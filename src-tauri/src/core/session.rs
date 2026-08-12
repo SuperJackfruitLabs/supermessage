@@ -7,8 +7,9 @@
 
 // `Session`'s methods are exercised by this module's own tests, but nothing
 // outside them calls in yet — `lib.rs` only constructs a `Session`, it
-// doesn't drive login/restore/logout/start_sync/stop_sync, since the command
-// surface that would is a later M0 task. Revisit removing this once it does.
+// doesn't drive login/restore/logout/start_sync/stop_sync/start_room_list/
+// stop_room_list, since the command surface that would is a later M0 task.
+// Revisit removing this once it does.
 #![allow(dead_code)]
 
 use std::path::PathBuf;
@@ -20,6 +21,7 @@ use tokio::sync::RwLock;
 use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
 use super::error::{CoreError, CoreResult};
+use super::rooms::{self, RoomListHandle};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
 use super::sync::{self, SyncHandle};
 use super::tls;
@@ -36,6 +38,11 @@ pub struct Session {
     // `SyncHandle` for why: a `SyncHandle` nobody stores stops sync the
     // moment it's dropped). `start_sync`/`stop_sync` are the only writers.
     sync: RwLock<Option<SyncHandle>>,
+    // Owns the room-list streaming task (see rooms.rs's doc comment on
+    // `RoomListHandle` for why it must be replaced-and-stopped, never just
+    // dropped-by-overwrite). `start_room_list`/`stop_room_list` are the only
+    // writers.
+    rooms: RwLock<Option<RoomListHandle>>,
 }
 
 impl Session {
@@ -46,6 +53,7 @@ impl Session {
             auth: PasswordAuth,
             client: RwLock::new(None),
             sync: RwLock::new(None),
+            rooms: RwLock::new(None),
         }
     }
 
@@ -95,9 +103,12 @@ impl Session {
     /// crypto keys decryptable-if-you-can-reach-the-keyring on disk after
     /// logout is not acceptable for a chat client regardless.
     pub async fn logout(&self) -> CoreResult<()> {
-        // Stop sync first: otherwise the sync loops keep running against a
-        // client we're about to drop (and, on some future error path, could
-        // still be mid-request against a store we're about to wipe below).
+        // Stop room-list streaming and sync first: otherwise those loops
+        // keep running against a client we're about to drop (and, on some
+        // future error path, could still be mid-request against a store
+        // we're about to wipe below). Room list first since it depends on
+        // the sync service's `RoomListService`, not the other way around.
+        self.stop_room_list().await;
         self.stop_sync().await;
         // Clone the handle (cheap — `Client` is internally reference
         // counted) and drop the read lock before the network call below, so
@@ -137,6 +148,37 @@ impl Session {
     pub async fn stop_sync(&self) {
         if let Some(handle) = self.sync.write().await.take() {
             handle.stop().await;
+        }
+    }
+
+    /// Starts streaming the room list for the currently running sync and
+    /// stores the resulting handle, replacing (and stopping) any room-list
+    /// stream already running.
+    ///
+    /// Fails with [`CoreError::NotReady`] when sync hasn't been started yet
+    /// (`start_sync` must run first — the room list is projected from its
+    /// `RoomListService`).
+    pub async fn start_room_list(&self, app: AppHandle) -> CoreResult<()> {
+        let handle = {
+            let sync = self.sync.read().await;
+            let sync_handle = sync.as_ref().ok_or(CoreError::NotReady)?;
+            rooms::spawn_room_list(sync_handle, app).await?
+        };
+        // Stop whatever was running before swapping in the new handle —
+        // otherwise the old stream would keep interleaving envelopes, with
+        // its own independent `seq` counter, onto the same event.
+        let previous = self.rooms.write().await.replace(handle);
+        if let Some(previous) = previous {
+            previous.stop();
+        }
+        Ok(())
+    }
+
+    /// Stops room-list streaming and drops the handle, if any is running. A
+    /// safe no-op when nothing was started.
+    pub async fn stop_room_list(&self) {
+        if let Some(handle) = self.rooms.write().await.take() {
+            handle.stop();
         }
     }
 

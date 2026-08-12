@@ -108,6 +108,50 @@ where
     }
 }
 
+/// Applies a batch of ops to a materialized `Vec<T>` in place, mirroring
+/// exactly what the webview's `DiffTracker`/`applyOps`
+/// (`src/lib/stores/diff.ts`) does to its own copy of the same list.
+///
+/// For a channel that keeps a server-side materialized view in sync with
+/// what it emits — so a resync can be served from that view instead of a
+/// second, uncoordinated subscription (see `core::rooms::RoomListHandle`) —
+/// this is the one place that folds a `DiffOp` batch into it. Exhaustive
+/// with no wildcard arm, like `project_diff`: if `DiffOp` ever grows a
+/// variant, this must fail to compile rather than silently leave the
+/// materialized view out of sync with what was already emitted, which would
+/// corrupt every resync served from it.
+pub fn apply_ops<T: Clone>(items: &mut Vec<T>, ops: &[DiffOp<T>]) {
+    for op in ops {
+        match op {
+            DiffOp::Append { values } => items.extend(values.iter().cloned()),
+            DiffOp::Clear => items.clear(),
+            DiffOp::PushFront { value } => items.insert(0, value.clone()),
+            DiffOp::PushBack { value } => items.push(value.clone()),
+            DiffOp::PopFront => {
+                if !items.is_empty() {
+                    items.remove(0);
+                }
+            }
+            DiffOp::PopBack => {
+                items.pop();
+            }
+            DiffOp::Insert { index, value } => items.insert(*index, value.clone()),
+            DiffOp::Set { index, value } => {
+                if let Some(slot) = items.get_mut(*index) {
+                    *slot = value.clone();
+                }
+            }
+            DiffOp::Remove { index } => {
+                if *index < items.len() {
+                    items.remove(*index);
+                }
+            }
+            DiffOp::Truncate { length } => items.truncate(*length),
+            DiffOp::Reset { values } => *items = values.clone(),
+        }
+    }
+}
+
 /// Monotonic sequence number generator, starting at 1. The webview uses gaps
 /// in this sequence to detect a dropped event and force a resync.
 #[derive(Debug, Default)]
@@ -219,5 +263,118 @@ mod tests {
         assert_eq!(json["seq"], 7);
         assert_eq!(json["subject"], "!room:example.org");
         assert_eq!(json["ops"][0]["op"], "popFront");
+    }
+
+    // apply_ops: every DiffOp variant, mirroring the applyOps coverage in
+    // src/lib/stores/diff.test.ts (Task 11) one-for-one, since a divergence
+    // between the two would silently corrupt every resync served from the
+    // Rust-side materialized state.
+    #[test]
+    fn apply_ops_appends() {
+        let mut items = vec![1];
+        apply_ops(&mut items, &[DiffOp::Append { values: vec![2, 3] }]);
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn apply_ops_clears() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::Clear]);
+        assert_eq!(items, Vec::<i32>::new());
+    }
+
+    #[test]
+    fn apply_ops_pushes_front() {
+        let mut items = vec![2];
+        apply_ops(&mut items, &[DiffOp::PushFront { value: 1 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_pushes_back() {
+        let mut items = vec![1];
+        apply_ops(&mut items, &[DiffOp::PushBack { value: 2 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_pops_front() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::PopFront]);
+        assert_eq!(items, vec![2]);
+    }
+
+    #[test]
+    fn apply_ops_pops_back() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::PopBack]);
+        assert_eq!(items, vec![1]);
+    }
+
+    #[test]
+    fn apply_ops_inserts() {
+        let mut items = vec![1, 3];
+        apply_ops(&mut items, &[DiffOp::Insert { index: 1, value: 2 }]);
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn apply_ops_sets() {
+        let mut items = vec![1, 9];
+        apply_ops(&mut items, &[DiffOp::Set { index: 1, value: 2 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_removes() {
+        let mut items = vec![1, 2, 3];
+        apply_ops(&mut items, &[DiffOp::Remove { index: 1 }]);
+        assert_eq!(items, vec![1, 3]);
+    }
+
+    #[test]
+    fn apply_ops_truncates() {
+        let mut items = vec![1, 2, 3];
+        apply_ops(&mut items, &[DiffOp::Truncate { length: 2 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_resets() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::Reset { values: vec![9] }]);
+        assert_eq!(items, vec![9]);
+    }
+
+    #[test]
+    fn apply_ops_applies_a_batch_in_order() {
+        let mut items = vec![1];
+        apply_ops(
+            &mut items,
+            &[DiffOp::PushBack { value: 2 }, DiffOp::PopFront],
+        );
+        assert_eq!(items, vec![2]);
+    }
+
+    // Defensive: an out-of-bounds op should never happen against a
+    // consistent SDK-driven stream, but silently skipping rather than
+    // panicking keeps one malformed batch from permanently killing the
+    // background streaming task.
+    #[test]
+    fn apply_ops_ignores_out_of_bounds_indices_instead_of_panicking() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::Remove { index: 5 }]);
+        assert_eq!(items, vec![1, 2]);
+
+        apply_ops(&mut items, &[DiffOp::Set { index: 5, value: 9 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_ignores_pop_on_an_empty_list_instead_of_panicking() {
+        let mut items = Vec::<i32>::new();
+        apply_ops(&mut items, &[DiffOp::PopFront]);
+        apply_ops(&mut items, &[DiffOp::PopBack]);
+        assert_eq!(items, Vec::<i32>::new());
     }
 }
