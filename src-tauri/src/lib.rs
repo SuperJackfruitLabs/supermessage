@@ -1,3 +1,10 @@
+// `core::timeline::FocusedTimeline::subscribe`'s spawned task nests
+// `Timeline::subscribe`'s stream type (itself wrapping `TimelineWithDropHandle`
+// around an `eyeball_im` subscriber stream) inside a `pin_mut!`'d `while let`
+// loop inside an `async move` block passed to `tokio::spawn` — deep enough
+// that computing its layout overflows rustc's default query recursion limit.
+#![recursion_limit = "256"]
+
 mod core;
 
 use serde::Serialize;

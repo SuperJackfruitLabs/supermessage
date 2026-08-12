@@ -135,7 +135,11 @@ pub fn apply_ops<T: Clone>(items: &mut Vec<T>, ops: &[DiffOp<T>]) {
             DiffOp::PopBack => {
                 items.pop();
             }
-            DiffOp::Insert { index, value } => items.insert(*index, value.clone()),
+            DiffOp::Insert { index, value } => {
+                if *index <= items.len() {
+                    items.insert(*index, value.clone());
+                }
+            }
             DiffOp::Set { index, value } => {
                 if let Some(slot) = items.get_mut(*index) {
                     *slot = value.clone();
@@ -368,6 +372,22 @@ mod tests {
 
         apply_ops(&mut items, &[DiffOp::Set { index: 5, value: 9 }]);
         assert_eq!(items, vec![1, 2]);
+    }
+
+    // `Vec::insert` panics when `index > len` — unlike `Set`/`Remove`/
+    // `PopFront`/`PopBack`, which are all guarded above, an unguarded
+    // `Insert` would crash the streaming task (and silently freeze the
+    // affected list) on one malformed batch instead of just skipping it.
+    #[test]
+    fn apply_ops_ignores_an_out_of_range_insert_instead_of_panicking() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::Insert { index: 5, value: 9 }]);
+        assert_eq!(items, vec![1, 2]);
+
+        // The boundary case `index == len` is a valid append-via-insert and
+        // must still work.
+        apply_ops(&mut items, &[DiffOp::Insert { index: 2, value: 3 }]);
+        assert_eq!(items, vec![1, 2, 3]);
     }
 
     #[test]
