@@ -6,19 +6,30 @@
 //! into wire [`DiffOp`]s by `core::dto::project_diff` — as [`DiffEnvelope`]s
 //! stamped with a per-channel sequence number, so the webview can detect a
 //! dropped event and force a resync instead of silently corrupting its list.
+//!
+//! [`RoomListHandle`] also keeps a materialized copy of the list in sync
+//! with what it emits (via `core::dto::apply_ops`), guarded by the same lock
+//! its `seq` counter is stamped under. That is what lets
+//! [`RoomListHandle::snapshot`] serve a resync out of the live task's own
+//! state instead of opening a second, independently-numbered subscription —
+//! see that method's doc comment for why a second subscription cannot work.
 
-// `spawn_room_list` and `snapshot` have no caller yet — the Tauri command
-// surface that starts room-list streaming after login and implements
-// `rooms_resync` is a later M0 task. Revisit removing this once it lands.
+// `spawn_room_list` and `RoomListHandle` have no caller yet outside this
+// module's own tests — the Tauri command surface that starts room-list
+// streaming after login and implements `rooms_resync` is a later M0 task.
+// Revisit removing this once it lands.
 #![allow(dead_code)]
+
+use std::sync::{Arc, Mutex};
 
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use matrix_sdk_ui::room_list_service::filters::new_filter_non_left;
 use matrix_sdk_ui::room_list_service::RoomListItem;
 use tauri::{AppHandle, Emitter};
+use tokio::task::JoinHandle;
 
-use super::dto::{project_diff, DiffEnvelope, DiffOp, RoomSummary, SeqCounter};
+use super::dto::{apply_ops, project_diff, DiffEnvelope, DiffOp, RoomSummary, SeqCounter};
 use super::error::{CoreError, CoreResult};
 use super::sync::SyncHandle;
 
@@ -34,6 +45,11 @@ const ROOMS_CHANNEL: &str = "rooms";
 /// the list — sliding-window pagination of the room list itself is not part
 /// of this task.
 const ROOM_LIST_PAGE_SIZE: usize = 200;
+
+/// The sequence number of the last diff folded into `rooms`, and the
+/// resulting materialized list — always mutually consistent with each other
+/// (see [`RoomListHandle::snapshot`]).
+type RoomListSnapshot = (u64, Vec<RoomSummary>);
 
 /// Build a [`RoomSummary`] from already-extracted parts.
 ///
@@ -92,9 +108,70 @@ fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomSummary
         .collect()
 }
 
+/// Owns the background task streaming the room list to the webview.
+///
+/// Mirrors `core::sync::SyncHandle`'s shape: dropping a `RoomListHandle`, or
+/// calling [`RoomListHandle::stop`] on it, aborts the streaming task.
+/// `Session` is meant to be the sole long-term owner (see
+/// `core::session::Session::start_room_list`), replacing and stopping any
+/// previous handle before storing a new one — otherwise two independent
+/// subscriptions would interleave envelopes on the same event, each with its
+/// own `seq` counter restarting at 1, which the webview cannot tell apart
+/// from a corrupted stream.
+pub struct RoomListHandle {
+    state: Arc<Mutex<RoomListSnapshot>>,
+    task: JoinHandle<()>,
+}
+
+impl RoomListHandle {
+    /// Stops the background streaming task. Safe to call more than once, or
+    /// alongside letting the handle simply drop — both abort the same task.
+    ///
+    /// Unlike `SyncHandle::stop` (which awaits `SyncService::stop()`),
+    /// aborting a task is inherently synchronous, so this doesn't need to be
+    /// `async`.
+    pub fn stop(&self) {
+        self.task.abort();
+    }
+
+    /// A snapshot of the room list as of the last diff this handle's task
+    /// has applied, plus the sequence number of that diff — read directly
+    /// out of the same state the streaming task maintains, not from a
+    /// second subscription.
+    ///
+    /// Why this has to be shared state rather than a fresh
+    /// `entries_with_dynamic_adapters` call: a second subscription gets its
+    /// own `SeqCounter`, starting at 1, with no relationship to whatever
+    /// sequence number the *live*, already-running stream is currently on.
+    /// A webview that gapped at, say, seq 47 and resynced against a fresh
+    /// subscription's `seq: 1` would set its next-expected sequence to 2 —
+    /// but the live task keeps counting forward from 48, 49, 50, ...; every
+    /// subsequent live envelope would look like a gap, forever. Reading out
+    /// of the *same* counter and the *same* materialized list the live task
+    /// just updated, under the same lock, is what makes the returned
+    /// `(seq, rooms)` pair unconditionally correct to hand to
+    /// `DiffTracker::reset` regardless of when it's called — second 0 or
+    /// hour 3 of the session, mid-batch or between batches.
+    pub fn snapshot(&self) -> CoreResult<RoomListSnapshot> {
+        self.state
+            .lock()
+            .map(|guard| guard.clone())
+            .map_err(|_| CoreError::Protocol("room list state lock poisoned".into()))
+    }
+}
+
+impl Drop for RoomListHandle {
+    fn drop(&mut self) {
+        // Belt and suspenders, same reasoning as `SyncHandle`'s `Drop`: a
+        // `RoomListHandle` no one stopped explicitly must not leave its task
+        // running forever.
+        self.task.abort();
+    }
+}
+
 /// Spawns a task that streams the (non-left) room list to the webview for as
-/// long as `app` lives, emitting one [`DiffEnvelope`] per batch on
-/// [`ROOMS_DIFF_EVENT`].
+/// long as the returned [`RoomListHandle`] lives, emitting one
+/// [`DiffEnvelope`] per batch on [`ROOMS_DIFF_EVENT`].
 ///
 /// `RoomList::entries_with_dynamic_adapters` returns `impl Stream + '_`: the
 /// stream borrows `&self` from the `RoomList` it's built from. Building the
@@ -105,25 +182,47 @@ fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomSummary
 /// block, and calling `entries_with_dynamic_adapters` from inside that
 /// block, ties the `RoomList`'s lifetime to the task's for as long as the
 /// task runs, so the borrow is always valid for the stream's entire life.
-pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<()> {
+pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<RoomListHandle> {
     let room_list = handle
         .room_list_service()
         .all_rooms()
         .await
         .map_err(|e| CoreError::Protocol(e.to_string()))?;
 
-    tokio::spawn(async move {
+    // Starts at `(0, [])`: "before any diff has been folded in, the list is
+    // empty" — consistent with `SeqCounter` starting at 1, since the first
+    // live envelope (seq 1) is exactly what turns this into the true state.
+    let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
+    let task_state = Arc::clone(&state);
+
+    let task = tokio::spawn(async move {
         let (stream, controller) = room_list.entries_with_dynamic_adapters(ROOM_LIST_PAGE_SIZE);
         controller.set_filter(Box::new(new_filter_non_left()));
         pin_mut!(stream);
 
         let mut seq = SeqCounter::default();
         while let Some(batch) = stream.next().await {
+            let ops = project_batch(batch);
+            let seq_no = seq.next();
+
+            // Fold this batch into the materialized list *before* emitting,
+            // under the same lock `snapshot()` reads. A `snapshot()` call
+            // that races this either observes the state from just before
+            // this batch or from just after it — never a torn mix of "the
+            // new seq number with the old list" or vice versa.
+            {
+                let mut guard = task_state
+                    .lock()
+                    .expect("room list state lock poisoned by an earlier panic");
+                apply_ops(&mut guard.1, &ops);
+                guard.0 = seq_no;
+            }
+
             let envelope = DiffEnvelope {
                 channel: ROOMS_CHANNEL.into(),
                 subject: String::new(),
-                seq: seq.next(),
-                ops: project_batch(batch),
+                seq: seq_no,
+                ops,
             };
             if let Err(err) = app.emit(ROOMS_DIFF_EVENT, &envelope) {
                 tracing::warn!(error = %err, "failed to emit {ROOMS_DIFF_EVENT}");
@@ -131,63 +230,13 @@ pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<
         }
     });
 
-    Ok(())
-}
-
-/// Fetches a one-off, self-consistent snapshot of the (non-left) room list —
-/// the full state plus the sequence number that corresponds to it, so the
-/// caller (`rooms_resync`) can hand both to the webview's `DiffTracker` via
-/// `reset(items, seq)` and resume applying live diffs from exactly the right
-/// point.
-///
-/// The sequence number is `1`, not an arbitrary placeholder like `0`. Here is
-/// why that is the number that keeps this consistent with the live stream:
-/// `entries_with_dynamic_adapters` has a documented contract — every time a
-/// filter is set on a fresh subscription, the *first* batch the stream
-/// yields is always `[VectorDiff::Reset { values }]` holding the complete
-/// current list, before any incremental updates follow. `spawn_room_list`
-/// relies on exactly this: its `SeqCounter` starts at 1, so the first
-/// envelope it ever emits for a freshly (re)started stream necessarily
-/// carries `seq: 1` and `ops: [Reset { values: <the full list at that
-/// moment> }]`. `snapshot` opens its own independent subscription and reads
-/// only that guaranteed-first Reset batch, stamping it with its own
-/// `SeqCounter`'s first value — which, since `SeqCounter` always starts at
-/// 1, is also `1`. The two are not coordinated through shared state; they
-/// agree because they are both direct readings of the same SDK contract.
-/// `DiffTracker::reset(items, 1)` therefore sets the webview's next expected
-/// sequence number to `2` — exactly what a freshly (re)started
-/// `spawn_room_list` stream's *second* envelope would carry. Returning
-/// anything other than `1` here (e.g. `0`, or a value taken from some other
-/// counter) would desynchronize the webview from that contract and either
-/// reintroduce the silent-corruption bug the sequence numbers exist to
-/// prevent, or send the webview into an endless resync loop.
-pub async fn snapshot(handle: &SyncHandle) -> CoreResult<(u64, Vec<RoomSummary>)> {
-    let room_list = handle
-        .room_list_service()
-        .all_rooms()
-        .await
-        .map_err(|e| CoreError::Protocol(e.to_string()))?;
-
-    let (stream, controller) = room_list.entries_with_dynamic_adapters(ROOM_LIST_PAGE_SIZE);
-    controller.set_filter(Box::new(new_filter_non_left()));
-    pin_mut!(stream);
-
-    let batch = stream.next().await.ok_or_else(|| {
-        CoreError::Protocol("room list stream ended before yielding a snapshot".into())
-    })?;
-
-    let mut seq = SeqCounter::default();
-    let mut ops = project_batch(batch).into_iter();
-    match (ops.next(), ops.next()) {
-        (Some(DiffOp::Reset { values }), None) => Ok((seq.next(), values)),
-        _ => Err(CoreError::Protocol(
-            "expected the room list's first batch to be a single reset".into(),
-        )),
-    }
+    Ok(RoomListHandle { state, task })
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     #[test]
@@ -220,5 +269,65 @@ mod tests {
         assert_eq!(summary.avatar_url.as_deref(), Some("mxc://example.org/abc"));
         assert_eq!(summary.last_message.as_deref(), Some("hello"));
         assert_eq!(summary.last_activity_ms, Some(1_700_000_000_000));
+    }
+
+    fn room(id: &str) -> RoomSummary {
+        project_room_parts(id, None, None, 0, None, None)
+    }
+
+    #[test]
+    fn snapshot_reflects_the_last_seq_and_rooms_written_under_the_lock() {
+        let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, vec![room("!a:x.org")])));
+
+        {
+            let mut guard = state.lock().unwrap();
+            apply_ops(
+                &mut guard.1,
+                &[DiffOp::PushBack {
+                    value: room("!b:x.org"),
+                }],
+            );
+            guard.0 = 3;
+        }
+
+        let snapshot = state.lock().unwrap().clone();
+        assert_eq!(snapshot.0, 3);
+        assert_eq!(snapshot.1, vec![room("!a:x.org"), room("!b:x.org")]);
+    }
+
+    #[tokio::test]
+    async fn stop_aborts_the_background_task() {
+        let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
+        let task = tokio::spawn(async {
+            loop {
+                tokio::time::sleep(Duration::from_secs(3600)).await;
+            }
+        });
+        let handle = RoomListHandle { state, task };
+
+        assert!(!handle.task.is_finished());
+        handle.stop();
+        // Give the runtime a moment to actually cancel the sleeping task.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(handle.task.is_finished());
+    }
+
+    #[tokio::test]
+    async fn snapshot_reports_a_lock_poisoned_protocol_error_instead_of_panicking() {
+        let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
+        let poison_state = Arc::clone(&state);
+
+        // Deliberately poison the mutex, the same way a bug elsewhere in the
+        // streaming task might.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poison_state.lock().unwrap();
+            panic!("simulated panic while holding the lock");
+        }));
+
+        let task = tokio::spawn(async {});
+        let handle = RoomListHandle { state, task };
+
+        let err = handle.snapshot().unwrap_err();
+        assert_eq!(err.kind(), "protocol");
     }
 }
