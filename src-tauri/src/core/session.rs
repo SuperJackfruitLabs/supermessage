@@ -176,6 +176,28 @@ impl Session {
         }
     }
 
+    /// Starts sync, then room-list streaming, as one step callers can treat
+    /// as atomic: if room-list streaming fails to start, sync is stopped
+    /// again before the error is returned, rather than leaving an
+    /// authenticated session with a sync loop running that nothing is
+    /// driving cleanup for.
+    ///
+    /// `stop_sync` can't itself fail (it only awaits/aborts already-running
+    /// tasks — see its signature), so this rollback never has a second error
+    /// to weigh against the first: whatever `start_room_list` failed with is
+    /// always what's returned.
+    ///
+    /// Used by the `login`/`restore_session` commands, which would otherwise
+    /// need this same start-then-rollback sequencing themselves.
+    pub async fn start_streams(&self, app: AppHandle) -> CoreResult<()> {
+        self.start_sync(app.clone()).await?;
+        if let Err(err) = self.start_room_list(app).await {
+            self.stop_sync().await;
+            return Err(err);
+        }
+        Ok(())
+    }
+
     /// A snapshot of the room list — the sequence number of the last diff
     /// folded in, and the resulting list — read out of the currently running
     /// room-list stream's own state. See `RoomListHandle::snapshot`'s doc
