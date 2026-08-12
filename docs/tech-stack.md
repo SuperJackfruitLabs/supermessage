@@ -107,7 +107,7 @@ Caution: Element X apps and trixnity-messenger/Tammy are **AGPL-3.0 — read for
 
 ## Milestones
 
-- **M0 — spine:** Tauri scaffold; Rust core syncs a real account (OIDC + password); Svelte stores mirror room list/timeline; virtua message list renders; send/receive plaintext.
+- **M0 — spine:** Tauri scaffold; Rust core syncs a real account (password login); Svelte stores mirror room list/timeline; virtua message list renders; send/receive plaintext.
 - **M1 — E2EE:** encrypted DMs, emoji verification, key backup bootstrap.
 - **M2 — daily driver:** media send/receive, replies/reactions/edits, receipts/typing, iOS keyboard fix, Android 16KB/ring fix, F7 mobile skin + desktop skins in place.
 - **M3 — push:** Sygnal deployment; FCM on Android; APNs phase 1; then iOS NSE.

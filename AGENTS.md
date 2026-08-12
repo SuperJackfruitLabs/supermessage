@@ -8,7 +8,7 @@ supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android
 
 It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Kaambaan + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Kaambaan cards/runs, permission requests, station status), approvals from chat (Kaambaan gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
 
-**Current status: M0 in progress (scaffold landed Aug 2026).** The Tauri 2 + Svelte 5 shell builds and runs on Linux, the Android project is generated, and the Rust core links matrix-rust-sdk — but **no Matrix code exists yet**. There is no login, no sync, no timeline. The single Tauri command (`core_status`) is a bridge smoke test, and `core::session` is an empty ownership seam. Next work is M0 proper: OIDC/password login, `SyncService`, room list and timeline stores.
+**Current status: M0 in progress (scaffold landed Aug 2026).** The Tauri 2 + Svelte 5 shell builds and runs on Linux, the Android project is generated, and the Rust core links matrix-rust-sdk — but **no Matrix code exists yet**. There is no login, no sync, no timeline. The single Tauri command (`core_status`) is a bridge smoke test, and `core::session` is an empty ownership seam. Next work is M0 proper: password login, `SyncService`, room list and timeline stores (OIDC deferred pending matrix-authentication-service deployment).
 
 ## Repository layout
 
@@ -140,7 +140,7 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 
 ## Milestones (docs/positioning.md supersedes docs/tech-stack.md on ordering)
 
-- **M0 — spine:** Tauri scaffold; Rust core syncs a real account on `id.agentpod.dev` (OIDC + password); Svelte stores mirror room list/timeline; virtua message list; send/receive plaintext. Dogfood immediately against real agent users.
+- **M0 — spine:** Tauri scaffold; Rust core syncs a real account on `id.agentpod.dev` (password login); Svelte stores mirror room list/timeline; virtua message list; send/receive plaintext. Dogfood immediately against real agent users.
 - **M1 — agent-aware client:** custom event rendering framework + schema drafts (card/run/permission/station), deep links, graceful plain-text fallback. E2EE is "available, not blocking".
 - **M2 — daily driver:** media, replies/reactions/edits, receipts/typing, iOS keyboard fix, Android 16KB/ring fix, Framework7 mobile skin + desktop skins.
 - **M3 — push + approvals:** Sygnal deployment; FCM/APNs; Kaambaan gate notifications → Matrix → approve/reject end-to-end; then iOS NSE.
