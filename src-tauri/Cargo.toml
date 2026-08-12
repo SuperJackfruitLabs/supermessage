@@ -37,6 +37,12 @@ keyring = "4.1"
 rand = "0.9"
 thiserror = "2"
 futures-util = "0.3"
+async-trait = "0.1"
+# Direct dep, at the same version matrix-sdk already resolves transitively, so
+# this doesn't pull a second copy: core::auth::password matches on
+# `ruma::api::error::ErrorKind::Forbidden` to tell a wrong password (403 /
+# M_FORBIDDEN, CoreError::Auth) apart from a transport failure (CoreError::Network).
+ruma = "0.16"
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tracing = "0.1"
@@ -47,3 +53,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # reqwest/rustls (= aws-lc-rs), so both providers are compiled in and rustls
 # has no implicit default — one must be installed at startup.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+
+[dev-dependencies]
+# `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
+# no_retry_test_client_with_server), wiremock to script the homeserver's HTTP
+# responses in auth tests.
+matrix-sdk = { version = "0.18", features = ["testing"] }
+wiremock = "0.6"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
