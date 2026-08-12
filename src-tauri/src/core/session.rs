@@ -7,19 +7,21 @@
 
 // `Session`'s methods are exercised by this module's own tests, but nothing
 // outside them calls in yet — `lib.rs` only constructs a `Session`, it
-// doesn't drive login/restore/logout, since the command surface that would
-// is a later M0 task. Revisit removing this once it does.
+// doesn't drive login/restore/logout/start_sync/stop_sync, since the command
+// surface that would is a later M0 task. Revisit removing this once it does.
 #![allow(dead_code)]
 
 use std::path::PathBuf;
 
 use matrix_sdk::Client;
+use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
 use super::error::{CoreError, CoreResult};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
+use super::sync::{self, SyncHandle};
 use super::tls;
 
 /// Holds the active account's client, if any.
@@ -30,6 +32,10 @@ pub struct Session {
     store: Box<dyn SecretStore>,
     auth: PasswordAuth,
     client: RwLock<Option<Client>>,
+    // Owns the running `SyncService` (see sync.rs's doc comment on
+    // `SyncHandle` for why: a `SyncHandle` nobody stores stops sync the
+    // moment it's dropped). `start_sync`/`stop_sync` are the only writers.
+    sync: RwLock<Option<SyncHandle>>,
 }
 
 impl Session {
@@ -39,6 +45,7 @@ impl Session {
             store,
             auth: PasswordAuth,
             client: RwLock::new(None),
+            sync: RwLock::new(None),
         }
     }
 
@@ -88,6 +95,10 @@ impl Session {
     /// crypto keys decryptable-if-you-can-reach-the-keyring on disk after
     /// logout is not acceptable for a chat client regardless.
     pub async fn logout(&self) -> CoreResult<()> {
+        // Stop sync first: otherwise the sync loops keep running against a
+        // client we're about to drop (and, on some future error path, could
+        // still be mid-request against a store we're about to wipe below).
+        self.stop_sync().await;
         // Clone the handle (cheap — `Client` is internally reference
         // counted) and drop the read lock before the network call below, so
         // a concurrent `client()`/`require_client()` is never blocked on it.
@@ -102,6 +113,31 @@ impl Session {
         drop(active);
         self.remove_store()?;
         Ok(())
+    }
+
+    /// Starts sync for the currently logged-in client and stores the
+    /// resulting handle, replacing (and stopping) any sync already running.
+    ///
+    /// Fails with [`CoreError::NotReady`] when nothing is logged in yet.
+    pub async fn start_sync(&self, app: AppHandle) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        let handle = sync::start(&client, app).await?;
+        // Stop whatever was running before swapping in the new handle —
+        // otherwise the old sync loops would leak, still running against
+        // (usually) the same client.
+        let previous = self.sync.write().await.replace(handle);
+        if let Some(previous) = previous {
+            previous.stop().await;
+        }
+        Ok(())
+    }
+
+    /// Stops sync and drops the handle, if any is running. A safe no-op when
+    /// nothing was started.
+    pub async fn stop_sync(&self) {
+        if let Some(handle) = self.sync.write().await.take() {
+            handle.stop().await;
+        }
     }
 
     /// Clones the active client handle. `Client` is internally reference
