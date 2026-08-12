@@ -11,6 +11,7 @@
 pub mod auth;
 pub mod dto;
 pub mod error;
+pub mod rooms;
 pub mod secrets;
 pub mod session;
 pub mod sync;
