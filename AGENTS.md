@@ -31,7 +31,7 @@ docs/positioning.md  — suite context, boundaries (hard rules), near-term wedge
 | Desktop skins | Per-OS token themes over Tauri native chrome (Fluent-inspired Windows, hand-rolled HIG macOS, libadwaita CSS vars Linux) | — |
 | Message list | virtua (Svelte virtualizer) for the inverted chat timeline | MIT |
 | JS ↔ Rust bridge | Tauri commands/events + Svelte stores | — |
-| Push infra | Self-hosted Sygnal push gateway + FCM/APNs | Apache-2.0 |
+| Push infra | Self-hosted push gateway (unmodified Sygnal, or own minimal Rust gateway at M3) + FCM/APNs | AGPL-3.0 if Sygnal — infrastructure only, not linked |
 
 ## Architecture rules (from docs/tech-stack.md — treat as binding)
 
@@ -72,6 +72,7 @@ Add real testing instructions here once the first code exists.
 
 - **No copyleft dependencies.** All runtime dependencies must be permissively licensed (MIT / Apache-2.0 / BSD). This hard requirement eliminated Flutter/matrix-dart-sdk and trixnity (both AGPL-3.0).
 - **AGPL projects are reference-only, never copy code:** Element X apps, trixnity-messenger/Tammy, mautrix. If an Application Service bridge is ever co-designed, prefer Ruma/ruma-appservice (MIT); avoid mautrix (AGPL).
+- **Sygnal (push gateway) is AGPL-3.0** in its maintained element-hq form; the Apache-2.0 matrix-org original is archived. It is deployed infrastructure, not a dependency — the client never talks to it (the homeserver POSTs to it). Run it unmodified; a minimal own Rust push gateway is an M3 option (see docs/tech-stack.md license section).
 - E2EE via vodozemac only; never hand-roll cryptography. Note the product call (docs/positioning.md): org rooms are unencrypted by design (knowledge extraction, AS-bridge incompatibility); E2EE stays available for external/DM contexts but is not on the critical path.
 - Push content is fetched and decrypted by the app itself (`event_id_only` pushes) — do not route message content through the push gateway.
 

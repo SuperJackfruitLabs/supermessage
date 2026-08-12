@@ -60,7 +60,7 @@ The strategy's Communication layer (priority **P2**) is defined as: *"Matrix + b
 - **M0 — spine (unchanged scope, new target):** Tauri + rust-sdk sync against **`id.agentpod.dev`** (OIDC + password), room list, virtua timeline, send/receive. Dogfood with real agent users immediately.
 - **M1 — agent-aware client (was E2EE):** custom event rendering framework + schema drafts (card/run/permission/station), deep links, graceful plain-text fallback. E2EE becomes "available, not blocking".
 - **M2 — daily driver (unchanged):** media, replies/reactions/edits, receipts/typing, iOS keyboard fix, Android 16KB/ring fix, F7 mobile skin + desktop skins.
-- **M3 — push + approvals:** Sygnal; FCM/APNs; Kaambaan gate notifications → Matrix → approve/reject actions end-to-end. Then iOS NSE.
+- **M3 — push + approvals:** push-gateway deployment (unmodified Sygnal, or own minimal Rust gateway — license stance in tech-stack.md); FCM/APNs; Kaambaan gate notifications → Matrix → approve/reject actions end-to-end. Then iOS NSE.
 - **M4 — mission surfaces:** spaces/mission rooms, presence-from-org-state, fleet event rooms (level C consumer), multi-account, settings polish.
 
 ## Where the suite is heading (and what P2 will ask of supermessage)

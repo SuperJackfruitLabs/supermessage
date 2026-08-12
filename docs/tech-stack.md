@@ -26,7 +26,7 @@ supermessage is a cross-platform Matrix chat client targeting **iOS, Android, Wi
 | Desktop skins | Per-OS token themes + Tauri native chrome | — | Fluent-inspired (Windows), hand-rolled HIG (macOS), libadwaita CSS vars (Linux) |
 | Message list | **virtua** (Svelte virtualizer) | MIT | Virtualized, inverted chat timeline |
 | JS ↔ Rust bridge | Tauri commands/events + Svelte stores | — | Reference: [tauri-plugin-matrix-svelte](https://github.com/IT-ess/tauri-plugin-matrix-svelte), [koushi-matrix](https://github.com/shinaoka/koushi-matrix) |
-| Push infra | **Sygnal** push gateway (self-hosted) + FCM/APNs | Apache-2.0 | Matrix requires app-vendor-owned gateway |
+| Push infra | Self-hosted push gateway + FCM/APNs: unmodified **Sygnal**, or own minimal Rust gateway (M3 decision) | AGPL-3.0 if Sygnal — infrastructure only, not linked | Matrix requires app-vendor-owned gateway; AGPL doesn't reach the client (homeserver→gateway HTTP) |
 
 ## Architecture
 
@@ -96,8 +96,14 @@ Rules:
 
 ## License compliance
 
-All runtime dependencies are permissive: Tauri (MIT/Apache-2.0), matrix-rust-sdk (Apache-2.0), Svelte/Tailwind/Framework7/Konsta/Bits UI/virtua (MIT). Sygnal (Apache-2.0) is infrastructure, not linked code.
+All runtime dependencies are permissive: Tauri (MIT/Apache-2.0), matrix-rust-sdk (Apache-2.0), Svelte/Tailwind/Framework7/Konsta/Bits UI/virtua (MIT).
 Caution: Element X apps and trixnity-messenger/Tammy are **AGPL-3.0 — read for reference, never copy code**.
+
+**Push gateway (infrastructure, not a dependency):** the maintained [element-hq/sygnal](https://github.com/element-hq/sygnal) is **AGPL-3.0** (Element took over maintenance in 2025 and relicensed, as with Synapse); the original [matrix-org/sygnal](https://github.com/matrix-org/sygnal) is Apache-2.0 but archived/unmaintained. This does not contaminate supermessage: the client never talks to the gateway — the homeserver POSTs to it — and it runs as a separate service, not linked code. Stance, in order of preference:
+
+1. Run Sygnal **unmodified** — no AGPL obligations arise without modification/distribution; if we ever modify it, publish the fork (trivial once this repo is public).
+2. Fallback: fork the archived Apache-2.0 matrix-org/sygnal (permissive, but we own all patching).
+3. M3 decision point: a **minimal own push gateway in Rust** — the Push Gateway API is a single endpoint (`POST /_matrix/push/v1/notify` → forward to FCM/APNs → report rejected pushkeys). A few hundred lines, fully license-clean; cost is owning FCM/APNs quirks.
 
 ## Milestones
 
