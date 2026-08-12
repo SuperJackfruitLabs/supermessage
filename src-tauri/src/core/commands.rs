@@ -22,8 +22,7 @@ pub async fn login(
     session: State<'_, Session>,
 ) -> Result<(), CoreError> {
     session.login(&homeserver, &username, &password).await?;
-    session.start_sync(app.clone()).await?;
-    session.start_room_list(app).await?;
+    session.start_streams(app).await?;
     Ok(())
 }
 
@@ -38,8 +37,7 @@ pub async fn restore_session(
 ) -> Result<bool, CoreError> {
     let restored = session.restore().await?;
     if restored {
-        session.start_sync(app.clone()).await?;
-        session.start_room_list(app).await?;
+        session.start_streams(app).await?;
     }
     Ok(restored)
 }
