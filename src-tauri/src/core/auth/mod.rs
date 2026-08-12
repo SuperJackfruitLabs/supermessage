@@ -8,9 +8,10 @@
 //! OIDC (`/_matrix/client/v1/auth_metadata` and the MSC2965 unstable path
 //! both 404).
 
-// Nothing outside this module's own tests calls into `auth` yet — that lands
-// with the login command/UI in a later M0 task. Revisit removing this once it
-// does.
+// `AuthProvider`/`PasswordAuth` are called by `Session::login`/`restore`/
+// `logout` (Task 6) now, but nothing outside `session`'s own tests calls
+// those yet — the command surface that reaches them from `lib.rs` is a later
+// M0 task. Revisit removing this once it does.
 #![allow(dead_code)]
 
 use async_trait::async_trait;

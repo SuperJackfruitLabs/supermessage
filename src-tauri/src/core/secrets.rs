@@ -9,8 +9,14 @@
 //! tested against [`MemoryStore`] instead. [`KeyringStore`] is the real,
 //! production-facing implementation.
 
-// Nothing outside this module and its tests calls into `secrets` yet — that
-// lands with login in a later M0 task. Revisit removing this once it does.
+// `SecretStore` and `KeyringStore` are now genuinely used: `lib.rs`
+// constructs a `KeyringStore` and hands it to `Session::new`, which `run()`
+// calls. `KEY_SESSION`/`KEY_STORE_PASSPHRASE` are used from `auth::password`
+// and `session`. `KEY_HOMESERVER_URL`, `MemoryStore` and
+// `generate_passphrase` are still only reachable from `session`'s own tests
+// and from inside `Session::login`/`restore`, which nothing outside those
+// tests calls yet — that lands with the command surface in a later M0 task.
+// Revisit removing this once it does.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -28,6 +34,15 @@ pub const KEY_SESSION: &str = "matrix_session";
 /// Key under which the passphrase for the SDK's SQLCipher-encrypted SQLite
 /// stores is stored.
 pub const KEY_STORE_PASSPHRASE: &str = "store_passphrase";
+
+/// Key under which the homeserver URL used at login is stored.
+///
+/// The persisted [`matrix_sdk::authentication::matrix::MatrixSession`] under
+/// [`KEY_SESSION`] carries only auth tokens and device identity, never the
+/// homeserver — `Client::builder().build()` fails with
+/// `ClientBuildError::MissingHomeserver` without one. `Session::restore`
+/// needs this to rebuild an identical client without asking the user again.
+pub const KEY_HOMESERVER_URL: &str = "homeserver_url";
 
 /// A place to put secrets. Implemented for real by [`KeyringStore`] (the OS
 /// secret store) and for tests by [`MemoryStore`].

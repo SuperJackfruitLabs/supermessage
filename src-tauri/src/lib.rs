@@ -3,6 +3,7 @@ mod core;
 use serde::Serialize;
 use tauri::Manager;
 
+use crate::core::secrets::KeyringStore;
 use crate::core::{session::Session, tls};
 
 #[derive(Serialize)]
@@ -59,7 +60,10 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            app.manage(Session::new());
+            // `Session` construction only; the command surface that logs in
+            // through it lands in a later M0 task.
+            let data_dir = app.path().app_data_dir().expect("app data dir");
+            app.manage(Session::new(data_dir, Box::new(KeyringStore)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![core_status])
