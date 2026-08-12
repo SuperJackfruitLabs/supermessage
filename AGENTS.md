@@ -61,7 +61,12 @@ src-tauri/           — the Rust core and Tauri config
 
 ## Matrix protocol choices
 
-- **Auth:** native OIDC (MSC3861) primary — PKCE via system browser, refresh tokens; legacy password/SSO login as fallback.
+- **Auth:** `m.login.password` is the **only** flow available today —
+  `id.agentpod.dev` (Synapse 1.152.0) advertises no SSO or OIDC, and both
+  `/_matrix/client/v1/auth_metadata` and the MSC2965 unstable path return 404.
+  Native OIDC (MSC3861) remains the intended target but requires deploying
+  matrix-authentication-service first. The client implements password login
+  behind an `AuthProvider` trait so OIDC is additive.
 - **Sync:** Simplified Sliding Sync (MSC4186) via the SDK's SyncService; `/sync` v3 fallback for older servers.
 - **E2EE:** SDK crypto (vodozemac): cross-signing, SSSS key backup, emoji/SAS device verification. Never hand-roll crypto.
 - **Media:** authenticated media endpoints (spec ≥1.11).
@@ -117,7 +122,17 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 
 ## Security and license considerations
 
-- **No copyleft dependencies.** All runtime dependencies must be permissively licensed (MIT / Apache-2.0 / BSD). This hard requirement eliminated Flutter/matrix-dart-sdk and trixnity (both AGPL-3.0).
+- **Dependency licenses:** all runtime dependencies must be permissively
+  licensed (MIT / Apache-2.0 / BSD) **or MPL-2.0 used unmodified**. MPL-2.0 is
+  file-level copyleft: it obliges publishing changes to those files and
+  explicitly permits combination into a larger work under other terms. Thirteen
+  MPL-2.0 crates arrive unavoidably with matrix-sdk (`eyeball`, `eyeball-im`,
+  `imbl`, `imbl-sized-chunks`, `bitmaps`, `readlock`, `readlock-tokio`,
+  `as_variant`) and Tauri (`cssparser`, `cssparser-macros`, `dtoa-short`,
+  `selectors`, `option-ext`). **Strong and network copyleft (GPL / AGPL /
+  LGPL) remain banned** — that requirement is what eliminated
+  Flutter/matrix-dart-sdk and trixnity. If you modify an MPL-2.0 file, publish
+  the change.
 - **AGPL projects are reference-only, never copy code:** Element X apps, trixnity-messenger/Tammy, mautrix. If an Application Service bridge is ever co-designed, prefer Ruma/ruma-appservice (MIT); avoid mautrix (AGPL).
 - **Sygnal (push gateway) is AGPL-3.0** in its maintained element-hq form; the Apache-2.0 matrix-org original is archived. It is deployed infrastructure, not a dependency — the client never talks to it (the homeserver POSTs to it). Run it unmodified; a minimal own Rust push gateway is an M3 option (see docs/tech-stack.md license section).
 - E2EE via vodozemac only; never hand-roll cryptography. Note the product call (docs/positioning.md): org rooms are unencrypted by design (knowledge extraction, AS-bridge incompatibility); E2EE stays available for external/DM contexts but is not on the critical path.

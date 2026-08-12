@@ -9,7 +9,7 @@ supermessage is a cross-platform Matrix chat client targeting **iOS, Android, Wi
 
 1. Single codebase; mobile and desktop are equally weighted.
 2. UI must **feel native** — platform-conformant chrome, behavior, and polish; not a web page in a shell.
-3. **No copyleft dependencies.** Runtime dependencies must be permissively licensed (MIT / Apache-2.0 / BSD). This eliminated matrix-dart-sdk/Flutter (AGPL-3.0) and the trixnity-messenger framework (AGPL-3.0).
+3. **Dependency licenses:** all runtime dependencies must be permissively licensed (MIT / Apache-2.0 / BSD) **or MPL-2.0 used unmodified**. MPL-2.0 is file-level copyleft; it obliges publishing changes to those files and explicitly permits combination into a larger work under other terms. Thirteen MPL-2.0 crates arrive unavoidably with matrix-sdk and Tauri. Strong and network copyleft (GPL / AGPL / LGPL) remain banned — this eliminated matrix-dart-sdk/Flutter (AGPL-3.0) and the trixnity-messenger framework (AGPL-3.0).
 4. Open source project; E2EE is non-negotiable (a plaintext-only Matrix client is not viable in 2026).
 
 ## The stack
@@ -65,10 +65,10 @@ Rules:
 
 ## Matrix protocol choices
 
-- **Auth:** native OIDC (MSC3861, spec ≥1.15) primary — PKCE via system browser, refresh tokens; legacy password/SSO login as fallback. Guide: [areweoidcyet.com](https://areweoidcyet.com/).
-- **Sync:** Simplified Sliding Sync (MSC4186) via the SDK's SyncService (native in Synapse ≥1.114); `/sync` v3 fallback for older servers.
+- **Auth:** `m.login.password` is the only flow available today — `id.agentpod.dev` (Synapse 1.152.0) advertises no SSO or OIDC, and both `/_matrix/client/v1/auth_metadata` and the MSC2965 unstable path return 404. Native OIDC (MSC3861) remains the intended target but requires deploying matrix-authentication-service first. The client implements password login behind an `AuthProvider` trait so OIDC is additive. Guide: [areweoidcyet.com](https://areweoidcyet.com/).
+- **Sync:** Simplified Sliding Sync (MSC4186) via the SDK's SyncService (native in Synapse ≥1.114; `org.matrix.simplified_msc3575` advertised on `id.agentpod.dev`); `/sync` v3 fallback for older servers.
 - **E2EE:** SDK crypto (vodozemac). Cross-signing, SSSS key backup, emoji/SAS device verification. Never hand-roll crypto.
-- **Media:** authenticated media endpoints (spec ≥1.11).
+- **Media:** authenticated media endpoints (spec ≥1.11; available on `id.agentpod.dev`).
 - **Push:** `event_id_only` pushes via own Sygnal → FCM/APNs; app fetches and decrypts content itself. iOS phase 2: Notification Service Extension in Swift linking the Rust SDK (Element X NSE as reference).
 
 ## Known risks & mitigations
@@ -96,7 +96,7 @@ Rules:
 
 ## License compliance
 
-All runtime dependencies are permissive: Tauri (MIT/Apache-2.0), matrix-rust-sdk (Apache-2.0), Svelte/Tailwind/Framework7/Konsta/Bits UI/virtua (MIT).
+All runtime dependencies are permissive: Tauri (MIT/Apache-2.0), matrix-rust-sdk (Apache-2.0), Svelte/Tailwind/Framework7/Konsta/Bits UI/virtua (MIT), or MPL-2.0 used unmodified. Thirteen MPL-2.0 crates arrive unavoidably with matrix-sdk (`eyeball`, `eyeball-im`, `imbl`, `imbl-sized-chunks`, `bitmaps`, `readlock`, `readlock-tokio`, `as_variant`) and Tauri (`cssparser`, `cssparser-macros`, `dtoa-short`, `selectors`, `option-ext`). MPL-2.0 is file-level copyleft and obliges publishing changes to those files; if you modify one, publish it. Strong and network copyleft (GPL / AGPL / LGPL) remain banned.
 Caution: Element X apps and trixnity-messenger/Tammy are **AGPL-3.0 — read for reference, never copy code**.
 
 **Push gateway (infrastructure, not a dependency):** the maintained [element-hq/sygnal](https://github.com/element-hq/sygnal) is **AGPL-3.0** (Element took over maintenance in 2025 and relicensed, as with Synapse); the original [matrix-org/sygnal](https://github.com/matrix-org/sygnal) is Apache-2.0 but archived/unmaintained. This does not contaminate supermessage: the client never talks to the gateway — the homeserver POSTs to it — and it runs as a separate service, not linked code. Stance, in order of preference:
