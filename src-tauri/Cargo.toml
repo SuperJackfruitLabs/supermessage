@@ -26,6 +26,13 @@ serde_json = "1"
 # forwarding + the SQLite stores; `markdown` for formatted message bodies.
 matrix-sdk = { version = "0.18", features = ["markdown", "bundled-sqlite"] }
 matrix-sdk-ui = "0.18"
+# Direct deps on the diff/collection types that already flow through
+# matrix-sdk transitively (eyeball_im::Vector re-exports imbl::Vector); pinned
+# explicitly because core::dto matches on VectorDiff and builds imbl::Vector
+# values directly. imbl 6, not 5: eyeball-im 0.8 resolves imbl 6.x, and a `= "5"`
+# constraint would pull a second, incompatible copy (see cargo tree -i imbl).
+eyeball-im = "0.8"
+imbl = "6"
 keyring = "4.1"
 rand = "0.9"
 thiserror = "2"
