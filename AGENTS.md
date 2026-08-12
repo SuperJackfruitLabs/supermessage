@@ -8,7 +8,7 @@ supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android
 
 It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Kaambaan + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Kaambaan cards/runs, permission requests, station status), approvals from chat (Kaambaan gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
 
-**Current status: pre-implementation (decisions taken Aug 2026).** The repository contains documentation only — there is no source code, no build system, no package manifest, and no test suite yet. Do not invent build/test commands or scaffolding conventions; when implementation begins (milestone M0), this file must be updated with the real commands.
+**Current status: M0 in progress (scaffold landed Aug 2026).** The Tauri 2 + Svelte 5 shell builds and runs on Linux, the Android project is generated, and the Rust core links matrix-rust-sdk — but **no Matrix code exists yet**. There is no login, no sync, no timeline. The single Tauri command (`core_status`) is a bridge smoke test, and `core::session` is an empty ownership seam. Next work is M0 proper: OIDC/password login, `SyncService`, room list and timeline stores.
 
 ## Repository layout
 
@@ -16,6 +16,16 @@ It is the **Communication layer (client)** of the Synthetic Organization suite (
 README.md            — one-paragraph summary and stack pointer
 docs/tech-stack.md   — full stack decision record: choices, rationale, risks, protocol choices, milestones
 docs/positioning.md  — suite context, boundaries (hard rules), near-term wedge, milestone adjustments
+package.json         — frontend manifest (pnpm)
+svelte.config.js     — SvelteKit, adapter-static, SPA mode
+vite.config.js       — Vite + Tailwind v4 plugin; fixed port 1420 for Tauri
+src/app.css          — Tailwind v4 design tokens + behavior-budget base rules
+src/routes/          — Svelte 5 routes (currently the M0 placeholder screen)
+src-tauri/           — the Rust core and Tauri config
+  src/lib.rs         — app setup, tracing, command registration
+  src/core/tls.rs    — rustls provider selection (ring); see the Android note below
+  src/core/session.rs— ownership seam for the logged-in matrix_sdk::Client
+  gen/android/       — generated Android Studio project (committed)
 ```
 
 ## Decided technology stack
@@ -32,6 +42,8 @@ docs/positioning.md  — suite context, boundaries (hard rules), near-term wedge
 | Message list | virtua (Svelte virtualizer) for the inverted chat timeline | MIT |
 | JS ↔ Rust bridge | Tauri commands/events + Svelte stores | — |
 | Push infra | Self-hosted push gateway (unmodified Sygnal, or own minimal Rust gateway at M3) + FCM/APNs | AGPL-3.0 if Sygnal — infrastructure only, not linked |
+
+**Wired so far:** Tauri 2, matrix-sdk 0.18 (`markdown` + `bundled-sqlite`), Svelte 5 + SvelteKit (SPA), Tailwind v4, Bits UI, virtua. **Not yet added:** Framework7 (mobile skin, M2) and the desktop skins — add them when skin work starts, not before, so the Konsta fallback stays cheap.
 
 ## Architecture rules (from docs/tech-stack.md — treat as binding)
 
@@ -57,16 +69,51 @@ docs/positioning.md  — suite context, boundaries (hard rules), near-term wedge
 
 ## Build, test, and development commands
 
-None exist yet — the repo has no code, no `Cargo.toml`, no `package.json`, and no CI. When M0 scaffolding lands, document here the real commands (expected shape per the stack: Cargo for the Rust/Tauri core, a JS package manager + Tauri CLI for the frontend, Tauri mobile commands for iOS/Android), plus lint/format/test invocations. Until then, any command an agent needs should be established as part of the task and recorded here.
+Package manager is **pnpm**. All commands run from the repo root unless noted.
+
+```bash
+pnpm install                 # frontend dependencies
+pnpm tauri dev               # run the desktop app (Vite on :1420 + Rust core)
+pnpm tauri build             # production desktop bundle
+pnpm check                   # svelte-check (TypeScript + Svelte diagnostics)
+pnpm build                   # frontend only -> build/
+
+cd src-tauri
+cargo check                  # fast Rust typecheck
+cargo test                   # Rust unit tests
+cargo fmt && cargo clippy    # format and lint
+```
+
+Android (SDK at `~/Android/Sdk`, NDK 29.0.14206865 installed; all four Rust
+Android targets added):
+
+```bash
+export ANDROID_HOME="$HOME/Android/Sdk"
+export NDK_HOME="$HOME/Android/Sdk/ndk/29.0.14206865"
+pnpm tauri android dev       # requires a device or emulator
+```
+
+**Do not verify the app with a bare `cargo run`/`cargo build` binary.** Tauri
+debug builds load `build.devUrl` (`http://localhost:1420`), so without Vite
+running the webview loads nothing and every `invoke` fails — which looks like a
+broken app. Use `pnpm tauri dev`, or `pnpm tauri build` for a binary that has
+the frontend embedded.
+
+iOS/macOS builds need a Mac and are not possible on the current Linux machine;
+WebKit visual QA has to happen elsewhere.
 
 ## Testing strategy
 
-No test suite exists yet and no strategy is prescribed in the docs. Two quality requirements from `docs/tech-stack.md` will shape it:
+`cargo test` covers the Rust core (currently one test, pinning the ring crypto
+provider). There is no frontend test runner yet — add one when the first real
+stores land. Two quality requirements from `docs/tech-stack.md` shape the rest:
 
 - **Per-engine visual QA** across WebKit (iOS/macOS), WebView2 (Windows), and WebKitGTK (Linux, including the oldest supported distro version).
 - A **native-feel behavior budget** (non-negotiable checklist): iOS keyboard webview-resize fix, safe-area handling, haptics via `tauri-plugin-haptics`, native popup context menus (no HTML dropdowns for OS-level actions), platform scrollbar discipline, system font stacks/Dynamic Type, strict `user-select` discipline.
 
-Add real testing instructions here once the first code exists.
+Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
+`--inset-*` safe-area variables, per-platform system font stack, and
+`user-select` off on chrome / on for `.selectable` content. The rest is open.
 
 ## Security and license considerations
 
@@ -88,7 +135,7 @@ Add real testing instructions here once the first code exists.
 
 - No production Tauri-**mobile** Matrix client exists yet — mobile integration is trailblazing; spike the push path early.
 - iOS keyboard does not resize WKWebView (the #1 "web tell" in chat apps) — the planned fix is ~200 lines of objc2 Rust resizing the webview frame; treat as core work.
-- aws-lc-rs crashes on Android 16KB-page devices — force the `ring` TLS backend until the upstream matrix-rust-sdk fix lands (Google Play requires 16KB support).
+- aws-lc-rs crashes on Android 16KB-page devices ([matrix-rust-sdk#6442](https://github.com/matrix-org/matrix-rust-sdk/issues/6442), still open as of Aug 2026). **The `ring` backend cannot be selected purely by features:** matrix-sdk 0.18 depends on `reqwest` with its `rustls` feature, which resolves to `__rustls-aws-lc-rs` and turns on `rustls/aws_lc_rs`. Cargo features are additive, so aws-lc-rs is compiled in no matter what this crate declares. The mitigation is runtime, in `src-tauri/src/core/tls.rs`: we also enable `rustls/ring` and install ring as the process-wide provider at the top of `run()`. This is also load-bearing for correctness — with two providers compiled in, rustls has no implicit default and `ClientConfig::builder()` panics unless one is installed. **Anything that constructs TLS must run after `install_ring_provider()`.** Verify on a real 16KB-page device at M2; if it still crashes, the remaining lever is a `[patch.crates-io]` forcing reqwest's `rustls-no-provider` feature.
 - IPC cost of streaming timelines to the webview — use windowed/delta updates.
 - Framework7 is single-maintainer — keep the skin isolated (~20% of UI) so the Konsta fallback stays viable.
 
