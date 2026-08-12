@@ -10,7 +10,12 @@ mod core;
 use serde::Serialize;
 use tauri::Manager;
 
+use crate::core::commands::{
+    login, logout, restore_session, rooms_resync, send_message, timeline_paginate_back,
+    timeline_resync, timeline_subscribe,
+};
 use crate::core::secrets::KeyringStore;
+use crate::core::timeline::FocusedTimeline;
 use crate::core::{session::Session, tls};
 
 #[derive(Serialize)]
@@ -67,13 +72,22 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // `Session` construction only; the command surface that logs in
-            // through it lands in a later M0 task.
             let data_dir = app.path().app_data_dir().expect("app data dir");
             app.manage(Session::new(data_dir, Box::new(KeyringStore)));
+            app.manage(FocusedTimeline::default());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![core_status])
+        .invoke_handler(tauri::generate_handler![
+            core_status,
+            login,
+            restore_session,
+            logout,
+            rooms_resync,
+            timeline_subscribe,
+            timeline_paginate_back,
+            timeline_resync,
+            send_message,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

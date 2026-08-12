@@ -3,14 +3,6 @@
 //! Variants exist so the webview can branch on failure kind (a wrong password
 //! versus an unreachable server) without parsing prose.
 
-// `Protocol` is still not constructed anywhere (lands with Task 9's
-// `RoomId::parse` mapping). `NotReady` is constructed by `Session`
-// (Task 6), but only inside methods (`require_client`, `login`, `restore`)
-// that nothing outside `session`'s own tests calls yet — the command surface
-// that reaches them from `lib.rs` is a later M0 task. Revisit once that
-// lands.
-#![allow(dead_code)]
-
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 

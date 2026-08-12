@@ -13,11 +13,6 @@
 //! loops would silently kill sync, so nothing here is meant to be used
 //! standalone.
 
-// `SyncHandle::room_list_service` has no caller yet — the room-list
-// projection that consumes it (feeding `core::dto::project_diff`) is a
-// later M0 task. Revisit removing this once it lands.
-#![allow(dead_code)]
-
 use std::sync::Arc;
 
 use matrix_sdk::Client;

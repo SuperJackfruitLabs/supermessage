@@ -5,13 +5,6 @@
 //! drives login/restore/logout through the [`AuthProvider`] trait, and hands
 //! out cheap clones of the client handle to the rest of the core.
 
-// `Session`'s methods are exercised by this module's own tests, but nothing
-// outside them calls in yet — `lib.rs` only constructs a `Session`, it
-// doesn't drive login/restore/logout/start_sync/stop_sync/start_room_list/
-// stop_room_list, since the command surface that would is a later M0 task.
-// Revisit removing this once it does.
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 
 use matrix_sdk::Client;
@@ -20,6 +13,7 @@ use tokio::sync::RwLock;
 
 use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
+use super::dto::RoomSummary;
 use super::error::{CoreError, CoreResult};
 use super::rooms::{self, RoomListHandle};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
@@ -180,6 +174,19 @@ impl Session {
         if let Some(handle) = self.rooms.write().await.take() {
             handle.stop();
         }
+    }
+
+    /// A snapshot of the room list — the sequence number of the last diff
+    /// folded in, and the resulting list — read out of the currently running
+    /// room-list stream's own state. See `RoomListHandle::snapshot`'s doc
+    /// comment for why this can't be served from a second subscription.
+    ///
+    /// Fails with [`CoreError::NotReady`] when room-list streaming hasn't
+    /// been started yet (i.e. before [`Self::start_room_list`] has run).
+    pub async fn rooms_snapshot(&self) -> CoreResult<(u64, Vec<RoomSummary>)> {
+        let rooms = self.rooms.read().await;
+        let handle = rooms.as_ref().ok_or(CoreError::NotReady)?;
+        handle.snapshot()
     }
 
     /// Clones the active client handle. `Client` is internally reference

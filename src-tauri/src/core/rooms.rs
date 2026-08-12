@@ -14,12 +14,6 @@
 //! state instead of opening a second, independently-numbered subscription —
 //! see that method's doc comment for why a second subscription cannot work.
 
-// `spawn_room_list` and `RoomListHandle` have no caller yet outside this
-// module's own tests — the Tauri command surface that starts room-list
-// streaming after login and implements `rooms_resync` is a later M0 task.
-// Revisit removing this once it lands.
-#![allow(dead_code)]
-
 use std::sync::{Arc, Mutex};
 
 use eyeball_im::VectorDiff;
