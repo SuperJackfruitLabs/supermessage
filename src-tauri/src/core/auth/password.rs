@@ -33,14 +33,6 @@ impl AuthProvider for PasswordAuth {
             return Ok(false);
         };
 
-        if client.matrix_auth().session().is_some() {
-            // Already authenticated. `restore_session` panics if auth data
-            // was already set on this client (matrix-sdk treats it as a
-            // programmer error to call it twice), and there is nothing left
-            // to do: the session this store holds is already live.
-            return Ok(true);
-        }
-
         let session = serde_json::from_str(&json)
             .map_err(|e| CoreError::Store(format!("corrupt stored session: {e}")))?;
 
@@ -86,7 +78,7 @@ fn map_login_error(err: matrix_sdk::Error) -> CoreError {
         api_err.status_code.as_u16() == 403
             || matches!(
                 api_err.error_kind(),
-                Some(ruma::api::error::ErrorKind::Forbidden)
+                Some(matrix_sdk::ruma::api::error::ErrorKind::Forbidden)
             )
     });
 
@@ -106,8 +98,10 @@ mod tests {
 
     #[tokio::test]
     async fn persist_then_restore_round_trips_the_session() {
+        use matrix_sdk::test_utils::test_client_builder;
+
         tls::install_ring_provider();
-        let (client, _server) = logged_in_client_with_server().await;
+        let (client, server) = logged_in_client_with_server().await;
         let store = MemoryStore::default();
         let auth = PasswordAuth;
 
@@ -117,9 +111,25 @@ mod tests {
             .unwrap()
             .is_some());
 
-        // A fresh client with the same store restores without a network login.
-        let restored = auth.restore(&client, &store).await.unwrap();
+        // A second, still-logged-out client against the same homeserver: this
+        // is what makes the test genuine. Restoring onto it must actually
+        // deserialize the stored JSON and drive it through
+        // `restore_session(session, RoomLoadSettings::default())` — the
+        // two-argument 0.18 signature this task exists to get right — not
+        // just observe that *some* client somewhere is authenticated.
+        let fresh_client = test_client_builder(Some(server.uri()))
+            .build()
+            .await
+            .unwrap();
+        assert!(fresh_client.matrix_auth().session().is_none());
+
+        let restored = auth.restore(&fresh_client, &store).await.unwrap();
         assert!(restored);
+        assert_eq!(
+            fresh_client.matrix_auth().session(),
+            client.matrix_auth().session(),
+            "the restored client's session must match what was persisted"
+        );
     }
 
     #[tokio::test]
@@ -130,10 +140,15 @@ mod tests {
         assert!(!PasswordAuth.restore(&client, &store).await.unwrap());
     }
 
-    // The brief's two tests above are used verbatim. Everything below exists
-    // because the task explicitly calls out the 403-vs-transport mapping and
-    // the "logout still clears secrets locally" behavior as real defects, not
-    // cosmetic ones, and neither is exercised by the brief's tests.
+    // `restore_reports_false_when_nothing_is_stored` above is the brief's
+    // second test, used verbatim. `persist_then_restore_round_trips_the_session`
+    // was rewritten per code review: the brief's original reused the same
+    // already-authenticated client for both persist and restore, so
+    // `restore` never actually reached `restore_session` — see the fix
+    // report for details. Everything below exists because the task
+    // explicitly calls out the 403-vs-transport mapping and the "logout
+    // still clears secrets locally" behavior as real defects, not cosmetic
+    // ones, and neither is exercised by the brief's tests.
 
     #[tokio::test]
     async fn login_maps_wrong_password_to_auth_error() {

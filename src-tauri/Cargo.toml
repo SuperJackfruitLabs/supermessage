@@ -38,11 +38,6 @@ rand = "0.9"
 thiserror = "2"
 futures-util = "0.3"
 async-trait = "0.1"
-# Direct dep, at the same version matrix-sdk already resolves transitively, so
-# this doesn't pull a second copy: core::auth::password matches on
-# `ruma::api::error::ErrorKind::Forbidden` to tell a wrong password (403 /
-# M_FORBIDDEN, CoreError::Auth) apart from a transport failure (CoreError::Network).
-ruma = "0.16"
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tracing = "0.1"
