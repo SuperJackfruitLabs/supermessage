@@ -25,6 +25,10 @@ serde_json = "1"
 # Matrix core. Default features give e2e-encryption + automatic room key
 # forwarding + the SQLite stores; `markdown` for formatted message bodies.
 matrix-sdk = { version = "0.18", features = ["markdown", "bundled-sqlite"] }
+matrix-sdk-ui = "0.18"
+keyring = "4.1"
+thiserror = "2"
+futures-util = "0.3"
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tracing = "0.1"
