@@ -79,6 +79,14 @@ impl Session {
     /// Logs out and drops the active client, if any. Clears local state even
     /// if the server-side call fails, so the user is never stuck "logged in"
     /// with no way back out.
+    ///
+    /// Also wipes the encrypted store directory (per the M0 plan: `logout`
+    /// clears "session, secrets and stores"). `PasswordAuth::logout` deletes
+    /// the store passphrase, so leaving the old SQLCipher-encrypted store on
+    /// disk would make it unopenable by any later `login` (which generates a
+    /// fresh passphrase) — and leaving message history, room state and
+    /// crypto keys decryptable-if-you-can-reach-the-keyring on disk after
+    /// logout is not acceptable for a chat client regardless.
     pub async fn logout(&self) -> CoreResult<()> {
         // Clone the handle (cheap — `Client` is internally reference
         // counted) and drop the read lock before the network call below, so
@@ -89,6 +97,10 @@ impl Session {
         }
         self.store.delete(KEY_HOMESERVER_URL)?;
         *self.client.write().await = None;
+        // Drop our own strong reference before touching the store directory
+        // on disk, so nothing here still has the SQLite files open.
+        drop(active);
+        self.remove_store()?;
         Ok(())
     }
 
@@ -124,6 +136,17 @@ impl Session {
     /// Where the encrypted SQLCipher store lives on disk.
     fn store_path(&self) -> PathBuf {
         self.data_dir.join("store")
+    }
+
+    /// Removes the encrypted store directory from disk. Tolerant of it not
+    /// existing, so logging out when nothing was ever written stays a safe
+    /// no-op.
+    fn remove_store(&self) -> CoreResult<()> {
+        match std::fs::remove_dir_all(self.store_path()) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(CoreError::Store(e.to_string())),
+        }
     }
 }
 
@@ -265,6 +288,56 @@ mod tests {
             session.client().await.is_none(),
             "logout must drop the active client even when the server call fails"
         );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn login_after_logout_succeeds_at_the_same_data_dir() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        tls::install_ring_provider();
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/_matrix/client/versions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "versions": ["r0.6.0"],
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/_matrix/client/r0/login"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "abc123",
+                "device_id": "GHTYAJCE",
+                "user_id": "@alice:localhost",
+            })))
+            .mount(&server)
+            .await;
+
+        let data_dir =
+            std::env::temp_dir().join(format!("sm-session-relogin-test-{}", rand::random::<u64>()));
+        let session = Session::new(data_dir.clone(), Box::new(MemoryStore::default()));
+
+        session
+            .login(&server.uri(), "alice", "hunter2")
+            .await
+            .unwrap();
+
+        session.logout().await.unwrap();
+
+        // `PasswordAuth::logout` deletes `KEY_STORE_PASSPHRASE`, so a second
+        // `login` generates a *fresh* passphrase. If `logout` left the old
+        // encrypted store directory in place, opening it with the new
+        // passphrase fails with a SQLCipher `aead::Error` — `logout` must
+        // wipe the store directory too, so the second login starts clean.
+        session
+            .login(&server.uri(), "alice", "hunter2")
+            .await
+            .unwrap_or_else(|e| panic!("second login after logout must succeed, got: {e:?}"));
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
