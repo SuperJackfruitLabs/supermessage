@@ -9,5 +9,6 @@
 //! will be owned once M0 login/sync lands.
 
 pub mod error;
+pub mod secrets;
 pub mod session;
 pub mod tls;

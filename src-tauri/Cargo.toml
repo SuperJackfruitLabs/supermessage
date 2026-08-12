@@ -27,6 +27,7 @@ serde_json = "1"
 matrix-sdk = { version = "0.18", features = ["markdown", "bundled-sqlite"] }
 matrix-sdk-ui = "0.18"
 keyring = "4.1"
+rand = "0.9"
 thiserror = "2"
 futures-util = "0.3"
 
