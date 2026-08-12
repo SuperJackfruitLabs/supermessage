@@ -3,8 +3,11 @@
 //! Variants exist so the webview can branch on failure kind (a wrong password
 //! versus an unreachable server) without parsing prose.
 
-// `Network`, `Store`, `Protocol`, and `CoreResult` are the seam later M0 tasks
-// (login, sync, storage) return through; nothing constructs them yet.
+// `Network` and `Protocol` are still not constructed anywhere: `secrets`
+// (Task 3) is the first real consumer of `CoreError`/`CoreResult`, via
+// `CoreError::Store`, but `secrets` itself has no caller yet (that lands with
+// login in a later M0 task), so rustc's dead-code analysis can't see past it
+// either. Revisit once login wires `core::secrets` in.
 #![allow(dead_code)]
 
 use serde::ser::SerializeStruct;
