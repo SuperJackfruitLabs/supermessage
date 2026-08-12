@@ -9,17 +9,9 @@
 //! tested against [`MemoryStore`] instead. [`KeyringStore`] is the real,
 //! production-facing implementation.
 
-// `SecretStore` and `KeyringStore` are now genuinely used: `lib.rs`
-// constructs a `KeyringStore` and hands it to `Session::new`, which `run()`
-// calls. `KEY_SESSION`/`KEY_STORE_PASSPHRASE` are used from `auth::password`
-// and `session`. `KEY_HOMESERVER_URL`, `MemoryStore` and
-// `generate_passphrase` are still only reachable from `session`'s own tests
-// and from inside `Session::login`/`restore`, which nothing outside those
-// tests calls yet — that lands with the command surface in a later M0 task.
-// Revisit removing this once it does.
-#![allow(dead_code)]
-
+#[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
 use std::sync::Mutex;
 
 use rand::rngs::OsRng;
@@ -113,11 +105,18 @@ fn android_unimplemented() -> CoreError {
 }
 
 /// An in-memory secret store, for tests only. Never persists anything.
+///
+/// `#[cfg(test)]`, not just doc-comment convention: nothing in production
+/// code should ever reach for this over the real `KeyringStore`, and gating
+/// it keeps a non-test build from having to account for it as a dead-code
+/// warning.
+#[cfg(test)]
 #[derive(Default)]
 pub struct MemoryStore {
     entries: Mutex<HashMap<String, String>>,
 }
 
+#[cfg(test)]
 impl SecretStore for MemoryStore {
     fn get(&self, key: &str) -> CoreResult<Option<String>> {
         Ok(self.entries.lock().unwrap().get(key).cloned())

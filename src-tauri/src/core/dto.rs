@@ -5,12 +5,6 @@
 //! `project_diff` is the exhaustive match that guarantees that boundary holds
 //! even as the SDK evolves.
 
-// Nothing outside this module's own tests constructs `RoomSummary`,
-// `TimelineItemDto`, or calls `project_diff`/`SeqCounter` yet — the sync
-// pipeline that produces `VectorDiff`s and the Tauri commands that emit these
-// DTOs land in later M0 tasks. Revisit removing this once they do.
-#![allow(dead_code)]
-
 use eyeball_im::VectorDiff;
 use serde::Serialize;
 

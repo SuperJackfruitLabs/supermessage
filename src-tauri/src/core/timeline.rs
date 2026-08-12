@@ -13,12 +13,6 @@
 //! previous subscription first (see its doc comment), so switching rooms
 //! can never leave a background timeline's task running.
 
-// `FocusedTimeline` has no caller yet outside this module's own tests — the
-// Tauri command surface that starts timeline streaming when a room is
-// focused, and implements `timeline_resync`/`timeline_paginate_back`/
-// `timeline_send`, is a later M0 task. Revisit removing this once it lands.
-#![allow(dead_code)]
-
 use std::sync::{Arc, Mutex};
 
 use eyeball_im::VectorDiff;
