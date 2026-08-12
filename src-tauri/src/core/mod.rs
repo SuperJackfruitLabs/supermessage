@@ -8,6 +8,7 @@
 //! Nothing here talks to Matrix yet; `session` is the seam where the client
 //! will be owned once M0 login/sync lands.
 
+pub mod dto;
 pub mod error;
 pub mod secrets;
 pub mod session;

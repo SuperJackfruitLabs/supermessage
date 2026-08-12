@@ -1,0 +1,223 @@
+//! IPC DTOs and the single translation point from SDK diffs to wire format.
+//!
+//! No SDK type crosses the IPC boundary. `matrix_sdk`/`eyeball_im` types stay
+//! on the core side of this module; the webview only ever sees these structs.
+//! `project_diff` is the exhaustive match that guarantees that boundary holds
+//! even as the SDK evolves.
+
+// Nothing outside this module's own tests constructs `RoomSummary`,
+// `TimelineItemDto`, or calls `project_diff`/`SeqCounter` yet — the sync
+// pipeline that produces `VectorDiff`s and the Tauri commands that emit these
+// DTOs land in later M0 tasks. Revisit removing this once they do.
+#![allow(dead_code)]
+
+use eyeball_im::VectorDiff;
+use serde::Serialize;
+
+/// A single room as summarized for the room list.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomSummary {
+    pub id: String,
+    pub name: String,
+    pub avatar_url: Option<String>,
+    pub unread: u64,
+    pub last_message: Option<String>,
+    pub last_activity_ms: Option<u64>,
+}
+
+/// A single timeline item (message, state event, etc.) as rendered.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineItemDto {
+    pub id: String,
+    pub kind: String,
+    pub sender: Option<String>,
+    pub sender_display_name: Option<String>,
+    pub body: Option<String>,
+    pub timestamp_ms: Option<u64>,
+    pub is_own: bool,
+    pub send_state: Option<String>,
+}
+
+/// The wire projection of an `eyeball_im::VectorDiff<T>`.
+///
+/// Tagged with `op` in camelCase so the webview can switch on an exact
+/// string (`"pushFront"`, `"popBack"`, ...) without parsing prose.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum DiffOp<T> {
+    Append { values: Vec<T> },
+    Clear,
+    PushFront { value: T },
+    PushBack { value: T },
+    PopFront,
+    PopBack,
+    Insert { index: usize, value: T },
+    Set { index: usize, value: T },
+    Remove { index: usize },
+    Truncate { length: usize },
+    Reset { values: Vec<T> },
+}
+
+/// A batch of ops for one subject (room list, or a specific room's
+/// timeline), stamped with a sequence number the webview uses to detect a
+/// dropped event and force a resync.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffEnvelope<T> {
+    pub channel: String,
+    pub subject: String,
+    pub seq: u64,
+    pub ops: Vec<DiffOp<T>>,
+}
+
+/// Translate one SDK `VectorDiff<S>` into a `DiffOp<T>`, mapping contained
+/// items through `f`.
+///
+/// This match is exhaustive with **no wildcard arm** on purpose: if a future
+/// eyeball-im version adds a `VectorDiff` variant, this must fail to compile
+/// rather than silently drop the update.
+pub fn project_diff<S, T, F>(diff: VectorDiff<S>, f: F) -> DiffOp<T>
+where
+    S: Clone,
+    F: Fn(S) -> T,
+{
+    match diff {
+        VectorDiff::Append { values } => DiffOp::Append {
+            values: values.into_iter().map(f).collect(),
+        },
+        VectorDiff::Clear => DiffOp::Clear,
+        VectorDiff::PushFront { value } => DiffOp::PushFront { value: f(value) },
+        VectorDiff::PushBack { value } => DiffOp::PushBack { value: f(value) },
+        VectorDiff::PopFront => DiffOp::PopFront,
+        VectorDiff::PopBack => DiffOp::PopBack,
+        VectorDiff::Insert { index, value } => DiffOp::Insert {
+            index,
+            value: f(value),
+        },
+        VectorDiff::Set { index, value } => DiffOp::Set {
+            index,
+            value: f(value),
+        },
+        VectorDiff::Remove { index } => DiffOp::Remove { index },
+        VectorDiff::Truncate { length } => DiffOp::Truncate { length },
+        VectorDiff::Reset { values } => DiffOp::Reset {
+            values: values.into_iter().map(f).collect(),
+        },
+    }
+}
+
+/// Monotonic sequence number generator, starting at 1. The webview uses gaps
+/// in this sequence to detect a dropped event and force a resync.
+#[derive(Debug, Default)]
+pub struct SeqCounter(u64);
+
+impl SeqCounter {
+    pub fn next(&mut self) -> u64 {
+        self.0 += 1;
+        self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eyeball_im::VectorDiff;
+    use imbl::vector;
+
+    // Projection must be exhaustive: if eyeball-im adds a variant, this file
+    // must fail to compile rather than silently drop updates.
+    #[test]
+    fn projects_every_variant() {
+        let id = |n: i32| n.to_string();
+
+        assert!(matches!(
+            project_diff(VectorDiff::Append { values: vector![1, 2] }, id),
+            DiffOp::Append { ref values } if values == &["1".to_string(), "2".to_string()]
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::Clear, id),
+            DiffOp::Clear
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::PushFront { value: 1 }, id),
+            DiffOp::PushFront { ref value } if value == "1"
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::PushBack { value: 1 }, id),
+            DiffOp::PushBack { ref value } if value == "1"
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::PopFront, id),
+            DiffOp::PopFront
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::PopBack, id),
+            DiffOp::PopBack
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::Insert { index: 3, value: 1 }, id),
+            DiffOp::Insert { index: 3, ref value } if value == "1"
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::Set { index: 2, value: 1 }, id),
+            DiffOp::Set { index: 2, ref value } if value == "1"
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::Remove { index: 4 }, id),
+            DiffOp::Remove { index: 4 }
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::Truncate { length: 5 }, id),
+            DiffOp::Truncate { length: 5 }
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::Reset { values: vector![1] }, id),
+            DiffOp::Reset { ref values } if values == &["1".to_string()]
+        ));
+    }
+
+    #[test]
+    fn ops_serialize_with_a_discriminant_the_webview_can_switch_on() {
+        let json = serde_json::to_value(DiffOp::Insert {
+            index: 2,
+            value: "x",
+        })
+        .unwrap();
+        assert_eq!(json["op"], "insert");
+        assert_eq!(json["index"], 2);
+        assert_eq!(json["value"], "x");
+
+        assert_eq!(
+            serde_json::to_value(DiffOp::<String>::Clear).unwrap()["op"],
+            "clear"
+        );
+        assert_eq!(
+            serde_json::to_value(DiffOp::<String>::PopBack).unwrap()["op"],
+            "popBack"
+        );
+    }
+
+    #[test]
+    fn sequence_numbers_start_at_one_and_increment() {
+        let mut seq = SeqCounter::default();
+        assert_eq!(seq.next(), 1);
+        assert_eq!(seq.next(), 2);
+        assert_eq!(seq.next(), 3);
+    }
+
+    #[test]
+    fn envelope_serializes_camel_case() {
+        let env = DiffEnvelope {
+            channel: "timeline".into(),
+            subject: "!room:example.org".into(),
+            seq: 7,
+            ops: vec![DiffOp::<String>::PopFront],
+        };
+        let json = serde_json::to_value(&env).unwrap();
+        assert_eq!(json["seq"], 7);
+        assert_eq!(json["subject"], "!room:example.org");
+        assert_eq!(json["ops"][0]["op"], "popFront");
+    }
+}
