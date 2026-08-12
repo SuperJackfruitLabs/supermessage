@@ -13,4 +13,5 @@ pub mod dto;
 pub mod error;
 pub mod secrets;
 pub mod session;
+pub mod sync;
 pub mod tls;
