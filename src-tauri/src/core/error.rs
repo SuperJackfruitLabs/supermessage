@@ -3,11 +3,12 @@
 //! Variants exist so the webview can branch on failure kind (a wrong password
 //! versus an unreachable server) without parsing prose.
 
-// `Network` and `Protocol` are still not constructed anywhere: `secrets`
-// (Task 3) is the first real consumer of `CoreError`/`CoreResult`, via
-// `CoreError::Store`, but `secrets` itself has no caller yet (that lands with
-// login in a later M0 task), so rustc's dead-code analysis can't see past it
-// either. Revisit once login wires `core::secrets` in.
+// `Protocol` is still not constructed anywhere (lands with Task 9's
+// `RoomId::parse` mapping). `NotReady` is constructed by `Session`
+// (Task 6), but only inside methods (`require_client`, `login`, `restore`)
+// that nothing outside `session`'s own tests calls yet — the command surface
+// that reaches them from `lib.rs` is a later M0 task. Revisit once that
+// lands.
 #![allow(dead_code)]
 
 use serde::ser::SerializeStruct;
