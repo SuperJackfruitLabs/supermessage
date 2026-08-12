@@ -1,0 +1,152 @@
+// The single file that talks to Tauri. Every other module — stores,
+// components — goes through the typed wrappers here instead of importing
+// `@tauri-apps/api` directly, so the wire format (command names, argument
+// casing, event channels) has exactly one place it can drift from the Rust
+// core.
+//
+// Command names stay snake_case (that's what `#[tauri::command]` registers);
+// their JS-side argument objects are camelCase, per Tauri's default arg
+// conversion. Getting an argument name wrong here fails at runtime with
+// "invalid args", not at compile time — the names below are copied
+// verbatim from `src-tauri/src/core/commands.rs` and `src-tauri/src/lib.rs`.
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { DiffEnvelope } from "./stores/diff";
+
+/** Mirrors the `CoreStatus` struct returned by the `core_status` command. */
+export interface CoreStatus {
+  platform: string;
+  cryptoProvider: string;
+  sdkReady: boolean;
+}
+
+/**
+ * Mirrors `RoomSummary` from `src-tauri/src/core/dto.rs`. `lastMessage` is
+ * currently always `null` — the core defers message-preview decoding — so
+ * callers must render that as "no preview", not treat it as a bug.
+ */
+export interface RoomSummary {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  unread: number;
+  lastMessage: string | null;
+  lastActivityMs: number | null;
+}
+
+/** Mirrors `TimelineItemDto` from `src-tauri/src/core/dto.rs`. */
+export interface TimelineItem {
+  id: string;
+  kind: string;
+  sender: string | null;
+  senderDisplayName: string | null;
+  body: string | null;
+  timestampMs: number | null;
+  isOwn: boolean;
+  sendState: string | null;
+}
+
+/** Mirrors `CoreError::kind()` from `src-tauri/src/core/error.rs`. */
+export type CoreErrorKind = "auth" | "network" | "store" | "protocol" | "notReady";
+
+/**
+ * Mirrors the serialized shape of `CoreError`. Every command in this file
+ * rejects with a value of this shape at runtime; TypeScript can't express
+ * that in `invoke`'s rejection type, so callers that need to branch on
+ * `kind` should catch and cast (`err as CoreError`).
+ */
+export interface CoreError {
+  kind: CoreErrorKind;
+  message: string;
+}
+
+/**
+ * Mirrors the `state` values `core::sync::connection_state_name` can emit.
+ * Nothing currently emits `"syncing"` — the UI is expected to treat every
+ * non-`"live"` state the same — but it stays in the type because the core
+ * doc comments reserve it for future use.
+ */
+export type ConnectionState = "offline" | "syncing" | "live" | "error";
+
+/** Mirrors the `ConnectionPayload` struct emitted on `sm://connection`. */
+export interface ConnectionPayload {
+  state: ConnectionState;
+  message: string | null;
+}
+
+const ROOMS_DIFF_EVENT = "sm://rooms/diff";
+const TIMELINE_DIFF_EVENT = "sm://timeline/diff";
+const CONNECTION_EVENT = "sm://connection";
+
+/** Queries the core's basic identity — platform, crypto provider, SDK link. */
+export async function coreStatus(): Promise<CoreStatus> {
+  return invoke<CoreStatus>("core_status");
+}
+
+/** Logs in with a homeserver, username and password, then starts syncing. */
+export async function login(homeserver: string, username: string, password: string): Promise<void> {
+  await invoke<void>("login", { homeserver, username, password });
+}
+
+/** Attempts to restore a previously persisted session. `false` = nothing to restore. */
+export async function restoreSession(): Promise<boolean> {
+  return invoke<boolean>("restore_session");
+}
+
+/** Logs out, clearing the session, secrets and local stores. */
+export async function logout(): Promise<void> {
+  await invoke<void>("logout");
+}
+
+/**
+ * A full snapshot of the room list for resync after a detected gap: the
+ * sequence number of the last diff folded in, and the resulting list. The
+ * core returns this as a 2-element JSON array, not an object — destructure
+ * positionally (`const [seq, rooms] = await roomsResync();`).
+ */
+export async function roomsResync(): Promise<[number, RoomSummary[]]> {
+  return invoke<[number, RoomSummary[]]>("rooms_resync");
+}
+
+/** Subscribes to `roomId`'s timeline, replacing any previously focused room. */
+export async function timelineSubscribe(roomId: string): Promise<void> {
+  await invoke<void>("timeline_subscribe", { roomId });
+}
+
+/**
+ * Paginates the focused timeline backwards by up to `count` events. Resolves
+ * `true` when the start of the timeline was reached.
+ */
+export async function timelinePaginateBack(count: number): Promise<boolean> {
+  return invoke<boolean>("timeline_paginate_back", { count });
+}
+
+/**
+ * A full snapshot of the focused timeline for resync after a detected gap,
+ * shaped the same way as {@link roomsResync}: a 2-element `[seq, items]`
+ * array, not an object.
+ */
+export async function timelineResync(): Promise<[number, TimelineItem[]]> {
+  return invoke<[number, TimelineItem[]]>("timeline_resync");
+}
+
+/** Sends a plain-text message to the focused room. */
+export async function sendMessage(body: string): Promise<void> {
+  await invoke<void>("send_message", { body });
+}
+
+/** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
+export function onRoomsDiff(handler: (env: DiffEnvelope<RoomSummary>) => void): Promise<UnlistenFn> {
+  return listen<DiffEnvelope<RoomSummary>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));
+}
+
+/** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */
+export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineItem>) => void): Promise<UnlistenFn> {
+  return listen<DiffEnvelope<TimelineItem>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
+}
+
+/** Subscribes to connection-health updates on {@link CONNECTION_EVENT}. */
+export function onConnection(handler: (payload: ConnectionPayload) => void): Promise<UnlistenFn> {
+  return listen<ConnectionPayload>(CONNECTION_EVENT, (event) => handler(event.payload));
+}
