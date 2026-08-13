@@ -34,11 +34,19 @@
   const text = $derived(typingIndicatorText(typingStore.users));
 </script>
 
+<!--
+  Ground edge to edge, contents in the timeline's own `72ch` column (spec
+  §6.3.0) — the same alignment the composer takes, and for the same reason:
+  this line names who is typing *in the conversation above it*, so it has to
+  start where that conversation starts rather than at the pane's edge.
+-->
 <div
-  class="flex h-6 shrink-0 items-center bg-surface-sunken px-4 font-mono text-meta text-content-faint"
+  class="h-6 shrink-0 bg-surface-sunken px-4 font-mono text-meta text-content-faint"
   aria-live="polite"
 >
-  {#if text}
-    <span class="truncate">{text}</span>
-  {/if}
+  <div class="mx-auto flex h-full w-full max-w-[72ch] items-center">
+    {#if text}
+      <span class="truncate">{text}</span>
+    {/if}
+  </div>
 </div>

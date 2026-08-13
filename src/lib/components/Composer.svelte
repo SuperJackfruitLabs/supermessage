@@ -236,7 +236,8 @@
   independently bordered bars.
 -->
 {#if replyTarget}
-  <div class="flex shrink-0 items-start gap-2 border-l-2 border-l-accent bg-surface-sunken px-4 py-2">
+  <div class="shrink-0 border-l-2 border-l-accent bg-surface-sunken px-4 py-2">
+    <div class="mx-auto flex w-full max-w-[72ch] items-start gap-2">
     <div class="min-w-0 flex-1">
       <p class="truncate font-mono text-label text-content-muted uppercase">
         Replying to {replyTarget.sender}
@@ -253,18 +254,31 @@
     >
       ✕
     </button>
+    </div>
   </div>
 {/if}
 {#if sendError}
-  <div class="flex shrink-0 flex-col gap-0.5 bg-surface-sunken px-4 py-2">
+  <div class="shrink-0 bg-surface-sunken px-4 py-2">
+    <div class="mx-auto flex w-full max-w-[72ch] flex-col gap-0.5">
     <span class="font-mono text-label text-danger uppercase">Send failed</span>
     <p class="selectable text-ui text-content" role="alert">{sendError}</p>
+    </div>
   </div>
 {/if}
+<!--
+  The strip's ground runs edge to edge, but its contents sit in the same
+  centred `72ch` column the timeline uses (spec §6.3.0). Before this, the
+  composer spanned the whole pane while the messages above it stopped at
+  630px, so on a wide window the input read as belonging to a different
+  layout from the conversation — reported from real use on a 1905px display,
+  and visible the moment you look for it. The column is the app's reading
+  measure; anything that lines up *with* the messages has to share it.
+-->
 <div
-  class="flex shrink-0 items-end gap-2 bg-surface-sunken px-4 py-3"
+  class="shrink-0 bg-surface-sunken px-4 py-3"
   style="padding-bottom: calc(0.75rem + var(--inset-bottom));"
 >
+  <div class="mx-auto flex w-full max-w-[72ch] items-end gap-2">
   <div
     class="flex min-w-0 flex-1 items-end gap-1.5 rounded-md px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
   >
@@ -337,4 +351,5 @@
     -->
     <span aria-hidden="true" class="font-mono opacity-80">⏎</span>
   </button>
+  </div>
 </div>
