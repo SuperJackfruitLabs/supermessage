@@ -4,7 +4,13 @@
 // a real bug and not just an omission.
 
 import { describe, expect, it } from "vitest";
-import { displayReactionKey, replyQuoteView, viewFor } from "./timelineItemView";
+import {
+  canReplyOrReact,
+  displayReactionKey,
+  replyPreviewExcerpt,
+  replyQuoteView,
+  viewFor,
+} from "./timelineItemView";
 import type { ReplyTo, TimelineItem } from "$lib/ipc";
 
 function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind">): TimelineItem {
@@ -237,6 +243,7 @@ function replyTo(overrides: Partial<ReplyTo> = {}): ReplyTo {
     sender: "@alice:example.org",
     senderDisplayName: "Alice",
     excerpt: "the original message",
+    label: null,
     ...overrides,
   };
 }
@@ -248,17 +255,40 @@ describe("replyQuoteView", () => {
 
   it("resolves the display name, falling back to the raw sender id", () => {
     const view = replyQuoteView(replyTo({ senderDisplayName: null, sender: "@bob:example.org" }));
-    expect(view).toEqual({ available: true, sender: "@bob:example.org", excerpt: "the original message" });
+    expect(view).toEqual({
+      available: true,
+      sender: "@bob:example.org",
+      excerpt: "the original message",
+      label: null,
+    });
   });
 
   it("falls back to a generic placeholder when neither name nor sender id is known", () => {
     const view = replyQuoteView(replyTo({ senderDisplayName: null, sender: null }));
-    expect(view).toEqual({ available: true, sender: "Someone", excerpt: "the original message" });
+    expect(view).toEqual({
+      available: true,
+      sender: "Someone",
+      excerpt: "the original message",
+      label: null,
+    });
   });
 
   it("carries a null excerpt through for a parent with nothing to quote", () => {
     const view = replyQuoteView(replyTo({ excerpt: null }));
-    expect(view).toEqual({ available: true, sender: "Alice", excerpt: null });
+    expect(view).toEqual({ available: true, sender: "Alice", excerpt: null, label: null });
+  });
+
+  it("carries the core's classification label through when the parent has nothing to quote", () => {
+    // The review finding this fixes: before, a redacted/sticker/poll/etc.
+    // reply parent rendered as a bare sender name with no indication why.
+    // `label` is what `Timeline.svelte` falls back to in that case.
+    const view = replyQuoteView(replyTo({ excerpt: null, label: "Message deleted" }));
+    expect(view).toEqual({
+      available: true,
+      sender: "Alice",
+      excerpt: null,
+      label: "Message deleted",
+    });
   });
 
   it("collapses every unavailable state to a single available:false outcome", () => {
@@ -270,6 +300,46 @@ describe("replyQuoteView", () => {
       replyTo({ available: false, sender: null, senderDisplayName: null, excerpt: null }),
     );
     expect(view).toEqual({ available: false });
+  });
+});
+
+describe("canReplyOrReact", () => {
+  it("allows an ordinary received message (sendState: null)", () => {
+    expect(canReplyOrReact(item({ kind: "message", sendState: null }))).toBe(true);
+  });
+
+  it("allows a message the server has already echoed back", () => {
+    expect(canReplyOrReact(item({ kind: "message", sendState: "sent" }))).toBe(true);
+  });
+
+  it("disallows a message still only a local echo", () => {
+    expect(canReplyOrReact(item({ kind: "message", sendState: "notSentYet" }))).toBe(false);
+  });
+
+  it("disallows a message whose send failed", () => {
+    expect(canReplyOrReact(item({ kind: "message", sendState: "sendingFailed" }))).toBe(false);
+  });
+});
+
+describe("replyPreviewExcerpt", () => {
+  it("is null for a null body", () => {
+    expect(replyPreviewExcerpt(null)).toBeNull();
+  });
+
+  it("is null for a whitespace-only body", () => {
+    expect(replyPreviewExcerpt("   ")).toBeNull();
+  });
+
+  it("trims surrounding whitespace from a short body", () => {
+    expect(replyPreviewExcerpt("  hello there  ")).toBe("hello there");
+  });
+
+  it("caps a long body with an ellipsis", () => {
+    const long = "x".repeat(500);
+    const preview = replyPreviewExcerpt(long);
+    expect(preview).not.toBeNull();
+    expect(preview!.length).toBeLessThan(long.length);
+    expect(preview!.endsWith("…")).toBe(true);
   });
 });
 

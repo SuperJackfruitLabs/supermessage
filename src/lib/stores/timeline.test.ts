@@ -106,6 +106,8 @@ describe("timelineStore: switching rooms while the previous room is still stream
       timelinePaginateBack: vi.fn(),
       timelineResync,
       sendMessage: vi.fn(),
+      sendReply: vi.fn(),
+      toggleReaction: vi.fn(),
       onTimelineDiff: channel.onTimelineDiff,
     });
 
@@ -157,6 +159,8 @@ describe("timelineStore: switching rooms while the previous room is still stream
       timelinePaginateBack: vi.fn(),
       timelineResync,
       sendMessage: vi.fn(),
+      sendReply: vi.fn(),
+      toggleReaction: vi.fn(),
       onTimelineDiff: channel.onTimelineDiff,
     });
 
@@ -179,5 +183,79 @@ describe("timelineStore: switching rooms while the previous room is still stream
     await switching;
     channel.emit(env(ROOM_B, 1, [{ op: "reset", values: [item("b1")] }]));
     expect(store.items.map((i) => i.id)).toEqual(["b1"]);
+  });
+});
+
+describe("timelineStore: toggleReaction", () => {
+  it("round-trips the IPC call's argument and return value without touching items", async () => {
+    const channel = makeChannel();
+    const toggleReaction = vi.fn(async (eventId: string, key: string) => {
+      expect(eventId).toBe("$e1:example.org");
+      expect(key).toBe("👍");
+      return true;
+    });
+
+    const store = createTimelineStore({
+      timelineSubscribe: vi.fn(),
+      timelinePaginateBack: vi.fn(),
+      timelineResync: vi.fn(),
+      sendMessage: vi.fn(),
+      sendReply: vi.fn(),
+      toggleReaction,
+      onTimelineDiff: channel.onTimelineDiff,
+    });
+
+    await store.subscribeTo(ROOM_A);
+    channel.emit(env(ROOM_A, 1, [{ op: "reset", values: [item("$e1:example.org")] }]));
+    const before = store.items;
+
+    const added = await store.toggleReaction("$e1:example.org", "👍");
+
+    expect(added).toBe(true);
+    expect(toggleReaction).toHaveBeenCalledTimes(1);
+    expect(toggleReaction).toHaveBeenCalledWith("$e1:example.org", "👍");
+    // No optimistic update: the store never appends/mutates on its own —
+    // only a diff arriving over `onTimelineDiff` changes `items` (see
+    // `Timeline.svelte`'s and this store's doc comments for why).
+    expect(store.items).toBe(before);
+  });
+
+  it("resolves false when the reaction was removed, still without touching items", async () => {
+    const channel = makeChannel();
+    const toggleReaction = vi.fn(async () => false);
+
+    const store = createTimelineStore({
+      timelineSubscribe: vi.fn(),
+      timelinePaginateBack: vi.fn(),
+      timelineResync: vi.fn(),
+      sendMessage: vi.fn(),
+      sendReply: vi.fn(),
+      toggleReaction,
+      onTimelineDiff: channel.onTimelineDiff,
+    });
+
+    await store.subscribeTo(ROOM_A);
+    const removed = await store.toggleReaction("$e1:example.org", "👍");
+    expect(removed).toBe(false);
+  });
+});
+
+describe("timelineStore: sendReply", () => {
+  it("forwards body and the parent event id to the IPC call unchanged", async () => {
+    const sendReply = vi.fn(async () => undefined);
+    const store = createTimelineStore({
+      timelineSubscribe: vi.fn(),
+      timelinePaginateBack: vi.fn(),
+      timelineResync: vi.fn(),
+      sendMessage: vi.fn(),
+      sendReply,
+      toggleReaction: vi.fn(),
+      onTimelineDiff: vi.fn(async () => () => {}),
+    });
+
+    await store.sendReply("hello", "$parent:example.org");
+
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    expect(sendReply).toHaveBeenCalledWith("hello", "$parent:example.org");
   });
 });

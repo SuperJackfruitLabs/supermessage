@@ -12,7 +12,7 @@ use tauri::{Manager, Url, WebviewWindowBuilder};
 
 use crate::core::commands::{
     login, logout, media_fetch, restore_session, room_avatar, rooms_resync, send_message,
-    timeline_paginate_back, timeline_resync, timeline_subscribe,
+    send_reply, timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
 };
 use crate::core::secrets::KeyringStore;
 use crate::core::{session::Session, tls};
@@ -155,6 +155,8 @@ pub fn run() {
             timeline_paginate_back,
             timeline_resync,
             send_message,
+            send_reply,
+            toggle_reaction,
             room_avatar,
             media_fetch,
         ])

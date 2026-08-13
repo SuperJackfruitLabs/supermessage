@@ -33,9 +33,11 @@
 import {
   onTimelineDiff as defaultOnTimelineDiff,
   sendMessage as defaultSendMessage,
+  sendReply as defaultSendReply,
   timelinePaginateBack as defaultTimelinePaginateBack,
   timelineResync as defaultTimelineResync,
   timelineSubscribe as defaultTimelineSubscribe,
+  toggleReaction as defaultToggleReaction,
   type TimelineItem,
 } from "$lib/ipc";
 import { startGapSync } from "./gapSync";
@@ -45,6 +47,8 @@ export interface TimelineStoreDeps {
   timelinePaginateBack: typeof defaultTimelinePaginateBack;
   timelineResync: typeof defaultTimelineResync;
   sendMessage: typeof defaultSendMessage;
+  sendReply: typeof defaultSendReply;
+  toggleReaction: typeof defaultToggleReaction;
   onTimelineDiff: typeof defaultOnTimelineDiff;
 }
 
@@ -53,6 +57,8 @@ const defaultDeps: TimelineStoreDeps = {
   timelinePaginateBack: defaultTimelinePaginateBack,
   timelineResync: defaultTimelineResync,
   sendMessage: defaultSendMessage,
+  sendReply: defaultSendReply,
+  toggleReaction: defaultToggleReaction,
   onTimelineDiff: defaultOnTimelineDiff,
 };
 
@@ -104,6 +110,25 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
     await deps.sendMessage(body);
   }
 
+  /**
+   * Sends a plain-text reply to `inReplyTo` (a parent event id) in the
+   * focused room. Never touches `items` itself — same as `send`, the local
+   * echo arrives back through the diff stream this store is already folding
+   * into `items`.
+   */
+  async function sendReply(body: string, inReplyTo: string): Promise<void> {
+    await deps.sendReply(body, inReplyTo);
+  }
+
+  /**
+   * Toggles `key` as a reaction on `eventId` in the focused room. Resolves
+   * to whether the reaction was added. Never touches `items` itself, same
+   * reasoning as `sendReply`.
+   */
+  async function toggleReaction(eventId: string, key: string): Promise<boolean> {
+    return deps.toggleReaction(eventId, key);
+  }
+
   return {
     get items(): TimelineItem[] {
       return items;
@@ -111,6 +136,8 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
     subscribeTo,
     paginateBack,
     send,
+    sendReply,
+    toggleReaction,
   };
 }
 

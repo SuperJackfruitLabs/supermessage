@@ -103,10 +103,20 @@ export function membershipVerb(detail: string | null): string {
  * show, so `Timeline.svelte` renders a neutral "Original message
  * unavailable" quote rather than an empty one or a spinner that will never
  * resolve on its own.
+ *
+ * A `Ready` parent (`available: true`) can *also* have nothing to quote —
+ * a redacted, sticker, poll, or undecryptable parent has a sender but no
+ * body. Before, that rendered as a bare sender name with no indication why;
+ * `excerpt`/`label` are mutually exclusive here (`label` is only ever
+ * non-null when `excerpt` is `null`) so `Timeline.svelte` can fall back to
+ * `label` — the same short text `core::timeline::reply_parent_label`
+ * classifies the parent's content into, mirroring the vocabulary
+ * `viewFor`'s placeholders already use for a top-level item of the same
+ * kind (e.g. "Message deleted").
  */
 export type ReplyQuoteView =
   | { available: false }
-  | { available: true; sender: string; excerpt: string | null };
+  | { available: true; sender: string; excerpt: string | null; label: string | null };
 
 /**
  * Derives {@link ReplyQuoteView} from `TimelineItem.replyTo`. Resolves the
@@ -123,7 +133,52 @@ export function replyQuoteView(replyTo: ReplyTo | null): ReplyQuoteView | null {
     available: true,
     sender: replyTo.senderDisplayName ?? replyTo.sender ?? "Someone",
     excerpt: replyTo.excerpt,
+    label: replyTo.label,
   };
+}
+
+/**
+ * Whether `item` can be replied to or have a reaction toggled on it —
+ * gated on it already carrying a real Matrix event id rather than a local
+ * echo's transaction id. `Timeline::send_reply`/`Timeline::toggle_reaction`
+ * (`core::timeline::FocusedTimeline`) both take an event id; `TimelineItem.id`
+ * only becomes one once the server has echoed the item back
+ * (`core::timeline::event_item_id`), which is exactly when `sendState`
+ * stops being `"notSentYet"`/`"sendingFailed"` (see `TimelineItem.sendState`'s
+ * doc comment) — `null`/`"sent"` both mean "this id is a real event id".
+ */
+export function canReplyOrReact(item: TimelineItem): boolean {
+  return item.sendState !== "notSentYet" && item.sendState !== "sendingFailed";
+}
+
+/**
+ * Cap on the composer's reply-preview text, in `char`s — a display-only cap
+ * on a *fresh* preview built here from a live local item's `body`, distinct
+ * from (and not a substitute for) `core::timeline::REPLY_EXCERPT_MAX_CHARS`,
+ * which caps a *quoted* parent's excerpt once it's already crossed IPC. Kept
+ * short for the same reason the composer's reply-target row is one line:
+ * this is a reminder of what's being replied to, not the full message.
+ */
+const REPLY_PREVIEW_MAX_CHARS = 140;
+
+/**
+ * The text to show as a preview of `body` in the composer's "Replying to …"
+ * row, or `null` when there's nothing to preview (a `null`/empty/
+ * whitespace-only body — e.g. the reader started a reply from a media
+ * message with no caption). Truncates by UTF-16 code unit, unlike
+ * `truncate_reply_excerpt`'s by-`char` truncation on the Rust side: this is
+ * cosmetic single-line preview text, not the enforcement point for bounding
+ * what crosses IPC (that's already done in the core before `body` ever
+ * reaches this process), so splitting a multi-byte character on a very rare
+ * unlucky boundary costs nothing a `char`-aware pass would meaningfully fix
+ * here.
+ */
+export function replyPreviewExcerpt(body: string | null): string | null {
+  if (!body) return null;
+  const trimmed = body.trim();
+  if (trimmed === "") return null;
+  if (trimmed.length <= REPLY_PREVIEW_MAX_CHARS) return trimmed;
+  return `${trimmed.slice(0, REPLY_PREVIEW_MAX_CHARS)}…`;
 }
 
 /**

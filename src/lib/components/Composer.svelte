@@ -7,7 +7,9 @@
   // Deliberately does not touch `timelineStore.items` — the core appends a
   // local echo to the timeline itself (see `timelineStore`'s module doc
   // comment), which arrives back through the diff stream. Appending here
-  // too would render every sent message twice.
+  // too would render every sent message twice. Same rule for a reply: when
+  // `replyTarget` is set, `send` routes through `timelineStore.sendReply`
+  // instead of `send`, but still never touches `items` itself.
   //
   // Per-room drafts, not a single shared one: this component is intentionally
   // *not* remounted when the focused room changes (unlike `Timeline`, which
@@ -20,8 +22,19 @@
   // room's — see `draftTracker.ts` for why this is a real bug fix, not a
   // nicety: without it, `value` would keep showing (and sending would keep
   // targeting) whichever room was focused when the text was typed.
+  //
+  // The pending reply target has the identical hazard and is scoped the
+  // identical way, through `replyTargetStore` (`$lib/stores/replyTarget.svelte.ts`)
+  // rather than a second `DraftTracker` — see that store's doc comment for
+  // why it doesn't need `switchTo`'s "flush the outgoing value" step a
+  // continuously-typed draft does: nothing here ever mutates a reply target
+  // in place, only `set`/`clear` calls that already name the room they
+  // apply to. `replyTarget` below is a `$derived` read of `roomId`'s own
+  // entry, so it updates automatically both when `roomId` changes and when
+  // `Timeline.svelte` sets one for the room currently shown.
 
   import { timelineStore } from "$lib/stores/timeline.svelte";
+  import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { DraftTracker } from "./draftTracker";
 
   let { roomId }: { roomId: string } = $props();
@@ -41,16 +54,35 @@
     }
   });
 
+  /** `roomId`'s own pending reply target, or `null` — see this file's top-of-script doc comment. */
+  const replyTarget = $derived(replyTargetStore.get(roomId));
+
   const trimmed = $derived(value.trim());
   const canSend = $derived(trimmed !== "" && !sending);
+
+  /** Cancels the pending reply for `roomId` without discarding the draft text. */
+  function cancelReply(): void {
+    replyTargetStore.clear(roomId);
+  }
 
   async function send(): Promise<void> {
     if (!canSend) return;
     const body = trimmed;
     const sentRoomId = roomId;
+    // Snapshot *before* the `await` below: if the reader switches rooms
+    // while this send is in flight, `replyTargetStore.get(roomId)` would
+    // read the *newly* focused room's target, not the one this send was
+    // actually composed against — the same "read the wrong room's state
+    // after an await" hazard `roomId === sentRoomId` below already guards
+    // for `value`.
+    const target = replyTargetStore.get(sentRoomId);
     sending = true;
     try {
-      await timelineStore.send(body);
+      if (target) {
+        await timelineStore.sendReply(body, target.eventId);
+      } else {
+        await timelineStore.send(body);
+      }
       if (roomId === sentRoomId) {
         value = "";
       } else {
@@ -60,6 +92,11 @@
         // the sent room's stored draft needs clearing.
         drafts.setDraftFor(sentRoomId, "");
       }
+      // Always the sent room, never `roomId` — same reasoning as
+      // `drafts.setDraftFor(sentRoomId, "")` above: clearing whichever room
+      // is *now* focused could wipe out a reply the reader has since
+      // started composing there.
+      replyTargetStore.clear(sentRoomId);
     } catch (err) {
       console.error("failed to send message", err);
     } finally {
@@ -75,6 +112,24 @@
   }
 </script>
 
+{#if replyTarget}
+  <div class="flex shrink-0 items-center gap-2 border-t border-border bg-surface-sunken px-4 py-2 text-xs">
+    <div class="min-w-0 flex-1 truncate">
+      <span class="font-medium text-content">Replying to {replyTarget.sender}</span>
+      {#if replyTarget.excerpt}
+        <span class="text-content-muted">— {replyTarget.excerpt}</span>
+      {/if}
+    </div>
+    <button
+      type="button"
+      onclick={cancelReply}
+      aria-label="Cancel reply"
+      class="shrink-0 rounded px-1.5 py-0.5 text-content-muted transition-colors hover:bg-surface hover:text-content"
+    >
+      ✕
+    </button>
+  </div>
+{/if}
 <div
   class="flex shrink-0 items-end gap-2 border-t border-border bg-surface px-4 py-3"
   style="padding-bottom: calc(0.75rem + var(--inset-bottom));"
@@ -84,7 +139,7 @@
     onkeydown={handleKeydown}
     disabled={sending}
     rows="1"
-    placeholder="Message…"
+    placeholder={replyTarget ? `Reply to ${replyTarget.sender}…` : "Message…"}
     class="max-h-40 min-h-10 flex-1 resize-none rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
   ></textarea>
   <button

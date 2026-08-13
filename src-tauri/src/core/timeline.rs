@@ -70,6 +70,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use matrix_sdk::ruma::events::room::message::{
     FormattedBody, MessageFormat, MessageType, RoomMessageEventContent,
+    RoomMessageEventContentWithoutRelation,
 };
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::AnyMessageLikeEventContent;
@@ -81,8 +82,8 @@ use matrix_sdk::ruma::{EventId, MilliSecondsSinceUnixEpoch, RoomId, UInt, UserId
 use matrix_sdk::Client;
 use matrix_sdk_ui::timeline::{
     EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, ReactionsByKeyBySender,
-    RoomExt, Timeline, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind,
-    VirtualTimelineItem,
+    RoomExt, Timeline, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent,
+    TimelineItemKind, VirtualTimelineItem,
 };
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
@@ -470,7 +471,6 @@ fn send_state_name(state: &EventSendState) -> &'static str {
 /// The stable id used for an event item: its event id once the server has
 /// echoed it back, or its transaction id while still a local echo.
 fn event_item_id(event: &EventTimelineItem) -> String {
-    use matrix_sdk_ui::timeline::TimelineEventItemId;
     match event.identifier() {
         TimelineEventItemId::TransactionId(txn) => txn.to_string(),
         TimelineEventItemId::EventId(id) => id.to_string(),
@@ -584,6 +584,49 @@ fn truncate_reply_excerpt(body: &str) -> String {
     excerpt
 }
 
+/// A short label describing *why* a reply's parent has nothing to quote —
+/// only ever needed when the parent's content has no body (`reply_to_dto`'s
+/// `Ready` arm calls this exactly when `embedded.content.as_message()` is
+/// `None`). Classifies the parent's content the same way [`classify_content`]
+/// already classifies a top-level item, and maps the resulting `kind` (plus
+/// `detail`, for the two kinds that need it) to the same short wording
+/// `Timeline.svelte`'s `timelineItemView.ts` (`viewFor`'s placeholder
+/// branches) already uses for that event kind — so a reply quoting a
+/// redacted, sticker, poll, or undecryptable parent reads with the exact
+/// vocabulary the reader already knows from encountering that event kind
+/// as a top-level item, rather than a second, differently-worded label for
+/// the same thing.
+///
+/// `None` for `kind == "message"`: every `MsgLikeKind::Message` has a body
+/// (`content.as_message()` is always `Some`), so `reply_to_dto` never
+/// actually calls this function for that case in practice — included in the
+/// match anyway (rather than asserted unreachable) so this function stays
+/// total and safe to call with any `classify_content` output, including a
+/// hypothetical future caller.
+fn reply_parent_label(kind: &str, detail: Option<&str>) -> Option<String> {
+    match kind {
+        "message" => None,
+        "sticker" => Some("Sticker".to_string()),
+        "poll" => Some("Poll".to_string()),
+        "redacted" => Some("Message deleted".to_string()),
+        "unableToDecrypt" => Some("Encrypted message — this device has no key for it".to_string()),
+        "liveLocation" => Some("Live location".to_string()),
+        "callInvite" => Some("Call".to_string()),
+        "rtcNotification" => Some("Call notification".to_string()),
+        "customMessage" => Some(format!("Custom event ({})", detail.unwrap_or("unknown"))),
+        "membership" => Some("Membership change".to_string()),
+        "profileChange" => Some("Profile change".to_string()),
+        "state" => Some("State change".to_string()),
+        "failedToParse" => Some(format!(
+            "Unsupported event ({})",
+            detail.unwrap_or("unknown")
+        )),
+        // Defensive only, mirroring `viewFor`'s own defensive default: no
+        // `classify_content` kind reaches this arm today.
+        other => Some(format!("Unsupported event ({other})")),
+    }
+}
+
 /// Builds the reply-quote DTO from already-extracted parent details. Pure —
 /// mirrors [`project_item_parts`]'s split between SDK extraction (in
 /// [`reply_to_dto`]) and logic (here, so it's unit-testable without a live
@@ -594,6 +637,7 @@ fn project_reply_to(
     sender: Option<&str>,
     sender_display_name: Option<&str>,
     body: Option<&str>,
+    label: Option<&str>,
 ) -> ReplyToDto {
     ReplyToDto {
         event_id: event_id.to_string(),
@@ -601,6 +645,7 @@ fn project_reply_to(
         sender: sender.map(str::to_string),
         sender_display_name: sender_display_name.map(str::to_string),
         excerpt: body.map(truncate_reply_excerpt),
+        label: label.map(str::to_string),
     }
 }
 
@@ -620,6 +665,13 @@ fn project_reply_to(
 /// reader for any of the three than "Original message unavailable" (see
 /// [`ReplyToDto`]'s doc comment), and adding a fetch call to resolve
 /// `Unavailable`/`Pending` is out of scope for a read-only pass.
+///
+/// A `Ready` parent can *itself* have nothing to quote — a redacted,
+/// sticker, poll, or undecryptable parent still has a sender, just no body
+/// (`embedded.content.as_message()` is `None`). Before, that case rendered
+/// as a bare sender name with no explanation; `label` (via
+/// [`reply_parent_label`], only ever computed when `body` is `None`) is
+/// what fixes that — see this module's and `ReplyToDto`'s doc comments.
 fn reply_to_dto(content: &TimelineItemContent) -> Option<ReplyToDto> {
     let reply = content.in_reply_to()?;
     let event_id = reply.event_id.to_string();
@@ -631,16 +683,23 @@ fn reply_to_dto(content: &TimelineItemContent) -> Option<ReplyToDto> {
                 _ => None,
             };
             let body = embedded.content.as_message().map(|m| m.body().to_string());
+            let label = if body.is_none() {
+                let (kind, _msgtype, detail) = classify_content(&embedded.content);
+                reply_parent_label(kind, detail.as_deref())
+            } else {
+                None
+            };
             Some(project_reply_to(
                 &event_id,
                 true,
                 Some(&sender),
                 sender_display_name.as_deref(),
                 body.as_deref(),
+                label.as_deref(),
             ))
         }
         TimelineDetails::Unavailable | TimelineDetails::Pending | TimelineDetails::Error(_) => {
-            Some(project_reply_to(&event_id, false, None, None, None))
+            Some(project_reply_to(&event_id, false, None, None, None, None))
         }
     }
 }
@@ -1023,6 +1082,71 @@ impl FocusedTimeline {
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))?;
         Ok(())
+    }
+
+    /// Sends a plain-text reply to `in_reply_to` in the focused room.
+    ///
+    /// Does not emit anything itself, same reasoning as [`Self::send_text`]:
+    /// `Timeline::send_reply` adds the local echo to the timeline, which
+    /// arrives at the webview through the same diff stream `subscribe` set
+    /// up — emitting it again here would show the message twice.
+    ///
+    /// `in_reply_to` must parse as a real Matrix event id, not a local
+    /// echo's transaction id — `Timeline::send_reply` resolves it by
+    /// fetching the parent event by id (`Room::make_reply_event`, via
+    /// `EventSource::get_event`), falling back to a
+    /// `GET /rooms/{roomId}/event/{eventId}` request when it isn't cached
+    /// locally. That means a parent that has scrolled out of, or been
+    /// redacted out of, the locally materialized timeline (see this
+    /// module's "Recovering from an emptied timeline" doc comment for one
+    /// way that can happen) can still be replied to as long as the event id
+    /// itself still resolves somewhere — sending does not depend on the
+    /// parent still being present in this timeline's own item list. If it
+    /// doesn't resolve at all (a garbage id, or the fetch itself fails),
+    /// this returns [`CoreError::Protocol`] the same way any other send
+    /// failure does; the webview only ever offers the Reply affordance for
+    /// an item whose `sendState` shows it has already been echoed back by
+    /// the server (see `Timeline.svelte`'s `canReplyOrReact`), which is what
+    /// guarantees `in_reply_to` parses as a valid [`EventId`] in the first
+    /// place.
+    ///
+    /// Fails with [`CoreError::NotReady`] when no room is focused.
+    pub async fn send_reply(&self, body: &str, in_reply_to: &str) -> CoreResult<()> {
+        let event_id =
+            EventId::parse(in_reply_to).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let timeline = self.active_timeline()?;
+        let content = RoomMessageEventContentWithoutRelation::text_plain(body);
+        timeline
+            .send_reply(content, event_id)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Toggles `reaction_key` as a reaction on `event_id` in the focused
+    /// room. Returns whether the reaction was added (`true`) or removed
+    /// (`false`) — `Timeline::toggle_reaction` decides which by checking
+    /// whether the current user has already reacted with this exact key,
+    /// and (per its own doc comment) serialises concurrent toggles against
+    /// the same item so a rapid double-click can't race itself into sending
+    /// two requests.
+    ///
+    /// Does not emit anything itself, same reasoning as [`Self::send_text`]:
+    /// the SDK adds (or redacts) the reaction as a local echo that arrives
+    /// back through the same diff stream `subscribe` set up.
+    ///
+    /// `event_id` has the same real-event-id requirement [`Self::send_reply`]'s
+    /// `in_reply_to` does — see that method's doc comment.
+    ///
+    /// Fails with [`CoreError::NotReady`] when no room is focused.
+    pub async fn toggle_reaction(&self, event_id: &str, reaction_key: &str) -> CoreResult<bool> {
+        let event_id = EventId::parse(event_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let timeline = self.active_timeline()?;
+        let item_id = TimelineEventItemId::EventId(event_id);
+        timeline
+            .toggle_reaction(&item_id, reaction_key)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
     }
 
     /// Resolves `event_id`'s `MediaSource` from the focused timeline's own
@@ -1945,6 +2069,7 @@ mod tests {
             Some("@alice:example.org"),
             Some("Alice"),
             Some(&long_body),
+            None,
         );
         assert_eq!(reply.event_id, "$parent:example.org");
         assert!(reply.available);
@@ -1956,6 +2081,10 @@ mod tests {
             excerpt.len() < long_body.len(),
             "expected the excerpt truncated, not carried through whole"
         );
+        assert!(
+            reply.label.is_none(),
+            "a message parent has an excerpt, so it needs no label"
+        );
     }
 
     #[test]
@@ -1964,12 +2093,13 @@ mod tests {
         // doc comment for why they're folded together) — this is the shape
         // the webview must render as "Original message unavailable", not an
         // empty quote or a spinner that never resolves.
-        let reply = project_reply_to("$parent:example.org", false, None, None, None);
+        let reply = project_reply_to("$parent:example.org", false, None, None, None, None);
         assert_eq!(reply.event_id, "$parent:example.org");
         assert!(!reply.available);
         assert!(reply.sender.is_none());
         assert!(reply.sender_display_name.is_none());
         assert!(reply.excerpt.is_none());
+        assert!(reply.label.is_none());
     }
 
     #[test]
@@ -1982,9 +2112,112 @@ mod tests {
             Some("@bob:example.org"),
             None,
             None,
+            None,
         );
         assert!(reply.available);
         assert!(reply.excerpt.is_none());
+    }
+
+    #[test]
+    fn project_reply_to_carries_a_label_through_when_the_parent_has_no_body() {
+        // The review fix: a `Ready` parent with nothing to quote now carries
+        // *why* through as `label`, rather than rendering as a bare sender
+        // name. `project_reply_to` itself just carries whatever label its
+        // caller (`reply_to_dto`) computed — see `reply_parent_label`'s own
+        // tests for the actual classification logic.
+        let reply = project_reply_to(
+            "$parent:example.org",
+            true,
+            Some("@bob:example.org"),
+            None,
+            None,
+            Some("Message deleted"),
+        );
+        assert!(reply.available);
+        assert!(reply.excerpt.is_none());
+        assert_eq!(reply.label.as_deref(), Some("Message deleted"));
+    }
+
+    // `reply_parent_label`: pure over the `(kind, detail)` pair
+    // `classify_content` already produces, so — like `should_reseed` and
+    // `classify_content`'s own indirect coverage above — this is exercised
+    // directly rather than through a live `TimelineItemContent` (which has
+    // no test-friendly constructor outside a real synced timeline).
+
+    #[test]
+    fn reply_parent_label_is_none_for_a_message_kind() {
+        // `reply_to_dto` never actually calls this for `kind == "message"`
+        // in practice (that case always has a body, so it never needs a
+        // label) — this documents that `None` is still the right answer if
+        // it ever were called with it.
+        assert!(reply_parent_label("message", None).is_none());
+    }
+
+    #[test]
+    fn reply_parent_label_names_common_non_message_parents() {
+        // Mirrors the exact wording `timelineItemView.ts`'s `viewFor` uses
+        // for the same event kinds as a top-level item — see this
+        // function's doc comment for why that consistency matters.
+        assert_eq!(
+            reply_parent_label("redacted", None).as_deref(),
+            Some("Message deleted")
+        );
+        assert_eq!(
+            reply_parent_label("sticker", None).as_deref(),
+            Some("Sticker")
+        );
+        assert_eq!(reply_parent_label("poll", None).as_deref(), Some("Poll"));
+        assert_eq!(
+            reply_parent_label("unableToDecrypt", None).as_deref(),
+            Some("Encrypted message — this device has no key for it")
+        );
+        assert_eq!(
+            reply_parent_label("liveLocation", None).as_deref(),
+            Some("Live location")
+        );
+    }
+
+    #[test]
+    fn reply_parent_label_includes_the_event_type_for_kinds_that_carry_a_detail() {
+        assert_eq!(
+            reply_parent_label("customMessage", Some("org.supermessage.card")).as_deref(),
+            Some("Custom event (org.supermessage.card)")
+        );
+        assert_eq!(
+            reply_parent_label("failedToParse", Some("m.some.custom")).as_deref(),
+            Some("Unsupported event (m.some.custom)")
+        );
+        // No detail supplied still produces a real label, never a panic or
+        // an empty string.
+        assert_eq!(
+            reply_parent_label("customMessage", None).as_deref(),
+            Some("Custom event (unknown)")
+        );
+    }
+
+    #[test]
+    fn reply_parent_label_never_returns_an_empty_string_for_any_known_kind() {
+        for kind in [
+            "sticker",
+            "poll",
+            "redacted",
+            "unableToDecrypt",
+            "liveLocation",
+            "callInvite",
+            "rtcNotification",
+            "customMessage",
+            "membership",
+            "profileChange",
+            "state",
+            "failedToParse",
+            "somethingFutureAndUnknown",
+        ] {
+            let label = reply_parent_label(kind, Some("detail"));
+            assert!(
+                label.is_some_and(|l| !l.is_empty()),
+                "expected a non-empty label for kind {kind:?}"
+            );
+        }
     }
 
     #[test]
@@ -2083,6 +2316,7 @@ mod tests {
             Some("@alice:example.org"),
             Some("Alice"),
             Some("original message"),
+            None,
         );
         let dto = project_item_parts(
             "$e7",
@@ -2133,5 +2367,50 @@ mod tests {
         let focused = FocusedTimeline::default();
         let err = focused.send_text("hi").await.unwrap_err();
         assert_eq!(err.kind(), "notReady");
+    }
+
+    #[tokio::test]
+    async fn focused_timeline_send_reply_reports_not_ready_when_nothing_is_focused() {
+        let focused = FocusedTimeline::default();
+        let err = focused
+            .send_reply("hi", "$parent:example.org")
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), "notReady");
+    }
+
+    #[tokio::test]
+    async fn focused_timeline_send_reply_reports_a_protocol_error_for_a_malformed_event_id() {
+        // The event-id parse happens before the "is anything focused at
+        // all" check, so this specifically exercises that `EventId::parse`
+        // failure surfaces as `CoreError::Protocol`, not `NotReady` — even
+        // with nothing focused, a malformed id is still the more specific,
+        // more useful error to report.
+        let focused = FocusedTimeline::default();
+        let err = focused
+            .send_reply("hi", "not-a-valid-event-id")
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), "protocol");
+    }
+
+    #[tokio::test]
+    async fn focused_timeline_toggle_reaction_reports_not_ready_when_nothing_is_focused() {
+        let focused = FocusedTimeline::default();
+        let err = focused
+            .toggle_reaction("$parent:example.org", "👍")
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), "notReady");
+    }
+
+    #[tokio::test]
+    async fn focused_timeline_toggle_reaction_reports_a_protocol_error_for_a_malformed_event_id() {
+        let focused = FocusedTimeline::default();
+        let err = focused
+            .toggle_reaction("not-a-valid-event-id", "👍")
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), "protocol");
     }
 }

@@ -108,7 +108,7 @@
       <section class="flex min-w-0 flex-1 flex-col" style="padding-right: var(--inset-right);">
         {#if roomsStore.selectedId}
           {#key roomsStore.selectedId}
-            <Timeline />
+            <Timeline roomId={roomsStore.selectedId} />
           {/key}
           <Composer roomId={roomsStore.selectedId} />
         {:else}

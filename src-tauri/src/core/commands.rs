@@ -103,6 +103,28 @@ pub async fn send_message(
     timeline.send_text(&body).await
 }
 
+/// Sends a plain-text reply to `in_reply_to` (a parent event id) in the
+/// focused room.
+#[tauri::command]
+pub async fn send_reply(
+    body: String,
+    in_reply_to: String,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<(), CoreError> {
+    timeline.send_reply(&body, &in_reply_to).await
+}
+
+/// Toggles `key` as a reaction on `event_id` in the focused room. Returns
+/// whether the reaction was added (`true`) or removed (`false`).
+#[tauri::command]
+pub async fn toggle_reaction(
+    event_id: String,
+    key: String,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<bool, CoreError> {
+    timeline.toggle_reaction(&event_id, &key).await
+}
+
 /// Resolves and fetches `room_id`'s avatar as a `data:` URI, or `None` when
 /// the room has no avatar to show (by any of `core::rooms::resolve_room_avatar_mxc`'s
 /// rules) or its bytes don't sniff to a renderable image format (see

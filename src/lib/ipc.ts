@@ -160,6 +160,19 @@ export interface ReplyTo {
    * `Timeline.svelte`).
    */
   excerpt: string | null;
+  /**
+   * A short label for *why* there's nothing to quote, when `available` is
+   * `true` but `excerpt` is `null` — a redacted, sticker, poll, or
+   * undecryptable parent has a sender but no body. Classified in the core
+   * the same way a top-level item is (`core::timeline::reply_parent_label`,
+   * built on `classify_content`), so it reads with the same vocabulary
+   * `$lib/components/timelineItemView.ts`'s `viewFor` placeholders already
+   * use (e.g. `"Message deleted"`). `null` whenever `excerpt` is non-null,
+   * and always `null` when `available` is `false` (that case already has
+   * its own "Original message unavailable" wording — see `ReplyQuoteView`
+   * in `timelineItemView.ts`).
+   */
+  label: string | null;
 }
 
 /**
@@ -298,6 +311,35 @@ export async function timelineResync(): Promise<[string, number, TimelineItem[]]
 /** Sends a plain-text message to the focused room. */
 export async function sendMessage(body: string): Promise<void> {
   await invoke<void>("send_message", { body });
+}
+
+/**
+ * Sends a plain-text reply to `inReplyTo` (a parent event id) in the focused
+ * room. Does not append anything to `timelineStore.items` itself — same as
+ * {@link sendMessage}, the SDK adds the local echo to the timeline, which
+ * arrives back through the diff stream {@link onTimelineDiff} subscribes to.
+ *
+ * `inReplyTo` must be a real Matrix event id, not a local echo's transaction
+ * id — see `TimelineItem.sendState`'s doc comment and
+ * `$lib/components/timelineItemView.ts`'s `canReplyOrReact` for the rule the
+ * webview uses to only ever offer this for an item that already has one.
+ */
+export async function sendReply(body: string, inReplyTo: string): Promise<void> {
+  await invoke<void>("send_reply", { body, inReplyTo });
+}
+
+/**
+ * Toggles `key` as a reaction on `eventId` in the focused room. Resolves to
+ * whether the reaction was added (`true`) or removed (`false`) — mirrors
+ * `Timeline::toggle_reaction`'s own return value. Does not append anything
+ * to `timelineStore.items` itself, same reasoning as {@link sendReply}: the
+ * SDK's local echo arrives back through the diff stream.
+ *
+ * `eventId` has the same real-event-id requirement as {@link sendReply}'s
+ * `inReplyTo`.
+ */
+export async function toggleReaction(eventId: string, key: string): Promise<boolean> {
+  return invoke<boolean>("toggle_reaction", { eventId, key });
 }
 
 /**

@@ -89,6 +89,19 @@ pub struct ReplyToDto {
     /// `available` is `false`, or when the parent isn't a message (or has no
     /// body) to quote.
     pub excerpt: Option<String>,
+    /// A short label for *why* there's nothing to quote, populated only when
+    /// `available` is `true` but `excerpt` is `None` — a `Ready` parent that
+    /// isn't a message (redacted, a sticker, a poll, undecryptable, ...) has
+    /// a sender but no body. Classified the same way a top-level item is
+    /// (see `core::timeline::reply_parent_label`, built on that module's
+    /// `classify_content`), so the webview renders it with the same
+    /// vocabulary `$lib/components/timelineItemView.ts`'s `viewFor`
+    /// placeholders already use for that event kind (e.g. `"Message
+    /// deleted"`) instead of a bare sender name with no explanation. Always
+    /// `None` when `excerpt` is `Some`, and always `None` when `available`
+    /// is `false` (that case already has its own "Original message
+    /// unavailable" wording on the webview side).
+    pub label: Option<String>,
 }
 
 /// One reaction key aggregated across senders on a message (see

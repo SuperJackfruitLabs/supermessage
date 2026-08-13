@@ -103,19 +103,22 @@
   // `{@html}` here just because this precedent exists; the guarantee lives
   // in the Rust code that produced the string, not in this file.
   //
-  // Replies/edits/reactions (M2, `docs/matrix-events.md` Table A) are
-  // rendering-only in this pass — sending a reply and toggling a reaction
-  // are a follow-up, so nothing here is clickable. `replyQuote`/
-  // `reactionsRow` below are shared snippets, reused across every
-  // bubble-shaped render kind (`bubble`/`image`/`mediaFile`) rather than
-  // duplicated per branch. Two things worth calling out:
+  // Replies/reactions (M2, `docs/matrix-events.md` Table A) are interactive
+  // as of this pass — editing is still a follow-up. `replyQuote`/
+  // `reactionsRow`/`messageActions` below are shared snippets, reused across
+  // every bubble-shaped render kind (`bubble`/`image`/`mediaFile`) rather
+  // than duplicated per branch. Several things worth calling out:
   //   - A reply's parent (`item.replyTo`) may not have loaded —
   //     `replyQuoteView` (`timelineItemView.ts`) reduces the SDK's four
   //     `TimelineDetails` states to two outcomes: `available` (something to
   //     quote) or not (render "Original message unavailable", never an
   //     empty quote or a spinner — this build never calls
   //     `Timeline::fetch_details_for_event`, so an unavailable parent will
-  //     not resolve itself).
+  //     not resolve itself). A `Ready` parent can *also* have nothing to
+  //     quote (redacted, a sticker, a poll, undecryptable, ...) — that
+  //     renders `quote.label`, the same short classification text
+  //     `core::timeline::reply_parent_label` computes on the Rust side,
+  //     rather than a bare sender name with no explanation.
   //   - A reply excerpt and a reaction key are both sender-controlled
   //     strings. The excerpt is already truncated in the core
   //     (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) before it ever crosses
@@ -126,6 +129,30 @@
   //     bubble (the exact class of bug `.message-html`'s own
   //     `overflow-wrap: anywhere` exists to prevent; see that block's doc
   //     comment for the 4700px regression this guards against).
+  //   - Clicking an existing reaction chip, one of the quick-reaction
+  //     buttons in `messageActions`, or "Reply" never mutates
+  //     `timelineStore.items` itself — see this file's "Never optimistically
+  //     appends" note above, which applies identically here: `Timeline::
+  //     toggle_reaction`/`send_reply` add their own local echo, which
+  //     arrives back through the same diff stream this component only ever
+  //     reads. Adding a second, local update here would double-render,
+  //     exactly the bug that note already guards `Composer` against.
+  //   - Both controls are gated by `canReplyOrReact` (`timelineItemView.ts`):
+  //     an item only has a real Matrix event id — which `Timeline::
+  //     toggle_reaction`/`send_reply` both require — once the server has
+  //     echoed it back, never while it's still a local echo
+  //     (`sendState: "notSentYet"`) or failed to send.
+  //   - The pending reply target lives in `replyTargetStore`
+  //     (`$lib/stores/replyTarget.svelte.ts`), keyed by `roomId` (a prop,
+  //     not read off `timelineStore` — see that store's doc comment for why
+  //     it must be scoped per room exactly like `Composer`'s drafts, and
+  //     what leaking it across a room switch would cost).
+  //   - `messageActions`' buttons are revealed on hover *or* focus-within
+  //     (`focus-within:opacity-100`, not `hover:opacity-100` alone) — CSS
+  //     opacity, not `display: none`, so they stay in the tab order and
+  //     reachable by keyboard even while visually faded out; focusing one
+  //     (e.g. by tabbing through the timeline) reveals the whole row the
+  //     same way hovering the bubble does.
   //
   // Links inside that HTML are still plain `<a>` tags in a webview with no
   // browser chrome, so a click on one would otherwise replace this whole
@@ -148,11 +175,27 @@
   import { tick } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
-  import { displayReactionKey, replyQuoteView, viewFor } from "./timelineItemView";
+  import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
+  import {
+    canReplyOrReact,
+    displayReactionKey,
+    replyQuoteView,
+    viewFor,
+  } from "./timelineItemView";
   import { groupTimelineItems, type TimelineDisplayRow } from "./timelineGrouping";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import type { TimelineItem } from "$lib/ipc";
+
+  /**
+   * The room this pane shows — needed only to scope `replyTargetStore`'s
+   * writes (see this file's top-of-script doc comment). `+page.svelte`
+   * already remounts this whole component on a room switch (`{#key
+   * roomsStore.selectedId}`), so this is always the room whose messages are
+   * actually on screen — never stale the way a value read off a
+   * non-remounted component (`Composer`) would have to guard against.
+   */
+  let { roomId }: { roomId: string } = $props();
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
   const PAGE_SIZE = 20;
@@ -289,6 +332,40 @@
       void requestOlderMessages();
     }
   }
+
+  /**
+   * The fixed set of one-click reactions offered on every eligible message.
+   * Small and fixed on purpose — the task brief calls for exactly this, not
+   * a full emoji picker (out of scope for this pass): clicking an existing
+   * chip already covers reacting with anything someone else in the room
+   * already used.
+   */
+  const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "🙏"];
+
+  /**
+   * Toggles `key` as a reaction on `eventId`. Never mutates
+   * `timelineStore.items` itself — see this file's top-of-script doc
+   * comment for why the local echo arriving back through the diff stream is
+   * what actually updates the chip, not this function.
+   */
+  async function handleToggleReaction(eventId: string, key: string): Promise<void> {
+    try {
+      await timelineStore.toggleReaction(eventId, key);
+    } catch (err) {
+      console.error("failed to toggle reaction", err);
+    }
+  }
+
+  /**
+   * Starts (or replaces) the pending reply target for `roomId`. Scoped per
+   * room in `replyTargetStore` — see that store's doc comment and this
+   * file's top-of-script comment for why a reply target must never be
+   * allowed to follow the reader across a room switch the way a stale
+   * composer draft once did.
+   */
+  function startReply(item: TimelineItem): void {
+    replyTargetStore.set(roomId, replyTargetStore.fromItem(item));
+  }
 </script>
 
 {#snippet replyQuote(item: TimelineItem)}
@@ -300,7 +377,15 @@
         : 'border-border text-content-muted'}"
     >
       {#if quote.available}
-        <p class="truncate font-medium break-words">{quote.sender}</p>
+        <!--
+          `truncate` alone here (no `break-words`): `truncate` is
+          `white-space: nowrap` + `text-overflow: ellipsis` + `overflow:
+          hidden`, which never wraps in the first place, so `break-words`
+          (a wrapping rule) was dead weight on this line — see this file's
+          top-of-script doc comment for why `break-words` *does* matter,
+          genuinely, on the two lines below that actually allow wrapping.
+        -->
+        <p class="truncate font-medium">{quote.sender}</p>
         {#if quote.excerpt}
           <!-- `quote.excerpt` is already truncated in the core
                (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) — `break-words`
@@ -308,6 +393,15 @@
                not the length itself. See this file's top-of-script doc
                comment. -->
           <p class="line-clamp-2 break-words">{quote.excerpt}</p>
+        {:else if quote.label}
+          <!-- The parent loaded but had nothing to quote (redacted, a
+               sticker, a poll, undecryptable, ...) — `quote.label` is the
+               same short classification text `core::timeline::
+               reply_parent_label` computes for it, so this reads with the
+               vocabulary `viewFor`'s own placeholders already use. Fixes
+               the review finding that this used to render as a bare sender
+               name with no indication why. -->
+          <p class="italic break-words">{quote.label}</p>
         {/if}
       {:else}
         <p class="italic break-words">Original message unavailable</p>
@@ -320,22 +414,68 @@
   {#if item.reactions.length > 0}
     <div class="mt-1 flex flex-wrap gap-1">
       {#each item.reactions as reaction (reaction.key)}
+        {@const interactive = canReplyOrReact(item)}
         <!--
           `displayReactionKey` caps a reaction key's rendered length (a key
           is arbitrary sender-controlled text, not necessarily one emoji);
           `break-words` guards the chip itself against a long run within
           that cap, same reasoning as the reply excerpt above. `byMe` gets a
-          visually distinct style so the interaction pass has something to
-          build "already reacted" on — this pass itself is read-only, no
-          click handler here.
+          visually distinct style so a reader can tell at a glance which
+          chips they've already added to. A real `<button>`, not a `<span>`
+          with a click handler, so it's keyboard-operable with an accessible
+          name on its own — `aria-pressed` mirrors `byMe` for the same
+          reason a toggle button conventionally exposes its own state.
+          Clicking never mutates `item.reactions` itself; see this file's
+          top-of-script doc comment.
         -->
-        <span
-          class="rounded-full border px-2 py-0.5 text-xs break-words {reaction.byMe
-            ? 'border-accent bg-accent/20 text-accent font-medium'
-            : 'border-border/70 bg-surface-sunken text-content-muted'}"
+        <button
+          type="button"
+          disabled={!interactive}
+          onclick={() => handleToggleReaction(item.id, reaction.key)}
+          aria-pressed={reaction.byMe}
+          aria-label={`${displayReactionKey(reaction.key)}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
+          class="rounded-full border px-2 py-0.5 text-xs break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {reaction.byMe
+            ? 'border-accent bg-accent/20 text-accent font-medium hover:bg-accent/30'
+            : 'border-border/70 bg-surface-sunken text-content-muted hover:bg-surface'}"
         >
           {displayReactionKey(reaction.key)} {reaction.count}
-        </span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet messageActions(item: TimelineItem)}
+  {#if canReplyOrReact(item)}
+    <!--
+      Chrome, not content — no `.selectable` here (see this file's
+      top-of-script comment on user-select discipline). Faded out until the
+      bubble is hovered *or* one of these buttons has focus
+      (`focus-within`, not `hover` alone), so tabbing through the timeline
+      still reaches every button — opacity, never `display: none`, keeps
+      them in the tab order the whole time. `flex-wrap` so six quick
+      reactions plus "Reply" never force the bubble wider than its own
+      `max-w-[70%]` cap.
+    -->
+    <div
+      class="mt-1 flex flex-wrap items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+    >
+      <button
+        type="button"
+        onclick={() => startReply(item)}
+        class="rounded px-1.5 py-0.5 text-[11px] font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+      >
+        Reply
+      </button>
+      {#each QUICK_REACTIONS as emoji (emoji)}
+        <button
+          type="button"
+          onclick={() => handleToggleReaction(item.id, emoji)}
+          aria-label={`React with ${emoji}`}
+          class="rounded px-1 py-0.5 text-xs transition-colors hover:bg-surface-sunken"
+        >
+          {emoji}
+        </button>
       {/each}
     </div>
   {/if}
@@ -379,7 +519,7 @@
             {#if view.render === "bubble"}
               <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
                 <div
-                  class="min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
+                  class="group min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
                     ? 'bg-accent text-accent-content'
                     : 'border border-border bg-surface-raised text-content'}"
                 >
@@ -429,6 +569,7 @@
                     </p>
                   {/if}
                   {@render reactionsRow(item)}
+                  {@render messageActions(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
@@ -458,7 +599,7 @@
               {@const failed = mediaCache.hasFailed(item.id)}
               <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
                 <div
-                  class="min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
+                  class="group min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
                     ? 'bg-accent text-accent-content'
                     : 'border border-border bg-surface-raised text-content'}"
                 >
@@ -496,6 +637,7 @@
                     ></div>
                   {/if}
                   {@render reactionsRow(item)}
+                  {@render messageActions(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
@@ -516,7 +658,7 @@
               -->
               <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
                 <div
-                  class="min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
+                  class="group min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
                     ? 'bg-accent text-accent-content'
                     : 'border border-border bg-surface-raised text-content'}"
                 >
@@ -547,6 +689,7 @@
                     </span>
                   </div>
                   {@render reactionsRow(item)}
+                  {@render messageActions(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
