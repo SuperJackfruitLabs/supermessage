@@ -715,15 +715,23 @@
     session signed in as this account can produce an own custom event, and
     a right-hanging row under a left-anchored card is then reachable, not
     hypothetical.
+
+    This row renders *outside* the message container, on the sheet ground,
+    tucked under the container's bottom edge — see `messageBlock`. A
+    reaction is chrome that acts on a message, not part of it, and this
+    file already refuses to mix the two anywhere else. Positive offsets
+    rather than a negative one that would overlap the container's edge:
+    an overlap only reads as "tucked into the corner" against a container
+    that *has* a visible corner, and of the three that call this, only the
+    own bubble does — a peer block and the space under a dispatch card
+    would just get a chip sitting too close to the text above it.
   -->
   {#if item.reactions.length > 0}
     <div class="mt-1.5 flex flex-wrap gap-1 {alignEnd ? 'justify-end' : ''}">
       {#each item.reactions as reaction (reaction.key)}
         {@const interactive = canReplyOrReact(item)}
         {@const chipClass = reaction.byMe
-          ? `border-accent font-medium text-accent ${
-              item.isOwn ? "bg-surface hover:bg-surface-sunken" : "bg-accent/15 hover:bg-accent/20"
-            }`
+          ? "reaction-chip-mine border-accent font-medium text-accent"
           : "border-border bg-surface-sunken text-content-muted hover:border-border-strong hover:text-content"}
         <!--
           `displayReactionKey` caps a reaction key's rendered length (a key
@@ -742,27 +750,27 @@
           message block that sets `font-serif` (peer) on itself so its
           `ch`-based measure resolves in the reading face.
 
-          The `byMe` fill is ground-dependent, and that is a contrast fix,
-          not a flourish. `bg-accent/15` is *translucent*, so it composites
-          against whatever is behind it: on the reading surface that gives
-          accent text 5.60:1 (light) / 5.55:1 (dark), but on the own
-          bubble's `--color-accent-soft` ground the tint lands on an
-          already-accent-tinted colour and collapses to 4.88:1 / **4.26:1**
-          — under the 4.5:1 floor in dark. Inside an own bubble the chip
-          therefore takes an *opaque* `--color-surface` fill instead
-          (7.04:1 / 7.00:1), which also matches the media row's icon: on
-          this bubble, `--color-surface` is what an inset control is made
-          of. Hover is `bg-accent/20`, not `/25`, for the same reason —
-          `/25` measures 4.49:1 in dark, failing by a hair; `/20` is
-          5.16:1 / 5.02:1. `--color-content-muted` on
-          `--color-surface-sunken` (the not-mine chip) is opaque already
-          and clears on either ground at 7.49:1 / 9.23:1.
+          The "mine" fill is `.reaction-chip-mine` (in the style block at
+          the foot of this file) rather than a `bg-accent/15` utility, and
+          that is a contrast fix. A translucent fill composites against
+          whatever happens to be behind it, and this one snippet renders on
+          **four** different grounds: `--color-surface` (a peer block),
+          `--color-accent-soft` (an own bubble), `--color-surface-raised`
+          (a dispatch card) and `--color-signal-soft` (a pending one). The
+          tint measured 5.55:1 on the first and 4.26:1 on the second, and
+          the fix that branched on `item.isOwn` still left the two card
+          grounds unmeasured — where they came in at 5.00:1 resting and
+          4.53:1 on hover, under the 5.0:1 bar. Branching per ground does
+          not scale and is how this was missed twice. `.reaction-chip-mine`
+          instead paints the accent tint over its *own* opaque
+          `--color-surface`, so the chip's contrast is a single number on
+          every ground it can ever land on, present or future.
 
-          Those numbers are composited by the browser, not modelled:
-          Tailwind emits `/15` as `color-mix(in oklab, … , transparent)`,
-          so anything that reads `getComputedStyle().backgroundColor` and
-          expects `rgba()` will silently measure the wrong ground. Paint
-          the layer stack into a canvas and read the pixel instead.
+          Numbers are composited by the browser, not modelled: Tailwind
+          emits `/15` as `color-mix(in oklab, … , transparent)`, so
+          anything that reads `getComputedStyle().backgroundColor` and
+          expects `rgba()` silently measures the wrong ground. Paint the
+          layer stack into a canvas and read the pixel back.
         -->
         <button
           type="button"
@@ -784,23 +792,29 @@
   {#if canReplyOrReact(item)}
     <!--
       Chrome, not content — no `.selectable` here (see this file's
-      top-of-script comment on user-select discipline). Faded out until the
-      bubble is hovered *or* one of these buttons has focus
-      (`focus-within`, not `hover` alone), so tabbing through the timeline
-      still reaches every button — opacity, never `display: none`, keeps
-      them in the tab order the whole time. `flex-wrap` so six quick
-      reactions plus "Reply" never force the block wider than its own
-      `max-w-[68ch]`/`max-w-[52ch]` cap.
+      top-of-script comment on user-select discipline), and rendered
+      outside the message container on the sheet ground for the same
+      reason `reactionsRow` is; see its comment and `messageBlock`'s.
+
+      Faded out until the *row* is hovered or one of these buttons has
+      focus (`focus-within`, not `hover` alone), so tabbing through the
+      timeline still reaches every button — opacity, never `display:
+      none`, keeps them in the tab order the whole time. The `group` that
+      drives that hover is on `messageBlock`'s outermost row precisely so
+      that it encloses this detached element: on the container, the
+      pointer would leave the group the instant it reached the row being
+      revealed. `flex-wrap` so six quick reactions plus "Reply" never
+      force the row wider than the reading column.
 
       The negative margin pulls the outermost button's own padding back so
-      the row aligns optically with the message body's edge rather than
-      sitting indented from it — left edge for a peer block, right edge for
-      an own bubble, matching which side each is anchored to. `font-sans`
-      for the same reason the reaction chips carry it: this is chrome
-      inside a serif block.
+      the row aligns optically with the message container's edge rather
+      than sitting indented from it — left edge for a peer block or a
+      dispatch card, right edge for an own bubble. `font-sans` for the
+      same reason the reaction chips carry it: this is chrome, and the
+      column it now sits directly on is set in the reading serif.
     -->
     <div
-      class="mt-0.5 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {alignEnd
+      class="mt-1 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {alignEnd
         ? '-mr-1.5 justify-end'
         : '-ml-1.5'}"
     >
@@ -925,89 +939,120 @@
     so a boundary still reads as a boundary). Both hold with or without an
     actions row; the row only ever adds to them.
   -->
-  <div
-    class="flex {continuesRun ? 'pt-5' : 'pt-8'} {item.isOwn
-      ? 'justify-end'
-      : 'justify-start'}"
-  >
-    <div
-      class="group flex min-w-0 flex-col text-content {item.isOwn
-        ? 'max-w-[52ch] rounded-md bg-accent-soft px-3 py-2 font-sans text-body-own'
-        : 'max-w-[68ch] font-serif text-body'}"
-    >
-      {#if !item.isOwn && (!continuesRun || item.edited)}
-        <!--
-          The peer sender line: name and timestamp on one baseline, both
-          mono, per spec §6.3. The timestamp sits immediately after the
-          name rather than pushed to the block's right edge — the block is
-          shrink-to-fit, so a right edge would wander with the message's
-          own width and strand the time far from the name it belongs to.
-          The name `truncate`s (and so, as on the reply quote above, needs
-          no `break-words`: `truncate` never wraps in the first place),
-          which is what keeps a long display name from pushing the
-          timestamp out of view.
+  <!--
+    Three nested elements, each earning its place — this is not one wrapper
+    too many:
 
-          A collapsed continuation drops this line entirely — except when
-          the message was edited, which is real information and not "the
-          timestamp": that case renders the marker alone.
-        -->
-        <p class="mb-1 flex items-baseline gap-2 font-mono text-meta text-content-muted">
-          {#if !continuesRun}
-            <span class="min-w-0 truncate text-label uppercase">
-              {item.senderDisplayName ?? item.sender ?? "Unknown"}
-            </span>
-            <span class="shrink-0">{formatTime(item.timestampMs)}</span>
-          {/if}
-          <!-- Mono rank, so no italic — see spec §6.3. -->
-          {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
-        </p>
-      {/if}
-      {@render replyQuote(item)}
-      {@render content()}
-      {@render reactionsRow(item)}
-      {@render messageActions(item)}
-      {@render seenMarker(item)}
-      {#if item.isOwn}
-        {@const failed = item.sendState === "sendingFailed"}
-        {@const sending = item.sendState === "notSentYet"}
-        <!--
-          The own message's trailing meta line. A collapsed continuation
-          drops the timestamp, but a send that failed or is still in
-          flight is *not* a timestamp — suppressing it would silently hide
-          a failed send in the middle of a run, so those two states always
-          render. `--color-danger` is the token the palette assigns to a
-          failed send (spec §3).
-        -->
-        {#if failed || sending || item.edited || !continuesRun}
-          <p
-            class="mt-1 flex items-baseline justify-end gap-2 font-mono text-meta {failed
-              ? 'text-danger'
-              : 'text-content-muted'}"
-          >
-            {#if failed}
-              Failed to send
-            {:else if sending}
-              Sending…
-            {:else}
-              <!-- `muted`, not the `faint` its peer-side counterpart
-                   carries: this line sits on the own bubble's
-                   `--color-accent-soft`, where faint measures 4.26:1 light
-                   / 3.52:1 dark. See `replyQuote` for the measurement and
-                   the rule. It costs the marker its rank below the
-                   timestamp; the word is doing that work anyway. -->
-              {#if item.edited}<span class="text-content-muted">edited</span>{/if}
-              {#if !continuesRun}<span>{formatTime(item.timestampMs)}</span>{/if}
+    1. The **row** carries the vertical rhythm and, since the reaction and
+       action rows were detached, the `group` class. `group` has to live
+       out here now: `messageActions` is revealed by `group-hover`, and if
+       `group` stayed on the container the pointer would leave it the
+       moment it reached the very row it was revealing. One consequence,
+       accepted deliberately: the hover target is now the full column
+       width rather than the message's own box. For a peer block, which
+       has no bubble to aim at, that is the better target anyway.
+    2. The **alignment row** is a row-direction flex container whose single
+       item is the message container. It exists to keep the container a
+       flex item of a *row*-direction parent, which is precisely the
+       relationship the layout-blowout guard is written against: in a
+       column-direction parent `min-width: auto` would not apply to the
+       cross axis and `min-w-0` would quietly stop being load-bearing.
+       Do not collapse this into the row with `items-end`/`items-start`.
+    3. The **container** is the message itself.
+
+    Reactions and actions render *after* the alignment row, on the column
+    (sheet) ground rather than inside the container — chrome does not sit
+    inside content, the same rule that keeps mono off prose and
+    `.selectable` off chrome. The timestamp and the seen marker stay
+    inside: those annotate the message rather than acting on it. Both
+    detached snippets render nothing at all when there is nothing to show,
+    so a message with no reactions and no available actions still
+    contributes exactly its own height and the rhythm above is untouched.
+  -->
+  <div class="group flex flex-col {continuesRun ? 'pt-5' : 'pt-8'}">
+    <div class="flex {item.isOwn ? 'justify-end' : 'justify-start'}">
+      <div
+        class="flex min-w-0 flex-col text-content {item.isOwn
+          ? 'max-w-[52ch] rounded-md bg-accent-soft px-3 py-2 font-sans text-body-own'
+          : 'max-w-[68ch] font-serif text-body'}"
+      >
+        {#if !item.isOwn && (!continuesRun || item.edited)}
+          <!--
+            The peer sender line: name and timestamp on one baseline, both
+            mono, per spec §6.3. The timestamp sits immediately after the
+            name rather than pushed to the block's right edge — the block is
+            shrink-to-fit, so a right edge would wander with the message's
+            own width and strand the time far from the name it belongs to.
+            The name `truncate`s (and so, as on the reply quote above, needs
+            no `break-words`: `truncate` never wraps in the first place),
+            which is what keeps a long display name from pushing the
+            timestamp out of view.
+
+            A collapsed continuation drops this line entirely — except when
+            the message was edited, which is real information and not "the
+            timestamp": that case renders the marker alone.
+          -->
+          <p class="mb-1 flex items-baseline gap-2 font-mono text-meta text-content-muted">
+            {#if !continuesRun}
+              <span class="min-w-0 truncate text-label uppercase">
+                {item.senderDisplayName ?? item.sender ?? "Unknown"}
+              </span>
+              <span class="shrink-0">{formatTime(item.timestampMs)}</span>
             {/if}
+            <!-- Mono rank, so no italic — see spec §6.3. -->
+            {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
-      {/if}
+        {@render replyQuote(item)}
+        {@render content()}
+        {@render seenMarker(item)}
+        {#if item.isOwn}
+          {@const failed = item.sendState === "sendingFailed"}
+          {@const sending = item.sendState === "notSentYet"}
+          <!--
+            The own message's trailing meta line. A collapsed continuation
+            drops the timestamp, but a send that failed or is still in
+            flight is *not* a timestamp — suppressing it would silently hide
+            a failed send in the middle of a run, so those two states always
+            render. `--color-danger` is the token the palette assigns to a
+            failed send (spec §3).
+          -->
+          {#if failed || sending || item.edited || !continuesRun}
+            <p
+              class="mt-1 flex items-baseline justify-end gap-2 font-mono text-meta {failed
+                ? 'text-danger'
+                : 'text-content-muted'}"
+            >
+              {#if failed}
+                Failed to send
+              {:else if sending}
+                Sending…
+              {:else}
+                <!-- `muted`, not the `faint` its peer-side counterpart
+                     carries: this line sits on the own bubble's
+                     `--color-accent-soft`, where faint measures 4.26:1 light
+                     / 3.52:1 dark. See `replyQuote` for the measurement and
+                     the rule. It costs the marker its rank below the
+                     timestamp; the word is doing that work anyway. -->
+                {#if item.edited}<span class="text-content-muted">edited</span>{/if}
+                {#if !continuesRun}<span>{formatTime(item.timestampMs)}</span>{/if}
+              {/if}
+            </p>
+          {/if}
+        {/if}
+      </div>
     </div>
+    {@render reactionsRow(item)}
+    {@render messageActions(item)}
   </div>
 {/snippet}
 
 <div class="min-h-0 flex-1">
   {#if timelineStore.items.length === 0}
-    <div class="flex h-full items-center justify-center">
+    <!-- `bg-surface-sunken` here too, so the pane's ground is the field
+         whether or not there is anything on the sheet — see the scroller
+         below. -->
+    <div class="flex h-full items-center justify-center bg-surface-sunken">
       <p class="text-ui text-content-muted">No messages yet</p>
     </div>
   {:else}
@@ -1017,7 +1062,7 @@
       getKey={(row: TimelineDisplayRow) => row.key}
       shift
       onscroll={handleScroll}
-      class="px-4"
+      class="bg-surface-sunken"
     >
       {#snippet children(row: TimelineDisplayRow, _index: number)}
         <!--
@@ -1042,14 +1087,51 @@
           inherited decoration: `ch` resolves against the element's own
           font, so this is what makes the column's `72ch` and the peer
           block's `68ch` the same unit and the two numbers actually
-          comparable (~540px and ~510px). Measured in the inherited 16px
-          sans instead, `72ch` would be ~691px — a coincidence rather than
-          a relationship, and wide enough to reopen the gap this exists to
-          close. Nothing depends on inheriting the face: every descendant
-          already names its own (`messageBlock`, `logLine`, the date
-          divider, the emote and the dispatch card all set theirs).
+          comparable (566px and 535px, measured). Measured in the inherited
+          16px sans instead, `72ch` would be ~691px — a coincidence rather
+          than a relationship, and wide enough to reopen the gap this
+          exists to close. Nothing depends on inheriting the face: every
+          descendant already names its own (`messageBlock`, `logLine`, the
+          date divider, the emote and the dispatch card all set theirs).
+
+          **The sheet.** The column carries `--color-surface` and the
+          scroller behind it carries `--color-surface-sunken`, so the
+          reading column is the one lit surface in the window and the space
+          either side of it is a considered field rather than 1050px of
+          inert nothing (which is what a flat ground looked like at 1905px
+          once the column landed). The roster and the composer are already
+          `--color-surface-sunken`, so the field is continuous with them
+          and the app reads as a three-level stack: sunken field, surface
+          sheet, raised card. No hairline on the sheet's edges — checked
+          both ways at 1905px and 700px in both themes, and the tone step
+          alone is cleaner; a border turned the sheet into a boxed panel
+          and started competing with the dispatch card, which is supposed
+          to be the timeline's only bordered object.
+
+          The sheet owns its own gutter, which is why the scroller above no
+          longer carries `px-4`. Each `max-w` is its padding plus 72ch
+          rather than a bare `72ch`, because Tailwind's `box-sizing:
+          border-box` would otherwise take the margins *out of* the 72ch
+          and clamp the peer block's own 68ch measure to whatever was left;
+          widening by exactly the padding keeps the content box at 72ch at
+          every width. The margins narrow below `lg`, where the pane is too
+          narrow for a field to exist at all: at 700px the sheet fills the
+          pane and 32px of margin would be 79px of reading width bought for
+          8px of field either side. Measured: content box 566px at 1905px,
+          and 380px at 700px — exactly what it was before the sheet, so a
+          narrow window pays nothing for this.
+
+          Vertical padding is deliberately *not* set here. Rows already
+          carry their own top padding (32px new block / 20px continuation)
+          and the sheet is continuous down the whole scroll height, so
+          per-row vertical padding would not add margins to a page — it
+          would add a gap between every pair of rows and double-count
+          against a rhythm that was measured. See the report for the
+          rendered check that this reads as a sheet and not a stripe.
         -->
-        <div class="mx-auto w-full max-w-[72ch] min-w-0 font-serif text-body">
+        <div
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-serif text-body lg:max-w-[calc(72ch+4rem)] lg:px-8"
+        >
           {#if row.type === "membershipGroup"}
             <!--
               A collapsed run of consecutive membership changes — see
@@ -1541,6 +1623,39 @@
   .dispatch-card-pending {
     border-left-color: var(--color-signal);
     background-color: var(--color-signal-soft);
+  }
+
+  /*
+   * The "mine" reaction chip's fill — see `reactionsRow`'s comment for why
+   * this is here rather than a `bg-accent/15` utility. The short version:
+   * one snippet, four possible grounds, and a translucent fill takes its
+   * contrast from whichever one it lands on.
+   *
+   * The trick is one line: an opaque `background-color` with the accent
+   * tint painted over it as a `background-image`. `background-image` sits
+   * *above* `background-color` on the same element, so the tint composites
+   * against `--color-surface` here and never against the ground behind the
+   * chip — the chip stops caring what it is sitting on. A `linear-gradient`
+   * between two identical colour stops is the standard way to express "a
+   * flat layer" as an image; there is no gradient in it.
+   *
+   * Tokens only, no literal colours (spec §3), and the tint percentages
+   * are the measured ones: 15% resting and 20% on hover give accent text
+   * 5.60:1 / 5.16:1 in light and 5.55:1 / 5.02:1 in dark, on every ground.
+   */
+  .reaction-chip-mine {
+    background-color: var(--color-surface);
+    background-image: linear-gradient(
+      color-mix(in oklab, var(--color-accent) 15%, transparent),
+      color-mix(in oklab, var(--color-accent) 15%, transparent)
+    );
+  }
+
+  .reaction-chip-mine:hover {
+    background-image: linear-gradient(
+      color-mix(in oklab, var(--color-accent) 20%, transparent),
+      color-mix(in oklab, var(--color-accent) 20%, transparent)
+    );
   }
 
   /*
