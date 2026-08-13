@@ -20,9 +20,9 @@ use serde::Serialize;
 use tauri::{Manager, Url, WebviewWindowBuilder};
 
 use crate::core::commands::{
-    login, logout, media_fetch, member_avatar, restore_session, room_avatar, room_info,
-    rooms_resync, send_message, send_reply, timeline_paginate_back, timeline_resync,
-    timeline_subscribe, toggle_reaction,
+    login, logout, mark_room_read, media_fetch, member_avatar, restore_session, room_avatar,
+    room_info, rooms_resync, send_message, send_reply, set_typing, timeline_paginate_back,
+    timeline_resync, timeline_subscribe, toggle_reaction,
 };
 use crate::core::secrets::KeyringStore;
 use crate::core::{session::Session, tls};
@@ -167,6 +167,8 @@ pub fn run() {
             send_message,
             send_reply,
             toggle_reaction,
+            set_typing,
+            mark_room_read,
             room_avatar,
             media_fetch,
             room_info,

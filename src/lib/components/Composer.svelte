@@ -32,10 +32,22 @@
   // apply to. `replyTarget` below is a `$derived` read of `roomId`'s own
   // entry, so it updates automatically both when `roomId` changes and when
   // `Timeline.svelte` sets one for the room currently shown.
+  //
+  // Typing notices have the identical room-scoping hazard as the draft
+  // itself, plus a lifecycle draft doesn't: they must be explicitly
+  // *stopped* for the outgoing room, not merely stop applying to it — see
+  // `stopTyping` below, called from the same room-switch effect that
+  // `drafts.switchTo` already runs from, on send, and on this component's
+  // own destruction. `typingTracker` (`./typingTracker.ts`) is what decides
+  // *whether* a given moment warrants a `setTyping` call at all; this file
+  // only decides *when* those moments are (a keystroke, a pause, a send, a
+  // switch, an unmount).
 
+  import { onDestroy } from "svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { DraftTracker } from "./draftTracker";
+  import { TYPING_STOP_AFTER_MS, TypingTracker } from "./typingTracker";
   import type { CoreError } from "$lib/ipc";
 
   let { roomId }: { roomId: string } = $props();
@@ -55,12 +67,77 @@
    */
   let sendError = $state<string | null>(null);
 
+  const typingTracker = new TypingTracker();
+  // The pending inactivity timer that fires `stopTyping` after a pause in
+  // keystrokes — plain bookkeeping, not a value the template reads.
+  let typingStopTimer: ReturnType<typeof setTimeout> | undefined;
+
   // Bookkeeping for the effect below, not a value the template reads —
   // same reasoning as `Timeline.svelte`'s `previousLastId`.
   let previousRoomId: string | null = null;
 
+  /**
+   * Sends an explicit `setTyping(forRoomId, false)` if (and only if)
+   * `typingTracker` still considers typing active, and cancels any pending
+   * inactivity timer. Idempotent — safe to call from every "typing has
+   * definitely stopped" moment (a pause, a send, a room switch, this
+   * component's own destruction) without checking first whether one of the
+   * others already fired.
+   */
+  function stopTyping(forRoomId: string): void {
+    if (typingStopTimer !== undefined) {
+      clearTimeout(typingStopTimer);
+      typingStopTimer = undefined;
+    }
+    if (typingTracker.onStop()) {
+      void timelineStore.setTyping(forRoomId, false).catch((err: unknown) => {
+        console.error("failed to send stop-typing notice", err);
+      });
+    }
+  }
+
+  /**
+   * Called on every keystroke that leaves a non-empty draft. `typingTracker.onType`
+   * is the actual throttle decision (see its doc comment for the interval and
+   * why); this only reschedules the inactivity timer that eventually calls
+   * `stopTyping` on its own, so a reader who stops typing without sending or
+   * switching rooms still clears their notice promptly rather than waiting
+   * out the whole session.
+   */
+  function handleTyping(): void {
+    if (typingTracker.onType(Date.now())) {
+      void timelineStore.setTyping(roomId, true).catch((err: unknown) => {
+        console.error("failed to send typing notice", err);
+      });
+    }
+    if (typingStopTimer !== undefined) clearTimeout(typingStopTimer);
+    typingStopTimer = setTimeout(() => stopTyping(roomId), TYPING_STOP_AFTER_MS);
+  }
+
+  /** `textarea`'s `oninput` — routes to `handleTyping`/`stopTyping` depending on whether anything is left to be "typing". */
+  function handleInput(): void {
+    if (value.trim() === "") {
+      stopTyping(roomId);
+    } else {
+      handleTyping();
+    }
+  }
+
+  // The typing notice's own destruction path: signing out, or this pane
+  // being torn down for any other reason, must not leave a stale "typing"
+  // notice active in whichever room was last focused.
+  onDestroy(() => stopTyping(roomId));
+
   $effect(() => {
     if (roomId !== previousRoomId) {
+      // Stop typing in the *outgoing* room before switching state to the
+      // new one — `stopTyping` must be called with `previousRoomId`, not
+      // `roomId`, or it would (incorrectly) tell the room the reader is
+      // switching *into* that they just stopped typing there, and never
+      // notify the room they're leaving at all. `previousRoomId === null`
+      // is the first mount, with no outgoing room to notify — same guard
+      // `drafts.switchTo` already uses for "no before room yet".
+      if (previousRoomId !== null) stopTyping(previousRoomId);
       value = drafts.switchTo(roomId, value);
       previousRoomId = roomId;
       // A room-changed send error names the room switch that caused it;
@@ -94,6 +171,11 @@
     // after an await" hazard `roomId === sentRoomId` below already guards
     // for `value`.
     const target = replyTargetStore.get(sentRoomId);
+    // "false on send" (this task's brief) — stopped here, not left to the
+    // homeserver-side notice to simply expire, so anyone still watching
+    // this room's typing indicator sees it clear the instant the message
+    // goes out rather than up to `TYPING_NOTICE_TIMEOUT` (4s) later.
+    stopTyping(sentRoomId);
     sending = true;
     sendError = null;
     try {
@@ -169,6 +251,7 @@
   <textarea
     bind:value
     onkeydown={handleKeydown}
+    oninput={handleInput}
     disabled={sending}
     rows="1"
     placeholder={replyTarget ? `Reply to ${replyTarget.sender}…` : "Message…"}

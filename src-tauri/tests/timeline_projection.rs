@@ -74,6 +74,7 @@ use std::time::Duration;
 
 use futures_util::{pin_mut, StreamExt};
 use matrix_sdk::ruma::events::macros::EventContent;
+use matrix_sdk::ruma::events::receipt::{ReceiptThread, ReceiptType};
 use matrix_sdk::ruma::events::room::message::{
     ImageMessageEventContent, MessageType, RedactedRoomMessageEventContent, RoomMessageEventContent,
 };
@@ -82,7 +83,7 @@ use matrix_sdk::ruma::{event_id, owned_mxc_uri, room_id, uint, user_id, RoomId};
 use matrix_sdk::test_utils::mocks::MatrixMockServer;
 use matrix_sdk_test::event_factory::EventFactory;
 use matrix_sdk_test::{JoinedRoomBuilder, ALICE, BOB};
-use matrix_sdk_ui::timeline::RoomExt;
+use matrix_sdk_ui::timeline::{RoomExt, TimelineReadReceiptTracking};
 use serde::{Deserialize, Serialize};
 
 use supermessage_lib::core::dto::{apply_ops, project_diff, TimelineItemDto};
@@ -149,6 +150,13 @@ async fn projected_items(
     let timeline = room
         .timeline_builder()
         .event_filter(timeline_event_filter)
+        // Mirrors `FocusedTimeline::subscribe`'s own builder call exactly —
+        // see this file's doc comment on why this harness exists to run
+        // tests through the *real* production pipeline, and
+        // `TimelineItemDto::read_by`'s doc comment for why `read_by` would
+        // otherwise stay unconditionally empty even when a receipt is
+        // synced in below.
+        .track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents)
         .build()
         .await
         .expect("Timeline::new against a mocked, joined room");
@@ -505,6 +513,71 @@ async fn reaction_projects_key_count_and_by_me() {
     assert_eq!(reaction.key, "😆");
     assert_eq!(reaction.count, 2);
     assert!(reaction.by_me, "the mock client's own user reacted too");
+}
+
+/// Sorts `read_by` (a `HashMap`-backed receipt map underneath, so its
+/// iteration order isn't meaningful) into a stable order for comparison.
+fn sorted_read_by(item: &TimelineItemDto) -> Vec<String> {
+    let mut ids = item.read_by.clone();
+    ids.sort();
+    ids
+}
+
+#[tokio::test]
+async fn read_receipt_populates_read_by_with_the_other_members_id() {
+    // `core::timeline::read_by` end to end: a real `m.read` receipt, synced
+    // in as an ephemeral event the same way a homeserver actually delivers
+    // one, must show up on the event it points at. Alongside it: the
+    // sender's own *implicit* receipt — `matrix_sdk_ui` credits sending a
+    // message with having read up to it (`Timeline::latest_user_read_receipt`'s
+    // doc comment), and that folds into `EventTimelineItem::read_receipts()`
+    // the same as an explicit one — so Alice, this message's sender, is
+    // expected here too, not just Bob's explicit receipt. Only the
+    // *harness's own logged-in user* is ever filtered out (see
+    // `TimelineItemDto::read_by`'s doc comment) — a plain "other member",
+    // sender or not, always counts.
+    let msg_id = event_id!("$read1");
+    let items = projected_items(move |room_id, room| {
+        let f = EventFactory::new().room(room_id);
+        room.add_timeline_event(f.text_msg("hello").sender(&ALICE).event_id(msg_id))
+            .add_receipt(
+                f.read_receipts()
+                    .add(msg_id, &BOB, ReceiptType::Read, ReceiptThread::Unthreaded)
+                    .into_event(),
+            )
+    })
+    .await;
+
+    let real = real_items(&items);
+    assert_eq!(
+        real.len(),
+        1,
+        "expected exactly the one message, got {real:#?}"
+    );
+    assert_eq!(
+        sorted_read_by(real[0]),
+        vec![ALICE.to_string(), BOB.to_string()]
+    );
+}
+
+#[tokio::test]
+async fn a_message_nobody_else_has_read_carries_only_the_senders_own_implicit_receipt() {
+    // See `read_receipt_populates_read_by_with_the_other_members_id`'s doc
+    // comment for why the sender's own implicit receipt is expected even
+    // with no explicit `m.read` receipt synced in at all.
+    let items = projected_items(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        room.add_timeline_event(f.text_msg("hello").event_id(event_id!("$unread1")))
+    })
+    .await;
+
+    let real = real_items(&items);
+    assert_eq!(
+        real.len(),
+        1,
+        "expected exactly one real item, got {real:#?}"
+    );
+    assert_eq!(real[0].read_by, vec![ALICE.to_string()]);
 }
 
 #[tokio::test]

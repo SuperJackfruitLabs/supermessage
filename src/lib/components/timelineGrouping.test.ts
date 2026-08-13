@@ -23,6 +23,7 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind" | "id
     replyTo: null,
     edited: false,
     reactions: [],
+    readBy: [],
     ...overrides,
   };
 }

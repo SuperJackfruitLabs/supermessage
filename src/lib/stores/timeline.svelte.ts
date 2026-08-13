@@ -31,9 +31,11 @@
 // steps 2 and 3 into no-ops.
 
 import {
+  markRoomRead as defaultMarkRoomRead,
   onTimelineDiff as defaultOnTimelineDiff,
   sendMessage as defaultSendMessage,
   sendReply as defaultSendReply,
+  setTyping as defaultSetTyping,
   timelinePaginateBack as defaultTimelinePaginateBack,
   timelineResync as defaultTimelineResync,
   timelineSubscribe as defaultTimelineSubscribe,
@@ -41,6 +43,7 @@ import {
   type TimelineItem,
 } from "$lib/ipc";
 import { startGapSync } from "./gapSync";
+import { typingStore } from "./typing.svelte";
 
 export interface TimelineStoreDeps {
   timelineSubscribe: typeof defaultTimelineSubscribe;
@@ -49,6 +52,8 @@ export interface TimelineStoreDeps {
   sendMessage: typeof defaultSendMessage;
   sendReply: typeof defaultSendReply;
   toggleReaction: typeof defaultToggleReaction;
+  setTyping: typeof defaultSetTyping;
+  markRoomRead: typeof defaultMarkRoomRead;
   onTimelineDiff: typeof defaultOnTimelineDiff;
 }
 
@@ -59,6 +64,8 @@ const defaultDeps: TimelineStoreDeps = {
   sendMessage: defaultSendMessage,
   sendReply: defaultSendReply,
   toggleReaction: defaultToggleReaction,
+  setTyping: defaultSetTyping,
+  markRoomRead: defaultMarkRoomRead,
   onTimelineDiff: defaultOnTimelineDiff,
 };
 
@@ -97,6 +104,16 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
   async function subscribeTo(roomId: string): Promise<void> {
     focusedId = roomId;
     gapSync.resetForNewSubscription();
+    // Same ordering requirement as `gapSync.resetForNewSubscription()` above
+    // and for the identical reason (see this module's doc comment): the
+    // core only ever streams typing state for the *focused* room (mirroring
+    // `FocusedTimeline`'s single-subscription invariant), so a typing event
+    // from the room we're leaving that's still in flight when the new room's
+    // subscription is being set up must be rejected as not-ours, not shown
+    // under the new room's identity. `typingStore.focus` resets synchronously,
+    // before the `timelineSubscribe` command below is even issued, closing
+    // that window the same way — see `typing.svelte.ts`'s doc comment.
+    typingStore.focus(roomId);
     await deps.timelineSubscribe(roomId);
   }
 
@@ -156,6 +173,26 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
     return deps.toggleReaction(roomId, eventId, key);
   }
 
+  /**
+   * Sets (or clears) this device's typing notice in `roomId`. `roomId` is
+   * scoped the same way, and for the same reason, as `send`'s — see
+   * `$lib/components/typingTracker.ts` for the throttle decision that
+   * decides *when* this gets called at all.
+   */
+  async function setTyping(roomId: string, typing: boolean): Promise<void> {
+    await deps.setTyping(roomId, typing);
+  }
+
+  /**
+   * Marks `roomId` read. Resolves to whether a receipt was actually sent.
+   * `roomId` is scoped the same way, and for the same reason, as `send`'s —
+   * see `$lib/components/readTracking.ts`'s `shouldMarkRead` for the
+   * predicate that decides *whether* this gets called at all.
+   */
+  async function markRead(roomId: string): Promise<boolean> {
+    return deps.markRoomRead(roomId);
+  }
+
   return {
     get items(): TimelineItem[] {
       return items;
@@ -165,6 +202,8 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
     send,
     sendReply,
     toggleReaction,
+    setTyping,
+    markRead,
   };
 }
 

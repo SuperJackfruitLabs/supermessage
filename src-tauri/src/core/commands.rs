@@ -154,6 +154,43 @@ pub async fn toggle_reaction(
     timeline.toggle_reaction(&room_id, &event_id, &key).await
 }
 
+/// Sets (or clears) this device's typing notice in `room_id`.
+///
+/// `room_id` is checked the same way, and for the same race, as
+/// [`send_message`] — see `FocusedTimeline::set_typing`'s doc comment. A
+/// notice sent into the wrong room after a room switch tells everyone
+/// *there* the reader is typing, which they are not.
+#[tauri::command]
+pub async fn set_typing(
+    room_id: String,
+    typing: bool,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<(), CoreError> {
+    timeline.set_typing(&room_id, typing).await
+}
+
+/// Marks `room_id` read by sending a public read receipt on the latest event
+/// the focused timeline knows about. Returns whether a receipt was actually
+/// sent (`false` when the room's read state already covered it).
+///
+/// `room_id` is checked the same way, and for the same race, as
+/// [`send_message`] — see `FocusedTimeline::mark_read`'s doc comment for why
+/// that matters even more here than for an ordinary send: a stale call
+/// landing after a room switch would otherwise mark whatever room is *now*
+/// focused read for a message the reader never saw.
+///
+/// **Does not decide whether the room is actually read** — the caller (`Timeline.svelte`,
+/// via `$lib/components/readTracking.ts`'s `shouldMarkRead`) is responsible
+/// for only calling this once the reader is genuinely at the live end of the
+/// timeline with the window focused; this command just performs the send.
+#[tauri::command]
+pub async fn mark_room_read(
+    room_id: String,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<bool, CoreError> {
+    timeline.mark_read(&room_id).await
+}
+
 /// Resolves and fetches `room_id`'s avatar as a `data:` URI, or `None` when
 /// the room has no avatar to show (by any of `core::rooms::resolve_room_avatar_mxc`'s
 /// rules) or its bytes don't sniff to a renderable image format (see

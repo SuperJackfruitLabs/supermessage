@@ -108,6 +108,7 @@ describe("replyTargetStore: fromItem", () => {
       replyTo: null,
       edited: false,
       reactions: [],
+      readBy: [],
       ...overrides,
     };
   }

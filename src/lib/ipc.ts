@@ -172,6 +172,22 @@ export interface TimelineItem {
    * (never `null`) when the item has none. Mirrors `ReactionDto`.
    */
   reactions: Reaction[];
+  /**
+   * The raw user ids of every *other* member whose latest read receipt
+   * currently points at this event, mirroring `TimelineItemDto::read_by`
+   * from `src-tauri/src/core/dto.rs`. Empty (never `null`) for a non-message
+   * `kind`, an item nobody has read up to yet, or — per that struct's doc
+   * comment — the sender's own message before anyone *else* has read it: the
+   * SDK credits sending a message with an implicit receipt on it, so a
+   * message's `readBy` is never really "empty" from its own sender's point
+   * of view, just from every other member's.
+   *
+   * Deliberately raw ids, never resolved display names — see that struct's
+   * doc comment for why. `Timeline.svelte`'s `seenMarker` is the only
+   * consumer: a plain "Seen"/"Seen by N" count on the reader's own latest
+   * message, never a per-message avatar stack or a name list.
+   */
+  readBy: string[];
 }
 
 /** Mirrors `MediaMetaDto` from `src-tauri/src/core/dto.rs`. See {@link TimelineItem.media}. */
@@ -285,9 +301,39 @@ export interface ConnectionPayload {
   message: string | null;
 }
 
+/**
+ * One member currently typing in a room, mirroring `TypingUserDto` from
+ * `src-tauri/src/core/dto.rs`. The current user is never present — the core
+ * filters it out before this ever crosses IPC.
+ */
+export interface TypingUser {
+  userId: string;
+  /**
+   * `null` when the room's local member store has nothing cached for this
+   * id yet — fall back to `userId`, the same convention every other
+   * sender-name field in this codebase uses. Server-controlled, arbitrary
+   * text otherwise: cap its rendered length and guard it against overflow
+   * like any other free-text field from a sender (see
+   * `$lib/components/typingView.ts`).
+   */
+  displayName: string | null;
+}
+
+/**
+ * Mirrors the payload emitted on {@link TYPING_EVENT}: the room this typing
+ * state belongs to, plus who's typing there right now. Always a full
+ * replace of "who's typing", never an incremental diff — see
+ * `core::timeline::TYPING_EVENT`'s doc comment for why that's enough.
+ */
+export interface TypingPayload {
+  roomId: string;
+  users: TypingUser[];
+}
+
 const ROOMS_DIFF_EVENT = "sm://rooms/diff";
 const TIMELINE_DIFF_EVENT = "sm://timeline/diff";
 const CONNECTION_EVENT = "sm://connection";
+const TYPING_EVENT = "sm://typing";
 
 /** Queries the core's basic identity — platform, crypto provider, SDK link. */
 export async function coreStatus(): Promise<CoreStatus> {
@@ -431,6 +477,40 @@ export async function toggleReaction(roomId: string, eventId: string, key: strin
 }
 
 /**
+ * Sets (or clears) this device's typing notice in `roomId`.
+ *
+ * `roomId` must be the room the caller actually means, same as
+ * {@link sendMessage}'s — the core verifies it against whichever room is
+ * focused when the command runs and rejects with a `"roomChanged"`-kind
+ * {@link CoreError} on a mismatch, without sending, rather than telling
+ * whichever room ended up focused instead that the reader is typing there.
+ *
+ * Cheap to call often — `Room::typing_notice` already throttles the actual
+ * network request (see `core::timeline::FocusedTimeline::set_typing`'s doc
+ * comment) — but callers should still not invoke this on every keystroke;
+ * see `$lib/components/typingTracker.ts`.
+ */
+export async function setTyping(roomId: string, typing: boolean): Promise<void> {
+  await invoke<void>("set_typing", { roomId, typing });
+}
+
+/**
+ * Marks `roomId` read by sending a public read receipt on the latest event
+ * the focused timeline knows about. Resolves to whether a receipt was
+ * actually sent (`false` when the room's read state already covered it).
+ *
+ * `roomId` is checked the same way, and for the same reason, as
+ * {@link sendMessage}'s — see `core::timeline::FocusedTimeline::mark_read`'s
+ * doc comment. **Does not decide whether the room is actually read**: the
+ * caller (`Timeline.svelte`, via `$lib/components/readTracking.ts`'s
+ * `shouldMarkRead`) must only call this once the reader is genuinely at the
+ * live end of the timeline with the window focused.
+ */
+export async function markRoomRead(roomId: string): Promise<boolean> {
+  return invoke<boolean>("mark_room_read", { roomId });
+}
+
+/**
  * Resolves and fetches `roomId`'s avatar as a `data:` URI, or `null` when
  * the room genuinely has nothing to show (or the core couldn't identify the
  * fetched bytes as a renderable image format). Takes a room id, not an mxc
@@ -512,4 +592,9 @@ export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineItem>) => voi
 /** Subscribes to connection-health updates on {@link CONNECTION_EVENT}. */
 export function onConnection(handler: (payload: ConnectionPayload) => void): Promise<UnlistenFn> {
   return listen<ConnectionPayload>(CONNECTION_EVENT, (event) => handler(event.payload));
+}
+
+/** Subscribes to typing-state updates on {@link TYPING_EVENT}. */
+export function onTyping(handler: (payload: TypingPayload) => void): Promise<UnlistenFn> {
+  return listen<TypingPayload>(TYPING_EVENT, (event) => handler(event.payload));
 }

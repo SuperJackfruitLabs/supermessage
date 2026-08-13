@@ -43,6 +43,7 @@ function item(id: string): TimelineItem {
     replyTo: null,
     edited: false,
     reactions: [],
+    readBy: [],
   };
 }
 
@@ -109,6 +110,8 @@ describe("timelineStore: switching rooms while the previous room is still stream
       sendMessage: vi.fn(),
       sendReply: vi.fn(),
       toggleReaction: vi.fn(),
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
       onTimelineDiff: channel.onTimelineDiff,
     });
 
@@ -162,6 +165,8 @@ describe("timelineStore: switching rooms while the previous room is still stream
       sendMessage: vi.fn(),
       sendReply: vi.fn(),
       toggleReaction: vi.fn(),
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
       onTimelineDiff: channel.onTimelineDiff,
     });
 
@@ -204,6 +209,8 @@ describe("timelineStore: toggleReaction", () => {
       sendMessage: vi.fn(),
       sendReply: vi.fn(),
       toggleReaction,
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
       onTimelineDiff: channel.onTimelineDiff,
     });
 
@@ -233,6 +240,8 @@ describe("timelineStore: toggleReaction", () => {
       sendMessage: vi.fn(),
       sendReply: vi.fn(),
       toggleReaction,
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
       onTimelineDiff: channel.onTimelineDiff,
     });
 
@@ -252,6 +261,8 @@ describe("timelineStore: sendReply", () => {
       sendMessage: vi.fn(),
       sendReply,
       toggleReaction: vi.fn(),
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
       onTimelineDiff: vi.fn(async () => () => {}),
     });
 

@@ -21,6 +21,7 @@
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import RoomList from "$lib/components/RoomList.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
+  import TypingIndicator from "$lib/components/TypingIndicator.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
@@ -160,6 +161,7 @@
           {#key roomsStore.selectedId}
             <Timeline roomId={roomsStore.selectedId} />
           {/key}
+          <TypingIndicator />
           <Composer roomId={roomsStore.selectedId} />
         {:else}
           <div class="flex flex-1 items-center justify-center">

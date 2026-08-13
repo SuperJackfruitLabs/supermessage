@@ -186,6 +186,7 @@
   import { groupTimelineItems, type TimelineDisplayRow } from "./timelineGrouping";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
+  import { shouldMarkRead } from "./readTracking";
   import type { TimelineItem } from "$lib/ipc";
 
   /**
@@ -221,7 +222,13 @@
   let vlist: VListHandle | undefined = $state();
   let paginating = $state(false);
   let reachedStart = $state(false);
-  let followBottom = true;
+  // `$state`, not a plain variable: the read-tracking effect further down
+  // needs to re-run when this flips (e.g. the reader scrolls back down to
+  // the bottom with no new message having arrived) — see that effect's doc
+  // comment. `handleScroll` writes it on every scroll event; Svelte's
+  // primitive `$state` dirty-checks by value, so re-scrolling within the
+  // same "at the bottom" state doesn't itself cause extra work.
+  let followBottom = $state(true);
 
   /**
    * The list `VList` actually renders — `timelineStore.items` with
@@ -231,6 +238,27 @@
    * array itself.
    */
   let displayRows = $derived(groupTimelineItems(timelineStore.items));
+
+  /**
+   * The id of the last own item in `timelineStore.items` whose `kind` this
+   * pass renders as a bubble-shaped row (a plain message, or a rendered
+   * custom event) — the one item `seenMarker` below is allowed to annotate
+   * with a "Seen"/"Seen by N" line. See [`TimelineItemDto::read_by`]'s doc
+   * comment (`core::dto`) for why this is scoped to the reader's *own*
+   * latest message and never shown per-message: a reader doesn't need a
+   * read receipt on every bubble, only confirmation that the most recent
+   * thing they sent has actually been seen.
+   */
+  let lastOwnMessageId = $derived.by(() => {
+    const items = timelineStore.items;
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+      const candidate = items[i]!;
+      if (candidate.isOwn && (candidate.kind === "message" || candidate.kind === "customMessage")) {
+        return candidate.id;
+      }
+    }
+    return null;
+  });
 
   // Tracked outside `$state` on purpose: bookkeeping for the effect below,
   // not a value the template reads.
@@ -311,6 +339,79 @@
 
     const targetIndex = displayRows.length - 1;
     void tick().then(() => vlist?.scrollToIndex(targetIndex, { align: "end" }));
+  });
+
+  /**
+   * Whether the app window currently has focus — one of `shouldMarkRead`'s
+   * (`readTracking.ts`) required conditions, per this task's brief: a
+   * background window must never mark a room read just because it's
+   * scrolled to the bottom. `document.hasFocus()` (not merely a `blur`
+   * having fired) seeds the initial value so a pane that mounts already
+   * unfocused — opening the app in the background, say — doesn't start out
+   * wrongly `true`.
+   */
+  let windowFocused = $state(document.hasFocus());
+
+  $effect(() => {
+    function updateFocus(): void {
+      windowFocused = document.hasFocus();
+    }
+    window.addEventListener("focus", updateFocus);
+    window.addEventListener("blur", updateFocus);
+    // Belt and suspenders alongside focus/blur: `visibilitychange` also
+    // catches the window being minimized/occluded on platforms where that
+    // doesn't reliably fire a DOM `blur` on its own.
+    document.addEventListener("visibilitychange", updateFocus);
+    return () => {
+      window.removeEventListener("focus", updateFocus);
+      window.removeEventListener("blur", updateFocus);
+      document.removeEventListener("visibilitychange", updateFocus);
+    };
+  });
+
+  // The id of the newest item this pane has already marked the room read
+  // up to — bookkeeping for the effect below, not a value the template
+  // reads (same shape as `previousLastId` above). Resets to `null` on every
+  // remount (a fresh room, via `+page.svelte`'s `{#key roomsStore.selectedId}`),
+  // which is exactly right: a freshly opened room has nothing marked yet.
+  let lastMarkedReadId: string | null = null;
+
+  /**
+   * Marks the room read exactly when `shouldMarkRead` (`readTracking.ts`)
+   * says the reader is genuinely at the live end of the timeline — never
+   * merely because this room is the one open. Re-evaluated whenever any of
+   * its inputs change: a new item arriving, the reader scrolling to (or
+   * away from) the bottom, or the window gaining (or losing) focus.
+   *
+   * `lastMarkedReadId` is updated *before* the (fire-and-forget) IPC call
+   * resolves, not after — otherwise every one of those triggers firing
+   * again before the in-flight call returns (e.g. a burst of incoming
+   * messages while already at the bottom) would each independently decide
+   * "not yet marked" and fire its own redundant `markRead` call. Rolled
+   * back on failure so a genuine error (not merely the expected `roomChanged`
+   * from a room switch this pane's own remount already makes moot) gets a
+   * chance to retry on the next qualifying change instead of being silently
+   * treated as done.
+   */
+  $effect(() => {
+    const items = timelineStore.items;
+    const lastItemId = items.length > 0 ? items[items.length - 1]!.id : null;
+    if (
+      !shouldMarkRead({
+        followBottom,
+        windowFocused,
+        lastItemId,
+        lastMarkedId: lastMarkedReadId,
+      })
+    ) {
+      return;
+    }
+
+    lastMarkedReadId = lastItemId;
+    void timelineStore.markRead(roomId).catch((err) => {
+      console.error("failed to mark room read", err);
+      if (lastMarkedReadId === lastItemId) lastMarkedReadId = null;
+    });
   });
 
   async function requestOlderMessages(): Promise<void> {
@@ -517,6 +618,23 @@
   {/if}
 {/snippet}
 
+{#snippet seenMarker(item: TimelineItem)}
+  <!--
+    "Seen"/"Seen by N" — the reader's own latest message only, per
+    `TimelineItemDto::read_by`'s doc comment (`core::dto`): no per-message
+    avatar stack, and never shown on anyone else's message. `lastOwnMessageId`
+    (top-of-script) is what scopes this to "the last own item" rather than
+    every item's own `read_by` being rendered — the check here only needs to
+    confirm this specific item is that one and that at least one other
+    member has actually read it yet.
+  -->
+  {#if item.id === lastOwnMessageId && item.readBy.length > 0}
+    <p class="mt-0.5 text-right text-[10px] text-accent-content/70">
+      {item.readBy.length === 1 ? "Seen" : `Seen by ${item.readBy.length}`}
+    </p>
+  {/if}
+{/snippet}
+
 <div class="min-h-0 flex-1">
   {#if timelineStore.items.length === 0}
     <div class="flex h-full items-center justify-center">
@@ -608,6 +726,7 @@
                   {/if}
                   {@render reactionsRow(item)}
                   {@render messageActions(item)}
+                  {@render seenMarker(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
@@ -676,6 +795,7 @@
                   {/if}
                   {@render reactionsRow(item)}
                   {@render messageActions(item)}
+                  {@render seenMarker(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
@@ -728,6 +848,7 @@
                   </div>
                   {@render reactionsRow(item)}
                   {@render messageActions(item)}
+                  {@render seenMarker(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
@@ -820,6 +941,7 @@
                     {/if}
                     {@render reactionsRow(item)}
                     {@render messageActions(item)}
+                    {@render seenMarker(item)}
                     <p
                       class="mt-1 text-right text-[10px] {item.isOwn
                         ? 'text-accent-content/70'

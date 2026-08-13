@@ -198,6 +198,51 @@ pub struct TimelineItemDto {
     /// Reactions aggregated onto this item, one entry per distinct key.
     /// Empty (never omitted) when the item has none — see [`ReactionDto`].
     pub reactions: Vec<ReactionDto>,
+    /// The raw user ids of every *other* member whose latest read receipt
+    /// (`m.read`) currently points at this event — projected from
+    /// `EventTimelineItem::read_receipts()` (see
+    /// `core::timeline::project_event_item`), with the current user always
+    /// filtered out. Empty (never omitted) for a non-message `kind`, an item
+    /// nobody has read up to yet, or when read-receipt tracking isn't
+    /// populated for this item's kind (`core::timeline`'s `Timeline` is built
+    /// with `TimelineReadReceiptTracking::MessageLikeEvents`, so only
+    /// message-like items ever carry one).
+    ///
+    /// Deliberately just ids, not resolved display names: the SDK's receipt
+    /// map carries no profile data, and resolving one would mean an async
+    /// member lookup from inside `project_event_item`'s synchronous
+    /// projection — the same constraint `core::rooms::resolve_room_avatar_mxc`
+    /// exists to work around for avatars, not worth re-solving here for a
+    /// "seen by N" marker (see this app's `ReadState`/`shouldMarkRead` design
+    /// note) that never needs to name anyone. The webview renders this as a
+    /// simple "Seen"/"Seen by N" marker on the reader's own latest message —
+    /// never a per-message avatar stack.
+    pub read_by: Vec<String>,
+}
+
+/// One member currently typing in a room, projected from the SDK's
+/// `Vec<OwnedUserId>` (`Room::subscribe_to_typing_notifications`) plus a
+/// best-effort local member-list lookup for a display name — see
+/// `core::timeline::resolve_typing_users`, the async adapter that builds
+/// this (member resolution needs a store read `project_typing_users` itself
+/// can't do, the same split `core::rooms::resolve_room_avatar_mxc` uses for
+/// an avatar).
+///
+/// The current user is never present: `subscribe_to_typing_notifications`
+/// filters it out before this project ever sees the id list.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypingUserDto {
+    pub user_id: String,
+    /// `None` when the room's local member store has nothing cached for
+    /// this id yet (lazy-loaded membership — same caveat
+    /// `core::rooms::resolve_room_avatar_mxc`'s doc comment describes for
+    /// avatars). The webview falls back to `userId` in that case, the same
+    /// convention every other sender-name field in this codebase already
+    /// uses. Server-controlled, arbitrary text otherwise — the webview must
+    /// cap its rendered length the same as any other free-text field from a
+    /// sender.
+    pub display_name: Option<String>,
 }
 
 /// The wire projection of an `eyeball_im::VectorDiff<T>`.

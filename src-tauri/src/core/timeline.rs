@@ -120,6 +120,7 @@ use std::sync::{Arc, Mutex};
 use eyeball_im::VectorDiff;
 use futures_util::{Stream, StreamExt};
 use imbl::Vector;
+use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use matrix_sdk::ruma::events::room::message::{
     FormattedBody, MessageFormat, MessageType, RoomMessageEventContent,
     RoomMessageEventContentWithoutRelation,
@@ -133,19 +134,21 @@ use matrix_sdk::ruma::html::{
 };
 use matrix_sdk::ruma::room_version_rules::RoomVersionRules;
 use matrix_sdk::ruma::serde::Raw;
-use matrix_sdk::ruma::{EventId, MilliSecondsSinceUnixEpoch, RoomId, UInt, UserId};
-use matrix_sdk::Client;
+use matrix_sdk::ruma::{EventId, MilliSecondsSinceUnixEpoch, OwnedUserId, RoomId, UInt, UserId};
+use matrix_sdk::{Client, Room};
 use matrix_sdk_ui::timeline::{
     default_event_filter, EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind,
     ReactionsByKeyBySender, RoomExt, Timeline, TimelineDetails, TimelineEventItemId, TimelineItem,
-    TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    TimelineItemContent, TimelineItemKind, TimelineReadReceiptTracking, VirtualTimelineItem,
 };
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 
 use super::dto::{
     apply_ops, op_name, ops_len_after, project_diff, DiffEnvelope, DiffOp, MediaMetaDto,
-    ReactionDto, ReplyToDto, SeqCounter, TimelineItemDto,
+    ReactionDto, ReplyToDto, SeqCounter, TimelineItemDto, TypingUserDto,
 };
 use super::error::{CoreError, CoreResult};
 
@@ -155,6 +158,23 @@ pub const TIMELINE_DIFF_EVENT: &str = "sm://timeline/diff";
 
 /// The `DiffEnvelope::channel` value used for every timeline envelope.
 const TIMELINE_CHANNEL: &str = "timeline";
+
+/// Tauri event channel carrying the focused room's current typing state.
+///
+/// Unlike [`TIMELINE_DIFF_EVENT`], this carries no sequence number and no
+/// diff ops — just the *current* list of who's typing, replacing whatever
+/// the webview showed before. That's a deliberate simplification, not an
+/// oversight: an `m.typing` ephemeral event is itself always a full replace
+/// ("here is who is typing right now"), never an increment, and losing one
+/// mid-stream (a broadcast receiver lagging, see [`FocusedTimeline::subscribe`])
+/// only means a stale indicator persists a little longer — it self-heals on
+/// the next typing change, and the timeout the sender's own client attaches
+/// to each `m.typing` event (`matrix-sdk-0.18.0/src/room/mod.rs`'s
+/// `TYPING_NOTICE_TIMEOUT`) means the *server* itself pushes a fresh,
+/// corrected event once a typer's notice expires, even if that typer's
+/// client never sends an explicit "stopped". None of the gap-detection
+/// machinery [`TIMELINE_DIFF_EVENT`] needs is worth paying for here.
+pub const TYPING_EVENT: &str = "sm://typing";
 
 /// How much history to load when a room is first opened.
 ///
@@ -253,6 +273,7 @@ pub fn project_item_parts(
     reply_to: Option<ReplyToDto>,
     edited: bool,
     reactions: Vec<ReactionDto>,
+    read_by: Vec<String>,
 ) -> TimelineItemDto {
     TimelineItemDto {
         id: id.to_string(),
@@ -271,6 +292,7 @@ pub fn project_item_parts(
         reply_to,
         edited,
         reactions,
+        read_by,
     }
 }
 
@@ -988,6 +1010,71 @@ fn reaction_entries(reactions: Option<&ReactionsByKeyBySender>) -> Vec<(String, 
         .collect()
 }
 
+/// The raw user ids of every *other* member whose latest read receipt
+/// currently points at `event` — see [`TimelineItemDto::read_by`]'s doc
+/// comment for what this is for and why it stops at raw ids.
+///
+/// `EventTimelineItem::read_receipts()` only has entries at all when the
+/// timeline was built with read-receipt tracking enabled
+/// (`TimelineReadReceiptTracking`, set on the builder in
+/// [`FocusedTimeline::subscribe`]) — otherwise this is unconditionally
+/// empty, same as the SDK's own map would be.
+fn read_by(event: &EventTimelineItem, own_user: &UserId) -> Vec<String> {
+    event
+        .read_receipts()
+        .keys()
+        .filter(|user_id| *user_id != own_user)
+        .map(|user_id| user_id.to_string())
+        .collect()
+}
+
+/// Builds the wire [`TypingUserDto`] list from already-extracted `(user id,
+/// display name)` pairs, in the order given.
+///
+/// Pure and SDK-free, like [`project_reactions`]: [`resolve_typing_users`] is
+/// the thin async adapter that extracts this shape from a live `Room`'s
+/// member store, so this is what's actually unit-tested (see this module's
+/// tests).
+fn project_typing_users(entries: &[(String, Option<String>)]) -> Vec<TypingUserDto> {
+    entries
+        .iter()
+        .map(|(user_id, display_name)| TypingUserDto {
+            user_id: user_id.clone(),
+            display_name: display_name.clone(),
+        })
+        .collect()
+}
+
+/// Resolves each of `user_ids` to a [`TypingUserDto`], looking up a cached
+/// display name from `room`'s local member store.
+///
+/// `get_member_no_sync`, not `get_member`: same reasoning as
+/// `core::rooms::resolve_room_avatar_mxc`'s identical choice for avatars — a
+/// typing notification arrives on every keystroke-driven refresh from the
+/// sender's own client, so this runs often enough that triggering a
+/// `/members` network round trip per call (what `get_member` does when the
+/// lazy-loaded member list is incomplete) would be a real, repeated cost for
+/// a "who's typing" indicator that's allowed to just fall back to a raw user
+/// id when the local store has nothing cached yet.
+async fn resolve_typing_users(room: &Room, user_ids: &[OwnedUserId]) -> Vec<TypingUserDto> {
+    let mut entries = Vec::with_capacity(user_ids.len());
+    for user_id in user_ids {
+        let display_name = match room.get_member_no_sync(user_id).await {
+            Ok(member) => member.and_then(|m| m.display_name().map(str::to_string)),
+            Err(err) => {
+                tracing::debug!(
+                    error = %err,
+                    user_id = %user_id,
+                    "failed to look up a typing member's cached profile; falling back to their user id"
+                );
+                None
+            }
+        };
+        entries.push((user_id.to_string(), display_name));
+    }
+    project_typing_users(&entries)
+}
+
 /// Project an SDK event item into the wire [`TimelineItemDto`].
 fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineItemDto {
     let id = event_item_id(event);
@@ -1017,6 +1104,7 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
     let edited = message.is_some_and(|m| m.is_edited());
     let reaction_entries = reaction_entries(event.content().reactions());
     let reactions = project_reactions(&reaction_entries, own_user.as_str());
+    let read_by = read_by(event, own_user);
 
     project_item_parts(
         &id,
@@ -1035,6 +1123,7 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
         reply_to,
         edited,
         reactions,
+        read_by,
     )
 }
 
@@ -1067,6 +1156,7 @@ fn project_virtual_item(
         None,
         None,
         false,
+        Vec::new(),
         Vec::new(),
     )
 }
@@ -1132,6 +1222,15 @@ pub struct TimelineHandle {
     timeline: Arc<Timeline>,
     state: Arc<Mutex<TimelineState>>,
     task: JoinHandle<()>,
+    /// Streams the room's typing state to the webview for as long as this
+    /// handle lives — see [`FocusedTimeline::subscribe`]'s typing-setup step.
+    /// Owns the `EventHandlerDropGuard` `Room::subscribe_to_typing_notifications`
+    /// returns (moved into the task's own future, not stored as a separate
+    /// field): aborting this task drops that future, and with it the guard,
+    /// which deregisters the client-side event handler the same instant the
+    /// task itself stops — so there is exactly one thing to tear down here,
+    /// not two that could fall out of sync.
+    typing_task: JoinHandle<()>,
 }
 
 impl TimelineHandle {
@@ -1143,6 +1242,11 @@ impl TimelineHandle {
     async fn stop_and_join(&mut self) {
         self.task.abort();
         let _ = std::pin::Pin::new(&mut self.task).await;
+        // Same reasoning, same wait-not-merely-abort discipline, for the
+        // typing task — it transitively holds the same `Room` -> `Client`
+        // through the `EventHandlerDropGuard`/`Room` it captured.
+        self.typing_task.abort();
+        let _ = std::pin::Pin::new(&mut self.typing_task).await;
     }
 
     /// A snapshot of the timeline as of the last diff this handle's task has
@@ -1166,6 +1270,7 @@ impl Drop for TimelineHandle {
         // a `TimelineHandle` no one stopped explicitly must not leave its
         // task running forever.
         self.task.abort();
+        self.typing_task.abort();
     }
 }
 
@@ -1205,6 +1310,20 @@ impl FocusedTimeline {
         let timeline = room
             .timeline_builder()
             .event_filter(timeline_event_filter)
+            // `TimelineItemDto::read_by` (see its doc comment) has nothing
+            // to project without this: `EventTimelineItem::read_receipts()`
+            // is unconditionally empty unless the timeline was built with
+            // tracking enabled (`TimelineReadReceiptTracking`, default
+            // `Disabled` — verified against `matrix-sdk-ui-0.18.0/src/
+            // timeline/controller/mod.rs`'s `TimelineSettings::default`).
+            // `MessageLikeEvents`, not `AllEvents`: every item this app's
+            // `read_by` is meant to annotate (a message-shaped bubble) is a
+            // message-like event; state/membership items never render a
+            // "seen by" marker (`Timeline.svelte`'s `seenMarker` gates on
+            // `isOwn` items rendered as a bubble), so tracking receipts
+            // against state events too would only cost bookkeeping with no
+            // consumer.
+            .track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents)
             .build()
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))?;
@@ -1212,7 +1331,49 @@ impl FocusedTimeline {
 
         // Required to compute `TimelineItemDto::is_own` — a client with no
         // user id can't meaningfully own a subscription in the first place.
+        // Resolved *before* the typing task is spawned below: an early
+        // return past this point via `?` must not leave a just-spawned task
+        // behind with nothing left to stop it — the exact "leaked task
+        // holding a `Client`" hazard this module's teardown discipline
+        // exists to close everywhere else.
         let own_user = client.user_id().ok_or(CoreError::NotReady)?.to_owned();
+
+        // Typing state streams independently of the timeline diff channel —
+        // see [`TYPING_EVENT`]'s doc comment for why it needs none of the
+        // seq/gap machinery the diff channel does. `subscribe_to_typing_notifications`
+        // is synchronous (unlike everything else built here) and hands back
+        // both a receiver and the `EventHandlerDropGuard` that keeps the
+        // underlying client event handler registered — moved into the task
+        // below, not stored on `TimelineHandle` separately, so aborting the
+        // task is the one thing that tears both down (see
+        // [`TimelineHandle::typing_task`]'s doc comment).
+        let (typing_guard, mut typing_rx) = room.subscribe_to_typing_notifications();
+        let typing_room = room.clone();
+        let typing_subject = room_id.to_string();
+        let typing_app = app.clone();
+        let typing_task = tokio::spawn(async move {
+            // Keeps the client event handler registered for exactly as long
+            // as this task runs; dropped (deregistering it) the instant the
+            // task ends, whether by `abort()` or by the loop below breaking
+            // on its own.
+            let _guard = typing_guard;
+            loop {
+                match typing_rx.recv().await {
+                    Ok(user_ids) => {
+                        let users = resolve_typing_users(&typing_room, &user_ids).await;
+                        emit_typing(&typing_app, &typing_subject, users);
+                    }
+                    // A slow consumer missed some updates — the next `Ok`
+                    // still carries the *current*, complete typing list (see
+                    // `TYPING_EVENT`'s doc comment: this channel is a
+                    // replace, not an increment), so there is nothing to
+                    // recover here beyond reading on.
+                    Err(RecvError::Lagged(_)) => continue,
+                    // The sender side is gone. Nothing left to stream.
+                    Err(RecvError::Closed) => break,
+                }
+            }
+        });
 
         let (initial, stream) = timeline.subscribe().await;
 
@@ -1334,6 +1495,7 @@ impl FocusedTimeline {
                 timeline,
                 state,
                 task,
+                typing_task,
             });
         Ok(())
     }
@@ -1493,6 +1655,78 @@ impl FocusedTimeline {
         let item_id = TimelineEventItemId::EventId(event_id);
         timeline
             .toggle_reaction(&item_id, reaction_key)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
+    /// Sets (or clears) this device's typing notice in `room_id`.
+    ///
+    /// Checked against the focused room the same way, and for the same
+    /// reason, as [`Self::send_text`] — see [`Self::active_timeline_for`]'s
+    /// doc comment. A typing notice sent into whichever room happens to be
+    /// focused when a slow command finally runs, rather than the room the
+    /// caller actually composed against, is the exact same wrong-recipient
+    /// hazard a misdirected send is: it tells everyone in the *wrong* room
+    /// that the reader is typing there.
+    ///
+    /// Delegates straight to `Room::typing_notice`, which is already
+    /// throttled for exactly this "call on every keystroke" use — its own
+    /// doc comment: "This method can be called on every key stroke, since it
+    /// will do nothing while typing is active." (`matrix-sdk-0.18.0/src/
+    /// room/mod.rs`'s `TYPING_NOTICE_TIMEOUT`/`TYPING_NOTICE_RESEND_TIMEOUT`,
+    /// 4s/3s — a fresh `typing: true` is only actually sent to the
+    /// homeserver once every 3s while the reader keeps typing, and `typing:
+    /// false` only when the state is actually active.) The webview's own
+    /// `TypingTracker` (`$lib/components/typingTracker.ts`) throttles the
+    /// *IPC calls* themselves on top of that — see its doc comment for why
+    /// this being cheap network-wise still isn't a reason to invoke a Tauri
+    /// command on every keystroke.
+    ///
+    /// Fails with [`CoreError::NotReady`] when no room is focused, or
+    /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is — in
+    /// either case, nothing is sent.
+    pub async fn set_typing(&self, room_id: &str, typing: bool) -> CoreResult<()> {
+        let timeline = self.active_timeline_for(room_id)?;
+        timeline
+            .room()
+            .typing_notice(typing)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
+    /// Marks `room_id` read by sending a public (`m.read`) receipt on the
+    /// latest event the *focused timeline* — not the homeserver's own notion
+    /// of "latest in the room" — currently knows about. Returns whether a
+    /// receipt was actually sent (`Timeline::mark_as_read`'s own return
+    /// value): `false` when the current read receipt already covers this
+    /// event, so nothing needed sending.
+    ///
+    /// Checked against the focused room the same way, and for the same
+    /// reason, as [`Self::send_text`]. A room-scoped check is not merely
+    /// consistency for its own sake here: without it, a slow `mark_read`
+    /// call that resolves *after* the reader has switched away would mark
+    /// the room they switched away from read using whatever `Timeline` this
+    /// method's caller (`FocusedTimeline`) happens to hold by then — which,
+    /// per this module's single-subscription invariant, is already the *new*
+    /// room's `Timeline`, not the old one at all. That would mark the new,
+    /// possibly-unread room "read" for an event the reader was never shown —
+    /// exactly the silent unread-state corruption this task's brief warns
+    /// against, just approached from the sending side rather than the
+    /// display side of the "seen by" feature.
+    ///
+    /// **This method does not decide *whether* the room is read** — see
+    /// `$lib/components/readTracking.ts`'s `shouldMarkRead`, the pure
+    /// predicate `Timeline.svelte` evaluates before ever calling this. This
+    /// is only the room-scoped send once that predicate has already said
+    /// yes.
+    ///
+    /// Fails with [`CoreError::NotReady`] when no room is focused, or
+    /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is — in
+    /// either case, nothing is sent.
+    pub async fn mark_read(&self, room_id: &str) -> CoreResult<bool> {
+        let timeline = self.active_timeline_for(room_id)?;
+        timeline
+            .mark_as_read(ReceiptType::Read)
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))
     }
@@ -1831,6 +2065,29 @@ fn emit_ops(
     (before, after)
 }
 
+/// The payload emitted on [`TYPING_EVENT`] — the focused room's id (so a
+/// listener registered before a room switch fully lands can reject a
+/// still-arriving envelope for the room it just left, the same "check the
+/// subject" discipline [`DiffEnvelope`] uses on the timeline/room-list
+/// channels) plus who's typing there right now.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TypingPayload {
+    room_id: String,
+    users: Vec<TypingUserDto>,
+}
+
+/// Emits one [`TYPING_EVENT`] envelope for `room_id`.
+fn emit_typing(app: &AppHandle, room_id: &str, users: Vec<TypingUserDto>) {
+    let payload = TypingPayload {
+        room_id: room_id.to_string(),
+        users,
+    };
+    if let Err(err) = app.emit(TYPING_EVENT, &payload) {
+        tracing::warn!(error = %err, "failed to emit {TYPING_EVENT}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1862,6 +2119,7 @@ mod tests {
             None,
             None,
             false,
+            Vec::new(),
             Vec::new(),
         );
         assert_eq!(dto.kind, "message");
@@ -1897,6 +2155,7 @@ mod tests {
             None,
             false,
             Vec::new(),
+            Vec::new(),
         );
         assert_eq!(dto.kind, "dateDivider");
         assert!(dto.sender.is_none());
@@ -1929,6 +2188,7 @@ mod tests {
             None,
             false,
             Vec::new(),
+            Vec::new(),
         );
         assert_eq!(dto.kind, "state");
         assert_eq!(dto.detail.as_deref(), Some("m.room.name"));
@@ -1953,6 +2213,7 @@ mod tests {
             None,
             None,
             false,
+            Vec::new(),
             Vec::new(),
         );
         assert_eq!(dto.kind, "message");
@@ -1980,6 +2241,7 @@ mod tests {
             None,
             None,
             false,
+            Vec::new(),
             Vec::new(),
         );
         assert_eq!(dto.body.as_deref(), Some("plain"));
@@ -2693,6 +2955,7 @@ mod tests {
             None,
             false,
             Vec::new(),
+            Vec::new(),
         )
     }
 
@@ -3123,6 +3386,7 @@ mod tests {
             None,
             true,
             Vec::new(),
+            Vec::new(),
         );
         assert!(dto.edited);
     }
@@ -3151,6 +3415,7 @@ mod tests {
             None,
             false,
             reactions.clone(),
+            Vec::new(),
         );
         assert_eq!(dto.reactions, reactions);
     }
@@ -3181,6 +3446,7 @@ mod tests {
             None,
             Some(reply_to.clone()),
             false,
+            Vec::new(),
             Vec::new(),
         );
         assert_eq!(dto.reply_to, Some(reply_to));
@@ -3268,5 +3534,45 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.kind(), "protocol");
+    }
+
+    #[tokio::test]
+    async fn focused_timeline_set_typing_reports_not_ready_when_nothing_is_focused() {
+        let focused = FocusedTimeline::default();
+        let err = focused.set_typing("!a:x.org", true).await.unwrap_err();
+        assert_eq!(err.kind(), "notReady");
+    }
+
+    #[tokio::test]
+    async fn focused_timeline_mark_read_reports_not_ready_when_nothing_is_focused() {
+        let focused = FocusedTimeline::default();
+        let err = focused.mark_read("!a:x.org").await.unwrap_err();
+        assert_eq!(err.kind(), "notReady");
+    }
+
+    // `project_typing_users`: pure, like `project_reactions` — the async
+    // member-resolution adapter (`resolve_typing_users`) isn't exercised
+    // here for the same reason `resolve_room_avatar_mxc` isn't in
+    // `core::rooms`'s unit tests: it needs a live `Room` backed by a real
+    // local member store, which `tests/timeline_projection.rs`'s mocked-
+    // homeserver harness is what actually covers end to end.
+
+    #[test]
+    fn project_typing_users_carries_ids_and_display_names_through() {
+        let entries = vec![
+            ("@alice:x.org".to_string(), Some("Alice".to_string())),
+            ("@bob:x.org".to_string(), None),
+        ];
+        let users = project_typing_users(&entries);
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].user_id, "@alice:x.org");
+        assert_eq!(users[0].display_name.as_deref(), Some("Alice"));
+        assert_eq!(users[1].user_id, "@bob:x.org");
+        assert!(users[1].display_name.is_none());
+    }
+
+    #[test]
+    fn project_typing_users_is_empty_for_no_typers() {
+        assert!(project_typing_users(&[]).is_empty());
     }
 }
