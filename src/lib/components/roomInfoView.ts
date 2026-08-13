@@ -36,6 +36,43 @@ export function memberDisplayName(member: Pick<RoomMember, "displayName" | "user
 }
 
 /**
+ * Every leading character Matrix treats as a sigil: `@` (user), `#`
+ * (room alias), `!` (room id), `$` (event id), `+` (space). Spec §5.2 treats
+ * the sigil itself as the label for an identifier — no "Address"/"Room ID"
+ * heading needed above it — so this module exists purely to split it off
+ * for styling (`--color-content-faint` on the sigil, `--color-content-muted`
+ * on the rest), independent of *which* kind of identifier it is.
+ */
+const SIGILS = new Set(["@", "#", "!", "$", "+"]);
+
+/**
+ * Splits a Matrix identifier into its leading sigil and the rest, for the
+ * two-tone sigil treatment (spec §5.2). One line of string work, but it's
+ * sender/server-adjacent data rendered in four places in
+ * `RoomInfoPanel.svelte` (canonical alias, each alt alias, the room id, each
+ * member's mxid) — worth one pure, tested function rather than four inline
+ * slices that could quietly drift apart.
+ *
+ * Indexes `id[0]` directly rather than iterating code points the way
+ * `roomIdentity.ts`'s glyph parsing does: every sigil this module recognizes
+ * is a single ASCII code point, so there's no surrogate pair to split in
+ * half here — that hazard is specific to arbitrary leading graphemes (emoji
+ * glyphs), not this fixed, five-character ASCII set.
+ *
+ * A leading character outside that set (or an empty string) yields
+ * `{sigil: null, rest: id}` — the whole input is returned verbatim as
+ * `rest`, not silently dropped, so a caller can render *something* even for
+ * an identifier this module doesn't recognize the shape of.
+ */
+export function splitSigil(id: string): { sigil: string | null; rest: string } {
+  const first = id[0];
+  if (first !== undefined && SIGILS.has(first)) {
+    return { sigil: first, rest: id.slice(1) };
+  }
+  return { sigil: null, rest: id };
+}
+
+/**
  * A single uppercase initial for `label` (a room or member display name),
  * for the placeholder shown before/absent a real avatar image — mirrors
  * `RoomList.svelte`'s `initials` exactly, including the reason it iterates

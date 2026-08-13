@@ -44,7 +44,8 @@
   import { roomInfo, type RoomInfo } from "$lib/ipc";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
-  import { initial, memberDisplayName, roomDisplayName } from "./roomInfoView";
+  import { parseRoomIdentity, roomInitial } from "./roomIdentity";
+  import { initial, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
 
   let { roomId, onClose }: { roomId: string; onClose: () => void } = $props();
 
@@ -124,6 +125,7 @@
   {:else if info}
     {@const currentRoomId = info.roomId}
     {@const avatar = avatarCache.get(currentRoomId)}
+    {@const identity = parseRoomIdentity(roomDisplayName(info))}
     <div class="flex flex-col items-center gap-2 border-b border-border px-4 py-5">
       {#if avatar}
         <img
@@ -138,44 +140,71 @@
           class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-xl font-medium text-content"
           aria-hidden="true"
         >
-          {initial(roomDisplayName(info))}
+          {roomInitial(identity)}
         </span>
       {/if}
-      <p class="selectable max-w-full text-center text-base font-semibold break-words text-content">
-        {roomDisplayName(info)}
+      <p class="selectable max-w-full text-center text-ui-lg break-words text-content">
+        {identity.name}
       </p>
+      {#if identity.role !== null}
+        <span
+          class="shrink-0 truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+        >
+          {identity.role}
+        </span>
+      {/if}
     </div>
 
     {#if info.topic}
       <div class="border-b border-border px-4 py-3">
-        <h3 class="mb-1 text-xs font-medium text-content-muted">Topic</h3>
-        <p class="selectable text-sm break-words text-content">{info.topic}</p>
+        <h3 class="mb-1 font-mono text-label text-content-muted uppercase">Topic</h3>
+        <p class="selectable font-serif text-body break-words text-content">{info.topic}</p>
       </div>
     {/if}
 
     {#if info.canonicalAlias || info.altAliases.length > 0}
+      <!--
+        No "Address"/"Alternative addresses" heading (spec §5.2): the
+        leading `#` sigil, rendered in --color-content-faint, is the label.
+        Canonical-vs-alternative is a distinction sighted readers no longer
+        get a heading for either — it now rides on two cues instead: the
+        canonical alias always renders first, and its rest-of-id text is a
+        touch heavier (font-medium vs the alt aliases' regular weight).
+        Neither cue reaches a screen reader (DOM order is preserved, but
+        weight isn't announced, and "first" isn't itself an announced
+        relationship), so each line also carries an sr-only prefix
+        ("Canonical address"/"Alternative address") — content a sighted
+        reader doesn't see, restoring parity rather than leaving an AT user
+        to infer canonical-ness from the mere absence of a marker on later
+        rows.
+      -->
       <div class="border-b border-border px-4 py-3">
-        <h3 class="mb-1 text-xs font-medium text-content-muted">
-          {info.canonicalAlias && info.altAliases.length > 0
-            ? "Addresses"
-            : info.altAliases.length > 0
-              ? "Alternative addresses"
-              : "Address"}
-        </h3>
         {#if info.canonicalAlias}
-          <p class="selectable text-sm break-words text-content">{info.canonicalAlias}</p>
+          {@const parsed = splitSigil(info.canonicalAlias)}
+          <p class="selectable font-mono text-meta font-medium break-words">
+            <span class="sr-only">Canonical address: </span><span class="text-content-faint"
+              >{parsed.sigil}</span
+            ><span class="text-content-muted">{parsed.rest}</span>
+          </p>
         {/if}
         {#each info.altAliases as alias (alias)}
-          <p class="selectable text-sm break-words text-content-muted">{alias}</p>
+          {@const parsed = splitSigil(alias)}
+          <p class="selectable font-mono text-meta break-words">
+            <span class="sr-only">Alternative address: </span><span class="text-content-faint"
+              >{parsed.sigil}</span
+            ><span class="text-content-muted">{parsed.rest}</span>
+          </p>
         {/each}
       </div>
     {/if}
 
+    {@const roomIdParsed = splitSigil(info.roomId)}
     <div class="border-b border-border px-4 py-3">
-      <h3 class="mb-1 text-xs font-medium text-content-muted">Room ID</h3>
       <div class="flex items-center gap-2">
-        <p class="selectable min-w-0 flex-1 font-mono text-xs break-words text-content">
-          {info.roomId}
+        <p class="selectable min-w-0 flex-1 font-mono text-meta break-words">
+          <span class="text-content-faint">{roomIdParsed.sigil}</span><span
+            class="text-content-muted">{roomIdParsed.rest}</span
+          >
         </p>
         <button
           type="button"
@@ -188,7 +217,7 @@
     </div>
 
     <div class="min-h-0 flex-1 px-4 py-3">
-      <h3 class="mb-2 text-xs font-medium text-content-muted">
+      <h3 class="mb-2 font-mono text-label text-content-muted uppercase">
         {info.activeMemberCount}
         {info.activeMemberCount === 1 ? "member" : "members"}
       </h3>
@@ -221,12 +250,15 @@
                 `truncate` (nowrap + ellipsis) would also just hide a long
                 name outright rather than let the reader see it wrap.
               -->
-              <span class="selectable block text-sm text-content break-words">
+              <span class="selectable block font-sans text-ui text-content break-words">
                 {memberDisplayName(member)}
               </span>
               {#if member.displayName}
-                <span class="selectable block text-xs text-content-muted break-words">
-                  {member.userId}
+                {@const parsedMember = splitSigil(member.userId)}
+                <span class="selectable block font-mono text-meta break-words">
+                  <span class="text-content-faint">{parsedMember.sigil}</span><span
+                    class="text-content-muted">{parsedMember.rest}</span
+                  >
                 </span>
               {/if}
             </span>

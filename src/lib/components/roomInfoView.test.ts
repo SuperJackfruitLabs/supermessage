@@ -1,7 +1,7 @@
 // Covers `roomInfoView.ts`'s pure display helpers.
 
 import { describe, expect, it } from "vitest";
-import { initial, memberDisplayName, roomDisplayName } from "./roomInfoView";
+import { initial, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
 
 describe("roomDisplayName", () => {
   it("prefers the room's own name", () => {
@@ -52,5 +52,51 @@ describe("initial", () => {
     // pair — a broken glyph, not the emoji. See RoomList.svelte's identical
     // fix for the same bug.
     expect(initial("🧠 Buddhimaan")).toBe("🧠");
+  });
+});
+
+describe("splitSigil", () => {
+  it("returns a null sigil for a string with no recognized leading sigil", () => {
+    expect(splitSigil("example.org")).toEqual({ sigil: null, rest: "example.org" });
+  });
+
+  it("splits a user id on the leading @", () => {
+    expect(splitSigil("@alice:example.org")).toEqual({
+      sigil: "@",
+      rest: "alice:example.org",
+    });
+  });
+
+  it("splits a room alias on the leading #", () => {
+    expect(splitSigil("#ops:example.org")).toEqual({ sigil: "#", rest: "ops:example.org" });
+  });
+
+  it("splits a room id on the leading !", () => {
+    expect(splitSigil("!abc123:example.org")).toEqual({
+      sigil: "!",
+      rest: "abc123:example.org",
+    });
+  });
+
+  it("splits an event id on the leading $", () => {
+    expect(splitSigil("$eventabc:example.org")).toEqual({
+      sigil: "$",
+      rest: "eventabc:example.org",
+    });
+  });
+
+  it("splits a space id on the leading +", () => {
+    expect(splitSigil("+space:example.org")).toEqual({
+      sigil: "+",
+      rest: "space:example.org",
+    });
+  });
+
+  it("returns a null sigil for an empty string", () => {
+    expect(splitSigil("")).toEqual({ sigil: null, rest: "" });
+  });
+
+  it("returns an empty rest for a string that is only a sigil", () => {
+    expect(splitSigil("#")).toEqual({ sigil: "#", rest: "" });
   });
 });
