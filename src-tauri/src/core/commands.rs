@@ -67,10 +67,8 @@ pub async fn timeline_subscribe(
     room_id: String,
     app: AppHandle,
     session: State<'_, Session>,
-    timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<(), CoreError> {
-    let client = session.require_client().await?;
-    timeline.subscribe(&client, &room_id, app).await
+    session.subscribe_timeline(&room_id, app).await
 }
 
 /// Paginates the focused timeline backwards by up to `count` events. Returns
