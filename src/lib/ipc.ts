@@ -84,12 +84,30 @@ export async function coreStatus(): Promise<CoreStatus> {
   return invoke<CoreStatus>("core_status");
 }
 
-/** Logs in with a homeserver, username and password, then starts syncing. */
+/**
+ * Logs in with a homeserver, username and password, then starts syncing.
+ *
+ * Do not call this directly to start a session — call `roomsStore.login`
+ * instead. The core restarts its room-list sequence counter from scratch
+ * every time this starts streaming (`SeqCounter::default()` inside
+ * `spawn_room_list`, run again on every login), and `roomsStore.login`
+ * re-arms the room-list `DiffTracker` for that before calling this. Calling
+ * this bare function directly leaves the tracker expecting the previous
+ * session's sequence numbers, and the new session's early diffs get
+ * silently dropped as apparent duplicates rather than triggering a resync —
+ * see `rooms.svelte.ts`'s module doc comment for the full hazard.
+ */
 export async function login(homeserver: string, username: string, password: string): Promise<void> {
   await invoke<void>("login", { homeserver, username, password });
 }
 
-/** Attempts to restore a previously persisted session. `false` = nothing to restore. */
+/**
+ * Attempts to restore a previously persisted session. `false` = nothing to
+ * restore.
+ *
+ * Same warning as `login`: call `roomsStore.restoreSession` instead of this
+ * directly — it re-arms the room-list tracker first for the same reason.
+ */
 export async function restoreSession(): Promise<boolean> {
   return invoke<boolean>("restore_session");
 }
