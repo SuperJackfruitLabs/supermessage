@@ -42,14 +42,79 @@
 //    splits them into two groups even though nothing renders in between. That
 //    is judged an acceptable, rare cosmetic trade-off against the simplicity
 //    of not coupling this module to render decisions.
+//
+// Sender-run collapsing (spec §6.3) is a second, independent grouping rule
+// living in the same module rather than a parallel mechanism, per that
+// section's instruction to extend this file rather than add a second one.
+// It marks — but never removes — a row: every non-membership item still
+// gets exactly one `{type: "item"}` row (unlike membership runs, which
+// disappear into a `membershipGroup`), so `continuesRun` is purely
+// informational and `Timeline.svelte` decides what to do with it (Task 6:
+// suppress the redundant sender line and tighten the gap). An item
+// `continuesRun` when the *immediately preceding display row* — not the
+// previous raw item — is itself an `item` row whose underlying item is
+// message-shaped, same non-null `sender`, within `SENDER_RUN_WINDOW_MS` of
+// this item's timestamp, and this item is message-shaped too. Reading off
+// the previous *display* row rather than the previous *raw* item is what
+// makes a collapsed membership group (or a date divider, which also gets
+// its own `item` row) break a run for free: once it's the immediately
+// preceding row, it's already not a qualifying `item` row of a message, so
+// no special-casing of membership or date-divider kinds is needed here
+// beyond what "message-shaped" already excludes.
+//
+// "Message-shaped" is intentionally narrow: `kind === "message"` and
+// nothing else. A custom event (`kind: "customMessage"`) is about to become
+// a bordered card with its own header of its own (spec §7) — it must never
+// silently continue, or be continued into, a run of plain-text bubbles, so
+// it is excluded exactly like a state event, a redaction, or a membership
+// change. This mirrors the run-breaking list above: anything that isn't an
+// ordinary message breaks a run both as the *previous* row and as the
+// *current* item.
+//
+// Like the membership-run grouping above, this does not consult
+// `timelineItemView.viewFor` — it reads `kind`/`sender`/`timestampMs`
+// directly off `TimelineItem`, for the same reason: staying decoupled from
+// the render-decision vocabulary so a future `viewFor` change can't
+// silently change which messages collapse into a run.
 
 import { attributedName, membershipVerb } from "./timelineItemView";
 import type { TimelineItem } from "$lib/ipc";
 
 /** One row `Timeline.svelte` iterates, in place of the raw item array. */
 export type TimelineDisplayRow =
-  | { type: "item"; key: string; item: TimelineItem }
+  | { type: "item"; key: string; item: TimelineItem; continuesRun: boolean }
   | { type: "membershipGroup"; key: string; items: TimelineItem[]; text: string };
+
+/**
+ * How close two consecutive messages from the same sender must be, in
+ * milliseconds, to read as one continuous run rather than two separate
+ * turns — spec §6.3's "within 5 minutes". Exported so the test file (and
+ * any future caller) states its fixture timestamps relative to this
+ * constant instead of a duplicated magic number.
+ */
+export const SENDER_RUN_WINDOW_MS = 5 * 60_000;
+
+/** The narrow "message-shaped" predicate the run rule uses — see the doc comment above. */
+function isMessageShaped(item: TimelineItem): boolean {
+  return item.kind === "message";
+}
+
+/**
+ * Whether `item`, about to become an `{type: "item"}` row, continues a
+ * sender run started by `previousRow` — the display row immediately before
+ * it, or `undefined` at the start of the timeline. See the module doc
+ * comment for why this is computed from the previous *row*, not the
+ * previous *raw* item.
+ */
+function continuesSenderRun(previousRow: TimelineDisplayRow | undefined, item: TimelineItem): boolean {
+  if (!previousRow || previousRow.type !== "item") return false;
+  const previousItem = previousRow.item;
+  if (!isMessageShaped(previousItem) || !isMessageShaped(item)) return false;
+  if (previousItem.sender == null || item.sender == null) return false;
+  if (previousItem.sender !== item.sender) return false;
+  if (previousItem.timestampMs == null || item.timestampMs == null) return false;
+  return item.timestampMs - previousItem.timestampMs <= SENDER_RUN_WINDOW_MS;
+}
 
 /** How many members a collapsed line names explicitly before "and N others". */
 const MAX_NAMED = 2;
@@ -123,9 +188,9 @@ export function groupTimelineItems(items: readonly TimelineItem[]): TimelineDisp
   }
 
   for (const item of items) {
-    const continuesRun =
+    const continuesMembershipRun =
       item.kind === "membership" && (run.length === 0 || run[0]!.detail === item.detail);
-    if (continuesRun) {
+    if (continuesMembershipRun) {
       run.push(item);
       continue;
     }
@@ -135,7 +200,10 @@ export function groupTimelineItems(items: readonly TimelineItem[]): TimelineDisp
       // starts a fresh run of its own rather than passing through.
       run.push(item);
     } else {
-      rows.push({ type: "item", key: item.id, item });
+      // `rows.at(-1)` here is the previous *display* row, including a
+      // membership group `flushRun()` may have just pushed above — see the
+      // module doc comment for why that's what the sender-run rule reads.
+      rows.push({ type: "item", key: item.id, item, continuesRun: continuesSenderRun(rows.at(-1), item) });
     }
   }
   flushRun();
