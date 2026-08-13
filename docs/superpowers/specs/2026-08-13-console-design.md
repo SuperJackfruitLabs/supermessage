@@ -324,6 +324,52 @@ Two lines per row, replacing today's one-line name + pill.
   ground. Not a full accent fill.
 - Row separator: hairline, inset to clear the avatar column.
 
+#### 6.1.1 The preview line
+
+A third line, below the role line, carrying what was last said in the room.
+Added after the design shipped: `last_message` had always been `null`, and a
+roster where no row says anything about the conversation is the most visible
+functional gap the client has.
+
+- **Message-like events only.** Membership changes, renames, topic edits and
+  other state never become a preview — the row keeps showing the last thing
+  actually *said*. A fleet whose agents restart and rename would otherwise
+  fill its roster with noise that displaces real work. This matches how the
+  timeline already collapses those into quiet log lines.
+- **No sender prefix, except your own.** Most rooms here are one-to-one with
+  an agent, so prefixing with the agent's name just repeats the room name
+  two lines above. `You: ` is the one prefix that disambiguates. In a room
+  with several people this loses attribution; accepted for now, and recorded
+  as the known limitation it is.
+- **Omitted entirely when there is nothing to show**, exactly as the role and
+  time line already is. No placeholder string.
+- Rank `--text-meta`, `--color-content-muted` when the room has unread,
+  `--color-content-faint` otherwise. Single line, truncated in CSS.
+
+**A pending decision takes the row.** When the newest message-like event is a
+gate awaiting this operator, the preview reads `Approval needed` and the row
+takes `--color-signal`. This does not loosen §3's reservation: the rule is
+that amber marks *a pending decision*, not that it marks one only in the
+timeline. A roster that shows which agent is waiting on you is the same
+signal doing the same job one surface earlier.
+
+Like the dispatch card's decision row, **this ships unreachable.** No gate
+schema exists yet, so nothing can produce a pending decision. Build the
+mechanism, cover it with a fixture, and let no production event reach it —
+the alternative is inventing a schema, which is the one thing this codebase
+has consistently refused to do.
+
+**Core contract** (`RoomSummary`, `core::dto`):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `last_message` | `Option<String>` | Preview text, already bounded and whitespace-collapsed. No sender prefix. |
+| `last_message_is_own` | `bool` | Whether the previewed event was sent by this account. Drives the `You: ` prefix, which is the frontend's to add. |
+| `last_event_type` | `Option<String>` | The Matrix event type, populated only for a custom event. The hook the pending-decision path keys off; `null` for ordinary messages. |
+
+Presentation stays in the frontend: the core returns text and facts, never a
+composed display string.
+
 Relative time: `now`, `4m`, `2h`, `3d`, then a date. Pure and unit-tested
 alongside the identity parse; takes an explicit `now` argument so the tests
 do not depend on the clock.
