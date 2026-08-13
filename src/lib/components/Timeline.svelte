@@ -586,12 +586,38 @@
    * The operator's answer to a pending decision on a dispatch card (spec
    * §7.1) — deliberately inert in this build.
    *
-   * **What replaces this:** Kaambaan's gate-resolution REST call
-   * (`docs/positioning.md`, wedge #3 "Approvals from chat"). That call, plus
-   * the renderer that translates Kaambaan's permission-request event into a
-   * `CustomEventRenderResult.decision` (`customEvents.ts`, "Decisions"),
-   * are the two pieces this slot is waiting on. Neither exists yet, and the
-   * schema is that team's to design, not this app's to invent.
+   * **What replaces this: sending a Matrix event — not an HTTP call.**
+   * An earlier version of this comment said Kaambaan's gate-resolution REST
+   * endpoint, and that is now known to be wrong
+   * (rakeshgangwar/kaambaan#34). Three reasons, in ascending order of how
+   * badly a REST client would fail:
+   *
+   * 1. The suite's decision is that supermessage acts **only** through
+   *    Matrix. An Application Service translates the event into the
+   *    Kaambaan call. The client then holds exactly one credential — the
+   *    Matrix one — which is also what keeps this app usable as an ordinary
+   *    Matrix client against any homeserver, rather than degrading to
+   *    read-only wherever suite credentials are absent.
+   * 2. Gate resolution requires a **human session cookie**. An agent-token
+   *    bearer cannot reach it at all, so a client holding a suite token
+   *    could not resolve a gate even if it tried.
+   * 3. Resolving as a single bridge identity would attribute every approval
+   *    in the suite to one account and silently void Kaambaan's
+   *    separation-of-duties check, which refuses a decision whose
+   *    `decidedBy` is the agent that produced the work. The Application
+   *    Service therefore has to act *on behalf of* the person who tapped
+   *    the button, which needs an explicitly-minted `mxid → Principal`
+   *    link — never one inferred from a localpart or a matching email.
+   *
+   * So this becomes a `timelineStore` send of a decision event carrying the
+   * option id and the event it answers. Two further things this slot waits
+   * on, both that team's to design rather than this app's to invent: the
+   * inbound schema whose renderer sets `CustomEventRenderResult.decision`
+   * (`customEvents.ts`, "Decisions"), and the outbound decision event type
+   * itself. Note also that "gate" is two mechanisms there — a stage-review
+   * gate, which resolves today, and a mid-run elicitation, which currently
+   * has no return path at all — so this may end up answering two event
+   * types rather than one.
    *
    * Nothing in this build can reach it: no shipped renderer sets
    * `decision`, so `resolveCustomEvent` returns `decision: null` for every
@@ -602,7 +628,7 @@
    * evidence in the console instead of a silent click.
    */
   function onDecide(itemId: string, optionId: string): void {
-    console.warn("dispatch decision is not wired to a backend yet", { itemId, optionId });
+    console.warn("dispatch decision has no outbound event type yet", { itemId, optionId });
   }
 
   /**
