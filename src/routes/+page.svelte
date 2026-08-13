@@ -1,15 +1,20 @@
 <script lang="ts">
-  // Session gate: restores a prior session if one exists, otherwise sends
-  // the user to /login. This is intentionally a placeholder — the real
-  // two-pane chat UI lands in a later task; don't build it here.
+  // The two-pane chat UI: room list on the left, timeline + composer on the
+  // right, a connection banner across the top when the core isn't "live".
   //
-  // Goes through `roomsStore.restoreSession`, never `ipc.ts` directly, so
-  // the room-list tracker gets re-armed alongside the core's sequence
-  // counter restart. See `rooms.svelte.ts`'s module doc comment.
+  // Still session-gated the same way the provisional placeholder was: try
+  // to restore a prior session, and if there isn't one, fall through to
+  // /login. Goes through `roomsStore.restoreSession`, never `ipc.ts`
+  // directly, so the room-list tracker gets re-armed alongside the core's
+  // sequence counter restart — see `rooms.svelte.ts`'s module doc comment.
 
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
+  import RoomList from "$lib/components/RoomList.svelte";
+  import Timeline from "$lib/components/Timeline.svelte";
+  import Composer from "$lib/components/Composer.svelte";
+  import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
 
   let checking = $state(true);
   let restored = $state(false);
@@ -32,17 +37,35 @@
   });
 </script>
 
-<main
-  class="flex min-h-dvh flex-col items-center justify-center bg-surface p-8"
-  style="padding-top: calc(2rem + var(--inset-top)); padding-bottom: calc(2rem + var(--inset-bottom));"
->
-  {#if checking}
+{#if checking}
+  <main
+    class="flex min-h-dvh flex-col items-center justify-center bg-surface p-8"
+    style="padding-top: calc(2rem + var(--inset-top)); padding-bottom: calc(2rem + var(--inset-bottom));"
+  >
     <p class="text-sm text-content-muted">Restoring session…</p>
-  {:else if restored}
-    <!-- Provisional placeholder — replaced by the two-pane chat UI. -->
-    <div class="text-center">
-      <h1 class="text-xl font-semibold tracking-tight">supermessage</h1>
-      <p class="mt-1 text-sm text-content-muted">Signed in. Chat UI not yet built.</p>
+  </main>
+{:else if restored}
+  <div class="flex h-dvh flex-col bg-surface" style="padding-top: var(--inset-top); padding-bottom: var(--inset-bottom);">
+    <ConnectionBanner />
+    <div class="flex min-h-0 flex-1">
+      <aside
+        class="w-72 shrink-0 border-r border-border bg-surface-sunken"
+        style="padding-left: var(--inset-left);"
+      >
+        <RoomList />
+      </aside>
+      <section class="flex min-w-0 flex-1 flex-col" style="padding-right: var(--inset-right);">
+        {#if roomsStore.selectedId}
+          {#key roomsStore.selectedId}
+            <Timeline />
+          {/key}
+          <Composer />
+        {:else}
+          <div class="flex flex-1 items-center justify-center">
+            <p class="text-sm text-content-muted">Select a room to start chatting</p>
+          </div>
+        {/if}
+      </section>
     </div>
-  {/if}
-</main>
+  </div>
+{/if}
