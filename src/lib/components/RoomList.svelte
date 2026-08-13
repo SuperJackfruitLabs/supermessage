@@ -269,9 +269,22 @@
               text at 100 code points for transport, CSS owns what the
               reader actually sees, exactly as every other roster string
               here does.
+
+              **Sans, not mono**, even though `--text-meta`'s own scale
+              entry is a mono rank and the role line directly above it is
+              mono. §5.3 is the tiebreaker: mono means machine, serif means
+              prose, sans means chrome. A preview is a fragment of something
+              a person or an agent wrote — prose — so mono is wrong by the
+              design's own rule, and rendered it looked wrong for exactly
+              that reason: three stacked mono lines made a conversation read
+              like terminal output. Not serif either: serif says "read this
+              at length", which a truncated one-liner in a scanning surface
+              is not. Sans is the face for chrome, and this line is prose
+              *quoted into* chrome. It also happens to fit noticeably more
+              characters in the same column than mono did.
             -->
             <span
-              class="mt-0.5 block truncate font-mono text-meta {preview.pending
+              class="mt-0.5 block truncate font-sans text-meta {preview.pending
                 ? 'text-signal'
                 : room.unread > 0
                   ? 'text-content-muted'
