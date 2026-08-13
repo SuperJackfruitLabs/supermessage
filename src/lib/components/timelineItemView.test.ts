@@ -15,6 +15,7 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind">): Ti
     sender: "@someone:example.org",
     senderDisplayName: null,
     body: null,
+    formattedBody: null,
     timestampMs: 1_700_000_000_000,
     isOwn: false,
     sendState: null,

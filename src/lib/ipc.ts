@@ -68,6 +68,18 @@ export interface TimelineItem {
   sender: string | null;
   senderDisplayName: string | null;
   body: string | null;
+  /**
+   * The message's HTML formatted body, present only when the core reports
+   * `format: "org.matrix.custom.html"` (`core::timeline::formatted_html_body`).
+   * Already sanitised and hardened in the core — ruma's
+   * `HtmlSanitizerMode::Compat` allowlist, then this app's own `<img>`
+   * removal and `<a href>` scheme narrowing on top of it (see
+   * `core::timeline::harden_formatted_body`'s doc comment for exactly what
+   * that does and why) — **before** it ever reaches this process. That is
+   * what makes it safe for `Timeline.svelte` to render with `{@html}`; see
+   * its doc comment. Never pipe unsanitised text through the same path.
+   */
+  formattedBody: string | null;
   timestampMs: number | null;
   isOwn: boolean;
   sendState: string | null;

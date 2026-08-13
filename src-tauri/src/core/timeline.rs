@@ -18,8 +18,14 @@ use std::sync::{Arc, Mutex};
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+use matrix_sdk::ruma::events::room::message::{
+    FormattedBody, MessageFormat, MessageType, RoomMessageEventContent,
+};
 use matrix_sdk::ruma::events::AnyMessageLikeEventContent;
+use matrix_sdk::ruma::html::{
+    ElementAttributesSchemes, Html, HtmlSanitizerMode, ListBehavior, PropertiesNames,
+    SanitizerConfig,
+};
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, RoomId, UserId};
 use matrix_sdk::Client;
 use matrix_sdk_ui::timeline::{
@@ -86,6 +92,7 @@ pub fn project_item_parts(
     sender: Option<&str>,
     sender_display_name: Option<&str>,
     body: Option<&str>,
+    formatted_body: Option<&str>,
     timestamp_ms: Option<u64>,
     is_own: bool,
     send_state: Option<&str>,
@@ -98,10 +105,104 @@ pub fn project_item_parts(
         sender: sender.map(str::to_string),
         sender_display_name: sender_display_name.map(str::to_string),
         body: body.map(str::to_string),
+        formatted_body: formatted_body.map(str::to_string),
         timestamp_ms,
         is_own,
         send_state: send_state.map(str::to_string),
     }
+}
+
+/// The URI schemes this app allows a rendered message's `<a href>` to carry
+/// once it reaches the webview.
+///
+/// Narrower than what ruma's `HtmlSanitizerMode::Compat` allows on its own
+/// (`http`, `https`, `ftp`, `mailto`, `magnet`, plus `matrix` — see
+/// `ruma-html-0.8.0/src/sanitizer_config/clean.rs`,
+/// `spec::allowed_schemes`/`compat::allowed_schemes`): `ftp`/`magnet` are
+/// dropped too, since nothing in this app ever opens either, and every link
+/// this app does open goes through the system opener
+/// (`tauri-plugin-opener`), not an in-app fetch.
+const ALLOWED_LINK_SCHEMES: &[&str] = &["http", "https", "mailto", "matrix"];
+
+/// Hardens an already-sanitised message HTML body before it crosses IPC to
+/// the webview, which renders it with `{@html}` (`Timeline.svelte`).
+///
+/// `matrix_sdk_ui::timeline::Message::from_event` already runs ruma's
+/// `HtmlSanitizerMode::Compat` allowlist sanitiser over `formatted_body`
+/// before this is ever reached (`matrix-sdk-ui-0.18.0/src/lib.rs`,
+/// `DEFAULT_SANITIZER_MODE`, applied via `FormattedBody::sanitize_html`) —
+/// this function does not re-implement or second-guess that allowlist: no
+/// `<script>`, no inline event handlers (`onerror`, ...), no `style`
+/// attribute, and no `javascript:`/`data:` URI can survive that pass, since
+/// none of them are in the Matrix-spec allowlist ruma enforces. What this
+/// function does is run the *same* sanitiser — `ruma::html::SanitizerConfig`,
+/// the exact type `matrix-sdk-ui` itself builds `HtmlSanitizerMode::Compat`
+/// from — a second time with a narrower configuration, for two things
+/// ruma's Compat mode does not do on its own:
+///
+/// - **`<img>` is dropped outright**, not just its `src`. Ruma already
+///   restricts `img src` to a valid `mxc://` URI (same file,
+///   `spec::allowed_schemes` — `("img", "src") => &["mxc"]`; anything else
+///   is left as an unrecognised attribute and the *scheme* check in
+///   `clean_node` then drops the whole `<img>` for having no allowed
+///   `src`), so this is not closing an observed gap. It is removing an
+///   element this webview has no way to usefully render even when ruma
+///   passes it through unchanged: there is no `mxc://` protocol handler
+///   registered, so a surviving `<img src="mxc://...">` only ever paints a
+///   broken-image icon. Dropping it here — rather than rewriting it to its
+///   `alt` text — avoids adding a second code path that builds and escapes
+///   a replacement text node from attacker-supplied content, for a payoff
+///   (showing attacker-chosen `alt` text) this app doesn't need yet.
+/// - **`<a href>` is narrowed to [`ALLOWED_LINK_SCHEMES`]** (`http`,
+///   `https`, `mailto`, `matrix`), dropping the `ftp`/`magnet` schemes ruma
+///   itself would still allow. A link whose scheme isn't in that list has
+///   its `<a>` unwrapped — text kept, no anchor — which is exactly how
+///   ruma's own sanitiser treats a scheme it denies (`NodeAction::Ignore`
+///   in `clean_node`), so this reuses that existing, already-tested
+///   behaviour rather than inventing a different one.
+///
+/// Pure string-in, string-out and independent of any live SDK/timeline
+/// object, so it's unit-testable on its own (see this module's tests).
+fn harden_formatted_body(html: &str) -> String {
+    let config = SanitizerConfig::with_mode(HtmlSanitizerMode::Compat)
+        .remove_elements(["img"])
+        .allow_schemes(
+            [ElementAttributesSchemes {
+                element: "a",
+                attr_schemes: &[PropertiesNames {
+                    parent: "href",
+                    properties: ALLOWED_LINK_SCHEMES,
+                }],
+            }],
+            ListBehavior::Override,
+        );
+    let parsed = Html::parse(html);
+    parsed.sanitize_with(&config);
+    parsed.to_string()
+}
+
+/// Extracts and hardens a message's HTML formatted body, if it has one whose
+/// `format` is `org.matrix.custom.html` (`MessageFormat::Html` — the only
+/// format the spec defines; anything else, including an absent `formatted`
+/// field, projects to `None` here exactly as if the message had no
+/// formatted body at all).
+///
+/// Only `m.text`, `m.notice` and `m.emote` carry a `formatted` field in the
+/// first place (`ruma_events::room::message::{TextMessageEventContent,
+/// NoticeMessageEventContent, EmoteMessageEventContent}` are the only three
+/// with one — `MessageType` has no type-level accessor for it, hence the
+/// match); every other msgtype returns `None`.
+fn formatted_html_body(msgtype: &MessageType) -> Option<String> {
+    let formatted: &FormattedBody = match msgtype {
+        MessageType::Text(m) => m.formatted.as_ref(),
+        MessageType::Notice(m) => m.formatted.as_ref(),
+        MessageType::Emote(m) => m.formatted.as_ref(),
+        _ => None,
+    }?;
+    if formatted.format != MessageFormat::Html {
+        return None;
+    }
+    Some(harden_formatted_body(&formatted.body))
 }
 
 /// `MilliSecondsSinceUnixEpoch` wraps `js_int::UInt`, which only converts to
@@ -225,7 +326,9 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
         TimelineDetails::Ready(profile) => profile.display_name.clone(),
         _ => None,
     };
-    let body = event.content().as_message().map(|m| m.body().to_string());
+    let message = event.content().as_message();
+    let body = message.map(|m| m.body().to_string());
+    let formatted_body = message.and_then(|m| formatted_html_body(m.msgtype()));
     let timestamp_ms = timestamp_to_millis(event.timestamp());
     let is_own = event.sender() == own_user;
     let send_state = event.send_state().map(send_state_name);
@@ -238,6 +341,7 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
         Some(&sender),
         sender_display_name.as_deref(),
         body.as_deref(),
+        formatted_body.as_deref(),
         Some(timestamp_ms),
         is_own,
         send_state,
@@ -260,6 +364,7 @@ fn project_virtual_item(
     project_item_parts(
         id,
         kind,
+        None,
         None,
         None,
         None,
@@ -619,6 +724,7 @@ mod tests {
             Some("@me:x.org"),
             Some("Me"),
             Some("hello"),
+            None,
             Some(1_700_000_000_000),
             true,
             None,
@@ -626,6 +732,7 @@ mod tests {
         assert_eq!(dto.kind, "message");
         assert_eq!(dto.msgtype.as_deref(), Some("m.text"));
         assert_eq!(dto.body.as_deref(), Some("hello"));
+        assert!(dto.formatted_body.is_none());
         assert!(dto.is_own);
     }
 
@@ -634,6 +741,7 @@ mod tests {
         let dto = project_item_parts(
             "vd1",
             "dateDivider",
+            None,
             None,
             None,
             None,
@@ -665,6 +773,7 @@ mod tests {
             Some("@alice:x.org"),
             Some("Alice"),
             None,
+            None,
             Some(1_700_000_000_000),
             false,
             None,
@@ -684,12 +793,146 @@ mod tests {
             Some("@bot:x.org"),
             None,
             Some("build finished"),
+            None,
             Some(1_700_000_000_000),
             false,
             None,
         );
         assert_eq!(dto.kind, "message");
         assert_eq!(dto.msgtype.as_deref(), Some("m.notice"));
+    }
+
+    #[test]
+    fn project_item_parts_carries_a_formatted_body_through_untouched() {
+        // `project_item_parts` just stores whatever it's handed — the
+        // extraction and hardening live in `formatted_html_body` /
+        // `harden_formatted_body`, tested below.
+        let dto = project_item_parts(
+            "$e4",
+            "message",
+            Some("m.text"),
+            None,
+            Some("@me:x.org"),
+            Some("Me"),
+            Some("plain"),
+            Some("<p>rich</p>"),
+            Some(1_700_000_000_000),
+            true,
+            None,
+        );
+        assert_eq!(dto.body.as_deref(), Some("plain"));
+        assert_eq!(dto.formatted_body.as_deref(), Some("<p>rich</p>"));
+    }
+
+    #[test]
+    fn formatted_html_body_is_none_for_a_plain_text_message() {
+        assert!(formatted_html_body(&MessageType::text_plain("hello")).is_none());
+    }
+
+    #[test]
+    fn formatted_html_body_is_none_for_a_msgtype_that_never_carries_one() {
+        // `m.image` (and every other non-text/notice/emote msgtype) has no
+        // `formatted` field at all in ruma's model.
+        let msgtype = MessageType::new(
+            "m.image",
+            "cat.png".into(),
+            serde_json::json!({ "url": "mxc://example.org/abc" })
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        assert!(formatted_html_body(&msgtype).is_none());
+    }
+
+    #[test]
+    fn formatted_html_body_projects_an_html_formatted_text_message() {
+        let msgtype = MessageType::text_html("plain fallback", "<p>rich <strong>text</strong></p>");
+        let html = formatted_html_body(&msgtype).expect("m.text with an HTML formatted body");
+        assert!(html.contains("<strong>text</strong>"));
+    }
+
+    #[test]
+    fn formatted_html_body_projects_html_formatted_notice_and_emote_messages_too() {
+        assert!(formatted_html_body(&MessageType::notice_html("n", "<p>n</p>")).is_some());
+        assert!(formatted_html_body(&MessageType::emote_html("e", "<p>e</p>")).is_some());
+    }
+
+    #[test]
+    fn formatted_html_body_is_none_when_format_is_not_the_html_one() {
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+
+        let mut content = TextMessageEventContent::plain("plain fallback");
+        content.formatted = Some(FormattedBody {
+            // The spec defines exactly one format, `org.matrix.custom.html`;
+            // this is deliberately something else, simulating a value this
+            // build doesn't understand.
+            format: MessageFormat::from("some.other.format"),
+            body: "<p>should not be projected</p>".into(),
+        });
+        assert!(formatted_html_body(&MessageType::Text(content)).is_none());
+    }
+
+    #[test]
+    fn harden_formatted_body_drops_img_elements_entirely() {
+        // Ruma's own sanitiser already restricts `img src` to `mxc://` — see
+        // this function's doc comment — but the webview can't load `mxc://`
+        // either way, so this app drops `<img>` outright rather than
+        // rendering a permanently-broken image.
+        let out = harden_formatted_body(
+            r#"<p>before<img src="mxc://example.org/abc" alt="cat">after</p>"#,
+        );
+        assert!(!out.contains("<img"), "expected no <img> in {out:?}");
+    }
+
+    #[test]
+    fn harden_formatted_body_keeps_links_on_the_allowed_scheme_list() {
+        for scheme_href in [
+            "https://example.org/x",
+            "http://example.org/x",
+            "mailto:a@example.org",
+        ] {
+            let out = harden_formatted_body(&format!(r#"<a href="{scheme_href}">link</a>"#));
+            assert!(
+                out.contains(&format!(r#"href="{scheme_href}""#)),
+                "expected {scheme_href} preserved in {out:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn harden_formatted_body_unwraps_links_outside_the_allowed_scheme_list() {
+        // `ftp:`/`magnet:` are schemes ruma's own Compat sanitiser would
+        // still allow (see this function's doc comment) but this app
+        // narrows away, since nothing here opens either. `javascript:`
+        // shouldn't reach this function at all (ruma's earlier pass already
+        // strips it), but is included as a second layer of proof that a
+        // disallowed scheme never survives with its anchor intact.
+        for href in [
+            "ftp://example.org/file",
+            "magnet:?xt=urn:btih:abc",
+            "javascript:alert(1)",
+        ] {
+            let out = harden_formatted_body(&format!(r#"<a href="{href}">click me</a>"#));
+            assert!(
+                !out.contains("<a "),
+                "expected the anchor removed from {out:?}"
+            );
+            assert!(
+                out.contains("click me"),
+                "expected the link text preserved in {out:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn harden_formatted_body_preserves_ordinary_rich_text_formatting() {
+        let out = harden_formatted_body(
+            "<p>Fresh login URL:</p><p><strong>https://login.example.org/a/1</strong></p><pre><code>fn main() {}</code></pre>",
+        );
+        assert!(out.contains("<strong>https://login.example.org/a/1</strong>"));
+        assert!(out.contains("<pre>"));
+        assert!(out.contains("<code>"));
     }
 
     #[test]

@@ -38,11 +38,42 @@
   // `reachedStart` and `followBottom` all start clean for every room,
   // and virtua's own internal size cache doesn't get reused across two
   // unrelated item sets either.
+  //
+  // A bubble renders `item.formattedBody` with `{@html}` when present,
+  // falling back to the plain `item.body` otherwise (the `{#if
+  // item.formattedBody}` branch in the bubble markup below). `{@html}` is
+  // otherwise a red flag in a Svelte app — it
+  // is safe here **only** because of guarantees made entirely on the Rust
+  // side, before this string ever crosses IPC:
+  //   1. `core::timeline::formatted_html_body` only populates `formattedBody`
+  //      for a `format: "org.matrix.custom.html"` body, and only after
+  //      `matrix_sdk_ui::timeline::Message::from_event` has already run
+  //      ruma's `HtmlSanitizerMode::Compat` allowlist sanitiser over it
+  //      (`matrix-sdk-ui`'s own `DEFAULT_SANITIZER_MODE`) — no `<script>`,
+  //      no `on*` handlers, no `style` attribute, no `javascript:`/`data:`
+  //      URI survives that pass.
+  //   2. `core::timeline::harden_formatted_body` then runs the *same*
+  //      sanitiser a second time, narrower: `<img>` is dropped outright
+  //      (nothing here can load `mxc://`, and a surviving non-`mxc` `src`
+  //      would leak the reader's IP as a tracking beacon), and `<a href>`
+  //      is restricted to `http`/`https`/`mailto`/`matrix`.
+  // If a future change needs to render more of the timeline as HTML, run it
+  // through that same core-side path — never pipe a fresh string through
+  // `{@html}` here just because this precedent exists; the guarantee lives
+  // in the Rust code that produced the string, not in this file.
+  //
+  // Links inside that HTML are still plain `<a>` tags in a webview with no
+  // browser chrome, so a click on one would otherwise replace this whole
+  // app with the target page and leave no way back. `messageLinks.ts`'s
+  // `handleMessageBodyClick`, wired below on every bubble's content, is
+  // what redirects that click to the system browser via
+  // `tauri-plugin-opener` instead of letting the SPA navigate.
 
   import { tick } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { viewFor } from "./timelineItemView";
+  import { handleMessageBodyClick } from "./messageLinks";
   import type { TimelineItem } from "$lib/ipc";
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
@@ -147,14 +178,41 @@
                     {item.senderDisplayName ?? item.sender ?? "Unknown"}
                   </p>
                 {/if}
-                <p
-                  class="selectable text-sm whitespace-pre-wrap break-words {view.muted &&
-                  !item.isOwn
-                    ? 'text-content-muted'
-                    : ''}"
-                >
-                  {item.body}
-                </p>
+                {#if item.formattedBody}
+                  <!--
+                    `{@html}` — safe only because of the guarantees this
+                    file's top-of-script doc comment spells out in full
+                    (core-side sanitisation + hardening, never redone here).
+                    Do not copy this pattern onto any other field.
+
+                    `onclick` here is delegated link handling, not a
+                    control of its own — `handleMessageBodyClick` only acts
+                    when the click bubbled up from a nested `<a href>`, and
+                    an `<a>`'s own native keyboard activation (Enter/Space)
+                    already dispatches a bubbling `click` the same way a
+                    mouse click does, so there is no extra keyboard handler
+                    this div itself needs to add.
+                  -->
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="message-html selectable text-sm {view.muted && !item.isOwn
+                      ? 'text-content-muted'
+                      : ''}"
+                    onclick={handleMessageBodyClick}
+                  >
+                    {@html item.formattedBody}
+                  </div>
+                {:else}
+                  <p
+                    class="selectable text-sm whitespace-pre-wrap break-words {view.muted &&
+                    !item.isOwn
+                      ? 'text-content-muted'
+                      : ''}"
+                  >
+                    {item.body}
+                  </p>
+                {/if}
                 <p
                   class="mt-1 text-right text-[10px] {item.isOwn
                     ? 'text-accent-content/70'
@@ -205,3 +263,97 @@
     </VList>
   {/if}
 </div>
+
+<style>
+  /*
+   * Typography for `{@html item.formattedBody}` content (see this file's
+   * top-of-script doc comment for the sanitisation guarantees that make
+   * rendering it safe at all). `:global(...)` throughout, deliberately: the
+   * elements below come from raw injected HTML, not markup Svelte compiles
+   * and scopes itself, so a plain (non-global) selector would never match
+   * them.
+   *
+   * Colors are `--color-*` tokens from `src/app.css`, per the same
+   * no-hardcoded-colors rule the rest of the app follows — except that they
+   * are read through `currentColor` (the bubble's own already-token-driven
+   * text color, `text-content`/`text-accent-content`/`text-content-muted`
+   * set in the markup above) rather than referenced directly, since this
+   * block must look right against *both* an own-message bubble (accent
+   * background) and a peer bubble (surface background) without knowing
+   * which one it's in.
+   *
+   * Long content must never widen the bubble (`max-w-[70%]` on its
+   * container, in the markup above): `overflow-wrap: anywhere` handles long
+   * unbroken words/URLs by wrapping, and `pre` additionally scrolls
+   * horizontally for content that shouldn't wrap (code) rather than
+   * wrapping or overflowing.
+   */
+  .message-html {
+    overflow-wrap: anywhere;
+  }
+
+  :global(.message-html p) {
+    margin: 0;
+  }
+
+  :global(.message-html > * + *) {
+    margin-top: 0.4em;
+  }
+
+  :global(.message-html ul),
+  :global(.message-html ol) {
+    margin: 0.4em 0;
+    padding-left: 1.25em;
+  }
+
+  :global(.message-html li) {
+    margin: 0.15em 0;
+  }
+
+  :global(.message-html blockquote) {
+    margin: 0.4em 0;
+    padding-left: 0.6em;
+    border-left: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+    color: color-mix(in srgb, currentColor 75%, transparent);
+  }
+
+  :global(.message-html a) {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+    overflow-wrap: anywhere;
+  }
+
+  :global(.message-html strong) {
+    font-weight: 600;
+  }
+
+  :global(.message-html em) {
+    font-style: italic;
+  }
+
+  :global(.message-html code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    border-radius: 0.25em;
+    padding: 0.1em 0.3em;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.message-html pre) {
+    margin: 0.4em 0;
+    padding: 0.5em 0.6em;
+    border-radius: 0.5em;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  :global(.message-html pre code) {
+    background: none;
+    padding: 0;
+    overflow-wrap: normal;
+    white-space: pre;
+  }
+</style>

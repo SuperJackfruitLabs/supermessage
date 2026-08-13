@@ -34,6 +34,7 @@ function item(id: string): TimelineItem {
     sender: "@someone:example.org",
     senderDisplayName: null,
     body: id,
+    formattedBody: null,
     timestampMs: 1_700_000_000_000,
     isOwn: false,
     sendState: null,

@@ -41,6 +41,16 @@ pub struct TimelineItemDto {
     pub sender: Option<String>,
     pub sender_display_name: Option<String>,
     pub body: Option<String>,
+    /// The message's HTML formatted body, present only when the SDK reports
+    /// `format: "org.matrix.custom.html"` (see
+    /// `core::timeline::formatted_html_body`). Already sanitised — first by
+    /// `matrix_sdk_ui::timeline::Message::from_event`'s
+    /// `HtmlSanitizerMode::Compat` pass, then by this project's own
+    /// `img`/link hardening on top of it (see `core::timeline`'s doc
+    /// comments for exactly what each pass does) — because the webview
+    /// renders this directly with `{@html}`. `body` stays the untouched
+    /// plain-text fallback; never derive one from the other.
+    pub formatted_body: Option<String>,
     pub timestamp_ms: Option<u64>,
     pub is_own: bool,
     pub send_state: Option<String>,
