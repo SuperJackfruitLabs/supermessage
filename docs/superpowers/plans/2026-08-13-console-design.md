@@ -71,6 +71,8 @@ Replace the placeholder ramp in `@theme` with the light-theme values from spec �
 
 `--font-system` stays defined, as the documented one-token revert path for the serif experiment (spec §4).
 
+Tailwind v4's `@theme` turns `--text-label` into a `text-label` utility and `--text-label--line-height` / `--text-label--letter-spacing` / `--text-label--font-weight` into that utility's paired properties. It has **no** convention for text-transform, so `--text-label`'s uppercase is applied at each call site (`class="text-label font-mono uppercase"`). Set the letter-spacing and weight as theme sub-properties so only the uppercase and the family have to be repeated.
+
 - [ ] **Step 4: Set the base face and the reduced-motion opt-out**
 
 `:root` keeps `font-family: var(--font-sans)` (was `--font-system`). Add, in `@layer base`:
@@ -188,11 +190,14 @@ describe("parseRoomIdentity", () => {
   });
 
   it("yields null for an empty half rather than an empty string", () => {
+    // A trailing dash with nothing after it still splits — the separator
+    // needs whitespace *before* the dash, not after.
     expect(parseRoomIdentity("Buddhimaan —")).toEqual({
       glyph: null,
       name: "Buddhimaan",
       role: null,
     });
+    // No whitespace before the dash, so this is not a separator at all.
     expect(parseRoomIdentity("— Squad Lead").name).toBe("— Squad Lead");
   });
 
@@ -204,8 +209,9 @@ describe("parseRoomIdentity", () => {
   });
 
   it("never returns an empty name", () => {
-    expect(parseRoomIdentity("   ").name).not.toBe("");
-    expect(parseRoomIdentity("").name).not.toBe("");
+    expect(parseRoomIdentity("   ").name).toBe("Unnamed room");
+    expect(parseRoomIdentity("").name).toBe("Unnamed room");
+    expect(parseRoomIdentity(" — ").name).toBe("Unnamed room");
   });
 });
 
@@ -254,7 +260,8 @@ Expected: FAIL — module not found.
 Write it with a module doc comment in this codebase's house style: say what structure it is parsing and *why that structure exists* (agent rooms on `id.agentpod.dev` are named `<glyph> <Name> — <Role>`), and state that a room without that structure is normal and must degrade silently. Cross-reference spec §5.1.
 
 Implementation notes that the tests above pin but the prose should also make explicit:
-- Split on `/\s+—\s+/` (em dash U+2014 with surrounding whitespace), first occurrence only, using `indexOf` rather than a global regex so the role half keeps any later dashes.
+- Split on `/\s+—\s*/` — em dash U+2014, **whitespace required before it, optional after**, first occurrence only. Whitespace before is what stops `aether-dispatches` splitting; whitespace after being optional is what makes a trailing `"Buddhimaan —"` yield a null role rather than a name with a dangling dash. Match once and slice, rather than using a global regex or `split`, so the role half keeps any later dashes (`"Coder Kai — Code — Build"` → role `"Code — Build"`).
+- When the resulting name is empty after trimming, return the literal `"Unnamed room"`. An empty string would collapse the roster row and produce an avatar with no fallback character.
 - Detect the glyph by taking `[...trimmed][0]` and requiring both that its code point is `> 0x7f` and that the character after it is whitespace. Emoji with a variation selector or ZWJ sequence must survive whole — take every code point up to the first whitespace as the glyph candidate, then require the remainder to be non-empty.
 - `relativeTime` clamps a negative delta to zero before bucketing. The ≥7d branch uses `Intl.DateTimeFormat` with `{month: "short", day: "numeric"}`.
 
@@ -515,14 +522,17 @@ Add to `customEvents.test.ts`, using its existing fixture-registry pattern:
 
 ```ts
 describe("decision", () => {
-  const decisionRenderer = (decision: unknown) => ({
-    eventType: "test.decision.v1",
-    maxKnownSchemaVersion: 1,
-    render: () => ({ fields: [{ label: "Action", value: "Restart gateway" }], decision }) as never,
-  });
-
+  // `decision` is deliberately `unknown` here: these tests feed shapes a
+  // renderer must never be trusted to get right, so the cast to the
+  // renderer interface is the point, not an oversight. Cast through
+  // `unknown` to `CustomEventRenderer` — never `as never`.
   function resolve(decision: unknown) {
-    const registry = createCustomEventRegistry([decisionRenderer(decision) as never]);
+    const renderer = {
+      eventType: "test.decision.v1",
+      maxKnownSchemaVersion: 1,
+      render: () => ({ fields: [{ label: "Action", value: "Restart gateway" }], decision }),
+    } as unknown as CustomEventRenderer;
+    const registry = createCustomEventRegistry([renderer]);
     return resolveCustomEvent(registry, "test.decision.v1", {}, "fallback");
   }
 
