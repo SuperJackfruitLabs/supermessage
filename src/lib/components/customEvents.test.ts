@@ -388,6 +388,21 @@ describe("decision", () => {
     }
   });
 
+  it("drops a function-valued decision, even when it carries a valid prompt and options", () => {
+    // The case that isolates `boundDecision`'s non-object guard: a function
+    // is `typeof "function"`, not `"object"`, yet it can carry ordinary
+    // properties — so every *other* check in that function passes here.
+    // Delete the guard and this shape renders a live amber card. (The
+    // primitives above do not isolate it: none of them has an `options`
+    // array, so the `Array.isArray` check catches them anyway.)
+    const hostile = () => "not a decision";
+    Object.assign(hostile, {
+      prompt: "Approve restarting hermes-gateway?",
+      options: [{ id: "approve", label: "Approve" }],
+    });
+    expect(resolve(hostile)).toMatchObject({ decision: null });
+  });
+
   it("drops a decision whose prompt is not a string, even with valid options", () => {
     expect(
       resolve({ prompt: { toString: () => "gotcha" }, options: [{ id: "a", label: "A" }] }),

@@ -333,7 +333,14 @@ function boundFields(fields: readonly CustomEventField[]): CustomEventField[] {
  * highest-value surface in the timeline to get wrong — so nothing is
  * assumed and every level is checked explicitly:
  *
- * - not a non-null object → `null`;
+ * - not a non-null object → `null`. This arm is load-bearing and not
+ *   merely defensive tidiness, which is worth stating because it is easy to
+ *   talk yourself out of: the `Array.isArray(options)` check below does
+ *   *not* subsume it. A **function** is `typeof "function"`, not
+ *   `"object"`, and a function can carry a `prompt` string and an `options`
+ *   array as ordinary properties — so without this line a function-valued
+ *   `decision` would sail through every other check and render. There is a
+ *   test named for exactly that;
  * - `prompt` not a `string` → `null` (never coerced: `String(value)` would
  *   happily stringify an attacker-controlled object);
  * - `options` not an array → `null`;

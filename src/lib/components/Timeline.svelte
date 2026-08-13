@@ -680,9 +680,20 @@
   {/if}
 {/snippet}
 
-{#snippet reactionsRow(item: TimelineItem)}
+{#snippet reactionsRow(item: TimelineItem, alignEnd: boolean = item.isOwn)}
+  <!--
+    `alignEnd` defaults to `item.isOwn` — an own bubble's affordances hang
+    off its right edge — but it is a *parameter*, not a read of `isOwn`,
+    because one caller genuinely differs: the dispatch card is left-aligned
+    regardless of sender (spec §7), so its rows must be too. See the card's
+    call sites. Do not "simplify" this back to `item.isOwn`: `isOwn` is
+    account-scoped (`event.sender() == own_user` in the core), so any other
+    session signed in as this account can produce an own custom event, and
+    a right-hanging row under a left-anchored card is then reachable, not
+    hypothetical.
+  -->
   {#if item.reactions.length > 0}
-    <div class="mt-1.5 flex flex-wrap gap-1 {item.isOwn ? 'justify-end' : ''}">
+    <div class="mt-1.5 flex flex-wrap gap-1 {alignEnd ? 'justify-end' : ''}">
       {#each item.reactions as reaction (reaction.key)}
         {@const interactive = canReplyOrReact(item)}
         {@const chipClass = reaction.byMe
@@ -744,7 +755,8 @@
   {/if}
 {/snippet}
 
-{#snippet messageActions(item: TimelineItem)}
+{#snippet messageActions(item: TimelineItem, alignEnd: boolean = item.isOwn)}
+  <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter. -->
   {#if canReplyOrReact(item)}
     <!--
       Chrome, not content — no `.selectable` here (see this file's
@@ -764,7 +776,7 @@
       inside a serif block.
     -->
     <div
-      class="mt-0.5 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {item.isOwn
+      class="mt-0.5 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {alignEnd
         ? '-mr-1.5 justify-end'
         : '-ml-1.5'}"
     >
@@ -789,8 +801,10 @@
   {/if}
 {/snippet}
 
-{#snippet seenMarker(item: TimelineItem)}
-  <!--
+{#snippet seenMarker(item: TimelineItem, alignEnd: boolean = item.isOwn)}
+  <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter.
+
+
     "Seen"/"Seen by N" — the reader's own latest message only, per
     `TimelineItemDto::read_by`'s doc comment (`core::dto`): no per-message
     avatar stack, and never shown on anyone else's message. `lastOwnMessageId`
@@ -807,7 +821,7 @@
       with `--color-content` text, and white-at-70% on that ground is
       effectively invisible. Mono, because a read receipt is data.
     -->
-    <p class="mt-1 text-right font-mono text-meta text-content-muted">
+    <p class="mt-1 font-mono text-meta text-content-muted {alignEnd ? 'text-right' : 'text-left'}">
       {item.readBy.length === 1 ? "Seen" : `Seen by ${item.readBy.length}`}
     </p>
   {/if}
@@ -1205,19 +1219,13 @@
                 -->
                 {#if view.view.status === "placeholder"}
                   <!--
-                    Not a card, on purpose (spec §7): a type this build cannot
-                    render at all is not worth a bordered object. Identical
-                    markup to the `system`/`placeholder` lines below, so it
-                    reads as the same quiet machine log — including the
-                    three-part wrap guard, whose reasoning is spelled out
-                    there. Mono and not italic, per spec §6.3.
+                    Not a card, on purpose (spec §7): a type this build
+                    cannot render at all is not worth a bordered object. It
+                    is a log line like any other, and it renders through the
+                    same `logLine` snippet — see there for the wrap guard and
+                    why every row in that log is deliberately identical.
                   -->
-                  <div class="flex justify-center py-2">
-                    <span
-                      class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
-                      >{view.view.text}</span
-                    >
-                  </div>
+                  {@render logLine(view.view.text)}
                 {:else}
                   {@const decision =
                     view.view.status === "rendered" ? view.view.decision : null}
@@ -1232,7 +1240,7 @@
                     are read in and makes `68ch` resolve against that face, so
                     a card is exactly as wide as a peer message.
                   -->
-                  <div class="flex justify-start pt-4">
+                  <div class="flex justify-start pt-8">
                     <div class="group min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
                       <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
                         <!--
@@ -1252,43 +1260,72 @@
                           <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
                         </div>
                         {#if view.view.status === "rendered"}
-                          <dl class="selectable m-0 px-3 py-2">
-                            <!--
-                              A real `<dl>`: these rows are label/value pairs,
-                              and a screen reader should read them as such
-                              rather than as a run of unrelated lines. Keyed
-                              by index, not `field.label` — a renderer's
-                              fields are trusted (registered application code,
-                              not an array read straight off the payload), but
-                              a duplicate label is still possible and
-                              shouldn't be able to confuse Svelte's keyed
-                              reconciliation.
+                          <!--
+                            A real `<dl>`: these rows are label/value pairs,
+                            and a screen reader should read them as such
+                            rather than as a run of unrelated lines. Keyed by
+                            index, not `field.label` — a renderer's fields are
+                            trusted (registered application code, not an array
+                            read straight off the payload), but a duplicate
+                            label is still possible and shouldn't be able to
+                            confuse Svelte's keyed reconciliation.
 
-                              The label column is a fixed `9ch` (spec §7),
-                              measured in the label's own mono face because
-                              `ch` resolves against the element's own font.
-                              `break-words` inside it because a label is
-                              bounded at 60 chars, not at 9.
-                            -->
+                            A two-column *grid*, not a flex row per pair, and
+                            the label track is `max-content` rather than the
+                            fixed `9ch` this first shipped with. Both halves
+                            of that are corrections found by rendering:
+
+                            - A fixed `9ch` is narrower than most real labels,
+                              and `overflow-wrap` then breaks them mid-word —
+                              `REQUEST`/`ED BY`, and at the 60-char bound a
+                              twelve-line syllable ladder. `min-w-[9ch]` keeps
+                              the spec's column rank for a short label like
+                              `NOTE`; `max-w-[16ch]` bounds it; between them
+                              an ordinary multi-word label wraps at its spaces
+                              and only a single over-long *word* still breaks,
+                              which is `break-words`' (`overflow-wrap:
+                              break-word`, not `anywhere`) last resort doing
+                              what it should.
+                            - A `max-content` track clamped by those two
+                              widths sizes to the longest label *in this card*
+                              and applies to every row, so the values still
+                              line up in one column. Per-row flex would let
+                              each row pick its own label width and the grid
+                              would stop being a grid.
+
+                            `ch` resolves against the element's own font, so
+                            the two caps are on the `dt`, which is the mono
+                            one — 9ch of mono, as the spec means it, not 9ch
+                            of the serif the card is set in.
+                          -->
+                          <dl
+                            class="selectable m-0 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 px-3 py-2"
+                          >
                             {#each view.view.fields as field, i (i)}
-                              <div class="flex items-baseline gap-3 {i > 0 ? 'mt-1' : ''}">
-                                <dt
-                                  class="w-[9ch] shrink-0 font-mono text-label uppercase break-words text-content-muted"
-                                >
-                                  {field.label}
-                                </dt>
-                                <dd class="m-0 min-w-0 flex-1 break-words">{field.value}</dd>
-                              </div>
+                              <dt
+                                class="min-w-[9ch] max-w-[16ch] font-mono text-label uppercase break-words text-content-muted"
+                              >
+                                {field.label}
+                              </dt>
+                              <dd class="m-0 min-w-0 break-words">{field.value}</dd>
                             {/each}
                           </dl>
                           {#if view.view.newerVersion}
                             <!--
-                              Faint mono, and emphatically *not* amber: this
-                              is a note, not a decision, and amber is reserved
+                              Mono and emphatically *not* amber: this is a
+                              note, not a decision, and amber is reserved
                               (spec §3). Not italic either — no mono italic is
                               bundled (spec §6.3).
+
+                              `--color-content-muted`, not `faint`, and that
+                              is a measured floor rather than a preference:
+                              `faint` on `--color-surface-raised` is 4.16:1
+                              in dark, under the 4.5:1 bar, because the card's
+                              ground is *raised* off the surface the rest of
+                              the log's faint rows sit on. `muted` on the same
+                              ground is 8.21:1.
                             -->
-                            <p class="px-3 pb-2 font-mono text-meta text-content-faint">
+                            <p class="px-3 pb-2 font-mono text-meta text-content-muted">
                               Shown from a newer version of this event
                             </p>
                           {/if}
@@ -1369,15 +1406,22 @@
                         Outside the bordered object, not inside it: the card
                         is the dispatch, and these are this reader's
                         affordances against it — the same relationship, and
-                        the same shared snippets, a message block has. They
-                        anchor to `item.isOwn`, which for a dispatch is always
-                        false in practice (this client cannot send a custom
-                        event), so in this build they always sit left with the
-                        card's own edge.
+                        the same shared snippets, a message block has.
+
+                        `alignEnd: false` explicitly, on all three, because
+                        the card is left-aligned regardless of sender and its
+                        affordances must be too. This is not defensive
+                        decoration: `isOwn` is `event.sender() == own_user` in
+                        the core, i.e. *account*-scoped, not client-scoped, so
+                        another session signed in as this account can produce
+                        an own custom event — and `lastOwnMessageId`
+                        (top-of-script) already handles exactly that case for
+                        `seenMarker`. Left the default and these rows would
+                        hang off the right edge of a left-anchored card.
                       -->
-                      {@render reactionsRow(item)}
-                      {@render messageActions(item)}
-                      {@render seenMarker(item)}
+                      {@render reactionsRow(item, false)}
+                      {@render messageActions(item, false)}
+                      {@render seenMarker(item, false)}
                     </div>
                   </div>
                 {/if}
@@ -1413,6 +1457,24 @@
    * object, and the only place `--color-signal` (amber) appears anywhere in
    * this application (spec §3).
    *
+   * **Two border ranks, and the difference between them is the whole
+   * device.** A 1px `--color-border` hairline on three sides, a 2px
+   * `--color-border-strong` edge on the left (spec §7). The first
+   * implementation used `border-strong` on all four sides, and rendering it
+   * is what exposed the mistake: the left edge was then the same colour as
+   * its neighbours and merely one pixel wider — invisible at any normal
+   * viewing distance. That left the card's signature device existing *only*
+   * on the pending variant, which no shipped renderer can currently
+   * produce, so everything a user could actually see had no signature at
+   * all. The edge has to read as a rank in the ordinary state, so that
+   * going amber changes an edge's **meaning** rather than conjuring an edge
+   * from nothing.
+   *
+   * This matters more in light than the token table suggests:
+   * `--color-surface-raised` on `--color-surface` measures 1.03:1, so in
+   * light mode the card has, for practical purposes, no ground — only its
+   * frame. The frame is what makes it an object there.
+   *
    * Written here rather than as Tailwind utilities for one specific
    * reason: the card sets `border-color` on three sides and a *different*
    * `border-left-color` on the fourth. As utilities those are two rules of
@@ -1429,7 +1491,7 @@
    * is covered by `app.css`'s `prefers-reduced-motion` opt-out.
    */
   .dispatch-card {
-    border: 1px solid var(--color-border-strong);
+    border: 1px solid var(--color-border);
     border-left: 2px solid var(--color-border-strong);
     border-radius: 6px;
     background-color: var(--color-surface-raised);
