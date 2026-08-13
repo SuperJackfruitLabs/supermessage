@@ -28,7 +28,9 @@ const ROOM_B = "!b:example.org";
 function item(id: string): TimelineItem {
   return {
     id,
-    kind: "m.room.message",
+    kind: "message",
+    msgtype: "m.text",
+    detail: null,
     sender: "@someone:example.org",
     senderDisplayName: null,
     body: id,

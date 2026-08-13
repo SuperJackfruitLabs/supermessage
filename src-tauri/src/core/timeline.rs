@@ -23,8 +23,8 @@ use matrix_sdk::ruma::events::AnyMessageLikeEventContent;
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, RoomId, UserId};
 use matrix_sdk::Client;
 use matrix_sdk_ui::timeline::{
-    EventSendState, EventTimelineItem, RoomExt, Timeline, TimelineDetails, TimelineItem,
-    TimelineItemKind, VirtualTimelineItem,
+    EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline,
+    TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
 };
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
@@ -81,6 +81,8 @@ pub type TimelineSnapshot = (String, u64, Vec<TimelineItemDto>);
 pub fn project_item_parts(
     id: &str,
     kind: &str,
+    msgtype: Option<&str>,
+    detail: Option<&str>,
     sender: Option<&str>,
     sender_display_name: Option<&str>,
     body: Option<&str>,
@@ -91,6 +93,8 @@ pub fn project_item_parts(
     TimelineItemDto {
         id: id.to_string(),
         kind: kind.to_string(),
+        msgtype: msgtype.map(str::to_string),
+        detail: detail.map(str::to_string),
         sender: sender.map(str::to_string),
         sender_display_name: sender_display_name.map(str::to_string),
         body: body.map(str::to_string),
@@ -131,13 +135,91 @@ fn event_item_id(event: &EventTimelineItem) -> String {
     }
 }
 
+/// Maps an SDK `MembershipChange` onto the wire vocabulary, handling the
+/// outer `Option` (an event whose membership change the SDK couldn't
+/// compute) explicitly rather than folding it into a wildcard.
+///
+/// Exhaustive over both the `Option` and every `MembershipChange` variant —
+/// like `send_state_name`, this must fail to compile if the SDK adds a
+/// variant, rather than silently mislabel a membership line.
+fn membership_change_name(change: Option<MembershipChange>) -> &'static str {
+    let Some(change) = change else {
+        return "unknown";
+    };
+    match change {
+        MembershipChange::None => "none",
+        MembershipChange::Error => "error",
+        MembershipChange::Joined => "joined",
+        MembershipChange::Left => "left",
+        MembershipChange::Banned => "banned",
+        MembershipChange::Unbanned => "unbanned",
+        MembershipChange::Kicked => "kicked",
+        MembershipChange::Invited => "invited",
+        MembershipChange::KickedAndBanned => "kickedAndBanned",
+        MembershipChange::InvitationAccepted => "invitationAccepted",
+        MembershipChange::InvitationRejected => "invitationRejected",
+        MembershipChange::InvitationRevoked => "invitationRevoked",
+        MembershipChange::Knocked => "knocked",
+        MembershipChange::KnockAccepted => "knockAccepted",
+        MembershipChange::KnockRetracted => "knockRetracted",
+        MembershipChange::KnockDenied => "knockDenied",
+        MembershipChange::NotImplemented => "notImplemented",
+    }
+}
+
+/// Projects the SDK's `TimelineItemContent` taxonomy into the wire `(kind,
+/// msgtype, detail)` triple documented on [`TimelineItemDto`] and in
+/// `docs/matrix-events.md`.
+///
+/// Exhaustive with **no wildcard arm**, like `send_state_name` and
+/// `project_diff`: a future `TimelineItemContent` (or `MsgLikeKind`) variant
+/// must fail this to compile rather than silently fall through to the old
+/// "Unsupported event" behaviour this refactor exists to remove.
+fn classify_content(
+    content: &TimelineItemContent,
+) -> (&'static str, Option<String>, Option<String>) {
+    match content {
+        TimelineItemContent::MsgLike(msg_like) => match &msg_like.kind {
+            MsgLikeKind::Message(message) => (
+                "message",
+                Some(message.msgtype().msgtype().to_string()),
+                None,
+            ),
+            MsgLikeKind::Sticker(_) => ("sticker", None, None),
+            MsgLikeKind::Poll(_) => ("poll", None, None),
+            MsgLikeKind::Redacted => ("redacted", None, None),
+            MsgLikeKind::UnableToDecrypt(_) => ("unableToDecrypt", None, None),
+            MsgLikeKind::Other(other) => {
+                ("customMessage", None, Some(other.event_type().to_string()))
+            }
+            MsgLikeKind::LiveLocation(_) => ("liveLocation", None, None),
+        },
+        TimelineItemContent::MembershipChange(change) => (
+            "membership",
+            None,
+            Some(membership_change_name(change.change()).to_string()),
+        ),
+        TimelineItemContent::ProfileChange(_) => ("profileChange", None, None),
+        TimelineItemContent::OtherState(state) => (
+            "state",
+            None,
+            Some(state.content().event_type().to_string()),
+        ),
+        TimelineItemContent::FailedToParseMessageLike { event_type, .. } => {
+            ("failedToParse", None, Some(event_type.to_string()))
+        }
+        TimelineItemContent::FailedToParseState { event_type, .. } => {
+            ("failedToParse", None, Some(event_type.to_string()))
+        }
+        TimelineItemContent::CallInvite => ("callInvite", None, None),
+        TimelineItemContent::RtcNotification { .. } => ("rtcNotification", None, None),
+    }
+}
+
 /// Project an SDK event item into the wire [`TimelineItemDto`].
 fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineItemDto {
     let id = event_item_id(event);
-    let kind = event
-        .content()
-        .event_type_str()
-        .unwrap_or_else(|| "unknown".to_string());
+    let (kind, msgtype, detail) = classify_content(event.content());
     let sender = event.sender().to_string();
     let sender_display_name = match event.sender_profile() {
         TimelineDetails::Ready(profile) => profile.display_name.clone(),
@@ -150,7 +232,9 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
 
     project_item_parts(
         &id,
-        &kind,
+        kind,
+        msgtype.as_deref(),
+        detail.as_deref(),
         Some(&sender),
         sender_display_name.as_deref(),
         body.as_deref(),
@@ -173,7 +257,18 @@ fn project_virtual_item(
         VirtualTimelineItem::ReadMarker => ("readMarker", None),
         VirtualTimelineItem::TimelineStart => ("timelineStart", None),
     };
-    project_item_parts(id, kind, None, None, None, timestamp_ms, false, None)
+    project_item_parts(
+        id,
+        kind,
+        None,
+        None,
+        None,
+        None,
+        None,
+        timestamp_ms,
+        false,
+        None,
+    )
 }
 
 /// Project an SDK [`TimelineItem`] into the wire [`TimelineItemDto`].
@@ -518,7 +613,9 @@ mod tests {
     fn projects_a_text_message_with_ownership() {
         let dto = project_item_parts(
             "$e1",
-            "m.room.message",
+            "message",
+            Some("m.text"),
+            None,
             Some("@me:x.org"),
             Some("Me"),
             Some("hello"),
@@ -526,16 +623,140 @@ mod tests {
             true,
             None,
         );
-        assert_eq!(dto.kind, "m.room.message");
+        assert_eq!(dto.kind, "message");
+        assert_eq!(dto.msgtype.as_deref(), Some("m.text"));
         assert_eq!(dto.body.as_deref(), Some("hello"));
         assert!(dto.is_own);
     }
 
     #[test]
     fn virtual_items_are_projected_with_their_own_kind() {
-        let dto = project_item_parts("vd1", "dateDivider", None, None, None, None, false, None);
+        let dto = project_item_parts(
+            "vd1",
+            "dateDivider",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+        );
         assert_eq!(dto.kind, "dateDivider");
         assert!(dto.sender.is_none());
+    }
+
+    /// `classify_content`/`membership_change_name` can't be exercised
+    /// directly here: `TimelineItemContent`, `MsgLikeKind`, `OtherState`, and
+    /// `RoomMembershipChange` all have crate-private constructors in
+    /// `matrix-sdk-ui` — there is no public way to build one outside a real
+    /// synced timeline. The classifier's cases are covered indirectly below
+    /// through `project_item_parts`, which is what it ultimately feeds; the
+    /// exhaustive-match discipline itself is enforced by the compiler, not
+    /// by a test (a new SDK variant fails to compile, per its doc comment).
+    #[test]
+    fn state_events_project_to_the_state_kind_with_the_event_type_as_detail() {
+        let dto = project_item_parts(
+            "$e2",
+            "state",
+            None,
+            Some("m.room.name"),
+            Some("@alice:x.org"),
+            Some("Alice"),
+            None,
+            Some(1_700_000_000_000),
+            false,
+            None,
+        );
+        assert_eq!(dto.kind, "state");
+        assert_eq!(dto.detail.as_deref(), Some("m.room.name"));
+        assert!(dto.msgtype.is_none());
+    }
+
+    #[test]
+    fn notice_messages_carry_their_msgtype() {
+        let dto = project_item_parts(
+            "$e3",
+            "message",
+            Some("m.notice"),
+            None,
+            Some("@bot:x.org"),
+            None,
+            Some("build finished"),
+            Some(1_700_000_000_000),
+            false,
+            None,
+        );
+        assert_eq!(dto.kind, "message");
+        assert_eq!(dto.msgtype.as_deref(), Some("m.notice"));
+    }
+
+    #[test]
+    fn membership_change_names_are_mapped_to_the_wire_vocabulary() {
+        assert_eq!(membership_change_name(None), "unknown");
+        assert_eq!(membership_change_name(Some(MembershipChange::None)), "none");
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::Error)),
+            "error"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::Joined)),
+            "joined"
+        );
+        assert_eq!(membership_change_name(Some(MembershipChange::Left)), "left");
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::Banned)),
+            "banned"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::Unbanned)),
+            "unbanned"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::Kicked)),
+            "kicked"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::Invited)),
+            "invited"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::KickedAndBanned)),
+            "kickedAndBanned"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::InvitationAccepted)),
+            "invitationAccepted"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::InvitationRejected)),
+            "invitationRejected"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::InvitationRevoked)),
+            "invitationRevoked"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::Knocked)),
+            "knocked"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::KnockAccepted)),
+            "knockAccepted"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::KnockRetracted)),
+            "knockRetracted"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::KnockDenied)),
+            "knockDenied"
+        );
+        assert_eq!(
+            membership_change_name(Some(MembershipChange::NotImplemented)),
+            "notImplemented"
+        );
     }
 
     #[test]

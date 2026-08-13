@@ -21,11 +21,12 @@
   //    incoming message.
   //
   // Every item renders something or is deliberately silent — there is no
-  // "falls through the template" case. Only date dividers and text messages
-  // have a real visual form in M0; everything else (undecryptable events,
-  // membership changes, redactions) gets an explicit muted placeholder from
-  // `timelinePlaceholder.ts`, which is what stops an encrypted room a fresh
-  // device can't decrypt from rendering as blank rows.
+  // "falls through the template" case. `timelineItemView.ts` classifies each
+  // item into a render decision (bubble / emote / system line / placeholder
+  // / nothing); this component only switches on that decision, it never
+  // inspects the wire `kind` itself beyond `dateDivider`, which renders real
+  // content the classifier's vocabulary doesn't cover. See that module's
+  // doc comment for why suppression happens here and not in the core.
   //
   // Never optimistically appends: `timelineStore.items` is driven entirely
   // by the diff stream (see `timeline.svelte.ts`), including the local echo
@@ -41,7 +42,7 @@
   import { tick } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
-  import { placeholderFor } from "./timelinePlaceholder";
+  import { viewFor } from "./timelineItemView";
   import type { TimelineItem } from "$lib/ipc";
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
@@ -132,49 +133,73 @@
               {formatDate(item.timestampMs)}
             </span>
           </div>
-        {:else if item.kind === "m.room.message" && item.body}
-          <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
-            <div
-              class="max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
-                ? 'bg-accent text-accent-content'
-                : 'border border-border bg-surface-raised text-content'}"
-            >
-              {#if !item.isOwn}
-                <p class="mb-0.5 text-xs font-medium text-content-muted">
-                  {item.senderDisplayName ?? item.sender ?? "Unknown"}
-                </p>
-              {/if}
-              <p class="selectable text-sm whitespace-pre-wrap break-words">{item.body}</p>
-              <p
-                class="mt-1 text-right text-[10px] {item.isOwn
-                  ? 'text-accent-content/70'
-                  : 'text-content-muted'}"
+        {:else}
+          {@const view = viewFor(item)}
+          {#if view.render === "bubble"}
+            <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
+              <div
+                class="max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
+                  ? 'bg-accent text-accent-content'
+                  : 'border border-border bg-surface-raised text-content'}"
               >
-                {#if item.isOwn && item.sendState === "sendingFailed"}
-                  Failed to send
-                {:else if item.isOwn && item.sendState === "notSentYet"}
-                  Sending…
-                {:else}
-                  {formatTime(item.timestampMs)}
+                {#if !item.isOwn}
+                  <p class="mb-0.5 text-xs font-medium text-content-muted">
+                    {item.senderDisplayName ?? item.sender ?? "Unknown"}
+                  </p>
                 {/if}
+                <p
+                  class="selectable text-sm whitespace-pre-wrap break-words {view.muted &&
+                  !item.isOwn
+                    ? 'text-content-muted'
+                    : ''}"
+                >
+                  {item.body}
+                </p>
+                <p
+                  class="mt-1 text-right text-[10px] {item.isOwn
+                    ? 'text-accent-content/70'
+                    : 'text-content-muted'}"
+                >
+                  {#if item.isOwn && item.sendState === "sendingFailed"}
+                    Failed to send
+                  {:else if item.isOwn && item.sendState === "notSentYet"}
+                    Sending…
+                  {:else}
+                    {formatTime(item.timestampMs)}
+                  {/if}
+                </p>
+              </div>
+            </div>
+          {:else if view.render === "emote"}
+            <div class="flex justify-center py-1 px-4">
+              <p class="selectable text-center text-xs text-content-muted italic">
+                {item.senderDisplayName ?? item.sender ?? "Someone"}
+                {item.body}
               </p>
             </div>
-          </div>
-        {:else}
-          <!--
-            Everything that isn't a renderable text message: undecryptable
-            events on a fresh device (the common case in a real encrypted
-            room), membership changes, redactions. Muted and centred, so a
-            history full of them reads as a quiet log rather than as
-            messages — and never as the bare empty bubble that rendering
-            nothing used to produce. See `timelinePlaceholder.ts`.
-          -->
-          {@const placeholder = placeholderFor(item)}
-          {#if placeholder}
+          {:else if view.render === "system"}
+            <!--
+              Membership lines, room creation, encryption enabled, room
+              replaced. Centred and muted so a history full of them reads as
+              a quiet log rather than as messages.
+            -->
             <div class="flex justify-center py-1.5">
-              <span class="text-xs text-content-muted italic">{placeholder}</span>
+              <span class="text-xs text-content-muted">{view.text}</span>
+            </div>
+          {:else if view.render === "placeholder"}
+            <!--
+              Anything the reader must be told about but this build can't
+              render fully yet: undecryptable events on a fresh device (the
+              common case in a real encrypted room), redactions, media,
+              stickers, polls, custom suite events. Never the bare empty
+              bubble that rendering nothing used to produce — see
+              `timelineItemView.ts`.
+            -->
+            <div class="flex justify-center py-1.5">
+              <span class="text-xs text-content-muted italic">{view.text}</span>
             </div>
           {/if}
+          <!-- view.render === "none": deliberately silent, see `timelineItemView.ts`. -->
         {/if}
       {/snippet}
     </VList>

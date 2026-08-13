@@ -21,11 +21,23 @@ pub struct RoomSummary {
 }
 
 /// A single timeline item (message, state event, etc.) as rendered.
+///
+/// `kind` is the semantic discriminant projected from the SDK's
+/// `TimelineItemContent` (see `core::timeline::classify_content`) — never a
+/// raw Matrix event-type string. `msgtype` and `detail` carry the two kinds
+/// of extra context a `kind` sometimes needs to be rendered correctly:
+/// `msgtype` is only populated for `kind: "message"` (`m.text`, `m.notice`,
+/// …); `detail` carries kind-specific context such as a membership change's
+/// change kind, a state event's event type, or a custom event's event type.
+/// Both are `None` when the `kind` doesn't need them — see the table in
+/// `docs/matrix-events.md` for the full mapping.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineItemDto {
     pub id: String,
     pub kind: String,
+    pub msgtype: Option<String>,
+    pub detail: Option<String>,
     pub sender: Option<String>,
     pub sender_display_name: Option<String>,
     pub body: Option<String>,

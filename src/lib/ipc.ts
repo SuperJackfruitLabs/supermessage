@@ -35,10 +35,23 @@ export interface RoomSummary {
   lastActivityMs: number | null;
 }
 
-/** Mirrors `TimelineItemDto` from `src-tauri/src/core/dto.rs`. */
+/**
+ * Mirrors `TimelineItemDto` from `src-tauri/src/core/dto.rs`.
+ *
+ * `kind` is a semantic discriminant projected from the SDK's
+ * `TimelineItemContent` (see `core::timeline::classify_content`), not a raw
+ * Matrix event-type string. `msgtype` is only populated for `kind:
+ * "message"`; `detail` carries kind-specific context (a membership change's
+ * change kind, a state event's event type, a custom event's event type, …).
+ * `$lib/components/timelineItemView.ts` is what turns this into a render
+ * decision — see its doc comment and `docs/matrix-events.md` for the full
+ * mapping.
+ */
 export interface TimelineItem {
   id: string;
   kind: string;
+  msgtype: string | null;
+  detail: string | null;
   sender: string | null;
   senderDisplayName: string | null;
   body: string | null;
