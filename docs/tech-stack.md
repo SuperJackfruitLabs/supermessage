@@ -40,7 +40,7 @@ supermessage is a cross-platform Matrix chat client targeting **iOS, Android, Wi
 ├────────── Tauri commands / events ──────────────┤
 │ Rust core (tokio)                               │
 │  matrix-sdk client · SyncService (sliding sync) │
-│  vodozemac crypto · SQLite stores (sqlcipher)   │
+│  vodozemac crypto · SQLite stores (StoreCipher) │
 ├─────────────────────────────────────────────────┤
 │ Platform: Tauri window chrome, native menus,    │
 │ haptics, dialogs, tray · push (FCM/APNs)        │

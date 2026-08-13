@@ -1,8 +1,16 @@
 //! Where credentials live.
 //!
 //! Two things are stored here: the serialized Matrix session (access and
-//! refresh tokens) and the passphrase for the SDK's SQLCipher-encrypted
-//! SQLite stores. Both go behind the OS secret store via [`SecretStore`].
+//! refresh tokens) and the passphrase for the SDK's encrypted SQLite
+//! stores. Both go behind the OS secret store via [`SecretStore`].
+//!
+//! "Encrypted" is matrix-sdk-sqlite 0.18's own scheme, not SQLCipher: the
+//! SQLite files themselves are plain, and their keys and values are
+//! individually AEAD-encrypted with
+//! `matrix_sdk_store_encryption::StoreCipher` derived from the passphrase
+//! below. Losing the passphrase therefore loses the store's contents, which
+//! is why `Session::logout` wipes the store directory in the same step that
+//! deletes the passphrase.
 //!
 //! The trait exists because the keyring cannot be exercised in unit tests
 //! without writing to the developer's real secret store, so the contract is
@@ -23,8 +31,8 @@ use super::error::{CoreError, CoreResult};
 /// is stored.
 pub const KEY_SESSION: &str = "matrix_session";
 
-/// Key under which the passphrase for the SDK's SQLCipher-encrypted SQLite
-/// stores is stored.
+/// Key under which the passphrase for the SDK's encrypted SQLite stores is
+/// stored. See this module's doc comment for what that encryption is.
 pub const KEY_STORE_PASSPHRASE: &str = "store_passphrase";
 
 /// Key under which the homeserver URL used at login is stored.
