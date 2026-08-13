@@ -16,7 +16,36 @@ pub struct RoomSummary {
     pub name: String,
     pub avatar_url: Option<String>,
     pub unread: u64,
+    /// The roster's preview line (spec §6.1.1): what was last *said* in the
+    /// room, already whitespace-collapsed and bounded to
+    /// `core::timeline::PREVIEW_MAX_CHARS`.
+    ///
+    /// **Never carries a sender prefix** — composing `You: ` from
+    /// [`Self::last_message_is_own`] is the webview's job, so the core keeps
+    /// returning facts rather than a composed display string. `None` when
+    /// the room's latest event is not message-like (a membership change, a
+    /// rename, a redaction, an undecryptable event, …), and the row then
+    /// omits the preview line entirely rather than showing a placeholder.
+    ///
+    /// One exception to "no sender prefix" is inherent rather than a
+    /// decoration: an emote reads as a sentence about its sender, so its
+    /// preview is the sender's name followed by the body, exactly as
+    /// `Timeline.svelte` renders the same event.
     pub last_message: Option<String>,
+    /// Whether this account sent the previewed event. Always `false` when
+    /// [`Self::last_message`] is `None` — the two are resolved together (see
+    /// `core::rooms::project_room_parts`), so this can never claim ownership
+    /// of a preview that doesn't exist.
+    pub last_message_is_own: bool,
+    /// The Matrix event type, populated **only** for a custom
+    /// (`MsgLikeKind::Other`) event; `None` for an ordinary message. This is
+    /// the hook §6.1.1's pending-decision path keys off.
+    ///
+    /// Unreachable in production today, for two independent reasons: no gate
+    /// schema exists to send, *and* the SDK's own latest-event filter rejects
+    /// unrecognized message-like content outright (see
+    /// `core::rooms::room_preview`).
+    pub last_event_type: Option<String>,
     pub last_activity_ms: Option<u64>,
 }
 
@@ -280,6 +309,39 @@ pub fn op_name<T>(op: &DiffOp<T>) -> &'static str {
         DiffOp::Remove { .. } => "remove",
         DiffOp::Truncate { .. } => "truncate",
         DiffOp::Reset { .. } => "reset",
+    }
+}
+
+/// Every item value an op carries, in order — empty for the ops that only
+/// move or drop items (`Clear`, `PopFront`, `PopBack`, `Remove`,
+/// `Truncate`).
+///
+/// This is what lets a caller do *asynchronous* work per item before
+/// projecting a batch, without a second traversal of `VectorDiff` competing
+/// with [`project_diff`] for the "exhaustive match" role that module's doc
+/// comment reserves for it. `core::rooms::project_batch` is the caller:
+/// resolving a room's message preview needs `RoomExt::latest_event`, which
+/// is `async`, and `project_diff`'s mapping closure is not — so it walks the
+/// batch's values through here first, resolves a preview per room, then
+/// projects with the results in hand.
+///
+/// Exhaustive with no wildcard arm, like [`project_diff`]/[`apply_ops`]/
+/// [`erase_op_value`]: a future `DiffOp` variant carrying items must fail
+/// this to compile rather than silently skip them, which would leave exactly
+/// the rooms in that op with no preview at all.
+pub fn op_values<T>(op: &DiffOp<T>) -> Vec<&T> {
+    match op {
+        DiffOp::Append { values } => values.iter().collect(),
+        DiffOp::Clear => Vec::new(),
+        DiffOp::PushFront { value } => vec![value],
+        DiffOp::PushBack { value } => vec![value],
+        DiffOp::PopFront => Vec::new(),
+        DiffOp::PopBack => Vec::new(),
+        DiffOp::Insert { value, .. } => vec![value],
+        DiffOp::Set { value, .. } => vec![value],
+        DiffOp::Remove { .. } => Vec::new(),
+        DiffOp::Truncate { .. } => Vec::new(),
+        DiffOp::Reset { values } => values.iter().collect(),
     }
 }
 
@@ -758,5 +820,41 @@ mod tests {
             ops_len_after(1, &[DiffOp::PushBack { value: 2 }, DiffOp::<i32>::PopFront]),
             1
         );
+    }
+
+    #[test]
+    fn op_values_returns_every_item_a_single_item_op_carries() {
+        assert_eq!(op_values(&DiffOp::PushFront { value: 1 }), vec![&1]);
+        assert_eq!(op_values(&DiffOp::PushBack { value: 2 }), vec![&2]);
+        assert_eq!(op_values(&DiffOp::Insert { index: 0, value: 3 }), vec![&3]);
+        assert_eq!(op_values(&DiffOp::Set { index: 0, value: 4 }), vec![&4]);
+    }
+
+    #[test]
+    fn op_values_returns_every_item_a_multi_item_op_carries() {
+        // The two that matter most for the room list: `Reset` re-sends the
+        // whole list, and `Append` is how the first page of rooms arrives.
+        // Missing either would leave every one of those rooms with a blank
+        // preview line.
+        assert_eq!(
+            op_values(&DiffOp::Append {
+                values: vec![1, 2, 3]
+            }),
+            vec![&1, &2, &3]
+        );
+        assert_eq!(
+            op_values(&DiffOp::Reset { values: vec![4, 5] }),
+            vec![&4, &5]
+        );
+    }
+
+    #[test]
+    fn op_values_is_empty_for_the_ops_that_carry_no_items() {
+        let empty: Vec<&i32> = Vec::new();
+        assert_eq!(op_values(&DiffOp::<i32>::Clear), empty);
+        assert_eq!(op_values(&DiffOp::<i32>::PopFront), empty);
+        assert_eq!(op_values(&DiffOp::<i32>::PopBack), empty);
+        assert_eq!(op_values(&DiffOp::<i32>::Remove { index: 0 }), empty);
+        assert_eq!(op_values(&DiffOp::<i32>::Truncate { length: 0 }), empty);
     }
 }

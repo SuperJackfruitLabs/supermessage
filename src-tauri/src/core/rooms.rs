@@ -14,19 +14,25 @@
 //! state instead of opening a second, independently-numbered subscription —
 //! see that method's doc comment for why a second subscription cannot work.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
+use matrix_sdk::ruma::{OwnedRoomId, UserId};
 use matrix_sdk::{Room, RoomMemberships};
 use matrix_sdk_ui::room_list_service::filters::new_filter_non_left;
 use matrix_sdk_ui::room_list_service::RoomListItem;
+use matrix_sdk_ui::timeline::{LatestEventValue, Profile, RoomExt, TimelineDetails};
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
-use super::dto::{apply_ops, op_name, project_diff, DiffEnvelope, DiffOp, RoomSummary, SeqCounter};
+use super::dto::{
+    apply_ops, op_name, op_values, project_diff, DiffEnvelope, DiffOp, RoomSummary, SeqCounter,
+};
 use super::error::{CoreError, CoreResult};
 use super::sync::SyncHandle;
+use super::timeline::{latest_event_preview, MessagePreview};
 
 /// Tauri event channel carrying room-list diffs for the webview's room list
 /// store.
@@ -50,20 +56,32 @@ type RoomListSnapshot = (u64, Vec<RoomSummary>);
 ///
 /// Pure and SDK-free on purpose: it is the part `project_room` delegates to,
 /// so the projection logic is testable without a live homeserver.
+///
+/// Takes the whole [`MessagePreview`] rather than the three preview fields
+/// separately so they cannot be set inconsistently: destructuring one
+/// `Option` is what makes "`lastMessageIsOwn` is `false` and
+/// `lastEventType` is `null` whenever there is no preview" a property of the
+/// type rather than a rule every caller has to remember.
 pub fn project_room_parts(
     id: &str,
     name: Option<String>,
     avatar_url: Option<String>,
     unread: u64,
-    last_message: Option<String>,
+    preview: Option<MessagePreview>,
     last_activity_ms: Option<u64>,
 ) -> RoomSummary {
+    let (last_message, last_message_is_own, last_event_type) = match preview {
+        Some(preview) => (Some(preview.text), preview.is_own, preview.event_type),
+        None => (None, false, None),
+    };
     RoomSummary {
         id: id.to_string(),
         name: name.unwrap_or_else(|| id.to_string()),
         avatar_url,
         unread,
         last_message,
+        last_message_is_own,
+        last_event_type,
         last_activity_ms,
     }
 }
@@ -216,19 +234,134 @@ pub async fn resolve_room_avatar_mxc(room: &Room) -> CoreResult<Option<String>> 
     Ok(resolved)
 }
 
+/// The name to render a sender by: their display name where the local
+/// member store has one, their raw user id otherwise — the same
+/// `senderDisplayName ?? sender` fallback `Timeline.svelte` uses, so an
+/// emote reads identically on both surfaces.
+///
+/// Pure and SDK-shaped rather than SDK-free: `TimelineDetails`/`Profile` are
+/// plain data the caller already holds, and there is no logic here worth
+/// isolating from them.
+fn sender_display_name(profile: &TimelineDetails<Profile>, sender: &UserId) -> String {
+    match profile {
+        TimelineDetails::Ready(profile) => profile.display_name.clone(),
+        _ => None,
+    }
+    .unwrap_or_else(|| sender.to_string())
+}
+
+/// Resolves a room's roster preview (spec §6.1.1) from the SDK's own
+/// latest-event value.
+///
+/// **Why `matrix_sdk_ui::timeline::RoomExt::latest_event` and not the base
+/// `Room::latest_event` a `RoomListItem` also derefs to** (the two share a
+/// name; this calls the UI one through UFCS so the choice can't silently
+/// flip): the base call hands back a raw `TimelineEvent`, which would mean
+/// re-deriving "what kind of event is this" from ruma types — a second
+/// classifier that could disagree with the timeline's about the very same
+/// event, which is a bug visible on exactly one surface. The UI call returns
+/// a `TimelineItemContent`, the *same* type `core::timeline::classify_content`
+/// already takes, so the roster and the timeline are reading one
+/// classification.
+///
+/// **What it costs:** `async`, which is what forces [`project_batch`]'s
+/// two-pass shape (see its doc comment). Nothing in it reaches the network:
+/// it deserializes an already-decrypted raw event, and loads the sender's
+/// profile via `get_member_no_sync` — the local member store only, the same
+/// choice [`resolve_room_avatar_mxc`] and `resolve_typing_users` make and
+/// for the same reason.
+///
+/// **What the SDK has already filtered out, and what it has not.** The value
+/// this reads is computed by `matrix-sdk`'s own backwards scan
+/// (`latest_events/latest_event/builder.rs`), which *does* skip reactions,
+/// redactions, `m.room.encrypted`/UTDs, verification requests and other
+/// people's membership changes — so the "scan backwards for the last real
+/// message" loop this task was told not to invent already exists upstream,
+/// for free. It is **not** a preview filter, though: it also accepts polls,
+/// stickers, call invites, RTC notifications, live-location beacons, and
+/// *our own* joins and invites, all of which reach here as state or
+/// non-message `MsgLikeKind`s and are dropped by
+/// [`latest_event_preview`]'s own eligibility rules. That double filter is
+/// deliberate — the SDK's job is "what is this room's newest interesting
+/// event", §6.1.1's is "what was last said in it", and they are not the same
+/// question.
+///
+/// Two consequences worth knowing before reading a roster:
+///
+/// - **A custom event can never be previewed.** That same upstream filter
+///   ends in a `_ => filter_continue()` over `AnyMessageLikeEventContent`,
+///   and ruma's catch-all `_Custom` variant falls into it — the identical
+///   gap `timeline_event_filter` had to patch for the timeline, except that
+///   this one is inside the SDK's own background task and cannot be
+///   overridden from here. So a Kaambaan card/run/permission-request event
+///   does not become the latest-event value at all; the roster shows the
+///   last ordinary message underneath it instead. `lastEventType` is
+///   therefore unreachable in production twice over (no gate schema exists
+///   yet either), which is why `None` is passed for `custom_body` below:
+///   `MsgLikeKind::Other` discards the content, and unlike
+///   `custom_message_payload` there is no raw event here to read a fallback
+///   `body` back out of. Fix the filter upstream, not this comment, if a
+///   gate schema ever needs the amber row §6.1.1 describes.
+/// - **An encrypted room whose keys have not arrived shows an older
+///   message,** not "unable to decrypt": UTDs are explicitly skipped by that
+///   scan, so it keeps walking backwards to something it can read.
+async fn room_preview(item: &RoomListItem) -> Option<MessagePreview> {
+    // Exhaustive with no wildcard arm, matching this crate's discipline for
+    // every other SDK enum (`classify_content`, `send_state_name`,
+    // `project_diff`): a new `LatestEventValue` variant must fail to compile
+    // here rather than silently blank every affected room's preview.
+    // `RoomExt` is implemented for `matrix_sdk::Room`, which `RoomListItem`
+    // only *derefs* to — and UFCS does not apply a deref coercion to a
+    // trait's `Self`, so the coercion is spelled out here. Calling it as
+    // `item.latest_event()` would compile, but method resolution would then
+    // be the only thing keeping this off the base `Room::latest_event` one
+    // deref further down, which returns a raw event and no classification.
+    let room: &Room = item;
+    match RoomExt::latest_event(room).await {
+        LatestEventValue::Remote {
+            sender,
+            is_own,
+            profile,
+            content,
+            ..
+        } => latest_event_preview(
+            &content,
+            is_own,
+            &sender_display_name(&profile, &sender),
+            None,
+        ),
+        // A local echo: something *we* just sent and the server hasn't
+        // echoed back yet. Previewed the same way, and unconditionally
+        // `is_own` — the SDK builds this variant from our own outgoing
+        // send queue, so there is no other sender it could have.
+        LatestEventValue::Local {
+            sender,
+            profile,
+            content,
+            ..
+        } => latest_event_preview(
+            &content,
+            true,
+            &sender_display_name(&profile, &sender),
+            None,
+        ),
+        // `RemoteInvite` carries no content at all (just the inviter), and
+        // an invitation is not something said in the room. `None` is the
+        // ordinary state for any room the room-list service never subscribed
+        // to while the event cache was listening.
+        LatestEventValue::None | LatestEventValue::RemoteInvite { .. } => None,
+    }
+}
+
 /// Project an SDK [`RoomListItem`] into the wire [`RoomSummary`].
 ///
 /// A thin adapter: it only extracts values and delegates to
 /// [`project_room_parts`] and [`resolve_avatar_url`], which carry the actual
 /// logic (and are what get unit-tested).
 ///
-/// `last_message` is left `None` here. A real preview requires decoding the
-/// latest event's content the same way `core::timeline`'s `project_item`
-/// will for `TimelineItemDto` (matching message types, handling
-/// undecryptable events, etc.) — building that twice would duplicate that
-/// later task's work, so it is deliberately deferred rather than
-/// half-implemented here.
-pub fn project_room(item: &RoomListItem) -> RoomSummary {
+/// `preview` is resolved separately, by [`room_preview`], and handed in:
+/// that call is `async` and this function is not (see [`project_batch`]).
+pub fn project_room(item: &RoomListItem, preview: Option<MessagePreview>) -> RoomSummary {
     let id = item.room_id().to_string();
     let name = item.cached_display_name().map(|name| name.to_string());
     let hero_avatar_urls: Vec<Option<String>> = item
@@ -264,14 +397,53 @@ pub fn project_room(item: &RoomListItem) -> RoomSummary {
         .latest_event_timestamp()
         .map(|ts| i64::from(ts.get()) as u64);
 
-    project_room_parts(&id, name, avatar_url, unread, None, last_activity_ms)
+    project_room_parts(&id, name, avatar_url, unread, preview, last_activity_ms)
 }
 
 /// Project a raw batch of SDK diffs into the wire ops for one envelope.
-fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomSummary>> {
+///
+/// Two passes, because [`room_preview`] is `async` and `project_diff`'s
+/// mapping closure is not. Pass one walks the batch's item values (through
+/// `core::dto::op_values`, so no second exhaustive `VectorDiff` match has to
+/// exist alongside `project_diff` and risk drifting from it) and resolves
+/// one preview per room; pass two runs the ordinary synchronous projection
+/// with those results in hand.
+///
+/// Keyed by room id and resolved at most once per room per batch: a `Reset`
+/// re-sends the whole list, and a room can appear in several ops of one
+/// batch, while each resolution deserializes that room's latest event and
+/// hits the member store for its sender's profile.
+///
+/// The identity `project_diff` in pass one is not a wasted projection — it
+/// is how the batch's values are reached at all without writing that second
+/// match. `RoomListItem` is a handful of `Arc`s, so cloning the batch to do
+/// it is cheap.
+async fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomSummary>> {
+    let mut previews: HashMap<OwnedRoomId, Option<MessagePreview>> = HashMap::new();
+    for op in batch
+        .iter()
+        .cloned()
+        .map(|diff| project_diff(diff, |item| item))
+    {
+        for item in op_values(&op) {
+            if !previews.contains_key(item.room_id()) {
+                previews.insert(item.room_id().to_owned(), room_preview(item).await);
+            }
+        }
+    }
+
     batch
         .into_iter()
-        .map(|diff| project_diff(diff, |item| project_room(&item)))
+        .map(|diff| {
+            project_diff(diff, |item| {
+                // Cloned rather than removed: the same room can legitimately
+                // appear in more than one op of a batch, and the second
+                // occurrence must get the same preview as the first, not a
+                // blank one.
+                let preview = previews.get(item.room_id()).cloned().flatten();
+                project_room(&item, preview)
+            })
+        })
         .collect()
 }
 
@@ -378,7 +550,7 @@ pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<
 
         let mut seq = SeqCounter::default();
         while let Some(batch) = stream.next().await {
-            let ops = project_batch(batch);
+            let ops = project_batch(batch).await;
             let seq_no = seq.next_seq();
 
             // Fold this batch into the materialized list *before* emitting,
@@ -448,12 +620,51 @@ mod tests {
             Some("Ops".into()),
             Some("mxc://example.org/abc".into()),
             2,
-            Some("hello".into()),
+            Some(MessagePreview {
+                text: "hello".into(),
+                is_own: false,
+                event_type: None,
+            }),
             Some(1_700_000_000_000),
         );
         assert_eq!(summary.avatar_url.as_deref(), Some("mxc://example.org/abc"));
         assert_eq!(summary.last_message.as_deref(), Some("hello"));
         assert_eq!(summary.last_activity_ms, Some(1_700_000_000_000));
+    }
+
+    #[test]
+    fn room_summary_splits_a_preview_into_its_three_wire_fields() {
+        let summary = project_room_parts(
+            "!abc:example.org",
+            None,
+            None,
+            0,
+            Some(MessagePreview {
+                text: "Approval needed".into(),
+                is_own: true,
+                event_type: Some("dev.supermessage.gate.v1".into()),
+            }),
+            None,
+        );
+        assert_eq!(summary.last_message.as_deref(), Some("Approval needed"));
+        assert!(summary.last_message_is_own);
+        assert_eq!(
+            summary.last_event_type.as_deref(),
+            Some("dev.supermessage.gate.v1")
+        );
+    }
+
+    #[test]
+    fn room_summary_with_no_preview_claims_neither_ownership_nor_an_event_type() {
+        // The invariant `project_room_parts` takes a whole `MessagePreview`
+        // to enforce: a row with nothing to show must not also tell the
+        // webview the nothing was ours, or that it was a custom event —
+        // either would light up a `You: ` prefix or the pending-decision
+        // branch on an empty preview line.
+        let summary = project_room_parts("!abc:example.org", None, None, 0, None, None);
+        assert_eq!(summary.last_message, None);
+        assert!(!summary.last_message_is_own);
+        assert_eq!(summary.last_event_type, None);
     }
 
     fn room(id: &str) -> RoomSummary {

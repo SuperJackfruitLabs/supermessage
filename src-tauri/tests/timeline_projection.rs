@@ -79,16 +79,20 @@ use matrix_sdk::ruma::events::room::message::{
     ImageMessageEventContent, MessageType, RedactedRoomMessageEventContent, RoomMessageEventContent,
 };
 use matrix_sdk::ruma::events::room::ImageInfo;
+use matrix_sdk::ruma::UserId;
 use matrix_sdk::ruma::{event_id, owned_mxc_uri, room_id, uint, user_id, RoomId};
 use matrix_sdk::test_utils::mocks::MatrixMockServer;
 use matrix_sdk_test::event_factory::EventFactory;
 use matrix_sdk_test::{JoinedRoomBuilder, ALICE, BOB};
-use matrix_sdk_ui::timeline::{RoomExt, TimelineReadReceiptTracking};
+use matrix_sdk_ui::timeline::{
+    RoomExt, TimelineDetails, TimelineItem, TimelineItemKind, TimelineReadReceiptTracking,
+};
 use serde::{Deserialize, Serialize};
 
 use supermessage_lib::core::dto::{apply_ops, project_diff, TimelineItemDto};
 use supermessage_lib::core::timeline::{
-    project_item, timeline_event_filter, CUSTOM_PAYLOAD_MAX_BYTES,
+    latest_event_preview, project_item, timeline_event_filter, MessagePreview,
+    CUSTOM_PAYLOAD_MAX_BYTES, PREVIEW_MAX_CHARS,
 };
 use supermessage_lib::core::tls::install_ring_provider;
 
@@ -114,6 +118,71 @@ struct DemoNoteEventContent {
 async fn projected_items(
     build: impl FnOnce(&RoomId, JoinedRoomBuilder) -> JoinedRoomBuilder,
 ) -> Vec<TimelineItemDto> {
+    projected(build, |item, own_user| {
+        project_item(item, own_user).expect("project_item is total over TimelineItemKind")
+    })
+    .await
+}
+
+/// The room-list preview `core::rooms::room_preview` would resolve for each
+/// synced-in event, run against **real** SDK-produced `TimelineItemContent`
+/// through the production `core::timeline::latest_event_preview`.
+///
+/// Why this exists next to the unit tests: `latest_event_preview`'s
+/// eligibility filter is what decides whether a membership change, a
+/// redaction or an undecryptable event ever reaches the roster, and the unit
+/// tests can only drive that filter through `classify_content`'s `&str`
+/// vocabulary — they cannot catch the filter agreeing with a *wrong*
+/// classification of a real event. These can. `TimelineItemContent` has no
+/// public constructor (see `core::timeline`'s test-module comment), so a
+/// live synced timeline is the only way to get one at all.
+///
+/// The one thing this does **not** exercise is the SDK's own latest-event
+/// selection — see `core::rooms::room_preview`'s doc comment for what that
+/// filter drops before this code would ever see it. Here every synced event
+/// is offered to the preview, which is exactly what makes the ineligible
+/// cases below assertable.
+async fn projected_previews(
+    build: impl FnOnce(&RoomId, JoinedRoomBuilder) -> JoinedRoomBuilder,
+) -> Vec<Option<MessagePreview>> {
+    projected(build, |item, own_user| match item.kind() {
+        TimelineItemKind::Event(event) => {
+            // Mirrors `core::rooms::sender_display_name`, which resolves the
+            // same fallback from a `LatestEventValue`'s profile rather than
+            // an `EventTimelineItem`'s. Against this harness both are
+            // `Unavailable`, so every emote below reads by raw user id.
+            let sender_name = match event.sender_profile() {
+                TimelineDetails::Ready(profile) => profile.display_name.clone(),
+                _ => None,
+            }
+            .unwrap_or_else(|| event.sender().to_string());
+            Some(latest_event_preview(
+                event.content(),
+                event.sender() == own_user,
+                &sender_name,
+                None,
+            ))
+        }
+        // Virtual items (date dividers, the read marker) are not events and
+        // have no content to preview. Dropped here rather than folded in as
+        // `None`, so the assertions below can tell "this event is not
+        // previewable" apart from "a date divider went past".
+        TimelineItemKind::Virtual(_) => None,
+    })
+    .await
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// The shared body of [`projected_items`] and [`projected_previews`] — see
+/// this file's doc comment for the harness shape. `project` is applied to
+/// every materialized `TimelineItem`, inside the *production*
+/// `core::dto::project_diff`/`apply_ops` fold.
+async fn projected<T: Clone>(
+    build: impl FnOnce(&RoomId, JoinedRoomBuilder) -> JoinedRoomBuilder,
+    project: impl Fn(&TimelineItem, &UserId) -> T,
+) -> Vec<T> {
     // Every client construction path in this crate runs this first — see
     // `core::tls`'s doc comment for why a `ClientConfig::builder()` call
     // panics otherwise. Idempotent, so safe to call once per test.
@@ -178,11 +247,9 @@ async fn projected_items(
         .expect("the timeline must emit a diff batch for the events just synced in")
         .expect("the timeline stream must not end while its Timeline is still alive");
 
-    let ops = batch.into_iter().map(|diff| {
-        project_diff(diff, |item| {
-            project_item(&item, &own_user).expect("project_item is total over TimelineItemKind")
-        })
-    });
+    let ops = batch
+        .into_iter()
+        .map(|diff| project_diff(diff, |item| project(&item, &own_user)));
 
     let mut items = Vec::new();
     apply_ops(&mut items, &ops.collect::<Vec<_>>());
@@ -704,4 +771,236 @@ async fn custom_message_like_event_drops_an_oversized_payload_but_keeps_the_fall
         Some("fallback text for an oversized card"),
         "the plain-text fallback body must survive even when the payload is dropped"
     );
+}
+
+// Room-list previews (spec §6.1.1) against real SDK-produced content — see
+// [`projected_previews`] for why these exist alongside `core::timeline`'s
+// pure unit tests, and `core::rooms::room_preview` for what the SDK's own
+// latest-event filter drops before any of this runs in production.
+
+/// The single preview `projected_previews` produced, asserting there was
+/// exactly one event to preview.
+fn only_preview(previews: &[Option<MessagePreview>]) -> &Option<MessagePreview> {
+    assert_eq!(
+        previews.len(),
+        1,
+        "expected exactly one event to preview, got {previews:#?}"
+    );
+    &previews[0]
+}
+
+#[tokio::test]
+async fn text_message_previews_as_its_body_with_no_sender_prefix() {
+    let previews = projected_previews(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        room.add_timeline_event(f.text_msg("hello world").event_id(event_id!("$p1")))
+    })
+    .await;
+
+    let preview = only_preview(&previews)
+        .as_ref()
+        .expect("a text message is previewable");
+    // No `Alice: ` — composing a prefix is the webview's job, and §6.1.1
+    // only ever adds one for your own messages.
+    assert_eq!(preview.text, "hello world");
+    assert!(!preview.is_own, "ALICE is not the harness's own user");
+    assert_eq!(preview.event_type, None);
+}
+
+#[tokio::test]
+async fn own_message_previews_with_is_own_set() {
+    // The mock client builder's own default user id — see `projected_items`'s
+    // doc comment. This is what drives the webview's `You: ` prefix.
+    let own_user = user_id!("@example:localhost");
+    let previews = projected_previews(move |room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(own_user);
+        room.add_timeline_event(f.text_msg("on it").event_id(event_id!("$p2")))
+    })
+    .await;
+
+    let preview = only_preview(&previews)
+        .as_ref()
+        .expect("an own text message is previewable");
+    assert_eq!(preview.text, "on it");
+    assert!(preview.is_own);
+}
+
+#[tokio::test]
+async fn notice_message_previews_like_any_other_text() {
+    // The msgtype most of this org's agent traffic actually uses (spec §A):
+    // de-emphasised in the timeline, but never suppressed, so a roster that
+    // dropped it would be blank for most rooms here.
+    let previews = projected_previews(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        room.add_timeline_event(f.notice("build green").event_id(event_id!("$p3")))
+    })
+    .await;
+
+    assert_eq!(
+        only_preview(&previews)
+            .as_ref()
+            .expect("a notice is previewable")
+            .text,
+        "build green"
+    );
+}
+
+#[tokio::test]
+async fn emote_previews_with_its_sender_the_way_the_timeline_renders_it() {
+    let previews = projected_previews(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        room.add_timeline_event(f.emote("waves hello").event_id(event_id!("$p4")))
+    })
+    .await;
+
+    // No profile is loaded against this harness, so the name falls back to
+    // the raw user id — exactly as `Timeline.svelte`'s own
+    // `senderDisplayName ?? sender` does for the same event.
+    assert_eq!(
+        only_preview(&previews)
+            .as_ref()
+            .expect("an emote is previewable")
+            .text,
+        format!("{} waves hello", *ALICE)
+    );
+}
+
+#[tokio::test]
+async fn image_message_previews_as_its_filename() {
+    let previews = projected_previews(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        let content =
+            RoomMessageEventContent::new(MessageType::Image(ImageMessageEventContent::plain(
+                "photo.png".to_owned(),
+                owned_mxc_uri!("mxc://example.org/abc123"),
+            )));
+        room.add_timeline_event(f.event(content).event_id(event_id!("$p5")))
+    })
+    .await;
+
+    assert_eq!(
+        only_preview(&previews)
+            .as_ref()
+            .expect("an image is previewable")
+            .text,
+        "photo.png"
+    );
+}
+
+#[tokio::test]
+async fn a_multiline_body_previews_collapsed_and_bounded() {
+    // The two transformations that make the preview safe to render as one
+    // line and cheap to re-send for every room on a `Reset`, verified
+    // together on one real event.
+    let body = format!("deploy failed\n\n\t{}", "x".repeat(64 * 1024));
+    let previews = projected_previews(move |room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        room.add_timeline_event(f.text_msg(body).event_id(event_id!("$p6")))
+    })
+    .await;
+
+    let preview = only_preview(&previews)
+        .as_ref()
+        .expect("a long multi-line body is still previewable");
+    assert!(
+        !preview.text.contains('\n') && !preview.text.contains('\t'),
+        "expected no raw whitespace left in {:?}",
+        preview.text
+    );
+    assert!(preview.text.starts_with("deploy failed x"));
+    assert_eq!(preview.text.chars().count(), PREVIEW_MAX_CHARS + 1);
+}
+
+#[tokio::test]
+async fn a_custom_message_like_event_previews_generically_and_names_its_type() {
+    // Unreachable in production — see `core::rooms::room_preview` on the two
+    // independent reasons — but the mechanism §6.1.1 asks for is real, and
+    // this is the only place it can be driven against a genuine
+    // `MsgLikeKind::Other`. The text is the generic rather than the event's
+    // own `body` because `MsgLikeKind::Other` discards the content and the
+    // room list has no raw event to read it back out of.
+    let previews = projected_previews(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        let content = DemoNoteEventContent {
+            schema_version: 1,
+            title: "Deployed to staging".to_owned(),
+            body: "Card: Deployed to staging".to_owned(),
+        };
+        room.add_timeline_event(f.event(content).event_id(event_id!("$p7")))
+    })
+    .await;
+
+    let preview = only_preview(&previews)
+        .as_ref()
+        .expect("a custom event must never preview as nothing");
+    assert_eq!(preview.text, "Custom event");
+    assert_eq!(
+        preview.event_type.as_deref(),
+        Some("dev.supermessage.demo.note.v1")
+    );
+}
+
+#[tokio::test]
+async fn a_room_rename_is_not_previewable() {
+    // §6.1.1's central rule, against a real state event: a fleet whose
+    // agents restart and rename must not fill its roster with noise that
+    // displaces the last thing actually said.
+    let previews = projected_previews(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        room.add_timeline_event(f.room_name("New room name").event_id(event_id!("$p8")))
+    })
+    .await;
+
+    assert_eq!(only_preview(&previews), &None);
+}
+
+#[tokio::test]
+async fn a_membership_change_is_not_previewable() {
+    let previews = projected_previews(|room_id, room| {
+        // No factory-level `.sender()`, same reason as
+        // `membership_invite_projects_as_membership_with_the_invited_detail`.
+        let f = EventFactory::new().room(room_id);
+        room.add_timeline_event(f.member(&BOB).invited(&ALICE).display_name("Alice"))
+    })
+    .await;
+
+    assert_eq!(only_preview(&previews), &None);
+}
+
+#[tokio::test]
+async fn a_redacted_message_is_not_previewable() {
+    let previews = projected_previews(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        room.add_timeline_event(
+            f.redacted(&ALICE, RedactedRoomMessageEventContent::new())
+                .event_id(event_id!("$p9")),
+        )
+    })
+    .await;
+
+    assert_eq!(only_preview(&previews), &None);
+}
+
+#[tokio::test]
+async fn an_undecryptable_message_is_not_previewable() {
+    // Belt and braces: the SDK's own latest-event scan already skips UTDs
+    // (`core::rooms::room_preview`), so in production the roster shows an
+    // older readable message instead. This pins the behaviour if that ever
+    // changes upstream — a roster row reading "Unable to decrypt" would be
+    // the timeline's placeholder leaking onto a surface with no room for it.
+    let previews = projected_previews(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        room.add_timeline_event(
+            f.encrypted(
+                "AwgAEtABWuWeRLintqVP5ez5kki8sDsX7zSq++9AJo9lELGTDjNKzbF8sowUgg0D",
+                "sKSGv2uD9zUncgL6GiLedvuky3fjVcEz9qVKZkpzN14",
+                "PNQBRWYIJL",
+                "unknown-session-id",
+            )
+            .event_id(event_id!("$p10")),
+        )
+    })
+    .await;
+
+    assert_eq!(only_preview(&previews), &None);
 }

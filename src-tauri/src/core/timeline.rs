@@ -893,6 +893,231 @@ fn reply_parent_label(kind: &str, detail: Option<&str>) -> Option<String> {
     }
 }
 
+/// Cap on a room-list preview, in `char`s (not bytes, so a truncation always
+/// lands on a valid boundary — same reasoning as
+/// [`REPLY_EXCERPT_MAX_CHARS`]).
+///
+/// Deliberately *smaller* than a reply excerpt's 160, because the two lines
+/// have opposite shapes. A reply quote sits inside the reading column and is
+/// allowed to wrap to a couple of lines; a roster preview is one
+/// CSS-truncated line in a fixed-width column. That column is `w-72` (288px,
+/// `src/routes/+page.svelte`) in the two-pane layout, which at
+/// `--text-meta`'s mono face leaves room for roughly 30 characters after the
+/// avatar and padding, and at most a full-width row below the 640px collapse
+/// point, worth about 85. 100 clears the widest line the roster can ever
+/// actually show, so widening the window never reveals the core's truncation
+/// where CSS's used to be, and no more.
+///
+/// The bound matters more here than in the timeline: this crosses IPC on
+/// *every* room-list diff, and a `Reset` re-sends every room at once. At 100
+/// `char`s a 200-room resync carries at most ~20k characters of preview;
+/// unbounded, each of those rooms could carry a body right up against
+/// Matrix's 64KiB event limit — 12.8MB in one envelope — for a line that
+/// shows thirty characters.
+pub const PREVIEW_MAX_CHARS: usize = 100;
+
+/// The three room-list preview facts `RoomSummary` carries, resolved
+/// together so they cannot disagree: there is never an `is_own` or an
+/// `event_type` without preview text to attach them to (see
+/// [`crate::core::rooms::project_room_parts`], which destructures this into
+/// the wire fields).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MessagePreview {
+    /// Already whitespace-collapsed and bounded to [`PREVIEW_MAX_CHARS`].
+    /// Never carries a sender prefix — composing `You: ` is the webview's
+    /// job, per the spec's §6.1.1 core contract.
+    pub text: String,
+    /// Whether this account sent the previewed event.
+    pub is_own: bool,
+    /// The Matrix event type, populated **only** for a custom
+    /// (`MsgLikeKind::Other`) event. `None` for an ordinary message — the
+    /// webview keys its pending-decision branch off this being `Some`.
+    pub event_type: Option<String>,
+}
+
+/// Collapses every run of whitespace — including the newlines a multi-line
+/// message body is full of — to a single space, and trims the ends.
+///
+/// Load-bearing, not cosmetic: the preview is rendered as one line, and a
+/// raw `"deploy failed\n\n  stack trace..."` body would otherwise cross IPC
+/// with its newlines intact and either render as a single run of spaces or,
+/// worse, spend the whole 100-character budget on indentation before the
+/// first word of the second line. `split_whitespace` is Unicode-aware, so a
+/// non-breaking space or an ideographic space collapses too.
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Collapses, then bounds `text` to [`PREVIEW_MAX_CHARS`], appending an
+/// ellipsis when anything was cut. `None` for a body that is empty or
+/// nothing but whitespace — §6.1.1 says the preview line is *omitted*
+/// when there is nothing to show, never rendered as an empty row.
+fn bound_preview_text(text: &str) -> Option<String> {
+    let collapsed = collapse_whitespace(text);
+    if collapsed.is_empty() {
+        return None;
+    }
+    if collapsed.chars().count() <= PREVIEW_MAX_CHARS {
+        return Some(collapsed);
+    }
+    let mut bounded: String = collapsed.chars().take(PREVIEW_MAX_CHARS).collect();
+    bounded.push('…');
+    Some(bounded)
+}
+
+/// A media message's preview label: its filename when the event carries a
+/// usable one, else the kind word the timeline already uses for that
+/// msgtype.
+///
+/// `filename()` falls back to the message `body` (see [`media_meta`]), so
+/// this is almost always a real name; the kind words are exactly
+/// `timelineItemView.ts`'s own `MEDIA_FILE_LABELS` plus the `"Image"` its
+/// `m.image` alt falls back to, so the roster and the timeline never call
+/// the same event two different things. Deliberately no emoji: nothing in
+/// `Timeline.svelte` renders one for media, and inventing a 📎 vocabulary
+/// here would exist only on this surface.
+///
+/// `None` for any msgtype that is not one of the four media kinds.
+fn media_preview_text(msgtype: &MessageType) -> Option<String> {
+    let (filename, kind_word) = match msgtype {
+        MessageType::Image(m) => (m.filename(), "Image"),
+        MessageType::File(m) => (m.filename(), "File"),
+        MessageType::Audio(m) => (m.filename(), "Audio"),
+        MessageType::Video(m) => (m.filename(), "Video"),
+        _ => return None,
+    };
+    // `bound_preview_text` is what decides a filename is unusable: an empty
+    // or whitespace-only one collapses to `None`, and the kind word takes
+    // over. Doing it in that order means a hostile filename of nothing but
+    // spaces can't produce a blank preview row.
+    Some(bound_preview_text(filename).unwrap_or_else(|| kind_word.to_string()))
+}
+
+/// The preview text for a message's `MessageType`, or `None` for a msgtype
+/// this client does not render as something *said*.
+///
+/// The eligible set is exactly the set `timelineItemView.ts`'s `messageView`
+/// renders as content — `m.text`, `m.notice`, `m.emote`, `m.image`,
+/// `m.file`, `m.audio`, `m.video`. Every other msgtype (`m.location`,
+/// `m.server_notice`, a msgtype ruma doesn't know) renders in the timeline
+/// as an `Unsupported message (…)` placeholder, so previewing its body here
+/// would make the roster claim something was said that the timeline itself
+/// refuses to show.
+///
+/// `sender_name` is used only by the emote arm, which renders the way
+/// `Timeline.svelte`'s emote branch does — the sender's name followed by the
+/// body, because an emote is a sentence *about* its sender and reads as
+/// nonsense without one.
+fn message_preview_text(msgtype: &MessageType, sender_name: &str) -> Option<String> {
+    match msgtype {
+        MessageType::Text(m) => bound_preview_text(&m.body),
+        MessageType::Notice(m) => bound_preview_text(&m.body),
+        // Bound the *composed* line, not the body alone: a display name is
+        // as sender-controlled as the message it prefixes here, and ruma
+        // imposes no length limit on either.
+        MessageType::Emote(m) => bound_preview_text(&format!("{sender_name} {}", m.body)),
+        MessageType::Image(_)
+        | MessageType::File(_)
+        | MessageType::Audio(_)
+        | MessageType::Video(_) => media_preview_text(msgtype),
+        // Everything else — `m.location`, `m.server_notice`, an
+        // `m.key.verification.request`, a msgtype ruma has no variant for.
+        // Not a wildcard over *SDK variants* the way `classify_content`
+        // refuses to be: `MessageType` is `#[non_exhaustive]` in ruma, so
+        // exhaustiveness here is impossible to enforce at compile time
+        // anyway, and the safe default for an unknown msgtype is the one the
+        // timeline already picks — an `Unsupported message (…)` placeholder,
+        // which is nothing said, which is no preview.
+        _ => None,
+    }
+}
+
+/// Builds `(preview text, last_event_type)` from an already-classified
+/// latest event, or `None` when the event is not previewable at all.
+///
+/// Pure over the `(kind, detail)` pair [`classify_content`] produces plus a
+/// `MessageType` — the same split as [`reply_parent_label`], and for the
+/// same reason: `TimelineItemContent` has no public constructor outside a
+/// live synced timeline, while `MessageType` does, so this is the layer that
+/// can actually be unit-tested. [`latest_event_preview`] is the thin adapter
+/// that classifies real SDK content and calls this.
+///
+/// Only `"message"` and `"customMessage"` are previewable. Membership
+/// changes, renames and other state, reactions, redactions, stickers, polls,
+/// live locations, call invites and undecryptable events all return `None`
+/// — §6.1.1: the row keeps showing the last thing actually *said*, and shows
+/// nothing rather than filling a fleet's roster with restart noise.
+///
+/// `custom_body` is the plain-text fallback `docs/matrix-events.md` §G
+/// requires every custom event to carry. See [`latest_event_preview`] for
+/// why the room-list adapter has none to pass today.
+fn preview_from_classification(
+    kind: &str,
+    detail: Option<&str>,
+    msgtype: Option<&MessageType>,
+    custom_body: Option<&str>,
+    sender_name: &str,
+) -> Option<(String, Option<String>)> {
+    match kind {
+        "message" => Some((message_preview_text(msgtype?, sender_name)?, None)),
+        "customMessage" => {
+            // Never `None`, even with no fallback body and an oversized or
+            // absent payload: `docs/matrix-events.md` §G's rule is that no
+            // custom event renders as nothing, and `customEvents.ts` applies
+            // the same last-resort generic in the webview.
+            let text = custom_body
+                .and_then(bound_preview_text)
+                .unwrap_or_else(|| "Custom event".to_string());
+            Some((text, detail.map(str::to_string)))
+        }
+        // Every other `classify_content` kind — membership, profile and
+        // state changes, redactions, undecryptable events, stickers, polls,
+        // live locations, call invites, RTC notifications, failed parses.
+        // Not something said, so no preview. Deliberately a wildcard rather
+        // than an exhaustive list: `kind` is a `&'static str` from
+        // `classify_content`, so nothing here can be compiler-checked, and
+        // "anything I don't recognise shows no preview" is the failure mode
+        // §6.1.1 asks for — a *new* kind quietly appearing in the roster
+        // would be the bug.
+        _ => None,
+    }
+}
+
+/// Builds the room-list [`MessagePreview`] for a room's latest event,
+/// classifying it with the *same* [`classify_content`] the timeline uses so
+/// the two surfaces can never disagree about what an event is.
+///
+/// `sender_name` should be the sender's display name where one is known and
+/// their raw user id otherwise, matching `Timeline.svelte`'s own
+/// `senderDisplayName ?? sender` fallback for an emote.
+///
+/// `custom_body` is `None` from the room-list caller
+/// (`core::rooms::room_preview`), and that is not an oversight:
+/// `MsgLikeKind::Other` discards the event's content (it keeps only the
+/// event type — verified against `matrix-sdk-ui-0.18.0`'s
+/// `timeline/event_item/content/other.rs`), and the `LatestEventValue` the
+/// room list reads carries no raw event to read it back out of, the way
+/// `custom_message_payload` does from `EventTimelineItem::original_json`.
+/// The parameter exists anyway because the *rule* is real (§6.1.1) and
+/// testable, and because the arm is unreachable in production for an
+/// independent second reason documented on `core::rooms::room_preview`.
+pub fn latest_event_preview(
+    content: &TimelineItemContent,
+    is_own: bool,
+    sender_name: &str,
+    custom_body: Option<&str>,
+) -> Option<MessagePreview> {
+    let (kind, _msgtype_name, detail) = classify_content(content);
+    let msgtype = content.as_message().map(|message| message.msgtype());
+    let (text, event_type) =
+        preview_from_classification(kind, detail.as_deref(), msgtype, custom_body, sender_name)?;
+    Some(MessagePreview {
+        text,
+        is_own,
+        event_type,
+    })
+}
+
 /// Builds the reply-quote DTO from already-extracted parent details. Pure —
 /// mirrors [`project_item_parts`]'s split between SDK extraction (in
 /// [`reply_to_dto`]) and logic (here, so it's unit-testable without a live
@@ -2100,6 +2325,16 @@ mod tests {
     // needs it directly (that call happens inside `matrix-sdk-ui`, not
     // here), so importing it there would be an unused import outside tests.
     use matrix_sdk::ruma::html::RemoveReplyFallback;
+    // Media/location message contents, built by hand for the room-list
+    // preview tests below. Production code never names these types — it only
+    // ever *matches* on the `MessageType` variants the SDK hands it — so, like
+    // `RemoveReplyFallback` above, importing them at module scope would be an
+    // unused import outside tests.
+    use matrix_sdk::ruma::events::room::message::{
+        AudioMessageEventContent, FileMessageEventContent, ImageMessageEventContent,
+        LocationMessageEventContent, VideoMessageEventContent,
+    };
+    use matrix_sdk::ruma::owned_mxc_uri;
 
     #[test]
     fn projects_a_text_message_with_ownership() {
@@ -3244,6 +3479,316 @@ mod tests {
         assert!(reply.available);
         assert!(reply.excerpt.is_none());
         assert_eq!(reply.label.as_deref(), Some("Message deleted"));
+    }
+
+    // Room-list previews. `collapse_whitespace`/`bound_preview_text`/
+    // `media_preview_text`/`message_preview_text`/
+    // `preview_from_classification` are pure over `&str` and ruma's
+    // `MessageType`, both constructible here — the same split
+    // `reply_parent_label` uses, and for the same reason: the SDK-facing
+    // `latest_event_preview` takes a `TimelineItemContent`, which has no
+    // public constructor outside a live synced timeline.
+
+    fn image(body: &str, filename: Option<&str>) -> MessageType {
+        let mut content =
+            ImageMessageEventContent::plain(body.to_owned(), owned_mxc_uri!("mxc://x.org/img"));
+        content.filename = filename.map(str::to_string);
+        MessageType::Image(content)
+    }
+
+    #[test]
+    fn collapse_whitespace_flattens_newlines_tabs_and_runs_of_spaces() {
+        // The case this exists for: a multi-line body (an agent pasting a
+        // stack trace) must not spend the preview's budget on indentation,
+        // and must not reach the webview with newlines in a one-line row.
+        assert_eq!(
+            collapse_whitespace("deploy failed\n\n\tstack   trace"),
+            "deploy failed stack trace"
+        );
+    }
+
+    #[test]
+    fn collapse_whitespace_trims_the_ends() {
+        assert_eq!(collapse_whitespace("  hello  "), "hello");
+    }
+
+    #[test]
+    fn collapse_whitespace_handles_unicode_whitespace_too() {
+        // A non-breaking space and an ideographic space are whitespace to
+        // `split_whitespace`; a byte-wise `\n`/`\t`/`' '` replacement would
+        // leave both intact and let a sender smuggle a wide blank run into
+        // the roster.
+        assert_eq!(collapse_whitespace("a\u{00a0}\u{3000}b"), "a b");
+    }
+
+    #[test]
+    fn bound_preview_text_leaves_a_short_body_untouched() {
+        assert_eq!(bound_preview_text("ship it").as_deref(), Some("ship it"));
+    }
+
+    #[test]
+    fn bound_preview_text_collapses_before_bounding() {
+        assert_eq!(
+            bound_preview_text(" one\ntwo\tthree ").as_deref(),
+            Some("one two three")
+        );
+    }
+
+    #[test]
+    fn bound_preview_text_caps_a_long_body_with_an_ellipsis() {
+        // A message right up against the spec's 64KiB event limit must not
+        // cross IPC anywhere near full size — and unlike a reply excerpt,
+        // this one is re-sent for *every* room on a room-list `Reset`.
+        let long_body = "x".repeat(64 * 1024);
+        let preview = bound_preview_text(&long_body).expect("a long body still previews");
+        assert_eq!(preview.chars().count(), PREVIEW_MAX_CHARS + 1); // +1 for the ellipsis
+        assert!(preview.ends_with('…'));
+    }
+
+    #[test]
+    fn bound_preview_text_counts_chars_not_bytes() {
+        // `PREVIEW_MAX_CHARS` is a `char` bound so truncation always lands on
+        // a valid boundary; a byte bound would panic (or mangle) here.
+        let long_body = "é".repeat(PREVIEW_MAX_CHARS * 2);
+        let preview = bound_preview_text(&long_body).expect("a long body still previews");
+        assert_eq!(preview.chars().count(), PREVIEW_MAX_CHARS + 1);
+    }
+
+    #[test]
+    fn bound_preview_text_is_none_for_an_empty_or_whitespace_only_body() {
+        // §6.1.1: the preview line is omitted when there is nothing to show,
+        // never rendered as a blank row.
+        assert!(bound_preview_text("").is_none());
+        assert!(bound_preview_text("   \n\t ").is_none());
+    }
+
+    #[test]
+    fn message_preview_text_previews_a_plain_text_body() {
+        assert_eq!(
+            message_preview_text(&MessageType::text_plain("ship it"), "Alice").as_deref(),
+            Some("ship it")
+        );
+    }
+
+    #[test]
+    fn message_preview_text_previews_a_notice_body_like_any_other_text() {
+        // `m.notice` is what most of this org's agent traffic uses (spec §A);
+        // the timeline only de-emphasises it, it does not suppress it.
+        assert_eq!(
+            message_preview_text(&MessageType::notice_plain("build green"), "Theo").as_deref(),
+            Some("build green")
+        );
+    }
+
+    #[test]
+    fn message_preview_text_renders_an_emote_the_way_the_timeline_does() {
+        // `Timeline.svelte`'s emote branch renders `senderDisplayName ??
+        // sender` followed by the body; an emote read without its subject is
+        // nonsense ("waves"), so the roster reads it the same way.
+        assert_eq!(
+            message_preview_text(&MessageType::emote_plain("waves"), "Alice").as_deref(),
+            Some("Alice waves")
+        );
+    }
+
+    #[test]
+    fn message_preview_text_prefers_a_media_filename() {
+        assert_eq!(
+            message_preview_text(&image("caption", Some("diagram.png")), "Alice").as_deref(),
+            Some("diagram.png")
+        );
+    }
+
+    #[test]
+    fn message_preview_text_falls_back_to_the_body_as_a_media_filename() {
+        // ruma's `filename()` falls back to `body`, which is where a client
+        // that sets no separate `filename` field puts the name.
+        assert_eq!(
+            message_preview_text(&image("photo.png", None), "Alice").as_deref(),
+            Some("photo.png")
+        );
+    }
+
+    #[test]
+    fn message_preview_text_falls_back_to_a_kind_word_for_a_nameless_media_file() {
+        // Same vocabulary as `timelineItemView.ts`'s `MEDIA_FILE_LABELS` and
+        // its `m.image` alt fallback — never an invented emoji.
+        assert_eq!(
+            message_preview_text(&image("   ", None), "Alice").as_deref(),
+            Some("Image")
+        );
+        assert_eq!(
+            message_preview_text(
+                &MessageType::File(FileMessageEventContent::plain(
+                    String::new(),
+                    owned_mxc_uri!("mxc://x.org/f")
+                )),
+                "Alice"
+            )
+            .as_deref(),
+            Some("File")
+        );
+        assert_eq!(
+            message_preview_text(
+                &MessageType::Audio(AudioMessageEventContent::plain(
+                    String::new(),
+                    owned_mxc_uri!("mxc://x.org/a")
+                )),
+                "Alice"
+            )
+            .as_deref(),
+            Some("Audio")
+        );
+        assert_eq!(
+            message_preview_text(
+                &MessageType::Video(VideoMessageEventContent::plain(
+                    String::new(),
+                    owned_mxc_uri!("mxc://x.org/v")
+                )),
+                "Alice"
+            )
+            .as_deref(),
+            Some("Video")
+        );
+    }
+
+    #[test]
+    fn message_preview_text_is_none_for_a_msgtype_the_timeline_will_not_render() {
+        // `timelineItemView.ts`'s `messageView` renders anything outside the
+        // seven eligible msgtypes as an `Unsupported message (…)`
+        // placeholder. Previewing its body would make the roster claim
+        // something was said that the timeline itself refuses to show.
+        assert!(message_preview_text(
+            &MessageType::Location(LocationMessageEventContent::new(
+                "here".into(),
+                "geo:0,0".into()
+            )),
+            "Alice"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn message_preview_text_bounds_a_long_body() {
+        // The bound must be enforced on the way *out* of this function, not
+        // left to the caller — every arm is sender-controlled text.
+        let preview =
+            message_preview_text(&MessageType::text_plain("x".repeat(64 * 1024)), "Alice")
+                .expect("a long text body still previews");
+        assert_eq!(preview.chars().count(), PREVIEW_MAX_CHARS + 1);
+    }
+
+    #[test]
+    fn message_preview_text_bounds_a_long_emote_including_its_sender_name() {
+        // A hostile *display name* is as sender-controlled as the body, so
+        // the bound has to apply to the composed line, not just the body.
+        let preview = message_preview_text(&MessageType::emote_plain("waves"), &"n".repeat(4096))
+            .expect("a long emote still previews");
+        assert_eq!(preview.chars().count(), PREVIEW_MAX_CHARS + 1);
+    }
+
+    #[test]
+    fn message_preview_text_bounds_a_long_media_filename() {
+        // A filename is likewise attacker-influenced, and ruma imposes no
+        // length limit on it.
+        let preview = message_preview_text(&image("x", Some(&"f".repeat(4096))), "Alice")
+            .expect("a long filename still previews");
+        assert_eq!(preview.chars().count(), PREVIEW_MAX_CHARS + 1);
+    }
+
+    #[test]
+    fn preview_from_classification_previews_a_message_and_leaves_the_event_type_unset() {
+        // `lastEventType` is the webview's "this is a custom event" hook, so
+        // an ordinary message must never populate it.
+        let (text, event_type) = preview_from_classification(
+            "message",
+            None,
+            Some(&MessageType::text_plain("ship it")),
+            None,
+            "Alice",
+        )
+        .expect("a message is previewable");
+        assert_eq!(text, "ship it");
+        assert_eq!(event_type, None);
+    }
+
+    #[test]
+    fn preview_from_classification_uses_a_custom_events_fallback_body_and_sets_its_type() {
+        let (text, event_type) = preview_from_classification(
+            "customMessage",
+            Some("dev.supermessage.demo.note.v1"),
+            None,
+            Some("Approval needed"),
+            "Alice",
+        )
+        .expect("a custom event is previewable");
+        assert_eq!(text, "Approval needed");
+        assert_eq!(event_type.as_deref(), Some("dev.supermessage.demo.note.v1"));
+    }
+
+    #[test]
+    fn preview_from_classification_falls_back_to_a_generic_for_a_bodyless_custom_event() {
+        // `docs/matrix-events.md` §G: no custom event should ever render as
+        // nothing — the same rule `customEvents.ts` follows in the webview.
+        let (text, event_type) = preview_from_classification(
+            "customMessage",
+            Some("dev.supermessage.demo.note.v1"),
+            None,
+            None,
+            "Alice",
+        )
+        .expect("a bodyless custom event still previews");
+        assert_eq!(text, "Custom event");
+        assert_eq!(event_type.as_deref(), Some("dev.supermessage.demo.note.v1"));
+    }
+
+    #[test]
+    fn preview_from_classification_bounds_a_custom_events_fallback_body() {
+        // Straight off the wire from a homeserver, and `extract_custom_body`
+        // imposes no length limit of its own.
+        let (text, _) = preview_from_classification(
+            "customMessage",
+            Some("x.y.z"),
+            None,
+            Some(&"c".repeat(64 * 1024)),
+            "Alice",
+        )
+        .expect("a long custom body still previews");
+        assert_eq!(text.chars().count(), PREVIEW_MAX_CHARS + 1);
+    }
+
+    #[test]
+    fn preview_from_classification_is_none_for_every_kind_that_is_not_something_said() {
+        // §6.1.1's central rule: a fleet whose agents restart and rename must
+        // not fill its roster with membership and state noise that displaces
+        // real work. These are exactly `classify_content`'s other outputs.
+        for kind in [
+            "membership",
+            "profileChange",
+            "state",
+            "redacted",
+            "unableToDecrypt",
+            "sticker",
+            "poll",
+            "liveLocation",
+            "callInvite",
+            "rtcNotification",
+            "failedToParse",
+        ] {
+            assert!(
+                preview_from_classification(kind, Some("m.room.name"), None, None, "Alice")
+                    .is_none(),
+                "expected no preview for {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn preview_from_classification_is_none_for_a_message_with_no_msgtype_to_read() {
+        // Defensive: `latest_event_preview` only ever passes `Some` alongside
+        // `"message"` (both come from the same content), but a `None` here
+        // must degrade to "no preview" rather than to an empty string.
+        assert!(preview_from_classification("message", None, None, None, "Alice").is_none());
     }
 
     // `reply_parent_label`: pure over the `(kind, detail)` pair
