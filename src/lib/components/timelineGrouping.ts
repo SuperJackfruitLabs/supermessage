@@ -54,7 +54,9 @@
 // `continuesRun` when the *immediately preceding display row* — not the
 // previous raw item — is itself an `item` row whose underlying item is
 // message-shaped, same non-null `sender`, within `SENDER_RUN_WINDOW_MS` of
-// this item's timestamp, and this item is message-shaped too. Reading off
+// this item's timestamp **in either direction** (see `continuesSenderRun`'s
+// doc comment for why the window is symmetric), and this item is
+// message-shaped too. Reading off
 // the previous *display* row rather than the previous *raw* item is what
 // makes a collapsed membership group (or a date divider, which also gets
 // its own `item` row) break a run for free: once it's the immediately
@@ -105,6 +107,17 @@ function isMessageShaped(item: TimelineItem): boolean {
  * it, or `undefined` at the start of the timeline. See the module doc
  * comment for why this is computed from the previous *row*, not the
  * previous *raw* item.
+ *
+ * The window check is symmetric (`Math.abs`), deliberately: real Matrix
+ * timelines do produce items whose `timestampMs` isn't strictly increasing
+ * (local echo vs. server timestamp, federation lag), so a signed
+ * `item.timestampMs - previousItem.timestampMs` would let a message dated
+ * arbitrarily far *before* its predecessor still read as "within the
+ * window" — the negative delta compares as well inside it. `Math.abs` keeps
+ * the behaviour this rule exists for (a message a few seconds out of order
+ * from the same sender still reads as one continuous turn) while bounding
+ * both directions the same way the 5-minute window already bounds the
+ * forward one.
  */
 function continuesSenderRun(previousRow: TimelineDisplayRow | undefined, item: TimelineItem): boolean {
   if (!previousRow || previousRow.type !== "item") return false;
@@ -113,7 +126,7 @@ function continuesSenderRun(previousRow: TimelineDisplayRow | undefined, item: T
   if (previousItem.sender == null || item.sender == null) return false;
   if (previousItem.sender !== item.sender) return false;
   if (previousItem.timestampMs == null || item.timestampMs == null) return false;
-  return item.timestampMs - previousItem.timestampMs <= SENDER_RUN_WINDOW_MS;
+  return Math.abs(item.timestampMs - previousItem.timestampMs) <= SENDER_RUN_WINDOW_MS;
 }
 
 /** How many members a collapsed line names explicitly before "and N others". */
