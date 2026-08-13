@@ -26,13 +26,18 @@ export interface CoreStatus {
  * currently always `null` — the core defers message-preview decoding — so
  * callers must render that as "no preview", not treat it as a bug.
  *
- * `avatarUrl` is the room's raw `mxc://` URI, not something an `<img src>`
- * can load directly (browsers can't fetch `mxc://`, and this homeserver's
- * media endpoints are authenticated — no bare `http(s)://` URL exists
- * either). It is deliberately *not* the image data itself: `RoomSummary` is
- * re-sent whole on every room-list `Set` diff, and putting bytes here would
- * inflate every such update. Use it only as a change signal / cache key, and
- * call {@link avatarThumbnail} to resolve the actual pixels.
+ * `avatarUrl` is the room's raw `mxc://` URI when the room has one set, but
+ * it is **not** the full picture: it's `null` for a room whose "avatar" is
+ * really its other member's profile picture (Element shows one; the room
+ * itself has no `m.room.avatar`), because that requires reading the room's
+ * member list — async, store-backed work the core's synchronous room-list
+ * projection can't do (see `core::rooms::resolve_room_avatar_mxc`'s doc
+ * comment). Even when it isn't `null`, it's still just an identifier, not
+ * loadable image data — browsers can't fetch `mxc://`, and this homeserver's
+ * media endpoints are authenticated, so no bare `http(s)://` URL exists
+ * either. Never use this field to decide whether to fetch an avatar; call
+ * {@link roomAvatar} unconditionally, for every room, and let it resolve
+ * (and return `null` when there is genuinely nothing to show).
  */
 export interface RoomSummary {
   id: string;
@@ -190,16 +195,19 @@ export async function sendMessage(body: string): Promise<void> {
 }
 
 /**
- * Fetches `mxcUri` as a `data:` URI, or `null` when the core couldn't
- * identify its bytes as a renderable image format. Takes the raw `mxc://`
- * URI rather than a room id — a room's `RoomSummary.avatarUrl` is exactly
- * such a URI (see that interface's doc comment for why it isn't image data
- * itself), and this same command works for any other mxc URI too, e.g. a
- * user's own avatar. Callers fetch this lazily and cache the result
- * themselves, keyed on `mxcUri` (see `$lib/stores/avatarCache.svelte.ts`).
+ * Resolves and fetches `roomId`'s avatar as a `data:` URI, or `null` when
+ * the room genuinely has nothing to show (or the core couldn't identify the
+ * fetched bytes as a renderable image format). Takes a room id, not an mxc
+ * URI: resolution needs the room's member list for a DM whose "avatar" is
+ * really the other member's profile picture — something `RoomSummary`'s
+ * `avatarUrl` alone can't express, so **call this for every room**, not
+ * only those with a non-null `avatarUrl` (see that field's doc comment).
+ * Callers fetch this lazily and cache the result themselves, keyed on
+ * `roomId` (see `$lib/stores/avatarCache.svelte.ts` for why room id rather
+ * than mxc URI, and the trade-off that implies).
  */
-export async function avatarThumbnail(mxcUri: string): Promise<string | null> {
-  return invoke<string | null>("avatar_thumbnail", { mxcUri });
+export async function roomAvatar(roomId: string): Promise<string | null> {
+  return invoke<string | null>("room_avatar", { roomId });
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */

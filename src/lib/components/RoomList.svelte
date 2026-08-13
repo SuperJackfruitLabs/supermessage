@@ -10,17 +10,19 @@
   // row therefore looks intentionally uniform today; once previews land,
   // rooms that have one will simply grow a second line.
   //
-  // Avatars: `avatarUrl` is an `mxc://` URI a browser can't load directly
-  // (and this homeserver's media endpoints are authenticated, so there's no
-  // bare `http(s)://` URL either — see `ipc.ts`'s `avatarThumbnail` doc
-  // comment). It's also not always the room's own avatar — the core falls
-  // back to a DM's sole other member when the room has no `m.room.avatar`
-  // (`core::rooms::resolve_avatar_url`), which is why "no avatarUrl" still
-  // means "no avatar to show", not "core bug". `avatarCache` resolves
-  // whatever mxc URI is set to a `data:` URI via the `avatar_thumbnail`
-  // command, fetched lazily per URI so the list never blocks on avatars:
-  // every row renders immediately with its initials, and swaps in the real
-  // image once (and if) the fetch resolves.
+  // Avatars: fetched via `avatarCache`, keyed by room id, for **every**
+  // room — not gated on `room.avatarUrl` being set. That field only ever
+  // reflects the room's own `m.room.avatar`, and is `null` for most of
+  // these rooms: their "avatar" (per Element) is really the other member's
+  // profile picture, which the core can only resolve by reading the room's
+  // member list — async, so it happens inside the `room_avatar` command
+  // rather than the synchronous room-list projection (see
+  // `core::rooms::resolve_room_avatar_mxc`'s doc comment and `ipc.ts`'s
+  // `RoomSummary`/`roomAvatar` doc comments). Gating the fetch on
+  // `avatarUrl` here would silently skip exactly those rooms. The cache
+  // still keeps the list from blocking on avatars: every row renders
+  // immediately with its initials, and swaps in the real image once (and
+  // if) the fetch resolves.
 
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
@@ -49,7 +51,7 @@
   {:else}
     {#each sortedRooms as room (room.id)}
       {@const selected = room.id === roomsStore.selectedId}
-      {@const avatar = avatarCache.get(room.avatarUrl)}
+      {@const avatar = avatarCache.get(room.id)}
       <button
         type="button"
         onclick={() => roomsStore.select(room.id)}
@@ -64,7 +66,7 @@
             alt=""
             aria-hidden="true"
             class="h-10 w-10 shrink-0 rounded-full object-cover"
-            onerror={() => room.avatarUrl && avatarCache.markFailed(room.avatarUrl)}
+            onerror={() => avatarCache.markFailed(room.id)}
           />
         {:else}
           <span

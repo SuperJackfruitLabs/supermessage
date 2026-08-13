@@ -103,20 +103,21 @@ pub async fn send_message(
     timeline.send_text(&body).await
 }
 
-/// Fetches `mxc_uri` as a `data:` URI, or `None` when its bytes don't sniff
-/// to a renderable image format (see `core::media::sniff_mime`). Takes the
-/// mxc URI directly rather than a room id — see `core::media`'s doc comment
-/// for why — which the caller (`avatarCache.svelte.ts`) already holds as a
-/// room's `avatarUrl` (`RoomSummary`'s `avatarUrl`, projected by
-/// `core::rooms::project_room` with a hero fallback — see
-/// `core::rooms::resolve_avatar_url`) or a user's own avatar mxc URI. Fetched
-/// lazily and cached by the caller, keyed on that same mxc URI — never
-/// carried in the streamed `RoomSummary` itself, per `core::dto`'s doc
-/// comment on IPC cost.
+/// Resolves and fetches `room_id`'s avatar as a `data:` URI, or `None` when
+/// the room has no avatar to show (by any of `core::rooms::resolve_room_avatar_mxc`'s
+/// rules) or its bytes don't sniff to a renderable image format (see
+/// `core::media::sniff_mime`). Takes a room id, not an mxc URI — resolution
+/// needs the room's member list for the two-person fallback, which
+/// `RoomSummary.avatarUrl` alone can't express (see `Session::room_avatar`'s
+/// doc comment). Callers must invoke this for every room, not only those
+/// with a non-null `avatarUrl` — most rooms in practice, since the fallback
+/// is exactly what covers up a null `avatarUrl` — fetched lazily and cached
+/// by the caller, keyed on `room_id` this time rather than the mxc URI (see
+/// `avatarCache.svelte.ts` for the trade-off that implies).
 #[tauri::command]
-pub async fn avatar_thumbnail(
-    mxc_uri: String,
+pub async fn room_avatar(
+    room_id: String,
     session: State<'_, Session>,
 ) -> Result<Option<String>, CoreError> {
-    session.avatar_thumbnail(&mxc_uri).await
+    session.room_avatar(&room_id).await
 }

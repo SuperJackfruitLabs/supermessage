@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
+use matrix_sdk::{Room, RoomMemberships};
 use matrix_sdk_ui::room_list_service::filters::new_filter_non_left;
 use matrix_sdk_ui::room_list_service::RoomListItem;
 use tauri::{AppHandle, Emitter};
@@ -96,6 +97,94 @@ fn resolve_avatar_url(
     })
 }
 
+/// Resolves a two-person room's avatar to the sole *other* joined member's
+/// avatar — the fallback that actually fires against this deployment.
+/// Synapse only sends heroes for **unnamed** rooms (they exist so a client
+/// can compute a display name for a room that doesn't have one); every room
+/// here has an explicit name, so [`resolve_avatar_url`]'s hero step is
+/// correct but inert, and this is what Element is really showing when it
+/// displays a picture for one of these two-person agent rooms.
+///
+/// `member_avatar_urls` is `(is_own_member, avatar_url)` for every *joined*
+/// member of the room, in no particular order — already extracted from a
+/// live `RoomMember` by [`resolve_room_avatar_mxc`], so this stays pure and
+/// SDK-free like [`resolve_avatar_url`], testable without a live room or
+/// store.
+///
+/// Deliberately narrow like the hero rule: fires only with **exactly two**
+/// joined members. A larger room with no avatar has no single member whose
+/// picture uniquely represents the room — picking one arbitrarily would be
+/// the same mistake the hero rule already avoids for `heroes.len() > 1`.
+fn resolve_two_person_avatar_url(member_avatar_urls: &[(bool, Option<String>)]) -> Option<String> {
+    if member_avatar_urls.len() != 2 {
+        return None;
+    }
+    member_avatar_urls
+        .iter()
+        .find(|(is_own, _)| !*is_own)
+        .and_then(|(_, avatar_url)| avatar_url.clone())
+}
+
+/// Resolves `room`'s avatar to an mxc URI, consulting — in order — the
+/// room's own `m.room.avatar`, a sole hero's avatar
+/// ([`resolve_avatar_url`]), and, when neither fires, the sole *other*
+/// member's avatar in an exactly-two-joined-member room
+/// ([`resolve_two_person_avatar_url`]).
+///
+/// **Why this can't live in [`project_room`]:** the member list is read via
+/// `Room::members_no_sync`, which is `async` — it reads the local state
+/// store, not the network (see below), but `async` all the same — and
+/// `project_room` is called from inside [`project_diff`]'s synchronous
+/// closure, shared with `core::timeline`'s identical projection. Forcing
+/// that closure `async` for one field would reshape a function this module
+/// doesn't own. So this lives here as its own entry point, called directly
+/// by `Session::room_avatar` instead of from the streaming path.
+///
+/// **Why `members_no_sync` shouldn't cost a network round trip here:**
+/// `matrix-sdk-ui`'s room list requests `(RoomMember, "$LAZY")` and
+/// `(RoomMember, "$ME")` in its sliding-sync `required_state` by default
+/// (`DEFAULT_REQUIRED_STATE`, `room_list_service/mod.rs`) — independent of
+/// heroes, which is a separate sliding-sync field the server may or may not
+/// populate. So by the time a room reaches the webview at all, its joined
+/// members' `m.room.member` events are already in the local store from that
+/// lazy-loaded `required_state`, not from anything this function has to go
+/// fetch. `members_no_sync` (unlike `members`, which syncs first) reads only
+/// that local store and never triggers a fetch of its own — deliberately
+/// preferred here over `members()` for exactly that reason, per this
+/// deployment's report: an unexpectedly empty local member list should
+/// surface as "no avatar" rather than silently add a network round trip to
+/// every avatar fetch.
+pub async fn resolve_room_avatar_mxc(room: &Room) -> CoreResult<Option<String>> {
+    let hero_avatar_urls: Vec<Option<String>> = room
+        .heroes()
+        .iter()
+        .map(|hero| hero.avatar_url.as_ref().map(|url| url.to_string()))
+        .collect();
+    let avatar_url = resolve_avatar_url(
+        room.avatar_url().map(|url| url.to_string()),
+        &hero_avatar_urls,
+    );
+    if avatar_url.is_some() {
+        return Ok(avatar_url);
+    }
+
+    let members = room
+        .members_no_sync(RoomMemberships::JOIN)
+        .await
+        .map_err(|e| CoreError::Protocol(e.to_string()))?;
+    let member_avatar_urls: Vec<(bool, Option<String>)> = members
+        .iter()
+        .map(|member| {
+            (
+                member.is_account_user(),
+                member.avatar_url().map(|url| url.to_string()),
+            )
+        })
+        .collect();
+
+    Ok(resolve_two_person_avatar_url(&member_avatar_urls))
+}
+
 /// Project an SDK [`RoomListItem`] into the wire [`RoomSummary`].
 ///
 /// A thin adapter: it only extracts values and delegates to
@@ -119,6 +208,22 @@ pub fn project_room(item: &RoomListItem) -> RoomSummary {
     let avatar_url = resolve_avatar_url(
         item.avatar_url().map(|url| url.to_string()),
         &hero_avatar_urls,
+    );
+    // Diagnostic only, deliberately kept: this traced the missing-hero
+    // hypothesis that led to `resolve_room_avatar_mxc`'s two-person fallback
+    // above, and stays useful for the next "why is this room's avatar
+    // missing" report — `resolved` here only reflects what this synchronous
+    // path can determine (own avatar / heroes), not the async member-based
+    // fallback, which `Session::room_avatar` resolves separately and isn't
+    // visible from inside `project_diff`'s sync closure.
+    tracing::debug!(
+        room = %id,
+        room_avatar = item.avatar_url().is_some(),
+        heroes = hero_avatar_urls.len(),
+        heroes_with_avatar = hero_avatar_urls.iter().filter(|u| u.is_some()).count(),
+        active_members = item.active_members_count(),
+        resolved_sync = avatar_url.is_some(),
+        "avatar resolution (sync projection; async two-person fallback resolved separately)"
     );
     let unread = item.num_unread_messages();
     // `MilliSecondsSinceUnixEpoch` wraps `js_int::UInt`, which only converts
@@ -365,6 +470,60 @@ mod tests {
     #[test]
     fn resolve_avatar_url_is_none_when_the_sole_hero_has_no_avatar_either() {
         assert_eq!(resolve_avatar_url(None, &[None]), None);
+    }
+
+    #[test]
+    fn resolve_two_person_avatar_url_returns_the_other_members_avatar() {
+        // The case this exists for: a two-person agent room with no
+        // `m.room.avatar` and no heroes (Synapse only sends heroes for
+        // unnamed rooms, and these rooms all have explicit names).
+        let resolved = resolve_two_person_avatar_url(&[
+            (true, Some("mxc://x.org/me".into())),
+            (false, Some("mxc://x.org/agent".into())),
+        ]);
+        assert_eq!(resolved.as_deref(), Some("mxc://x.org/agent"));
+    }
+
+    #[test]
+    fn resolve_two_person_avatar_url_works_regardless_of_member_order() {
+        let resolved = resolve_two_person_avatar_url(&[
+            (false, Some("mxc://x.org/agent".into())),
+            (true, Some("mxc://x.org/me".into())),
+        ]);
+        assert_eq!(resolved.as_deref(), Some("mxc://x.org/agent"));
+    }
+
+    #[test]
+    fn resolve_two_person_avatar_url_is_none_when_the_other_member_has_no_avatar() {
+        let resolved =
+            resolve_two_person_avatar_url(&[(true, Some("mxc://x.org/me".into())), (false, None)]);
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn resolve_two_person_avatar_url_is_none_for_a_room_with_three_or_more_joined_members() {
+        // A group room with no room avatar: no single member's picture is
+        // "the room's" picture, so this must not pick one arbitrarily —
+        // same reasoning as the hero rule for `heroes.len() > 1`.
+        let resolved = resolve_two_person_avatar_url(&[
+            (true, Some("mxc://x.org/me".into())),
+            (false, Some("mxc://x.org/a".into())),
+            (false, Some("mxc://x.org/b".into())),
+        ]);
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn resolve_two_person_avatar_url_is_none_for_a_single_member_room() {
+        assert_eq!(
+            resolve_two_person_avatar_url(&[(true, Some("mxc://x.org/me".into()))]),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_two_person_avatar_url_is_none_for_an_empty_member_list() {
+        assert_eq!(resolve_two_person_avatar_url(&[]), None);
     }
 
     #[test]

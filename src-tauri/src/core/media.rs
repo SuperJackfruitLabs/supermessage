@@ -13,14 +13,14 @@
 //! for the same `mxc://` URI do not re-hit the network — no separate disk
 //! cache is built here.
 //!
-//! Deliberately keyed on the mxc URI itself, not on a room id: `Client` has
-//! no notion of "this room's avatar" — only the SDK's higher-level `Room`
-//! wrapper does (`Room::avatar`), and that only ever reads the room's own
-//! `m.room.avatar` state event, with no fallback to a hero's avatar for
-//! rooms that don't have one set (see `core::rooms::resolve_avatar_url` for
-//! why that fallback has to live there instead). Taking the mxc URI directly
-//! sidesteps that mismatch entirely, and generalizes for free: a user avatar
-//! (needed for the timeline at M2) is fetched through the exact same path.
+//! This module only ever fetches an mxc URI it's handed — it has no opinion
+//! on *which* mxc URI represents a room's avatar (that's
+//! `core::rooms::resolve_room_avatar_mxc`'s job, since it needs the room's
+//! member list, not just its own state). `Session::room_avatar` is what
+//! wires the two together: resolve, then fetch via
+//! [`avatar_thumbnail`]. Keeping the fetch keyed purely on the mxc URI
+//! itself (never a room id) is also what lets this same function serve a
+//! user avatar identically once the timeline needs one at M2.
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -45,9 +45,10 @@ const AVATAR_THUMBNAIL_SIZE: u16 = 96;
 /// format (see [`sniff_mime`]), so the webview is never handed a `data:` URI
 /// it can't render rather than one guessing a MIME type that turns out
 /// wrong. A genuinely missing/unreachable media item surfaces as `Err`
-/// instead — unlike `Room::avatar` (which folds "room has no avatar" into
-/// `Ok(None)`), `mxc_uri` here is always one the caller already knows to
-/// exist (an `avatarUrl` the core itself projected), so a fetch failure is a
+/// instead — `mxc_uri` here is always one `resolve_room_avatar_mxc` already
+/// resolved to *some* real avatar source before calling this (the room's
+/// own avatar, a hero's, or a member's), so "there is no avatar" is decided
+/// before this function is ever called; a fetch failure past that point is a
 /// real error, not an expected "no avatar" case.
 pub async fn avatar_thumbnail(client: &Client, mxc_uri: &str) -> CoreResult<Option<String>> {
     let request = MediaRequestParameters {
