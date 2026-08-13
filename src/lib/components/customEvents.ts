@@ -106,6 +106,38 @@
 //    (`status: "placeholder"`), today's behaviour, unchanged. No custom
 //    event ever reaches `Timeline.svelte` with nothing to render at all.
 //
+// ## Decisions
+//
+// `CustomEventRenderResult.decision` is **our UI contract, not a wire
+// schema** — the distinction this module opens with, applied to the one
+// case where it is easiest to blur. Nothing below describes, assumes or
+// requires any particular shape inside `content`: a renderer reads whatever
+// its own event type actually carries (one named field at a time, as
+// always) and *translates* it into this shape. Kaambaan's permission-request
+// event will be the first renderer to do so, wiring the operator's answer to
+// that team's gate-resolution call (`docs/positioning.md`, wedge #3
+// "Approvals from chat" — the suite's missing human-in-the-loop channel, and
+// the reason `customMessage` handling exists at all). Until then no shipped
+// renderer sets it, `boundDecision` returns `null` for every real event, and
+// no button reaches the timeline — deliberately: spec §7.1 forbids shipping
+// a visible control with nothing behind it.
+//
+// A decision on a card is the **only** place `--color-signal` (amber)
+// appears in the entire application (spec §3, §7.1). Amber means "the
+// operator owes someone an answer" and means nothing else — not a warning,
+// not an error, not a newer-schema note. `Timeline.svelte`'s dispatch card
+// switches the card's left edge and ground to the signal tokens exactly
+// when `decision !== null`, which is why that field being trustworthy
+// matters beyond mere layout.
+//
+// {@link boundDecision} therefore treats a renderer's `decision` as
+// hostile, not merely as possibly-buggy: a renderer that echoed
+// `content.decision` straight through would hand this module attacker-shaped
+// data, and the fallout of accepting it is a bordered, amber, *clickable*
+// object — a far better phishing surface than a mistyped text field. The
+// validation is structural and total (see that function), and the failure
+// mode is always "an ordinary card", never "a card with a broken button".
+//
 // ## Why renderers never recurse
 //
 // A Matrix event is capped at 64KiB, and this app bounds a custom event's
@@ -134,12 +166,42 @@ export interface CustomEventField {
   value: string;
 }
 
+/** One answer the operator can give to a {@link CustomEventDecision}.
+ *
+ * `label` is display text and is bounded/escaped like any other field.
+ * `id` is an *identifier*, never rendered: it is what a renderer's own
+ * event type calls this answer, and it is handed back verbatim to the
+ * `onDecide` callback (and, once Kaambaan's gate resolution lands, to that
+ * call). It is deliberately not truncated — see {@link boundDecision}. */
+export interface CustomEventDecisionOption {
+  id: string;
+  label: string;
+}
+
+/** A pending decision the operator still owes an answer to — the UI
+ * contract this module defines on its own result type, **not** a wire
+ * schema (see this module's "Decisions" section for why that distinction is
+ * the whole point, and for why a decision is the only place amber appears
+ * in the app). A renderer translates whatever its event type actually
+ * carries into this shape; it never passes a payload object through. */
+export interface CustomEventDecision {
+  prompt: string;
+  options: CustomEventDecisionOption[];
+}
+
 /** What a renderer returns: the rows to show, or an empty list when the
  * payload had nothing this renderer could do anything useful with (treated
  * the same as an unrecognized type by {@link resolveCustomEvent} — falls
  * through to the plain-text `body`/generic placeholder). */
 export interface CustomEventRenderResult {
   fields: CustomEventField[];
+  /** Set by a renderer when the payload carries a decision the operator
+   * still owes an answer to. No shipped renderer sets this yet — the
+   * Kaambaan permission schema is the first that will. Validated by
+   * {@link boundDecision} before it can reach the DOM: this field's static
+   * type is a promise about the renderer's *intent*, never a guarantee
+   * about its output. */
+  decision?: CustomEventDecision;
 }
 
 /** A registered renderer for one custom event type (major version baked
@@ -226,6 +288,14 @@ const FIELD_VALUE_MAX_CHARS = 300;
  * deriving one from the payload, so this is bounded for the same reason
  * the value is. */
 const FIELD_LABEL_MAX_CHARS = 60;
+/** Cap on how many options a pending decision may offer. Four, not twelve
+ * like {@link FIELD_MAX_COUNT}: an option is a *button*, and a row of
+ * buttons is the one part of a dispatch card the operator is meant to act
+ * on under time pressure. Approve/Decline is the shape this exists for;
+ * four leaves room for a "Approve once"/"Always allow" style variant
+ * without ever becoming a menu, and caps how much amber a single event can
+ * put on screen. */
+const DECISION_MAX_OPTIONS = 4;
 
 /** Truncates `value` to `maxChars` UTF-16 code units, appending an ellipsis
  * when anything was cut — the same display-truncation shape
@@ -248,6 +318,64 @@ function boundFields(fields: readonly CustomEventField[]): CustomEventField[] {
     label: boundText(field.label, FIELD_LABEL_MAX_CHARS),
     value: boundText(field.value, FIELD_VALUE_MAX_CHARS),
   }));
+}
+
+/**
+ * Validates and bounds a renderer's `decision`, or returns `null` when
+ * there is no trustworthy decision to show.
+ *
+ * The parameter is `unknown`, not {@link CustomEventDecision}, and that is
+ * the point rather than an oversight: TypeScript's guarantee stops at this
+ * module's edge, and the realistic mistake is a renderer that echoes
+ * `content.decision` straight off an untrusted payload (`content` is
+ * arbitrary JSON from anyone who can send to the room). Everything this
+ * function accepts ends up in a bordered, amber, clickable object — the
+ * highest-value surface in the timeline to get wrong — so nothing is
+ * assumed and every level is checked explicitly:
+ *
+ * - not a non-null object → `null`;
+ * - `prompt` not a `string` → `null` (never coerced: `String(value)` would
+ *   happily stringify an attacker-controlled object);
+ * - `options` not an array → `null`;
+ * - an entry that is not an object, or whose `id` or `label` is not a
+ *   `string` → that entry is dropped, its valid siblings survive;
+ * - no valid entries left → `null`, so a malformed decision degrades to an
+ *   ordinary card rather than to a card with a dead button (spec §7.1).
+ *
+ * The {@link DECISION_MAX_OPTIONS} cap counts *valid* options, not raw
+ * array entries — slicing before validating would let six junk entries
+ * hide two real ones.
+ *
+ * `prompt` and `label` are bounded exactly as fields are (the same two
+ * constants, for the same layout reason). `id` is deliberately **not**
+ * bounded: it is never rendered, and silently truncating an identifier
+ * would turn "approve-restart-hermes-gateway…" into a value the gate
+ * resolution on the other end has never heard of — a wrong answer sent
+ * confidently, which is strictly worse than a long string in a callback.
+ * Its length is already bounded upstream, where it matters, by
+ * `core::timeline::CUSTOM_PAYLOAD_MAX_BYTES`.
+ *
+ * Pure and non-throwing by construction (no recursion, no coercion, fixed
+ * depth) — `resolveCustomEvent`'s `try`/`catch` is a backstop for the
+ * renderer, not for this.
+ */
+function boundDecision(decision: unknown): CustomEventDecision | null {
+  if (decision === null || typeof decision !== "object") return null;
+  const candidate = decision as { prompt?: unknown; options?: unknown };
+  if (typeof candidate.prompt !== "string") return null;
+  if (!Array.isArray(candidate.options)) return null;
+
+  const options: CustomEventDecisionOption[] = [];
+  for (const entry of candidate.options) {
+    if (options.length >= DECISION_MAX_OPTIONS) break;
+    if (entry === null || typeof entry !== "object") continue;
+    const { id, label } = entry as { id?: unknown; label?: unknown };
+    if (typeof id !== "string" || typeof label !== "string") continue;
+    options.push({ id, label: boundText(label, FIELD_LABEL_MAX_CHARS) });
+  }
+  if (options.length === 0) return null;
+
+  return { prompt: boundText(candidate.prompt, FIELD_VALUE_MAX_CHARS), options };
 }
 
 /**
@@ -279,7 +407,18 @@ function readSchemaVersion(content: unknown): number | null {
 /** {@link resolveCustomEvent}'s result — what `Timeline.svelte` actually
  * switches on. */
 export type CustomEventView =
-  | { status: "rendered"; fields: CustomEventField[]; newerVersion: boolean }
+  | {
+      status: "rendered";
+      fields: CustomEventField[];
+      newerVersion: boolean;
+      /** The validated, bounded pending decision, or `null` — always
+       * present on a `rendered` view so `Timeline.svelte` never has to
+       * distinguish "no decision" from "this variant has no such field".
+       * Only this variant can carry one: `fallbackBody` and `placeholder`
+       * mean no renderer produced anything, so there is nothing that could
+       * have set a decision in the first place. */
+      decision: CustomEventDecision | null;
+    }
   | { status: "fallbackBody"; text: string }
   | { status: "placeholder"; text: string };
 
@@ -312,7 +451,11 @@ export function resolveCustomEvent(
         const schemaVersion = readSchemaVersion(content);
         const newerVersion =
           schemaVersion !== null && schemaVersion > renderer.maxKnownSchemaVersion;
-        return { status: "rendered", fields, newerVersion };
+        // `result?.decision` is typed `CustomEventDecision | undefined`, and
+        // `boundDecision` still validates every level of it — see that
+        // function's doc comment for why the static type is not the
+        // guarantee it looks like here.
+        return { status: "rendered", fields, newerVersion, decision: boundDecision(result?.decision) };
       }
     } catch {
       // A renderer must never be able to take the timeline down with it —

@@ -59,8 +59,9 @@
   //     quote, reactions, actions, the seen marker and the trailing own
   //     meta line — and takes the branch's distinct middle as a child
   //     snippet. The asymmetry above is therefore expressed exactly once.
-  //     (`view.render === "customEvent"` still carries its own wrapper; it
-  //     is being replaced wholesale by the dispatch card in spec §7.)
+  //     (`view.render === "customEvent"` deliberately does *not* go
+  //     through it: a dispatch card is left-aligned regardless of sender —
+  //     see the dispatch-card note below.)
   //   - The `68ch`/`52ch` measures are set on the block, not on the prose
   //     inside it, for two reasons: the reactions and actions rows live in
   //     the same block and would otherwise be unbounded, and the block is
@@ -92,6 +93,39 @@
   //     mono string would simply render upright. Italic survives only where
   //     a real italic file exists for the face: serif emotes and `<em>`
   //     inside a message body.
+  //
+  // The dispatch card (spec §7) is this design's signature element and the
+  // one bordered object in the timeline — everything else here is unbordered
+  // prose. Every `kind: "customMessage"` item renders as one: Kaambaan
+  // cards, runs, station status, and above all permission requests
+  // (`docs/matrix-events.md` §G), which are the app's third named
+  // differentiator. Four things about it are decisions, not defaults:
+  //   - **Left-aligned regardless of `item.isOwn`**, and so deliberately not
+  //     built on `messageBlock`. A dispatch is not a remark; it does not
+  //     take a side. It occupies the full `68ch` reading measure rather
+  //     than shrinking to fit.
+  //   - **The event type truncates from the left**, with a leading ellipsis
+  //     (`…supermessage.demo.note.v1`), in `displayEventType`
+  //     (`timelineItemView.ts`) — a pure, unit-tested code-point slice
+  //     rather than the `direction: rtl` CSS trick, because the type is a
+  //     sender-controlled string and an RTL base direction lets the bidi
+  //     algorithm visually reorder a crafted one. See that function's doc
+  //     comment.
+  //   - **Amber (`--color-signal`) appears here and nowhere else in the
+  //     application** (spec §3, §7.1), and only when
+  //     `view.view.decision !== null`: the left edge, the ground and the
+  //     `AWAITING YOUR DECISION` label all switch together. Amber means the
+  //     operator owes someone an answer — never a warning, an error, or the
+  //     newer-schema note, which stays a faint mono line.
+  //   - **The `placeholder` status is not a card**, just the same quiet
+  //     centred system line every other unrenderable item gets. A type we
+  //     cannot render is not worth a bordered object.
+  // Every label, value, prompt and option label is plain-text `{...}`
+  // interpolation. `content` is arbitrary JSON from anyone who can send to
+  // the room, and `resolveCustomEvent` has already bounded and validated
+  // all of it (`customEvents.ts` — `boundFields`, `boundDecision`); the
+  // `{@html}` precedent below applies to `item.formattedBody` alone and
+  // must never be extended to a custom payload.
   //
   // Never optimistically appends: `timelineStore.items` is driven entirely
   // by the diff stream (see `timeline.svelte.ts`), including the local echo
@@ -232,6 +266,7 @@
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import {
     canReplyOrReact,
+    displayEventType,
     displayReactionKey,
     replyQuoteView,
     viewFor,
@@ -533,6 +568,29 @@
    */
   function startReply(item: TimelineItem): void {
     replyTargetStore.set(roomId, replyTargetStore.fromItem(item));
+  }
+
+  /**
+   * The operator's answer to a pending decision on a dispatch card (spec
+   * §7.1) — deliberately inert in this build.
+   *
+   * **What replaces this:** Kaambaan's gate-resolution REST call
+   * (`docs/positioning.md`, wedge #3 "Approvals from chat"). That call, plus
+   * the renderer that translates Kaambaan's permission-request event into a
+   * `CustomEventRenderResult.decision` (`customEvents.ts`, "Decisions"),
+   * are the two pieces this slot is waiting on. Neither exists yet, and the
+   * schema is that team's to design, not this app's to invent.
+   *
+   * Nothing in this build can reach it: no shipped renderer sets
+   * `decision`, so `resolveCustomEvent` returns `decision: null` for every
+   * real event and the branch that renders these buttons never executes.
+   * That is the spec's requirement, not an accident — §7.1: "Do not ship a
+   * visible button that does nothing." It logs rather than being an empty
+   * body so that the first renderer to set a decision produces visible
+   * evidence in the console instead of a silent click.
+   */
+  function onDecide(itemId: string, optionId: string): void {
+    console.warn("dispatch decision is not wired to a backend yet", { itemId, optionId });
   }
 
   /**
@@ -1012,93 +1070,201 @@
               {@render messageBlock(item, continuesRun, mediaFileContent)}
             {:else if view.render === "customEvent"}
               <!--
-                A `kind: "customMessage"` item — Kaambaan cards/runs/
-                permission requests/station status once those schemas land
-                (`docs/matrix-events.md` §G), the demo renderer until then.
-                `view.view` is the whole `resolveCustomEvent` outcome
+                The dispatch card (spec §7) — a `kind: "customMessage"`
+                item: Kaambaan cards/runs/permission requests/station status
+                once those schemas land (`docs/matrix-events.md` §G), the
+                demo renderer until then. `view.view` is the whole
+                `resolveCustomEvent` outcome
                 (`$lib/components/customEvents.ts`) — this block only
                 switches on its `status`, never decides anything itself.
+                See this file's top-of-script doc comment for the four
+                decisions this markup expresses.
 
                 Every value below is plain-text interpolation (`{...}`),
-                never `{@html}` — `content` is arbitrary JSON from anyone
-                who can send to the room, and a renderer's fields are
-                already bounded in count/length by `resolveCustomEvent`
-                before they ever reach here. `break-words` + the bubble's
-                own `max-w-[70%]`/`min-w-0` guard against a long unbroken
-                value or label widening the bubble, the same discipline
-                every other sender-controlled surface in this file follows.
+                never `{@html}`, never an `href`/`src`/inline style —
+                `content` is arbitrary JSON from anyone who can send to the
+                room, and `resolveCustomEvent` has already bounded its
+                fields and validated its decision before either reaches
+                here. `break-words` + the card's own `max-w-[68ch]`/
+                `min-w-0` guard against a long unbroken value, label or
+                option widening the card, the same discipline every other
+                sender-controlled surface in this file follows.
               -->
               {#if view.view.status === "placeholder"}
-                <div class="flex justify-center py-1.5">
-                  <span class="text-xs text-content-muted italic">{view.view.text}</span>
+                <!--
+                  Not a card, on purpose (spec §7): a type this build cannot
+                  render at all is not worth a bordered object. Identical
+                  markup to the `system`/`placeholder` lines below, so it
+                  reads as the same quiet machine log — including the
+                  three-part wrap guard, whose reasoning is spelled out
+                  there. Mono and not italic, per spec §6.3.
+                -->
+                <div class="flex justify-center py-2">
+                  <span
+                    class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
+                    >{view.view.text}</span
+                  >
                 </div>
               {:else}
-                <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
-                  <div
-                    class="group min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
-                      ? 'bg-accent text-accent-content'
-                      : 'border border-border bg-surface-raised text-content'}"
-                  >
-                    {#if !item.isOwn}
-                      <p class="mb-0.5 text-xs font-medium text-content-muted">
-                        {item.senderDisplayName ?? item.sender ?? "Unknown"}
-                      </p>
-                    {/if}
-                    <p
-                      class="mb-1 text-[10px] font-semibold tracking-wide uppercase {item.isOwn
-                        ? 'text-accent-content/70'
-                        : 'text-content-muted'}"
-                    >
-                      Custom event
-                    </p>
-                    {#if view.view.status === "rendered"}
-                      <div class="selectable space-y-0.5 text-sm">
-                        <!--
-                          Keyed by index, not `field.label` — a renderer's
-                          fields are trusted (registered application code,
-                          not an array read straight off the payload), but a
-                          duplicate label is still possible and shouldn't be
-                          able to confuse Svelte's keyed reconciliation.
-                        -->
-                        {#each view.view.fields as field, i (i)}
-                          <p class="break-words">
-                            <span class="font-medium">{field.label}:</span>
-                            {field.value}
-                          </p>
-                        {/each}
+                {@const decision =
+                  view.view.status === "rendered" ? view.view.decision : null}
+                <!--
+                  `justify-start` unconditionally, and no `messageBlock`: a
+                  dispatch does not take a side (spec §7). `flex-1` +
+                  `max-w-[68ch]` makes it occupy the full reading measure
+                  rather than shrinking to its content, and `min-w-0` is the
+                  other half of the layout-blowout guard the block comment
+                  on the style rules at the foot of this file describes.
+                  `font-serif` on the wrapper both sets the face card values
+                  are read in and makes `68ch` resolve against that face, so
+                  a card is exactly as wide as a peer message.
+                -->
+                <div class="flex justify-start pt-4">
+                  <div class="group min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
+                    <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
+                      <!--
+                        Header: the event type left, the timestamp right, a
+                        hairline beneath. Both mono — an event type and a
+                        time are data (spec §5.3). `displayEventType`
+                        truncates the type from the *left*; see its doc
+                        comment for why that is a pure helper and not a
+                        `direction: rtl` trick.
+                      -->
+                      <div
+                        class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
+                      >
+                        <span class="min-w-0 flex-1 text-label uppercase break-words">
+                          {displayEventType(item.detail)}
+                        </span>
+                        <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
                       </div>
-                      {#if view.view.newerVersion}
-                        <p
-                          class="mt-1 text-[10px] italic {item.isOwn
-                            ? 'text-accent-content/70'
-                            : 'text-content-muted'}"
-                        >
-                          Shown from a newer version of this event
+                      {#if view.view.status === "rendered"}
+                        <dl class="selectable m-0 px-3 py-2">
+                          <!--
+                            A real `<dl>`: these rows are label/value pairs,
+                            and a screen reader should read them as such
+                            rather than as a run of unrelated lines. Keyed
+                            by index, not `field.label` — a renderer's
+                            fields are trusted (registered application code,
+                            not an array read straight off the payload), but
+                            a duplicate label is still possible and
+                            shouldn't be able to confuse Svelte's keyed
+                            reconciliation.
+
+                            The label column is a fixed `9ch` (spec §7),
+                            measured in the label's own mono face because
+                            `ch` resolves against the element's own font.
+                            `break-words` inside it because a label is
+                            bounded at 60 chars, not at 9.
+                          -->
+                          {#each view.view.fields as field, i (i)}
+                            <div class="flex items-baseline gap-3 {i > 0 ? 'mt-1' : ''}">
+                              <dt
+                                class="w-[9ch] shrink-0 font-mono text-label uppercase break-words text-content-muted"
+                              >
+                                {field.label}
+                              </dt>
+                              <dd class="m-0 min-w-0 flex-1 break-words">{field.value}</dd>
+                            </div>
+                          {/each}
+                        </dl>
+                        {#if view.view.newerVersion}
+                          <!--
+                            Faint mono, and emphatically *not* amber: this
+                            is a note, not a decision, and amber is reserved
+                            (spec §3). Not italic either — no mono italic is
+                            bundled (spec §6.3).
+                          -->
+                          <p class="px-3 pb-2 font-mono text-meta text-content-faint">
+                            Shown from a newer version of this event
+                          </p>
+                        {/if}
+                      {:else}
+                        <!-- status === "fallbackBody": the plain-text
+                             `content.body` Matrix convention puts on every
+                             suite custom event, for a type this build has
+                             no renderer for. Serif, no field grid (spec
+                             §7) — it is prose, not data. -->
+                        <p class="selectable px-3 py-2 whitespace-pre-wrap break-words">
+                          {view.view.text}
                         </p>
                       {/if}
-                    {:else}
-                      <!-- status === "fallbackBody": the plain-text
-                           `content.body` Matrix convention puts on every
-                           suite custom event, for a type this build has no
-                           renderer for. -->
-                      <p
-                        class="selectable text-sm whitespace-pre-wrap break-words {item.isOwn
-                          ? ''
-                          : 'text-content-muted'}"
-                      >
-                        {view.view.text}
-                      </p>
-                    {/if}
+                      {#if decision}
+                        <!--
+                          UNREACHABLE IN THIS BUILD — do not go looking for
+                          these buttons in the running app. No shipped
+                          renderer sets `CustomEventRenderResult.decision`
+                          (`customEvents.ts` "Decisions"; the demo renderer
+                          never does, and a unit test holds it that way), so
+                          `resolveCustomEvent` returns `decision: null` for
+                          every real event and this block never executes.
+                          That is spec §7.1's requirement — "do not ship a
+                          visible button that does nothing" — and the reason
+                          `onDecide` is inert. Kaambaan's permission-request
+                          renderer plus its gate-resolution REST call
+                          (`docs/positioning.md`, wedge #3) are what make
+                          this live; the slot is covered by unit tests
+                          against a fixture renderer so it ships proven
+                          rather than speculative.
+
+                          Everything here is bounded and validated by
+                          `boundDecision` before it arrives: the prompt is a
+                          string capped at 300 chars, and there are at most
+                          four options, each with a string `id` and a string
+                          `label` capped at 60. A malformed decision is
+                          `null` by then, so this block cannot render a
+                          half-built control.
+                        -->
+                        <div class="border-t border-border px-3 py-2">
+                          <p class="selectable break-words">{decision.prompt}</p>
+                          <!--
+                            The only amber in the application (spec §7.1),
+                            alongside this card's left edge and ground. It
+                            says the operator owes someone an answer.
+                          -->
+                          <p class="mt-2 font-mono text-label uppercase text-signal">
+                            Awaiting your decision
+                          </p>
+                          <div class="mt-1.5 flex flex-wrap gap-2">
+                            <!--
+                              Keyed by index, not `option.id`, and for a
+                              sharper reason than the field grid above:
+                              `boundDecision` guarantees each `id` is a
+                              string, but nothing makes two options' ids
+                              *distinct* — a renderer echoing a payload
+                              could easily produce two `"approve"`s, and a
+                              duplicate key is a Svelte runtime error
+                              (`each_key_duplicate`) that would take the
+                              whole timeline render down. The id is still
+                              what `onDecide` receives; it is never a key
+                              and never reaches the DOM.
+                            -->
+                            {#each decision.options as option, i (i)}
+                              <button
+                                type="button"
+                                onclick={() => onDecide(item.id, option.id)}
+                                class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised"
+                              >
+                                {option.label}
+                              </button>
+                            {/each}
+                          </div>
+                        </div>
+                      {/if}
+                    </div>
+                    <!--
+                      Outside the bordered object, not inside it: the card
+                      is the dispatch, and these are this reader's
+                      affordances against it — the same relationship, and
+                      the same shared snippets, a message block has. They
+                      anchor to `item.isOwn`, which for a dispatch is always
+                      false in practice (this client cannot send a custom
+                      event), so in this build they always sit left with the
+                      card's own edge.
+                    -->
                     {@render reactionsRow(item)}
                     {@render messageActions(item)}
                     {@render seenMarker(item)}
-                    <p
-                      class="mt-1 text-right text-[10px] {item.isOwn
-                        ? 'text-accent-content/70'
-                        : 'text-content-muted'}"
-                    >
-                      {formatTime(item.timestampMs)}
-                    </p>
                   </div>
                 </div>
               {/if}
@@ -1163,6 +1329,41 @@
 </div>
 
 <style>
+  /*
+   * The dispatch card's frame (spec §7) — the timeline's only bordered
+   * object, and the only place `--color-signal` (amber) appears anywhere in
+   * this application (spec §3).
+   *
+   * Written here rather than as Tailwind utilities for one specific
+   * reason: the card sets `border-color` on three sides and a *different*
+   * `border-left-color` on the fourth. As utilities those are two rules of
+   * equal specificity, so which one wins depends on the order Tailwind
+   * happens to emit `border-color` and `border-left-color` in — not on the
+   * order they appear in the class attribute, which is what a reader would
+   * naturally assume. One rule, with the left edge stated after the
+   * shorthand, is unambiguous. It also lets the pending swap be a single
+   * named state rather than four interleaved conditionals.
+   *
+   * `--color-signal-soft` is the pending ground and `--color-signal` the
+   * pending edge; both are tokens, no literal colours (spec §3). The 100ms
+   * transition is the whole motion budget this element gets (spec §8) and
+   * is covered by `app.css`'s `prefers-reduced-motion` opt-out.
+   */
+  .dispatch-card {
+    border: 1px solid var(--color-border-strong);
+    border-left: 2px solid var(--color-border-strong);
+    border-radius: 6px;
+    background-color: var(--color-surface-raised);
+    transition:
+      background-color 100ms,
+      border-color 100ms;
+  }
+
+  .dispatch-card-pending {
+    border-left-color: var(--color-signal);
+    background-color: var(--color-signal-soft);
+  }
+
   /*
    * Typography for `{@html item.formattedBody}` content (see this file's
    * top-of-script doc comment for the sanitisation guarantees that make

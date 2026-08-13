@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createCustomEventRegistry,
+  customEventRegistry,
   demoNoteRenderer,
   DEMO_NOTE_EVENT_TYPE,
   registerCustomEventRenderer,
@@ -36,6 +37,7 @@ describe("resolveCustomEvent — dispatch", () => {
       status: "rendered",
       fields: [{ label: "Note", value: "Deployed" }],
       newerVersion: false,
+      decision: null,
     });
   });
 
@@ -49,6 +51,7 @@ describe("resolveCustomEvent — dispatch", () => {
       status: "rendered",
       fields: [{ label: "Type", value: "dev.supermessage.demo.b.v1" }],
       newerVersion: false,
+      decision: null,
     });
   });
 
@@ -119,6 +122,7 @@ describe("resolveCustomEvent — version tolerance", () => {
       status: "rendered",
       fields: [{ label: "Note", value: "x" }],
       newerVersion: true,
+      decision: null,
     });
   });
 
@@ -224,6 +228,7 @@ describe("resolveCustomEvent — hostile payloads render inert", () => {
       status: "rendered",
       fields: [{ label: "Note", value: "the real value" }],
       newerVersion: false,
+      decision: null,
     });
     // Generous bound — this is about proving "doesn't hang", not a strict
     // perf assertion.
@@ -293,6 +298,145 @@ describe("field/value bounding", () => {
   });
 });
 
+describe("decision", () => {
+  // `decision` is deliberately `unknown` here: these tests feed shapes a
+  // renderer must never be trusted to get right, so the cast to the
+  // renderer interface is the point, not an oversight. Cast through
+  // `unknown` to `CustomEventRenderer` — never `as never`.
+  function resolve(decision: unknown) {
+    const renderer = {
+      eventType: "test.decision.v1",
+      maxKnownSchemaVersion: 1,
+      render: () => ({ fields: [{ label: "Action", value: "Restart gateway" }], decision }),
+    } as unknown as CustomEventRenderer;
+    const registry = createCustomEventRegistry([renderer]);
+    return resolveCustomEvent(registry, "test.decision.v1", {}, "fallback");
+  }
+
+  it("passes a well-formed decision through", () => {
+    const view = resolve({
+      prompt: "Approve restarting hermes-gateway?",
+      options: [
+        { id: "approve", label: "Approve" },
+        { id: "decline", label: "Decline" },
+      ],
+    });
+    expect(view.status).toBe("rendered");
+    expect(view.status === "rendered" && view.decision?.options).toHaveLength(2);
+  });
+
+  it("bounds the prompt and each label", () => {
+    const view = resolve({
+      prompt: "p".repeat(1000),
+      options: [{ id: "a", label: "l".repeat(500) }],
+    });
+    if (view.status !== "rendered" || !view.decision) throw new Error("expected a decision");
+    expect(view.decision.prompt.length).toBeLessThanOrEqual(301);
+    expect(view.decision.options[0]!.label.length).toBeLessThanOrEqual(61);
+  });
+
+  it("caps the option count at four", () => {
+    const view = resolve({
+      prompt: "pick",
+      options: Array.from({ length: 20 }, (_, i) => ({ id: `o${i}`, label: `Option ${i}` })),
+    });
+    expect(view.status === "rendered" && view.decision?.options).toHaveLength(4);
+  });
+
+  it("drops a decision with no valid options rather than rendering a dead card", () => {
+    expect(resolve({ prompt: "pick", options: [] })).toMatchObject({ decision: null });
+    expect(resolve({ prompt: "pick", options: "nope" })).toMatchObject({ decision: null });
+    expect(resolve({ prompt: "pick" })).toMatchObject({ decision: null });
+  });
+
+  it("drops options with a non-string id or label", () => {
+    const view = resolve({
+      prompt: "pick",
+      options: [{ id: 1, label: "Approve" }, { id: "decline", label: null }, { id: "ok", label: "OK" }],
+    });
+    expect(view.status === "rendered" && view.decision?.options).toEqual([
+      { id: "ok", label: "OK" },
+    ]);
+  });
+
+  it("is null when a renderer sets nothing", () => {
+    const registry = createCustomEventRegistry([
+      { eventType: "t.v1", maxKnownSchemaVersion: 1, render: () => ({ fields: [{ label: "a", value: "b" }] }) },
+    ]);
+    expect(resolveCustomEvent(registry, "t.v1", {}, null)).toMatchObject({ decision: null });
+  });
+
+  it("never sets a decision on a fallbackBody or placeholder view", () => {
+    const registry = createCustomEventRegistry([]);
+    expect(resolveCustomEvent(registry, "unknown.v1", {}, "body")).toEqual({
+      status: "fallbackBody",
+      text: "body",
+    });
+  });
+
+  it("keeps the shipped demo renderer decision-free", () => {
+    const view = resolveCustomEvent(customEventRegistry, DEMO_NOTE_EVENT_TYPE, { title: "x" }, null);
+    expect(view.status === "rendered" && view.decision).toBeNull();
+  });
+
+  // Beyond the brief's cases: the two remaining shapes a hostile renderer
+  // could plausibly echo straight off the payload, both of which must reach
+  // `boundDecision`'s "not an object" arm rather than its property reads.
+  it("drops a decision that is not an object at all", () => {
+    for (const hostile of [null, undefined, "approve", 42, true]) {
+      expect(resolve(hostile)).toMatchObject({ decision: null });
+    }
+  });
+
+  it("drops a decision whose prompt is not a string, even with valid options", () => {
+    expect(
+      resolve({ prompt: { toString: () => "gotcha" }, options: [{ id: "a", label: "A" }] }),
+    ).toMatchObject({ decision: null });
+    expect(resolve({ options: [{ id: "a", label: "A" }] })).toMatchObject({ decision: null });
+  });
+
+  it("drops non-object options (a bare string, null) without dropping their valid siblings", () => {
+    const view = resolve({
+      prompt: "pick",
+      options: ["approve", null, 7, ["nested"], { id: "ok", label: "OK" }],
+    });
+    expect(view.status === "rendered" && view.decision?.options).toEqual([
+      { id: "ok", label: "OK" },
+    ]);
+  });
+
+  it("counts the four-option cap in valid options, not in raw array entries", () => {
+    // Six junk entries first: a naive `slice(0, 4)` before validation would
+    // yield an empty (and therefore dropped) decision here.
+    const view = resolve({
+      prompt: "pick",
+      options: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+      ],
+    });
+    expect(view.status === "rendered" && view.decision?.options).toEqual([
+      { id: "a", label: "A" },
+      { id: "b", label: "B" },
+    ]);
+  });
+
+  it("leaves the option id untruncated — it is an identifier, not display text", () => {
+    // The label is bounded because it is rendered; the id is not, because a
+    // truncated id would be silently wrong when it is handed to the
+    // gate-resolution call. See `boundDecision`'s doc comment.
+    const longId = "i".repeat(500);
+    const view = resolve({ prompt: "pick", options: [{ id: longId, label: "Approve" }] });
+    expect(view.status === "rendered" && view.decision?.options[0]!.id).toBe(longId);
+  });
+});
+
 describe("registerCustomEventRenderer / createCustomEventRegistry", () => {
   it("starts empty when built with no renderers", () => {
     const registry: CustomEventRegistry = createCustomEventRegistry();
@@ -314,6 +458,7 @@ describe("registerCustomEventRenderer / createCustomEventRegistry", () => {
       status: "rendered",
       fields: [{ label: "Type", value: DEMO_NOTE_EVENT_TYPE }],
       newerVersion: false,
+      decision: null,
     });
   });
 });
