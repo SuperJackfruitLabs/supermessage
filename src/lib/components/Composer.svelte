@@ -8,11 +8,38 @@
   // local echo to the timeline itself (see `timelineStore`'s module doc
   // comment), which arrives back through the diff stream. Appending here
   // too would render every sent message twice.
+  //
+  // Per-room drafts, not a single shared one: this component is intentionally
+  // *not* remounted when the focused room changes (unlike `Timeline`, which
+  // `+page.svelte` wraps in `{#key roomsStore.selectedId}`) — remounting
+  // would be the simpler fix, but it means a draft evaporates the instant
+  // you switch away, which is a worse experience for an ordinary "let me
+  // check something in another room" detour. Instead `roomId` is a reactive
+  // prop, and every time it changes, `DraftTracker.switchTo` atomically
+  // saves the outgoing room's in-progress text and returns the incoming
+  // room's — see `draftTracker.ts` for why this is a real bug fix, not a
+  // nicety: without it, `value` would keep showing (and sending would keep
+  // targeting) whichever room was focused when the text was typed.
 
   import { timelineStore } from "$lib/stores/timeline.svelte";
+  import { DraftTracker } from "./draftTracker";
 
+  let { roomId }: { roomId: string } = $props();
+
+  const drafts = new DraftTracker();
   let value = $state("");
   let sending = $state(false);
+
+  // Bookkeeping for the effect below, not a value the template reads —
+  // same reasoning as `Timeline.svelte`'s `previousLastId`.
+  let previousRoomId: string | null = null;
+
+  $effect(() => {
+    if (roomId !== previousRoomId) {
+      value = drafts.switchTo(roomId, value);
+      previousRoomId = roomId;
+    }
+  });
 
   const trimmed = $derived(value.trim());
   const canSend = $derived(trimmed !== "" && !sending);
@@ -20,10 +47,19 @@
   async function send(): Promise<void> {
     if (!canSend) return;
     const body = trimmed;
+    const sentRoomId = roomId;
     sending = true;
     try {
       await timelineStore.send(body);
-      value = "";
+      if (roomId === sentRoomId) {
+        value = "";
+      } else {
+        // The reader switched to a different room while this send was in
+        // flight. `value` now belongs to that other room — clearing it here
+        // would wipe out whatever they've since started typing there. Only
+        // the sent room's stored draft needs clearing.
+        drafts.setDraftFor(sentRoomId, "");
+      }
     } catch (err) {
       console.error("failed to send message", err);
     } finally {
