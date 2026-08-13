@@ -417,8 +417,17 @@ bordered object. Nothing else in the timeline has a border.
 
 - Full width of the reading measure, **left-aligned regardless of sender**.
   A dispatch is not a remark; it does not take a side.
-- 1px `--color-border-strong`, 6px radius, `--color-surface-raised` ground,
-  2px left edge.
+- 6px radius, `--color-surface-raised` ground, a **1px `--color-border`
+  hairline** on three sides, and a **2px `--color-border-strong` left edge**.
+
+  The two border ranks are the point, and the first implementation got this
+  wrong in a way only rendering revealed: it used `--color-border-strong` on
+  all four sides, so the left edge was the same colour as its neighbours and
+  merely one pixel wider — invisible. The card's signature device therefore
+  existed *only* on the pending variant, which no shipped renderer can
+  currently produce. The edge must be a visible rank in the ordinary state,
+  so that going amber changes an edge's **meaning** rather than conjuring an
+  edge from nothing.
 - Header row: the event type in `--text-label`, hairline beneath,
   timestamp right. The type is a reverse-DNS string whose **tail** is the
   informative part, so truncate from the **left** with a leading ellipsis —
