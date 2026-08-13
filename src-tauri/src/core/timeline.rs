@@ -29,7 +29,9 @@ use matrix_sdk_ui::timeline::{
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
-use super::dto::{apply_ops, project_diff, DiffEnvelope, DiffOp, SeqCounter, TimelineItemDto};
+use super::dto::{
+    apply_ops, op_name, project_diff, DiffEnvelope, DiffOp, SeqCounter, TimelineItemDto,
+};
 use super::error::{CoreError, CoreResult};
 
 /// Tauri event channel carrying timeline diffs for the webview's timeline
@@ -38,6 +40,14 @@ pub const TIMELINE_DIFF_EVENT: &str = "sm://timeline/diff";
 
 /// The `DiffEnvelope::channel` value used for every timeline envelope.
 const TIMELINE_CHANNEL: &str = "timeline";
+
+/// How much history to load when a room is first opened.
+///
+/// Sliding sync caches only one event per room, so this is what makes an
+/// opened room show a conversation rather than a single line. Sized to fill
+/// a desktop viewport and leave something to scroll, which is also what lets
+/// the UI's scroll-triggered pagination take over from here.
+const INITIAL_PAGE_SIZE: u16 = 30;
 
 /// The sequence number of the last diff folded into the materialized item
 /// list, and the resulting list itself — always mutually consistent (see
@@ -317,6 +327,7 @@ impl FocusedTimeline {
         let task_state = Arc::clone(&state);
 
         let subject = room_id.to_string();
+        let paginator = Arc::clone(&timeline);
         let task = tokio::spawn(async move {
             pin_mut!(stream);
             let mut seq = SeqCounter::default();
@@ -329,6 +340,27 @@ impl FocusedTimeline {
                 values: project_initial(&initial, &own_user),
             }];
             emit_ops(&app, &task_state, &mut seq, &subject, ops);
+
+            // Seed the room with real history.
+            //
+            // Sliding sync keeps only `DEFAULT_LIST_TIMELINE_LIMIT` events
+            // per room — which is **1** in matrix-sdk-ui 0.18 — so without
+            // this a freshly opened room renders a single message. It also
+            // cannot recover on its own: one item leaves nothing to scroll,
+            // so the UI's scroll-triggered back-pagination never fires.
+            //
+            // Awaited inside this task rather than spawned separately, so
+            // switching rooms aborts it along with everything else and no
+            // detached task is left holding an `Arc<Timeline>` (and through
+            // it a `Client`) past teardown. The events it loads arrive as
+            // ordinary diffs on the stream below.
+            if let Err(err) = paginator.paginate_backwards(INITIAL_PAGE_SIZE).await {
+                tracing::warn!(
+                    error = %err,
+                    subject = %subject,
+                    "initial back-pagination failed; the room will show only cached events"
+                );
+            }
 
             while let Some(batch) = stream.next().await {
                 let ops = project_batch(batch, &own_user);
@@ -449,13 +481,23 @@ fn emit_ops(
     ops: Vec<DiffOp<TimelineItemDto>>,
 ) {
     let seq_no = seq.next();
-    {
+    let folded_len = {
         let mut guard = state
             .lock()
             .expect("timeline state lock poisoned by an earlier panic");
         apply_ops(&mut guard.1, &ops);
         guard.0 = seq_no;
-    }
+        guard.1.len()
+    };
+
+    tracing::debug!(
+        seq = seq_no,
+        subject = subject,
+        ops = ops.len(),
+        kinds = ?ops.iter().map(op_name).collect::<Vec<_>>(),
+        items = folded_len,
+        "emitting timeline diff"
+    );
 
     let envelope = DiffEnvelope {
         channel: TIMELINE_CHANNEL.into(),
