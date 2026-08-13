@@ -21,12 +21,13 @@ use imbl::Vector;
 use matrix_sdk::ruma::events::room::message::{
     FormattedBody, MessageFormat, MessageType, RoomMessageEventContent,
 };
+use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::AnyMessageLikeEventContent;
 use matrix_sdk::ruma::html::{
     ElementAttributesSchemes, Html, HtmlSanitizerMode, ListBehavior, PropertiesNames,
     SanitizerConfig,
 };
-use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, RoomId, UserId};
+use matrix_sdk::ruma::{EventId, MilliSecondsSinceUnixEpoch, RoomId, UInt, UserId};
 use matrix_sdk::Client;
 use matrix_sdk_ui::timeline::{
     EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline,
@@ -36,7 +37,8 @@ use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
 use super::dto::{
-    apply_ops, op_name, project_diff, DiffEnvelope, DiffOp, SeqCounter, TimelineItemDto,
+    apply_ops, op_name, project_diff, DiffEnvelope, DiffOp, MediaMetaDto, SeqCounter,
+    TimelineItemDto,
 };
 use super::error::{CoreError, CoreResult};
 
@@ -93,6 +95,7 @@ pub fn project_item_parts(
     sender_display_name: Option<&str>,
     body: Option<&str>,
     formatted_body: Option<&str>,
+    media: Option<MediaMetaDto>,
     timestamp_ms: Option<u64>,
     is_own: bool,
     send_state: Option<&str>,
@@ -106,6 +109,7 @@ pub fn project_item_parts(
         sender_display_name: sender_display_name.map(str::to_string),
         body: body.map(str::to_string),
         formatted_body: formatted_body.map(str::to_string),
+        media,
         timestamp_ms,
         is_own,
         send_state: send_state.map(str::to_string),
@@ -296,6 +300,79 @@ fn timestamp_to_millis(ts: MilliSecondsSinceUnixEpoch) -> u64 {
     i64::from(ts.get()) as u64
 }
 
+/// A `UInt`'s value as `u64`. `UInt` only converts to `i64`/`i128` directly
+/// (no direct `u64` conversion exists in `js_int` 0.2), so this goes through
+/// `i64` — exactly [`timestamp_to_millis`]'s reasoning above: `UInt` is
+/// always non-negative and within `i64::MAX`, so the round trip is exact.
+fn uint_to_u64(value: UInt) -> u64 {
+    i64::from(value) as u64
+}
+
+/// Extracts the real `MediaSource` — `Plain(OwnedMxcUri)` or
+/// `Encrypted(Box<EncryptedFile>)` — from a media message's `MessageType`.
+/// `None` for a msgtype that isn't one of the four media kinds this pass
+/// renders.
+///
+/// This is deliberately the *only* place the SDK's `MediaSource` is reached
+/// for a message: [`FocusedTimeline::media_source`] is what calls it, from a
+/// live timeline item looked up by event id, and hands the result straight
+/// to `core::media::message_media_thumbnail` — never through
+/// [`TimelineItemDto`], which carries only [`MediaMetaDto`]'s plain metadata
+/// (see that struct's doc comment for why bytes/sources never cross IPC).
+fn message_media_source(msgtype: &MessageType) -> Option<MediaSource> {
+    match msgtype {
+        MessageType::Image(m) => Some(m.source.clone()),
+        MessageType::File(m) => Some(m.source.clone()),
+        MessageType::Audio(m) => Some(m.source.clone()),
+        MessageType::Video(m) => Some(m.source.clone()),
+        _ => None,
+    }
+}
+
+/// Projects a media message's size/dimension metadata into the wire
+/// [`MediaMetaDto`] — never its bytes (see that struct's doc comment).
+/// `None` for anything that isn't one of the four media msgtypes this pass
+/// renders.
+///
+/// Width/height are only ever populated for `m.image`, straight from
+/// `ImageInfo` — see [`MediaMetaDto::width`]'s doc comment for why `m.video`
+/// (whose `VideoInfo` carries the same two fields) doesn't get them too.
+/// `filename` uses each content type's own `filename()` method, which falls
+/// back to `body` when the event carries no separate `filename` field.
+fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
+    match msgtype {
+        MessageType::Image(m) => Some(MediaMetaDto {
+            filename: m.filename().to_string(),
+            mimetype: m.info.as_ref().and_then(|i| i.mimetype.clone()),
+            size: m.info.as_ref().and_then(|i| i.size).map(uint_to_u64),
+            width: m.info.as_ref().and_then(|i| i.width).map(uint_to_u64),
+            height: m.info.as_ref().and_then(|i| i.height).map(uint_to_u64),
+        }),
+        MessageType::File(m) => Some(MediaMetaDto {
+            filename: m.filename().to_string(),
+            mimetype: m.info.as_ref().and_then(|i| i.mimetype.clone()),
+            size: m.info.as_ref().and_then(|i| i.size).map(uint_to_u64),
+            width: None,
+            height: None,
+        }),
+        MessageType::Audio(m) => Some(MediaMetaDto {
+            filename: m.filename().to_string(),
+            mimetype: m.info.as_ref().and_then(|i| i.mimetype.clone()),
+            size: m.info.as_ref().and_then(|i| i.size).map(uint_to_u64),
+            width: None,
+            height: None,
+        }),
+        MessageType::Video(m) => Some(MediaMetaDto {
+            filename: m.filename().to_string(),
+            mimetype: m.info.as_ref().and_then(|i| i.mimetype.clone()),
+            size: m.info.as_ref().and_then(|i| i.size).map(uint_to_u64),
+            width: None,
+            height: None,
+        }),
+        _ => None,
+    }
+}
+
 /// Maps an SDK send state onto the wire vocabulary.
 ///
 /// Exhaustive and wildcard-free on purpose: if the SDK ever adds an
@@ -412,6 +489,7 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
     let message = event.content().as_message();
     let body = message.map(|m| m.body().to_string());
     let formatted_body = message.and_then(|m| formatted_html_body(m.msgtype()));
+    let media = message.and_then(|m| media_meta(m.msgtype()));
     let timestamp_ms = timestamp_to_millis(event.timestamp());
     let is_own = event.sender() == own_user;
     let send_state = event.send_state().map(send_state_name);
@@ -425,6 +503,7 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
         sender_display_name.as_deref(),
         body.as_deref(),
         formatted_body.as_deref(),
+        media,
         Some(timestamp_ms),
         is_own,
         send_state,
@@ -447,6 +526,7 @@ fn project_virtual_item(
     project_item_parts(
         id,
         kind,
+        None,
         None,
         None,
         None,
@@ -695,6 +775,39 @@ impl FocusedTimeline {
         Ok(())
     }
 
+    /// Resolves `event_id`'s `MediaSource` from the focused timeline's own
+    /// live state — the SDK type `core::media::message_media_thumbnail`
+    /// needs to fetch a message's media bytes, deliberately kept off
+    /// [`TimelineItemDto`] entirely (see [`MediaMetaDto`]'s doc comment).
+    ///
+    /// Looked up by event id rather than trusting an mxc URI the webview
+    /// might have cached from `TimelineItemDto` itself — it can't have one,
+    /// since none is ever sent — because `MediaSource` has two variants,
+    /// `Plain(OwnedMxcUri)` and `Encrypted(Box<EncryptedFile>)`, and only the
+    /// real timeline item (not a bare string) can say which applies. That is
+    /// also what lets an encrypted room's media resolve through this exact
+    /// same path later, unencrypted-only as this deployment is today, with
+    /// no redesign here: `Client::media().get_media_content` (called from
+    /// `core::media::fetch_thumbnail`) transparently decrypts whichever
+    /// variant it's handed.
+    ///
+    /// `Ok(None)` covers both "no such event in this timeline" (paginated
+    /// away, wrong room, a still-pending local echo id) and "found it, but
+    /// it isn't a media-bearing message" — `Session::media_fetch` treats
+    /// both exactly like "there is nothing to fetch", not an error.
+    ///
+    /// Fails with [`CoreError::NotReady`] when no room is focused at all.
+    pub async fn media_source(&self, event_id: &EventId) -> CoreResult<Option<MediaSource>> {
+        let timeline = self.active_timeline()?;
+        let Some(item) = timeline.item_by_event_id(event_id).await else {
+            return Ok(None);
+        };
+        let Some(message) = item.content().as_message() else {
+            return Ok(None);
+        };
+        Ok(message_media_source(message.msgtype()))
+    }
+
     /// A snapshot of the focused timeline as of the last diff its streaming
     /// task has applied, plus the sequence number of that diff — read
     /// directly out of the live task's own state (see
@@ -817,6 +930,7 @@ mod tests {
             Some("Me"),
             Some("hello"),
             None,
+            None,
             Some(1_700_000_000_000),
             true,
             None,
@@ -825,6 +939,7 @@ mod tests {
         assert_eq!(dto.msgtype.as_deref(), Some("m.text"));
         assert_eq!(dto.body.as_deref(), Some("hello"));
         assert!(dto.formatted_body.is_none());
+        assert!(dto.media.is_none());
         assert!(dto.is_own);
     }
 
@@ -833,6 +948,7 @@ mod tests {
         let dto = project_item_parts(
             "vd1",
             "dateDivider",
+            None,
             None,
             None,
             None,
@@ -866,6 +982,7 @@ mod tests {
             Some("Alice"),
             None,
             None,
+            None,
             Some(1_700_000_000_000),
             false,
             None,
@@ -885,6 +1002,7 @@ mod tests {
             Some("@bot:x.org"),
             None,
             Some("build finished"),
+            None,
             None,
             Some(1_700_000_000_000),
             false,
@@ -908,6 +1026,7 @@ mod tests {
             Some("Me"),
             Some("plain"),
             Some("<p>rich</p>"),
+            None,
             Some(1_700_000_000_000),
             true,
             None,
@@ -971,6 +1090,108 @@ mod tests {
             body: "<p>should not be projected</p>".into(),
         });
         assert!(formatted_html_body(&MessageType::Text(content)).is_none());
+    }
+
+    // `media_meta`/`message_media_source`: pure extraction from an SDK
+    // `MessageType`, constructible in a test without a live homeserver or
+    // synced timeline (unlike `classify_content`, whose inputs are
+    // crate-private in `matrix-sdk-ui` — see that test module comment
+    // above).
+
+    #[test]
+    fn media_meta_is_none_for_a_plain_text_message() {
+        assert!(media_meta(&MessageType::text_plain("hello")).is_none());
+    }
+
+    #[test]
+    fn media_meta_projects_an_image_messages_dimensions_mimetype_and_size() {
+        use matrix_sdk::ruma::events::room::message::ImageMessageEventContent;
+        use matrix_sdk::ruma::events::room::ImageInfo;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let mut info = ImageInfo::new();
+        info.width = Some(UInt::from(800u32));
+        info.height = Some(UInt::from(600u32));
+        info.mimetype = Some("image/png".to_string());
+        info.size = Some(UInt::from(123_456u32));
+
+        let content = ImageMessageEventContent::plain(
+            "cat.png".to_string(),
+            OwnedMxcUri::from("mxc://example.org/abc"),
+        )
+        .info(Box::new(info));
+
+        let meta =
+            media_meta(&MessageType::Image(content)).expect("m.image must project media metadata");
+        assert_eq!(meta.filename, "cat.png");
+        assert_eq!(meta.mimetype.as_deref(), Some("image/png"));
+        assert_eq!(meta.size, Some(123_456));
+        assert_eq!(meta.width, Some(800));
+        assert_eq!(meta.height, Some(600));
+    }
+
+    #[test]
+    fn media_meta_projects_a_file_messages_filename_without_dimensions() {
+        use matrix_sdk::ruma::events::room::message::{FileInfo, FileMessageEventContent};
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let mut info = FileInfo::new();
+        info.mimetype = Some("application/pdf".to_string());
+        info.size = Some(UInt::from(9_000u32));
+
+        let content = FileMessageEventContent::plain(
+            "report.pdf".to_string(),
+            OwnedMxcUri::from("mxc://example.org/def"),
+        )
+        .info(Box::new(info));
+
+        let meta =
+            media_meta(&MessageType::File(content)).expect("m.file must project media metadata");
+        assert_eq!(meta.filename, "report.pdf");
+        assert_eq!(meta.mimetype.as_deref(), Some("application/pdf"));
+        assert_eq!(meta.size, Some(9_000));
+        assert!(
+            meta.width.is_none(),
+            "a file message has no ImageInfo to derive dimensions from"
+        );
+        assert!(meta.height.is_none());
+    }
+
+    #[test]
+    fn media_meta_falls_back_to_body_when_no_filename_field_is_set() {
+        // `filename()` (see each content type's doc comment) falls back to
+        // `body` when the event carries no separate `filename` field — the
+        // common case, since `filename` only diverges from `body` when the
+        // message also has a caption.
+        use matrix_sdk::ruma::events::room::message::AudioMessageEventContent;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let content = AudioMessageEventContent::plain(
+            "voice-note.ogg".to_string(),
+            OwnedMxcUri::from("mxc://example.org/ghi"),
+        );
+        let meta =
+            media_meta(&MessageType::Audio(content)).expect("m.audio must project media metadata");
+        assert_eq!(meta.filename, "voice-note.ogg");
+    }
+
+    #[test]
+    fn message_media_source_extracts_the_source_for_media_msgtypes_and_none_otherwise() {
+        use matrix_sdk::ruma::events::room::message::ImageMessageEventContent;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let content = ImageMessageEventContent::plain(
+            "cat.png".to_string(),
+            OwnedMxcUri::from("mxc://example.org/abc"),
+        );
+        let source = message_media_source(&MessageType::Image(content))
+            .expect("m.image must carry a MediaSource");
+        match source {
+            MediaSource::Plain(uri) => assert_eq!(uri.to_string(), "mxc://example.org/abc"),
+            MediaSource::Encrypted(_) => panic!("expected a plain source, not an encrypted one"),
+        }
+
+        assert!(message_media_source(&MessageType::text_plain("hi")).is_none());
     }
 
     #[test]

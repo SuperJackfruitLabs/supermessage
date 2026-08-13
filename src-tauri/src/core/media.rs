@@ -39,6 +39,15 @@ use super::error::{CoreError, CoreResult};
 /// circle's worth of detail.
 const AVATAR_THUMBNAIL_SIZE: u16 = 96;
 
+/// Thumbnail dimensions requested for an inline message image
+/// (`Timeline.svelte`'s `render: "image"` row). Sized above the webview-side
+/// display cap (`IMAGE_MAX_WIDTH`/`IMAGE_MAX_HEIGHT` in `Timeline.svelte`,
+/// 320px) for 2x-DPI crispness, while staying a thumbnail request — the
+/// same reasoning as [`AVATAR_THUMBNAIL_SIZE`], just for a bigger box: a
+/// full-size photo can run to many megabytes, and nothing this pass renders
+/// needs more detail than a bubble-sized thumbnail carries.
+const MESSAGE_THUMBNAIL_SIZE: u16 = 640;
+
 /// Fetches `mxc_uri` as a thumbnail and encodes it as a `data:` URI.
 ///
 /// Returns `Ok(None)` when the fetched bytes don't sniff to a known image
@@ -50,13 +59,61 @@ const AVATAR_THUMBNAIL_SIZE: u16 = 96;
 /// own avatar, a hero's, or a member's), so "there is no avatar" is decided
 /// before this function is ever called; a fetch failure past that point is a
 /// real error, not an expected "no avatar" case.
+///
+/// A thin wrapper over [`fetch_thumbnail`], fixing the source to
+/// `MediaSource::Plain` — correct here because a room/member avatar is
+/// always unencrypted in this deployment's model (`resolve_room_avatar_mxc`
+/// only ever resolves a plain mxc URI, never an `EncryptedFile`). Message
+/// media (see [`message_media_thumbnail`]) can be either, which is exactly
+/// why that one takes a full `MediaSource` instead of also assuming `Plain`.
 pub async fn avatar_thumbnail(client: &Client, mxc_uri: &str) -> CoreResult<Option<String>> {
+    fetch_thumbnail(
+        client,
+        MediaSource::Plain(OwnedMxcUri::from(mxc_uri)),
+        AVATAR_THUMBNAIL_SIZE,
+    )
+    .await
+}
+
+/// Fetches a message's media (an `m.image`/`m.file`/`m.audio`/`m.video`'s
+/// `source`) as a thumbnail and encodes it as a `data:` URI, exactly like
+/// [`avatar_thumbnail`] but sized for a bubble-width image instead of an
+/// avatar circle.
+///
+/// Takes the real `MediaSource` — `Plain(OwnedMxcUri)` or
+/// `Encrypted(Box<EncryptedFile>)` — rather than a bare mxc string, because
+/// only the former can address encrypted media at all: `Client::media().
+/// get_media_content` (called from [`fetch_thumbnail`]) transparently
+/// decrypts an `Encrypted` source using the keys carried on the source
+/// itself, but there is nothing to decrypt *with* if this function were
+/// handed just the mxc URI. This deployment's rooms are unencrypted today
+/// (every source that reaches this function is `Plain`), but the signature
+/// makes an encrypted room work through the exact same path with no
+/// redesign here — see `core::timeline::FocusedTimeline::media_source` for
+/// where the `MediaSource` this function receives actually comes from (the
+/// live timeline item, looked up by event id, never a cached mxc string).
+pub async fn message_media_thumbnail(
+    client: &Client,
+    source: MediaSource,
+) -> CoreResult<Option<String>> {
+    fetch_thumbnail(client, source, MESSAGE_THUMBNAIL_SIZE).await
+}
+
+/// Shared implementation behind [`avatar_thumbnail`]/[`message_media_thumbnail`]:
+/// fetches `source` as a `size`x`size` thumbnail and encodes the result as a
+/// `data:` URI (`None` when the bytes don't sniff to a known image format —
+/// see [`sniff_mime`]).
+async fn fetch_thumbnail(
+    client: &Client,
+    source: MediaSource,
+    size: u16,
+) -> CoreResult<Option<String>> {
     let request = MediaRequestParameters {
-        source: MediaSource::Plain(OwnedMxcUri::from(mxc_uri)),
+        source,
         format: MediaFormat::Thumbnail(MediaThumbnailSettings::with_method(
             Method::Scale,
-            UInt::from(AVATAR_THUMBNAIL_SIZE),
-            UInt::from(AVATAR_THUMBNAIL_SIZE),
+            UInt::from(size),
+            UInt::from(size),
         )),
     };
 

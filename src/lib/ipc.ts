@@ -90,9 +90,29 @@ export interface TimelineItem {
    * comment for the exact mechanism and a worked example.
    */
   formattedBody: string | null;
+  /**
+   * Size/dimension metadata for an `m.image`/`m.file`/`m.audio`/`m.video`
+   * message, mirroring `MediaMetaDto` from `src-tauri/src/core/dto.rs`.
+   * `null` for every other message. Deliberately carries no bytes and no
+   * mxc URI — see that struct's doc comment for why (a `Set` diff op
+   * re-sends the whole item, so embedding image data here would inflate
+   * every timeline update). Fetch the actual bytes lazily through
+   * {@link mediaFetch}, keyed on the item's `id` (its event id), not
+   * anything on this object.
+   */
+  media: MediaMeta | null;
   timestampMs: number | null;
   isOwn: boolean;
   sendState: string | null;
+}
+
+/** Mirrors `MediaMetaDto` from `src-tauri/src/core/dto.rs`. See {@link TimelineItem.media}. */
+export interface MediaMeta {
+  filename: string;
+  mimetype: string | null;
+  size: number | null;
+  width: number | null;
+  height: number | null;
 }
 
 /** Mirrors `CoreError::kind()` from `src-tauri/src/core/error.rs`. */
@@ -230,6 +250,24 @@ export async function sendMessage(body: string): Promise<void> {
  */
 export async function roomAvatar(roomId: string): Promise<string | null> {
   return invoke<string | null>("room_avatar", { roomId });
+}
+
+/**
+ * Fetches `eventId`'s media (an `m.image`/`m.file`/`m.audio`/`m.video`
+ * message's content) as a thumbnail `data:` URI, or `null` when the event
+ * isn't in the focused timeline, isn't a media message, or its bytes don't
+ * sniff to a renderable image format.
+ *
+ * Takes the item's **event id**, not an mxc URI — `TimelineItem.media`
+ * never carries one (see its doc comment), and an mxc string alone
+ * couldn't address encrypted media anyway; the core re-resolves the real
+ * `MediaSource` from the live timeline item every call. Callers fetch this
+ * lazily and cache the result themselves, keyed on the event id (see
+ * `$lib/stores/mediaCache.svelte.ts`), the same pattern {@link roomAvatar}
+ * uses keyed on room id.
+ */
+export async function mediaFetch(eventId: string): Promise<string | null> {
+  return invoke<string | null>("media_fetch", { eventId });
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */

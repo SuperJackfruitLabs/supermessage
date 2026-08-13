@@ -16,6 +16,7 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind">): Ti
     senderDisplayName: null,
     body: null,
     formattedBody: null,
+    media: null,
     timestampMs: 1_700_000_000_000,
     isOwn: false,
     sendState: null,
@@ -44,13 +45,52 @@ describe("viewFor", () => {
       expect(view.render).toBe("emote");
     });
 
-    it("renders media msgtypes as a placeholder naming the type", () => {
-      expect(viewFor(item({ kind: "message", msgtype: "m.image" })).render).toBe("placeholder");
-      const view = viewFor(item({ kind: "message", msgtype: "m.image" }));
-      expect(view).toMatchObject({ render: "placeholder" });
-      if (view.render === "placeholder") {
-        expect(view.text.toLowerCase()).toContain("image");
-      }
+    it("renders m.image as its own image kind, carrying alt text and dimensions", () => {
+      const view = viewFor(
+        item({
+          kind: "message",
+          msgtype: "m.image",
+          body: "cat.png",
+          media: { filename: "cat.png", mimetype: "image/png", size: 1024, width: 800, height: 600 },
+        }),
+      );
+      expect(view).toEqual({ render: "image", alt: "cat.png", width: 800, height: 600 });
+    });
+
+    it("falls back to the plain body, then a generic label, for an image's alt text", () => {
+      const withBodyOnly = viewFor(
+        item({ kind: "message", msgtype: "m.image", body: "a screenshot", media: null }),
+      );
+      expect(withBodyOnly).toEqual({ render: "image", alt: "a screenshot", width: null, height: null });
+
+      const withNeither = viewFor(item({ kind: "message", msgtype: "m.image", body: null, media: null }));
+      expect(withNeither).toEqual({ render: "image", alt: "Image", width: null, height: null });
+    });
+
+    it("renders m.file/m.audio/m.video as an informative row, not a bare placeholder", () => {
+      const file = viewFor(
+        item({
+          kind: "message",
+          msgtype: "m.file",
+          body: "report.pdf",
+          media: { filename: "report.pdf", mimetype: "application/pdf", size: 2048, width: null, height: null },
+        }),
+      );
+      expect(file).toEqual({
+        render: "mediaFile",
+        label: "File",
+        filename: "report.pdf",
+        size: 2048,
+        mimetype: "application/pdf",
+      });
+
+      expect(
+        viewFor(item({ kind: "message", msgtype: "m.audio", media: null, body: "voice.ogg" })),
+      ).toEqual({ render: "mediaFile", label: "Audio", filename: "voice.ogg", size: null, mimetype: null });
+
+      expect(
+        viewFor(item({ kind: "message", msgtype: "m.video", media: null, body: null })),
+      ).toEqual({ render: "mediaFile", label: "Video", filename: "Video", size: null, mimetype: null });
     });
 
     it("falls back to a placeholder naming the msgtype for anything else", () => {

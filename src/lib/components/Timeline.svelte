@@ -53,7 +53,27 @@
   // than requiring an internal "did the room change" effect — `paginating`,
   // `reachedStart` and `followBottom` all start clean for every room,
   // and virtua's own internal size cache doesn't get reused across two
-  // unrelated item sets either.
+  // unrelated item sets either. That remount also drops and recreates
+  // `mediaCache` below, so a room switch never carries stale in-flight
+  // fetches into the new room's item ids.
+  //
+  // Inline images (`view.render === "image"`): `TimelineItem.media` never
+  // carries bytes, only metadata (see its doc comment) — `mediaCache`,
+  // mirroring `avatarCache`'s lazy/deduplicated/failure-remembered shape,
+  // fetches the actual `data:` URI through `ipc.mediaFetch` the first time
+  // a given item is rendered, keyed on the item's event id. `imageBoxStyle`
+  // computes the exact same reserved box — from `view.width`/`view.height`,
+  // capped to `IMAGE_MAX_WIDTH`/`IMAGE_MAX_HEIGHT` so one huge image can
+  // never widen the bubble (the same class of bug the security review found
+  // with an unconstrained `<table>`, noted below on `.message-html table`)
+  // — for both the loading skeleton and the loaded `<img>`, so the swap
+  // between them changes nothing about the row's size. That matters more
+  // here than an ordinary reflow would: the list is virtualized by `virtua`
+  // with `shift` (see the top of this comment), and a row resizing out from
+  // under it fights that same scroll-anchoring. Any failure — the core
+  // reporting nothing renderable, a rejected fetch, or the `<img>` itself
+  // failing to decode — converges on `mediaCache.hasFailed`, which falls
+  // back to the plain-text placeholder row, never a broken-image icon.
   //
   // A bubble renders `item.formattedBody` with `{@html}` when present,
   // falling back to the plain `item.body` otherwise (the `{#if
@@ -107,6 +127,7 @@
   import { viewFor } from "./timelineItemView";
   import { groupTimelineItems, type TimelineDisplayRow } from "./timelineGrouping";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
+  import { createMediaCache } from "$lib/stores/mediaCache.svelte";
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
   const PAGE_SIZE = 20;
@@ -114,6 +135,19 @@
   const TOP_THRESHOLD = 200;
   /** How close to the bottom (px) counts as "still following" the tail. */
   const BOTTOM_THRESHOLD = 120;
+
+  /**
+   * The cap (px) an inline image thumbnail is allowed to occupy, regardless
+   * of the bubble's own `max-w-[70%]` — a large image must not blow the
+   * bubble, and with it the whole layout, out past this box. See this
+   * file's top-of-script doc comment.
+   */
+  const IMAGE_MAX_WIDTH = 320;
+  const IMAGE_MAX_HEIGHT = 320;
+  /** Fallback box shape when the sender's client never reported dimensions. */
+  const IMAGE_DEFAULT_ASPECT = 4 / 3;
+
+  const mediaCache = createMediaCache();
 
   let vlist: VListHandle | undefined = $state();
   let paginating = $state(false);
@@ -142,6 +176,44 @@
 
   function formatTime(ms: number | null): string {
     return ms == null ? "" : timeFormatter.format(new Date(ms));
+  }
+
+  /**
+   * The exact CSS `width`/`height` (plus a `max-width: 100%` safety net for
+   * a narrow window) to reserve for an image thumbnail. Called identically
+   * for the loading skeleton and the loaded `<img>` — see this file's
+   * top-of-script doc comment for why that identity is load-bearing, not
+   * cosmetic.
+   *
+   * Missing dimensions (`width`/`height` both `null`, or non-positive —
+   * defensive against a malformed `ImageInfo`) fall back to a generic
+   * `IMAGE_DEFAULT_ASPECT` box rather than collapsing to zero size, which
+   * would reserve no space at all and reintroduce the exact reflow this
+   * function exists to prevent.
+   */
+  function imageBoxStyle(width: number | null, height: number | null): string {
+    const hasDimensions = width != null && height != null && width > 0 && height > 0;
+    const ratio = hasDimensions ? width / height : IMAGE_DEFAULT_ASPECT;
+    let boxWidth = hasDimensions ? Math.min(width, IMAGE_MAX_WIDTH) : IMAGE_MAX_WIDTH;
+    let boxHeight = boxWidth / ratio;
+    if (boxHeight > IMAGE_MAX_HEIGHT) {
+      boxHeight = IMAGE_MAX_HEIGHT;
+      boxWidth = boxHeight * ratio;
+    }
+    return `width: ${Math.round(boxWidth)}px; height: ${Math.round(boxHeight)}px; max-width: 100%;`;
+  }
+
+  /** A human-readable file size, e.g. `"1.2 MB"`. */
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unitIndex]}`;
   }
 
   /**
@@ -301,6 +373,103 @@
                   {item.senderDisplayName ?? item.sender ?? "Someone"}
                   {item.body}
                 </p>
+              </div>
+            {:else if view.render === "image"}
+              {@const src = mediaCache.get(item.id)}
+              {@const failed = mediaCache.hasFailed(item.id)}
+              <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
+                <div
+                  class="min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
+                    ? 'bg-accent text-accent-content'
+                    : 'border border-border bg-surface-raised text-content'}"
+                >
+                  {#if !item.isOwn}
+                    <p class="mb-0.5 text-xs font-medium text-content-muted">
+                      {item.senderDisplayName ?? item.sender ?? "Unknown"}
+                    </p>
+                  {/if}
+                  {#if failed}
+                    <!-- Never a broken-image icon: any failure — nothing
+                         renderable, a rejected fetch, or the <img> itself
+                         failing to decode — lands here. -->
+                    <p class="selectable text-sm text-content-muted italic">{view.alt}</p>
+                  {:else if src}
+                    <!--
+                      Content, not decoration — real `alt` text from the
+                      message (unlike the room list's decorative avatars,
+                      this is never `aria-hidden`).
+                    -->
+                    <img
+                      {src}
+                      alt={view.alt}
+                      class="block rounded-lg object-cover"
+                      style={imageBoxStyle(view.width, view.height)}
+                      onerror={() => mediaCache.markFailed(item.id)}
+                    />
+                  {:else}
+                    <!-- Still fetching: reserves the identical box the
+                         loaded <img> above will occupy — see this file's
+                         top-of-script doc comment. -->
+                    <div
+                      class="animate-pulse rounded-lg bg-surface-sunken"
+                      style={imageBoxStyle(view.width, view.height)}
+                    ></div>
+                  {/if}
+                  <p
+                    class="mt-1 text-right text-[10px] {item.isOwn
+                      ? 'text-accent-content/70'
+                      : 'text-content-muted'}"
+                  >
+                    {formatTime(item.timestampMs)}
+                  </p>
+                </div>
+              </div>
+            {:else if view.render === "mediaFile"}
+              <!--
+                `m.file`/`m.audio`/`m.video`: an informative row (filename,
+                size, kind), no playback or download action yet — see
+                `.superpowers/sdd/2026-08-13-m0-spine/media-report.md` for
+                what a follow-up would need to add either.
+              -->
+              <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
+                <div
+                  class="min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
+                    ? 'bg-accent text-accent-content'
+                    : 'border border-border bg-surface-raised text-content'}"
+                >
+                  {#if !item.isOwn}
+                    <p class="mb-0.5 text-xs font-medium text-content-muted">
+                      {item.senderDisplayName ?? item.sender ?? "Unknown"}
+                    </p>
+                  {/if}
+                  <div class="selectable flex items-center gap-2 text-sm">
+                    <span
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold {item.isOwn
+                        ? 'bg-accent-content/15 text-accent-content'
+                        : 'bg-surface text-content-muted'}"
+                      aria-hidden="true"
+                    >
+                      {view.label[0]}
+                    </span>
+                    <span class="min-w-0">
+                      <span class="block truncate font-medium">{view.filename}</span>
+                      <span
+                        class="block text-xs {item.isOwn
+                          ? 'text-accent-content/70'
+                          : 'text-content-muted'}"
+                      >
+                        {view.label}{view.size != null ? ` · ${formatFileSize(view.size)}` : ""}
+                      </span>
+                    </span>
+                  </div>
+                  <p
+                    class="mt-1 text-right text-[10px] {item.isOwn
+                      ? 'text-accent-content/70'
+                      : 'text-content-muted'}"
+                  >
+                    {formatTime(item.timestampMs)}
+                  </p>
+                </div>
               </div>
             {:else if view.render === "system"}
               <!--

@@ -121,3 +121,23 @@ pub async fn room_avatar(
 ) -> Result<Option<String>, CoreError> {
     session.room_avatar(&room_id).await
 }
+
+/// Fetches `event_id`'s media (an `m.image`/`m.file`/`m.audio`/`m.video`
+/// message's content) as a thumbnail `data:` URI, or `None` when the event
+/// isn't in the focused timeline, isn't a media message, or its bytes don't
+/// sniff to a renderable image format (see `core::media::sniff_mime`).
+///
+/// Keyed by event id, not an mxc URI: `TimelineItemDto` never carries one
+/// (see `MediaMetaDto`'s doc comment for why bytes/sources stay off that
+/// struct entirely) and, separately, an mxc string alone couldn't address
+/// encrypted media anyway — see `Session::media_fetch` and
+/// `core::timeline::FocusedTimeline::media_source` for the full reasoning.
+/// Callers fetch this lazily per item and cache the result themselves, keyed
+/// on the event id (see `$lib/stores/mediaCache.svelte.ts`).
+#[tauri::command]
+pub async fn media_fetch(
+    event_id: String,
+    session: State<'_, Session>,
+) -> Result<Option<String>, CoreError> {
+    session.media_fetch(&event_id).await
+}

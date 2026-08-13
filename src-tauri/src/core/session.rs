@@ -19,7 +19,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use matrix_sdk::{ruma::RoomId, Client};
+use matrix_sdk::{
+    ruma::{EventId, RoomId},
+    Client,
+};
 use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 
@@ -451,6 +454,40 @@ impl Session {
         };
 
         media::avatar_thumbnail(&client, &mxc_uri).await
+    }
+
+    /// Fetches `event_id`'s media as a thumbnail, encoded as a `data:` URI
+    /// the webview can render directly — the same shape as
+    /// [`Self::room_avatar`], but for a message's `m.image`/`m.file`/
+    /// `m.audio`/`m.video` content instead of a room's avatar.
+    ///
+    /// `event_id` is looked up against the *focused* timeline
+    /// (`FocusedTimeline::media_source`), not against a room the webview
+    /// names separately — the same "only one timeline is ever subscribed"
+    /// model every other timeline command already relies on. Returns
+    /// `Ok(None)`, never an error, for "no such event in the focused
+    /// timeline", "found it, but it isn't media", and "fetched it, but the
+    /// bytes don't sniff to a renderable image format" alike — the webview's
+    /// `mediaCache` treats all three as "nothing to show", falling back to
+    /// the informative placeholder row (see `$lib/stores/mediaCache.svelte.ts`).
+    ///
+    /// **Deliberately not serialized through [`Self::lifecycle`]**, for
+    /// exactly the reason [`Self::room_avatar`]'s doc comment gives for
+    /// itself: this is a one-shot read (clone the client, resolve the
+    /// source, fetch, return) with nothing left running afterward for the
+    /// lock to have protected. Losing a race with a concurrent `logout`
+    /// here just fails the call rather than leaking a live handle across
+    /// the teardown.
+    pub async fn media_fetch(&self, event_id: &str) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        let parsed_event_id =
+            EventId::parse(event_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+
+        let Some(source) = self.focused.media_source(&parsed_event_id).await? else {
+            return Ok(None);
+        };
+
+        media::message_media_thumbnail(&client, source).await
     }
 
     /// Builds a `Client` against `homeserver`, backed by the encrypted store

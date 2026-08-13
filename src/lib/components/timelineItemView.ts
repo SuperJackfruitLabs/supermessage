@@ -23,11 +23,36 @@ export type ItemView =
   | { render: "emote" }
   | { render: "system"; text: string }
   | { render: "placeholder"; text: string }
+  /**
+   * An `m.image` message. `alt` is always non-empty (falls back through
+   * `media.filename`, then the plain `body`, to a generic "Image" — never
+   * `aria-hidden`, unlike the decorative room-list avatars, since this is
+   * genuine message content). `width`/`height` are the image's own pixel
+   * dimensions from `ImageInfo` (`null` when the sender's client never
+   * reported them) — `Timeline.svelte` uses them to reserve the thumbnail's
+   * box *before* its bytes have even been requested, so the virtualized
+   * list never reflows once they land.
+   */
+  | { render: "image"; alt: string; width: number | null; height: number | null }
+  /**
+   * An `m.file`/`m.audio`/`m.video` message: no playback or download yet
+   * (a follow-up's job — see `Timeline.svelte`), just an informative row
+   * naming what the message is. `filename`/`size`/`mimetype` mirror
+   * `TimelineItem.media`'s fields one-for-one; `label` is the human-facing
+   * kind name (kept as a plain string here, precomputed, so the component
+   * never needs its own msgtype-to-label table).
+   */
+  | {
+      render: "mediaFile";
+      label: "File" | "Audio" | "Video";
+      filename: string;
+      size: number | null;
+      mimetype: string | null;
+    }
   | { render: "none" };
 
-/** Human-readable labels for the media msgtypes M2 will render properly. */
-const MEDIA_LABELS: Record<string, string> = {
-  "m.image": "Image",
+/** msgtype -> the render decision's `label` for the non-image media kinds. */
+const MEDIA_FILE_LABELS: Record<string, "File" | "Audio" | "Video"> = {
   "m.file": "File",
   "m.audio": "Audio",
   "m.video": "Video",
@@ -78,11 +103,22 @@ function messageView(item: TimelineItem): ItemView {
   // actually uses.
   if (msgtype === "m.notice") return { render: "bubble", muted: true };
   if (msgtype === "m.emote") return { render: "emote" };
-  if (msgtype != null && msgtype in MEDIA_LABELS) {
-    // Full media rendering is M2 (authenticated media endpoints); for now
-    // this is what stops an image message from either rendering as a bare
-    // bubble with no image, or vanishing.
-    return { render: "placeholder", text: `${MEDIA_LABELS[msgtype]} message` };
+  if (msgtype === "m.image") {
+    return {
+      render: "image",
+      alt: item.media?.filename ?? item.body ?? "Image",
+      width: item.media?.width ?? null,
+      height: item.media?.height ?? null,
+    };
+  }
+  if (msgtype != null && msgtype in MEDIA_FILE_LABELS) {
+    return {
+      render: "mediaFile",
+      label: MEDIA_FILE_LABELS[msgtype]!,
+      filename: item.media?.filename ?? item.body ?? MEDIA_FILE_LABELS[msgtype]!,
+      size: item.media?.size ?? null,
+      mimetype: item.media?.mimetype ?? null,
+    };
   }
   return { render: "placeholder", text: `Unsupported message (${msgtype ?? "unknown"})` };
 }

@@ -20,6 +20,44 @@ pub struct RoomSummary {
     pub last_activity_ms: Option<u64>,
 }
 
+/// Media metadata projected from an `m.image`/`m.file`/`m.audio`/`m.video`
+/// message's `MessageType` (see `core::timeline::media_meta`) — deliberately
+/// never the media's bytes themselves. `TimelineItemDto` streams to the
+/// webview as `VectorDiff`s, and a `Set` op re-sends the *whole* item, so
+/// embedding image data on this struct would inflate every timeline update —
+/// the top IPC-cost risk called out in `docs/tech-stack.md`. The webview
+/// fetches bytes lazily instead, on demand, through the `media_fetch`
+/// command (`core::commands::media_fetch`), keyed by the item's event id —
+/// never an mxc URI copied out of this struct, since nothing here carries
+/// one (see that command's doc comment for why).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaMetaDto {
+    /// The file's display name — `MessageType::*::filename()`, which falls
+    /// back to the message `body` when no separate `filename` field was set
+    /// on the event (see that method's doc comment on each ruma content
+    /// type).
+    pub filename: String,
+    /// The MIME type reported by the sender's client, e.g. `"image/png"`.
+    /// Untrusted (any client can lie about it) — `core::media::sniff_mime`
+    /// is what actually decides how fetched bytes get rendered; this field
+    /// is display-only (the "File · 2.1 MB" row for non-image media).
+    pub mimetype: Option<String>,
+    /// The file size in bytes, as reported by the sender's client.
+    pub size: Option<u64>,
+    /// The image's pixel width, from `ImageInfo` — used to reserve layout
+    /// space for the thumbnail before its bytes arrive, so the (virtualized)
+    /// timeline doesn't reflow when it loads. `None` for every msgtype but
+    /// `m.image`, even though `m.video`'s `VideoInfo` carries the same
+    /// field: nothing in this pass renders a video thumbnail, so there is no
+    /// reserved-space calculation that would consume it (see
+    /// `core::timeline::media_meta`).
+    pub width: Option<u64>,
+    /// The image's pixel height, from `ImageInfo`. Same scoping as
+    /// [`Self::width`].
+    pub height: Option<u64>,
+}
+
 /// A single timeline item (message, state event, etc.) as rendered.
 ///
 /// `kind` is the semantic discriminant projected from the SDK's
@@ -51,6 +89,11 @@ pub struct TimelineItemDto {
     /// renders this directly with `{@html}`. `body` stays the untouched
     /// plain-text fallback; never derive one from the other.
     pub formatted_body: Option<String>,
+    /// Size/dimension metadata for an `m.image`/`m.file`/`m.audio`/`m.video`
+    /// message, `None` for every other `kind`/`msgtype`. See
+    /// [`MediaMetaDto`]'s doc comment for why this never carries the
+    /// media's actual bytes.
+    pub media: Option<MediaMetaDto>,
     pub timestamp_ms: Option<u64>,
     pub is_own: bool,
     pub send_state: Option<String>,
