@@ -209,8 +209,19 @@
               {/if}
               <span class="min-w-0 truncate text-ui-lg text-content">{selectedIdentity.name}</span>
               {#if selectedIdentity.role !== null}
+                <!--
+                  `min-w-0` and a `max-w`, not `shrink-0`: a `shrink-0` flex
+                  item never shrinks below its own nowrap content width, so
+                  pairing it with `truncate` makes the truncation dead code
+                  and lets a long role push the connection dot and `Info`
+                  button out of the header. The role is bounded to 40
+                  characters by `parseRoomIdentity`, which caps the damage
+                  but does not prevent it. The name is the more important
+                  half of the identity, so the chip is the one given a hard
+                  ceiling and told to give way first.
+                -->
                 <span
-                  class="shrink-0 truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+                  class="min-w-0 max-w-[14ch] truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
                 >
                   {selectedIdentity.role}
                 </span>
