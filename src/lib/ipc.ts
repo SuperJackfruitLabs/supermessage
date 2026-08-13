@@ -71,13 +71,23 @@ export interface TimelineItem {
   /**
    * The message's HTML formatted body, present only when the core reports
    * `format: "org.matrix.custom.html"` (`core::timeline::formatted_html_body`).
-   * Already sanitised and hardened in the core — ruma's
-   * `HtmlSanitizerMode::Compat` allowlist, then this app's own `<img>`
-   * removal and `<a href>` scheme narrowing on top of it (see
-   * `core::timeline::harden_formatted_body`'s doc comment for exactly what
-   * that does and why) — **before** it ever reaches this process. That is
-   * what makes it safe for `Timeline.svelte` to render with `{@html}`; see
-   * its doc comment. Never pipe unsanitised text through the same path.
+   * Already sanitised and hardened in the core, **before** it ever reaches
+   * this process — that is what makes it safe for `Timeline.svelte` to
+   * render with `{@html}`; see its doc comment. Never pipe unsanitised text
+   * through the same path.
+   *
+   * Two core-side passes produce this, and they are not
+   * redundant-with-each-other belt-and-braces: `matrix_sdk_ui`'s own
+   * `HtmlSanitizerMode::Compat` allowlist pass is reliable for removing
+   * *elements* / *attributes* outright (no `<script>`, no `on*` handler, no
+   * `style` attribute survives it) but is **not** reliably enforcing the
+   * `<a href>`/`<img src>` *scheme* rules it advertises — ruma-html 0.8.0
+   * has a bug that can skip that specific check. `core::timeline::harden_formatted_body`'s
+   * own pass — which removes `<img>`/`<mx-reply>` outright and narrows
+   * `<a href>` to `http`/`https`/`mailto`/`matrix` — is what actually
+   * enforces those two, and is the one that must never be removed on the
+   * assumption the first pass already covers it. See that function's doc
+   * comment for the exact mechanism and a worked example.
    */
   formattedBody: string | null;
   timestampMs: number | null;

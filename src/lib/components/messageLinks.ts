@@ -6,13 +6,27 @@
 // target page and leave no way back. This intercepts the click instead and
 // hands the `href` to the OS's default browser through `tauri-plugin-opener`.
 //
-// A pure function, not a Svelte event handler itself, so it's unit-testable
-// without a DOM (this project's vitest runs with `environment: "node"`, same
-// constraint `draftTracker.ts` and `timelineItemView.ts` are built around):
-// it takes the minimal shape it needs out of the click event and element,
-// and an injectable `open` function, so a test can hand it plain fakes and
-// assert the opener was called instead of asserting anything about real
-// navigation.
+// This is one of two independent layers against that outcome, not the only
+// one: per UI Events, a primary-button (left) click and a keyboard
+// activation (Enter/Space on a focused `<a>`) both dispatch a real `click`
+// event, which `handleMessageBodyClick` (wired to `onclick`) catches — but a
+// non-primary-button press (middle-click, "open in new tab") dispatches
+// `auxclick` instead, which a plain `onclick` handler never sees at all.
+// `handleMessageBodyAuxClick` (wired to `onauxclick`, guarded to the middle
+// button specifically) covers that. The real backstop is
+// `src-tauri/src/lib.rs`'s `on_navigation` handler on the main window, which
+// refuses any navigation whose origin isn't the app's own regardless of what
+// triggered it — these two click handlers only cover paths this file knows
+// about today; that one covers all of them, including ones nobody has
+// thought of yet.
+//
+// Pure functions, not Svelte event handlers themselves, so they're
+// unit-testable without a DOM (this project's vitest runs with
+// `environment: "node"`, same constraint `draftTracker.ts` and
+// `timelineItemView.ts` are built around): they take the minimal shape they
+// need out of the click event and element, and an injectable `open`
+// function, so a test can hand them plain fakes and assert the opener was
+// called instead of asserting anything about real navigation.
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -20,6 +34,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 export interface MessageBodyClickEvent {
   readonly target: EventTarget | null;
   preventDefault(): void;
+}
+
+/** The parts of a DOM `auxclick` event this module actually touches — a click event plus `button`. */
+export interface MessageBodyAuxClickEvent extends MessageBodyClickEvent {
+  readonly button: number;
 }
 
 /** The parts of a DOM element this module actually touches. */
@@ -75,4 +94,19 @@ export function handleMessageBodyClick(
   void open(href).catch((err) => {
     console.error("failed to open link in the system browser", href, err);
   });
+}
+
+/**
+ * The `auxclick` counterpart to {@link handleMessageBodyClick} — see this
+ * module's doc comment for why `click` alone isn't enough. Only acts on
+ * `button === 1` (the middle button); every other auxiliary button (e.g.
+ * the right button, on platforms that route it through `auxclick` rather
+ * than the `contextmenu` event) is left alone.
+ */
+export function handleMessageBodyAuxClick(
+  event: MessageBodyAuxClickEvent,
+  open: (url: string) => Promise<void> = openUrl,
+): void {
+  if (event.button !== 1) return;
+  handleMessageBodyClick(event, open);
 }

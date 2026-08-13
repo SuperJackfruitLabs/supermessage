@@ -42,21 +42,26 @@
   // A bubble renders `item.formattedBody` with `{@html}` when present,
   // falling back to the plain `item.body` otherwise (the `{#if
   // item.formattedBody}` branch in the bubble markup below). `{@html}` is
-  // otherwise a red flag in a Svelte app — it
-  // is safe here **only** because of guarantees made entirely on the Rust
-  // side, before this string ever crosses IPC:
+  // otherwise a red flag in a Svelte app — it is safe here **only** because
+  // of guarantees made entirely on the Rust side, before this string ever
+  // crosses IPC:
   //   1. `core::timeline::formatted_html_body` only populates `formattedBody`
   //      for a `format: "org.matrix.custom.html"` body, and only after
   //      `matrix_sdk_ui::timeline::Message::from_event` has already run
   //      ruma's `HtmlSanitizerMode::Compat` allowlist sanitiser over it
-  //      (`matrix-sdk-ui`'s own `DEFAULT_SANITIZER_MODE`) — no `<script>`,
-  //      no `on*` handlers, no `style` attribute, no `javascript:`/`data:`
-  //      URI survives that pass.
-  //   2. `core::timeline::harden_formatted_body` then runs the *same*
-  //      sanitiser a second time, narrower: `<img>` is dropped outright
-  //      (nothing here can load `mxc://`, and a surviving non-`mxc` `src`
-  //      would leak the reader's IP as a tracking beacon), and `<a href>`
-  //      is restricted to `http`/`https`/`mailto`/`matrix`.
+  //      (`matrix-sdk-ui`'s own `DEFAULT_SANITIZER_MODE`) — that pass is
+  //      reliable for *element*/*attribute* allowlisting (no `<script>`, no
+  //      `on*` handler, no `style` attribute survives it, on any element).
+  //   2. `core::timeline::harden_formatted_body` then runs a second,
+  //      narrower pass. This is **not** belt-and-braces on top of a working
+  //      upstream check: ruma-html 0.8.0 has a real bug in the loop that
+  //      checks `<a href>`/`<img src>` *schemes* (see that function's own
+  //      doc comment for the exact mechanism), and without this second
+  //      pass, `<a class="x" href="javascript:alert(1)">` and `<img
+  //      alt="a" src="https://evil.example/beacon.png">` both reach this
+  //      component's `{@html}` unchanged. This pass is what actually
+  //      removes `<img>`/`<mx-reply>` outright and restricts `<a href>` to
+  //      `http`/`https`/`mailto`/`matrix`.
   // If a future change needs to render more of the timeline as HTML, run it
   // through that same core-side path — never pipe a fresh string through
   // `{@html}` here just because this precedent exists; the guarantee lives
@@ -64,16 +69,27 @@
   //
   // Links inside that HTML are still plain `<a>` tags in a webview with no
   // browser chrome, so a click on one would otherwise replace this whole
-  // app with the target page and leave no way back. `messageLinks.ts`'s
-  // `handleMessageBodyClick`, wired below on every bubble's content, is
-  // what redirects that click to the system browser via
-  // `tauri-plugin-opener` instead of letting the SPA navigate.
+  // app with the target page and leave no way back. Two independent layers
+  // guard against that:
+  //   1. `messageLinks.ts`'s `handleMessageBodyClick`/`handleMessageBodyAuxClick`,
+  //      wired below on every bubble's content for both `onclick` (primary
+  //      button, and any keyboard-activated link — both dispatch a real
+  //      `click`) and `onauxclick` (middle-click specifically — per UI
+  //      Events, a non-primary-button press dispatches `auxclick`, *not*
+  //      `click`, so a plain `onclick` handler alone never sees it), route
+  //      the click to the system browser via `tauri-plugin-opener` instead.
+  //   2. `src-tauri/src/lib.rs`'s `on_navigation` handler on the main
+  //      window is the backstop: it refuses any navigation whose origin
+  //      isn't the app's own, regardless of what triggered it. That is the
+  //      layer that actually makes "the SPA navigates away and the app is
+  //      gone" unreachable — layer 1 only covers the click paths this file
+  //      knows about today.
 
   import { tick } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { viewFor } from "./timelineItemView";
-  import { handleMessageBodyClick } from "./messageLinks";
+  import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import type { TimelineItem } from "$lib/ipc";
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
@@ -169,7 +185,7 @@
           {#if view.render === "bubble"}
             <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
               <div
-                class="max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
+                class="min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
                   ? 'bg-accent text-accent-content'
                   : 'border border-border bg-surface-raised text-content'}"
               >
@@ -185,13 +201,16 @@
                     (core-side sanitisation + hardening, never redone here).
                     Do not copy this pattern onto any other field.
 
-                    `onclick` here is delegated link handling, not a
-                    control of its own — `handleMessageBodyClick` only acts
-                    when the click bubbled up from a nested `<a href>`, and
-                    an `<a>`'s own native keyboard activation (Enter/Space)
-                    already dispatches a bubbling `click` the same way a
+                    `onclick`/`onauxclick` here are delegated link handling,
+                    not a control of their own — `handleMessageBodyClick`/
+                    `handleMessageBodyAuxClick` only act when the click
+                    bubbled up from a nested `<a href>`, and an `<a>`'s own
+                    native keyboard activation (Enter/Space) already
+                    dispatches a bubbling `click` the same way a primary
                     mouse click does, so there is no extra keyboard handler
-                    this div itself needs to add.
+                    this div itself needs to add. `onauxclick` specifically
+                    exists for the middle-click case `onclick` alone cannot
+                    see — see `messageLinks.ts`'s doc comment.
                   -->
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -200,6 +219,7 @@
                       ? 'text-content-muted'
                       : ''}"
                     onclick={handleMessageBodyClick}
+                    onauxclick={handleMessageBodyAuxClick}
                   >
                     {@html item.formattedBody}
                   </div>
@@ -283,13 +303,37 @@
    * which one it's in.
    *
    * Long content must never widen the bubble (`max-w-[70%]` on its
-   * container, in the markup above): `overflow-wrap: anywhere` handles long
-   * unbroken words/URLs by wrapping, and `pre` additionally scrolls
-   * horizontally for content that shouldn't wrap (code) rather than
-   * wrapping or overflowing.
+   * container, in the markup above — plus `min-w-0` there too: a flex
+   * item's default automatic minimum size is its content's min-content
+   * size, which silently overrides an explicit `max-width` unless the item
+   * opts out with `min-width: 0`, so without it a wide-enough descendant
+   * — a `<table>` with many columns, say — reopens exactly the blowout
+   * this block exists to prevent regardless of what's set here).
+   * `overflow-wrap: anywhere` handles long unbroken words/URLs by
+   * wrapping; `overflow-x: auto` + `max-width: 100%` on this container
+   * (and again, more narrowly, on `table` and `pre` below, since those are
+   * the two elements whose *natural* rendering is to refuse to wrap at
+   * all — a wide table's columns and `pre`'s preformatted text) is what
+   * turns "wide content" into "scrolls within the bubble" instead of
+   * "widens the bubble, and with it the whole window"
+   * (`document.documentElement.scrollWidth`, measured in review, grew to
+   * 4700px against a 1905px viewport from a single 300-`<td>` message
+   * before this fix). `core::timeline::harden_formatted_body`'s lowered
+   * `max_depth` bounds nested `<ul>`/`<ol>`/`<blockquote>` for the same
+   * reason from the other side — capping how deep the indentation in
+   * `ul`/`ol`/`blockquote` below can compound in the first place, rather
+   * than trying to cap already-rendered CSS padding after the fact.
    */
   .message-html {
     overflow-wrap: anywhere;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  :global(.message-html table) {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
   }
 
   :global(.message-html p) {

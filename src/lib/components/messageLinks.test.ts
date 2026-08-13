@@ -7,7 +7,12 @@
 // only implements the one method (`closest`) the module under test calls.
 
 import { describe, expect, it, vi } from "vitest";
-import { handleMessageBodyClick, type MessageBodyClickEvent } from "./messageLinks";
+import {
+  handleMessageBodyAuxClick,
+  handleMessageBodyClick,
+  type MessageBodyAuxClickEvent,
+  type MessageBodyClickEvent,
+} from "./messageLinks";
 
 /** A fake DOM element exposing only `closest`, resolving to `anchor` (or nothing). */
 function elementWithClosestAnchor(anchor: { getAttribute(name: string): string | null } | null) {
@@ -26,6 +31,22 @@ function fakeEvent(target: unknown): {
 } {
   const preventDefault = vi.fn();
   const event: MessageBodyClickEvent = { target: target as EventTarget | null, preventDefault };
+  return { event, preventDefault };
+}
+
+function fakeAuxEvent(
+  target: unknown,
+  button: number,
+): {
+  event: MessageBodyAuxClickEvent;
+  preventDefault: ReturnType<typeof vi.fn>;
+} {
+  const preventDefault = vi.fn();
+  const event: MessageBodyAuxClickEvent = {
+    target: target as EventTarget | null,
+    button,
+    preventDefault,
+  };
   return { event, preventDefault };
 }
 
@@ -98,5 +119,45 @@ describe("handleMessageBodyClick", () => {
 
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+});
+
+describe("handleMessageBodyAuxClick", () => {
+  // Per UI Events, a non-primary-button press dispatches `auxclick`, not
+  // `click` — so this is the only thing standing between a middle-click on
+  // a rendered link and an in-webview navigation. See `messageLinks.ts`'s
+  // module doc comment for the second, independent (Rust-side) layer this
+  // backs up.
+
+  it("intercepts a middle-click (button 1) on a link exactly like a primary click", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const anchor = fakeAnchor("https://example.org/path");
+    const { event, preventDefault } = fakeAuxEvent(elementWithClosestAnchor(anchor), 1);
+
+    handleMessageBodyAuxClick(event, open);
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://example.org/path");
+  });
+
+  it("ignores a non-middle auxiliary button (e.g. the right button)", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const anchor = fakeAnchor("https://example.org/path");
+    const { event, preventDefault } = fakeAuxEvent(elementWithClosestAnchor(anchor), 2);
+
+    handleMessageBodyAuxClick(event, open);
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("ignores a middle-click that landed on no anchor", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const { event, preventDefault } = fakeAuxEvent(elementWithClosestAnchor(null), 1);
+
+    handleMessageBodyAuxClick(event, open);
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
   });
 });

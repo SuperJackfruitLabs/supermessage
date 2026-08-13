@@ -113,16 +113,63 @@ pub fn project_item_parts(
 }
 
 /// The URI schemes this app allows a rendered message's `<a href>` to carry
-/// once it reaches the webview.
+/// once it reaches the webview: `http`, `https`, `mailto`, `matrix`.
 ///
-/// Narrower than what ruma's `HtmlSanitizerMode::Compat` allows on its own
+/// This is not merely a narrower allowance than ruma's `HtmlSanitizerMode::Compat`
 /// (`http`, `https`, `ftp`, `mailto`, `magnet`, plus `matrix` — see
 /// `ruma-html-0.8.0/src/sanitizer_config/clean.rs`,
-/// `spec::allowed_schemes`/`compat::allowed_schemes`): `ftp`/`magnet` are
-/// dropped too, since nothing in this app ever opens either, and every link
-/// this app does open goes through the system opener
-/// (`tauri-plugin-opener`), not an in-app fetch.
+/// `spec::allowed_schemes`/`compat::allowed_schemes`) — it is **the** scheme
+/// check that actually runs. Ruma's own has a real bug (see
+/// [`harden_formatted_body`]'s doc comment for the exact mechanism, verified
+/// against ruma-html 0.8.0's source): its scheme-checking loop can exit
+/// early and skip `href` entirely when another, scheme-rule-less attribute
+/// (`class`, say) is examined first, so `<a class="x"
+/// href="javascript:alert(1)">` survives `HtmlSanitizerMode::Compat` with
+/// its `javascript:` `href` intact. `harden_formatted_body`'s second pass
+/// only reaches a correct answer here because `<a>`'s sole two permitted
+/// attributes are `href` and `target`, and `"href" < "target"` in the
+/// `BTreeSet<Attribute>` iteration order this loop walks — so `href`,
+/// checked against *this* list, is always examined before the loop could
+/// reach an attribute with no rule attached. `ftp`/`magnet` (which ruma's
+/// own list would still allow, bug notwithstanding) are excluded from this
+/// list too, since nothing in this app opens either — every link this app
+/// does open goes through the system opener (`tauri-plugin-opener`), not an
+/// in-app fetch.
 const ALLOWED_LINK_SCHEMES: &[&str] = &["http", "https", "mailto", "matrix"];
+
+/// Elements structurally allowed by ruma's `HtmlSanitizerMode::Compat` that
+/// this app removes outright before a formatted body reaches the webview:
+///
+/// - `img`: this webview has no `mxc://` protocol handler, so even a
+///   spec-compliant `<img src="mxc://...">` only ever paints a
+///   broken-image icon — and, per [`harden_formatted_body`]'s doc comment,
+///   ruma's own restriction of `img src` to `mxc://` is not reliably
+///   enforced, so a non-`mxc` (e.g. remote-tracking-beacon) `src` cannot be
+///   assumed to have been stopped upstream.
+/// - `mx-reply`: `matrix_sdk_ui`'s `Message::from_event` only passes
+///   `RemoveReplyFallback::Yes` (which is what makes ruma strip `mx-reply`)
+///   when the event actually has an `in_reply_to` relation, and
+///   `apply_edit` always passes `RemoveReplyFallback::No` — so a `mx-reply`
+///   element is not reliably stripped upstream either. Left in, a crafted
+///   `<mx-reply><blockquote><a href="https://matrix.to/#/@victim:example.org">
+///   @victim</a><br>fabricated quote</blockquote></mx-reply>` renders with
+///   this app's own blockquote styling as what looks like a genuine quoted
+///   reply from another user — a spoofing bug the moment replies render
+///   (harmless today, since nothing reads `mx-reply` specially yet, but
+///   removing the element costs nothing and forecloses the bug before it
+///   can exist).
+const REMOVED_ELEMENTS: &[&str] = &["img", "mx-reply"];
+
+/// Cap on nested-element depth this app allows in a rendered message body,
+/// overriding ruma's own default of 100 (`spec::MAX_DEPTH` in
+/// `ruma-html-0.8.0/src/sanitizer_config/clean.rs`) — generous enough for
+/// any real message (ordinary markdown rarely nests more than 2-3 levels of
+/// `blockquote`/list), tight enough that 100 nested `<ul>` or `<blockquote>`
+/// — a valid 64KiB event body can easily carry either — cannot compound
+/// their indentation into a message that dwarfs the room it's posted in
+/// (measured in review: 100 nested `<ul>` produced a 2009px-wide bubble
+/// against a ~512px viewport under ruma's default depth of 100).
+const MAX_ELEMENT_DEPTH: u32 = 8;
 
 /// Hardens an already-sanitised message HTML body before it crosses IPC to
 /// the webview, which renders it with `{@html}` (`Timeline.svelte`).
@@ -130,42 +177,74 @@ const ALLOWED_LINK_SCHEMES: &[&str] = &["http", "https", "mailto", "matrix"];
 /// `matrix_sdk_ui::timeline::Message::from_event` already runs ruma's
 /// `HtmlSanitizerMode::Compat` allowlist sanitiser over `formatted_body`
 /// before this is ever reached (`matrix-sdk-ui-0.18.0/src/lib.rs`,
-/// `DEFAULT_SANITIZER_MODE`, applied via `FormattedBody::sanitize_html`) —
-/// this function does not re-implement or second-guess that allowlist: no
-/// `<script>`, no inline event handlers (`onerror`, ...), no `style`
-/// attribute, and no `javascript:`/`data:` URI can survive that pass, since
-/// none of them are in the Matrix-spec allowlist ruma enforces. What this
-/// function does is run the *same* sanitiser — `ruma::html::SanitizerConfig`,
-/// the exact type `matrix-sdk-ui` itself builds `HtmlSanitizerMode::Compat`
-/// from — a second time with a narrower configuration, for two things
-/// ruma's Compat mode does not do on its own:
+/// `DEFAULT_SANITIZER_MODE`, applied via `FormattedBody::sanitize_html`).
+/// That pass is genuinely reliable for *element*/*attribute* allowlisting —
+/// no `<script>`, no inline event handler (`onerror`, ...), no `style`
+/// attribute survives it, on any element, full stop; those are enforced by
+/// a separate, correctly-implemented code path
+/// (`SanitizerConfig::clean_element_attributes`) that this function does
+/// not need to (and does not) redo.
 ///
-/// - **`<img>` is dropped outright**, not just its `src`. Ruma already
-///   restricts `img src` to a valid `mxc://` URI (same file,
-///   `spec::allowed_schemes` — `("img", "src") => &["mxc"]`; anything else
-///   is left as an unrecognised attribute and the *scheme* check in
-///   `clean_node` then drops the whole `<img>` for having no allowed
-///   `src`), so this is not closing an observed gap. It is removing an
-///   element this webview has no way to usefully render even when ruma
-///   passes it through unchanged: there is no `mxc://` protocol handler
-///   registered, so a surviving `<img src="mxc://...">` only ever paints a
-///   broken-image icon. Dropping it here — rather than rewriting it to its
-///   `alt` text — avoids adding a second code path that builds and escapes
-///   a replacement text node from attacker-supplied content, for a payoff
-///   (showing attacker-chosen `alt` text) this app doesn't need yet.
-/// - **`<a href>` is narrowed to [`ALLOWED_LINK_SCHEMES`]** (`http`,
-///   `https`, `mailto`, `matrix`), dropping the `ftp`/`magnet` schemes ruma
-///   itself would still allow. A link whose scheme isn't in that list has
-///   its `<a>` unwrapped — text kept, no anchor — which is exactly how
-///   ruma's own sanitiser treats a scheme it denies (`NodeAction::Ignore`
-///   in `clean_node`), so this reuses that existing, already-tested
-///   behaviour rather than inventing a different one.
+/// It is **not** reliable for the *scheme* checks on `<a href>`/`<img
+/// src>`, and this function is not belt-and-braces layered on top of a
+/// working upstream check for those two — without it, both of the
+/// following reach this app's `{@html}` unchanged:
+///
+/// - **`<img>` can survive with a remote `src`.** Ruma restricts `img src`
+///   to a valid `mxc://` URI in principle (`spec::allowed_schemes` —
+///   `("img", "src") => &["mxc"]`), but the loop that enforces it
+///   (`ruma-html-0.8.0/src/sanitizer_config/clean.rs`, the `for attr in
+///   attrs.iter()` loop inside `node_action`) has a bug: for each
+///   attribute on the element, in `BTreeSet<Attribute>` order, it looks up
+///   a scheme rule for that specific attribute name, and the moment it
+///   finds an attribute with *no* rule of its own (e.g. `alt`, on `img`),
+///   it does `return NodeAction::None` — returning out of the whole
+///   function, not just skipping that one attribute — before the loop ever
+///   reaches `src`. Concretely: `<img alt="a"
+///   src="https://evil.example/beacon.png">` passes
+///   `HtmlSanitizerMode::Compat` with its remote `src` completely intact,
+///   because `alt` sorts before `src` and the scheme loop never got past
+///   it — a tracking beacon leaking the reader's IP to whoever sent the
+///   message, the instant it renders. This function does not depend on
+///   that loop for `<img>` at all: [`REMOVED_ELEMENTS`] takes effect in
+///   `node_action` *before* the scheme-checking loop runs, for either
+///   pass, so the element is gone regardless. (Separately: even a
+///   `src="mxc://..."` that legitimately passed ruma's check would only
+///   ever paint a broken-image icon here, since this webview has no
+///   `mxc://` protocol handler — so removing the element outright, rather
+///   than rewriting it to its `alt` text, costs nothing real and avoids a
+///   second code path that would have to build and escape a replacement
+///   text node from attacker-supplied content.)
+/// - **`<a href>` can survive with a `javascript:`/`data:` scheme.** Same
+///   bug, same loop: `<a class="x" href="javascript:alert(1)">click</a>`
+///   passes ruma's pass with `class` correctly stripped (attribute
+///   *removal* is that separate, correctly-implemented code path — this is
+///   specifically about the scheme *check*, a different code path in the
+///   same file) but `href="javascript:alert(1)"` intact, because `class`
+///   sorts before `href` and the scheme loop never got past it. This
+///   function's own [`ALLOWED_LINK_SCHEMES`] allowlist is what actually
+///   decides a link's fate here — see that constant's doc comment for why
+///   it survives the same bug (in short: `<a>` only has two permitted
+///   attributes, `href` and `target`, and `href` always sorts first, so
+///   this pass's own `href` check is never skipped the way an
+///   attacker-chosen decoy attribute could skip it upstream).
+///
+/// In short: **this function, not ruma's `HtmlSanitizerMode::Compat`, is
+/// the actual enforcement for the `<img>`/`<a href>` rules above.** Do not
+/// delete or weaken it on the assumption ruma's own allowlist already
+/// covers this reliably — it doesn't, for exactly the two things that
+/// matter most here (a remote-tracking `<img>`, a script-executing `<a
+/// href>`). This module's tests cover the composed pipeline (both passes,
+/// in the order the app actually runs them), not just this function in
+/// isolation, specifically because testing it alone cannot catch a bug
+/// that depends on what the *first* pass already stripped out.
 ///
 /// Pure string-in, string-out and independent of any live SDK/timeline
-/// object, so it's unit-testable on its own (see this module's tests).
+/// object, so it's unit-testable on its own too (see this module's tests).
 fn harden_formatted_body(html: &str) -> String {
     let config = SanitizerConfig::with_mode(HtmlSanitizerMode::Compat)
-        .remove_elements(["img"])
+        .remove_elements(REMOVED_ELEMENTS.iter().copied())
+        .max_depth(MAX_ELEMENT_DEPTH)
         .allow_schemes(
             [ElementAttributesSchemes {
                 element: "a",
@@ -187,16 +266,20 @@ fn harden_formatted_body(html: &str) -> String {
 /// field, projects to `None` here exactly as if the message had no
 /// formatted body at all).
 ///
-/// Only `m.text`, `m.notice` and `m.emote` carry a `formatted` field in the
-/// first place (`ruma_events::room::message::{TextMessageEventContent,
-/// NoticeMessageEventContent, EmoteMessageEventContent}` are the only three
-/// with one — `MessageType` has no type-level accessor for it, hence the
-/// match); every other msgtype returns `None`.
+/// Only `m.text` and `m.notice` are handled — both render a bubble with
+/// `{@html formattedBody}` in `Timeline.svelte` when this is `Some`.
+/// `m.emote` also carries a `formatted: Option<FormattedBody>` field in
+/// ruma's model (`ruma_events::room::message::EmoteMessageEventContent`),
+/// but `Timeline.svelte`'s emote view renders only the plain `{item.body}`
+/// centred italic line, never `formattedBody` — so computing (and hardening)
+/// an HTML string for it here would be dead weight with no consumer.
+/// Extend this match, and `Timeline.svelte`'s emote branch to actually
+/// render it, together if that ever changes; every other msgtype has no
+/// `formatted` field at all in ruma's model and returns `None`.
 fn formatted_html_body(msgtype: &MessageType) -> Option<String> {
     let formatted: &FormattedBody = match msgtype {
         MessageType::Text(m) => m.formatted.as_ref(),
         MessageType::Notice(m) => m.formatted.as_ref(),
-        MessageType::Emote(m) => m.formatted.as_ref(),
         _ => None,
     }?;
     if formatted.format != MessageFormat::Html {
@@ -713,6 +796,15 @@ fn emit_ops(
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only used by the composed-pipeline tests below, which call
+    // `MessageType::sanitize` themselves to reproduce ruma's own
+    // `HtmlSanitizerMode::Compat` pass exactly as `matrix_sdk_ui`'s
+    // `Message::from_event` runs it, before handing the result to
+    // `formatted_html_body`/`harden_formatted_body` the way the app
+    // actually does. Not imported at module scope: production code never
+    // needs it directly (that call happens inside `matrix-sdk-ui`, not
+    // here), so importing it there would be an unused import outside tests.
+    use matrix_sdk::ruma::html::RemoveReplyFallback;
 
     #[test]
     fn projects_a_text_message_with_ownership() {
@@ -853,9 +945,17 @@ mod tests {
     }
 
     #[test]
-    fn formatted_html_body_projects_html_formatted_notice_and_emote_messages_too() {
+    fn formatted_html_body_projects_html_formatted_notice_messages_too() {
         assert!(formatted_html_body(&MessageType::notice_html("n", "<p>n</p>")).is_some());
-        assert!(formatted_html_body(&MessageType::emote_html("e", "<p>e</p>")).is_some());
+    }
+
+    #[test]
+    fn formatted_html_body_is_none_for_an_emote_even_with_an_html_formatted_body() {
+        // `Timeline.svelte`'s emote view never renders `formattedBody` (see
+        // this function's doc comment) — computing one here would be dead
+        // weight, so `m.emote` is deliberately excluded from the match even
+        // though ruma's model lets it carry a `formatted` field.
+        assert!(formatted_html_body(&MessageType::emote_html("e", "<p>e</p>")).is_none());
     }
 
     #[test]
@@ -875,14 +975,72 @@ mod tests {
 
     #[test]
     fn harden_formatted_body_drops_img_elements_entirely() {
-        // Ruma's own sanitiser already restricts `img src` to `mxc://` — see
-        // this function's doc comment — but the webview can't load `mxc://`
-        // either way, so this app drops `<img>` outright rather than
-        // rendering a permanently-broken image.
+        // Even a spec-compliant `mxc://` src (which ruma's own scheme check
+        // is *supposed* to require, though see this function's doc comment
+        // for why that check isn't reliable) is dropped: the webview can't
+        // load `mxc://` either way, so this app drops `<img>` outright
+        // rather than rendering a permanently-broken image.
         let out = harden_formatted_body(
             r#"<p>before<img src="mxc://example.org/abc" alt="cat">after</p>"#,
         );
         assert!(!out.contains("<img"), "expected no <img> in {out:?}");
+    }
+
+    #[test]
+    fn harden_formatted_body_drops_mx_reply_elements() {
+        let out = harden_formatted_body(
+            r#"<mx-reply><blockquote><a href="https://matrix.to/#/@victim:example.org">@victim</a><br>fabricated quote</blockquote></mx-reply>real reply text"#,
+        );
+        assert!(
+            !out.contains("mx-reply"),
+            "expected mx-reply removed from {out:?}"
+        );
+        assert!(
+            !out.contains("fabricated quote"),
+            "expected mx-reply's *content* removed too (it's `remove_elements`, not \
+             `ignore_elements`) from {out:?}"
+        );
+        assert!(
+            out.contains("real reply text"),
+            "expected content outside mx-reply preserved in {out:?}"
+        );
+    }
+
+    #[test]
+    fn harden_formatted_body_caps_nesting_depth() {
+        // Each repeated `<blockquote>` adds exactly one level of nesting
+        // (unlike, say, a `<ul><li>` pair, which would add two per
+        // repeat), so the innermost content sits at depth `repeats - 1` —
+        // the outermost `<blockquote>` is a top-level child, at depth 0.
+        // `MAX_ELEMENT_DEPTH` repeats therefore lands the innermost `x`
+        // exactly one level *under* the cap (depth `MAX_ELEMENT_DEPTH -
+        // 1`, since a node is removed once its own depth `>=
+        // MAX_ELEMENT_DEPTH`) — the tightest boundary this can assert
+        // without being one off in either direction. Doubling the repeat
+        // count pushes it well past the cap. Mirrors the review's
+        // 100-nested-`<blockquote>` finding against ruma's own default
+        // depth of 100, just at this app's much lower cap.
+        let shallow = format!(
+            "{}x{}",
+            "<blockquote>".repeat(MAX_ELEMENT_DEPTH as usize),
+            "</blockquote>".repeat(MAX_ELEMENT_DEPTH as usize)
+        );
+        let shallow_out = harden_formatted_body(&shallow);
+        assert!(
+            shallow_out.contains('x'),
+            "expected content within the depth cap preserved in {shallow_out:?}"
+        );
+
+        let deep = format!(
+            "{}x{}",
+            "<blockquote>".repeat((MAX_ELEMENT_DEPTH * 2) as usize),
+            "</blockquote>".repeat((MAX_ELEMENT_DEPTH * 2) as usize)
+        );
+        let deep_out = harden_formatted_body(&deep);
+        assert!(
+            !deep_out.contains('x'),
+            "expected content past the depth cap removed from {deep_out:?}"
+        );
     }
 
     #[test]
@@ -933,6 +1091,107 @@ mod tests {
         assert!(out.contains("<strong>https://login.example.org/a/1</strong>"));
         assert!(out.contains("<pre>"));
         assert!(out.contains("<code>"));
+    }
+
+    // The tests below run the *composed* pipeline — ruma's own
+    // `HtmlSanitizerMode::Compat` pass (via `MessageType::sanitize`, called
+    // exactly as `matrix_sdk_ui::timeline::Message::from_event` calls it),
+    // then `formatted_html_body`/`harden_formatted_body` — rather than
+    // handing already-hardened or hand-written "clean" input to
+    // `harden_formatted_body` alone. That distinction is load-bearing: a
+    // test of `harden_formatted_body` in isolation, fed input that was
+    // never actually run through ruma's own (buggy) scheme check first,
+    // cannot exercise — and so cannot catch a regression in — the exact
+    // interaction `harden_formatted_body`'s doc comment depends on (that
+    // ruma's own pass has already stripped `class` etc. from `<a>`/`<img>`
+    // by the time this app's own pass runs, and that this app's pass does
+    // not itself depend on ruma's scheme check having worked).
+
+    #[test]
+    fn composed_pipeline_removes_a_javascript_href_ruma_alone_lets_through() {
+        // `<a class="x" href="javascript:...">`: `class` sorts before
+        // `href` in ruma's `BTreeSet<Attribute>` iteration order, which
+        // trips the early-return bug in `clean_node`'s scheme-checking loop
+        // (`ruma-html-0.8.0/src/sanitizer_config/clean.rs`) and skips the
+        // scheme check for `href` entirely — ruma's `HtmlSanitizerMode::Compat`
+        // pass alone leaves `href="javascript:alert(1)"` completely intact
+        // (only `class`, which *is* on a working code path, gets stripped).
+        let mut msgtype = MessageType::text_html(
+            "plain",
+            r#"<a class="x" href="javascript:alert(1)">click</a>"#,
+        );
+        msgtype.sanitize(HtmlSanitizerMode::Compat, RemoveReplyFallback::Yes);
+
+        let html = formatted_html_body(&msgtype).expect("m.text with an HTML formatted body");
+        assert!(
+            !html.contains("javascript:"),
+            "expected the javascript: scheme removed from {html:?}"
+        );
+        assert!(
+            !html.contains("<a "),
+            "expected the anchor unwrapped (not just its href stripped) in {html:?}"
+        );
+        assert!(
+            html.contains("click"),
+            "expected the link text preserved in {html:?}"
+        );
+    }
+
+    #[test]
+    fn composed_pipeline_removes_a_remote_img_src_ruma_alone_lets_through() {
+        // Same bug, same shape: `alt` sorts before `src` on `<img>`, so
+        // ruma's `HtmlSanitizerMode::Compat` pass alone leaves a remote
+        // (non-`mxc://`) `src` completely intact — a tracking beacon.
+        let mut msgtype = MessageType::text_html(
+            "plain",
+            r#"<img alt="a" src="https://evil.example/beacon.png">"#,
+        );
+        msgtype.sanitize(HtmlSanitizerMode::Compat, RemoveReplyFallback::Yes);
+
+        let html = formatted_html_body(&msgtype).expect("m.text with an HTML formatted body");
+        assert!(
+            !html.contains("<img"),
+            "expected <img> removed from {html:?}"
+        );
+        assert!(
+            !html.contains("evil.example"),
+            "expected the remote src gone entirely from {html:?}"
+        );
+    }
+
+    #[test]
+    fn composed_pipeline_strips_script_handlers_style_and_srcdoc_end_to_end() {
+        let mut msgtype = MessageType::text_html(
+            "plain",
+            r#"<p onclick="alert(1)" style="color:red">hi<script>alert(2)</script></p><iframe srcdoc="<script>alert(3)</script>"></iframe>"#,
+        );
+        msgtype.sanitize(HtmlSanitizerMode::Compat, RemoveReplyFallback::Yes);
+
+        let html = formatted_html_body(&msgtype).expect("m.text with an HTML formatted body");
+        assert!(
+            !html.contains("<script"),
+            "expected <script> removed from {html:?}"
+        );
+        assert!(
+            !html.contains("onclick"),
+            "expected the onclick handler removed from {html:?}"
+        );
+        assert!(
+            !html.contains("style="),
+            "expected the style attribute removed from {html:?}"
+        );
+        assert!(
+            !html.contains("<iframe"),
+            "expected <iframe> removed from {html:?}"
+        );
+        assert!(
+            !html.contains("srcdoc"),
+            "expected srcdoc removed from {html:?}"
+        );
+        assert!(
+            html.contains("hi"),
+            "expected the safe text content preserved in {html:?}"
+        );
     }
 
     #[test]
