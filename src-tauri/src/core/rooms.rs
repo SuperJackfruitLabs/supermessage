@@ -23,7 +23,7 @@ use matrix_sdk_ui::room_list_service::RoomListItem;
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
-use super::dto::{apply_ops, project_diff, DiffEnvelope, DiffOp, RoomSummary, SeqCounter};
+use super::dto::{apply_ops, op_name, project_diff, DiffEnvelope, DiffOp, RoomSummary, SeqCounter};
 use super::error::{CoreError, CoreResult};
 use super::sync::SyncHandle;
 
@@ -213,13 +213,22 @@ pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<
             // that races this either observes the state from just before
             // this batch or from just after it — never a torn mix of "the
             // new seq number with the old list" or vice versa.
-            {
+            let folded_len = {
                 let mut guard = task_state
                     .lock()
                     .expect("room list state lock poisoned by an earlier panic");
                 apply_ops(&mut guard.1, &ops);
                 guard.0 = seq_no;
-            }
+                guard.1.len()
+            };
+
+            tracing::debug!(
+                seq = seq_no,
+                ops = ops.len(),
+                kinds = ?ops.iter().map(op_name).collect::<Vec<_>>(),
+                rooms = folded_len,
+                "emitting room list diff"
+            );
 
             let envelope = DiffEnvelope {
                 channel: ROOMS_CHANNEL.into(),

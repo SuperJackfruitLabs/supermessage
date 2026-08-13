@@ -54,6 +54,24 @@ pub enum DiffOp<T> {
     Reset { values: Vec<T> },
 }
 
+/// The variant name of an op, for diagnostics. Kept next to the enum so a new
+/// variant is an obvious thing to add here too.
+pub fn op_name<T>(op: &DiffOp<T>) -> &'static str {
+    match op {
+        DiffOp::Append { .. } => "append",
+        DiffOp::Clear => "clear",
+        DiffOp::PushFront { .. } => "pushFront",
+        DiffOp::PushBack { .. } => "pushBack",
+        DiffOp::PopFront => "popFront",
+        DiffOp::PopBack => "popBack",
+        DiffOp::Insert { .. } => "insert",
+        DiffOp::Set { .. } => "set",
+        DiffOp::Remove { .. } => "remove",
+        DiffOp::Truncate { .. } => "truncate",
+        DiffOp::Reset { .. } => "reset",
+    }
+}
+
 /// A batch of ops for one subject (room list, or a specific room's
 /// timeline), stamped with a sequence number the webview uses to detect a
 /// dropped event and force a resync.
