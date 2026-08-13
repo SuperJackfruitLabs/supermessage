@@ -14,7 +14,17 @@ import type { DiffEnvelope } from "./diff";
 import type { RoomSummary } from "$lib/ipc";
 
 function room(id: string): RoomSummary {
-  return { id, name: id, avatarUrl: null, unread: 0, lastMessage: null, lastActivityMs: null };
+  return {
+    id,
+    name: id,
+    avatarUrl: null,
+    unread: 0,
+    lastMessage: null,
+    lastMessageIsOwn: false,
+    lastMessageNamesSender: false,
+    lastEventType: null,
+    lastActivityMs: null,
+  };
 }
 
 function env(seq: number, ops: DiffEnvelope<RoomSummary>["ops"]): DiffEnvelope<RoomSummary> {

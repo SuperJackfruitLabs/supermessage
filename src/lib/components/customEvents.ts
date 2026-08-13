@@ -509,3 +509,54 @@ export const demoNoteRenderer: CustomEventRenderer = {
 export const customEventRegistry: CustomEventRegistry = createCustomEventRegistry([
   demoNoteRenderer,
 ]);
+
+/**
+ * The custom event types whose mere presence as a room's *latest* event
+ * means the operator owes someone an answer — the roster's counterpart to
+ * this module's `decision` field, which is what the dispatch card keys its
+ * amber off (see the "Decisions" section above).
+ *
+ * **This set is empty, and shipping it empty is the point.** It is the one
+ * place `RoomSummary.lastEventType` is compared against anything, so an
+ * empty set is a proof — not a promise — that
+ * `$lib/components/roomPreview.ts` can never render `Approval needed`, and
+ * that spec §6.1.1's amber roster row can never appear, from any event this
+ * app can actually receive today. Spec §7.1's rule for the card applies
+ * verbatim here: build the mechanism, cover it with a fixture, ship it
+ * unreachable — never a visible signal with nothing behind it.
+ *
+ * The roster needs a *type* set where the card reads a rendered
+ * `decision`, because the two surfaces see different things. The card has
+ * the whole `content` and a renderer to translate it; the roster has one
+ * string per room off the room-list diff and no payload at all.
+ *
+ * **Two independent reasons nothing can reach the amber path, both of which
+ * must be understood before anyone adds an entry here:**
+ *
+ * 1. **No gate schema exists.** Kaambaan's permission-request event is
+ *    co-designed with that team and has not landed. Inventing one here is
+ *    the single thing this module opens by refusing to do.
+ * 2. **The SDK never surfaces a custom event as a room's latest event.**
+ *    `matrix-sdk`'s latest-event builder ends its message-like arm in an
+ *    unqualified catch-all over `AnyMessageLikeEventContent`, and ruma's
+ *    `_Custom` variant — which is what any suite event deserializes to —
+ *    falls into it, so the scan walks straight past a gate to the ordinary
+ *    message underneath. `RoomSummary.lastEventType` is therefore `null`
+ *    for every event in production. This is the *same* gap
+ *    `core::timeline::timeline_event_filter` had to patch for the timeline,
+ *    except it lives inside the SDK's own background task with no builder
+ *    hook to override it.
+ *
+ * Reason 2 **survives reason 1 being fixed**: landing the schema does not
+ * make ruma recognize it. Adding a type here the day the schema lands would
+ * therefore change nothing visible, and would quietly convert a proven-dead
+ * path into an untested-and-still-dead one. The prerequisite is the core
+ * resolving its own preview event (or an upstream fix), not this line —
+ * `.superpowers/sdd/room-list-previews/core-report.md` records the
+ * investigation.
+ *
+ * Typed `ReadonlySet` so nothing can mutate it at runtime, and exported
+ * (rather than inlined into `roomPreview.ts`) so the decision-bearing types
+ * live next to the decision contract itself.
+ */
+export const DECISION_BEARING_EVENT_TYPES: ReadonlySet<string> = new Set<string>();

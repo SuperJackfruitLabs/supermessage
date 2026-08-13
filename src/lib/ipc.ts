@@ -22,9 +22,16 @@ export interface CoreStatus {
 }
 
 /**
- * Mirrors `RoomSummary` from `src-tauri/src/core/dto.rs`. `lastMessage` is
- * currently always `null` — the core defers message-preview decoding — so
- * callers must render that as "no preview", not treat it as a bug.
+ * Mirrors `RoomSummary` from `src-tauri/src/core/dto.rs`.
+ *
+ * The four `last*` fields below are the roster preview contract (spec
+ * §6.1.1). They are resolved together in the core
+ * (`core::timeline::MessagePreview`) and are only ever consistent as a
+ * group: whenever `lastMessage` is `null`, `lastMessageIsOwn` and
+ * `lastMessageNamesSender` are `false` and `lastEventType` is `null`. The
+ * core returns facts, never a composed display string — building the line
+ * (including the `You: ` prefix) is the webview's job, and
+ * `$lib/components/roomPreview.ts` is the one place it happens.
  *
  * `avatarUrl` is the room's raw `mxc://` URI when the room has one set, but
  * it is **not** the full picture: it's `null` for a room whose "avatar" is
@@ -44,7 +51,77 @@ export interface RoomSummary {
   name: string;
   avatarUrl: string | null;
   unread: number;
+  /**
+   * The roster preview text for the room's latest event, or `null` when
+   * there is nothing to preview.
+   *
+   * Already bounded (100 code points, with an ellipsis) and
+   * whitespace-collapsed by the core, and carries **no sender prefix** —
+   * the `You: ` prefix is the webview's to add, and only its own (see
+   * {@link RoomSummary.lastMessageIsOwn} and
+   * {@link RoomSummary.lastMessageNamesSender}).
+   *
+   * `null` whenever the room's latest event is not message-like:
+   * membership changes, room renames and other state, reactions,
+   * redactions and undecryptable events are all ineligible **by design**,
+   * not by omission — the row keeps showing the last thing actually *said*
+   * rather than filling the roster with the churn a restarting fleet
+   * generates (spec §6.1.1). A msgtype the timeline itself refuses to
+   * render is ineligible too, so the roster can never claim something was
+   * said that the timeline will not show. Render this as "no preview" —
+   * omit the line entirely, no placeholder string — never as a bug.
+   *
+   * One honest caveat, latent while this deployment's rooms are
+   * unencrypted: the SDK's latest-event scan skips events it cannot
+   * decrypt and keeps walking backwards, so in an encrypted room missing
+   * keys this text can be *older* than `lastActivityMs`, with nothing on
+   * the row saying so.
+   */
   lastMessage: string | null;
+  /**
+   * Whether the event {@link RoomSummary.lastMessage} previews was sent by
+   * this account. Drives the `You: ` prefix — but only in combination with
+   * {@link RoomSummary.lastMessageNamesSender}; see that field.
+   *
+   * `false` whenever there is no preview at all.
+   */
+  lastMessageIsOwn: boolean;
+  /**
+   * Whether {@link RoomSummary.lastMessage} **already names its own
+   * sender**, so a caller adding a `You: `-style prefix would name them
+   * twice.
+   *
+   * `true` only for an emote, which the core renders as `"<Name> waves"`
+   * to match how `Timeline.svelte` renders the same event. Without this
+   * flag an own emote composes to `"You: <MyName> waves"` — the defect
+   * this field exists to prevent, and the reason the prefix rule is
+   * `isOwn && !namesSender` rather than plain `isOwn`.
+   *
+   * `false` for every other previewable message, including a custom
+   * event's plain-text fallback body (schema-author prose, which does not
+   * name its sender), and `false` whenever there is no preview at all.
+   */
+  lastMessageNamesSender: boolean;
+  /**
+   * The Matrix event type behind the preview, populated **only for a
+   * custom (unrecognized-type) event**; `null` for an ordinary message and
+   * whenever there is no preview.
+   *
+   * The hook the roster's pending-decision path keys off
+   * (`$lib/components/roomPreview.ts` against
+   * `customEvents.ts`'s `DECISION_BEARING_EVENT_TYPES`). Unreachable in
+   * production **twice over**, and the second reason survives the first
+   * being fixed: no gate schema exists yet, *and* the SDK's latest-event
+   * builder ends its message-like arm in an unqualified catch-all that
+   * rejects ruma's `_Custom` variant, so a custom event never becomes a
+   * room's latest event in the first place — the roster shows the last
+   * ordinary message underneath it instead. That second one is inside the
+   * SDK's own background task, with no builder hook equivalent to the
+   * `event_filter` override `core::timeline` uses to patch the identical
+   * gap for the timeline. Do not "fix" a preview path that never lights
+   * up by loosening either end of this; see `core::rooms::room_preview`.
+   */
+  lastEventType: string | null;
   lastActivityMs: number | null;
 }
 
