@@ -37,7 +37,35 @@
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { parseRoomIdentity, relativeTime, roomInitial } from "./roomIdentity";
 
+  /**
+   * `onSelect` fires after a row is chosen, whether or not that changed the
+   * selection. It exists for the collapsed layout in `+page.svelte`, which
+   * has to move to the room pane on *every* choice — including a re-choice
+   * of the room that is already selected, which is exactly how an operator
+   * returns to a room after using the back affordance.
+   */
+  let { onSelect }: { onSelect?: () => void } = $props();
+
   const avatarCache = createAvatarCache();
+
+  /**
+   * Handles a row click: select the room if it isn't already the selected
+   * one, then notify.
+   *
+   * The guard is not a micro-optimization. `roomsStore.select` calls
+   * `timelineStore.subscribeTo`, which re-arms the diff tracker to expect a
+   * fresh sequence starting at 1 and re-issues `timeline_subscribe` — the
+   * teardown-and-rebuild `rooms.svelte.ts`'s module doc comment spends most
+   * of its length on. In the collapsed layout, returning to a room from the
+   * roster is an ordinary navigation that happens constantly, so paying a
+   * resubscribe for it (and the resync window it opens) would be a real
+   * correctness and performance regression rather than a wasted call.
+   * Choosing the already-focused room now does nothing but re-show it.
+   */
+  function chooseRoom(id: string): void {
+    if (id !== roomsStore.selectedId) roomsStore.select(id);
+    onSelect?.();
+  }
 
   const sortedRooms = $derived(
     [...roomsStore.rooms].sort((a, b) => (b.lastActivityMs ?? 0) - (a.lastActivityMs ?? 0)),
@@ -97,7 +125,7 @@
       {@const showRow2 = identity.role !== null || time !== null}
       <button
         type="button"
-        onclick={() => roomsStore.select(room.id)}
+        onclick={() => chooseRoom(room.id)}
         aria-current={selected ? "true" : undefined}
         aria-label={rowAriaLabel(identity.name, identity.role, room.unread)}
         class="flex gap-3 border-l-2 pr-4 pl-[10px] text-left transition-colors {selected

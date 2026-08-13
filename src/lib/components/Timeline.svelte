@@ -668,11 +668,35 @@
                name with no indication why. -->
           <!-- Mono, and *not* italic: these two lines share the placeholder
                vocabulary, and no mono italic is bundled — see this file's
-               top-of-script doc comment and spec §6.3. -->
-          <p class="mt-0.5 font-mono text-meta text-content-faint break-words">{quote.label}</p>
+               top-of-script doc comment and spec §6.3.
+
+               `faint` only on a peer block; `muted` inside an own bubble.
+               The faint rank is defined against the *reading surface*
+               (spec §3 checks it there and nowhere else) and it does not
+               survive a tinted ground: composited over
+               `--color-accent-soft` it measures **4.26:1 light / 3.52:1
+               dark**, under the 4.5:1 floor §9 sets, while `muted` on the
+               same ground is 7.07 / 6.95. The rank the own bubble gets for
+               its secondary text is therefore `muted`, and the same swap
+               is made on the two other faint-on-`accent-soft` lines (the
+               `edited` marker and the image placeholder below). Measured
+               by compositing the layer stack in a canvas — the numbers a
+               token-pair calculator gives for `faint` on `surface` (4.92)
+               do not describe this ground at all. -->
+          <p
+            class="mt-0.5 font-mono text-meta break-words {item.isOwn
+              ? 'text-content-muted'
+              : 'text-content-faint'}"
+          >
+            {quote.label}
+          </p>
         {/if}
       {:else}
-        <p class="font-mono text-meta text-content-faint break-words">
+        <p
+          class="font-mono text-meta break-words {item.isOwn
+            ? 'text-content-muted'
+            : 'text-content-faint'}"
+        >
           Original message unavailable
         </p>
       {/if}
@@ -965,7 +989,13 @@
             {:else if sending}
               Sending…
             {:else}
-              {#if item.edited}<span class="text-content-faint">edited</span>{/if}
+              <!-- `muted`, not the `faint` its peer-side counterpart
+                   carries: this line sits on the own bubble's
+                   `--color-accent-soft`, where faint measures 4.26:1 light
+                   / 3.52:1 dark. See `replyQuote` for the measurement and
+                   the rule. It costs the marker its rank below the
+                   timestamp; the word is doing that work anyway. -->
+              {#if item.edited}<span class="text-content-muted">edited</span>{/if}
               {#if !continuesRun}<span>{formatTime(item.timestampMs)}</span>{/if}
             {/if}
           </p>
@@ -1130,8 +1160,16 @@
                          failing to decode — lands here. Mono and unitalicised
                          like every other placeholder rank (spec §6.3), since
                          what this line is really saying is "there is an image
-                         here that could not be shown". -->
-                    <p class="selectable font-mono text-meta text-content-faint break-words">
+                         here that could not be shown".
+
+                         `faint` on a peer block, `muted` inside an own
+                         bubble, for the ground reason `replyQuote` sets
+                         out. -->
+                    <p
+                      class="selectable font-mono text-meta break-words {item.isOwn
+                        ? 'text-content-muted'
+                        : 'text-content-faint'}"
+                    >
                       {view.alt}
                     </p>
                   {:else if src}

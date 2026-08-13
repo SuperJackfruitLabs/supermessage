@@ -286,6 +286,18 @@
     class="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-opacity disabled:opacity-60"
   >
     Send
-    <span aria-hidden="true" class="font-mono opacity-70">⏎</span>
+    <!--
+      80%, not the spec's literal 70% (§6.4). The hint is quieter than the
+      label either way, but at 70% `--color-accent-content` composites to
+      4.32:1 (light) / 4.14:1 (dark) against `--color-accent` — under the
+      4.5:1 floor §9 sets for the same design. 80% reads 5.12:1 / 5.09:1 and
+      is still visibly secondary. Same precedent as the palette's own
+      revisions: where §9's floor and a literal value in the spec disagree,
+      the floor wins and the value moves. Measured by compositing the layer
+      stack in a canvas, not by parsing `getComputedStyle` — this element's
+      colour is an alpha over an accent ground, which is precisely the case
+      an rgba-parsing probe gets wrong.
+    -->
+    <span aria-hidden="true" class="font-mono opacity-80">⏎</span>
   </button>
 </div>

@@ -102,9 +102,25 @@
   }
 </script>
 
+<!--
+  `max-w-full` alongside `w-80 shrink-0`: below 840px `+page.svelte` renders
+  this as an overlay pinned to the right of the room pane rather than as a
+  third column, and on a viewport narrower than the panel itself a
+  `shrink-0` flex item would simply hang off the edge. `max-width` clamps a
+  flex item's used size regardless of `shrink-0`, so this is the one guard
+  that holds at every width; it never binds in the column layout.
+
+  `padding-right: var(--inset-right)`: this panel is the rightmost content
+  on screen whenever it renders — the third column in the wide layout, and
+  an overlay flush to the pane's right edge in the collapsed one — so it is
+  the element that has to clear the right safe area. `+page.svelte`'s
+  `<section>` gives the padding up exactly when this panel takes a column of
+  its own; see `panelTakesColumn` there.
+-->
 <aside
   aria-label="Room info"
-  class="flex h-full w-80 shrink-0 flex-col overflow-y-auto border-l border-border bg-surface-sunken"
+  class="flex h-full w-80 max-w-full shrink-0 flex-col overflow-y-auto border-l border-border bg-surface-sunken"
+  style="padding-right: var(--inset-right);"
 >
   <div class="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
     <h2 class="text-sm font-semibold text-content">Room info</h2>
