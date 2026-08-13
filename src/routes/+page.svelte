@@ -331,9 +331,30 @@
             No member count here by design (spec §6.2): it only comes from
             `roomInfo`, fetched when the panel opens, and a stale or absent
             number would be worse than none.
+
+            `bg-surface-sunken`, so the header joins the field rather than
+            capping the sheet. It was the last element outside the depth
+            stack: the roster, the timeline field and the composer are all
+            sunken, and the header — inheriting the shell's
+            `--color-surface` — was a full-width lit bar sitting over them.
+            Rendered side by side at 1905px and 700px in both themes, that
+            reads as two lit regions in an L rather than one column, and
+            the sheet stops being *the* lit surface. Sunken makes the
+            header and the composer a matching pair of trays bracketing the
+            reading column, which is what the 700px case makes obvious:
+            there the sheet fills the pane, so the trays are the only thing
+            giving it edges.
+
+            It does not vanish into the roster it now shares a tone with —
+            the roster's own `border-r` runs the full height of the pane
+            row, including past this header, and the `border-b` below
+            separates it from the field. The hairline matters *more* than
+            it did (the tone step it used to have is gone) and happens to
+            get stronger in dark at the same time: `--color-border` reads
+            1.30:1 on `surface` and 1.41:1 on the darkened `sunken`.
           -->
           <div
-            class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2"
+            class="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface-sunken px-4 py-2"
           >
             <div class="flex min-w-0 items-center gap-2">
               {#if narrow}
@@ -350,11 +371,17 @@
                   `›` prompt, and "Rooms" is what actually names the
                   destination. `-ml-1` pulls its padding back so the label
                   optically aligns with the header's own left edge.
+
+                  `hover:bg-surface`, not `hover:bg-surface-sunken`: the
+                  header is sunken now, so a sunken hover would be no
+                  hover at all. A control on the sunken ground lifts to
+                  `surface` — the convention the roster on the same ground
+                  already uses for `Sign out`.
                 -->
                 <button
                   type="button"
                   onclick={backToRoster}
-                  class="-ml-1 flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+                  class="-ml-1 flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
                 >
                   <span aria-hidden="true" class="font-mono">‹</span>
                   Rooms
@@ -421,12 +448,28 @@
                   {connectionWord(connectionStore.state)}
                 </span>
               </span>
+              <!--
+                Both grounds inverted with the header (see its comment):
+                on a sunken bar, `bg-surface-sunken` for hover and pressed
+                is 1.0:1 against the ground — the states would exist in the
+                markup and nowhere on screen. This mirrors the roster row,
+                which is the app's other control on a sunken ground and
+                already solves the same problem the same way: `bg-surface`
+                for the sustained state, `bg-surface/60` for hover, so the
+                two are told apart rather than collapsing into each other.
+                Measured after the swap: hover 1.054:1 light / 1.042:1
+                dark, pressed 1.090:1 / 1.088:1 against the header. The
+                pressed state is now *stronger* in dark than it was
+                (1.035:1). `aria-pressed` carries it regardless — the
+                ground was never the only channel — but a state a sighted
+                operator cannot see is still a state that is not working.
+              -->
               <button
                 type="button"
                 onclick={() => (showRoomInfo = !showRoomInfo)}
                 aria-pressed={showRoomInfo}
-                class="shrink-0 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content {showRoomInfo
-                  ? 'bg-surface-sunken text-content'
+                class="shrink-0 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content {showRoomInfo
+                  ? 'bg-surface text-content'
                   : ''}"
               >
                 Info

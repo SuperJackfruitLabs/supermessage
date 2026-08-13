@@ -89,7 +89,7 @@ Dark (`prefers-color-scheme: dark`):
 | Token | Value |
 |---|---|
 | `--color-surface` | `#14161c` |
-| `--color-surface-sunken` | `#101218` |
+| `--color-surface-sunken` | `#090b11` |
 | `--color-surface-raised` | `#1b1e26` |
 | `--color-border` | `#282c37` |
 | `--color-border-strong` | `#3a3f4e` |
@@ -108,10 +108,10 @@ own ground for contrast; `--color-content-faint` on `--color-surface` is the
 tightest pair and must still clear 4.5:1 for the 10.5px system lines it
 carries. Adjust the token, never the usage, if it does not.
 
-**These values are the shipped ones, revised twice during implementation and
-synced back here — the table is not the original draft.** Both revisions are
-worth knowing about, because both were caught by review rather than by
-design:
+**These values are the shipped ones, revised three times during
+implementation and synced back here — the table is not the original draft.**
+All three revisions are worth knowing about, because all three were caught by
+rendering or review rather than by design:
 
 - The first draft's `faint` (`#8b90a0` / `#6b7183`) failed this section's own
   floor, reading as low as 2.92:1. Raising it cleared the floor but left it
@@ -124,10 +124,35 @@ design:
   YOUR DECISION` label: the smallest text in the app, on the one element the
   operator must never miss. Darkened to 6.0:1. Dark mode was already 7.5:1
   and is unchanged.
+- Dark `--color-surface-sunken` was `#101218`. Once §6.3 put the reading
+  column on `--color-surface` over a `--color-surface-sunken` field, that
+  pair became the load-bearing step in the whole design — and it measured
+  **1.035:1 in dark against 1.090:1 in light**, less than half the step and
+  effectively subliminal across 1050px of field at 1905px. `#090b11` brings
+  dark to **1.088:1**. Only the sunken end could move: lightening
+  `--color-surface` far enough (~`#191b23`) collapses surface-vs-raised from
+  1.085:1 to 1.031:1, deleting the third level of the stack to fix the
+  second, and drops `--color-content-faint` on the reading surface to
+  4.29:1 — under §9's floor. The value keeps the ramp's `(R, R+2, R+8)`
+  channel spacing, so the blue cast survives. Light is unchanged.
 
 The lesson for anyone extending this palette: a ratio that merely clears
 4.5:1 is not automatically finished. Check it against the *neighbouring rank*
 as well as against its ground, and give the smallest text the widest margin.
+
+**Surface steps must be checked in both themes independently.** The two
+ramps are not mirror images of each other — sRGB luminance is far from
+linear near black, so a tone step that reads in light can be half as strong
+in dark at the same hex distance. Every step in the sunken → surface →
+raised stack is now: light 1.090 / 1.034, dark 1.088 / 1.085.
+
+**Which ground a control lifts *to* depends on the ground it sits on.** On
+`--color-surface` a control drops to `--color-surface-sunken` for hover; on
+`--color-surface-sunken` — the roster, and since §6.2's header moved, the
+room header too — it lifts to `--color-surface`, with `bg-surface/60` for
+hover where a sustained `bg-surface` state also exists. Moving an element
+between the two grounds means moving its controls' states with it, or they
+land at 1.0:1 and disappear.
 
 **No hardcoded colours anywhere.** The existing rule holds: components
 consume tokens, and `Timeline.svelte`'s `.message-html` block keeps reading
@@ -285,8 +310,18 @@ do not depend on the clock.
 - Right: the connection dot — **filled** for `live`, hollow for everything
   else — plus the state word in `--text-meta` lowercase mono. Colour:
   `--color-content-muted`, or `--color-danger` for `error`. Never amber.
-- `Info` stays a text button; `--text-ui`, pressed state uses
-  `--color-surface-sunken`.
+- The header's own ground is `--color-surface-sunken`, matching the roster,
+  the timeline field and the composer. It is chrome, not part of the reading
+  sheet §6.3 lays over that field — on `--color-surface` it was a full-width
+  lit bar capping the sheet, and the pane read as two lit regions rather
+  than one column. Its `--color-border` bottom hairline is what separates it
+  from the field, and is now load-bearing rather than reinforcing a tone
+  step.
+- `Info` stays a text button; `--text-ui`, hover `--color-surface` at 60%,
+  pressed state uses `--color-surface`. (Both were
+  `--color-surface-sunken` while the header was `--color-surface`; on a
+  sunken header they measure 1.0:1 and vanish. See §3 on which way a control
+  lifts.)
 - Do not show a member count here. It comes from `roomInfo`, which is only
   fetched when the panel opens; showing a stale or absent number would be
   worse than showing none.

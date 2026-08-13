@@ -106,7 +106,31 @@
   @media (prefers-color-scheme: dark) {
     :root {
       --color-surface: #14161c;
-      --color-surface-sunken: #101218;
+      /* #090b11, not the spec's original #101218. The sheet-on-field step —
+       * the reading column on `--color-surface` over the timeline field,
+       * roster, header and composer on `--color-surface-sunken` — is what
+       * the whole three-level depth story rests on, and at #101218 it
+       * measured 1.035:1 in dark against 1.090:1 in light: less than half
+       * the step, and effectively subliminal across 1050px of field at
+       * 1905px. #090b11 restores it to 1.088:1, matching light.
+       *
+       * Darkening `sunken` rather than lightening `surface`, because
+       * lightening is not available: `--color-surface` would have to reach
+       * ~#191b23 to open the same step, which collapses surface-vs-raised
+       * from 1.085:1 to 1.031:1 — deleting the *third* level to fix the
+       * second — and drops `--color-content-faint` on the reading surface
+       * from 4.52:1 to 4.29:1, under §9's floor. Splitting the difference
+       * (#0c0e13 / #16181f) still lands faint at 4.43:1. Only the sunken
+       * end can move.
+       *
+       * The value continues the ramp's own construction rather than being
+       * picked for the ratio alone: #14161c and #101218 are both (R, R+2,
+       * R+8), and so is #090b11 — the blue cast survives the darkening.
+       * Everything that sits on this ground gets *easier*, not harder:
+       * content 15.56→16.35, muted 9.23→9.70, faint 4.67→4.91, and the
+       * `--color-border` hairline 1.34→1.41. Measured, composited, in the
+       * built app. The light ramp is untouched. */
+      --color-surface-sunken: #090b11;
       --color-surface-raised: #1b1e26;
       --color-border: #282c37;
       --color-border-strong: #3a3f4e;
