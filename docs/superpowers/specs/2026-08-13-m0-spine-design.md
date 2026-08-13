@@ -22,7 +22,7 @@ Three facts were established by probing the live homeserver and the dependency t
 |---|---|---|
 | Auth | `m.login.password` only, behind an `AuthProvider` trait | OIDC is unavailable; the trait keeps adding it additive rather than a rewrite |
 | Secrets | OS keyring (`keyring` 4.1, MIT/Apache-2.0) | Real agent-org credentials; avoids a migration later |
-| SDK stores | SQLCipher via `ClientBuilder::sqlite_store(path, Some(passphrase))` | Encrypted at rest, passphrase held in the keyring |
+| SDK stores | `ClientBuilder::sqlite_store(path, Some(passphrase))` — matrix-sdk-sqlite 0.18's `StoreCipher` (AEAD-encrypted keys and values inside a plain SQLite file), **not** SQLCipher | Encrypted at rest, passphrase held in the keyring |
 | State bridge | Forward the SDK's `VectorDiff` streams as versioned DTO diffs | IPC proportional to change, not state size |
 | UI | Two-pane desktop chat on the Tailwind token layer | M0 exists to be dogfooded; skins remain M2 |
 | License rule | Amend to permissive + unmodified MPL-2.0; strong/network copyleft still banned | Makes the rule match the stack and stay checkable |

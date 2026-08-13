@@ -8,7 +8,16 @@ supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android
 
 It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Kaambaan + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Kaambaan cards/runs, permission requests, station status), approvals from chat (Kaambaan gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
 
-**Current status: M0 in progress (scaffold landed Aug 2026).** The Tauri 2 + Svelte 5 shell builds and runs on Linux, the Android project is generated, and the Rust core links matrix-rust-sdk — but **no Matrix code exists yet**. There is no login, no sync, no timeline. The single Tauri command (`core_status`) is a bridge smoke test, and `core::session` is an empty ownership seam. Next work is M0 proper: OIDC/password login, `SyncService`, room list and timeline stores.
+**Current status: M0 built, reviewed, and validated against a real account on branch `m0-spine`.** Password login, encrypted session persistence, `SyncService`, room-list and timeline streaming, send/receive, and a two-pane desktop UI (49 Rust tests, 51 frontend tests, clippy and svelte-check clean).
+
+Verified by driving the real app over WebDriver against `id.agentpod.dev` (see "Driving the real UI" below): 16 rooms render, rooms load history, encrypted events show placeholders, composer drafts stay scoped to their room, no connection banner while sync is live, and the session restores from the keyring with no password after a restart.
+
+**What is still unverified:** sending a message end to end (not exercised, because it posts real text into real rooms), scroll-triggered back-pagination beyond the initial page, and anything on Windows, macOS or mobile.
+
+Remaining follow-ups:
+
+- **Hardening.** `start_sync`/`start_room_list` are `pub` and rely on every caller holding the lifecycle mutex — making them private would make that structural. `logout` holds that mutex across an untimed HTTP call, so a hung homeserver blocks the next login for its duration. `gapSync`'s `void doResync` has no `.catch`, so a rejected resync becomes an unhandled rejection.
+- **Deferred minors** from the task reviews, notably: no `event.isComposing` guard in the composer (CJK IME Enter sends prematurely), and the login error slot's `min-h-10` is unproven at narrow widths.
 
 ## Repository layout
 
@@ -61,7 +70,12 @@ src-tauri/           — the Rust core and Tauri config
 
 ## Matrix protocol choices
 
-- **Auth:** native OIDC (MSC3861) primary — PKCE via system browser, refresh tokens; legacy password/SSO login as fallback.
+- **Auth:** `m.login.password` is the **only** flow available today —
+  `id.agentpod.dev` (Synapse 1.152.0) advertises no SSO or OIDC, and both
+  `/_matrix/client/v1/auth_metadata` and the MSC2965 unstable path return 404.
+  Native OIDC (MSC3861) remains the intended target but requires deploying
+  matrix-authentication-service first. The client implements password login
+  behind an `AuthProvider` trait so OIDC is additive.
 - **Sync:** Simplified Sliding Sync (MSC4186) via the SDK's SyncService; `/sync` v3 fallback for older servers.
 - **E2EE:** SDK crypto (vodozemac): cross-signing, SSSS key backup, emoji/SAS device verification. Never hand-roll crypto.
 - **Media:** authenticated media endpoints (spec ≥1.11).
@@ -102,6 +116,33 @@ the frontend embedded.
 iOS/macOS builds need a Mac and are not possible on the current Linux machine;
 WebKit visual QA has to happen elsewhere.
 
+### Driving the real UI (end-to-end)
+
+Per [Tauri's WebDriver docs](https://v2.tauri.app/develop/tests/webdriver/),
+`tauri-driver` proxies to the platform's native WebDriver. Linux and Windows
+only — macOS has no WKWebView driver.
+
+```bash
+sudo apt install webkit2gtk-driver     # must match the installed webkit2gtk (2.52.3)
+cargo install tauri-driver --locked
+
+pnpm tauri build --debug --no-bundle   # tauri-driver launches the BINARY, so the
+                                       # frontend must be embedded; a plain debug
+                                       # build loads devUrl and shows nothing
+tauri-driver --port 4444 --native-port 4445 &
+python3 scripts/e2e-drive.py src-tauri/target/debug/supermessage
+```
+
+`scripts/e2e-drive.py` talks raw W3C WebDriver over HTTP — no `webdriverio`
+dependency. It asserts against the real DOM (room rows, `p.selectable`
+message bodies, `span.italic` placeholders, the composer) using whatever
+account the keyring currently holds, so it needs a logged-in session. It is a
+diagnostic harness, not part of `pnpm test`. Note WebKitWebDriver returns lone
+surrogates for astral-plane emoji; the script repairs them before printing.
+
+This harness is what caught the "opening a room shows one message" bug — it
+is worth reaching for before trusting a UI claim made from code reading alone.
+
 ## Testing strategy
 
 `cargo test` covers the Rust core (currently one test, pinning the ring crypto
@@ -117,7 +158,17 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 
 ## Security and license considerations
 
-- **No copyleft dependencies.** All runtime dependencies must be permissively licensed (MIT / Apache-2.0 / BSD). This hard requirement eliminated Flutter/matrix-dart-sdk and trixnity (both AGPL-3.0).
+- **Dependency licenses:** all runtime dependencies must be permissively
+  licensed (MIT / Apache-2.0 / BSD) **or MPL-2.0 used unmodified**. MPL-2.0 is
+  file-level copyleft: it obliges publishing changes to those files and
+  explicitly permits combination into a larger work under other terms. Thirteen
+  MPL-2.0 crates arrive unavoidably with matrix-sdk (`eyeball`, `eyeball-im`,
+  `imbl`, `imbl-sized-chunks`, `bitmaps`, `readlock`, `readlock-tokio`,
+  `as_variant`) and Tauri (`cssparser`, `cssparser-macros`, `dtoa-short`,
+  `selectors`, `option-ext`). **Strong and network copyleft (GPL / AGPL /
+  LGPL) remain banned** — that requirement is what eliminated
+  Flutter/matrix-dart-sdk and trixnity. If you modify an MPL-2.0 file, publish
+  the change.
 - **AGPL projects are reference-only, never copy code:** Element X apps, trixnity-messenger/Tammy, mautrix. If an Application Service bridge is ever co-designed, prefer Ruma/ruma-appservice (MIT); avoid mautrix (AGPL).
 - **Sygnal (push gateway) is AGPL-3.0** in its maintained element-hq form; the Apache-2.0 matrix-org original is archived. It is deployed infrastructure, not a dependency — the client never talks to it (the homeserver POSTs to it). Run it unmodified; a minimal own Rust push gateway is an M3 option (see docs/tech-stack.md license section).
 - E2EE via vodozemac only; never hand-roll cryptography. Note the product call (docs/positioning.md): org rooms are unencrypted by design (knowledge extraction, AS-bridge incompatibility); E2EE stays available for external/DM contexts but is not on the critical path.
@@ -125,7 +176,7 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 
 ## Milestones (docs/positioning.md supersedes docs/tech-stack.md on ordering)
 
-- **M0 — spine:** Tauri scaffold; Rust core syncs a real account on `id.agentpod.dev` (OIDC + password); Svelte stores mirror room list/timeline; virtua message list; send/receive plaintext. Dogfood immediately against real agent users.
+- **M0 — spine:** Tauri scaffold; Rust core syncs a real account on `id.agentpod.dev` (password login); Svelte stores mirror room list/timeline; virtua message list; send/receive plaintext. Dogfood immediately against real agent users.
 - **M1 — agent-aware client:** custom event rendering framework + schema drafts (card/run/permission/station), deep links, graceful plain-text fallback. E2EE is "available, not blocking".
 - **M2 — daily driver:** media, replies/reactions/edits, receipts/typing, iOS keyboard fix, Android 16KB/ring fix, Framework7 mobile skin + desktop skins.
 - **M3 — push + approvals:** Sygnal deployment; FCM/APNs; Kaambaan gate notifications → Matrix → approve/reject end-to-end; then iOS NSE.

@@ -1,8 +1,20 @@
+// `core::timeline::FocusedTimeline::subscribe`'s spawned task nests
+// `Timeline::subscribe`'s stream type (itself wrapping `TimelineWithDropHandle`
+// around an `eyeball_im` subscriber stream) inside a `pin_mut!`'d `while let`
+// loop inside an `async move` block passed to `tokio::spawn` — deep enough
+// that computing its layout overflows rustc's default query recursion limit.
+#![recursion_limit = "256"]
+
 mod core;
 
 use serde::Serialize;
 use tauri::Manager;
 
+use crate::core::commands::{
+    login, logout, restore_session, rooms_resync, send_message, timeline_paginate_back,
+    timeline_resync, timeline_subscribe,
+};
+use crate::core::secrets::KeyringStore;
 use crate::core::{session::Session, tls};
 
 #[derive(Serialize)]
@@ -59,10 +71,29 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            app.manage(Session::new());
+            let data_dir = app.path().app_data_dir().expect("app data dir");
+            let session = Session::new(data_dir, Box::new(KeyringStore));
+            // The focused timeline is managed state in its own right (the
+            // timeline commands take it directly), but it is *owned* by the
+            // session, which has to tear it down on logout before wiping
+            // the store off disk. Registering the session's own `Arc` keeps
+            // both views of it pointing at one object — see
+            // `Session::focused_timeline`.
+            app.manage(session.focused_timeline());
+            app.manage(session);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![core_status])
+        .invoke_handler(tauri::generate_handler![
+            core_status,
+            login,
+            restore_session,
+            logout,
+            rooms_resync,
+            timeline_subscribe,
+            timeline_paginate_back,
+            timeline_resync,
+            send_message,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
