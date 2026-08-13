@@ -370,6 +370,32 @@ has consistently refused to do.
 Presentation stays in the frontend: the core returns text and facts, never a
 composed display string.
 
+**Two SDK limitations found while implementing this, both outliving the task:**
+
+1. **A custom event can never become a room's preview.** The SDK's
+   latest-event scan ends in a catch-all over `AnyMessageLikeEventContent`
+   that rejects ruma's `_Custom` variant, so `last_event_type` cannot
+   populate in production. That is a *second* reason the pending-decision
+   path above is unreachable, independent of "no gate schema exists" — and
+   unlike that one, **it survives the schema landing**. Gates would render in
+   the timeline and be invisible in the roster, which is the surface an
+   operator scans to find what needs them.
+
+   The exact parallel is already solved one layer over: `core::timeline`'s
+   `timeline_event_filter` is a strictly-additive override that admits
+   `_Custom` for precisely this reason. Whether the same trick reaches this
+   path is unproven — this filter runs inside the SDK's own background task
+   rather than behind a `TimelineBuilder::event_filter`-style hook, so there
+   may be no injection point. **Investigate before the gate work starts, not
+   after**; if there is no hook, this needs an upstream change and that has
+   a lead time.
+
+2. **An encrypted room missing keys previews an older message**, not a
+   decryption placeholder, because the scan walks past undecryptable events.
+   The roster can therefore show text older than the row's own
+   `lastActivityMs` with nothing saying so. Latent while this deployment's
+   rooms are unencrypted; it becomes visible the day they are not.
+
 Relative time: `now`, `4m`, `2h`, `3d`, then a date. Pure and unit-tested
 alongside the identity parse; takes an explicit `now` argument so the tests
 do not depend on the clock.
