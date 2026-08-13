@@ -279,11 +279,29 @@
       class="max-h-40 min-h-10 flex-1 resize-none bg-transparent py-1 font-sans text-ui text-content outline-none placeholder:text-content-faint disabled:opacity-60"
     ></textarea>
   </div>
+  <!--
+    Disabled is a *ghost*, not a faded fill. `disabled:opacity-60` over the
+    accent fill measured 2.04:1 light / 2.17:1 dark. WCAG exempts inactive
+    controls, so that was not a violation — but this button is disabled
+    whenever the composer is empty, which is most of the time, and an
+    illegible label on the primary instrument's main control most of the
+    time is a usability problem the exemption does not make go away.
+    Dropping the fill rather than fading it keeps the label readable
+    (`content-faint` on `surface`, 4.92:1) *and* strengthens the inert
+    signal instead of weakening it: an unfilled button plainly is not the
+    primary action, whereas a washed-out filled one just looks broken.
+
+    The border is `border-transparent` when enabled rather than absent, so
+    the box measures the same in both states — adding a border only on
+    `:disabled` would shift the button by a pixel every time the composer
+    goes from empty to non-empty, which is on the first keystroke of every
+    message.
+  -->
   <button
     type="button"
     onclick={send}
     disabled={!canSend}
-    class="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-opacity disabled:opacity-60"
+    class="flex shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:border-border disabled:bg-transparent disabled:text-content-faint"
   >
     Send
     <!--
