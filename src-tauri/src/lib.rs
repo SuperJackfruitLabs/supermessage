@@ -15,7 +15,6 @@ use crate::core::commands::{
     timeline_resync, timeline_subscribe,
 };
 use crate::core::secrets::KeyringStore;
-use crate::core::timeline::FocusedTimeline;
 use crate::core::{session::Session, tls};
 
 #[derive(Serialize)]
@@ -73,8 +72,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir().expect("app data dir");
-            app.manage(Session::new(data_dir, Box::new(KeyringStore)));
-            app.manage(FocusedTimeline::default());
+            let session = Session::new(data_dir, Box::new(KeyringStore));
+            // The focused timeline is managed state in its own right (the
+            // timeline commands take it directly), but it is *owned* by the
+            // session, which has to tear it down on logout before wiping
+            // the store off disk. Registering the session's own `Arc` keeps
+            // both views of it pointing at one object — see
+            // `Session::focused_timeline`.
+            app.manage(session.focused_timeline());
+            app.manage(session);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

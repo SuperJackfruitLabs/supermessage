@@ -1,15 +1,27 @@
 //! Ownership seam for the logged-in Matrix account.
 //!
 //! One `matrix_sdk::Client` per account, owned here and never handed to the
-//! webview. `Session` builds the client with an encrypted SQLCipher store,
-//! drives login/restore/logout through the [`AuthProvider`] trait, and hands
-//! out cheap clones of the client handle to the rest of the core.
+//! webview. `Session` builds the client with an encrypted store (see
+//! [`Session::build_client`]), drives login/restore/logout through the
+//! [`AuthProvider`] trait, and hands out cheap clones of the client handle
+//! to the rest of the core.
+//!
+//! **Session lifecycle transitions are serialized** through
+//! [`Session::lifecycle`]: [`Session::login_and_start`],
+//! [`Session::restore_and_start`] and [`Session::logout`] each hold that
+//! mutex for their whole duration, and `restore_and_start` is a no-op when a
+//! client already exists. Together those two rules are what make it
+//! impossible for two `Client`s, two `SyncService`s or two room-list tasks
+//! to be live at the same time — a second set would emit onto the same Tauri
+//! events with its own `SeqCounter` restarting at 1, which the webview
+//! cannot tell apart from a corrupted stream.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use matrix_sdk::Client;
 use tauri::AppHandle;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
@@ -18,6 +30,7 @@ use super::error::{CoreError, CoreResult};
 use super::rooms::{self, RoomListHandle};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
 use super::sync::{self, SyncHandle};
+use super::timeline::FocusedTimeline;
 use super::tls;
 
 /// Holds the active account's client, if any.
@@ -37,6 +50,15 @@ pub struct Session {
     // dropped-by-overwrite). `start_room_list`/`stop_room_list` are the only
     // writers.
     rooms: RwLock<Option<RoomListHandle>>,
+    // The focused room's timeline subscription. Also handed to Tauri as
+    // managed state (see `Session::focused_timeline`), but owned here so
+    // that `logout` can tear it down: the timeline task holds
+    // `Arc<Timeline>` -> `Room` -> `Client`, which keeps the store's SQLite
+    // files open, and `logout` deletes those files.
+    focused: Arc<FocusedTimeline>,
+    // Serializes whole session transitions (login, restore, logout) against
+    // each other — see this module's doc comment.
+    lifecycle: Mutex<()>,
 }
 
 impl Session {
@@ -48,7 +70,23 @@ impl Session {
             client: RwLock::new(None),
             sync: RwLock::new(None),
             rooms: RwLock::new(None),
+            focused: Arc::new(FocusedTimeline::default()),
+            lifecycle: Mutex::new(()),
         }
+    }
+
+    /// The focused-room timeline this session owns, for registration as
+    /// Tauri managed state alongside the session itself.
+    ///
+    /// `FocusedTimeline` has to be reachable from the command layer (the
+    /// timeline commands operate on it directly) *and* from `logout` (which
+    /// must tear it down before wiping the store on disk). Handing out an
+    /// `Arc` clone of the one the session owns is what keeps those two views
+    /// of it the same object — registering an independent
+    /// `FocusedTimeline::default()` as managed state would leave `logout`
+    /// clearing a timeline nothing else ever uses.
+    pub fn focused_timeline(&self) -> Arc<FocusedTimeline> {
+        Arc::clone(&self.focused)
     }
 
     /// Logs in fresh with a username and password, building a new client
@@ -91,17 +129,29 @@ impl Session {
     ///
     /// Also wipes the encrypted store directory (per the M0 plan: `logout`
     /// clears "session, secrets and stores"). `PasswordAuth::logout` deletes
-    /// the store passphrase, so leaving the old SQLCipher-encrypted store on
-    /// disk would make it unopenable by any later `login` (which generates a
+    /// the store passphrase, so leaving the old encrypted store on disk
+    /// would make it unopenable by any later `login` (which generates a
     /// fresh passphrase) — and leaving message history, room state and
     /// crypto keys decryptable-if-you-can-reach-the-keyring on disk after
     /// logout is not acceptable for a chat client regardless.
     pub async fn logout(&self) -> CoreResult<()> {
-        // Stop room-list streaming and sync first: otherwise those loops
-        // keep running against a client we're about to drop (and, on some
-        // future error path, could still be mid-request against a store
-        // we're about to wipe below). Room list first since it depends on
-        // the sync service's `RoomListService`, not the other way around.
+        let _lifecycle = self.lifecycle.lock().await;
+        // Tear every background consumer of the client down first, and
+        // *wait* for each task to actually finish, not merely ask it to.
+        // Otherwise those loops keep running against a client we're about
+        // to drop, and — the reason this must complete before
+        // `remove_store()` below — each of them transitively holds the
+        // `Client`, so each keeps the store's SQLite files open. On POSIX an
+        // unlink of an open file succeeds anyway; on Windows
+        // `remove_dir_all` fails, and it would fail *after*
+        // `PasswordAuth::logout` has already deleted the store passphrase,
+        // leaving an encrypted store no future passphrase can ever open and
+        // every subsequent login failing permanently.
+        //
+        // Order is dependency order: the focused timeline hangs off a
+        // `Room`, the room list off the sync service's `RoomListService`,
+        // and the sync service off the client.
+        self.focused.clear_and_join().await;
         self.stop_room_list().await;
         self.stop_sync().await;
         // Clone the handle (cheap — `Client` is internally reference
@@ -120,20 +170,71 @@ impl Session {
         Ok(())
     }
 
+    /// Logs in and starts this session's streams, as one serialized
+    /// transition — the whole of what the `login` command does.
+    ///
+    /// Holds [`Session::lifecycle`] throughout so it cannot interleave with
+    /// a concurrent restore or logout; see this module's doc comment.
+    pub async fn login_and_start(
+        &self,
+        homeserver: &str,
+        username: &str,
+        password: &str,
+        app: AppHandle,
+    ) -> CoreResult<()> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.login(homeserver, username, password).await?;
+        self.start_streams(app).await
+    }
+
+    /// Restores a persisted session and starts its streams, as one
+    /// serialized transition — the whole of what the `restore_session`
+    /// command does. Returns `false` when there was nothing to restore.
+    ///
+    /// **Idempotent by design.** When a client is already active this
+    /// returns `Ok(true)` without touching anything. The webview cannot be
+    /// relied on to never ask twice — `/login` navigates to `/` on success,
+    /// and `/`'s own mount restores — and a second restore would be far
+    /// worse than a wasted round trip: it builds a *second* `Client` against
+    /// the same store and device id, and a second `SyncService` and
+    /// room-list task whose `SeqCounter` restarts at 1 while the first one's
+    /// task is still emitting. The webview arms its tracker for the new
+    /// stream, gets an old-stream envelope at a much higher seq, reads it as
+    /// a gap, resyncs off the *old* handle, and then discards the entire new
+    /// stream as duplicates — a room list frozen at login for the rest of
+    /// the session. Guarding here rather than at the call site fixes that
+    /// for every caller, present and future.
+    pub async fn restore_and_start(&self, app: AppHandle) -> CoreResult<bool> {
+        let _lifecycle = self.lifecycle.lock().await;
+        if self.is_active().await {
+            return Ok(true);
+        }
+        if !self.restore().await? {
+            return Ok(false);
+        }
+        self.start_streams(app).await?;
+        Ok(true)
+    }
+
     /// Starts sync for the currently logged-in client and stores the
-    /// resulting handle, replacing (and stopping) any sync already running.
+    /// resulting handle, stopping any sync already running first.
     ///
     /// Fails with [`CoreError::NotReady`] when nothing is logged in yet.
+    ///
+    /// **Stop-before-start, not start-then-stop.** `SyncHandle::stop` awaits
+    /// `SyncService::stop()`, whose supervisor sets `State::Idle` before
+    /// returning — so the outgoing handle's watcher wakes with `Idle` and
+    /// emits `"offline"` on the way down. Starting the new service first
+    /// would let that `"offline"` land *after* the new service has already
+    /// emitted `"live"`, and since nothing re-emits until the next state
+    /// transition the banner would then read "Offline" indefinitely while
+    /// sync was in fact running. Tearing the old one down first puts those
+    /// two emissions back in the order they describe.
     pub async fn start_sync(&self, app: AppHandle) -> CoreResult<()> {
         let client = self.require_client().await?;
+        self.stop_sync().await;
         let handle = sync::start(&client, app).await?;
-        // Stop whatever was running before swapping in the new handle —
-        // otherwise the old sync loops would leak, still running against
-        // (usually) the same client.
-        let previous = self.sync.write().await.replace(handle);
-        if let Some(previous) = previous {
-            previous.stop().await;
-        }
+        *self.sync.write().await = Some(handle);
         Ok(())
     }
 
@@ -146,33 +247,40 @@ impl Session {
     }
 
     /// Starts streaming the room list for the currently running sync and
-    /// stores the resulting handle, replacing (and stopping) any room-list
-    /// stream already running.
+    /// stores the resulting handle, stopping any room-list stream already
+    /// running first.
     ///
     /// Fails with [`CoreError::NotReady`] when sync hasn't been started yet
     /// (`start_sync` must run first — the room list is projected from its
     /// `RoomListService`).
+    ///
+    /// **Stop-before-start, not start-then-stop.** `spawn_room_list` awaits
+    /// `all_rooms()`, which can take a while; building the new handle first
+    /// leaves the old task emitting envelopes — with its own independent,
+    /// much higher `seq` — throughout that window, onto the very event the
+    /// webview has just re-armed its tracker for. The webview reads that as
+    /// a gap and resyncs off the still-installed old handle, after which the
+    /// new stream's `seq: 1, 2, 3, ...` all look like duplicates and are
+    /// discarded forever. Stopping first means at most one room-list task
+    /// can ever be emitting.
     pub async fn start_room_list(&self, app: AppHandle) -> CoreResult<()> {
+        self.stop_room_list().await;
         let handle = {
             let sync = self.sync.read().await;
             let sync_handle = sync.as_ref().ok_or(CoreError::NotReady)?;
             rooms::spawn_room_list(sync_handle, app).await?
         };
-        // Stop whatever was running before swapping in the new handle —
-        // otherwise the old stream would keep interleaving envelopes, with
-        // its own independent `seq` counter, onto the same event.
-        let previous = self.rooms.write().await.replace(handle);
-        if let Some(previous) = previous {
-            previous.stop();
-        }
+        *self.rooms.write().await = Some(handle);
         Ok(())
     }
 
-    /// Stops room-list streaming and drops the handle, if any is running. A
-    /// safe no-op when nothing was started.
+    /// Stops room-list streaming and drops the handle, if any is running,
+    /// waiting for the streaming task to actually finish before returning.
+    /// A safe no-op when nothing was started.
     pub async fn stop_room_list(&self) {
-        if let Some(handle) = self.rooms.write().await.take() {
-            handle.stop();
+        let handle = self.rooms.write().await.take();
+        if let Some(mut handle) = handle {
+            handle.stop_and_join().await;
         }
     }
 
@@ -190,6 +298,14 @@ impl Session {
     /// Used by the `login`/`restore_session` commands, which would otherwise
     /// need this same start-then-rollback sequencing themselves.
     pub async fn start_streams(&self, app: AppHandle) -> CoreResult<()> {
+        // Tear the previous session's streams down in dependency order (the
+        // room list is projected from the sync service's `RoomListService`,
+        // not the other way around) before building anything new.
+        // `start_sync`/`start_room_list` each stop their own predecessor
+        // too, so these are usually no-ops — but doing it here as well is
+        // what gets the *ordering between the two* right.
+        self.stop_room_list().await;
+        self.stop_sync().await;
         self.start_sync(app.clone()).await?;
         if let Err(err) = self.start_room_list(app).await {
             self.stop_sync().await;
@@ -217,6 +333,17 @@ impl Session {
         self.client.read().await.clone()
     }
 
+    /// Whether a session is currently active — i.e. whether a `Client` (and
+    /// therefore, since they are started together, a `SyncService` and a
+    /// room-list task) already exists.
+    ///
+    /// This is the predicate [`Self::restore_and_start`]'s idempotence guard
+    /// is built on; see that method for what a second, unguarded restore
+    /// costs.
+    pub async fn is_active(&self) -> bool {
+        self.client.read().await.is_some()
+    }
+
     /// Like [`Self::client`], but fails with [`CoreError::NotReady`] when
     /// logged out, so the UI can distinguish "not logged in yet" from a real
     /// failure.
@@ -224,10 +351,19 @@ impl Session {
         self.client().await.ok_or(CoreError::NotReady)
     }
 
-    /// Builds a `Client` against `homeserver`, backed by the encrypted
-    /// SQLCipher store at [`Self::store_path`]. Used identically by
-    /// [`Self::login`] and [`Self::restore`] so the two can never diverge on
-    /// where the store lives.
+    /// Builds a `Client` against `homeserver`, backed by the encrypted store
+    /// at [`Self::store_path`]. Used identically by [`Self::login`] and
+    /// [`Self::restore`] so the two can never diverge on where the store
+    /// lives.
+    ///
+    /// "Encrypted" here means what matrix-sdk-sqlite 0.18 actually does: a
+    /// plain SQLite file whose keys and values are individually
+    /// AEAD-encrypted with `matrix_sdk_store_encryption::StoreCipher`,
+    /// derived from the passphrase below. It is **not** SQLCipher — the file
+    /// itself is an ordinary readable SQLite database; what it contains is
+    /// ciphertext. The passphrase is held in the OS keyring, so the security
+    /// property (state, message history and crypto keys are encrypted at
+    /// rest) is the one §2 of the design spec asked for.
     async fn build_client(&self, homeserver: &str) -> CoreResult<Client> {
         // Before any TLS is constructed — see core::tls.
         tls::install_ring_provider();
@@ -240,7 +376,7 @@ impl Session {
             .map_err(|e| CoreError::Network(e.to_string()))
     }
 
-    /// Where the encrypted SQLCipher store lives on disk.
+    /// Where the encrypted store lives on disk.
     fn store_path(&self) -> PathBuf {
         self.data_dir.join("store")
     }
@@ -355,6 +491,17 @@ mod tests {
             .await
             .unwrap();
 
+        // The predicate `restore_and_start`'s idempotence guard reads. A
+        // login leaves the session active, so the redundant
+        // `restore_session` the webview fires on `/`'s mount right after
+        // `/login` navigates there short-circuits instead of building a
+        // second `Client` and a second set of streams — see
+        // `Session::restore_and_start`.
+        assert!(
+            session.is_active().await,
+            "a completed login must leave the session active"
+        );
+
         // A genuine app-relaunch would build a brand new `Session` reading
         // the same persisted secrets; `restore` always builds a brand new
         // `Client` regardless of instance, so calling it here on the same
@@ -394,6 +541,10 @@ mod tests {
         assert!(
             session.client().await.is_none(),
             "logout must drop the active client even when the server call fails"
+        );
+        assert!(
+            !session.is_active().await,
+            "logout must leave the session inactive, so the next restore actually restores"
         );
 
         let _ = std::fs::remove_dir_all(&data_dir);
@@ -439,7 +590,7 @@ mod tests {
         // `PasswordAuth::logout` deletes `KEY_STORE_PASSPHRASE`, so a second
         // `login` generates a *fresh* passphrase. If `logout` left the old
         // encrypted store directory in place, opening it with the new
-        // passphrase fails with a SQLCipher `aead::Error` — `logout` must
+        // passphrase fails with a `StoreCipher` `aead::Error` — `logout` must
         // wipe the store directory too, so the second login starts clean.
         session
             .login(&server.uri(), "alice", "hunter2")

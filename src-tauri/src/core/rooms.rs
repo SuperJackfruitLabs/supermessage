@@ -105,8 +105,8 @@ fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomSummary
 /// Owns the background task streaming the room list to the webview.
 ///
 /// Mirrors `core::sync::SyncHandle`'s shape: dropping a `RoomListHandle`, or
-/// calling [`RoomListHandle::stop`] on it, aborts the streaming task.
-/// `Session` is meant to be the sole long-term owner (see
+/// calling [`RoomListHandle::stop_and_join`] on it, aborts the streaming
+/// task. `Session` is meant to be the sole long-term owner (see
 /// `core::session::Session::start_room_list`), replacing and stopping any
 /// previous handle before storing a new one — otherwise two independent
 /// subscriptions would interleave envelopes on the same event, each with its
@@ -118,14 +118,23 @@ pub struct RoomListHandle {
 }
 
 impl RoomListHandle {
-    /// Stops the background streaming task. Safe to call more than once, or
-    /// alongside letting the handle simply drop — both abort the same task.
+    /// Stops the background streaming task and waits for it to actually
+    /// finish. Safe to call more than once, and safe alongside letting the
+    /// handle simply drop (`Drop` aborts the same task).
     ///
-    /// Unlike `SyncHandle::stop` (which awaits `SyncService::stop()`),
-    /// aborting a task is inherently synchronous, so this doesn't need to be
-    /// `async`.
-    pub fn stop(&self) {
+    /// Aborting alone would be enough to stop the *emissions*, but not
+    /// enough for the caller that matters: the task holds a `RoomList`, and
+    /// through it the `Client`, and through that the store's open SQLite
+    /// files. `Session::logout` deletes those files, so it needs the
+    /// stronger guarantee that the task is gone, not merely told to go.
+    pub async fn stop_and_join(&mut self) {
         self.task.abort();
+        // `JoinHandle` is `Unpin`, so it can be awaited through `&mut`
+        // without consuming the handle (which `Drop` prevents anyway). The
+        // result is always `Err(JoinError::Cancelled)` after an abort;
+        // what's load-bearing is that this resolves only once the task has
+        // been dropped.
+        let _ = std::pin::Pin::new(&mut self.task).await;
     }
 
     /// A snapshot of the room list as of the last diff this handle's task
@@ -290,19 +299,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_aborts_the_background_task() {
+    async fn stop_and_join_aborts_the_background_task_and_waits_for_it() {
         let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
         let task = tokio::spawn(async {
             loop {
                 tokio::time::sleep(Duration::from_secs(3600)).await;
             }
         });
-        let handle = RoomListHandle { state, task };
+        let mut handle = RoomListHandle { state, task };
 
         assert!(!handle.task.is_finished());
-        handle.stop();
-        // Give the runtime a moment to actually cancel the sleeping task.
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        handle.stop_and_join().await;
+        // No sleep here on purpose: `stop_and_join` is only allowed to
+        // return once the task has actually finished, which is exactly the
+        // property `Session::logout` depends on before it deletes the
+        // store's SQLite files.
         assert!(handle.task.is_finished());
     }
 

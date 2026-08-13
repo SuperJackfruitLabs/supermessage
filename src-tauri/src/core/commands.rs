@@ -4,12 +4,14 @@
 //! function, map the result. No logic lives here; the actual behavior is in
 //! `core::session`, `core::rooms`, and `core::timeline`.
 
+use std::sync::Arc;
+
 use tauri::{AppHandle, State};
 
-use super::dto::{RoomSummary, TimelineItemDto};
+use super::dto::RoomSummary;
 use super::error::CoreError;
 use super::session::Session;
-use super::timeline::FocusedTimeline;
+use super::timeline::{FocusedTimeline, TimelineSnapshot};
 
 /// Logs in with a username and password, then starts sync and room-list
 /// streaming so the webview has state to render as soon as login succeeds.
@@ -21,29 +23,29 @@ pub async fn login(
     app: AppHandle,
     session: State<'_, Session>,
 ) -> Result<(), CoreError> {
-    session.login(&homeserver, &username, &password).await?;
-    session.start_streams(app).await?;
-    Ok(())
+    session
+        .login_and_start(&homeserver, &username, &password, app)
+        .await
 }
 
 /// Attempts to restore a previously persisted session. Returns `false` when
 /// there is nothing to restore — the normal first-run path, not an error.
 ///
-/// Starts sync and room-list streaming on success, same as [`login`].
+/// Starts sync and room-list streaming on success, same as [`login`], and is
+/// a no-op returning `true` when a session is already active — see
+/// `Session::restore_and_start` for why that guard lives in the core rather
+/// than being left to the webview to remember.
 #[tauri::command]
 pub async fn restore_session(
     app: AppHandle,
     session: State<'_, Session>,
 ) -> Result<bool, CoreError> {
-    let restored = session.restore().await?;
-    if restored {
-        session.start_streams(app).await?;
-    }
-    Ok(restored)
+    session.restore_and_start(app).await
 }
 
 /// Logs out, clearing the session, secrets and local stores. `Session::logout`
-/// stops sync and room-list streaming itself before it clears anything else.
+/// stops the focused timeline, sync and room-list streaming itself before it
+/// clears anything else.
 #[tauri::command]
 pub async fn logout(session: State<'_, Session>) -> Result<(), CoreError> {
     session.logout().await
@@ -65,7 +67,7 @@ pub async fn timeline_subscribe(
     room_id: String,
     app: AppHandle,
     session: State<'_, Session>,
-    timeline: State<'_, FocusedTimeline>,
+    timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<(), CoreError> {
     let client = session.require_client().await?;
     timeline.subscribe(&client, &room_id, app).await
@@ -76,18 +78,21 @@ pub async fn timeline_subscribe(
 #[tauri::command]
 pub async fn timeline_paginate_back(
     count: u16,
-    timeline: State<'_, FocusedTimeline>,
+    timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<bool, CoreError> {
     timeline.paginate_back(count).await
 }
 
-/// A full snapshot of the focused timeline — the sequence number of the last
-/// diff folded in, and the resulting items — for the webview to reset its
-/// store against after it detects a gap.
+/// A full snapshot of the focused timeline — the room it belongs to, the
+/// sequence number of the last diff folded in, and the resulting items — for
+/// the webview to reset its store against after it detects a gap.
+///
+/// The room id leads so the webview can discard a snapshot for a room it is
+/// no longer showing; see `core::timeline::TimelineSnapshot`.
 #[tauri::command]
 pub async fn timeline_resync(
-    timeline: State<'_, FocusedTimeline>,
-) -> Result<(u64, Vec<TimelineItemDto>), CoreError> {
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<TimelineSnapshot, CoreError> {
     timeline.snapshot().await
 }
 
@@ -95,7 +100,7 @@ pub async fn timeline_resync(
 #[tauri::command]
 pub async fn send_message(
     body: String,
-    timeline: State<'_, FocusedTimeline>,
+    timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<(), CoreError> {
     timeline.send_text(&body).await
 }
