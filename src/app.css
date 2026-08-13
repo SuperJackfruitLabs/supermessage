@@ -22,6 +22,7 @@
   --color-content-muted: #62626b;
   --color-accent: #3b5bdb;
   --color-accent-content: #ffffff;
+  --color-danger: #c92a2a;
 }
 
 @layer theme {
@@ -35,6 +36,7 @@
       --color-content-muted: #9a9aa4;
       --color-accent: #748ffc;
       --color-accent-content: #10101a;
+      --color-danger: #ff6b6b;
     }
   }
 }
