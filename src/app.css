@@ -60,7 +60,13 @@
 
   /* Signal: amber, reserved exclusively for a pending decision (spec §3).
    * Not used anywhere in this task. */
-  --color-signal: #a35c00;
+  /* #8a4e00, not the spec's original #a35c00: that read 4.63:1 against
+   * --color-signal-soft, clearing the 4.5:1 floor by almost nothing while
+   * carrying the 10px `AWAITING YOUR DECISION` label — the smallest text in
+   * the app, on the one element the operator must never miss. 6.0:1 gives
+   * that label the margin its job deserves. Dark mode needs no change
+   * (#f0a63c on #2e2317 is 7.5:1). */
+  --color-signal: #8a4e00;
   --color-signal-soft: #fdf3e2;
 
   --color-danger: #b4232a;

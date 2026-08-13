@@ -75,12 +75,12 @@ Light (`:root`):
 | `--color-border` | `#dfe1e8` | Hairlines |
 | `--color-border-strong` | `#c3c7d2` | Focused inputs, card edges |
 | `--color-content` | `#161821` | Body text |
-| `--color-content-muted` | `#5f6472` | Labels, metadata |
-| `--color-content-faint` | `#8b90a0` | System lines, disabled |
+| `--color-content-muted` | `#4a4f5e` | Labels, metadata |
+| `--color-content-faint` | `#6b7082` | System lines, disabled |
 | `--color-accent` | `#4249c4` | Selection rail, focus ring, Send |
 | `--color-accent-content` | `#ffffff` | Text on accent |
 | `--color-accent-soft` | `#eceefb` | Own-message ground |
-| `--color-signal` | `#a35c00` | **Pending decision only** |
+| `--color-signal` | `#8a4e00` | **Pending decision only** |
 | `--color-signal-soft` | `#fdf3e2` | Pending-decision card ground |
 | `--color-danger` | `#b4232a` | Errors, failed sends |
 
@@ -94,8 +94,8 @@ Dark (`prefers-color-scheme: dark`):
 | `--color-border` | `#282c37` |
 | `--color-border-strong` | `#3a3f4e` |
 | `--color-content` | `#e8eaf0` |
-| `--color-content-muted` | `#9095a5` |
-| `--color-content-faint` | `#6b7183` |
+| `--color-content-muted` | `#b0b6c6` |
+| `--color-content-faint` | `#787f91` |
 | `--color-accent` | `#8b9bf7` |
 | `--color-accent-content` | `#12141b` |
 | `--color-accent-soft` | `#242a44` |
@@ -107,6 +107,27 @@ Both themes are first-class. Every value above must be checked against its
 own ground for contrast; `--color-content-faint` on `--color-surface` is the
 tightest pair and must still clear 4.5:1 for the 10.5px system lines it
 carries. Adjust the token, never the usage, if it does not.
+
+**These values are the shipped ones, revised twice during implementation and
+synced back here — the table is not the original draft.** Both revisions are
+worth knowing about, because both were caught by review rather than by
+design:
+
+- The first draft's `faint` (`#8b90a0` / `#6b7183`) failed this section's own
+  floor, reading as low as 2.92:1. Raising it cleared the floor but left it
+  ~1.2:1 against `muted`, which is a wobble, not a rank — so `muted` was
+  re-spaced too. The ramp is now roughly 15.9 : 8.2 : 4.9 in light, a real
+  progression with the floor as its last step rather than its only
+  constraint.
+- `--color-signal` was `#a35c00`, which read 4.63:1 on `--color-signal-soft`
+  — clearing the floor by almost nothing, while carrying the 10px `AWAITING
+  YOUR DECISION` label: the smallest text in the app, on the one element the
+  operator must never miss. Darkened to 6.0:1. Dark mode was already 7.5:1
+  and is unchanged.
+
+The lesson for anyone extending this palette: a ratio that merely clears
+4.5:1 is not automatically finished. Check it against the *neighbouring rank*
+as well as against its ground, and give the smallest text the widest margin.
 
 **No hardcoded colours anywhere.** The existing rule holds: components
 consume tokens, and `Timeline.svelte`'s `.message-html` block keeps reading
@@ -128,9 +149,24 @@ of the four platforms it ships to.
 | Data, labels, sigils, timestamps | **IBM Plex Mono** | `@fontsource/ibm-plex-mono` (400, 500) | Event types, room ids, mxids and timestamps are data; a mono grid is how data reads as data |
 
 `@fontsource-variable/ibm-plex-mono` does not exist — use the static
-`@fontsource/ibm-plex-mono` at weights 400 and 500 only. Import latin
-subsets only. `font-synthesis: none` is already set in `app.css`, so every
-weight in use must be a real weight.
+`@fontsource/ibm-plex-mono` at weights 400 and 500 only. `font-synthesis:
+none` is already set in `app.css`, so every weight in use must be a real
+weight.
+
+**Subsets: all of them, not latin-only.** This draft originally said latin
+only; that turned out to be unachievable. The `@fontsource-variable`
+packages expose only axis-level entry points (`wght.css`, `opsz.css`), each
+carrying every subset — there is no per-subset CSS for a variable family.
+Stripping subsets would mean hand-writing `@font-face` blocks with hardcoded
+asset paths and hand-maintained `unicode-range`s. Against that, the extra
+~600 KB sits in a *bundle*, not a page load — nothing is ever fetched — and
+keeping cyrillic and greek means a Matrix display name in those scripts
+renders in the designed face instead of falling back.
+
+**Sans italic is bundled too** (`wght-italic.css`), and this is not
+optional: with `font-synthesis: none`, an `<em>` inside an *own* message —
+which is set in sans, unlike a peer message — renders upright and loses its
+emphasis silently. Mono deliberately has no italic; see §6.3.
 
 **The risk this design takes, stated plainly:** serif message bodies in a
 chat client. Nobody does it. It is justified here because these are not chat
