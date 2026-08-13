@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push to the same branch cancels the first: these jobs build the
+# whole Rust tree, and a queue of superseded runs is the main way a small
+# project burns its Actions minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fail the build on a Rust warning in CI without making every local
+  # `cargo build` painful.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Type and template check
+        run: pnpm check
+
+      - name: Build
+        run: pnpm build
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        # webkit2gtk 4.1 is the Tauri 2 line (4.0 is Tauri 1). libxdo is
+        # needed by the tray/window plumbing, patchelf by the AppImage
+        # bundler in the release workflow.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            file \
+            wget
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the frontend
+        # Not redundant with the `frontend` job. `tauri::generate_context!`
+        # resolves `frontendDist` (`../build`) at compile time, so the Rust
+        # crate does not compile at all unless the frontend output exists on
+        # disk first. Anything that touches cargo here needs this.
+        run: pnpm build
+
+      - name: Formatting
+        run: cargo fmt --all --check
+        working-directory: src-tauri
+
+      - name: Clippy
+        # `-D warnings` explicitly, even though RUSTFLAGS already carries it:
+        # RUSTFLAGS denies *rustc* lints, and clippy's own lints are a
+        # separate set that it would otherwise report as warnings and exit 0
+        # on. Without this the job goes green on a tree full of clippy
+        # findings.
+        run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: src-tauri
+
+      - name: Tests
+        run: cargo test --all-features
+        working-directory: src-tauri
+
+  licences:
+    name: Dependency licences
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo-deny
+        # Enforces the licence rule in AGENTS.md — permissive licences plus
+        # unmodified MPL-2.0, with GPL/AGPL/LGPL refused outright. The
+        # project ships under MIT, so a copyleft dependency arriving through
+        # a transitive bump is a licensing problem we want to hear about from
+        # CI rather than from a user.
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          command: check licenses bans sources

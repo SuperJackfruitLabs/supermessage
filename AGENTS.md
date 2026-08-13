@@ -25,6 +25,9 @@ Remaining follow-ups:
 README.md            — one-paragraph summary and stack pointer
 docs/tech-stack.md   — full stack decision record: choices, rationale, risks, protocol choices, milestones
 docs/positioning.md  — suite context, boundaries (hard rules), near-term wedge, milestone adjustments
+                       NOT IN THIS REPOSITORY. Internal strategy notes, git-ignored and unpublished.
+                       References to it below are deliberate and will not resolve in a public clone;
+                       every rule it sets that binds this codebase is restated here in full.
 package.json         — frontend manifest (pnpm)
 svelte.config.js     — SvelteKit, adapter-static, SPA mode
 vite.config.js       — Vite + Tailwind v4 plugin; fixed port 1420 for Tauri
