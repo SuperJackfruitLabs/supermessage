@@ -20,6 +20,13 @@
   //    scrolling up to read history is never yanked back down by an
   //    incoming message.
   //
+  // Every item renders something or is deliberately silent — there is no
+  // "falls through the template" case. Only date dividers and text messages
+  // have a real visual form in M0; everything else (undecryptable events,
+  // membership changes, redactions) gets an explicit muted placeholder from
+  // `timelinePlaceholder.ts`, which is what stops an encrypted room a fresh
+  // device can't decrypt from rendering as blank rows.
+  //
   // Never optimistically appends: `timelineStore.items` is driven entirely
   // by the diff stream (see `timeline.svelte.ts`), including the local echo
   // of a just-sent message. This component only ever reads that store.
@@ -34,6 +41,7 @@
   import { tick } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
+  import { placeholderFor } from "./timelinePlaceholder";
   import type { TimelineItem } from "$lib/ipc";
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
@@ -152,6 +160,21 @@
               </p>
             </div>
           </div>
+        {:else}
+          <!--
+            Everything that isn't a renderable text message: undecryptable
+            events on a fresh device (the common case in a real encrypted
+            room), membership changes, redactions. Muted and centred, so a
+            history full of them reads as a quiet log rather than as
+            messages — and never as the bare empty bubble that rendering
+            nothing used to produce. See `timelinePlaceholder.ts`.
+          -->
+          {@const placeholder = placeholderFor(item)}
+          {#if placeholder}
+            <div class="flex justify-center py-1.5">
+              <span class="text-xs text-content-muted italic">{placeholder}</span>
+            </div>
+          {/if}
         {/if}
       {/snippet}
     </VList>
