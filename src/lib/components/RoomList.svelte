@@ -10,13 +10,19 @@
   // row therefore looks intentionally uniform today; once previews land,
   // rooms that have one will simply grow a second line.
   //
-  // Avatars: `avatarUrl` is an `mxc://` URI, and there is no IPC surface yet
-  // to resolve those to a displayable `http(s)://` URL (that's later-
-  // milestone work too). Rendering the raw `mxc://` string as an `<img src>`
-  // would just show a broken image, so this renders initials instead.
+  // Avatars: `avatarUrl` is an `mxc://` URI a browser can't load directly
+  // (and this homeserver's media endpoints are authenticated, so there's no
+  // bare `http(s)://` URL either — see `ipc.ts`'s `roomAvatar` doc comment).
+  // `avatarCache` resolves it to a `data:` URI via the `room_avatar` command,
+  // fetched lazily per room and cached by `avatarUrl` so the list never
+  // blocks on avatars: every row renders immediately with its initials, and
+  // swaps in the real image once (and if) the fetch resolves.
 
   import { roomsStore } from "$lib/stores/rooms.svelte";
+  import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import type { RoomSummary } from "$lib/ipc";
+
+  const avatarCache = createAvatarCache();
 
   const sortedRooms = $derived(
     [...roomsStore.rooms].sort((a, b) => (b.lastActivityMs ?? 0) - (a.lastActivityMs ?? 0)),
@@ -39,6 +45,7 @@
   {:else}
     {#each sortedRooms as room (room.id)}
       {@const selected = room.id === roomsStore.selectedId}
+      {@const avatar = avatarCache.get(room.id, room.avatarUrl)}
       <button
         type="button"
         onclick={() => roomsStore.select(room.id)}
@@ -47,12 +54,22 @@
           ? 'bg-surface'
           : 'hover:bg-surface/60'}"
       >
-        <span
-          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-raised text-sm font-medium text-content"
-          aria-hidden="true"
-        >
-          {initials(room)}
-        </span>
+        {#if avatar}
+          <img
+            src={avatar}
+            alt=""
+            aria-hidden="true"
+            class="h-10 w-10 shrink-0 rounded-full object-cover"
+            onerror={() => room.avatarUrl && avatarCache.markFailed(room.avatarUrl)}
+          />
+        {:else}
+          <span
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-raised text-sm font-medium text-content"
+            aria-hidden="true"
+          >
+            {initials(room)}
+          </span>
+        {/if}
         <span class="min-w-0 flex-1">
           <span class="flex items-center justify-between gap-2">
             <span class="truncate text-sm font-medium text-content">{room.name}</span>

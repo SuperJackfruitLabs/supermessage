@@ -102,3 +102,16 @@ pub async fn send_message(
 ) -> Result<(), CoreError> {
     timeline.send_text(&body).await
 }
+
+/// Fetches `room_id`'s avatar as a `data:` URI, or `None` when the room has
+/// no avatar (or its bytes don't sniff to a renderable image format — see
+/// `core::media::sniff_mime`). Fetched lazily and cached by the caller,
+/// keyed on the room's `avatarUrl` (the `mxc://` URI) — never carried in the
+/// streamed `RoomSummary` itself, per `core::dto`'s doc comment on IPC cost.
+#[tauri::command]
+pub async fn room_avatar(
+    room_id: String,
+    session: State<'_, Session>,
+) -> Result<Option<String>, CoreError> {
+    session.room_avatar(&room_id).await
+}

@@ -25,6 +25,14 @@ export interface CoreStatus {
  * Mirrors `RoomSummary` from `src-tauri/src/core/dto.rs`. `lastMessage` is
  * currently always `null` — the core defers message-preview decoding — so
  * callers must render that as "no preview", not treat it as a bug.
+ *
+ * `avatarUrl` is the room's raw `mxc://` URI, not something an `<img src>`
+ * can load directly (browsers can't fetch `mxc://`, and this homeserver's
+ * media endpoints are authenticated — no bare `http(s)://` URL exists
+ * either). It is deliberately *not* the image data itself: `RoomSummary` is
+ * re-sent whole on every room-list `Set` diff, and putting bytes here would
+ * inflate every such update. Use it only as a change signal / cache key, and
+ * call {@link roomAvatar} to resolve the actual pixels.
  */
 export interface RoomSummary {
   id: string;
@@ -179,6 +187,17 @@ export async function timelineResync(): Promise<[string, number, TimelineItem[]]
 /** Sends a plain-text message to the focused room. */
 export async function sendMessage(body: string): Promise<void> {
   await invoke<void>("send_message", { body });
+}
+
+/**
+ * Fetches `roomId`'s avatar as a `data:` URI, or `null` when the room has no
+ * avatar (or the core couldn't identify its image format). Deliberately not
+ * carried on `RoomSummary` — see that interface's doc comment — so callers
+ * fetch this lazily, per room, and cache the result themselves (keyed on the
+ * room's `avatarUrl`, not its id: see `$lib/components/RoomList.svelte`).
+ */
+export async function roomAvatar(roomId: string): Promise<string | null> {
+  return invoke<string | null>("room_avatar", { roomId });
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */

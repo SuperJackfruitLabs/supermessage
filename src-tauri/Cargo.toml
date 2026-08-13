@@ -38,6 +38,10 @@ rand = "0.9"
 thiserror = "2"
 futures-util = "0.3"
 async-trait = "0.1"
+# Encodes fetched avatar bytes as `data:` URIs (core::media). Already resolved
+# transitively (matrix-sdk/reqwest pull base64 0.22.1 — see `cargo tree -p
+# base64`); listed directly since core::media calls it by name.
+base64 = "0.22"
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tracing = "0.1"

@@ -27,6 +27,7 @@ use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
 use super::dto::RoomSummary;
 use super::error::{CoreError, CoreResult};
+use super::media;
 use super::rooms::{self, RoomListHandle};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
 use super::sync::{self, SyncHandle};
@@ -403,6 +404,30 @@ impl Session {
     /// failure.
     pub async fn require_client(&self) -> CoreResult<Client> {
         self.client().await.ok_or(CoreError::NotReady)
+    }
+
+    /// Fetches `room_id`'s avatar as a thumbnail, encoded as a `data:` URI
+    /// the webview can render directly. See `core::media`'s doc comment for
+    /// why a `data:` URI rather than an `http(s)://` URL.
+    ///
+    /// **Deliberately not serialized through [`Self::lifecycle`]**, unlike
+    /// [`Self::subscribe_timeline`]. What that guard protects against is a
+    /// *long-lived task* getting installed into `FocusedTimeline` inside
+    /// logout's teardown window — one that would keep holding
+    /// `Arc<Timeline>` -> `Room` -> `Client` (and so the store's open SQLite
+    /// files) indefinitely, past the point `logout` deletes them. A
+    /// `room_avatar` call is a one-shot read: it clones the `Client` handle,
+    /// awaits a single fetch, and drops the clone as soon as this function
+    /// returns — the same shape as `FocusedTimeline::paginate_back` and
+    /// `send_text`, neither of which holds this lock either. Losing a race
+    /// with a concurrent `logout` here just fails the call (`NotReady` if
+    /// `logout` already cleared the client, or a network/store error if it
+    /// wins mid-fetch) rather than leaking a live handle across the
+    /// deletion — nothing is left running afterwards for the lock to have
+    /// protected.
+    pub async fn room_avatar(&self, room_id: &str) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        media::room_avatar(&client, room_id).await
     }
 
     /// Builds a `Client` against `homeserver`, backed by the encrypted store

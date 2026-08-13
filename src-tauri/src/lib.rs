@@ -11,8 +11,8 @@ use serde::Serialize;
 use tauri::Manager;
 
 use crate::core::commands::{
-    login, logout, restore_session, rooms_resync, send_message, timeline_paginate_back,
-    timeline_resync, timeline_subscribe,
+    login, logout, restore_session, room_avatar, rooms_resync, send_message,
+    timeline_paginate_back, timeline_resync, timeline_subscribe,
 };
 use crate::core::secrets::KeyringStore;
 use crate::core::{session::Session, tls};
@@ -93,6 +93,7 @@ pub fn run() {
             timeline_paginate_back,
             timeline_resync,
             send_message,
+            room_avatar,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
