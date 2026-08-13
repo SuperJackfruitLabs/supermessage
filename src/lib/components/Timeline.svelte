@@ -53,6 +53,14 @@
   // line above it) and an own message keeps a tight right-aligned bubble
   // (`--color-accent-soft` ground, `--color-content` text, 6px radius, sans
   // `--text-body-own`, `52ch`). *You type, they write.*
+  //   - The asymmetry is one of **register, not geometry** (spec §6.3.0),
+  //     and that distinction is the whole of it: sans against serif, tight
+  //     against airy, a ground against no ground. Every row — peer block,
+  //     own bubble, divider, log line, emote, dispatch card — lays out
+  //     inside *one* centred `72ch` reading column, and "right-aligned"
+  //     means against that column's right edge, never the viewport's. See
+  //     the column wrapper in the markup below for what the viewport-
+  //     relative version actually looked like when it was rendered.
   //   - All three message-shaped render kinds (`bubble`/`image`/
   //     `mediaFile`) go through the single `messageBlock` snippet below,
   //     which owns that whole wrapper — the sender/meta line, the reply
@@ -79,13 +87,17 @@
   //     own face explicitly rather than inheriting.
   //   - `continuesRun` (from `timelineGrouping.ts`, see its doc comment)
   //     collapses a sender run: the sender line and the timestamp are
-  //     suppressed and the gap above tightens from 16px to 2px, so five
+  //     suppressed and the gap above tightens from 32px to 20px, so five
   //     consecutive paragraphs from one agent read as one piece of writing.
   //     Everything else — reply quote, reactions, actions, seen marker —
   //     still renders. Two things deliberately survive a collapse because
   //     they are not "the timestamp" and losing them would lose real
   //     information: the `edited` marker, and an own message's
-  //     `sendingFailed`/`notSentYet` state.
+  //     `sendingFailed`/`notSentYet` state. Those two numbers are picked
+  //     against the 13.5px gap between two paragraphs of a *single*
+  //     message and must stay looser than it — see `messageBlock`, which
+  //     explains what went wrong when the padding was 2px and the rhythm
+  //     was really being carried by the hover-only actions row.
   //   - Mono means machine, serif means prose (spec §5.3). System lines,
   //     placeholders, ids and timestamps are mono; message bodies are
   //     serif; chrome is sans. No mono rank is ever italic — `app.css` sets
@@ -673,6 +685,11 @@
     <div class="mt-1.5 flex flex-wrap gap-1 {item.isOwn ? 'justify-end' : ''}">
       {#each item.reactions as reaction (reaction.key)}
         {@const interactive = canReplyOrReact(item)}
+        {@const chipClass = reaction.byMe
+          ? `border-accent font-medium text-accent ${
+              item.isOwn ? "bg-surface hover:bg-surface-sunken" : "bg-accent/15 hover:bg-accent/20"
+            }`
+          : "border-border bg-surface-sunken text-content-muted hover:border-border-strong hover:text-content"}
         <!--
           `displayReactionKey` caps a reaction key's rendered length (a key
           is arbitrary sender-controlled text, not necessarily one emoji);
@@ -689,6 +706,28 @@
           `font-sans` explicitly: a chip is chrome, and it sits inside a
           message block that sets `font-serif` (peer) on itself so its
           `ch`-based measure resolves in the reading face.
+
+          The `byMe` fill is ground-dependent, and that is a contrast fix,
+          not a flourish. `bg-accent/15` is *translucent*, so it composites
+          against whatever is behind it: on the reading surface that gives
+          accent text 5.60:1 (light) / 5.55:1 (dark), but on the own
+          bubble's `--color-accent-soft` ground the tint lands on an
+          already-accent-tinted colour and collapses to 4.88:1 / **4.26:1**
+          — under the 4.5:1 floor in dark. Inside an own bubble the chip
+          therefore takes an *opaque* `--color-surface` fill instead
+          (7.04:1 / 7.00:1), which also matches the media row's icon: on
+          this bubble, `--color-surface` is what an inset control is made
+          of. Hover is `bg-accent/20`, not `/25`, for the same reason —
+          `/25` measures 4.49:1 in dark, failing by a hair; `/20` is
+          5.16:1 / 5.02:1. `--color-content-muted` on
+          `--color-surface-sunken` (the not-mine chip) is opaque already
+          and clears on either ground at 7.49:1 / 9.23:1.
+
+          Those numbers are composited by the browser, not modelled:
+          Tailwind emits `/15` as `color-mix(in oklab, … , transparent)`,
+          so anything that reads `getComputedStyle().backgroundColor` and
+          expects `rgba()` will silently measure the wrong ground. Paint
+          the layer stack into a canvas and read the pixel instead.
         -->
         <button
           type="button"
@@ -696,9 +735,7 @@
           onclick={() => handleToggleReaction(item.id, reaction.key)}
           aria-pressed={reaction.byMe}
           aria-label={`${displayReactionKey(reaction.key)}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
-          class="rounded-full border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {reaction.byMe
-            ? 'border-accent bg-accent/15 font-medium text-accent hover:bg-accent/25'
-            : 'border-border bg-surface-sunken text-content-muted hover:border-border-strong hover:text-content'}"
+          class="rounded-full border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
         >
           {displayReactionKey(reaction.key)} {reaction.count}
         </button>
@@ -727,7 +764,7 @@
       inside a serif block.
     -->
     <div
-      class="mt-1 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {item.isOwn
+      class="mt-0.5 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {item.isOwn
         ? '-mr-1.5 justify-end'
         : '-ml-1.5'}"
     >
@@ -776,6 +813,39 @@
   {/if}
 {/snippet}
 
+{#snippet logLine(text: string)}
+  <!--
+    The quiet machine log: membership changes (grouped or not), room
+    creation, encryption enabled, room replaced, and every placeholder for
+    something this build cannot render yet. All of these are the same row —
+    centred, mono `--text-meta`, `--color-content-faint` — and they were
+    three verbatim copies of this markup before this snippet existed.
+    Keeping them literally identical is the point, not an accident: a
+    collapsed membership run must read no differently from an ungrouped
+    one, and a placeholder must read as part of the same log rather than as
+    a failed message. Mono means machine (spec §5.3), and no mono rank is
+    ever italic (spec §6.3) — `font-synthesis: none` plus no bundled mono
+    italic would render an italic upright anyway.
+
+    `min-w-0` + `max-w` + `break-words`, the same three-part guard every
+    other sender-controlled string in this file carries. These strings are
+    not app-authored constants: a system line is built from
+    `attributedName`, which is the sender's own *unbounded* display name,
+    and a placeholder interpolates a sender-controlled `msgtype`/`detail`.
+    Before the guard, a single 5000-character display name pushed the
+    scroller's own `scrollWidth` to 16515px against a 1563px column.
+    `break-words` alone is not enough — `overflow-wrap: break-word` does
+    not reduce an element's min-content size, so a flex item's automatic
+    minimum size still holds the row open until `min-w-0` lets it shrink.
+  -->
+  <div class="flex justify-center py-2">
+    <span
+      class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
+      >{text}</span
+    >
+  </div>
+{/snippet}
+
 {#snippet messageBlock(item: TimelineItem, continuesRun: boolean, content: Snippet)}
   <!--
     The single wrapper every message-shaped render kind
@@ -798,8 +868,27 @@
     face the prose is actually set in, or it is not a reading measure.
     Every piece of chrome nested inside names its face explicitly.
   -->
+  <!--
+    Vertical rhythm, and why these two values and not the spec's literal
+    "2px": the gap above a row must not depend on whether the row above it
+    happened to render an actions row. `messageActions` is hidden with
+    `opacity`, never `display: none` (it has to stay in the tab order), so
+    it occupies ~26px of layout whenever `canReplyOrReact` is true and 0px
+    when it is not — a local echo, a failed send, anything without a server
+    event id yet. At `pt-0.5` that made the gap between two run
+    continuations 28px in the common case but **2px** in the other, which
+    is tighter than the 13.5px between two paragraphs of a *single*
+    message: two separate messages ended up closer together than two
+    paragraphs of one, inverting the hierarchy.
+
+    So the padding carries the rhythm on its own: 20px above a run
+    continuation (comfortably looser than the 13.5px intra-message
+    paragraph gap) and 32px above a new sender block (clearly looser again,
+    so a boundary still reads as a boundary). Both hold with or without an
+    actions row; the row only ever adds to them.
+  -->
   <div
-    class="flex {continuesRun ? 'pt-0.5' : 'pt-4'} {item.isOwn
+    class="flex {continuesRun ? 'pt-5' : 'pt-8'} {item.isOwn
       ? 'justify-end'
       : 'justify-start'}"
   >
@@ -887,442 +976,432 @@
       class="px-4"
     >
       {#snippet children(row: TimelineDisplayRow, _index: number)}
-        {#if row.type === "membershipGroup"}
-          <!--
-            A collapsed run of consecutive membership changes — see
-            `timelineGrouping.ts`. Same markup as an ordinary `system` line
-            below (`view.render === "system"`) so a collapsed line reads no
-            differently from an ungrouped one — including the wrap guard,
-            whose reasoning is spelled out there.
-          -->
-          <div class="flex justify-center py-2">
-            <span
-              class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
-              >{row.text}</span
-            >
-          </div>
-        {:else}
-          {@const item = row.item}
-          {@const continuesRun = row.continuesRun}
-          {#if item.kind === "dateDivider"}
+        <!--
+          The reading column (spec §6.3.0). *Every* row lays out inside one
+          centred `72ch` column: peer blocks align to its left edge, own
+          bubbles to its right edge, and dividers, log lines, emotes and
+          dispatch cards centre within it. Wrapping here — around the whole
+          row body rather than per branch — is what lets the `customEvent`
+          card inherit the same anchoring without that branch being touched.
+
+          This replaced viewport-relative alignment after the first
+          implementation was rendered and reviewed: at 1905px a reply sat
+          599px from the message it answered, in the very case where it
+          quotes its parent by name, and the pane read as two unrelated
+          columns with a void between them that grew with the window. The
+          own/peer asymmetry this design wants is one of *register* — sans
+          against serif, tight against airy, a ground against no ground —
+          and every bit of that survives inside a shared column. The
+          horizontal distance was never carrying meaning.
+
+          `font-serif text-body` on the column is load-bearing, not
+          inherited decoration: `ch` resolves against the element's own
+          font, so this is what makes the column's `72ch` and the peer
+          block's `68ch` the same unit and the two numbers actually
+          comparable (~540px and ~510px). Measured in the inherited 16px
+          sans instead, `72ch` would be ~691px — a coincidence rather than
+          a relationship, and wide enough to reopen the gap this exists to
+          close. Nothing depends on inheriting the face: every descendant
+          already names its own (`messageBlock`, `logLine`, the date
+          divider, the emote and the dispatch card all set theirs).
+        -->
+        <div class="mx-auto w-full max-w-[72ch] min-w-0 font-serif text-body">
+          {#if row.type === "membershipGroup"}
             <!--
-              A hairline with the date sitting *on* it, not a pill (spec
-              §6.3): the rule runs the full width behind an absolutely
-              positioned label that paints `--color-surface` over the
-              segment it occupies. `role="separator"` stays on the outer
-              element; only the rule itself is `aria-hidden`, so the date
-              is still announced.
+              A collapsed run of consecutive membership changes — see
+              `timelineGrouping.ts`. Literally the same row as an ungrouped
+              `system` line, because it renders through the same `logLine`
+              snippet rather than a copy of its markup.
             -->
-            <div class="relative flex items-center justify-center py-5" role="separator">
-              <span class="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true"></span>
-              <span
-                class="relative bg-surface px-3 font-mono text-label uppercase text-content-muted"
-              >
-                {formatDate(item.timestampMs)}
-              </span>
-            </div>
+            {@render logLine(row.text)}
           {:else}
-            {@const view = viewFor(item)}
-            {#if view.render === "bubble"}
-              {#snippet bubbleContent()}
-                {#if item.formattedBody}
-                  <!--
-                    `{@html}` — safe only because of the guarantees this
-                    file's top-of-script doc comment spells out in full
-                    (core-side sanitisation + hardening, never redone here).
-                    Do not copy this pattern onto any other field.
+            {@const item = row.item}
+            {@const continuesRun = row.continuesRun}
+            {#if item.kind === "dateDivider"}
+              <!--
+                A hairline with the date sitting *on* it, not a pill (spec
+                §6.3): the rule runs the full width behind an absolutely
+                positioned label that paints `--color-surface` over the
+                segment it occupies. `role="separator"` stays on the outer
+                element; only the rule itself is `aria-hidden`, so the date
+                is still announced.
+              -->
+              <div class="relative flex items-center justify-center py-5" role="separator">
+                <span class="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true"></span>
+                <span
+                  class="relative bg-surface px-3 font-mono text-label uppercase text-content-muted"
+                >
+                  {formatDate(item.timestampMs)}
+                </span>
+              </div>
+            {:else}
+              {@const view = viewFor(item)}
+              {#if view.render === "bubble"}
+                {#snippet bubbleContent()}
+                  {#if item.formattedBody}
+                    <!--
+                      `{@html}` — safe only because of the guarantees this
+                      file's top-of-script doc comment spells out in full
+                      (core-side sanitisation + hardening, never redone here).
+                      Do not copy this pattern onto any other field.
 
-                    `onclick`/`onauxclick` here are delegated link handling,
-                    not a control of their own — `handleMessageBodyClick`/
-                    `handleMessageBodyAuxClick` only act when the click
-                    bubbled up from a nested `<a href>`, and an `<a>`'s own
-                    native keyboard activation (Enter/Space) already
-                    dispatches a bubbling `click` the same way a primary
-                    mouse click does, so there is no extra keyboard handler
-                    this div itself needs to add. `onauxclick` specifically
-                    exists for the middle-click case `onclick` alone cannot
-                    see — see `messageLinks.ts`'s doc comment.
+                      `onclick`/`onauxclick` here are delegated link handling,
+                      not a control of their own — `handleMessageBodyClick`/
+                      `handleMessageBodyAuxClick` only act when the click
+                      bubbled up from a nested `<a href>`, and an `<a>`'s own
+                      native keyboard activation (Enter/Space) already
+                      dispatches a bubbling `click` the same way a primary
+                      mouse click does, so there is no extra keyboard handler
+                      this div itself needs to add. `onauxclick` specifically
+                      exists for the middle-click case `onclick` alone cannot
+                      see — see `messageLinks.ts`'s doc comment.
 
-                    No face or size class here on purpose: the enclosing
-                    message block already sets serif `--text-body` (peer) or
-                    sans `--text-body-own` (own), and `.message-html`'s own
-                    rules read through `currentColor` and `em` so they suit
-                    either.
-                  -->
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div
-                    class="message-html selectable {view.muted && !item.isOwn
-                      ? 'text-content-muted'
-                      : ''}"
-                    onclick={(e: MouseEvent) =>
-                      handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
-                    onauxclick={(e: MouseEvent) =>
-                      handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
-                  >
-                    {@html item.formattedBody}
-                  </div>
-                {:else}
+                      No face or size class here on purpose: the enclosing
+                      message block already sets serif `--text-body` (peer) or
+                      sans `--text-body-own` (own), and `.message-html`'s own
+                      rules read through `currentColor` and `em` so they suit
+                      either.
+                    -->
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                      class="message-html selectable {view.muted && !item.isOwn
+                        ? 'text-content-muted'
+                        : ''}"
+                      onclick={(e: MouseEvent) =>
+                        handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
+                      onauxclick={(e: MouseEvent) =>
+                        handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
+                    >
+                      {@html item.formattedBody}
+                    </div>
+                  {:else}
+                    <p
+                      class="selectable whitespace-pre-wrap break-words {view.muted && !item.isOwn
+                        ? 'text-content-muted'
+                        : ''}"
+                    >
+                      {item.body}
+                    </p>
+                  {/if}
+                {/snippet}
+                {@render messageBlock(item, continuesRun, bubbleContent)}
+              {:else if view.render === "emote"}
+                <!--
+                  Centred, serif *italic* — the one italic that survives in
+                  this file alongside `<em>` inside a message body, because
+                  the serif's italic is genuinely bundled (spec §6.3) and an
+                  emote is prose about the sender rather than a mono rank.
+                -->
+                <div class="flex justify-center px-4 py-2">
+                  <!-- `break-words` + `min-w-0`, same discipline as every
+                       other sender-controlled string in this file: both the
+                       display name and the body are arbitrary text, and a
+                       long space-free run in either would otherwise override
+                       this flex item's own `max-width`. -->
                   <p
-                    class="selectable whitespace-pre-wrap break-words {view.muted && !item.isOwn
-                      ? 'text-content-muted'
-                      : ''}"
+                    class="selectable min-w-0 max-w-[68ch] text-center font-serif text-body break-words text-content-muted italic"
                   >
+                    {item.senderDisplayName ?? item.sender ?? "Someone"}
                     {item.body}
                   </p>
-                {/if}
-              {/snippet}
-              {@render messageBlock(item, continuesRun, bubbleContent)}
-            {:else if view.render === "emote"}
-              <!--
-                Centred, serif *italic* — the one italic that survives in
-                this file alongside `<em>` inside a message body, because
-                the serif's italic is genuinely bundled (spec §6.3) and an
-                emote is prose about the sender rather than a mono rank.
-              -->
-              <div class="flex justify-center px-4 py-2">
-                <!-- `break-words` + `min-w-0`, same discipline as every
-                     other sender-controlled string in this file: both the
-                     display name and the body are arbitrary text, and a
-                     long space-free run in either would otherwise override
-                     this flex item's own `max-width`. -->
-                <p
-                  class="selectable min-w-0 max-w-[68ch] text-center font-serif text-body break-words text-content-muted italic"
-                >
-                  {item.senderDisplayName ?? item.sender ?? "Someone"}
-                  {item.body}
-                </p>
-              </div>
-            {:else if view.render === "image"}
-              {@const src = mediaCache.get(item.id)}
-              {@const failed = mediaCache.hasFailed(item.id)}
-              {#snippet imageContent()}
-                {#if failed}
-                  <!-- Never a broken-image icon: any failure — nothing
-                       renderable, a rejected fetch, or the <img> itself
-                       failing to decode — lands here. Mono and unitalicised
-                       like every other placeholder rank (spec §6.3), since
-                       what this line is really saying is "there is an image
-                       here that could not be shown". -->
-                  <p class="selectable font-mono text-meta text-content-faint break-words">
-                    {view.alt}
-                  </p>
-                {:else if src}
+                </div>
+              {:else if view.render === "image"}
+                {@const src = mediaCache.get(item.id)}
+                {@const failed = mediaCache.hasFailed(item.id)}
+                {#snippet imageContent()}
+                  {#if failed}
+                    <!-- Never a broken-image icon: any failure — nothing
+                         renderable, a rejected fetch, or the <img> itself
+                         failing to decode — lands here. Mono and unitalicised
+                         like every other placeholder rank (spec §6.3), since
+                         what this line is really saying is "there is an image
+                         here that could not be shown". -->
+                    <p class="selectable font-mono text-meta text-content-faint break-words">
+                      {view.alt}
+                    </p>
+                  {:else if src}
+                    <!--
+                      Content, not decoration — real `alt` text from the
+                      message (unlike the room list's decorative avatars,
+                      this is never `aria-hidden`).
+                    -->
+                    <img
+                      {src}
+                      alt={view.alt}
+                      class="block rounded-md object-cover"
+                      style={imageBoxStyle(view.width, view.height)}
+                      onerror={() => mediaCache.markFailed(item.id)}
+                    />
+                  {:else}
+                    <!-- Still fetching: reserves the identical box the
+                         loaded <img> above will occupy — see this file's
+                         top-of-script doc comment. -->
+                    <div
+                      class="animate-pulse rounded-md bg-surface-sunken"
+                      style={imageBoxStyle(view.width, view.height)}
+                    ></div>
+                  {/if}
+                {/snippet}
+                {@render messageBlock(item, continuesRun, imageContent)}
+              {:else if view.render === "mediaFile"}
+                <!--
+                  `m.file`/`m.audio`/`m.video`: an informative row (filename,
+                  size, kind), no playback or download action yet — see
+                  `.superpowers/sdd/2026-08-13-m0-spine/media-report.md` for
+                  what a follow-up would need to add either.
+
+                  Filename in sans, the kind/size line in mono (spec §6.3) —
+                  both named explicitly rather than inherited, since a peer
+                  block sets serif on itself for its `ch` measure. The icon
+                  and the sub-label both used to be `accent-content`-derived,
+                  which only worked against the accent-filled own bubble that
+                  no longer exists.
+                -->
+                {#snippet mediaFileContent()}
+                  <div class="selectable flex items-center gap-2">
+                    <span
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md font-mono text-ui font-medium text-content-muted {item.isOwn
+                        ? 'bg-surface'
+                        : 'bg-surface-sunken'}"
+                      aria-hidden="true"
+                    >
+                      {view.label[0]}
+                    </span>
+                    <span class="min-w-0">
+                      <!-- `truncate`, so no `break-words` — same reasoning as
+                           the reply quote's sender line above. -->
+                      <span class="block truncate font-sans text-ui font-medium">
+                        {view.filename}
+                      </span>
+                      <span class="mt-0.5 block font-mono text-meta text-content-muted">
+                        {view.label}{view.size != null ? ` · ${formatFileSize(view.size)}` : ""}
+                      </span>
+                    </span>
+                  </div>
+                {/snippet}
+                {@render messageBlock(item, continuesRun, mediaFileContent)}
+              {:else if view.render === "customEvent"}
+                <!--
+                  The dispatch card (spec §7) — a `kind: "customMessage"`
+                  item: Kaambaan cards/runs/permission requests/station status
+                  once those schemas land (`docs/matrix-events.md` §G), the
+                  demo renderer until then. `view.view` is the whole
+                  `resolveCustomEvent` outcome
+                  (`$lib/components/customEvents.ts`) — this block only
+                  switches on its `status`, never decides anything itself.
+                  See this file's top-of-script doc comment for the four
+                  decisions this markup expresses.
+
+                  Every value below is plain-text interpolation (`{...}`),
+                  never `{@html}`, never an `href`/`src`/inline style —
+                  `content` is arbitrary JSON from anyone who can send to the
+                  room, and `resolveCustomEvent` has already bounded its
+                  fields and validated its decision before either reaches
+                  here. `break-words` + the card's own `max-w-[68ch]`/
+                  `min-w-0` guard against a long unbroken value, label or
+                  option widening the card, the same discipline every other
+                  sender-controlled surface in this file follows.
+                -->
+                {#if view.view.status === "placeholder"}
                   <!--
-                    Content, not decoration — real `alt` text from the
-                    message (unlike the room list's decorative avatars,
-                    this is never `aria-hidden`).
+                    Not a card, on purpose (spec §7): a type this build cannot
+                    render at all is not worth a bordered object. Identical
+                    markup to the `system`/`placeholder` lines below, so it
+                    reads as the same quiet machine log — including the
+                    three-part wrap guard, whose reasoning is spelled out
+                    there. Mono and not italic, per spec §6.3.
                   -->
-                  <img
-                    {src}
-                    alt={view.alt}
-                    class="block rounded-md object-cover"
-                    style={imageBoxStyle(view.width, view.height)}
-                    onerror={() => mediaCache.markFailed(item.id)}
-                  />
+                  <div class="flex justify-center py-2">
+                    <span
+                      class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
+                      >{view.view.text}</span
+                    >
+                  </div>
                 {:else}
-                  <!-- Still fetching: reserves the identical box the
-                       loaded <img> above will occupy — see this file's
-                       top-of-script doc comment. -->
-                  <div
-                    class="animate-pulse rounded-md bg-surface-sunken"
-                    style={imageBoxStyle(view.width, view.height)}
-                  ></div>
-                {/if}
-              {/snippet}
-              {@render messageBlock(item, continuesRun, imageContent)}
-            {:else if view.render === "mediaFile"}
-              <!--
-                `m.file`/`m.audio`/`m.video`: an informative row (filename,
-                size, kind), no playback or download action yet — see
-                `.superpowers/sdd/2026-08-13-m0-spine/media-report.md` for
-                what a follow-up would need to add either.
+                  {@const decision =
+                    view.view.status === "rendered" ? view.view.decision : null}
+                  <!--
+                    `justify-start` unconditionally, and no `messageBlock`: a
+                    dispatch does not take a side (spec §7). `flex-1` +
+                    `max-w-[68ch]` makes it occupy the full reading measure
+                    rather than shrinking to its content, and `min-w-0` is the
+                    other half of the layout-blowout guard the block comment
+                    on the style rules at the foot of this file describes.
+                    `font-serif` on the wrapper both sets the face card values
+                    are read in and makes `68ch` resolve against that face, so
+                    a card is exactly as wide as a peer message.
+                  -->
+                  <div class="flex justify-start pt-4">
+                    <div class="group min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
+                      <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
+                        <!--
+                          Header: the event type left, the timestamp right, a
+                          hairline beneath. Both mono — an event type and a
+                          time are data (spec §5.3). `displayEventType`
+                          truncates the type from the *left*; see its doc
+                          comment for why that is a pure helper and not a
+                          `direction: rtl` trick.
+                        -->
+                        <div
+                          class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
+                        >
+                          <span class="min-w-0 flex-1 text-label uppercase break-words">
+                            {displayEventType(item.detail)}
+                          </span>
+                          <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
+                        </div>
+                        {#if view.view.status === "rendered"}
+                          <dl class="selectable m-0 px-3 py-2">
+                            <!--
+                              A real `<dl>`: these rows are label/value pairs,
+                              and a screen reader should read them as such
+                              rather than as a run of unrelated lines. Keyed
+                              by index, not `field.label` — a renderer's
+                              fields are trusted (registered application code,
+                              not an array read straight off the payload), but
+                              a duplicate label is still possible and
+                              shouldn't be able to confuse Svelte's keyed
+                              reconciliation.
 
-                Filename in sans, the kind/size line in mono (spec §6.3) —
-                both named explicitly rather than inherited, since a peer
-                block sets serif on itself for its `ch` measure. The icon
-                and the sub-label both used to be `accent-content`-derived,
-                which only worked against the accent-filled own bubble that
-                no longer exists.
-              -->
-              {#snippet mediaFileContent()}
-                <div class="selectable flex items-center gap-2">
-                  <span
-                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md font-mono text-ui font-medium text-content-muted {item.isOwn
-                      ? 'bg-surface'
-                      : 'bg-surface-sunken'}"
-                    aria-hidden="true"
-                  >
-                    {view.label[0]}
-                  </span>
-                  <span class="min-w-0">
-                    <!-- `truncate`, so no `break-words` — same reasoning as
-                         the reply quote's sender line above. -->
-                    <span class="block truncate font-sans text-ui font-medium">
-                      {view.filename}
-                    </span>
-                    <span class="mt-0.5 block font-mono text-meta text-content-muted">
-                      {view.label}{view.size != null ? ` · ${formatFileSize(view.size)}` : ""}
-                    </span>
-                  </span>
-                </div>
-              {/snippet}
-              {@render messageBlock(item, continuesRun, mediaFileContent)}
-            {:else if view.render === "customEvent"}
-              <!--
-                The dispatch card (spec §7) — a `kind: "customMessage"`
-                item: Kaambaan cards/runs/permission requests/station status
-                once those schemas land (`docs/matrix-events.md` §G), the
-                demo renderer until then. `view.view` is the whole
-                `resolveCustomEvent` outcome
-                (`$lib/components/customEvents.ts`) — this block only
-                switches on its `status`, never decides anything itself.
-                See this file's top-of-script doc comment for the four
-                decisions this markup expresses.
-
-                Every value below is plain-text interpolation (`{...}`),
-                never `{@html}`, never an `href`/`src`/inline style —
-                `content` is arbitrary JSON from anyone who can send to the
-                room, and `resolveCustomEvent` has already bounded its
-                fields and validated its decision before either reaches
-                here. `break-words` + the card's own `max-w-[68ch]`/
-                `min-w-0` guard against a long unbroken value, label or
-                option widening the card, the same discipline every other
-                sender-controlled surface in this file follows.
-              -->
-              {#if view.view.status === "placeholder"}
-                <!--
-                  Not a card, on purpose (spec §7): a type this build cannot
-                  render at all is not worth a bordered object. Identical
-                  markup to the `system`/`placeholder` lines below, so it
-                  reads as the same quiet machine log — including the
-                  three-part wrap guard, whose reasoning is spelled out
-                  there. Mono and not italic, per spec §6.3.
-                -->
-                <div class="flex justify-center py-2">
-                  <span
-                    class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
-                    >{view.view.text}</span
-                  >
-                </div>
-              {:else}
-                {@const decision =
-                  view.view.status === "rendered" ? view.view.decision : null}
-                <!--
-                  `justify-start` unconditionally, and no `messageBlock`: a
-                  dispatch does not take a side (spec §7). `flex-1` +
-                  `max-w-[68ch]` makes it occupy the full reading measure
-                  rather than shrinking to its content, and `min-w-0` is the
-                  other half of the layout-blowout guard the block comment
-                  on the style rules at the foot of this file describes.
-                  `font-serif` on the wrapper both sets the face card values
-                  are read in and makes `68ch` resolve against that face, so
-                  a card is exactly as wide as a peer message.
-                -->
-                <div class="flex justify-start pt-4">
-                  <div class="group min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
-                    <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
-                      <!--
-                        Header: the event type left, the timestamp right, a
-                        hairline beneath. Both mono — an event type and a
-                        time are data (spec §5.3). `displayEventType`
-                        truncates the type from the *left*; see its doc
-                        comment for why that is a pure helper and not a
-                        `direction: rtl` trick.
-                      -->
-                      <div
-                        class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
-                      >
-                        <span class="min-w-0 flex-1 text-label uppercase break-words">
-                          {displayEventType(item.detail)}
-                        </span>
-                        <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
-                      </div>
-                      {#if view.view.status === "rendered"}
-                        <dl class="selectable m-0 px-3 py-2">
-                          <!--
-                            A real `<dl>`: these rows are label/value pairs,
-                            and a screen reader should read them as such
-                            rather than as a run of unrelated lines. Keyed
-                            by index, not `field.label` — a renderer's
-                            fields are trusted (registered application code,
-                            not an array read straight off the payload), but
-                            a duplicate label is still possible and
-                            shouldn't be able to confuse Svelte's keyed
-                            reconciliation.
-
-                            The label column is a fixed `9ch` (spec §7),
-                            measured in the label's own mono face because
-                            `ch` resolves against the element's own font.
-                            `break-words` inside it because a label is
-                            bounded at 60 chars, not at 9.
-                          -->
-                          {#each view.view.fields as field, i (i)}
-                            <div class="flex items-baseline gap-3 {i > 0 ? 'mt-1' : ''}">
-                              <dt
-                                class="w-[9ch] shrink-0 font-mono text-label uppercase break-words text-content-muted"
-                              >
-                                {field.label}
-                              </dt>
-                              <dd class="m-0 min-w-0 flex-1 break-words">{field.value}</dd>
-                            </div>
-                          {/each}
-                        </dl>
-                        {#if view.view.newerVersion}
-                          <!--
-                            Faint mono, and emphatically *not* amber: this
-                            is a note, not a decision, and amber is reserved
-                            (spec §3). Not italic either — no mono italic is
-                            bundled (spec §6.3).
-                          -->
-                          <p class="px-3 pb-2 font-mono text-meta text-content-faint">
-                            Shown from a newer version of this event
+                              The label column is a fixed `9ch` (spec §7),
+                              measured in the label's own mono face because
+                              `ch` resolves against the element's own font.
+                              `break-words` inside it because a label is
+                              bounded at 60 chars, not at 9.
+                            -->
+                            {#each view.view.fields as field, i (i)}
+                              <div class="flex items-baseline gap-3 {i > 0 ? 'mt-1' : ''}">
+                                <dt
+                                  class="w-[9ch] shrink-0 font-mono text-label uppercase break-words text-content-muted"
+                                >
+                                  {field.label}
+                                </dt>
+                                <dd class="m-0 min-w-0 flex-1 break-words">{field.value}</dd>
+                              </div>
+                            {/each}
+                          </dl>
+                          {#if view.view.newerVersion}
+                            <!--
+                              Faint mono, and emphatically *not* amber: this
+                              is a note, not a decision, and amber is reserved
+                              (spec §3). Not italic either — no mono italic is
+                              bundled (spec §6.3).
+                            -->
+                            <p class="px-3 pb-2 font-mono text-meta text-content-faint">
+                              Shown from a newer version of this event
+                            </p>
+                          {/if}
+                        {:else}
+                          <!-- status === "fallbackBody": the plain-text
+                               `content.body` Matrix convention puts on every
+                               suite custom event, for a type this build has
+                               no renderer for. Serif, no field grid (spec
+                               §7) — it is prose, not data. -->
+                          <p class="selectable px-3 py-2 whitespace-pre-wrap break-words">
+                            {view.view.text}
                           </p>
                         {/if}
-                      {:else}
-                        <!-- status === "fallbackBody": the plain-text
-                             `content.body` Matrix convention puts on every
-                             suite custom event, for a type this build has
-                             no renderer for. Serif, no field grid (spec
-                             §7) — it is prose, not data. -->
-                        <p class="selectable px-3 py-2 whitespace-pre-wrap break-words">
-                          {view.view.text}
-                        </p>
-                      {/if}
-                      {#if decision}
-                        <!--
-                          UNREACHABLE IN THIS BUILD — do not go looking for
-                          these buttons in the running app. No shipped
-                          renderer sets `CustomEventRenderResult.decision`
-                          (`customEvents.ts` "Decisions"; the demo renderer
-                          never does, and a unit test holds it that way), so
-                          `resolveCustomEvent` returns `decision: null` for
-                          every real event and this block never executes.
-                          That is spec §7.1's requirement — "do not ship a
-                          visible button that does nothing" — and the reason
-                          `onDecide` is inert. Kaambaan's permission-request
-                          renderer plus its gate-resolution REST call
-                          (`docs/positioning.md`, wedge #3) are what make
-                          this live; the slot is covered by unit tests
-                          against a fixture renderer so it ships proven
-                          rather than speculative.
-
-                          Everything here is bounded and validated by
-                          `boundDecision` before it arrives: the prompt is a
-                          string capped at 300 chars, and there are at most
-                          four options, each with a string `id` and a string
-                          `label` capped at 60. A malformed decision is
-                          `null` by then, so this block cannot render a
-                          half-built control.
-                        -->
-                        <div class="border-t border-border px-3 py-2">
-                          <p class="selectable break-words">{decision.prompt}</p>
+                        {#if decision}
                           <!--
-                            The only amber in the application (spec §7.1),
-                            alongside this card's left edge and ground. It
-                            says the operator owes someone an answer.
+                            UNREACHABLE IN THIS BUILD — do not go looking for
+                            these buttons in the running app. No shipped
+                            renderer sets `CustomEventRenderResult.decision`
+                            (`customEvents.ts` "Decisions"; the demo renderer
+                            never does, and a unit test holds it that way), so
+                            `resolveCustomEvent` returns `decision: null` for
+                            every real event and this block never executes.
+                            That is spec §7.1's requirement — "do not ship a
+                            visible button that does nothing" — and the reason
+                            `onDecide` is inert. Kaambaan's permission-request
+                            renderer plus its gate-resolution REST call
+                            (`docs/positioning.md`, wedge #3) are what make
+                            this live; the slot is covered by unit tests
+                            against a fixture renderer so it ships proven
+                            rather than speculative.
+
+                            Everything here is bounded and validated by
+                            `boundDecision` before it arrives: the prompt is a
+                            string capped at 300 chars, and there are at most
+                            four options, each with a string `id` and a string
+                            `label` capped at 60. A malformed decision is
+                            `null` by then, so this block cannot render a
+                            half-built control.
                           -->
-                          <p class="mt-2 font-mono text-label uppercase text-signal">
-                            Awaiting your decision
-                          </p>
-                          <div class="mt-1.5 flex flex-wrap gap-2">
+                          <div class="border-t border-border px-3 py-2">
+                            <p class="selectable break-words">{decision.prompt}</p>
                             <!--
-                              Keyed by index, not `option.id`, and for a
-                              sharper reason than the field grid above:
-                              `boundDecision` guarantees each `id` is a
-                              string, but nothing makes two options' ids
-                              *distinct* — a renderer echoing a payload
-                              could easily produce two `"approve"`s, and a
-                              duplicate key is a Svelte runtime error
-                              (`each_key_duplicate`) that would take the
-                              whole timeline render down. The id is still
-                              what `onDecide` receives; it is never a key
-                              and never reaches the DOM.
+                              The only amber in the application (spec §7.1),
+                              alongside this card's left edge and ground. It
+                              says the operator owes someone an answer.
                             -->
-                            {#each decision.options as option, i (i)}
-                              <button
-                                type="button"
-                                onclick={() => onDecide(item.id, option.id)}
-                                class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised"
-                              >
-                                {option.label}
-                              </button>
-                            {/each}
+                            <p class="mt-2 font-mono text-label uppercase text-signal">
+                              Awaiting your decision
+                            </p>
+                            <div class="mt-1.5 flex flex-wrap gap-2">
+                              <!--
+                                Keyed by index, not `option.id`, and for a
+                                sharper reason than the field grid above:
+                                `boundDecision` guarantees each `id` is a
+                                string, but nothing makes two options' ids
+                                *distinct* — a renderer echoing a payload
+                                could easily produce two `"approve"`s, and a
+                                duplicate key is a Svelte runtime error
+                                (`each_key_duplicate`) that would take the
+                                whole timeline render down. The id is still
+                                what `onDecide` receives; it is never a key
+                                and never reaches the DOM.
+                              -->
+                              {#each decision.options as option, i (i)}
+                                <button
+                                  type="button"
+                                  onclick={() => onDecide(item.id, option.id)}
+                                  class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised"
+                                >
+                                  {option.label}
+                                </button>
+                              {/each}
+                            </div>
                           </div>
-                        </div>
-                      {/if}
+                        {/if}
+                      </div>
+                      <!--
+                        Outside the bordered object, not inside it: the card
+                        is the dispatch, and these are this reader's
+                        affordances against it — the same relationship, and
+                        the same shared snippets, a message block has. They
+                        anchor to `item.isOwn`, which for a dispatch is always
+                        false in practice (this client cannot send a custom
+                        event), so in this build they always sit left with the
+                        card's own edge.
+                      -->
+                      {@render reactionsRow(item)}
+                      {@render messageActions(item)}
+                      {@render seenMarker(item)}
                     </div>
-                    <!--
-                      Outside the bordered object, not inside it: the card
-                      is the dispatch, and these are this reader's
-                      affordances against it — the same relationship, and
-                      the same shared snippets, a message block has. They
-                      anchor to `item.isOwn`, which for a dispatch is always
-                      false in practice (this client cannot send a custom
-                      event), so in this build they always sit left with the
-                      card's own edge.
-                    -->
-                    {@render reactionsRow(item)}
-                    {@render messageActions(item)}
-                    {@render seenMarker(item)}
                   </div>
-                </div>
+                {/if}
+              {:else if view.render === "system"}
+                <!-- Membership lines, room creation, encryption enabled, room
+                     replaced — see `logLine` for why this row looks the way
+                     it does and what its wrap guard is protecting. -->
+                {@render logLine(view.text)}
+              {:else if view.render === "placeholder"}
+                <!--
+                  Anything the reader must be told about but this build can't
+                  render fully yet: undecryptable events on a fresh device
+                  (the common case in a real encrypted room), redactions,
+                  media, stickers, polls, custom suite events. Never the bare
+                  empty bubble that rendering nothing used to produce — see
+                  `timelineItemView.ts`. Rendered as the same log row as a
+                  system line, deliberately: see `logLine`.
+                -->
+                {@render logLine(view.text)}
               {/if}
-            {:else if view.render === "system"}
-              <!--
-                Membership lines, room creation, encryption enabled, room
-                replaced. Centred, mono and faint so a history full of them
-                reads as a quiet machine log rather than as messages — mono
-                means machine, spec §5.3.
-
-                `min-w-0` + `max-w` + `break-words`, the same three-part
-                guard every other sender-controlled string in this file
-                carries: `view.text` is built from `attributedName`, which
-                is the sender's own *unbounded* display name, and this line
-                previously had none of them. Measured with the 4700px-table
-                harness that the style block's comment describes: a single
-                5000-character display name pushed this row's scroll width
-                to 16515px against a 1563px column. `break-words` alone is
-                not enough — `overflow-wrap: break-word` does not reduce an
-                element's min-content size, so a flex item's automatic
-                minimum size still holds the row open until `min-w-0` lets
-                it shrink.
-              -->
-              <div class="flex justify-center py-2">
-                <span
-                  class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
-                  >{view.text}</span
-                >
-              </div>
-            {:else if view.render === "placeholder"}
-              <!--
-                Anything the reader must be told about but this build can't
-                render fully yet: undecryptable events on a fresh device
-                (the common case in a real encrypted room), redactions,
-                media, stickers, polls, custom suite events. Never the bare
-                empty bubble that rendering nothing used to produce — see
-                `timelineItemView.ts`.
-
-                Same rank as a system line, and deliberately *not* italic:
-                `font-synthesis: none` plus no bundled mono italic means an
-                italic here would render upright anyway, and the mono face
-                already marks the line as secondary (spec §6.3).
-
-                Same wrap guard as the system line above, for the same
-                reason: `Unsupported message (${msgtype})` and
-                `Unsupported event (${detail})` both interpolate a
-                sender-controlled string.
-              -->
-              <div class="flex justify-center py-2">
-                <span
-                  class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
-                  >{view.text}</span
-                >
-              </div>
+              <!-- view.render === "none": deliberately silent, see `timelineItemView.ts`. -->
             {/if}
-            <!-- view.render === "none": deliberately silent, see `timelineItemView.ts`. -->
           {/if}
-        {/if}
+        </div>
       {/snippet}
     </VList>
   {/if}
@@ -1412,7 +1491,20 @@
    * "widens the block, and with it the whole window"
    * (`document.documentElement.scrollWidth`, measured in review, grew to
    * 4700px against a 1905px viewport from a single 300-`<td>` message
-   * before this fix). `core::timeline::harden_formatted_body`'s lowered
+   * before this fix).
+   *
+   * **Measure the scroller, not the document, when you re-verify this.**
+   * `document.documentElement.scrollWidth === window.innerWidth` is the
+   * obvious assertion and it is *insensitive*: it passes with the guard
+   * removed entirely, because `+page.svelte`'s own `min-w-0` and this
+   * scroller's forced `overflow-x` absorb the overflow before it ever
+   * reaches the document. The discriminating number is the VList
+   * scroller's own `scrollWidth` against its `clientWidth` — 38415px
+   * versus 1602px on the same content, guard off versus on. Both halves
+   * of the guard earn their place under that measure, at different
+   * widths: `max-width` is what holds at 1905px, `min-w-0` at 700px.
+   *
+   * `core::timeline::harden_formatted_body`'s lowered
    * `max_depth` bounds nested `<ul>`/`<ol>`/`<blockquote>` for the same
    * reason from the other side — capping how deep the indentation in
    * `ul`/`ol`/`blockquote` below can compound in the first place, rather
