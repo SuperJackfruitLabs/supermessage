@@ -1,0 +1,176 @@
+// Regression test for the room-switch race described in
+// `timeline.svelte.ts`'s module doc comment: a room-A envelope arriving in
+// the window between `subscribeTo("!b")` resetting local tracking and the
+// core actually installing room B's subscription.
+//
+// Before this was fixed, that envelope read as a gap (seq 12 against a
+// tracker expecting 1), the resync it triggered — a fast mutex read — beat
+// the slow `room.timeline()` build and was served out of room A's
+// still-installed handle, and room B's stream then started at seq 1 and was
+// discarded as duplicates. Room A's messages rendered under room B's header
+// until the next room switch.
+//
+// The fix is that the timeline channel's `subject` (the room id, stamped by
+// the core on every envelope and now returned by `timeline_resync` too) is
+// actually read: anything whose subject isn't the focused room is dropped,
+// rather than mistaken for a gap in the focused room's stream.
+//
+// Fakes only — no Tauri runtime.
+
+import { describe, expect, it, vi } from "vitest";
+import { createTimelineStore } from "./timeline.svelte";
+import type { DiffEnvelope } from "./diff";
+import type { TimelineItem } from "$lib/ipc";
+
+const ROOM_A = "!a:example.org";
+const ROOM_B = "!b:example.org";
+
+function item(id: string): TimelineItem {
+  return {
+    id,
+    kind: "m.room.message",
+    sender: "@someone:example.org",
+    senderDisplayName: null,
+    body: id,
+    timestampMs: 1_700_000_000_000,
+    isOwn: false,
+    sendState: null,
+  };
+}
+
+function env(
+  subject: string,
+  seq: number,
+  ops: DiffEnvelope<TimelineItem>["ops"],
+): DiffEnvelope<TimelineItem> {
+  return { channel: "timeline", subject, seq, ops };
+}
+
+/** Fake `sm://timeline/diff` channel; captures the handler synchronously. */
+function makeChannel() {
+  let handler: ((env: DiffEnvelope<TimelineItem>) => void) | null = null;
+  return {
+    onTimelineDiff: (onEnvelope: (env: DiffEnvelope<TimelineItem>) => void) => {
+      handler = onEnvelope;
+      return Promise.resolve(() => {
+        handler = null;
+      });
+    },
+    emit: (envelope: DiffEnvelope<TimelineItem>) => handler?.(envelope),
+  };
+}
+
+/** A promise the test resolves by hand, to hold a command "in flight". */
+function makeDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/** Lets already-queued microtasks (a resolved resync's continuation) run. */
+function flush(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0));
+}
+
+describe("timelineStore: switching rooms while the previous room is still streaming", () => {
+  it("ignores the previous room's envelopes and its resync snapshot", async () => {
+    const channel = makeChannel();
+
+    // `timeline_subscribe` for room B is slow — it has to build
+    // `room.timeline()`. Held open so the test can drive the exact window
+    // the bug lived in.
+    const subscribeB = makeDeferred<void>();
+    const timelineSubscribe = vi.fn(async (roomId: string) => {
+      if (roomId === ROOM_B) await subscribeB.promise;
+    });
+
+    // `timeline_resync` is a mutex read, so it is fast — and while room B's
+    // subscribe is still in flight, the core serves it out of room A's
+    // still-installed handle, at room A's high seq. That is exactly what
+    // this fake returns.
+    const timelineResync = vi.fn(
+      async () => [ROOM_A, 12, [item("a1"), item("a2")]] as [string, number, TimelineItem[]],
+    );
+
+    const store = createTimelineStore({
+      timelineSubscribe,
+      timelinePaginateBack: vi.fn(),
+      timelineResync,
+      sendMessage: vi.fn(),
+      onTimelineDiff: channel.onTimelineDiff,
+    });
+
+    // Room A is focused and has been streaming for a while.
+    await store.subscribeTo(ROOM_A);
+    channel.emit(env(ROOM_A, 1, [{ op: "reset", values: [item("a1")] }]));
+    channel.emit(env(ROOM_A, 2, [{ op: "pushBack", value: item("a2") }]));
+    expect(store.items.map((i) => i.id)).toEqual(["a1", "a2"]);
+
+    // The user clicks room B. The subscribe command is now in flight.
+    const switching = store.subscribeTo(ROOM_B);
+    expect(store.items).toEqual([]);
+
+    // Room A's subscription has not been replaced yet, and emits again.
+    channel.emit(env(ROOM_A, 3, [{ op: "pushBack", value: item("a3") }]));
+    await flush();
+
+    // Dropped as not-ours. Critically it must not have been read as a gap:
+    // a gap here resyncs off room A and installs A's items at A's seq.
+    expect(timelineResync).not.toHaveBeenCalled();
+    expect(store.items).toEqual([]);
+
+    // Room B's subscription is finally installed and starts at seq 1.
+    subscribeB.resolve();
+    await switching;
+    channel.emit(env(ROOM_B, 1, [{ op: "reset", values: [item("b1")] }]));
+    channel.emit(env(ROOM_B, 2, [{ op: "pushBack", value: item("b2") }]));
+
+    // The pane shows room B. Before the fix it showed room A's messages
+    // here, permanently — B's seq 1 and 2 were below the expected sequence
+    // the stale resync had left behind, so both were discarded as
+    // duplicates.
+    expect(store.items.map((i) => i.id)).toEqual(["b1", "b2"]);
+  });
+
+  it("discards a resync snapshot that resolves for the room we just left", async () => {
+    const channel = makeChannel();
+
+    const subscribeB = makeDeferred<void>();
+    const timelineSubscribe = vi.fn(async (roomId: string) => {
+      if (roomId === ROOM_B) await subscribeB.promise;
+    });
+
+    const resyncResult = makeDeferred<[string, number, TimelineItem[]]>();
+    const timelineResync = vi.fn(() => resyncResult.promise);
+
+    const store = createTimelineStore({
+      timelineSubscribe,
+      timelinePaginateBack: vi.fn(),
+      timelineResync,
+      sendMessage: vi.fn(),
+      onTimelineDiff: channel.onTimelineDiff,
+    });
+
+    await store.subscribeTo(ROOM_A);
+    channel.emit(env(ROOM_A, 1, [{ op: "reset", values: [item("a1")] }]));
+
+    // A genuine gap in room A's own stream starts a resync.
+    channel.emit(env(ROOM_A, 9, []));
+    expect(timelineResync).toHaveBeenCalledTimes(1);
+
+    // The user switches to room B before it lands, and it then resolves
+    // with room A's snapshot.
+    const switching = store.subscribeTo(ROOM_B);
+    resyncResult.resolve([ROOM_A, 9, [item("a1"), item("a9")]]);
+    await flush();
+
+    expect(store.items).toEqual([]);
+
+    subscribeB.resolve();
+    await switching;
+    channel.emit(env(ROOM_B, 1, [{ op: "reset", values: [item("b1")] }]));
+    expect(store.items.map((i) => i.id)).toEqual(["b1"]);
+  });
+});

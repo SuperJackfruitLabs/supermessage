@@ -4,11 +4,20 @@
 // required.
 
 import { describe, expect, it, vi } from "vitest";
-import { startGapSync, type Unlisten } from "./gapSync";
+import { startGapSync, type Snapshot, type Unlisten } from "./gapSync";
 import type { DiffEnvelope } from "./diff";
 
 function env<T>(seq: number, ops: DiffEnvelope<T>["ops"]): DiffEnvelope<T> {
   return { channel: "test", subject: "", seq, ops };
+}
+
+/** Like {@link env}, but for the multi-subject case `accepts` guards. */
+function subjectEnv<T>(
+  subject: string,
+  seq: number,
+  ops: DiffEnvelope<T>["ops"],
+): DiffEnvelope<T> {
+  return { channel: "test", subject, seq, ops };
 }
 
 /** A fake event channel: `subscribe` captures the handler synchronously so
@@ -62,7 +71,7 @@ describe("startGapSync: gap -> resync-in-flight -> reset ordering", () => {
   it("suspends applying envelopes while a resync is in flight, then resumes from the reset snapshot", async () => {
     const channel = makeChannel<number>();
     const updates: number[][] = [];
-    const deferred = makeDeferred<[number, number[]]>();
+    const deferred = makeDeferred<Snapshot<number>>();
     const resync = vi.fn(() => deferred.promise);
 
     startGapSync<number>({
@@ -88,7 +97,7 @@ describe("startGapSync: gap -> resync-in-flight -> reset ordering", () => {
     expect(updates.at(-1)).toEqual([1]);
 
     // The resync lands: hard reset to its snapshot.
-    deferred.resolve([5, [7, 8]]);
+    deferred.resolve({ subject: "", seq: 5, items: [7, 8] });
     await vi.waitFor(() => expect(updates.at(-1)).toEqual([7, 8]));
 
     // The core guarantees the next live envelope after a resync is
@@ -100,7 +109,7 @@ describe("startGapSync: gap -> resync-in-flight -> reset ordering", () => {
 
   it("never issues two overlapping resyncs for the same channel", () => {
     const channel = makeChannel<number>();
-    const deferred = makeDeferred<[number, number[]]>();
+    const deferred = makeDeferred<Snapshot<number>>();
     const resync = vi.fn(() => deferred.promise);
 
     startGapSync<number>({
@@ -123,7 +132,7 @@ describe("startGapSync: resetForNewSubscription", () => {
   it("publishes an empty list immediately and discards a resync that was already in flight", async () => {
     const channel = makeChannel<string>();
     const updates: string[][] = [];
-    const deferred = makeDeferred<[number, string[]]>();
+    const deferred = makeDeferred<Snapshot<string>>();
     const resync = vi.fn(() => deferred.promise);
 
     const sync = startGapSync<string>({
@@ -144,7 +153,7 @@ describe("startGapSync: resetForNewSubscription", () => {
 
     // The stale resync now resolves with data belonging to the old
     // context. It must not be allowed to clobber the freshly reset state.
-    deferred.resolve([5, ["stale"]]);
+    deferred.resolve({ subject: "", seq: 5, items: ["stale"] });
     await vi.waitFor(() => expect(resync).toHaveBeenCalledTimes(1));
     // Give the (discarded) continuation a turn to run before asserting it
     // had no effect.
@@ -160,7 +169,7 @@ describe("startGapSync: resetForNewSubscription", () => {
     const channel = makeChannel<string>();
     const updates: string[][] = [];
     let call = 0;
-    const deferreds = [makeDeferred<[number, string[]]>(), makeDeferred<[number, string[]]>()];
+    const deferreds = [makeDeferred<Snapshot<string>>(), makeDeferred<Snapshot<string>>()];
     const resync = vi.fn(() => deferreds[call++].promise);
 
     const sync = startGapSync<string>({
@@ -181,13 +190,75 @@ describe("startGapSync: resetForNewSubscription", () => {
 
     // Once the stale resync clears (and is discarded, per the previous
     // test), the new context's own gap can now be served.
-    deferreds[0].resolve([5, ["stale"]]);
+    deferreds[0].resolve({ subject: "", seq: 5, items: ["stale"] });
     await vi.waitFor(() => expect(updates.at(-1)).toEqual([]));
 
     channel.emit(env(4, [])); // a fresh gap in the new context
     expect(resync).toHaveBeenCalledTimes(2);
-    deferreds[1].resolve([4, ["fresh"]]);
+    deferreds[1].resolve({ subject: "", seq: 4, items: ["fresh"] });
     await vi.waitFor(() => expect(updates.at(-1)).toEqual(["fresh"]));
+  });
+});
+
+describe("startGapSync: accepts (subject filtering)", () => {
+  it("drops an envelope for another subject instead of treating it as a gap", () => {
+    const channel = makeChannel<string>();
+    const updates: string[][] = [];
+    const resync = vi.fn();
+    let focused = "!a:x";
+
+    startGapSync<string>({
+      subscribe: channel.subscribe,
+      resync,
+      onUpdate: (items) => updates.push(items),
+      accepts: (subject) => subject === focused,
+    });
+
+    channel.emit(subjectEnv("!a:x", 1, [{ op: "pushBack", value: "a1" }]));
+    expect(updates.at(-1)).toEqual(["a1"]);
+
+    // The caller switches subject; the old subject's stream is still live.
+    focused = "!b:x";
+    channel.emit(subjectEnv("!a:x", 2, [{ op: "pushBack", value: "a2" }]));
+
+    // Not applied, and — the part that matters — not read as a gap either.
+    // A gap here would resync off the subject we just left.
+    expect(updates.at(-1)).toEqual(["a1"]);
+    expect(resync).not.toHaveBeenCalled();
+  });
+
+  it("discards a resync snapshot belonging to another subject", async () => {
+    const channel = makeChannel<string>();
+    const updates: string[][] = [];
+    const deferred = makeDeferred<Snapshot<string>>();
+    const resync = vi.fn(() => deferred.promise);
+    let focused = "!a:x";
+
+    startGapSync<string>({
+      subscribe: channel.subscribe,
+      resync,
+      onUpdate: (items) => updates.push(items),
+      accepts: (subject) => subject === focused,
+    });
+
+    // A real gap on the focused subject starts a resync.
+    channel.emit(subjectEnv("!a:x", 5, []));
+    expect(resync).toHaveBeenCalledTimes(1);
+
+    // The caller switches subject before it lands, and the core — which
+    // serves a resync out of whichever subscription is currently installed
+    // — answers with the *previous* subject's snapshot.
+    focused = "!b:x";
+    deferred.resolve({ subject: "!a:x", seq: 5, items: ["a-stale"] });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(updates.at(-1)).not.toEqual(["a-stale"]);
+
+    // And the new subject's stream, starting back at seq 1, applies
+    // normally — which it could not have if the stale snapshot had pushed
+    // the expected sequence up to 6.
+    channel.emit(subjectEnv("!b:x", 1, [{ op: "pushBack", value: "b1" }]));
+    expect(updates.at(-1)).toEqual(["b1"]);
   });
 });
 

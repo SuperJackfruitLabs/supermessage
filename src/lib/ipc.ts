@@ -147,12 +147,20 @@ export async function timelinePaginateBack(count: number): Promise<boolean> {
 }
 
 /**
- * A full snapshot of the focused timeline for resync after a detected gap,
- * shaped the same way as {@link roomsResync}: a 2-element `[seq, items]`
- * array, not an object.
+ * A full snapshot of the focused timeline for resync after a detected gap.
+ * A positional array like {@link roomsResync}, but a 3-element one:
+ * `[subject, seq, items]`, where `subject` is the room id the snapshot
+ * belongs to.
+ *
+ * The room id is load-bearing, not informational. The core serves this out
+ * of whichever timeline subscription is currently installed, which during a
+ * room switch is still the *previous* room's — a caller that folds the
+ * result in without checking `subject` will show the previous room's
+ * messages under the new room's header, permanently. See
+ * `core::timeline::TimelineSnapshot` for the full sequence.
  */
-export async function timelineResync(): Promise<[number, TimelineItem[]]> {
-  return invoke<[number, TimelineItem[]]>("timeline_resync");
+export async function timelineResync(): Promise<[string, number, TimelineItem[]]> {
+  return invoke<[string, number, TimelineItem[]]>("timeline_resync");
 }
 
 /** Sends a plain-text message to the focused room. */
