@@ -22,6 +22,10 @@
 // working `login`/`restoreSession` function without also being given the
 // re-arm callback — see that function's doc comment for why a bare export
 // with a warning comment wasn't enough.
+//
+// The mirror-image hazard is arming the tracker for a stream that isn't
+// going to restart, which is just as corrupting and was the actual bug
+// shipped on this branch: see `restoreSession` below.
 
 import {
   logout as defaultLogout,
@@ -50,10 +54,21 @@ const defaultDeps: RoomsStoreDeps = {
 export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
   let rooms = $state<RoomSummary[]>([]);
   let selectedId = $state<string | null>(null);
+  // Whether a session is already established in the core. Not `$state`:
+  // nothing renders it, and `restoreSession` must read it synchronously
+  // before its first await.
+  let sessionActive = false;
 
   const gapSync = startGapSync<RoomSummary>({
     subscribe: (onEnvelope) => deps.onRoomsDiff(onEnvelope),
-    resync: () => deps.roomsResync(),
+    // The room-list channel has a single subject (the core stamps every
+    // envelope with `""`), so there is nothing to filter on and no
+    // `accepts` predicate — unlike the timeline channel, whose subject is
+    // the focused room. See `timeline.svelte.ts`.
+    resync: async () => {
+      const [seq, items] = await deps.roomsResync();
+      return { subject: "", seq, items };
+    },
     onUpdate: (next) => {
       rooms = next;
     },
@@ -62,18 +77,56 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
   // The only way to obtain `login`/`restoreSession` — supplying the arm
   // callback isn't optional, it's how you get the functions in the first
   // place.
-  const { login, restoreSession } = deps.makeSessionCommands(() => gapSync.resetForNewSubscription());
+  const commands = deps.makeSessionCommands(() => gapSync.resetForNewSubscription());
+
+  /** Logs in, and records that a session is now established. */
+  async function login(homeserver: string, username: string, password: string): Promise<void> {
+    await commands.login(homeserver, username, password);
+    sessionActive = true;
+  }
+
+  /**
+   * Restores a persisted session, or reports that there was none.
+   *
+   * Skips the round trip entirely when a session is already established,
+   * because arming the tracker is not free: it is a hard reset that tells
+   * the store to expect the *next* stream to start at seq 1. `/login`
+   * navigates to `/` on success and `/`'s mount restores, so without this
+   * guard every password login re-armed the tracker against a room-list
+   * stream that was already mid-flight at some much higher seq — the very
+   * next envelope read as a gap, the resync that followed pushed the
+   * expected sequence back up, and the room list then froze for the rest of
+   * the session. `Session::restore_and_start` guards the same thing core-side
+   * (the webview is not the only possible caller); this guard is what stops
+   * the tracker being re-armed for a stream that never restarts.
+   */
+  async function restoreSession(): Promise<boolean> {
+    if (sessionActive) return true;
+    const restored = await commands.restoreSession();
+    sessionActive = restored;
+    return restored;
+  }
 
   /**
    * Logs out and clears local room/selection state. Re-arms the tracker
    * too — logout stops the stream so nothing strictly requires it before
    * the next login (which re-arms unconditionally anyway), but leaving a
    * stale room list on screen after logging out would be its own bug.
+   *
+   * Local state clears in a `finally`, so a `logout` command that rejects
+   * (the core wipes session, secrets and stores before it can fail on the
+   * store directory) still leaves the UI logged out rather than showing a
+   * room list backed by an account that is already gone. The error is
+   * rethrown for the caller to report.
    */
   async function logout(): Promise<void> {
-    await deps.logout();
-    gapSync.resetForNewSubscription();
-    selectedId = null;
+    try {
+      await deps.logout();
+    } finally {
+      sessionActive = false;
+      gapSync.resetForNewSubscription();
+      selectedId = null;
+    }
   }
 
   /**
