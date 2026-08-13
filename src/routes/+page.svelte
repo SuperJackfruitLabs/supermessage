@@ -59,7 +59,7 @@
           {#key roomsStore.selectedId}
             <Timeline />
           {/key}
-          <Composer />
+          <Composer roomId={roomsStore.selectedId} />
         {:else}
           <div class="flex flex-1 items-center justify-center">
             <p class="text-sm text-content-muted">Select a room to start chatting</p>
