@@ -65,3 +65,19 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # see tests/timeline_projection.rs's module doc comment for why this, not
 # hand-written DTOs, is what that file exists to exercise.
 matrix-sdk-test = "0.18"
+
+[lints.rust]
+# `ruma`'s `EventContent` derive expands to `#[cfg(ruma_unstable_exhaustive_types)]`
+# in the *consuming* crate, so rustc's check-cfg — which only knows the cfgs this
+# crate declares — flags it as an unknown condition name. It is a real cfg owned
+# by ruma, not a typo, so the fix is to declare it expected rather than to silence
+# the lint.
+#
+# Deliberately `check-cfg` and not `#[allow(unexpected_cfgs)]`: the allow would
+# switch the lint off for the whole item and hide a genuine typo'd cfg alongside
+# this legitimate one. This names the single condition we accept and keeps the
+# lint live for everything else.
+#
+# Only CI caught this: locally `unexpected_cfgs` is a warning, and CI sets
+# `RUSTFLAGS: -D warnings`, which is the point of setting it.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ruma_unstable_exhaustive_types)'] }
