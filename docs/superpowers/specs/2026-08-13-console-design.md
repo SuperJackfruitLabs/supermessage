@@ -291,7 +291,12 @@ messages are commands; they are not set for reading at length.
 - System lines: centred, `--text-meta`, `--color-content-faint`. Reads as a
   quiet log.
 - Placeholders (undecryptable, redacted, unrenderable): same as system
-  lines, italic.
+  lines. **No italic** — and the same goes for the `edited` marker and every
+  other mono rank. `font-synthesis: none` means an italic needs a real
+  bundled italic file, and IBM Plex Mono's would be ~30 KB bought to slant
+  three short strings that the mono face already marks as secondary. Italic
+  survives only where it does real work and the face is already bundled for
+  it: serif emotes, and `<em>` inside a message body.
 - Emotes: centred, serif italic, `--color-content-muted`.
 - Images and media files keep their current structure but adopt the peer
   layout — no bubble for peers, 6px radius on the image, filename in sans,

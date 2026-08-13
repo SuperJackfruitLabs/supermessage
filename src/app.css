@@ -1,4 +1,10 @@
 @import "@fontsource-variable/ibm-plex-sans/wght.css";
+/* Sans italic is not decorative: `font-synthesis: none` is set below, so
+ * without a real italic file an `<em>` inside an own message — which is set
+ * in sans, unlike a peer message — renders upright and the emphasis is
+ * silently lost. Mono deliberately has no italic counterpart here; see
+ * spec §6.3 on why mono ranks carry no italic at all. */
+@import "@fontsource-variable/ibm-plex-sans/wght-italic.css";
 @import "@fontsource-variable/source-serif-4/opsz.css";
 @import "@fontsource-variable/source-serif-4/opsz-italic.css";
 @import "@fontsource/ibm-plex-mono/latin-400.css";
@@ -34,11 +40,17 @@
   --color-border: #dfe1e8;
   --color-border-strong: #c3c7d2;
   --color-content: #161821;
-  --color-content-muted: #5f6472;
-  /* #6b7082, not spec's literal #8b90a0: that value read 3.18:1 on
-   * --color-surface and 2.92:1 on --color-surface-sunken, both under the
-   * 4.5:1 floor (spec §3, §9). Darkened along the same hue/saturation
-   * until both pairs cleared; see task-1-report.md for the full table. */
+  /* #4a4f5e, not the spec's original #5f6472 — see the note on `faint`
+   * below. The whole ramp had to be re-spaced, not just its bottom rung. */
+  --color-content-muted: #4a4f5e;
+  /* Three text ranks on one ground is a tight brief, and the spec's first
+   * attempt (#8b90a0) failed its own 4.5:1 floor outright — as low as
+   * 2.92:1 on --color-surface-sunken. Raising `faint` to #6b7082 cleared
+   * the floor (4.92:1 here, 4.51:1 in dark) but left it only ~1.2:1 against
+   * `muted`, which is not a rank, just a wobble. The fix is to re-space the
+   * whole ramp from the top rather than to keep nudging its bottom: content
+   * ~15.9:1, muted ~8.2:1, faint ~4.9:1 is a real progression with the
+   * accessibility floor as its last step rather than its only constraint. */
   --color-content-faint: #6b7082;
 
   /* Chrome hue: indigo. */
@@ -93,11 +105,9 @@
       --color-border: #282c37;
       --color-border-strong: #3a3f4e;
       --color-content: #e8eaf0;
-      --color-content-muted: #9095a5;
-      /* #787f91, not spec's literal #6b7183: that value read 3.72:1 on
-       * --color-surface and 3.85:1 on --color-surface-sunken, both under
-       * the 4.5:1 floor. Lightened along the same hue/saturation until
-       * both pairs cleared; see task-1-report.md for the full table. */
+      /* Re-spaced upward for the same reason the light ramp was re-spaced
+       * downward — see the light block's note on `faint`. */
+      --color-content-muted: #b0b6c6;
       --color-content-faint: #787f91;
 
       --color-accent: #8b9bf7;
