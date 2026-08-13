@@ -115,6 +115,33 @@ the frontend embedded.
 iOS/macOS builds need a Mac and are not possible on the current Linux machine;
 WebKit visual QA has to happen elsewhere.
 
+### Driving the real UI (end-to-end)
+
+Per [Tauri's WebDriver docs](https://v2.tauri.app/develop/tests/webdriver/),
+`tauri-driver` proxies to the platform's native WebDriver. Linux and Windows
+only — macOS has no WKWebView driver.
+
+```bash
+sudo apt install webkit2gtk-driver     # must match the installed webkit2gtk (2.52.3)
+cargo install tauri-driver --locked
+
+pnpm tauri build --debug --no-bundle   # tauri-driver launches the BINARY, so the
+                                       # frontend must be embedded; a plain debug
+                                       # build loads devUrl and shows nothing
+tauri-driver --port 4444 --native-port 4445 &
+python3 scripts/e2e-drive.py src-tauri/target/debug/supermessage
+```
+
+`scripts/e2e-drive.py` talks raw W3C WebDriver over HTTP — no `webdriverio`
+dependency. It asserts against the real DOM (room rows, `p.selectable`
+message bodies, `span.italic` placeholders, the composer) using whatever
+account the keyring currently holds, so it needs a logged-in session. It is a
+diagnostic harness, not part of `pnpm test`. Note WebKitWebDriver returns lone
+surrogates for astral-plane emoji; the script repairs them before printing.
+
+This harness is what caught the "opening a room shows one message" bug — it
+is worth reaching for before trusting a UI claim made from code reading alone.
+
 ## Testing strategy
 
 `cargo test` covers the Rust core (currently one test, pinning the ring crypto
