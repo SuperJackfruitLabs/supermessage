@@ -179,6 +179,11 @@
         rows.
       -->
       <div class="border-b border-border px-4 py-3">
+        <!--
+          Visually hidden, but a real `h3` — see the room-id section for the
+          reasoning that applies to both.
+        -->
+        <h3 class="sr-only">Addresses</h3>
         {#if info.canonicalAlias}
           {@const parsed = splitSigil(info.canonicalAlias)}
           <p class="selectable font-mono text-meta font-medium break-words">
@@ -200,6 +205,17 @@
 
     {@const roomIdParsed = splitSigil(info.roomId)}
     <div class="border-b border-border px-4 py-3">
+      <!--
+        Dropping the visible headings (spec §5.2) also dropped them from the
+        accessibility tree, and a heading is not only a label — it is a
+        navigation landmark. Heading-jump then skipped straight from "Topic"
+        to "N members", so the aliases and the room id became reachable only
+        by reading the panel linearly, while a sighted user still finds them
+        instantly by their sigils. `sr-only` restores the landmark without
+        putting the heading back on screen: the sigil remains the visible
+        label, and both kinds of reader get the same three stops.
+      -->
+      <h3 class="sr-only">Room ID</h3>
       <div class="flex items-center gap-2">
         <p class="selectable min-w-0 flex-1 font-mono text-meta break-words">
           <span class="text-content-faint">{roomIdParsed.sigil}</span><span
