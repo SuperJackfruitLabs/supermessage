@@ -31,6 +31,7 @@ use super::auth::AuthProvider;
 use super::dto::RoomSummary;
 use super::error::{CoreError, CoreResult};
 use super::media;
+use super::room_info::{self, RoomInfoDto};
 use super::rooms::{self, RoomListHandle};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
 use super::sync::{self, SyncHandle};
@@ -488,6 +489,76 @@ impl Session {
         };
 
         media::message_media_thumbnail(&client, source).await
+    }
+
+    /// Builds `room_id`'s [`RoomInfoDto`] — name, topic, canonical alias,
+    /// alt aliases, room id and joined member list — for the room-info
+    /// panel.
+    ///
+    /// **Room-scoped and focus-checked**, following the same pattern every
+    /// timeline command in `core::commands` already takes for the reason
+    /// `core::timeline::verify_room_focus`'s doc comment gives: a command
+    /// that silently resolved against "whatever room is current" could act
+    /// on the wrong room after a switch the caller lost a race against. Here
+    /// that would mean showing one room's topic/members under another
+    /// room's header — a real, if less damaging, wrong-recipient bug, so
+    /// this takes the same guard rather than being the one command in this
+    /// codebase that doesn't.
+    ///
+    /// The check reads the focused room id out of
+    /// [`FocusedTimeline::snapshot`] rather than a purpose-built accessor:
+    /// `core::timeline` is intentionally not touched by this change (see
+    /// this codebase's session-scoped edit rules at the time this was
+    /// written), and `snapshot` is the only existing `pub` method on
+    /// `FocusedTimeline` that reveals the focused room id without also
+    /// performing a live send/paginate against it. The trade-off, noted
+    /// rather than hidden: `snapshot` clones the whole materialized item
+    /// list to get there, which this call then discards unused. That cost is
+    /// paid once per explicit "open the room-info panel" action, not on
+    /// every keystroke or every timeline diff, so it was judged acceptable
+    /// rather than justifying a new `core::timeline` accessor mid-edit of a
+    /// file another change was actively working in.
+    ///
+    /// Fails with [`CoreError::NotReady`] when no room is focused at all, or
+    /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is.
+    pub async fn room_info(&self, room_id: &str) -> CoreResult<RoomInfoDto> {
+        let client = self.require_client().await?;
+        let (focused_room_id, _seq, _items) = self.focused.snapshot().await?;
+        room_info::verify_same_room(room_id, &focused_room_id)?;
+
+        let parsed_room_id =
+            RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let room = client
+            .get_room(&parsed_room_id)
+            .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
+
+        room_info::build_room_info(&room).await
+    }
+
+    /// Fetches a room member's avatar as a `data:` URI, given the raw
+    /// `mxc://` URI already carried on their `RoomInfoDto` member entry (see
+    /// [`Self::room_info`]).
+    ///
+    /// A thin wrapper over [`media::avatar_thumbnail`] — the exact same
+    /// authenticated-media fetch [`Self::room_avatar`] already uses for a
+    /// room's own avatar, called directly on the mxc URI the room-info panel
+    /// already has, rather than a second fetch path. Unlike
+    /// [`Self::room_avatar`], there is no resolution step to do first: a
+    /// member's avatar mxc URI (when they have one) is already the right
+    /// answer, with no hero/two-person fallback chain to walk — that
+    /// chain exists only because a *room's* avatar can be implicit, not a
+    /// member's.
+    ///
+    /// **Not room-scoped or focus-checked**, deliberately: like
+    /// [`Self::room_avatar`]/[`Self::media_fetch`], this fetches a resource
+    /// named explicitly by the caller (an mxc URI, not "whichever room is
+    /// current"), so there is no ambient "ran against the wrong room"
+    /// failure mode for a room switch to trigger — unlike [`Self::room_info`]
+    /// above, which shows an entire room's identity under a header and so
+    /// does take that guard.
+    pub async fn member_avatar(&self, mxc_uri: &str) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        media::avatar_thumbnail(&client, mxc_uri).await
     }
 
     /// Builds a `Client` against `homeserver`, backed by the encrypted store

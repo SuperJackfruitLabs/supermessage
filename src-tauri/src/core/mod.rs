@@ -13,6 +13,7 @@ pub mod commands;
 pub mod dto;
 pub mod error;
 pub mod media;
+pub mod room_info;
 pub mod rooms;
 pub mod secrets;
 pub mod session;

@@ -23,10 +23,33 @@
   import Timeline from "$lib/components/Timeline.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
+  import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
 
   let checking = $state(true);
   let restored = $state(false);
   let signingOut = $state(false);
+  /**
+   * Whether the room-info panel is open. Deliberately **not** reset on a
+   * room switch: `RoomInfoPanel` below is itself remounted per room (`{#key
+   * roomsStore.selectedId}`, same as `Timeline`), so leaving this `true`
+   * across a switch means the panel stays open and simply shows the newly
+   * selected room's info next — the more useful behavior, and one less
+   * thing for a room-switch effect to have to remember to do.
+   */
+  let showRoomInfo = $state(false);
+
+  const selectedRoomName = $derived(
+    roomsStore.rooms.find((room) => room.id === roomsStore.selectedId)?.name ??
+      roomsStore.selectedId,
+  );
+
+  /**
+   * Whether `RoomInfoPanel` is actually going to render. Drives which of
+   * `<section>`/`RoomInfoPanel` gets the `--inset-right` safe-area padding
+   * below: whichever one is currently the rightmost visible content, since
+   * only one of them ever is.
+   */
+  const panelOpen = $derived(Boolean(roomsStore.selectedId && showRoomInfo));
 
   onMount(async () => {
     try {
@@ -105,8 +128,35 @@
           </button>
         </div>
       </aside>
-      <section class="flex min-w-0 flex-1 flex-col" style="padding-right: var(--inset-right);">
+      <section
+        class="flex min-w-0 flex-1 flex-col"
+        style={panelOpen ? "" : "padding-right: var(--inset-right);"}
+      >
         {#if roomsStore.selectedId}
+          <!--
+            The only header this room pane has: the selected room's name
+            (already known from `roomsStore.rooms`, no extra fetch) plus the
+            one way to reach the room-info panel — there was previously no
+            surface at all for a room's topic/alias/member list; see
+            `RoomInfoPanel.svelte`'s doc comment.
+          -->
+          <div
+            class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2"
+          >
+            <span class="min-w-0 truncate text-sm font-medium text-content">
+              {selectedRoomName}
+            </span>
+            <button
+              type="button"
+              onclick={() => (showRoomInfo = !showRoomInfo)}
+              aria-pressed={showRoomInfo}
+              class="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content {showRoomInfo
+                ? 'bg-surface-sunken text-content'
+                : ''}"
+            >
+              Room info
+            </button>
+          </div>
           {#key roomsStore.selectedId}
             <Timeline roomId={roomsStore.selectedId} />
           {/key}
@@ -117,6 +167,11 @@
           </div>
         {/if}
       </section>
+      {#if roomsStore.selectedId && showRoomInfo}
+        {#key roomsStore.selectedId}
+          <RoomInfoPanel roomId={roomsStore.selectedId} onClose={() => (showRoomInfo = false)} />
+        {/key}
+      {/if}
     </div>
   </div>
 {/if}

@@ -49,6 +49,41 @@ export interface RoomSummary {
 }
 
 /**
+ * One joined member of a room, mirroring `RoomMemberDto` from
+ * `src-tauri/src/core/room_info.rs`. Part of {@link RoomInfo.members}.
+ */
+export interface RoomMember {
+  userId: string;
+  /** The member's own display name, when set. `null` means the reader
+   * should fall back to `userId` — the same convention every other
+   * sender-name field in this codebase already uses. */
+  displayName: string | null;
+  /** The member's avatar as a raw `mxc://` URI, resolved to a renderable
+   * `data:` URI lazily through {@link memberAvatar} — never fetched bytes
+   * on this object itself. */
+  avatarUrl: string | null;
+}
+
+/**
+ * A room's descriptive metadata plus its joined member list, mirroring
+ * `RoomInfoDto` from `src-tauri/src/core/room_info.rs`. Fetched on demand
+ * through {@link roomInfo} when the room-info panel opens — never streamed,
+ * unlike {@link RoomSummary}/{@link TimelineItem}.
+ */
+export interface RoomInfo {
+  roomId: string;
+  name: string | null;
+  topic: string | null;
+  canonicalAlias: string | null;
+  altAliases: string[];
+  /** The room's active (joined + invited) member count — may exceed
+   * `members.length`, which is joined-only; see `RoomInfoDto::active_member_count`'s
+   * doc comment on the Rust side for why that's expected, not a mismatch. */
+  activeMemberCount: number;
+  members: RoomMember[];
+}
+
+/**
  * Mirrors `TimelineItemDto` from `src-tauri/src/core/dto.rs`.
  *
  * `kind` is a semantic discriminant projected from the SDK's
@@ -411,6 +446,41 @@ export async function roomAvatar(roomId: string): Promise<string | null> {
  */
 export async function mediaFetch(eventId: string): Promise<string | null> {
   return invoke<string | null>("media_fetch", { eventId });
+}
+
+/**
+ * Fetches `roomId`'s room-info panel data — name, topic, canonical alias,
+ * alt aliases, room id and joined member list — mirroring `RoomInfoDto`
+ * from `src-tauri/src/core/room_info.rs`.
+ *
+ * `roomId` must be the room the caller actually means: the core verifies it
+ * against whichever room is focused when the command runs and rejects with
+ * a `"roomChanged"`-kind {@link CoreError} on a mismatch (e.g. the reader
+ * switched rooms while this call was in flight) rather than silently
+ * showing one room's identity under another room's header — see
+ * {@link CoreErrorKind}'s doc comment.
+ */
+export async function roomInfo(roomId: string): Promise<RoomInfo> {
+  return invoke<RoomInfo>("room_info", { roomId });
+}
+
+/**
+ * Fetches a room member's avatar as a `data:` URI, given the raw `mxc://`
+ * URI already carried on their {@link RoomInfo.members} entry. `null` for
+ * the same reasons {@link roomAvatar}'s are: nothing to show, or the
+ * fetched bytes don't sniff to a renderable image format.
+ *
+ * Reuses the exact same authenticated-media fetch {@link roomAvatar} already
+ * uses for a room's own avatar (`core::media::avatar_thumbnail`) — not a
+ * second fetch path — called directly on the member's own mxc URI, since a
+ * member's avatar (unlike a room's) has no hero/two-person fallback chain to
+ * resolve first. Callers fetch this lazily and cache the result themselves,
+ * keyed on the mxc URI (see `$lib/stores/memberAvatarCache.svelte.ts`), the
+ * same pattern {@link roomAvatar}/{@link mediaFetch} use keyed on room id /
+ * event id respectively.
+ */
+export async function memberAvatar(mxcUri: string): Promise<string | null> {
+  return invoke<string | null>("member_avatar", { mxcUri });
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */

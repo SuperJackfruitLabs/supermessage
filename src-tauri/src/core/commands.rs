@@ -10,6 +10,7 @@ use tauri::{AppHandle, State};
 
 use super::dto::RoomSummary;
 use super::error::CoreError;
+use super::room_info::RoomInfoDto;
 use super::session::Session;
 use super::timeline::{FocusedTimeline, TimelineSnapshot};
 
@@ -190,4 +191,41 @@ pub async fn media_fetch(
     session: State<'_, Session>,
 ) -> Result<Option<String>, CoreError> {
     session.media_fetch(&event_id).await
+}
+
+/// Builds `room_id`'s room-info panel data: name, topic, canonical alias,
+/// alt aliases, room id and joined member list.
+///
+/// `room_id` is verified against whichever room is actually focused
+/// (`Session::room_info`) before anything is resolved — the same
+/// room-scoped guard `timeline_paginate_back`/`send_message`/`send_reply`/
+/// `toggle_reaction` already take, for the same reason: a room switch
+/// resolving mid-call must not silently show one room's identity under
+/// another room's header. A mismatch fails with a `roomChanged`-kind
+/// [`CoreError`] instead.
+#[tauri::command]
+pub async fn room_info(
+    room_id: String,
+    session: State<'_, Session>,
+) -> Result<RoomInfoDto, CoreError> {
+    session.room_info(&room_id).await
+}
+
+/// Fetches a room member's avatar as a `data:` URI, given the raw
+/// `mxc://` URI already carried on their entry in [`room_info`]'s
+/// `RoomInfoDto::members`. `None` for the same reasons [`room_avatar`]'s
+/// are: nothing to show, or the fetched bytes don't sniff to a renderable
+/// image format.
+///
+/// Reuses `core::media::avatar_thumbnail` — the exact authenticated-media
+/// fetch [`room_avatar`] already uses for a room's own avatar — rather than
+/// a second fetch path; see `Session::member_avatar`'s doc comment for why
+/// no room/hero resolution step is needed first the way [`room_avatar`]
+/// needs one.
+#[tauri::command]
+pub async fn member_avatar(
+    mxc_uri: String,
+    session: State<'_, Session>,
+) -> Result<Option<String>, CoreError> {
+    session.member_avatar(&mxc_uri).await
 }

@@ -160,4 +160,112 @@ describe("handleMessageBodyAuxClick", () => {
     expect(preventDefault).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
   });
+
+  it("routes an in-app-routable room link the same way a primary click would", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const selectRoom = vi.fn();
+    const knownRoomIds = vi.fn(() => ["!room:example.org"]);
+    const anchor = fakeAnchor("https://matrix.to/#/!room:example.org");
+    const { event, preventDefault } = fakeAuxEvent(elementWithClosestAnchor(anchor), 1);
+
+    handleMessageBodyAuxClick(event, open, selectRoom, knownRoomIds);
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(selectRoom).toHaveBeenCalledExactlyOnceWith("!room:example.org");
+    expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleMessageBodyClick: matrix.to/matrix: links", () => {
+  it("selects the room in-app instead of opening it, for a matrix.to room-id link the account is already in", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const selectRoom = vi.fn();
+    const knownRoomIds = vi.fn(() => ["!room:example.org", "!other:example.org"]);
+    const anchor = fakeAnchor("https://matrix.to/#/!room:example.org");
+    const { event, preventDefault } = fakeEvent(elementWithClosestAnchor(anchor));
+
+    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(selectRoom).toHaveBeenCalledExactlyOnceWith("!room:example.org");
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("selects the room in-app for a matrix: roomid URI too", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const selectRoom = vi.fn();
+    const knownRoomIds = vi.fn(() => ["!room:example.org"]);
+    const anchor = fakeAnchor("matrix:roomid/room:example.org");
+    const { event } = fakeEvent(elementWithClosestAnchor(anchor));
+
+    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+
+    expect(selectRoom).toHaveBeenCalledExactlyOnceWith("!room:example.org");
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the system browser for a room-id link the account is not in — there is no join flow", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const selectRoom = vi.fn();
+    const knownRoomIds = vi.fn(() => ["!other:example.org"]);
+    const anchor = fakeAnchor("https://matrix.to/#/!unknown:example.org");
+    const { event } = fakeEvent(elementWithClosestAnchor(anchor));
+
+    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+
+    expect(selectRoom).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://matrix.to/#/!unknown:example.org");
+  });
+
+  it("falls back to the system browser for a room-alias link — no alias -> id resolution exists", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const selectRoom = vi.fn();
+    const knownRoomIds = vi.fn(() => ["!room:example.org"]);
+    const anchor = fakeAnchor("https://matrix.to/#/%23somewhere:example.org");
+    const { event } = fakeEvent(elementWithClosestAnchor(anchor));
+
+    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+
+    expect(selectRoom).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://matrix.to/#/%23somewhere:example.org");
+  });
+
+  it("falls back to the system browser for a user link — no profile surface exists", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const selectRoom = vi.fn();
+    const anchor = fakeAnchor("matrix:u/alice:example.org");
+    const { event } = fakeEvent(elementWithClosestAnchor(anchor));
+
+    handleMessageBodyClick(event, open, selectRoom);
+
+    expect(selectRoom).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledExactlyOnceWith("matrix:u/alice:example.org");
+  });
+
+  it("falls back to the system browser for a plain https:// link, never calling knownRoomIds at all", () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const selectRoom = vi.fn();
+    const knownRoomIds = vi.fn(() => ["!room:example.org"]);
+    const anchor = fakeAnchor("https://example.org/path");
+    const { event } = fakeEvent(elementWithClosestAnchor(anchor));
+
+    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+
+    expect(selectRoom).not.toHaveBeenCalled();
+    expect(knownRoomIds).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://example.org/path");
+  });
+
+  it("without selectRoom/knownRoomIds supplied, still falls back to the browser for a room link (safe defaults)", () => {
+    // The production `onclick={handleMessageBodyClick}` binding (no extra
+    // args) must never silently select a room using some default store —
+    // see messageLinks.ts's top-of-module doc comment for why the defaults
+    // are inert no-ops rather than the real `roomsStore`.
+    const open = vi.fn().mockResolvedValue(undefined);
+    const anchor = fakeAnchor("https://matrix.to/#/!room:example.org");
+    const { event } = fakeEvent(elementWithClosestAnchor(anchor));
+
+    expect(() => handleMessageBodyClick(event, open)).not.toThrow();
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://matrix.to/#/!room:example.org");
+  });
 });

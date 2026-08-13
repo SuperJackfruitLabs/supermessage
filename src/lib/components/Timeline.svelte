@@ -176,6 +176,7 @@
   import { VList, type VListHandle } from "virtua/svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
+  import { roomsStore } from "$lib/stores/rooms.svelte";
   import {
     canReplyOrReact,
     displayReactionKey,
@@ -379,6 +380,28 @@
   function startReply(item: TimelineItem): void {
     replyTargetStore.set(roomId, replyTargetStore.fromItem(item));
   }
+
+  /**
+   * Selects `targetRoomId` in-app, for a matrix.to/`matrix:` link inside a
+   * rendered message body that addresses a room the account is already in —
+   * see `messageLinks.ts`'s top-of-module doc comment for the full routing
+   * decision. Bound explicitly at the `onclick`/`onauxclick` call sites
+   * below, rather than relied on as a default: `handleMessageBodyClick`/
+   * `handleMessageBodyAuxClick` default `selectRoom` to an inert no-op
+   * precisely so importing `messageLinks.ts` never has to construct the real
+   * `roomsStore` singleton (see that file's doc comment) — this component is
+   * the one place that's safe, since it's a real Svelte component, not a
+   * unit-tested plain module.
+   */
+  function selectKnownRoom(targetRoomId: string): void {
+    roomsStore.select(targetRoomId);
+  }
+
+  /** Every room id the account is currently in, for `resolveInAppRoomId`'s
+   * membership check. See {@link selectKnownRoom}'s doc comment. */
+  function knownRoomIds(): readonly string[] {
+    return roomsStore.rooms.map((room) => room.id);
+  }
 </script>
 
 {#snippet replyQuote(item: TimelineItem)}
@@ -566,8 +589,10 @@
                       class="message-html selectable text-sm {view.muted && !item.isOwn
                         ? 'text-content-muted'
                         : ''}"
-                      onclick={handleMessageBodyClick}
-                      onauxclick={handleMessageBodyAuxClick}
+                      onclick={(e: MouseEvent) =>
+                        handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
+                      onauxclick={(e: MouseEvent) =>
+                        handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
                     >
                       {@html item.formattedBody}
                     </div>
