@@ -8,15 +8,16 @@ supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android
 
 It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Kaambaan + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Kaambaan cards/runs, permission requests, station status), approvals from chat (Kaambaan gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
 
-**Current status: M0 implemented and reviewed on branch `m0-spine`; not yet dogfooded.** Password login, encrypted session persistence, `SyncService`, room-list and timeline streaming, send/receive, and a two-pane desktop UI are all built and tested (49 Rust tests, 51 frontend tests, clippy and svelte-check clean). The app starts and the webview↔core IPC round trip is verified, and the login screen has been exercised against the real homeserver — a 403 surfaces as an auth error, an unreachable host as a network error.
+**Current status: M0 built, reviewed, and validated against a real account on branch `m0-spine`.** Password login, encrypted session persistence, `SyncService`, room-list and timeline streaming, send/receive, and a two-pane desktop UI (49 Rust tests, 51 frontend tests, clippy and svelte-check clean).
 
-**What has NOT happened: a credentialed run.** Nobody has yet logged in with a working account, so the room list, timeline and composer have never rendered real data. That is the next step, and it is where any remaining UI problems will first appear.
+Verified by driving the real app over WebDriver against `id.agentpod.dev` (see "Driving the real UI" below): 16 rooms render, rooms load history, encrypted events show placeholders, composer drafts stay scoped to their room, no connection banner while sync is live, and the session restores from the keyring with no password after a restart.
 
-Known follow-ups carried out of the final review, highest first:
+**What is still unverified:** sending a message end to end (not exercised, because it posts real text into real rooms), scroll-triggered back-pagination beyond the initial page, and anything on Windows, macOS or mobile.
 
-1. `Session::restore_and_start`'s idempotence guard keys on "a client exists" rather than "streams exist" (`core/session.rs`). If `restore()` succeeds but `start_streams` then fails, the session stays installed with dead sync and an empty room list, and every later `restore_session` short-circuits. Recoverable only via Sign out. Fix: clear the client on that error path, or require a live sync handle in the guard.
-2. `logout` clears the focused timeline before its network call but nulls the client after, so a `timeline_subscribe` in that window installs a handle holding the `Client` past `remove_store()`. Harmless on POSIX; **on Windows this bricks the store permanently** — must be fixed before any Windows testing.
-3. Assorted hardening: `start_sync`/`start_room_list` are `pub` and rely on callers holding the lifecycle mutex; `logout` holds that mutex across an untimed HTTP call; `gapSync`'s `void doResync` has no `.catch`.
+Remaining follow-ups:
+
+- **Hardening.** `start_sync`/`start_room_list` are `pub` and rely on every caller holding the lifecycle mutex — making them private would make that structural. `logout` holds that mutex across an untimed HTTP call, so a hung homeserver blocks the next login for its duration. `gapSync`'s `void doResync` has no `.catch`, so a rejected resync becomes an unhandled rejection.
+- **Deferred minors** from the task reviews, notably: no `event.isComposing` guard in the composer (CJK IME Enter sends prematurely), and the login error slot's `min-h-10` is unproven at narrow widths.
 
 ## Repository layout
 
