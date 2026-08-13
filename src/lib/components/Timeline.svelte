@@ -1724,26 +1724,33 @@
    * not lose that guard: the peer block carries both halves of it in its
    * own right, and it must keep carrying them.
    * `overflow-wrap: anywhere` handles long unbroken words/URLs by
-   * wrapping; `overflow-x: auto` + `max-width: 100%` on this container
-   * (and again, more narrowly, on `table` and `pre` below, since those are
-   * the two elements whose *natural* rendering is to refuse to wrap at
-   * all — a wide table's columns and `pre`'s preformatted text) is what
-   * turns "wide content" into "scrolls within the block" instead of
+   * wrapping; `overflow-x: auto` + `max-width: 100%` on this container is
+   * what turns "wide content" into "scrolls within the block" instead of
    * "widens the block, and with it the whole window"
    * (`document.documentElement.scrollWidth`, measured in review, grew to
    * 4700px against a 1905px viewport from a single 300-`<td>` message
-   * before this fix).
+   * before this fix). **This container is the scroll container for the two
+   * elements whose natural rendering refuses to wrap** — a wide `<table>`'s
+   * columns and `pre`'s preformatted text. `pre` also caps and scrolls
+   * itself below; a `<table>` deliberately does not, and the table block
+   * below says why at length.
    *
-   * **Measure the scroller, not the document, when you re-verify this.**
-   * `document.documentElement.scrollWidth === window.innerWidth` is the
-   * obvious assertion and it is *insensitive*: it passes with the guard
-   * removed entirely, because `+page.svelte`'s own `min-w-0` and this
-   * scroller's forced `overflow-x` absorb the overflow before it ever
-   * reaches the document. The discriminating number is the VList
-   * scroller's own `scrollWidth` against its `clientWidth` — 38415px
-   * versus 1602px on the same content, guard off versus on. Both halves
-   * of the guard earn their place under that measure, at different
-   * widths: `max-width` is what holds at 1905px, `min-w-0` at 700px.
+   * **Measure the reading column, not the document and not the VList
+   * scroller, when you re-verify this.** Two obvious assertions are both
+   * *insensitive* — they pass with the guard removed entirely:
+   * `document.documentElement.scrollWidth === window.innerWidth` (because
+   * `+page.svelte`'s own `min-w-0` and the scroller's forced `overflow-x`
+   * absorb the overflow long before it reaches the document) and the VList
+   * scroller's own `scrollWidth` (virtua sets `contain: strict` on it, so
+   * it reports its `clientWidth` no matter what is inside). Measured on the
+   * table fixture, guard off: document 1905, scroller 1617/1617 — both
+   * unchanged and both green. The discriminating number is the **reading
+   * column's** own `scrollWidth` against its `clientWidth`
+   * (`.mx-auto.max-w-[calc(72ch+…)]` in the markup above): 630 = 630 with
+   * the guard on, **41691** with it off, at a 1905px viewport; 412 = 412
+   * versus 41675 at 700px. Both halves of the guard earn their place under
+   * that measure, at different widths: `max-width` is what holds at 1905px,
+   * `min-w-0` at 700px.
    *
    * `core::timeline::harden_formatted_body`'s lowered
    * `max_depth` bounds nested `<ul>`/`<ol>`/`<blockquote>` for the same
@@ -1757,10 +1764,138 @@
     max-width: 100%;
   }
 
+  /*
+   * Tables. A markdown table from an agent is the densest thing this
+   * component renders, and it is *data* — the one kind of message content
+   * that is read by scanning rather than by reading.
+   *
+   * **What was here before, and why it had to change.** The rule was
+   * `display: block; overflow-x: auto; max-width: 100%`, and it did prevent
+   * the blowout — by destroying the table. A `display: block` table is a
+   * block box wrapping an *anonymous* table box, and that anonymous box
+   * shrink-to-fits its container, so the auto table-layout algorithm
+   * compresses every column to the narrowest width that fits instead of
+   * overflowing and scrolling. Measured on the 4-column review table
+   * (`# | Issue | Impact | Fix`) at a 1905px viewport: the `#` column came
+   * out **13px** wide and `10` rendered as `1` above `0`; every row was two
+   * lines tall; `Path.mkdir(parents=True)` broke across two lines and, at
+   * 700px, `~/.aether/logs/run_{id}.log` across three. `overflow-wrap:
+   * anywhere` above is what let it get that small: unlike `break-word`, it
+   * lowers a box's *min-content* size to one character, so the table had no
+   * floor to compress against.
+   *
+   * **What replaces it.** `width: 100%` with `min-width: max-content`, on a
+   * table that is once again a real `display: table`:
+   *   - `min-width: max-content` means no column can ever be compressed
+   *     below its natural width, so nothing inside a cell wraps and nothing
+   *     breaks mid-token — including a code span, which needs no rule of
+   *     its own here for that.
+   *   - `width: 100%` makes a table that *fits* stretch to the width of its
+   *     message block instead of huddling at its content width. Note what
+   *     that is 100% *of*: the block is itself content-sized, so a message
+   *     holding nothing but a two-column key/value table stays 150px wide
+   *     (measured) rather than stretching across the measure — the table
+   *     fills whatever the rest of the message has already claimed.
+   *   - When the two conflict — a table wider than the column — `min-width`
+   *     wins, the table overflows, and `.message-html`'s own `overflow-x:
+   *     auto` above scrolls it. That is why there is deliberately no
+   *     `overflow-x` or `max-width` on the table itself any more: **the
+   *     scroll container is the message body, not the table.**
+   * The same review table, re-measured: `#` column 41px with `10` on one
+   * line, every row a single 39px line, both code spans intact, the table
+   * 764px wide scrolling inside a 534px peer block — and the reading
+   * column still 630 = 630.
+   *
+   * **Three shapes that look right and are not** (all measured in Chrome
+   * before this was written, not reasoned about):
+   *   - `display: block; width: max-content; max-width: 100%; overflow-x:
+   *     auto` — the widely-copied recipe, and it changes nothing: the block
+   *     is clamped to 100% by `max-width`, the anonymous table inside
+   *     resolves against that clamped box, and the columns compress exactly
+   *     as before (`#` column 34px, rows still two lines).
+   *   - `display: block` plus `table > * { display: table; width:
+   *     max-content }` — this *does* scroll, but it turns `thead` and
+   *     `tbody` into two independent tables whose columns are sized
+   *     separately: header cells landed at x = 0/30/85/153 over body cells
+   *     at x = 0/38/250/525. A table whose header does not sit over its own
+   *     column is worse than one that is merely narrow.
+   *   - A wrapper `<div class="table-scroll">` around each table, which is
+   *     the conventional fix, is not available: this HTML arrives through
+   *     `{@html}` from a core-sanitised string, and adding elements to it
+   *     means changing `harden_formatted_body` on the Rust side.
+   *
+   * **The trade this makes, stated plainly.** Because no cell wraps, a
+   * table one of whose cells holds a long sentence becomes a wide table
+   * that must be scrolled, where the old rule would have wrapped it into
+   * something narrow and unreadable. That is the intended direction — a
+   * table that scrolls is still a table — but it is a real cost, and the
+   * knob if it ever needs turning is `min-width`, not `display`. The
+   * affordance for that scroll is whatever the platform gives
+   * `.message-html`'s scrollbar, which on an overlay-scrollbar webview is
+   * nothing until you touch it — the same deal `pre` has had all along.
+   *
+   * **Type ranks.** Cells leave the serif reading rank for `--font-sans`:
+   * serif is this app's face for *prose you read*, and a table is data you
+   * scan (spec §4). Not mono either — mono is reserved here for machine
+   * text, and a whole table set in it reads as a code block and costs about
+   * a sixth more width per column; `code` inside a cell still switches to
+   * mono under its own rule below, which is exactly the distinction worth
+   * keeping visible. Header cells *are* labels, so they take the mono
+   * label treatment the date divider and the dispatch card already use —
+   * uppercase, letter-spaced, 500. `tabular-nums` because the first column
+   * of an agent's table is nearly always a row number.
+   *
+   * **Grid, and why its colour is a `currentColor` mix rather than
+   * `--color-border`.** Every cell carries a full 1px border, not just a
+   * header rule and row hairlines: a data table is scanned across as well
+   * as down, and the vertical rules are what keep a wide scrolled table's
+   * columns readable. The weight is `--color-border`'s — every figure below
+   * is a painted pixel read out of a screenshot composited into a canvas,
+   * never `getComputedStyle`, since a `color-mix(…, transparent)` has no
+   * `backgroundColor` to parse. On the peer reading surface the mix reads
+   * **1.36:1** in light and 1.48:1 in dark against the token's 1.31:1 /
+   * 1.30:1 — the same hairline, a shade hotter in dark. But it cannot *be*
+   * `--color-border`, for exactly the reason this whole block reads colour
+   * through `currentColor`: an own message sits on `--color-accent-soft`,
+   * where the token measures **1.13:1 in light and 1.01:1 in dark** — a
+   * grid that is, in dark, simply not painted. The mix lands at 1.36:1 and
+   * 1.52:1 on that same ground, because it follows the ground it is on.
+   */
   :global(.message-html table) {
-    display: block;
-    overflow-x: auto;
-    max-width: 100%;
+    width: 100%;
+    min-width: max-content;
+    border-collapse: collapse;
+    font-family: var(--font-sans);
+    font-size: 0.9em;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+  }
+
+  :global(.message-html th),
+  :global(.message-html td) {
+    border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    padding: 0.7em 0.9em;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  /* Left-aligned like the body cells, not centred (the UA default): a
+   * centred header sitting over left-aligned data breaks the column's
+   * reading edge, which is the one thing a scanned table cannot afford.
+   *
+   * The padding numbers differ from the body cells' only because they are
+   * expressed in this rank's own, smaller `em` — 0.9/1.15em of 10.53px
+   * lands at 9.48px/12.11px against a body cell's 9.45px/12.15px, i.e. the
+   * same painted gutter. The header row still comes out 4px shorter (35px
+   * against 39px), which is the label rank being smaller and is meant. */
+  :global(.message-html thead th) {
+    font-family: var(--font-mono);
+    font-size: 0.78em;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.9em 1.15em;
+    background: color-mix(in srgb, currentColor 6%, transparent);
   }
 
   :global(.message-html p) {
