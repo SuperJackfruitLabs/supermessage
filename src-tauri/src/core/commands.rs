@@ -71,14 +71,23 @@ pub async fn timeline_subscribe(
     session.subscribe_timeline(&room_id, app).await
 }
 
-/// Paginates the focused timeline backwards by up to `count` events. Returns
+/// Paginates `room_id`'s timeline backwards by up to `count` events. Returns
 /// `true` when the start of the timeline was reached.
+///
+/// `room_id` is checked against whichever room is actually focused
+/// (`FocusedTimeline::active_timeline_for`) before pagination runs, and this
+/// fails with a `roomChanged`-kind [`CoreError`] rather than silently
+/// paginating whatever room a since-resolved room switch left focused — see
+/// `FocusedTimeline::paginate_back`'s doc comment for why that guard is
+/// worth paying here too, not just on the three commands where a mismatch
+/// would be a real wrong-recipient hazard.
 #[tauri::command]
 pub async fn timeline_paginate_back(
+    room_id: String,
     count: u16,
     timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<bool, CoreError> {
-    timeline.paginate_back(count).await
+    timeline.paginate_back(&room_id, count).await
 }
 
 /// A full snapshot of the focused timeline — the room it belongs to, the
@@ -94,35 +103,54 @@ pub async fn timeline_resync(
     timeline.snapshot().await
 }
 
-/// Sends a plain-text message to the focused room.
+/// Sends a plain-text message to `room_id`.
+///
+/// `room_id` is verified against whichever room is actually focused
+/// (`FocusedTimeline::active_timeline_for`) before anything is sent. This is
+/// the fix for the wrong-recipient race this command used to be exposed to:
+/// a room switch resolving on the Rust side while a send was in flight used
+/// to send into whatever room ended up focused, not the room the caller
+/// named — see `FocusedTimeline::send_text`'s doc comment. A mismatch fails
+/// with a `roomChanged`-kind [`CoreError`] instead, and nothing is sent.
 #[tauri::command]
 pub async fn send_message(
+    room_id: String,
     body: String,
     timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<(), CoreError> {
-    timeline.send_text(&body).await
+    timeline.send_text(&room_id, &body).await
 }
 
-/// Sends a plain-text reply to `in_reply_to` (a parent event id) in the
-/// focused room.
+/// Sends a plain-text reply to `in_reply_to` (a parent event id) in
+/// `room_id`.
+///
+/// `room_id` is checked the same way, and for the same race, as
+/// [`send_message`] — see `FocusedTimeline::send_reply`'s doc comment for
+/// why this command already failed (safely, by accident) on a mismatch
+/// before this check existed, and what the check changes about that.
 #[tauri::command]
 pub async fn send_reply(
+    room_id: String,
     body: String,
     in_reply_to: String,
     timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<(), CoreError> {
-    timeline.send_reply(&body, &in_reply_to).await
+    timeline.send_reply(&room_id, &body, &in_reply_to).await
 }
 
-/// Toggles `key` as a reaction on `event_id` in the focused room. Returns
-/// whether the reaction was added (`true`) or removed (`false`).
+/// Toggles `key` as a reaction on `event_id` in `room_id`. Returns whether
+/// the reaction was added (`true`) or removed (`false`).
+///
+/// `room_id` is checked the same way, and for the same race, as
+/// [`send_message`] — see `FocusedTimeline::toggle_reaction`'s doc comment.
 #[tauri::command]
 pub async fn toggle_reaction(
+    room_id: String,
     event_id: String,
     key: String,
     timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<bool, CoreError> {
-    timeline.toggle_reaction(&event_id, &key).await
+    timeline.toggle_reaction(&room_id, &event_id, &key).await
 }
 
 /// Resolves and fetches `room_id`'s avatar as a `data:` URI, or `None` when

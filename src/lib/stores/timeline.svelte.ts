@@ -100,33 +100,60 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
     await deps.timelineSubscribe(roomId);
   }
 
-  /** Paginates the focused timeline backwards. Resolves `true` at the start of history. */
-  async function paginateBack(count: number = DEFAULT_PAGE_SIZE): Promise<boolean> {
-    return deps.timelinePaginateBack(count);
-  }
-
-  /** Sends a plain-text message to the focused room. */
-  async function send(body: string): Promise<void> {
-    await deps.sendMessage(body);
+  /**
+   * Paginates `roomId`'s timeline backwards. Resolves `true` at the start of
+   * history.
+   *
+   * `roomId` is not read off `focusedId` above — it comes from the caller
+   * (`Timeline.svelte`'s own `roomId` prop), the same room-scoping
+   * `send`/`sendReply`/`toggleReaction` below take it for. See `send`'s doc
+   * comment for why a store-internal "current room" isn't what closes the
+   * race this exists to close.
+   */
+  async function paginateBack(roomId: string, count: number = DEFAULT_PAGE_SIZE): Promise<boolean> {
+    return deps.timelinePaginateBack(roomId, count);
   }
 
   /**
-   * Sends a plain-text reply to `inReplyTo` (a parent event id) in the
-   * focused room. Never touches `items` itself — same as `send`, the local
-   * echo arrives back through the diff stream this store is already folding
-   * into `items`.
+   * Sends a plain-text message to `roomId`.
+   *
+   * `roomId` is a required argument, not read off this store's own
+   * `focusedId` — `focusedId` is set synchronously the instant a room
+   * switch *starts* (`subscribeTo`), before the `timeline_subscribe`
+   * command it issues has resolved, so it can already have moved on to a
+   * new room by the time an in-flight `send` from the *previous* room
+   * actually reaches the core. Taking `roomId` from the caller instead (see
+   * `Composer.svelte`'s `sentRoomId`, snapshotted before its own await)
+   * means the room a send targets is fixed at the moment the reader hit
+   * Enter, not whatever happens to be focused when the round trip
+   * completes — the core's own `FocusedTimeline::active_timeline_for` check
+   * is what actually enforces this, not this store; the point of passing
+   * `roomId` through is only to give that check something real to compare
+   * against.
    */
-  async function sendReply(body: string, inReplyTo: string): Promise<void> {
-    await deps.sendReply(body, inReplyTo);
+  async function send(roomId: string, body: string): Promise<void> {
+    await deps.sendMessage(roomId, body);
   }
 
   /**
-   * Toggles `key` as a reaction on `eventId` in the focused room. Resolves
-   * to whether the reaction was added. Never touches `items` itself, same
-   * reasoning as `sendReply`.
+   * Sends a plain-text reply to `inReplyTo` (a parent event id) in `roomId`.
+   * Never touches `items` itself — same as `send`, the local echo arrives
+   * back through the diff stream this store is already folding into
+   * `items`. `roomId` is scoped the same way, and for the same reason, as
+   * `send`'s.
    */
-  async function toggleReaction(eventId: string, key: string): Promise<boolean> {
-    return deps.toggleReaction(eventId, key);
+  async function sendReply(roomId: string, body: string, inReplyTo: string): Promise<void> {
+    await deps.sendReply(roomId, body, inReplyTo);
+  }
+
+  /**
+   * Toggles `key` as a reaction on `eventId` in `roomId`. Resolves to
+   * whether the reaction was added. Never touches `items` itself, same
+   * reasoning as `sendReply`. `roomId` is scoped the same way, and for the
+   * same reason, as `send`'s.
+   */
+  async function toggleReaction(roomId: string, eventId: string, key: string): Promise<boolean> {
+    return deps.toggleReaction(roomId, eventId, key);
   }
 
   return {

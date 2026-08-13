@@ -187,9 +187,10 @@ describe("timelineStore: switching rooms while the previous room is still stream
 });
 
 describe("timelineStore: toggleReaction", () => {
-  it("round-trips the IPC call's argument and return value without touching items", async () => {
+  it("round-trips the IPC call's arguments and return value without touching items", async () => {
     const channel = makeChannel();
-    const toggleReaction = vi.fn(async (eventId: string, key: string) => {
+    const toggleReaction = vi.fn(async (roomId: string, eventId: string, key: string) => {
+      expect(roomId).toBe(ROOM_A);
       expect(eventId).toBe("$e1:example.org");
       expect(key).toBe("👍");
       return true;
@@ -209,11 +210,11 @@ describe("timelineStore: toggleReaction", () => {
     channel.emit(env(ROOM_A, 1, [{ op: "reset", values: [item("$e1:example.org")] }]));
     const before = store.items;
 
-    const added = await store.toggleReaction("$e1:example.org", "👍");
+    const added = await store.toggleReaction(ROOM_A, "$e1:example.org", "👍");
 
     expect(added).toBe(true);
     expect(toggleReaction).toHaveBeenCalledTimes(1);
-    expect(toggleReaction).toHaveBeenCalledWith("$e1:example.org", "👍");
+    expect(toggleReaction).toHaveBeenCalledWith(ROOM_A, "$e1:example.org", "👍");
     // No optimistic update: the store never appends/mutates on its own —
     // only a diff arriving over `onTimelineDiff` changes `items` (see
     // `Timeline.svelte`'s and this store's doc comments for why).
@@ -235,13 +236,13 @@ describe("timelineStore: toggleReaction", () => {
     });
 
     await store.subscribeTo(ROOM_A);
-    const removed = await store.toggleReaction("$e1:example.org", "👍");
+    const removed = await store.toggleReaction(ROOM_A, "$e1:example.org", "👍");
     expect(removed).toBe(false);
   });
 });
 
 describe("timelineStore: sendReply", () => {
-  it("forwards body and the parent event id to the IPC call unchanged", async () => {
+  it("forwards the room id, body and the parent event id to the IPC call unchanged", async () => {
     const sendReply = vi.fn(async () => undefined);
     const store = createTimelineStore({
       timelineSubscribe: vi.fn(),
@@ -253,9 +254,9 @@ describe("timelineStore: sendReply", () => {
       onTimelineDiff: vi.fn(async () => () => {}),
     });
 
-    await store.sendReply("hello", "$parent:example.org");
+    await store.sendReply(ROOM_A, "hello", "$parent:example.org");
 
     expect(sendReply).toHaveBeenCalledTimes(1);
-    expect(sendReply).toHaveBeenCalledWith("hello", "$parent:example.org");
+    expect(sendReply).toHaveBeenCalledWith(ROOM_A, "hello", "$parent:example.org");
   });
 });

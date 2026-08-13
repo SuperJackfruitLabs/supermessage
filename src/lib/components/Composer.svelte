@@ -36,12 +36,24 @@
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { DraftTracker } from "./draftTracker";
+  import type { CoreError } from "$lib/ipc";
 
   let { roomId }: { roomId: string } = $props();
 
   const drafts = new DraftTracker();
   let value = $state("");
   let sending = $state(false);
+  /**
+   * Set only for the one failure mode worth calling out by name: the core
+   * rejected a send with `CoreError.kind === "roomChanged"` because the
+   * reader switched rooms before it went through (see `send`'s `catch`
+   * below and `$lib/ipc.ts`'s `CoreErrorKind` doc comment). Every other
+   * failure still just logs to the console — this is not a general-purpose
+   * error banner — but a room-changed rejection is the one case where
+   * silence would look like the message went through when it didn't, which
+   * is worse than an ordinary visible failure.
+   */
+  let sendError = $state<string | null>(null);
 
   // Bookkeeping for the effect below, not a value the template reads —
   // same reasoning as `Timeline.svelte`'s `previousLastId`.
@@ -51,6 +63,12 @@
     if (roomId !== previousRoomId) {
       value = drafts.switchTo(roomId, value);
       previousRoomId = roomId;
+      // A room-changed send error names the room switch that caused it;
+      // once the reader has switched again, it's talking about a switch
+      // that's no longer the current one, so it stops being useful and
+      // starts being confusing pinned against whatever room they're looking
+      // at now.
+      sendError = null;
     }
   });
 
@@ -77,11 +95,12 @@
     // for `value`.
     const target = replyTargetStore.get(sentRoomId);
     sending = true;
+    sendError = null;
     try {
       if (target) {
-        await timelineStore.sendReply(body, target.eventId);
+        await timelineStore.sendReply(sentRoomId, body, target.eventId);
       } else {
-        await timelineStore.send(body);
+        await timelineStore.send(sentRoomId, body);
       }
       if (roomId === sentRoomId) {
         value = "";
@@ -99,6 +118,14 @@
       replyTargetStore.clear(sentRoomId);
     } catch (err) {
       console.error("failed to send message", err);
+      // `value`/`replyTargetStore` are deliberately left untouched here —
+      // the draft (and any pending reply target) survive a failed send
+      // exactly like the doc comment at the top of this file promises,
+      // whichever room they now belong to.
+      if ((err as CoreError)?.kind === "roomChanged") {
+        sendError =
+          "Not sent — you switched rooms before this went through. Your draft is safe; try again.";
+      }
     } finally {
       sending = false;
     }
@@ -128,6 +155,11 @@
     >
       ✕
     </button>
+  </div>
+{/if}
+{#if sendError}
+  <div class="flex shrink-0 items-center border-t border-border bg-surface-sunken px-4 py-2 text-xs">
+    <p class="selectable text-danger" role="alert">{sendError}</p>
   </div>
 {/if}
 <div

@@ -592,10 +592,28 @@ fn truncate_reply_excerpt(body: &str) -> String {
 /// `detail`, for the two kinds that need it) to the same short wording
 /// `Timeline.svelte`'s `timelineItemView.ts` (`viewFor`'s placeholder
 /// branches) already uses for that event kind — so a reply quoting a
-/// redacted, sticker, poll, or undecryptable parent reads with the exact
-/// vocabulary the reader already knows from encountering that event kind
-/// as a top-level item, rather than a second, differently-worded label for
-/// the same thing.
+/// redacted, sticker, poll, undecryptable, live-location, call-invite,
+/// rtc-notification, custom-message, or failed-to-parse parent reads with
+/// the exact vocabulary the reader already knows from encountering that
+/// event kind as a top-level item, rather than a second, differently-worded
+/// label for the same thing.
+///
+/// That wording match is **not** exact for `"membership"`, `"profileChange"`
+/// or `"state"` — this function returns a fixed generic string for each
+/// ("Membership change", "Profile change", "State change"), where `viewFor`
+/// itself renders, respectively, a dynamic attributed sentence
+/// (`membershipView`, e.g. "Alice joined the room"), nothing at all
+/// (`render: "none"`, deliberately suppressed as noise), and a per-event-type
+/// decision (`stateView`: specific system text for `m.room.create`/
+/// `m.room.encryption`/`m.room.tombstone`, `render: "none"` for every other
+/// state event). None of the three is reachable here in practice, which is
+/// what makes the generic strings an acceptable placeholder rather than a
+/// bug to fix: `Timeline::send_reply` (via the homeserver's
+/// `m.relates_to`/`m.in_reply_to` validation) rejects state events as reply
+/// targets outright, and `MembershipChange`/`ProfileChange` content is
+/// itself carried on a state event — so no parent this function is ever
+/// actually called against can classify to any of these three kinds. Fix
+/// this comment's claim, not the strings themselves, if that ever changes.
 ///
 /// `None` for `kind == "message"`: every `MsgLikeKind::Message` has a body
 /// (`content.as_message()` is always `Some`), so `reply_to_dto` never
@@ -1053,28 +1071,57 @@ impl FocusedTimeline {
         Ok(())
     }
 
-    /// Paginates the focused timeline backwards by up to `count` events.
+    /// Paginates `room_id`'s timeline backwards by up to `count` events.
     /// Returns `true` when the start of the timeline was reached.
     ///
-    /// Fails with [`CoreError::NotReady`] when no room is focused.
-    pub async fn paginate_back(&self, count: u16) -> CoreResult<bool> {
-        let timeline = self.active_timeline()?;
+    /// Checked against the focused room the same way, and for the same
+    /// race, as [`Self::send_text`] — see [`Self::active_timeline_for`]'s
+    /// doc comment. A stale pagination landing on the *new* room (the only
+    /// place it could land; there is no way to reach the old room's `Timeline`
+    /// at all once it's unfocused) would be silently wasted work at best —
+    /// an unwanted extra page loaded into a room the reader didn't ask to
+    /// paginate — and at worst counts against the new room's own
+    /// [`MAX_RESEED_ATTEMPTS`] budget or perturbs its `reachedStart`
+    /// bookkeeping for a scroll position the reader isn't even looking at.
+    /// Neither is dangerous the way a misdirected send is, but both are
+    /// pointless once the caller can name the room it means, so this takes
+    /// the same guard as the other three commands rather than being the one
+    /// exception.
+    ///
+    /// Fails with [`CoreError::NotReady`] when no room is focused, or
+    /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is.
+    pub async fn paginate_back(&self, room_id: &str, count: u16) -> CoreResult<bool> {
+        let timeline = self.active_timeline_for(room_id)?;
         timeline
             .paginate_backwards(count)
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))
     }
 
-    /// Sends a plain-text message to the focused room.
+    /// Sends a plain-text message to `room_id`.
+    ///
+    /// Checks `room_id` against whichever room is actually focused, under
+    /// the same lock acquisition that reads out the `Timeline` to send
+    /// through — see [`Self::active_timeline_for`]'s doc comment for why
+    /// that atomicity is what closes the race this exists to close, rather
+    /// than merely narrowing it. This is the one command among the four
+    /// that guard this way where skipping the check would be a real
+    /// wrong-recipient hazard, not a safety net firing by accident: unlike
+    /// [`Self::send_reply`]/[`Self::toggle_reaction`], nothing about sending
+    /// a plain message can fail just because it executed against a
+    /// different room than the caller intended — the send would simply
+    /// succeed, into the wrong room.
     ///
     /// Does not emit anything itself: `Timeline::send` adds the local echo
     /// to the timeline, which arrives at the webview through the same diff
     /// stream `subscribe` set up — emitting it again here would show the
     /// message twice.
     ///
-    /// Fails with [`CoreError::NotReady`] when no room is focused.
-    pub async fn send_text(&self, body: &str) -> CoreResult<()> {
-        let timeline = self.active_timeline()?;
+    /// Fails with [`CoreError::NotReady`] when no room is focused, or
+    /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is — in
+    /// either case, nothing is sent.
+    pub async fn send_text(&self, room_id: &str, body: &str) -> CoreResult<()> {
+        let timeline = self.active_timeline_for(room_id)?;
         let content =
             AnyMessageLikeEventContent::RoomMessage(RoomMessageEventContent::text_plain(body));
         timeline
@@ -1084,7 +1131,24 @@ impl FocusedTimeline {
         Ok(())
     }
 
-    /// Sends a plain-text reply to `in_reply_to` in the focused room.
+    /// Sends a plain-text reply to `in_reply_to` in `room_id`.
+    ///
+    /// Checked against the focused room the same way, and for the same
+    /// race, as [`Self::send_text`] — see [`Self::active_timeline_for`]'s
+    /// doc comment. Before this check existed, a reply issued during a room
+    /// switch that resolved on the Rust side still (almost always) failed
+    /// safely by accident: `in_reply_to` is a Matrix event id scoped to the
+    /// room it was composed against, and `Timeline::send_reply` resolves it
+    /// by fetching the parent event *from whichever room this `Timeline`
+    /// now belongs to* — a different room's event id essentially never
+    /// resolves there, so the send failed with [`CoreError::Protocol`]
+    /// instead of landing. This check does not change that outcome; it
+    /// changes *why* it fails, from an opaque fetch error to a typed,
+    /// intentional [`CoreError::RoomChanged`] the webview can actually
+    /// explain to the reader — and it closes the accidental net's one gap:
+    /// a parent event id that happens to collide (vanishingly unlikely, but
+    /// not the kind of thing to leave to chance) could otherwise still
+    /// resolve in the wrong room and send there.
     ///
     /// Does not emit anything itself, same reasoning as [`Self::send_text`]:
     /// `Timeline::send_reply` adds the local echo to the timeline, which
@@ -1110,11 +1174,13 @@ impl FocusedTimeline {
     /// guarantees `in_reply_to` parses as a valid [`EventId`] in the first
     /// place.
     ///
-    /// Fails with [`CoreError::NotReady`] when no room is focused.
-    pub async fn send_reply(&self, body: &str, in_reply_to: &str) -> CoreResult<()> {
+    /// Fails with [`CoreError::NotReady`] when no room is focused, or
+    /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is — in
+    /// either case, nothing is sent.
+    pub async fn send_reply(&self, room_id: &str, body: &str, in_reply_to: &str) -> CoreResult<()> {
         let event_id =
             EventId::parse(in_reply_to).map_err(|e| CoreError::Protocol(e.to_string()))?;
-        let timeline = self.active_timeline()?;
+        let timeline = self.active_timeline_for(room_id)?;
         let content = RoomMessageEventContentWithoutRelation::text_plain(body);
         timeline
             .send_reply(content, event_id)
@@ -1123,13 +1189,22 @@ impl FocusedTimeline {
         Ok(())
     }
 
-    /// Toggles `reaction_key` as a reaction on `event_id` in the focused
-    /// room. Returns whether the reaction was added (`true`) or removed
-    /// (`false`) — `Timeline::toggle_reaction` decides which by checking
-    /// whether the current user has already reacted with this exact key,
-    /// and (per its own doc comment) serialises concurrent toggles against
-    /// the same item so a rapid double-click can't race itself into sending
-    /// two requests.
+    /// Toggles `reaction_key` as a reaction on `event_id` in `room_id`.
+    /// Returns whether the reaction was added (`true`) or removed (`false`)
+    /// — `Timeline::toggle_reaction` decides which by checking whether the
+    /// current user has already reacted with this exact key, and (per its
+    /// own doc comment) serialises concurrent toggles against the same item
+    /// so a rapid double-click can't race itself into sending two requests.
+    ///
+    /// Checked against the focused room for the same reason, and with the
+    /// same "already failed safely by accident, this makes it fail
+    /// intentionally" caveat, as [`Self::send_reply`] — `event_id` is
+    /// looked up scoped to whichever room this `Timeline` now belongs to
+    /// (`Timeline::toggle_reaction` -> `EventCache`), so a mismatched room
+    /// already surfaced as [`CoreError::Protocol`]
+    /// (`FailedToToggleReaction`) before this check existed; now it
+    /// surfaces as [`CoreError::RoomChanged`] instead, and no longer
+    /// depends on the two rooms' event ids never colliding.
     ///
     /// Does not emit anything itself, same reasoning as [`Self::send_text`]:
     /// the SDK adds (or redacts) the reaction as a local echo that arrives
@@ -1138,10 +1213,16 @@ impl FocusedTimeline {
     /// `event_id` has the same real-event-id requirement [`Self::send_reply`]'s
     /// `in_reply_to` does — see that method's doc comment.
     ///
-    /// Fails with [`CoreError::NotReady`] when no room is focused.
-    pub async fn toggle_reaction(&self, event_id: &str, reaction_key: &str) -> CoreResult<bool> {
+    /// Fails with [`CoreError::NotReady`] when no room is focused, or
+    /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is.
+    pub async fn toggle_reaction(
+        &self,
+        room_id: &str,
+        event_id: &str,
+        reaction_key: &str,
+    ) -> CoreResult<bool> {
         let event_id = EventId::parse(event_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
-        let timeline = self.active_timeline()?;
+        let timeline = self.active_timeline_for(room_id)?;
         let item_id = TimelineEventItemId::EventId(event_id);
         timeline
             .toggle_reaction(&item_id, reaction_key)
@@ -1198,6 +1279,12 @@ impl FocusedTimeline {
 
     /// Clones the currently focused `Timeline`, if any. `Timeline` is
     /// wrapped in `Arc` on the handle, so this is cheap.
+    ///
+    /// Unchecked against any particular room id — only [`Self::media_source`]
+    /// still calls this directly, for a read that's already scoped by event
+    /// id rather than a room id the caller names (see that method's doc
+    /// comment). Every command that names a room it means to act on goes
+    /// through [`Self::active_timeline_for`] instead.
     fn active_timeline(&self) -> CoreResult<Arc<Timeline>> {
         let handle = self
             .0
@@ -1206,6 +1293,40 @@ impl FocusedTimeline {
         Ok(Arc::clone(
             &handle.as_ref().ok_or(CoreError::NotReady)?.timeline,
         ))
+    }
+
+    /// Clones the focused `Timeline`, but only when `room_id` is actually
+    /// the room installed right now — this is what closes the wrong-room
+    /// race described in this module's doc comment for `send_text`,
+    /// `send_reply`, `toggle_reaction` and `paginate_back`.
+    ///
+    /// The read (which room is focused) and the act (cloning that room's
+    /// `Timeline` to hand back to the caller, which then sends into it) are
+    /// not two operations — they are one lock acquisition. `subscribe`'s
+    /// own install step (`*self.0.lock()... = Some(...)`, at the end of that
+    /// method) needs the same `std::sync::Mutex`, so it cannot swap in a
+    /// different room's handle while this function is still inside its own
+    /// `lock()` call deciding whether `room_id` matches. That is what makes
+    /// this race-free rather than merely narrower than checking `room_id`
+    /// against a value read earlier: there is no window, however small,
+    /// between "confirm this is the right room" and "hand back a `Timeline`
+    /// to act through" for a `subscribe` call to land in.
+    ///
+    /// The comparison itself is delegated to [`verify_room_focus`], a pure
+    /// function over two already-extracted strings, so the actual matching
+    /// logic is unit-testable without a live `Mutex`/`Timeline` at all — see
+    /// this module's tests. This function is the thin, SDK-touching adapter
+    /// around it, the same split `should_reseed`/`emit_ops` and
+    /// `truncate_reply_excerpt`/`reply_to_dto` already use elsewhere in this
+    /// module.
+    fn active_timeline_for(&self, room_id: &str) -> CoreResult<Arc<Timeline>> {
+        let handle = self
+            .0
+            .lock()
+            .map_err(|_| CoreError::Protocol("focused timeline lock poisoned".into()))?;
+        let handle = handle.as_ref().ok_or(CoreError::NotReady)?;
+        verify_room_focus(room_id, &handle.room_id)?;
+        Ok(Arc::clone(&handle.timeline))
     }
 
     /// Stops and drops the currently focused subscription, if any, and waits
@@ -1275,6 +1396,37 @@ impl FocusedTimeline {
 /// landing back at zero). See [`MAX_RESEED_ATTEMPTS`]'s doc comment.
 fn should_reseed(before: usize, after: usize, reseed_attempts: u32) -> bool {
     before > 0 && after == 0 && reseed_attempts < MAX_RESEED_ATTEMPTS
+}
+
+/// The actual comparison behind [`FocusedTimeline::active_timeline_for`]:
+/// does `requested` (the room id a room-scoped command was issued for) name
+/// the same room as `focused` (the room id of the handle currently
+/// installed)?
+///
+/// Pure and SDK-free on purpose, like [`should_reseed`] and
+/// `core::rooms::resolve_two_person_avatar_url`: both inputs are plain
+/// already-extracted strings, so the actual trigger condition for
+/// [`CoreError::RoomChanged`] needs no `Mutex`, no live `Timeline`, no
+/// Tauri state — see this module's tests.
+///
+/// String equality, not `RoomId` parsing — deliberately. `focused` always
+/// comes from a `TimelineHandle::room_id` that was itself built from a
+/// `RoomId` `subscribe` already validated, and `requested` gets its own
+/// independent parse-or-fail treatment downstream wherever it's next used
+/// as a `RoomId` (`FocusedTimeline::subscribe`'s `RoomId::parse`, for the
+/// `timeline_subscribe` command) — this function only ever needs to answer
+/// "are these the same room", which plain string comparison already does
+/// correctly for two syntactically valid Matrix room ids, without this
+/// function taking on a second, redundant validation job.
+fn verify_room_focus(requested: &str, focused: &str) -> CoreResult<()> {
+    if requested == focused {
+        Ok(())
+    } else {
+        Err(CoreError::RoomChanged {
+            requested: requested.to_string(),
+            focused: focused.to_string(),
+        })
+    }
 }
 
 /// Folds `ops` into the materialized snapshot under one critical section,
@@ -2014,6 +2166,40 @@ mod tests {
         );
     }
 
+    // `verify_room_focus`: pure over two already-extracted room id strings,
+    // so — like `should_reseed` above — this is exercised directly rather
+    // than through a live `FocusedTimeline`/`Mutex`/`Timeline`. This is the
+    // mismatch path the room-scope fix exists to close: a command issued for
+    // room A while room B is focused must fail with `CoreError::RoomChanged`
+    // and, structurally (see `FocusedTimeline::active_timeline_for` and
+    // every one of `send_text`/`send_reply`/`toggle_reaction`/
+    // `paginate_back`'s `let timeline = self.active_timeline_for(room_id)?;`
+    // guard), never reach the SDK call that would actually send/toggle/
+    // paginate — an `Err` here returns before any `Timeline` is even handed
+    // back to the caller.
+
+    #[test]
+    fn verify_room_focus_succeeds_when_the_requested_room_is_focused() {
+        assert!(verify_room_focus("!a:x.org", "!a:x.org").is_ok());
+    }
+
+    #[test]
+    fn verify_room_focus_fails_with_room_changed_when_a_different_room_is_focused() {
+        // The scenario from the task brief: a command meant for room A
+        // (`requested`) issued while room B (`focused`) is what's actually
+        // installed — e.g. because a room switch resolved on the Rust side
+        // while the command was in flight.
+        let err = verify_room_focus("!a:x.org", "!b:x.org").unwrap_err();
+        assert_eq!(err.kind(), "roomChanged");
+        match err {
+            CoreError::RoomChanged { requested, focused } => {
+                assert_eq!(requested, "!a:x.org");
+                assert_eq!(focused, "!b:x.org");
+            }
+            other => panic!("expected CoreError::RoomChanged, got {other:?}"),
+        }
+    }
+
     // `truncate_reply_excerpt`/`project_reply_to`/`project_reactions`: pure
     // over plain strings, so — like `should_reseed` above — these are
     // exercised directly rather than through a live timeline item.
@@ -2357,15 +2543,21 @@ mod tests {
 
     #[tokio::test]
     async fn focused_timeline_paginate_back_reports_not_ready_when_nothing_is_focused() {
+        // Nothing focused at all outranks a room mismatch: `active_timeline_for`
+        // checks `handle.as_ref().ok_or(CoreError::NotReady)` before it ever
+        // reaches `verify_room_focus`, so this reports `notReady` regardless
+        // of which room id is passed — see the `_reports_room_changed_`
+        // tests below for the case where a room *is* focused, just not this
+        // one.
         let focused = FocusedTimeline::default();
-        let err = focused.paginate_back(10).await.unwrap_err();
+        let err = focused.paginate_back("!a:x.org", 10).await.unwrap_err();
         assert_eq!(err.kind(), "notReady");
     }
 
     #[tokio::test]
     async fn focused_timeline_send_text_reports_not_ready_when_nothing_is_focused() {
         let focused = FocusedTimeline::default();
-        let err = focused.send_text("hi").await.unwrap_err();
+        let err = focused.send_text("!a:x.org", "hi").await.unwrap_err();
         assert_eq!(err.kind(), "notReady");
     }
 
@@ -2373,7 +2565,7 @@ mod tests {
     async fn focused_timeline_send_reply_reports_not_ready_when_nothing_is_focused() {
         let focused = FocusedTimeline::default();
         let err = focused
-            .send_reply("hi", "$parent:example.org")
+            .send_reply("!a:x.org", "hi", "$parent:example.org")
             .await
             .unwrap_err();
         assert_eq!(err.kind(), "notReady");
@@ -2381,14 +2573,16 @@ mod tests {
 
     #[tokio::test]
     async fn focused_timeline_send_reply_reports_a_protocol_error_for_a_malformed_event_id() {
-        // The event-id parse happens before the "is anything focused at
-        // all" check, so this specifically exercises that `EventId::parse`
-        // failure surfaces as `CoreError::Protocol`, not `NotReady` — even
-        // with nothing focused, a malformed id is still the more specific,
-        // more useful error to report.
+        // The event-id parse happens before the room check (which itself
+        // happens before the "is anything focused at all" check — see
+        // `send_reply`'s body), so this specifically exercises that
+        // `EventId::parse` failure surfaces as `CoreError::Protocol`, not
+        // `NotReady` or `RoomChanged` — even with nothing focused, a
+        // malformed id is still the more specific, more useful error to
+        // report.
         let focused = FocusedTimeline::default();
         let err = focused
-            .send_reply("hi", "not-a-valid-event-id")
+            .send_reply("!a:x.org", "hi", "not-a-valid-event-id")
             .await
             .unwrap_err();
         assert_eq!(err.kind(), "protocol");
@@ -2398,7 +2592,7 @@ mod tests {
     async fn focused_timeline_toggle_reaction_reports_not_ready_when_nothing_is_focused() {
         let focused = FocusedTimeline::default();
         let err = focused
-            .toggle_reaction("$parent:example.org", "👍")
+            .toggle_reaction("!a:x.org", "$parent:example.org", "👍")
             .await
             .unwrap_err();
         assert_eq!(err.kind(), "notReady");
@@ -2408,7 +2602,7 @@ mod tests {
     async fn focused_timeline_toggle_reaction_reports_a_protocol_error_for_a_malformed_event_id() {
         let focused = FocusedTimeline::default();
         let err = focused
-            .toggle_reaction("not-a-valid-event-id", "👍")
+            .toggle_reaction("!a:x.org", "not-a-valid-event-id", "👍")
             .await
             .unwrap_err();
         assert_eq!(err.kind(), "protocol");

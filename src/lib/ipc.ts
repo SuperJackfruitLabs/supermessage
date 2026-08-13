@@ -192,8 +192,22 @@ export interface Reaction {
   byMe: boolean;
 }
 
-/** Mirrors `CoreError::kind()` from `src-tauri/src/core/error.rs`. */
-export type CoreErrorKind = "auth" | "network" | "store" | "protocol" | "notReady";
+/**
+ * Mirrors `CoreError::kind()` from `src-tauri/src/core/error.rs`.
+ *
+ * `"roomChanged"` is distinct from `"protocol"`/`"notReady"` on purpose: it
+ * means a room-scoped command ({@link sendMessage}, {@link sendReply},
+ * {@link toggleReaction}, {@link timelinePaginateBack}) named a `roomId`
+ * that wasn't the room actually focused when the core got around to running
+ * it — the caller lost a race against a room switch — and **the command did
+ * not act**. Every other kind here describes something that went wrong
+ * while the core was doing what it was asked; this one describes the core
+ * refusing to do something it was no longer being asked for. Callers should
+ * surface it, not swallow it the way a generic failure might be: a send
+ * that silently landed nowhere still needs the reader to know it needs
+ * retrying, the same way a send that visibly failed does.
+ */
+export type CoreErrorKind = "auth" | "network" | "store" | "protocol" | "notReady" | "roomChanged";
 
 /**
  * Mirrors the serialized shape of `CoreError`. Every command in this file
@@ -284,11 +298,18 @@ export async function timelineSubscribe(roomId: string): Promise<void> {
 }
 
 /**
- * Paginates the focused timeline backwards by up to `count` events. Resolves
+ * Paginates `roomId`'s timeline backwards by up to `count` events. Resolves
  * `true` when the start of the timeline was reached.
+ *
+ * `roomId` must be the room the caller actually means: the core checks it
+ * against whichever room is focused when the command runs and rejects with
+ * a `"roomChanged"`-kind {@link CoreError} on a mismatch (e.g. the reader
+ * switched rooms while this call was in flight) rather than silently
+ * paginating whatever room ended up focused instead. See
+ * {@link CoreErrorKind}'s doc comment.
  */
-export async function timelinePaginateBack(count: number): Promise<boolean> {
-  return invoke<boolean>("timeline_paginate_back", { count });
+export async function timelinePaginateBack(roomId: string, count: number): Promise<boolean> {
+  return invoke<boolean>("timeline_paginate_back", { roomId, count });
 }
 
 /**
@@ -308,38 +329,54 @@ export async function timelineResync(): Promise<[string, number, TimelineItem[]]
   return invoke<[string, number, TimelineItem[]]>("timeline_resync");
 }
 
-/** Sends a plain-text message to the focused room. */
-export async function sendMessage(body: string): Promise<void> {
-  await invoke<void>("send_message", { body });
+/**
+ * Sends a plain-text message to `roomId`.
+ *
+ * `roomId` must be the room the caller actually means, same as
+ * {@link timelinePaginateBack}'s `roomId` — the core verifies it against
+ * whichever room is focused when the command runs and rejects with a
+ * `"roomChanged"`-kind {@link CoreError} on a mismatch, **without sending**,
+ * rather than silently delivering into whatever room ended up focused
+ * instead. This is the command where that guard matters most: unlike
+ * {@link sendReply}/{@link toggleReaction}, nothing about sending a plain
+ * message would otherwise fail just because it landed in the wrong room —
+ * see {@link CoreErrorKind}'s doc comment.
+ */
+export async function sendMessage(roomId: string, body: string): Promise<void> {
+  await invoke<void>("send_message", { roomId, body });
 }
 
 /**
- * Sends a plain-text reply to `inReplyTo` (a parent event id) in the focused
- * room. Does not append anything to `timelineStore.items` itself — same as
+ * Sends a plain-text reply to `inReplyTo` (a parent event id) in `roomId`.
+ * Does not append anything to `timelineStore.items` itself — same as
  * {@link sendMessage}, the SDK adds the local echo to the timeline, which
  * arrives back through the diff stream {@link onTimelineDiff} subscribes to.
+ *
+ * `roomId` is checked the same way, and for the same reason, as
+ * {@link sendMessage}'s.
  *
  * `inReplyTo` must be a real Matrix event id, not a local echo's transaction
  * id — see `TimelineItem.sendState`'s doc comment and
  * `$lib/components/timelineItemView.ts`'s `canReplyOrReact` for the rule the
  * webview uses to only ever offer this for an item that already has one.
  */
-export async function sendReply(body: string, inReplyTo: string): Promise<void> {
-  await invoke<void>("send_reply", { body, inReplyTo });
+export async function sendReply(roomId: string, body: string, inReplyTo: string): Promise<void> {
+  await invoke<void>("send_reply", { roomId, body, inReplyTo });
 }
 
 /**
- * Toggles `key` as a reaction on `eventId` in the focused room. Resolves to
- * whether the reaction was added (`true`) or removed (`false`) — mirrors
+ * Toggles `key` as a reaction on `eventId` in `roomId`. Resolves to whether
+ * the reaction was added (`true`) or removed (`false`) — mirrors
  * `Timeline::toggle_reaction`'s own return value. Does not append anything
  * to `timelineStore.items` itself, same reasoning as {@link sendReply}: the
  * SDK's local echo arrives back through the diff stream.
  *
- * `eventId` has the same real-event-id requirement as {@link sendReply}'s
- * `inReplyTo`.
+ * `roomId` is checked the same way, and for the same reason, as
+ * {@link sendMessage}'s. `eventId` has the same real-event-id requirement
+ * as {@link sendReply}'s `inReplyTo`.
  */
-export async function toggleReaction(eventId: string, key: string): Promise<boolean> {
-  return invoke<boolean>("toggle_reaction", { eventId, key });
+export async function toggleReaction(roomId: string, eventId: string, key: string): Promise<boolean> {
+  return invoke<boolean>("toggle_reaction", { roomId, eventId, key });
 }
 
 /**

@@ -315,7 +315,16 @@
   async function requestOlderMessages(): Promise<void> {
     paginating = true;
     try {
-      reachedStart = await timelineStore.paginateBack(PAGE_SIZE);
+      // `roomId` is a stable prop for this component's whole lifetime — this
+      // pane is remounted (`{#key roomsStore.selectedId}` in `+page.svelte`)
+      // on every room switch, unlike `Composer.svelte`, so there is no
+      // "reader switched rooms mid-call" case to snapshot against here. It's
+      // still passed explicitly, not left for the core to infer from
+      // whatever's focused, so a stale call from a just-unmounted instance
+      // (its promise still resolving after the reader switched rooms) names
+      // the room it was actually issued for and gets rejected as
+      // `roomChanged` rather than paginating whatever room is focused now.
+      reachedStart = await timelineStore.paginateBack(roomId, PAGE_SIZE);
     } catch (err) {
       console.error("timeline paginateBack failed", err);
     } finally {
@@ -350,7 +359,11 @@
    */
   async function handleToggleReaction(eventId: string, key: string): Promise<void> {
     try {
-      await timelineStore.toggleReaction(eventId, key);
+      // Same reasoning as `requestOlderMessages`'s `roomId` argument: stable
+      // for this component's lifetime, passed explicitly so a stale toggle
+      // from a just-unmounted instance is rejected rather than landing
+      // against whatever room is focused when it finally resolves.
+      await timelineStore.toggleReaction(roomId, eventId, key);
     } catch (err) {
       console.error("failed to toggle reaction", err);
     }
