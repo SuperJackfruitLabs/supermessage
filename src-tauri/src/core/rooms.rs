@@ -168,10 +168,29 @@ pub async fn resolve_room_avatar_mxc(room: &Room) -> CoreResult<Option<String>> 
         return Ok(avatar_url);
     }
 
-    let members = room
+    let mut members = room
         .members_no_sync(RoomMemberships::JOIN)
         .await
         .map_err(|e| CoreError::Protocol(e.to_string()))?;
+
+    // The local store is lazily populated: sliding sync's `$LAZY` member
+    // state only carries members who sent an event inside the synced window,
+    // and the room list's timeline limit is 1. So a two-person room whose
+    // other member hasn't spoken recently has just *our own* member event
+    // cached, and the two-person rule below can't fire — measured against
+    // this deployment, that was 9 of 16 rooms.
+    //
+    // Fetch the real member list in that case, but only then: gated on the
+    // room claiming exactly two active members, so this never pulls the
+    // member list of a large room. It costs one `/members` round trip per
+    // affected room, once — the webview caches the resolved avatar per room,
+    // and the SDK caches the member list it fetches here.
+    if members.len() < 2 && room.active_members_count() == 2 {
+        members = room
+            .members(RoomMemberships::JOIN)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+    }
     let member_avatar_urls: Vec<(bool, Option<String>)> = members
         .iter()
         .map(|member| {
@@ -182,7 +201,19 @@ pub async fn resolve_room_avatar_mxc(room: &Room) -> CoreResult<Option<String>> 
         })
         .collect();
 
-    Ok(resolve_two_person_avatar_url(&member_avatar_urls))
+    let resolved = resolve_two_person_avatar_url(&member_avatar_urls);
+    tracing::debug!(
+        room = %room.room_id(),
+        joined_members = member_avatar_urls.len(),
+        others_with_avatar = member_avatar_urls
+            .iter()
+            .filter(|(is_own, url)| !*is_own && url.is_some())
+            .count(),
+        resolved = resolved.is_some(),
+        "two-person avatar fallback"
+    );
+
+    Ok(resolved)
 }
 
 /// Project an SDK [`RoomListItem`] into the wire [`RoomSummary`].
