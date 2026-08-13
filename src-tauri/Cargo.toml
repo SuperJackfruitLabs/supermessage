@@ -55,8 +55,13 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 
 [dev-dependencies]
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
-# no_retry_test_client_with_server), wiremock to script the homeserver's HTTP
-# responses in auth tests.
+# no_retry_test_client_with_server, MatrixMockServer), wiremock to script the
+# homeserver's HTTP responses in auth tests.
 matrix-sdk = { version = "0.18", features = ["testing"] }
 wiremock = "0.6"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# `event_factory` builds real SDK events (EventFactory), fed through a
+# MatrixMockServer-backed sync into a genuine matrix_sdk_ui::Timeline —
+# see tests/timeline_projection.rs's module doc comment for why this, not
+# hand-written DTOs, is what that file exists to exercise.
+matrix-sdk-test = "0.18"

@@ -5737,6 +5737,7 @@ dependencies = [
  "imbl",
  "keyring",
  "matrix-sdk",
+ "matrix-sdk-test",
  "matrix-sdk-ui",
  "rand 0.9.5",
  "rustls",

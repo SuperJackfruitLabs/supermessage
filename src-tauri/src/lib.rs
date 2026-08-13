@@ -5,7 +5,16 @@
 // that computing its layout overflows rustc's default query recursion limit.
 #![recursion_limit = "256"]
 
-mod core;
+// `pub`, not merely `mod`: `tests/timeline_projection.rs` is a genuine Cargo
+// integration test (a separate crate that links this one as an ordinary
+// dependency, not compiled with `--cfg test`), so it can only reach
+// `core::timeline::project_item`/`core::tls::install_ring_provider`/the DTOs
+// in `core::dto` if this module is actually public — `#[cfg(test)] pub mod
+// core;` would not do it, since that cfg is false for the non-test rlib build
+// integration tests link against. Nothing here is meant as a stable external
+// API; this crate is never published, and the only consumers of the `rlib`
+// crate-type are this binary and its own test targets.
+pub mod core;
 
 use serde::Serialize;
 use tauri::{Manager, Url, WebviewWindowBuilder};
