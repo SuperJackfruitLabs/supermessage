@@ -1,0 +1,144 @@
+// Collapses consecutive membership-change items into a single system line,
+// so a room with many agents joining/leaving doesn't bury the conversation
+// under one near-identical row per change. `docs/matrix-events.md` (Table B)
+// calls for collapsing these runs; this module is the pure grouping logic
+// `Timeline.svelte` renders from.
+//
+// Kept in its own module, mirroring `timelineItemView.ts` and
+// `draftTracker.ts`, so the grouping is unit-testable without a DOM.
+//
+// This is a *presentation*-layer concern only. The timeline is driven by
+// sequence-numbered diffs applied to `timelineStore.items` (see
+// `timeline.svelte.ts` and `core::timeline`'s doc comment), and `virtua`
+// virtualises that list by index — grouping must never mutate, filter, or
+// reorder the source array, or disturb the identity/keys the rest of the
+// app uses for it. `groupTimelineItems` below only ever *reads* `items`; it
+// returns a new derived list of "display rows", each of which either wraps
+// one original `TimelineItem` unchanged or bundles several into a group,
+// but never drops, copies, or edits an item's own fields. `Timeline.svelte`
+// calls this once per render from the raw item array (a `$derived`), so
+// grouping recomputes automatically whenever a new event arrives (append),
+// history is paginated in (prepend), or an item changes in place (edit) —
+// there is no cached grouping state of its own to fall out of sync.
+//
+// Runs are broken on:
+//  - any non-membership item, including a date divider — a run interrupted
+//    by a real message or a date divider is two runs, never merged across
+//    it (see this module's tests).
+//  - a change in membership *verb* (`detail`): a run of joins immediately
+//    followed by a leave produces two adjacent groups, not one sentence
+//    that would misleadingly describe both as the same kind of change.
+//    This is the "group by verb, don't merge across verbs" choice from the
+//    task brief, picked over a neutral fallback sentence ("membership
+//    changed") because a verb-pure group is exactly as informative as the
+//    original ungrouped lines, just fewer of them — a neutral summary would
+//    throw that information away for no reason.
+//  - This module doesn't consult `timelineItemView.viewFor` at all — it
+//    groups on `kind`/`detail` alone, not on what would ultimately render.
+//    That keeps it decoupled from the render-decision vocabulary (a new
+//    suppressed kind added there doesn't change grouping behaviour here) at
+//    the cost of one edge case: an invisible item of a different kind sitting
+//    between two membership runs (e.g. a suppressed `profileChange`) still
+//    splits them into two groups even though nothing renders in between. That
+//    is judged an acceptable, rare cosmetic trade-off against the simplicity
+//    of not coupling this module to render decisions.
+
+import { attributedName, membershipVerb } from "./timelineItemView";
+import type { TimelineItem } from "$lib/ipc";
+
+/** One row `Timeline.svelte` iterates, in place of the raw item array. */
+export type TimelineDisplayRow =
+  | { type: "item"; key: string; item: TimelineItem }
+  | { type: "membershipGroup"; key: string; items: TimelineItem[]; text: string };
+
+/** How many members a collapsed line names explicitly before "and N others". */
+const MAX_NAMED = 2;
+
+/** "Alice" / "Alice and Bob" / "Alice, Bob and Carol" — English list joining. */
+function joinNames(names: string[]): string {
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Builds the collapsed sentence for a run of same-verb membership items.
+ * `items` is never empty (only called from `flushRun` below, which is
+ * itself a no-op on an empty run) and every item in it shares the same
+ * `detail`, by construction of `groupTimelineItems`.
+ *
+ * Names at most `MAX_NAMED` people explicitly, then "and N other(s)" — a
+ * run of any size produces a sentence of bounded length, and a run of
+ * exactly one reads exactly like the ungrouped `timelineItemView.ts`
+ * membership line ("Alice joined the room"), never "Alice and 0 others".
+ */
+function groupText(items: TimelineItem[]): string {
+  const verb = membershipVerb(items[0]!.detail);
+  const names = items.map(attributedName);
+  if (names.length <= MAX_NAMED) {
+    return `${joinNames(names)} ${verb}`;
+  }
+  const named = names.slice(0, MAX_NAMED);
+  const remaining = names.length - MAX_NAMED;
+  const othersWord = remaining === 1 ? "other" : "others";
+  return `${named.join(", ")} and ${remaining} ${othersWord} ${verb}`;
+}
+
+/**
+ * Derives the display list `Timeline.svelte` renders from the raw,
+ * diff-driven item array. Never mutates `items`; array order is preserved,
+ * and every `TimelineItem` a caller sees in the result is the exact same
+ * object reference that was in `items` (so any identity-based comparison
+ * elsewhere — e.g. `$effect`s keyed on the last item's id — still works
+ * against the raw array itself, which callers keep reading directly for
+ * that).
+ *
+ * Grouped rows key off the *first* item's id in the run
+ * (`"group:" + firstId`), not e.g. a hash of every id in the run —
+ * deliberately, so a run that's still growing (a new membership item just
+ * arrived and extended it) keeps the *same* key across a recompute. virtua's
+ * `getKey` uses this to decide whether a row is "the same row, new content"
+ * (patched in place) or "a different row" (unmounted and a new one
+ * mounted); a key that changed shape on every append would remount that
+ * row's DOM node — and disturb virtua's size cache and scroll anchoring —
+ * on every single membership event in a long run, instead of just updating
+ * its text in place the way an ordinary growing message list already does.
+ * A single-item passthrough row keys off the item's own id unchanged, so
+ * grouping never destabilises the key of an item that isn't even part of a
+ * run.
+ */
+export function groupTimelineItems(items: readonly TimelineItem[]): TimelineDisplayRow[] {
+  const rows: TimelineDisplayRow[] = [];
+  let run: TimelineItem[] = [];
+
+  function flushRun(): void {
+    if (run.length === 0) return;
+    rows.push({
+      type: "membershipGroup",
+      key: `group:${run[0]!.id}`,
+      items: run,
+      text: groupText(run),
+    });
+    run = [];
+  }
+
+  for (const item of items) {
+    const continuesRun =
+      item.kind === "membership" && (run.length === 0 || run[0]!.detail === item.detail);
+    if (continuesRun) {
+      run.push(item);
+      continue;
+    }
+    flushRun();
+    if (item.kind === "membership") {
+      // A membership item with a different verb than the run just flushed:
+      // starts a fresh run of its own rather than passing through.
+      run.push(item);
+    } else {
+      rows.push({ type: "item", key: item.id, item });
+    }
+  }
+  flushRun();
+
+  return rows;
+}

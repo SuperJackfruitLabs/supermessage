@@ -86,9 +86,23 @@ describe("viewFor", () => {
       });
     });
 
-    it("surfaces room creation as the beginning-of-room marker", () => {
-      const view = viewFor(item({ kind: "state", detail: "m.room.create" }));
-      expect(view).toEqual({ render: "system", text: "Beginning of the room" });
+    it("surfaces room creation naming the creator, not the generic 'Beginning of the room' text", () => {
+      // Not the same text as `timelineStart` (below): both can appear in the
+      // same fully-loaded room (the SDK loads `m.room.create` and inserts
+      // `TimelineStart` together once back-pagination reaches genuine
+      // history), so this uses different wording rather than repeating it —
+      // see `stateView`'s `m.room.create` case for the full reasoning.
+      const view = viewFor(
+        item({ kind: "state", detail: "m.room.create", senderDisplayName: "Alice" }),
+      );
+      expect(view).toEqual({ render: "system", text: "Alice created the room" });
+    });
+
+    it("falls back to the raw sender id for room creation when there is no display name", () => {
+      const view = viewFor(
+        item({ kind: "state", detail: "m.room.create", sender: "@alice:example.org" }),
+      );
+      expect(view).toEqual({ render: "system", text: "@alice:example.org created the room" });
     });
 
     it("surfaces encryption being enabled", () => {
@@ -130,9 +144,15 @@ describe("viewFor", () => {
     });
   });
 
-  it("renders nothing for virtual items that legitimately have no visual form", () => {
+  it("renders nothing for the read marker, which legitimately has no visual form yet", () => {
     expect(viewFor(item({ kind: "readMarker" }))).toEqual({ render: "none" });
-    expect(viewFor(item({ kind: "timelineStart" }))).toEqual({ render: "none" });
+  });
+
+  it("renders the timeline-start virtual item as the 'Beginning of the room' system line", () => {
+    expect(viewFor(item({ kind: "timelineStart" }))).toEqual({
+      render: "system",
+      text: "Beginning of the room",
+    });
   });
 
   it("names stickers, polls, calls and custom suite events as placeholders, not silence", () => {

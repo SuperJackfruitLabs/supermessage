@@ -51,9 +51,22 @@ const MEMBERSHIP_VERBS: Record<string, string> = {
   knockDenied: "was denied entry",
 };
 
-/** The name to attribute a system line to: display name, falling back to the raw sender id. */
-function attributedName(item: TimelineItem): string {
+/**
+ * The name to attribute a system line to: display name, falling back to the
+ * raw sender id. Exported for `timelineGrouping.ts`, which needs the same
+ * resolution to name the members in a collapsed membership-change sentence.
+ */
+export function attributedName(item: TimelineItem): string {
   return item.senderDisplayName ?? item.sender ?? "Someone";
+}
+
+/**
+ * The verb phrase for a membership item's `detail`. Exported for
+ * `timelineGrouping.ts`, so a collapsed run's sentence uses exactly the same
+ * wording a single, ungrouped membership line would.
+ */
+export function membershipVerb(detail: string | null): string {
+  return (detail && MEMBERSHIP_VERBS[detail]) || "updated their membership";
 }
 
 /** Render decision for `kind: "message"`, switching on `msgtype`. */
@@ -77,8 +90,17 @@ function messageView(item: TimelineItem): ItemView {
 /** Render decision for `kind: "state"`, switching on `detail` (the state event type). */
 function stateView(item: TimelineItem): ItemView {
   switch (item.detail) {
+    // Not "Beginning of the room" — see `viewFor`'s `timelineStart` case,
+    // which owns that exact text (per `docs/matrix-events.md` Table E).
+    // Reaching the true start of a room's history means the SDK loads
+    // `m.room.create` (every room's first event, by spec) *and* inserts the
+    // `TimelineStart` virtual item in the same page, so both would render
+    // back-to-back — often separated only by a date divider, which reads
+    // worse, not better ("Beginning of the room" / "January 1, 2024" /
+    // "Beginning of the room"). Naming the creator here instead is strictly
+    // more informative than repeating the generic marker.
     case "m.room.create":
-      return { render: "system", text: "Beginning of the room" };
+      return { render: "system", text: `${attributedName(item)} created the room` };
     case "m.room.encryption":
       return { render: "system", text: "Encryption enabled" };
     case "m.room.tombstone":
@@ -95,8 +117,7 @@ function stateView(item: TimelineItem): ItemView {
 
 /** Render decision for `kind: "membership"`. */
 function membershipView(item: TimelineItem): ItemView {
-  const verb = (item.detail && MEMBERSHIP_VERBS[item.detail]) || "updated their membership";
-  return { render: "system", text: `${attributedName(item)} ${verb}` };
+  return { render: "system", text: `${attributedName(item)} ${membershipVerb(item.detail)}` };
 }
 
 /**
@@ -155,12 +176,19 @@ export function viewFor(item: TimelineItem): ItemView {
     case "failedToParse":
       return { render: "placeholder", text: `Unsupported event (${item.detail ?? "unknown"})` };
 
-    // Virtual items with no visual form in M0. `dateDivider` is the third
-    // virtual kind and is handled by the component itself, since it renders
-    // real content.
+    // `dateDivider` is the third virtual kind and is handled by the
+    // component itself, since it renders real content (a formatted date).
     case "readMarker":
-    case "timelineStart":
+      // No visual form yet — M2 per `docs/matrix-events.md` Table E.
       return { render: "none" };
+
+    // The boundary marker the SDK inserts once back-pagination reaches the
+    // genuine start of a room's history — always at most once, and always
+    // first (see `matrix-sdk-ui`'s `observable_items.rs`). Table E quotes
+    // this exact text; see `stateView`'s `m.room.create` case for why that
+    // case uses different wording rather than repeating it.
+    case "timelineStart":
+      return { render: "system", text: "Beginning of the room" };
 
     default:
       // Defensive only: every `kind` the core currently emits is handled
