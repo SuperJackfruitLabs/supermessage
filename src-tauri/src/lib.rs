@@ -81,6 +81,13 @@ pub fn run() {
     tls::install_ring_provider();
 
     tracing_subscriber::fmt()
+        // stderr, not stdout: conventional for diagnostics, and it is what
+        // makes the logs reachable when the app is launched by a supervising
+        // process. `tauri-driver` pipes the app's stderr into its own output
+        // but not its stdout, so a `pnpm tauri build` binary driven over
+        // WebDriver was silently logging into a void — which is exactly the
+        // situation where the logs are needed most.
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "supermessage=debug,matrix_sdk=info,warn".into()),
