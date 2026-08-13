@@ -293,6 +293,28 @@ do not depend on the clock.
 
 ### 6.3 Timeline — the reading surface
 
+#### 6.3.0 One reading column
+
+**Everything in the timeline lays out inside a single centred column of
+`72ch`** — peer blocks, own bubbles, date dividers, system lines,
+placeholders, emotes and dispatch cards alike. Peers align to its left edge,
+own messages to its right edge, and centred rows to its centre.
+
+This was added after the first implementation was rendered and reviewed. The
+original text said only "right-aligned" for own messages, which was read —
+reasonably — as right-aligned against the *viewport*. At 1905px that put a
+reply **599px** from the message it was answering, and in the very case where
+the relationship is most explicit, the one where the reply quotes its parent
+by name. The pane read as two unrelated columns with a void between them,
+and it got worse as the window got wider.
+
+The asymmetry this design wants between own and peer messages is one of
+**register, not geometry**: sans against serif, tight against airy, a ground
+against no ground. Every bit of that survives inside a shared column. The
+horizontal distance was never carrying meaning — it was just the default a
+chat bubble inherits, which is exactly the thing this surface is trying to
+stop being.
+
 **Peer messages lose the bubble.** A 70%-wide rounded bubble is the wrong
 container for a 400-word plan.
 
