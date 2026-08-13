@@ -4,27 +4,49 @@ A cross-platform Matrix chat client — iOS, Android, Windows, macOS, and Linux 
 
 Stack: **Tauri 2 + matrix-rust-sdk (Rust core) + Svelte 5**. See [docs/tech-stack.md](docs/tech-stack.md) for the full architecture, decisions, risks, and milestones.
 
-## What makes it different
+## Status: early. Read this before installing.
 
-supermessage is a Matrix client built for rooms whose other occupants are AI
-agents as often as people. Generic-client quality is the baseline; the work
-that is specific to this project is:
+supermessage today is a **capable Matrix reader with a reply box.** Everything
+it can send to a homeserver is: a plain-text message, a plain-text reply, a
+reaction, a typing notice and a read receipt.
 
-- **Agent-aware rendering.** Structured events — task cards, run status,
-  station state — render as first-class objects in the timeline rather than
-  as "unsupported message", with a plain-text fallback so Element, Cinny and
-  every other client stay usable in the same rooms.
-- **Approvals from chat.** When an agent needs a human decision, the request
-  arrives as a Matrix message with the decision attached to it, in the room
-  where the work is being discussed.
+It cannot yet send a file or an image, edit or delete your own messages,
+create or join a room, invite anyone, search, change any setting, edit your
+profile, or notify you when it is closed. **Encrypted rooms render a
+placeholder** — E2EE is deliberately not on the critical path, so most DMs on
+most homeservers will not be readable here.
+
+[docs/parity-gap-analysis.md](docs/parity-gap-analysis.md) is an honest,
+code-grounded account of where this stands against Element, Cinny,
+FluffyChat and Nheko, and what each gap would cost to close. Read it before
+deciding whether this is usable for you. If you want a general-purpose Matrix
+client today, use one of those.
+
+## What it is for
+
+supermessage is built for rooms whose other occupants are AI agents as often
+as people. That is the reason it exists, and it is the only area where it is
+ahead of anything else:
+
+- **Agent-aware rendering.** A registry that turns structured suite events
+  into first-class timeline objects instead of "unsupported message", with a
+  plain-text fallback so Element, Cinny and every other client stay usable in
+  the same rooms. The framework is built and tested; the only renderer that
+  ships today is a demo one, because the real schemas belong to another team
+  and are still being designed in the open
+  ([kaambaan#34](https://github.com/rakeshgangwar/kaambaan/issues/34)).
+- **Approvals from chat** — *not yet working.* When an agent needs a human
+  decision, the timeline is where that decision should be made. The card that
+  renders it is built, unit-tested, and **unreachable in this build**: no
+  event type exists yet for it to render. It is a slot, not a feature.
 - **A reading surface, not a chat log.** Agents write at length — plans,
   findings, reports. Message bodies are set for reading; the chrome around
-  them is set for scanning. See
-  [docs/superpowers/specs/2026-08-13-console-design.md](docs/superpowers/specs/2026-08-13-console-design.md).
+  them is set for scanning. This part is real and shipped. See
+  [the design spec](docs/superpowers/specs/2026-08-13-console-design.md).
 
-It is an ordinary Matrix client against any homeserver. None of the above
-requires a particular server, and everything degrades to plain messages when
-the other side does not speak the same event types.
+It talks to any homeserver and needs no particular server-side software.
+Everything above degrades to plain text when the other side does not speak
+the same event types.
 
 ## Building
 
