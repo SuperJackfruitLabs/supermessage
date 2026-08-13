@@ -8,7 +8,15 @@ supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android
 
 It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Kaambaan + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Kaambaan cards/runs, permission requests, station status), approvals from chat (Kaambaan gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
 
-**Current status: M0 in progress (scaffold landed Aug 2026).** The Tauri 2 + Svelte 5 shell builds and runs on Linux, the Android project is generated, and the Rust core links matrix-rust-sdk — but **no Matrix code exists yet**. There is no login, no sync, no timeline. The single Tauri command (`core_status`) is a bridge smoke test, and `core::session` is an empty ownership seam. Next work is M0 proper: password login, `SyncService`, room list and timeline stores (OIDC deferred pending matrix-authentication-service deployment).
+**Current status: M0 implemented and reviewed on branch `m0-spine`; not yet dogfooded.** Password login, encrypted session persistence, `SyncService`, room-list and timeline streaming, send/receive, and a two-pane desktop UI are all built and tested (49 Rust tests, 51 frontend tests, clippy and svelte-check clean). The app starts and the webview↔core IPC round trip is verified, and the login screen has been exercised against the real homeserver — a 403 surfaces as an auth error, an unreachable host as a network error.
+
+**What has NOT happened: a credentialed run.** Nobody has yet logged in with a working account, so the room list, timeline and composer have never rendered real data. That is the next step, and it is where any remaining UI problems will first appear.
+
+Known follow-ups carried out of the final review, highest first:
+
+1. `Session::restore_and_start`'s idempotence guard keys on "a client exists" rather than "streams exist" (`core/session.rs`). If `restore()` succeeds but `start_streams` then fails, the session stays installed with dead sync and an empty room list, and every later `restore_session` short-circuits. Recoverable only via Sign out. Fix: clear the client on that error path, or require a live sync handle in the guard.
+2. `logout` clears the focused timeline before its network call but nulls the client after, so a `timeline_subscribe` in that window installs a handle holding the `Client` past `remove_store()`. Harmless on POSIX; **on Windows this bricks the store permanently** — must be fixed before any Windows testing.
+3. Assorted hardening: `start_sync`/`start_room_list` are `pub` and rely on callers holding the lifecycle mutex; `logout` holds that mutex across an untimed HTTP call; `gapSync`'s `void doResync` has no `.catch`.
 
 ## Repository layout
 
