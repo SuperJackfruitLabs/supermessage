@@ -24,7 +24,12 @@
 
   function initials(room: RoomSummary): string {
     const trimmed = room.name.trim();
-    return trimmed === "" ? "?" : trimmed[0]!.toUpperCase();
+    // Iterate code points, not code units: `trimmed[0]` takes half of an
+    // astral-plane character, so an emoji-named room ("🧠 Buddhimaan")
+    // renders a lone surrogate — a broken glyph. Every agent room here is
+    // emoji-named, so this was visible on every row.
+    const first = [...trimmed][0];
+    return first === undefined ? "?" : first.toUpperCase();
   }
 </script>
 
