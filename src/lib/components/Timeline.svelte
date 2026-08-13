@@ -392,7 +392,7 @@
                     <!-- Never a broken-image icon: any failure — nothing
                          renderable, a rejected fetch, or the <img> itself
                          failing to decode — lands here. -->
-                    <p class="selectable text-sm text-content-muted italic">{view.alt}</p>
+                    <p class="selectable text-sm text-content-muted italic break-words">{view.alt}</p>
                   {:else if src}
                     <!--
                       Content, not decoration — real `alt` text from the

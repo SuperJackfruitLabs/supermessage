@@ -12,6 +12,56 @@
 //! time — the focused room. [`FocusedTimeline::subscribe`] always drops the
 //! previous subscription first (see its doc comment), so switching rooms
 //! can never leave a background timeline's task running.
+//!
+//! ## Recovering from an emptied timeline
+//!
+//! The room list's sliding-sync subscription uses `timeline_limit: 1`
+//! (`docs/tech-stack.md`), so an incoming event for the focused room often
+//! arrives as a *limited* ("gappy") sync even while it's focused. Traced
+//! against matrix-sdk 0.18's own source, a limited sync that also carries a
+//! new gap (`prev_batch` token) makes `RoomEventCacheState::handle_sync`
+//! call `shrink_to_last_chunk` (`matrix-sdk-0.18.0/src/event_cache/caches/
+//! room/state.rs`, the `timeline.limited && has_new_gap` branch), which
+//! unloads every in-memory chunk but the newly-persisted last one, reloaded
+//! straight from the store. That unload is implemented by
+//! `linked_chunk::lazy_loader::replace_with`
+//! (`matrix-sdk-common-0.18.0/src/linked_chunk/lazy_loader.rs`), which
+//! unconditionally discards whatever updates hadn't yet been drained
+//! (`updates.clear_pending()`) and replaces them with a single
+//! `Update::Clear` before re-describing the reloaded chunk's own content.
+//! `matrix_sdk_ui`'s `TimelineStateTransaction::handle_remote_events_with_diffs`
+//! (`matrix-sdk-ui-0.18.0/src/timeline/controller/state_transaction.rs`)
+//! translates that `VectorDiff::Clear` on the event cache's list 1:1 into a
+//! `self.clear()` on the timeline's own *item* list — and, once no local
+//! echo is still pending reconciliation (`ObservableItemsTransaction::
+//! has_local()` is false), that clear takes its bulk path and is itself a
+//! single `VectorDiff::Clear`, which is exactly what reaches
+//! [`FocusedTimeline::subscribe`]'s stream. Empirically (per the debug log
+//! this fix was written against), the diffs that are supposed to
+//! re-describe the reloaded chunk's content do not reliably show up as a
+//! further op on this stream — the observed sequence goes fully quiet right
+//! after the lone `Clear`, and the timeline never repopulates on its own.
+//! Notably, `shrink_to_last_chunk` also resets pagination status to `Idle {
+//! hit_timeline_start: false }` (same file), i.e. the SDK itself does not
+//! consider this "the start of the timeline" — it expects a consumer to
+//! resume paginating backward from here, which is exactly what backward
+//! pagination through the just-recorded gap is for.
+//!
+//! So this module treats "the materialized item list just went from
+//! non-empty to empty while the subscription is still live" as a signal to
+//! re-seed the timeline the same way [`FocusedTimeline::subscribe`] seeds it
+//! the first time: a `paginate_backwards(INITIAL_PAGE_SIZE)` call. The
+//! trigger is decided by [`should_reseed`], a pure function over the
+//! materialized length before/after a fold and a re-seed counter — see its
+//! doc comment for why it keys on the length transition rather than which
+//! `DiffOp` produced it, and [`MAX_RESEED_ATTEMPTS`] for the loop bound. The
+//! re-seed call happens inside the same streaming task as the initial one,
+//! so it is cancelled the same way by a room switch (`FocusedTimeline::
+//! clear_and_join`'s `task.abort()`) — there is no separate task to leak or
+//! race against a teardown. Its resulting diffs arrive as ordinary batches
+//! on the same `stream.next()` loop and are folded/emitted through the same
+//! `seq` counter as everything else, so the webview's gap detector sees a
+//! continuous sequence, not a restart.
 
 use std::sync::{Arc, Mutex};
 
@@ -56,6 +106,30 @@ const TIMELINE_CHANNEL: &str = "timeline";
 /// a desktop viewport and leave something to scroll, which is also what lets
 /// the UI's scroll-triggered pagination take over from here.
 const INITIAL_PAGE_SIZE: u16 = 30;
+
+/// Cap on how many times one streaming task will re-seed itself (see
+/// [`should_reseed`]) over its whole lifetime.
+///
+/// This is what makes re-seeding safe against two very different failure
+/// shapes without telling them apart:
+///
+/// - A genuinely empty room can't cause a loop in the first place —
+///   [`should_reseed`] only fires on a non-empty-to-empty *transition*, and
+///   an empty room never produces one after its first (also-empty) seed — so
+///   this bound is not what protects that case.
+/// - What it *does* bound is a room that keeps re-triggering the condition
+///   (repeated gappy syncs, or a re-seed pagination that itself lands the
+///   list back at zero some other way): each occurrence consumes one of a
+///   small, fixed budget, so the streaming task can re-seed at most this many
+///   times total, ever, no matter how many times the condition recurs.
+///
+/// Three is generous enough to ride out a burst of limited syncs in one
+/// sitting while still being obviously finite. Hitting the cap doesn't wedge
+/// anything further: the existing manual recovery (switch rooms and back,
+/// which tears down and rebuilds this task from scratch — see
+/// [`FocusedTimeline::subscribe`]'s doc comment) still works exactly as it
+/// does today.
+const MAX_RESEED_ATTEMPTS: u32 = 3;
 
 /// The sequence number of the last diff folded into the materialized item
 /// list, and the resulting list itself — always mutually consistent (see
@@ -694,6 +768,12 @@ impl FocusedTimeline {
         let task = tokio::spawn(async move {
             pin_mut!(stream);
             let mut seq = SeqCounter::default();
+            // How many times this subscription has re-seeded itself after
+            // the SDK emptied the timeline out from under it (see this
+            // module's "Recovering from an emptied timeline" doc comment
+            // and `should_reseed`). Lives here, not in `TimelineState`,
+            // for the same reason `seq` does: only this task ever needs it.
+            let mut reseed_attempts: u32 = 0;
 
             // The initial `Vector` `subscribe()` returns becomes the
             // stream's first envelope as a single `Reset`, so the webview
@@ -727,7 +807,33 @@ impl FocusedTimeline {
 
             while let Some(batch) = stream.next().await {
                 let ops = project_batch(batch, &own_user);
-                emit_ops(&app, &task_state, &mut seq, &subject, ops);
+                let (before, after) = emit_ops(&app, &task_state, &mut seq, &subject, ops);
+
+                if should_reseed(before, after, reseed_attempts) {
+                    reseed_attempts += 1;
+                    tracing::warn!(
+                        subject = %subject,
+                        attempt = reseed_attempts,
+                        max_attempts = MAX_RESEED_ATTEMPTS,
+                        "timeline emptied out from under its subscription; re-seeding with a fresh back-pagination"
+                    );
+
+                    // Same call, same reasoning as the initial seed above:
+                    // awaited inline in this task (not spawned), so a room
+                    // switch's `task.abort()` cancels it exactly like every
+                    // other await point here, and its resulting diffs arrive
+                    // as ordinary batches on `stream.next()` below — folded
+                    // and emitted through the same `seq` this loop already
+                    // owns, so the webview's gap detector sees a continuous
+                    // sequence rather than a restart.
+                    if let Err(err) = paginator.paginate_backwards(INITIAL_PAGE_SIZE).await {
+                        tracing::warn!(
+                            error = %err,
+                            subject = %subject,
+                            "re-seeding back-pagination failed; the timeline may stay empty until the room is reopened"
+                        );
+                    }
+                }
             }
         });
 
@@ -864,27 +970,73 @@ impl FocusedTimeline {
     }
 }
 
+/// Decides whether the streaming task should re-seed the timeline with a
+/// fresh `paginate_backwards(INITIAL_PAGE_SIZE)` call, given the
+/// materialized item count immediately before and after folding the latest
+/// diff batch, and how many times this subscription has already re-seeded.
+/// See this module's doc comment ("Recovering from an emptied timeline") for
+/// the full mechanism this exists to recover from.
+///
+/// Pure and SDK-free on purpose, like `core::rooms::resolve_two_person_avatar_url`
+/// and the webview's `timelineGrouping`: `matrix_sdk_ui::Timeline`/
+/// `eyeball_im::VectorDiff` have no public constructor outside a live,
+/// synced timeline, so the actual trigger condition needs to live in
+/// something that only takes plain `usize`/`u32` inputs to be testable at
+/// all (see this module's tests).
+///
+/// Keys on **"the materialized list just went from non-empty to empty"**
+/// (`before > 0 && after == 0`) rather than on which `DiffOp` emptied it.
+/// The mechanism traced in this module's doc comment produces a lone
+/// `VectorDiff::Clear` today, but a `Reset` with an empty `values` list or a
+/// `Truncate { length: 0 }` would leave the materialized list in exactly the
+/// same state — `core::dto::apply_ops` folds either into an empty `Vec` just
+/// as surely as `Clear` does — so pattern-matching on `Clear` specifically
+/// would silently miss those, while comparing lengths catches all three (and
+/// any future op with the same effect) uniformly.
+///
+/// `before == 0` is deliberately excluded even when `after == 0` too: that's
+/// either the very first fold (nothing has ever been seeded yet, so there is
+/// nothing to have "lost") or a room that is, and remains, genuinely empty.
+/// A genuinely empty room's own next batch (if any) still folds `0 -> 0`,
+/// never `>0 -> 0`, so it can never itself trigger a second attempt — this
+/// exclusion is what keeps `should_reseed` from re-firing forever against an
+/// empty room even without consulting `reseed_attempts` at all.
+/// `reseed_attempts >= MAX_RESEED_ATTEMPTS` is the second, independent bound,
+/// covering the other failure shape: a room that keeps re-triggering a real
+/// non-empty-to-empty transition (repeated gappy syncs, or a re-seed itself
+/// landing back at zero). See [`MAX_RESEED_ATTEMPTS`]'s doc comment.
+fn should_reseed(before: usize, after: usize, reseed_attempts: u32) -> bool {
+    before > 0 && after == 0 && reseed_attempts < MAX_RESEED_ATTEMPTS
+}
+
 /// Folds `ops` into the materialized snapshot under one critical section,
 /// then emits the resulting envelope — mirroring
 /// `core::rooms::spawn_room_list`'s identical fold-then-emit sequencing (see
 /// that function's doc comment for why the fold must happen before the lock
 /// is released, and the lock must be released before emitting).
+///
+/// Returns `(before, after)` — the materialized item count immediately
+/// before and after this batch was folded in — so the caller can feed
+/// [`should_reseed`] without a second, separately-locked read of the same
+/// state.
 fn emit_ops(
     app: &AppHandle,
     state: &Arc<Mutex<TimelineState>>,
     seq: &mut SeqCounter,
     subject: &str,
     ops: Vec<DiffOp<TimelineItemDto>>,
-) {
+) -> (usize, usize) {
     let seq_no = seq.next();
-    let folded_len = {
+    let (before, after) = {
         let mut guard = state
             .lock()
             .expect("timeline state lock poisoned by an earlier panic");
+        let before = guard.1.len();
         apply_ops(&mut guard.1, &ops);
         guard.0 = seq_no;
-        guard.1.len()
+        (before, guard.1.len())
     };
+    let folded_len = after;
 
     tracing::debug!(
         seq = seq_no,
@@ -904,6 +1056,8 @@ fn emit_ops(
     if let Err(err) = app.emit(TIMELINE_DIFF_EVENT, &envelope) {
         tracing::warn!(error = %err, "failed to emit {TIMELINE_DIFF_EVENT}");
     }
+
+    (before, after)
 }
 
 #[cfg(test)]
@@ -1507,6 +1661,67 @@ mod tests {
                 is_recoverable: false
             }),
             "sendingFailed"
+        );
+    }
+
+    // `should_reseed`: pure over `(before, after, reseed_attempts)`, so it's
+    // exercised directly here rather than through a live subscription — see
+    // its own doc comment for why that's the only way to test this decision
+    // at all (`matrix_sdk_ui::Timeline`/`eyeball_im::VectorDiff` have no
+    // test-friendly constructor).
+
+    #[test]
+    fn should_reseed_fires_when_a_nonempty_list_becomes_empty() {
+        assert!(should_reseed(20, 0, 0));
+    }
+
+    #[test]
+    fn should_reseed_does_not_fire_when_the_list_stays_nonempty() {
+        // Covers the "the SDK repopulated within the same batch" case: the
+        // final post-batch length is what matters, not whether some op
+        // partway through the batch happened to zero it out.
+        assert!(!should_reseed(20, 1, 0));
+    }
+
+    #[test]
+    fn should_reseed_does_not_fire_on_the_very_first_fold() {
+        // `before == 0` covers both "nothing has been seeded yet" and "this
+        // room is genuinely empty" — neither is a loss of anything to
+        // recover.
+        assert!(!should_reseed(0, 0, 0));
+    }
+
+    #[test]
+    fn should_reseed_does_not_loop_forever_against_a_genuinely_empty_room() {
+        // A room that starts (and stays) empty only ever folds `0 -> 0`
+        // batches after its first seed — never `>0 -> 0` — so it can never
+        // trigger a second time regardless of `reseed_attempts`, without
+        // needing the attempts bound to intervene at all.
+        for attempts in 0..10 {
+            assert!(!should_reseed(0, 0, attempts));
+        }
+    }
+
+    #[test]
+    fn should_reseed_is_bounded_by_max_reseed_attempts() {
+        // A room that keeps re-triggering a genuine non-empty-to-empty
+        // transition (e.g. repeated gappy syncs) is allowed to recover up to
+        // the bound, then stops — this is what actually prevents an
+        // infinite loop for *that* failure shape (the empty-room case above
+        // never reaches this bound in the first place).
+        for attempts in 0..MAX_RESEED_ATTEMPTS {
+            assert!(
+                should_reseed(5, 0, attempts),
+                "expected attempt {attempts} (below the cap of {MAX_RESEED_ATTEMPTS}) to still trigger"
+            );
+        }
+        assert!(
+            !should_reseed(5, 0, MAX_RESEED_ATTEMPTS),
+            "expected the cap itself to stop triggering"
+        );
+        assert!(
+            !should_reseed(5, 0, MAX_RESEED_ATTEMPTS + 5),
+            "expected well past the cap to stay stopped"
         );
     }
 
