@@ -221,12 +221,28 @@
   }
 </script>
 
+<!--
+  Separation from the timeline/typing indicator above is a ground change
+  (surface → surface-sunken), not a hairline: this strip and `Timeline`'s
+  date-divider rule already lean on hairlines constantly (roster rows, the
+  room header, the connection banner), so one more directly under the
+  typing indicator would just read as a fourth stacked bar rather than a
+  boundary. A change of ground reads as a distinct zone — "you have left
+  the reading surface and entered the instrument" — without adding a line,
+  and it's consistent with `--color-surface-sunken`'s existing job as the
+  inset/well tone (roster, info panel, and formerly this same textarea).
+  Deliberately no border-t on any of the three strips below: they now share
+  one ground and read as a single contiguous instrument rather than three
+  independently bordered bars.
+-->
 {#if replyTarget}
-  <div class="flex shrink-0 items-center gap-2 border-t border-border bg-surface-sunken px-4 py-2 text-xs">
-    <div class="min-w-0 flex-1 truncate">
-      <span class="font-medium text-content">Replying to {replyTarget.sender}</span>
+  <div class="flex shrink-0 items-start gap-2 border-l-2 border-l-accent bg-surface-sunken px-4 py-2">
+    <div class="min-w-0 flex-1">
+      <p class="truncate font-mono text-label text-content-muted uppercase">
+        Replying to {replyTarget.sender}
+      </p>
       {#if replyTarget.excerpt}
-        <span class="text-content-muted">— {replyTarget.excerpt}</span>
+        <p class="mt-0.5 truncate font-serif text-meta text-content-muted">{replyTarget.excerpt}</p>
       {/if}
     </div>
     <button
@@ -240,29 +256,36 @@
   </div>
 {/if}
 {#if sendError}
-  <div class="flex shrink-0 items-center border-t border-border bg-surface-sunken px-4 py-2 text-xs">
-    <p class="selectable text-danger" role="alert">{sendError}</p>
+  <div class="flex shrink-0 flex-col gap-0.5 bg-surface-sunken px-4 py-2">
+    <span class="font-mono text-label text-danger uppercase">Send failed</span>
+    <p class="selectable text-ui text-content" role="alert">{sendError}</p>
   </div>
 {/if}
 <div
-  class="flex shrink-0 items-end gap-2 border-t border-border bg-surface px-4 py-3"
+  class="flex shrink-0 items-end gap-2 bg-surface-sunken px-4 py-3"
   style="padding-bottom: calc(0.75rem + var(--inset-bottom));"
 >
-  <textarea
-    bind:value
-    onkeydown={handleKeydown}
-    oninput={handleInput}
-    disabled={sending}
-    rows="1"
-    placeholder={replyTarget ? `Reply to ${replyTarget.sender}…` : "Message…"}
-    class="max-h-40 min-h-10 flex-1 resize-none rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
-  ></textarea>
+  <div
+    class="flex min-w-0 flex-1 items-end gap-1.5 rounded-md px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
+  >
+    <span class="shrink-0 pb-1.5 font-mono text-content-faint" aria-hidden="true">›</span>
+    <textarea
+      bind:value
+      onkeydown={handleKeydown}
+      oninput={handleInput}
+      disabled={sending}
+      rows="1"
+      placeholder={replyTarget ? `Reply to ${replyTarget.sender}…` : "Message…"}
+      class="max-h-40 min-h-10 flex-1 resize-none bg-transparent py-1 font-sans text-ui text-content outline-none placeholder:text-content-faint disabled:opacity-60"
+    ></textarea>
+  </div>
   <button
     type="button"
     onclick={send}
     disabled={!canSend}
-    class="shrink-0 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-opacity disabled:opacity-60"
+    class="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-opacity disabled:opacity-60"
   >
     Send
+    <span aria-hidden="true" class="font-mono opacity-70">⏎</span>
   </button>
 </div>

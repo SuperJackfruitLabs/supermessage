@@ -17,7 +17,7 @@
   const text = $derived(typingIndicatorText(typingStore.users));
 </script>
 
-<div class="flex h-6 shrink-0 items-center px-4 text-xs text-content-muted" aria-live="polite">
+<div class="flex h-6 shrink-0 items-center px-4 font-mono text-meta text-content-faint" aria-live="polite">
   {#if text}
     <span class="truncate">{text}</span>
   {/if}
