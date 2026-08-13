@@ -134,9 +134,18 @@
           <span class="flex items-center justify-between gap-2">
             <span class="truncate text-ui font-medium text-content">{identity.name}</span>
             {#if room.unread > 0}
+              <!--
+                No `aria-label` of its own. The button above sets an explicit
+                one covering name, role and unread count, and an explicit
+                `aria-label` replaces its whole subtree for name computation
+                — so a label here would be dead for the row's accessible
+                name while still being reachable by an assistive
+                technology's virtual cursor, which is the worst of both:
+                inert where it looks useful, and a second, differently
+                worded reading of the same number where it isn't.
+              -->
               <span
                 class="shrink-0 rounded-full bg-accent px-1.5 py-0.5 font-mono text-meta text-accent-content"
-                aria-label={`${room.unread} unread`}
               >
                 {room.unread}
               </span>
