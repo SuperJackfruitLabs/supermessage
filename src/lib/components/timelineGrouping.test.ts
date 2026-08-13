@@ -19,6 +19,9 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind" | "id
     timestampMs: 1_700_000_000_000,
     isOwn: false,
     sendState: null,
+    replyTo: null,
+    edited: false,
+    reactions: [],
     ...overrides,
   };
 }

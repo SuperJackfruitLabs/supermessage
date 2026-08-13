@@ -39,6 +39,9 @@ function item(id: string): TimelineItem {
     timestampMs: 1_700_000_000_000,
     isOwn: false,
     sendState: null,
+    replyTo: null,
+    edited: false,
+    reactions: [],
   };
 }
 

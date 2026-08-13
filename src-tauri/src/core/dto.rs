@@ -58,6 +58,57 @@ pub struct MediaMetaDto {
     pub height: Option<u64>,
 }
 
+/// A reply's quoted parent, projected from the SDK's `InReplyToDetails` (see
+/// `core::timeline::reply_to_dto`). The parent is fetched lazily by the SDK
+/// and can be in any of `TimelineDetails`'s four states — `available` is
+/// `false` for all but `Ready`, which is the only state with anything to
+/// show. The webview must render a neutral "unavailable" quote in that case,
+/// never an empty quote or a spinner: this pass never calls
+/// `Timeline::fetch_details_for_event`, so a `Pending`/`Unavailable` parent
+/// will not resolve itself on its own.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyToDto {
+    /// The parent event's id. Always present, even when the parent itself
+    /// couldn't be loaded — enough to link to it later.
+    pub event_id: String,
+    /// Whether the parent's details were actually loaded (`TimelineDetails::Ready`).
+    /// `false` for `Unavailable`/`Pending`/`Error` alike; the webview doesn't
+    /// need to distinguish those three for this read-only rendering pass.
+    pub available: bool,
+    /// The parent's raw sender id. `None` when `available` is `false`.
+    pub sender: Option<String>,
+    /// The parent's sender display name, when known. `None` when
+    /// `available` is `false`, or when the parent's sender profile itself
+    /// hadn't resolved.
+    pub sender_display_name: Option<String>,
+    /// A short, already-truncated quote of the parent's body (see
+    /// `core::timeline::REPLY_EXCERPT_MAX_CHARS` and
+    /// `truncate_reply_excerpt`) — truncated in the core so a quoted 64KiB
+    /// message never crosses IPC anywhere near full size. `None` when
+    /// `available` is `false`, or when the parent isn't a message (or has no
+    /// body) to quote.
+    pub excerpt: Option<String>,
+}
+
+/// One reaction key aggregated across senders on a message (see
+/// `core::timeline::project_reactions`), projected from the SDK's
+/// `ReactionsByKeyBySender`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReactionDto {
+    /// The reaction's key — an arbitrary sender-controlled string (usually,
+    /// but not necessarily, a single emoji). The webview must cap its
+    /// rendered length and guard it against overflow the same as any other
+    /// free-text field from a sender.
+    pub key: String,
+    /// How many distinct senders have reacted with this key.
+    pub count: u32,
+    /// Whether the current user is among those senders — what the
+    /// interaction pass needs to render this chip as already-active/toggled.
+    pub by_me: bool,
+}
+
 /// A single timeline item (message, state event, etc.) as rendered.
 ///
 /// `kind` is the semantic discriminant projected from the SDK's
@@ -97,6 +148,16 @@ pub struct TimelineItemDto {
     pub timestamp_ms: Option<u64>,
     pub is_own: bool,
     pub send_state: Option<String>,
+    /// Present when this item is a reply (`m.in_reply_to`); `None` for an
+    /// ordinary message and for every non-message `kind`. See [`ReplyToDto`]
+    /// for how an unloaded parent is represented.
+    pub reply_to: Option<ReplyToDto>,
+    /// Whether the SDK has folded an `m.replace` edit into this item
+    /// (`Message::is_edited`). Always `false` for a non-message `kind`.
+    pub edited: bool,
+    /// Reactions aggregated onto this item, one entry per distinct key.
+    /// Empty (never omitted) when the item has none — see [`ReactionDto`].
+    pub reactions: Vec<ReactionDto>,
 }
 
 /// The wire projection of an `eyeball_im::VectorDiff<T>`.

@@ -4,8 +4,8 @@
 // a real bug and not just an omission.
 
 import { describe, expect, it } from "vitest";
-import { viewFor } from "./timelineItemView";
-import type { TimelineItem } from "$lib/ipc";
+import { displayReactionKey, replyQuoteView, viewFor } from "./timelineItemView";
+import type { ReplyTo, TimelineItem } from "$lib/ipc";
 
 function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind">): TimelineItem {
   return {
@@ -20,6 +20,9 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind">): Ti
     timestampMs: 1_700_000_000_000,
     isOwn: false,
     sendState: null,
+    replyTo: null,
+    edited: false,
+    reactions: [],
     ...overrides,
   };
 }
@@ -224,5 +227,74 @@ describe("viewFor", () => {
         expect(view.text).not.toBe("");
       }
     }
+  });
+});
+
+function replyTo(overrides: Partial<ReplyTo> = {}): ReplyTo {
+  return {
+    eventId: "$parent:example.org",
+    available: true,
+    sender: "@alice:example.org",
+    senderDisplayName: "Alice",
+    excerpt: "the original message",
+    ...overrides,
+  };
+}
+
+describe("replyQuoteView", () => {
+  it("is null for an item that isn't a reply", () => {
+    expect(replyQuoteView(null)).toBeNull();
+  });
+
+  it("resolves the display name, falling back to the raw sender id", () => {
+    const view = replyQuoteView(replyTo({ senderDisplayName: null, sender: "@bob:example.org" }));
+    expect(view).toEqual({ available: true, sender: "@bob:example.org", excerpt: "the original message" });
+  });
+
+  it("falls back to a generic placeholder when neither name nor sender id is known", () => {
+    const view = replyQuoteView(replyTo({ senderDisplayName: null, sender: null }));
+    expect(view).toEqual({ available: true, sender: "Someone", excerpt: "the original message" });
+  });
+
+  it("carries a null excerpt through for a parent with nothing to quote", () => {
+    const view = replyQuoteView(replyTo({ excerpt: null }));
+    expect(view).toEqual({ available: true, sender: "Alice", excerpt: null });
+  });
+
+  it("collapses every unavailable state to a single available:false outcome", () => {
+    // Renders as "Original message unavailable" in `Timeline.svelte`, not an
+    // empty quote or a spinner — the core already folds
+    // Unavailable/Pending/Error together (see `ReplyTo`'s doc comment), so
+    // this is the one shape this module needs to handle.
+    const view = replyQuoteView(
+      replyTo({ available: false, sender: null, senderDisplayName: null, excerpt: null }),
+    );
+    expect(view).toEqual({ available: false });
+  });
+});
+
+describe("displayReactionKey", () => {
+  it("leaves a short key untouched", () => {
+    expect(displayReactionKey("👍")).toBe("👍");
+  });
+
+  it("caps a long space-free key and appends an ellipsis", () => {
+    const longKey = "x".repeat(100);
+    const displayed = displayReactionKey(longKey);
+    expect(displayed.length).toBeLessThan(longKey.length);
+    expect(displayed.endsWith("…")).toBe(true);
+  });
+
+  it("caps by Unicode code point, not UTF-16 code unit, so it never splits a surrogate pair", () => {
+    // Each of these emoji is a single code point outside the BMP (two UTF-16
+    // code units each) — a naive `.slice()` by code unit could cut one in
+    // half and produce an unpaired surrogate.
+    const longKey = "🎉".repeat(40);
+    const displayed = displayReactionKey(longKey);
+    expect(displayed.endsWith("…")).toBe(true);
+    // No lone surrogate: every remaining code point round-trips through
+    // `Array.from` at the same count it was capped to.
+    const codePoints = Array.from(displayed.replace(/…$/, ""));
+    expect(codePoints.every((cp) => cp === "🎉")).toBe(true);
   });
 });

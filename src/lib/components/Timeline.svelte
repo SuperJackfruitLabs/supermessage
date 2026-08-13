@@ -103,6 +103,30 @@
   // `{@html}` here just because this precedent exists; the guarantee lives
   // in the Rust code that produced the string, not in this file.
   //
+  // Replies/edits/reactions (M2, `docs/matrix-events.md` Table A) are
+  // rendering-only in this pass — sending a reply and toggling a reaction
+  // are a follow-up, so nothing here is clickable. `replyQuote`/
+  // `reactionsRow` below are shared snippets, reused across every
+  // bubble-shaped render kind (`bubble`/`image`/`mediaFile`) rather than
+  // duplicated per branch. Two things worth calling out:
+  //   - A reply's parent (`item.replyTo`) may not have loaded —
+  //     `replyQuoteView` (`timelineItemView.ts`) reduces the SDK's four
+  //     `TimelineDetails` states to two outcomes: `available` (something to
+  //     quote) or not (render "Original message unavailable", never an
+  //     empty quote or a spinner — this build never calls
+  //     `Timeline::fetch_details_for_event`, so an unavailable parent will
+  //     not resolve itself).
+  //   - A reply excerpt and a reaction key are both sender-controlled
+  //     strings. The excerpt is already truncated in the core
+  //     (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) before it ever crosses
+  //     IPC; a reaction key is not (its exact bytes matter for aggregation),
+  //     so `displayReactionKey` caps it for *display* only. Both still carry
+  //     `break-words` here regardless — truncation bounds the length, not
+  //     whether a long space-free run within that bound can still widen the
+  //     bubble (the exact class of bug `.message-html`'s own
+  //     `overflow-wrap: anywhere` exists to prevent; see that block's doc
+  //     comment for the 4700px regression this guards against).
+  //
   // Links inside that HTML are still plain `<a>` tags in a webview with no
   // browser chrome, so a click on one would otherwise replace this whole
   // app with the target page and leave no way back. Two independent layers
@@ -124,10 +148,11 @@
   import { tick } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
-  import { viewFor } from "./timelineItemView";
+  import { displayReactionKey, replyQuoteView, viewFor } from "./timelineItemView";
   import { groupTimelineItems, type TimelineDisplayRow } from "./timelineGrouping";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
+  import type { TimelineItem } from "$lib/ipc";
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
   const PAGE_SIZE = 20;
@@ -266,6 +291,56 @@
   }
 </script>
 
+{#snippet replyQuote(item: TimelineItem)}
+  {@const quote = replyQuoteView(item.replyTo)}
+  {#if quote}
+    <div
+      class="mb-1 rounded-md border-l-2 px-2 py-1 text-xs {item.isOwn
+        ? 'border-accent-content/40 text-accent-content/85'
+        : 'border-border text-content-muted'}"
+    >
+      {#if quote.available}
+        <p class="truncate font-medium break-words">{quote.sender}</p>
+        {#if quote.excerpt}
+          <!-- `quote.excerpt` is already truncated in the core
+               (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) — `break-words`
+               here guards against a long space-free run within that bound,
+               not the length itself. See this file's top-of-script doc
+               comment. -->
+          <p class="line-clamp-2 break-words">{quote.excerpt}</p>
+        {/if}
+      {:else}
+        <p class="italic break-words">Original message unavailable</p>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet reactionsRow(item: TimelineItem)}
+  {#if item.reactions.length > 0}
+    <div class="mt-1 flex flex-wrap gap-1">
+      {#each item.reactions as reaction (reaction.key)}
+        <!--
+          `displayReactionKey` caps a reaction key's rendered length (a key
+          is arbitrary sender-controlled text, not necessarily one emoji);
+          `break-words` guards the chip itself against a long run within
+          that cap, same reasoning as the reply excerpt above. `byMe` gets a
+          visually distinct style so the interaction pass has something to
+          build "already reacted" on — this pass itself is read-only, no
+          click handler here.
+        -->
+        <span
+          class="rounded-full border px-2 py-0.5 text-xs break-words {reaction.byMe
+            ? 'border-accent bg-accent/20 text-accent font-medium'
+            : 'border-border/70 bg-surface-sunken text-content-muted'}"
+        >
+          {displayReactionKey(reaction.key)} {reaction.count}
+        </span>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
 <div class="min-h-0 flex-1">
   {#if timelineStore.items.length === 0}
     <div class="flex h-full items-center justify-center">
@@ -313,6 +388,7 @@
                       {item.senderDisplayName ?? item.sender ?? "Unknown"}
                     </p>
                   {/if}
+                  {@render replyQuote(item)}
                   {#if item.formattedBody}
                     <!--
                       `{@html}` — safe only because of the guarantees this
@@ -352,6 +428,7 @@
                       {item.body}
                     </p>
                   {/if}
+                  {@render reactionsRow(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
@@ -362,7 +439,9 @@
                     {:else if item.isOwn && item.sendState === "notSentYet"}
                       Sending…
                     {:else}
-                      {formatTime(item.timestampMs)}
+                      {#if item.edited}<span class="italic">edited</span> · {/if}{formatTime(
+                        item.timestampMs,
+                      )}
                     {/if}
                   </p>
                 </div>
@@ -388,6 +467,7 @@
                       {item.senderDisplayName ?? item.sender ?? "Unknown"}
                     </p>
                   {/if}
+                  {@render replyQuote(item)}
                   {#if failed}
                     <!-- Never a broken-image icon: any failure — nothing
                          renderable, a rejected fetch, or the <img> itself
@@ -415,12 +495,15 @@
                       style={imageBoxStyle(view.width, view.height)}
                     ></div>
                   {/if}
+                  {@render reactionsRow(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
                       : 'text-content-muted'}"
                   >
-                    {formatTime(item.timestampMs)}
+                    {#if item.edited}<span class="italic">edited</span> · {/if}{formatTime(
+                      item.timestampMs,
+                    )}
                   </p>
                 </div>
               </div>
@@ -442,6 +525,7 @@
                       {item.senderDisplayName ?? item.sender ?? "Unknown"}
                     </p>
                   {/if}
+                  {@render replyQuote(item)}
                   <div class="selectable flex items-center gap-2 text-sm">
                     <span
                       class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold {item.isOwn
@@ -462,12 +546,15 @@
                       </span>
                     </span>
                   </div>
+                  {@render reactionsRow(item)}
                   <p
                     class="mt-1 text-right text-[10px] {item.isOwn
                       ? 'text-accent-content/70'
                       : 'text-content-muted'}"
                   >
-                    {formatTime(item.timestampMs)}
+                    {#if item.edited}<span class="italic">edited</span> · {/if}{formatTime(
+                      item.timestampMs,
+                    )}
                   </p>
                 </div>
               </div>

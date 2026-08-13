@@ -15,7 +15,7 @@
 // `draftTracker.ts`), and so `Timeline.svelte` never has to know the wire
 // vocabulary directly.
 
-import type { TimelineItem } from "$lib/ipc";
+import type { ReplyTo, TimelineItem } from "$lib/ipc";
 
 /** What `Timeline.svelte` should render for a given timeline item. */
 export type ItemView =
@@ -92,6 +92,66 @@ export function attributedName(item: TimelineItem): string {
  */
 export function membershipVerb(detail: string | null): string {
   return (detail && MEMBERSHIP_VERBS[detail]) || "updated their membership";
+}
+
+/**
+ * The reply-quote view for a message's `replyTo` — `null` when the item
+ * isn't a reply at all (`TimelineItem.replyTo` is `null`). When it *is* a
+ * reply but the parent's details never loaded (`available: false` — a real
+ * and common outcome, not an edge case; see `ReplyTo`'s doc comment in
+ * `$lib/ipc`), this collapses to `{ available: false }` with nothing else to
+ * show, so `Timeline.svelte` renders a neutral "Original message
+ * unavailable" quote rather than an empty one or a spinner that will never
+ * resolve on its own.
+ */
+export type ReplyQuoteView =
+  | { available: false }
+  | { available: true; sender: string; excerpt: string | null };
+
+/**
+ * Derives {@link ReplyQuoteView} from `TimelineItem.replyTo`. Resolves the
+ * quoted sender's display name the same way {@link attributedName} does for
+ * a top-level item (display name, falling back to the raw sender id, then a
+ * generic placeholder) — kept as a separate function rather than reusing
+ * `attributedName` directly because a reply's parent is a `ReplyTo`, not a
+ * `TimelineItem`.
+ */
+export function replyQuoteView(replyTo: ReplyTo | null): ReplyQuoteView | null {
+  if (!replyTo) return null;
+  if (!replyTo.available) return { available: false };
+  return {
+    available: true,
+    sender: replyTo.senderDisplayName ?? replyTo.sender ?? "Someone",
+    excerpt: replyTo.excerpt,
+  };
+}
+
+/**
+ * Cap on a reaction key's *rendered* length, in Unicode code points. The
+ * core never truncates a reaction key (unlike a reply excerpt) — the spec
+ * puts no length limit on it, and a key is compared byte-for-byte against
+ * what other clients sent, so silently mutating it on the wire would break
+ * that comparison. This is a display-only cap: a key is arbitrary
+ * sender-controlled text, not necessarily a single emoji, so without this a
+ * long space-free key could still stretch a reaction chip arbitrarily wide
+ * (the overflow-guard rule this codebase enforces on every other free-text
+ * field from a sender — see `Timeline.svelte`'s reaction-chip markup, which
+ * also carries the CSS-level `overflow-wrap` guard as a second, independent
+ * layer).
+ */
+const REACTION_KEY_MAX_CODEPOINTS = 32;
+
+/**
+ * The text to actually render for a reaction key, capped to
+ * {@link REACTION_KEY_MAX_CODEPOINTS}. Iterates by Unicode code point
+ * (`Array.from`), not UTF-16 code unit (`.length`/`.slice`), so a cap
+ * landing mid-emoji still cuts on a whole-code-point boundary rather than
+ * splitting a surrogate pair into two unpaired halves.
+ */
+export function displayReactionKey(key: string): string {
+  const codePoints = Array.from(key);
+  if (codePoints.length <= REACTION_KEY_MAX_CODEPOINTS) return key;
+  return `${codePoints.slice(0, REACTION_KEY_MAX_CODEPOINTS).join("")}…`;
 }
 
 /** Render decision for `kind: "message"`, switching on `msgtype`. */

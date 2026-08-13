@@ -104,6 +104,23 @@ export interface TimelineItem {
   timestampMs: number | null;
   isOwn: boolean;
   sendState: string | null;
+  /**
+   * Present when this item is a reply (`m.in_reply_to`); `null` for an
+   * ordinary message and for every non-message `kind`. Mirrors `ReplyToDto`
+   * from `src-tauri/src/core/dto.rs` — see {@link ReplyTo} for how an
+   * unloaded parent is represented.
+   */
+  replyTo: ReplyTo | null;
+  /**
+   * Whether the SDK has folded an `m.replace` edit into this item
+   * (`Message::is_edited`). Always `false` for a non-message `kind`.
+   */
+  edited: boolean;
+  /**
+   * Reactions aggregated onto this item, one entry per distinct key. Empty
+   * (never `null`) when the item has none. Mirrors `ReactionDto`.
+   */
+  reactions: Reaction[];
 }
 
 /** Mirrors `MediaMetaDto` from `src-tauri/src/core/dto.rs`. See {@link TimelineItem.media}. */
@@ -113,6 +130,53 @@ export interface MediaMeta {
   size: number | null;
   width: number | null;
   height: number | null;
+}
+
+/**
+ * A reply's quoted parent, mirroring `ReplyToDto` from
+ * `src-tauri/src/core/dto.rs`. The parent is fetched lazily by the SDK and
+ * this build never resolves it further (no
+ * `Timeline::fetch_details_for_event` call), so `available: false` is a real
+ * and common outcome, not just an edge case — render it as a neutral
+ * "Original message unavailable" quote, never an empty quote or a spinner
+ * that will not resolve on its own.
+ */
+export interface ReplyTo {
+  /** The parent event's id. Present even when the parent itself didn't load. */
+  eventId: string;
+  /** Whether the parent's details were actually loaded. */
+  available: boolean;
+  /** The parent's raw sender id. `null` when `available` is `false`. */
+  sender: string | null;
+  /** The parent's sender display name, when known. */
+  senderDisplayName: string | null;
+  /**
+   * A short quote of the parent's body, **already truncated in the core**
+   * (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) — this string is safe to
+   * render as-is, without a further display-only clamp standing in for real
+   * truncation. `null` when `available` is `false`, or the parent isn't a
+   * message (or has no body) to quote. Still sender-controlled text: guard
+   * it against overflow the same as any other free-text field (see
+   * `Timeline.svelte`).
+   */
+  excerpt: string | null;
+}
+
+/**
+ * One reaction key aggregated across senders on a message, mirroring
+ * `ReactionDto`.
+ */
+export interface Reaction {
+  /**
+   * The reaction's key — an arbitrary sender-controlled string, not
+   * necessarily a single emoji. Cap its rendered length and guard it against
+   * overflow like any other free-text field from a sender.
+   */
+  key: string;
+  /** How many distinct senders have reacted with this key. */
+  count: number;
+  /** Whether the current user is among those senders. */
+  byMe: boolean;
 }
 
 /** Mirrors `CoreError::kind()` from `src-tauri/src/core/error.rs`. */

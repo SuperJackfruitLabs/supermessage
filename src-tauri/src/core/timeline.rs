@@ -80,15 +80,16 @@ use matrix_sdk::ruma::html::{
 use matrix_sdk::ruma::{EventId, MilliSecondsSinceUnixEpoch, RoomId, UInt, UserId};
 use matrix_sdk::Client;
 use matrix_sdk_ui::timeline::{
-    EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline,
-    TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, ReactionsByKeyBySender,
+    RoomExt, Timeline, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind,
+    VirtualTimelineItem,
 };
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
 use super::dto::{
-    apply_ops, op_name, project_diff, DiffEnvelope, DiffOp, MediaMetaDto, SeqCounter,
-    TimelineItemDto,
+    apply_ops, op_name, project_diff, DiffEnvelope, DiffOp, MediaMetaDto, ReactionDto, ReplyToDto,
+    SeqCounter, TimelineItemDto,
 };
 use super::error::{CoreError, CoreResult};
 
@@ -173,6 +174,9 @@ pub fn project_item_parts(
     timestamp_ms: Option<u64>,
     is_own: bool,
     send_state: Option<&str>,
+    reply_to: Option<ReplyToDto>,
+    edited: bool,
+    reactions: Vec<ReactionDto>,
 ) -> TimelineItemDto {
     TimelineItemDto {
         id: id.to_string(),
@@ -187,6 +191,9 @@ pub fn project_item_parts(
         timestamp_ms,
         is_own,
         send_state: send_state.map(str::to_string),
+        reply_to,
+        edited,
+        reactions,
     }
 }
 
@@ -551,6 +558,133 @@ fn classify_content(
     }
 }
 
+/// Cap on a quoted reply's body excerpt, in `char`s (not bytes, so a
+/// truncation always lands on a valid boundary). Long enough to give the
+/// reader a line or two of real context — the point of a reply quote — short
+/// enough that a message right up against the spec's 64KiB event size limit
+/// still crosses IPC as a few hundred bytes, not the whole thing. This is the
+/// actual enforcement point for "truncate in the core": the webview never
+/// receives more than this, regardless of what CSS does with it, so a
+/// display-only line-clamp can never be the only thing standing between a
+/// quoted 64KiB message and the wire.
+const REPLY_EXCERPT_MAX_CHARS: usize = 160;
+
+/// Truncates a message body down to [`REPLY_EXCERPT_MAX_CHARS`] `char`s,
+/// appending an ellipsis when anything was actually cut. Pure and SDK-free —
+/// [`reply_to_dto`] is the thin adapter that pulls a parent's raw body out of
+/// the SDK's types and hands it here, so this is what's unit-tested (see this
+/// module's tests).
+fn truncate_reply_excerpt(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.chars().count() <= REPLY_EXCERPT_MAX_CHARS {
+        return trimmed.to_string();
+    }
+    let mut excerpt: String = trimmed.chars().take(REPLY_EXCERPT_MAX_CHARS).collect();
+    excerpt.push('…');
+    excerpt
+}
+
+/// Builds the reply-quote DTO from already-extracted parent details. Pure —
+/// mirrors [`project_item_parts`]'s split between SDK extraction (in
+/// [`reply_to_dto`]) and logic (here, so it's unit-testable without a live
+/// timeline item).
+fn project_reply_to(
+    event_id: &str,
+    available: bool,
+    sender: Option<&str>,
+    sender_display_name: Option<&str>,
+    body: Option<&str>,
+) -> ReplyToDto {
+    ReplyToDto {
+        event_id: event_id.to_string(),
+        available,
+        sender: sender.map(str::to_string),
+        sender_display_name: sender_display_name.map(str::to_string),
+        excerpt: body.map(truncate_reply_excerpt),
+    }
+}
+
+/// Extracts a reply-quote DTO from an event's content, when it has one at
+/// all (`content.in_reply_to()` is `None` for an ordinary, non-reply
+/// message).
+///
+/// Handles every [`TimelineDetails`] state the parent can be in — not just
+/// `Ready`. The parent is populated eagerly only when it's already present
+/// in the locally materialized timeline (`InReplyToDetails::new` scans the
+/// in-memory item vector); otherwise it starts `Unavailable` and only
+/// resolves via an explicit `Timeline::fetch_details_for_event` call, which
+/// this read-only rendering pass never makes. So `Unavailable`, `Pending`,
+/// and `Error` are all real, common outcomes here — not edge cases — and are
+/// deliberately folded together into `available: false` rather than
+/// distinguished on the wire: this pass has nothing more useful to tell the
+/// reader for any of the three than "Original message unavailable" (see
+/// [`ReplyToDto`]'s doc comment), and adding a fetch call to resolve
+/// `Unavailable`/`Pending` is out of scope for a read-only pass.
+fn reply_to_dto(content: &TimelineItemContent) -> Option<ReplyToDto> {
+    let reply = content.in_reply_to()?;
+    let event_id = reply.event_id.to_string();
+    match reply.event {
+        TimelineDetails::Ready(embedded) => {
+            let sender = embedded.sender.to_string();
+            let sender_display_name = match &embedded.sender_profile {
+                TimelineDetails::Ready(profile) => profile.display_name.clone(),
+                _ => None,
+            };
+            let body = embedded.content.as_message().map(|m| m.body().to_string());
+            Some(project_reply_to(
+                &event_id,
+                true,
+                Some(&sender),
+                sender_display_name.as_deref(),
+                body.as_deref(),
+            ))
+        }
+        TimelineDetails::Unavailable | TimelineDetails::Pending | TimelineDetails::Error(_) => {
+            Some(project_reply_to(&event_id, false, None, None, None))
+        }
+    }
+}
+
+/// Pure computation over already-extracted reaction data: for each key, how
+/// many senders used it and whether `own_user_id` is one of them.
+///
+/// Takes plain `(key, sender ids)` pairs rather than the SDK's
+/// `ReactionsByKeyBySender` directly — that type's inner map is
+/// crate-private in `matrix-sdk-ui` (same reasoning as `classify_content`'s
+/// test-module comment: there is no public way to build one with real
+/// entries outside a live, synced timeline) — so this is what's
+/// unit-testable (see this module's tests); [`reaction_entries`] is the thin
+/// adapter that extracts this shape from the real SDK type.
+fn project_reactions(entries: &[(String, Vec<String>)], own_user_id: &str) -> Vec<ReactionDto> {
+    entries
+        .iter()
+        .map(|(key, senders)| ReactionDto {
+            key: key.clone(),
+            count: senders.len() as u32,
+            by_me: senders.iter().any(|sender| sender == own_user_id),
+        })
+        .collect()
+}
+
+/// Extracts `(key, sender ids)` pairs from the SDK's aggregated reactions, in
+/// the shape [`project_reactions`] takes. `None` (an item with no reactions
+/// at all, the common case) projects to an empty `Vec`, same as an empty
+/// `ReactionsByKeyBySender` would.
+fn reaction_entries(reactions: Option<&ReactionsByKeyBySender>) -> Vec<(String, Vec<String>)> {
+    let Some(reactions) = reactions else {
+        return Vec::new();
+    };
+    reactions
+        .iter()
+        .map(|(key, by_sender)| {
+            (
+                key.clone(),
+                by_sender.keys().map(|id| id.to_string()).collect(),
+            )
+        })
+        .collect()
+}
+
 /// Project an SDK event item into the wire [`TimelineItemDto`].
 fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineItemDto {
     let id = event_item_id(event);
@@ -567,6 +701,10 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
     let timestamp_ms = timestamp_to_millis(event.timestamp());
     let is_own = event.sender() == own_user;
     let send_state = event.send_state().map(send_state_name);
+    let reply_to = reply_to_dto(event.content());
+    let edited = message.is_some_and(|m| m.is_edited());
+    let reaction_entries = reaction_entries(event.content().reactions());
+    let reactions = project_reactions(&reaction_entries, own_user.as_str());
 
     project_item_parts(
         &id,
@@ -581,6 +719,9 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
         Some(timestamp_ms),
         is_own,
         send_state,
+        reply_to,
+        edited,
+        reactions,
     )
 }
 
@@ -610,6 +751,9 @@ fn project_virtual_item(
         timestamp_ms,
         false,
         None,
+        None,
+        false,
+        Vec::new(),
     )
 }
 
@@ -1088,6 +1232,9 @@ mod tests {
             Some(1_700_000_000_000),
             true,
             None,
+            None,
+            false,
+            Vec::new(),
         );
         assert_eq!(dto.kind, "message");
         assert_eq!(dto.msgtype.as_deref(), Some("m.text"));
@@ -1095,6 +1242,12 @@ mod tests {
         assert!(dto.formatted_body.is_none());
         assert!(dto.media.is_none());
         assert!(dto.is_own);
+        // A plain message (not a reply, not edited, no reactions) projects
+        // none of the M2 additions — see this module's tests further down
+        // for the cases where each one actually fires.
+        assert!(dto.reply_to.is_none());
+        assert!(!dto.edited);
+        assert!(dto.reactions.is_empty());
     }
 
     #[test]
@@ -1112,6 +1265,9 @@ mod tests {
             None,
             false,
             None,
+            None,
+            false,
+            Vec::new(),
         );
         assert_eq!(dto.kind, "dateDivider");
         assert!(dto.sender.is_none());
@@ -1140,6 +1296,9 @@ mod tests {
             Some(1_700_000_000_000),
             false,
             None,
+            None,
+            false,
+            Vec::new(),
         );
         assert_eq!(dto.kind, "state");
         assert_eq!(dto.detail.as_deref(), Some("m.room.name"));
@@ -1161,6 +1320,9 @@ mod tests {
             Some(1_700_000_000_000),
             false,
             None,
+            None,
+            false,
+            Vec::new(),
         );
         assert_eq!(dto.kind, "message");
         assert_eq!(dto.msgtype.as_deref(), Some("m.notice"));
@@ -1184,6 +1346,9 @@ mod tests {
             Some(1_700_000_000_000),
             true,
             None,
+            None,
+            false,
+            Vec::new(),
         );
         assert_eq!(dto.body.as_deref(), Some("plain"));
         assert_eq!(dto.formatted_body.as_deref(), Some("<p>rich</p>"));
@@ -1723,6 +1888,220 @@ mod tests {
             !should_reseed(5, 0, MAX_RESEED_ATTEMPTS + 5),
             "expected well past the cap to stay stopped"
         );
+    }
+
+    // `truncate_reply_excerpt`/`project_reply_to`/`project_reactions`: pure
+    // over plain strings, so — like `should_reseed` above — these are
+    // exercised directly rather than through a live timeline item.
+    // `reply_to_dto`/`reaction_entries` (the SDK-facing adapters either one
+    // feeds) aren't exercised directly, same reasoning as
+    // `classify_content`'s test-module comment: `TimelineItemContent`,
+    // `InReplyToDetails`'s embedded event, and `ReactionsByKeyBySender`'s
+    // inner map are all crate-private to construct with real data outside a
+    // live, synced timeline.
+
+    #[test]
+    fn truncate_reply_excerpt_leaves_a_short_body_untouched() {
+        assert_eq!(truncate_reply_excerpt("hello there"), "hello there");
+    }
+
+    #[test]
+    fn truncate_reply_excerpt_trims_surrounding_whitespace() {
+        assert_eq!(truncate_reply_excerpt("  hello  "), "hello");
+    }
+
+    #[test]
+    fn truncate_reply_excerpt_caps_a_long_body_with_an_ellipsis() {
+        // A message right up against the spec's 64KiB event body limit must
+        // not cross IPC anywhere near full size — this is the truncation
+        // this app actually relies on, not a display-only line-clamp.
+        let long_body = "x".repeat(64 * 1024);
+        let excerpt = truncate_reply_excerpt(&long_body);
+        assert_eq!(excerpt.chars().count(), REPLY_EXCERPT_MAX_CHARS + 1); // +1 for the ellipsis
+        assert!(excerpt.ends_with('…'));
+        assert!(
+            excerpt.len() < 1024,
+            "expected the excerpt to be a small fraction of 64KiB"
+        );
+    }
+
+    #[test]
+    fn truncate_reply_excerpt_does_not_split_a_multibyte_character() {
+        // `REPLY_EXCERPT_MAX_CHARS` counts `char`s, not bytes, so a body made
+        // entirely of multi-byte characters must still truncate cleanly
+        // rather than panicking or producing invalid UTF-8 mid-character.
+        let long_body = "é".repeat(500);
+        let excerpt = truncate_reply_excerpt(&long_body);
+        assert_eq!(excerpt.chars().count(), REPLY_EXCERPT_MAX_CHARS + 1);
+        assert!(excerpt.ends_with('…'));
+    }
+
+    #[test]
+    fn project_reply_to_projects_a_ready_parent_with_a_truncated_excerpt() {
+        let long_body = "y".repeat(1000);
+        let reply = project_reply_to(
+            "$parent:example.org",
+            true,
+            Some("@alice:example.org"),
+            Some("Alice"),
+            Some(&long_body),
+        );
+        assert_eq!(reply.event_id, "$parent:example.org");
+        assert!(reply.available);
+        assert_eq!(reply.sender.as_deref(), Some("@alice:example.org"));
+        assert_eq!(reply.sender_display_name.as_deref(), Some("Alice"));
+        let excerpt = reply.excerpt.expect("a message parent has an excerpt");
+        assert_eq!(excerpt.chars().count(), REPLY_EXCERPT_MAX_CHARS + 1);
+        assert!(
+            excerpt.len() < long_body.len(),
+            "expected the excerpt truncated, not carried through whole"
+        );
+    }
+
+    #[test]
+    fn project_reply_to_projects_an_unavailable_parent_gracefully() {
+        // Covers `Unavailable`/`Pending`/`Error` alike (see `reply_to_dto`'s
+        // doc comment for why they're folded together) — this is the shape
+        // the webview must render as "Original message unavailable", not an
+        // empty quote or a spinner that never resolves.
+        let reply = project_reply_to("$parent:example.org", false, None, None, None);
+        assert_eq!(reply.event_id, "$parent:example.org");
+        assert!(!reply.available);
+        assert!(reply.sender.is_none());
+        assert!(reply.sender_display_name.is_none());
+        assert!(reply.excerpt.is_none());
+    }
+
+    #[test]
+    fn project_reply_to_has_no_excerpt_when_the_parent_has_no_body() {
+        // A `Ready` parent that isn't a message (a redacted event, a
+        // sticker, ...) still has a sender to show, just nothing to quote.
+        let reply = project_reply_to(
+            "$parent:example.org",
+            true,
+            Some("@bob:example.org"),
+            None,
+            None,
+        );
+        assert!(reply.available);
+        assert!(reply.excerpt.is_none());
+    }
+
+    #[test]
+    fn project_reactions_projects_counts_and_by_me() {
+        let entries = vec![
+            (
+                "👍".to_string(),
+                vec!["@alice:x.org".to_string(), "@bob:x.org".to_string()],
+            ),
+            ("🎉".to_string(), vec!["@me:x.org".to_string()]),
+        ];
+        let mut reactions = project_reactions(&entries, "@me:x.org");
+        reactions.sort_by(|a, b| a.key.cmp(&b.key));
+
+        assert_eq!(reactions.len(), 2);
+        assert_eq!(reactions[0].key, "🎉");
+        assert_eq!(reactions[0].count, 1);
+        assert!(reactions[0].by_me);
+        assert_eq!(reactions[1].key, "👍");
+        assert_eq!(reactions[1].count, 2);
+        assert!(!reactions[1].by_me);
+    }
+
+    #[test]
+    fn project_reactions_is_empty_for_no_reaction_data() {
+        assert!(project_reactions(&[], "@me:x.org").is_empty());
+    }
+
+    #[test]
+    fn project_reactions_by_me_is_false_when_the_current_user_never_reacted() {
+        let entries = vec![("👍".to_string(), vec!["@alice:x.org".to_string()])];
+        let reactions = project_reactions(&entries, "@me:x.org");
+        assert_eq!(reactions.len(), 1);
+        assert!(!reactions[0].by_me);
+    }
+
+    // `project_item_parts` end-to-end for the `edited`/`reactions` fields
+    // (the reply case is already covered above via `project_reply_to`
+    // directly, and through `project_item_parts`'s own carries-through-
+    // untouched behaviour, identical to how `formatted_body` is covered).
+
+    #[test]
+    fn project_item_parts_carries_an_edited_flag_through_untouched() {
+        let dto = project_item_parts(
+            "$e5",
+            "message",
+            Some("m.text"),
+            None,
+            Some("@me:x.org"),
+            Some("Me"),
+            Some("edited text"),
+            None,
+            None,
+            Some(1_700_000_000_000),
+            true,
+            None,
+            None,
+            true,
+            Vec::new(),
+        );
+        assert!(dto.edited);
+    }
+
+    #[test]
+    fn project_item_parts_carries_reactions_through_untouched() {
+        let reactions = vec![ReactionDto {
+            key: "👍".to_string(),
+            count: 2,
+            by_me: true,
+        }];
+        let dto = project_item_parts(
+            "$e6",
+            "message",
+            Some("m.text"),
+            None,
+            Some("@me:x.org"),
+            Some("Me"),
+            Some("hi"),
+            None,
+            None,
+            Some(1_700_000_000_000),
+            true,
+            None,
+            None,
+            false,
+            reactions.clone(),
+        );
+        assert_eq!(dto.reactions, reactions);
+    }
+
+    #[test]
+    fn project_item_parts_carries_a_reply_to_through_untouched() {
+        let reply_to = project_reply_to(
+            "$parent:example.org",
+            true,
+            Some("@alice:example.org"),
+            Some("Alice"),
+            Some("original message"),
+        );
+        let dto = project_item_parts(
+            "$e7",
+            "message",
+            Some("m.text"),
+            None,
+            Some("@me:x.org"),
+            Some("Me"),
+            Some("a reply"),
+            None,
+            None,
+            Some(1_700_000_000_000),
+            true,
+            None,
+            Some(reply_to.clone()),
+            false,
+            Vec::new(),
+        );
+        assert_eq!(dto.reply_to, Some(reply_to));
     }
 
     // `TimelineHandle` holds a live `Arc<Timeline>`, which (unlike
