@@ -70,10 +70,16 @@ pub fn project_room_parts(
     preview: Option<MessagePreview>,
     last_activity_ms: Option<u64>,
 ) -> RoomSummary {
-    let (last_message, last_message_is_own, last_event_type) = match preview {
-        Some(preview) => (Some(preview.text), preview.is_own, preview.event_type),
-        None => (None, false, None),
-    };
+    let (last_message, last_message_is_own, last_message_names_sender, last_event_type) =
+        match preview {
+            Some(preview) => (
+                Some(preview.text),
+                preview.is_own,
+                preview.names_sender,
+                preview.event_type,
+            ),
+            None => (None, false, false, None),
+        };
     RoomSummary {
         id: id.to_string(),
         name: name.unwrap_or_else(|| id.to_string()),
@@ -81,6 +87,7 @@ pub fn project_room_parts(
         unread,
         last_message,
         last_message_is_own,
+        last_message_names_sender,
         last_event_type,
         last_activity_ms,
     }
@@ -623,6 +630,7 @@ mod tests {
             Some(MessagePreview {
                 text: "hello".into(),
                 is_own: false,
+                names_sender: false,
                 event_type: None,
             }),
             Some(1_700_000_000_000),
@@ -633,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    fn room_summary_splits_a_preview_into_its_three_wire_fields() {
+    fn room_summary_splits_a_preview_into_its_four_wire_fields() {
         let summary = project_room_parts(
             "!abc:example.org",
             None,
@@ -642,16 +650,40 @@ mod tests {
             Some(MessagePreview {
                 text: "Approval needed".into(),
                 is_own: true,
+                names_sender: false,
                 event_type: Some("dev.supermessage.gate.v1".into()),
             }),
             None,
         );
         assert_eq!(summary.last_message.as_deref(), Some("Approval needed"));
         assert!(summary.last_message_is_own);
+        assert!(!summary.last_message_names_sender);
         assert_eq!(
             summary.last_event_type.as_deref(),
             Some("dev.supermessage.gate.v1")
         );
+    }
+
+    #[test]
+    fn room_summary_carries_the_names_sender_flag_through() {
+        // An own emote: the one combination that would read
+        // `You: Alice waves` if the webview couldn't tell the text already
+        // names its sender.
+        let summary = project_room_parts(
+            "!abc:example.org",
+            None,
+            None,
+            0,
+            Some(MessagePreview {
+                text: "Alice waves".into(),
+                is_own: true,
+                names_sender: true,
+                event_type: None,
+            }),
+            None,
+        );
+        assert!(summary.last_message_is_own);
+        assert!(summary.last_message_names_sender);
     }
 
     #[test]
@@ -664,6 +696,7 @@ mod tests {
         let summary = project_room_parts("!abc:example.org", None, None, 0, None, None);
         assert_eq!(summary.last_message, None);
         assert!(!summary.last_message_is_own);
+        assert!(!summary.last_message_names_sender);
         assert_eq!(summary.last_event_type, None);
     }
 

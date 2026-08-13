@@ -929,6 +929,18 @@ pub struct MessagePreview {
     pub text: String,
     /// Whether this account sent the previewed event.
     pub is_own: bool,
+    /// Whether [`Self::text`] already names its own sender, so a caller
+    /// adding a `You: `-style prefix would double-name them.
+    ///
+    /// True for an emote, which renders as `"<Name> waves"` to match the
+    /// timeline; false for everything else. This states a property of the
+    /// string this module produced rather than second-guessing what the
+    /// caller will do with it — the alternatives were all worse: `"You
+    /// waves"` needs verb conjugation the core cannot do, lying about
+    /// [`Self::is_own`] poisons a field other things may come to depend on,
+    /// and dropping the prefix everywhere loses a real signal on every
+    /// non-emote message.
+    pub names_sender: bool,
     /// The Matrix event type, populated **only** for a custom
     /// (`MsgLikeKind::Other`) event. `None` for an ordinary message — the
     /// webview keys its pending-decision branch off this being `Some`.
@@ -1008,18 +1020,26 @@ fn media_preview_text(msgtype: &MessageType) -> Option<String> {
 /// `Timeline.svelte`'s emote branch does — the sender's name followed by the
 /// body, because an emote is a sentence *about* its sender and reads as
 /// nonsense without one.
-fn message_preview_text(msgtype: &MessageType, sender_name: &str) -> Option<String> {
+fn message_preview_text(msgtype: &MessageType, sender_name: &str) -> Option<(String, bool)> {
     match msgtype {
-        MessageType::Text(m) => bound_preview_text(&m.body),
-        MessageType::Notice(m) => bound_preview_text(&m.body),
+        MessageType::Text(m) => bound_preview_text(&m.body).map(|text| (text, false)),
+        MessageType::Notice(m) => bound_preview_text(&m.body).map(|text| (text, false)),
         // Bound the *composed* line, not the body alone: a display name is
         // as sender-controlled as the message it prefixes here, and ruma
         // imposes no length limit on either.
-        MessageType::Emote(m) => bound_preview_text(&format!("{sender_name} {}", m.body)),
+        //
+        // The `true` is `MessagePreview::names_sender`, returned from the
+        // same arm that composes the name rather than recomputed from the
+        // msgtype elsewhere — so a future arm that also names its sender
+        // cannot forget to declare it, and this one cannot stop naming the
+        // sender while still claiming to.
+        MessageType::Emote(m) => {
+            bound_preview_text(&format!("{sender_name} {}", m.body)).map(|text| (text, true))
+        }
         MessageType::Image(_)
         | MessageType::File(_)
         | MessageType::Audio(_)
-        | MessageType::Video(_) => media_preview_text(msgtype),
+        | MessageType::Video(_) => media_preview_text(msgtype).map(|text| (text, false)),
         // Everything else — `m.location`, `m.server_notice`, an
         // `m.key.verification.request`, a msgtype ruma has no variant for.
         // Not a wildcard over *SDK variants* the way `classify_content`
@@ -1057,9 +1077,18 @@ fn preview_from_classification(
     msgtype: Option<&MessageType>,
     custom_body: Option<&str>,
     sender_name: &str,
-) -> Option<(String, Option<String>)> {
+    is_own: bool,
+) -> Option<MessagePreview> {
     match kind {
-        "message" => Some((message_preview_text(msgtype?, sender_name)?, None)),
+        "message" => {
+            let (text, names_sender) = message_preview_text(msgtype?, sender_name)?;
+            Some(MessagePreview {
+                text,
+                is_own,
+                names_sender,
+                event_type: None,
+            })
+        }
         "customMessage" => {
             // Never `None`, even with no fallback body and an oversized or
             // absent payload: `docs/matrix-events.md` §G's rule is that no
@@ -1068,7 +1097,15 @@ fn preview_from_classification(
             let text = custom_body
                 .and_then(bound_preview_text)
                 .unwrap_or_else(|| "Custom event".to_string());
-            Some((text, detail.map(str::to_string)))
+            Some(MessagePreview {
+                text,
+                is_own,
+                // A custom event's fallback `body` is prose the sender wrote
+                // for clients that can't render the schema; nothing makes it
+                // name its own sender, so `You: ` in front of it is correct.
+                names_sender: false,
+                event_type: detail.map(str::to_string),
+            })
         }
         // Every other `classify_content` kind — membership, profile and
         // state changes, redactions, undecryptable events, stickers, polls,
@@ -1109,13 +1146,14 @@ pub fn latest_event_preview(
 ) -> Option<MessagePreview> {
     let (kind, _msgtype_name, detail) = classify_content(content);
     let msgtype = content.as_message().map(|message| message.msgtype());
-    let (text, event_type) =
-        preview_from_classification(kind, detail.as_deref(), msgtype, custom_body, sender_name)?;
-    Some(MessagePreview {
-        text,
+    preview_from_classification(
+        kind,
+        detail.as_deref(),
+        msgtype,
+        custom_body,
+        sender_name,
         is_own,
-        event_type,
-    })
+    )
 }
 
 /// Builds the reply-quote DTO from already-extracted parent details. Pure —
@@ -3489,6 +3527,13 @@ mod tests {
     // `latest_event_preview` takes a `TimelineItemContent`, which has no
     // public constructor outside a live synced timeline.
 
+    /// [`message_preview_text`]'s text alone, dropping the `names_sender`
+    /// flag — the two tests that are actually about that flag call the real
+    /// function and assert on both halves.
+    fn preview_text_of(msgtype: &MessageType, sender_name: &str) -> Option<String> {
+        message_preview_text(msgtype, sender_name).map(|(text, _)| text)
+    }
+
     fn image(body: &str, filename: Option<&str>) -> MessageType {
         let mut content =
             ImageMessageEventContent::plain(body.to_owned(), owned_mxc_uri!("mxc://x.org/img"));
@@ -3565,7 +3610,7 @@ mod tests {
     #[test]
     fn message_preview_text_previews_a_plain_text_body() {
         assert_eq!(
-            message_preview_text(&MessageType::text_plain("ship it"), "Alice").as_deref(),
+            preview_text_of(&MessageType::text_plain("ship it"), "Alice").as_deref(),
             Some("ship it")
         );
     }
@@ -3575,7 +3620,7 @@ mod tests {
         // `m.notice` is what most of this org's agent traffic uses (spec §A);
         // the timeline only de-emphasises it, it does not suppress it.
         assert_eq!(
-            message_preview_text(&MessageType::notice_plain("build green"), "Theo").as_deref(),
+            preview_text_of(&MessageType::notice_plain("build green"), "Theo").as_deref(),
             Some("build green")
         );
     }
@@ -3586,15 +3631,46 @@ mod tests {
         // sender` followed by the body; an emote read without its subject is
         // nonsense ("waves"), so the roster reads it the same way.
         assert_eq!(
-            message_preview_text(&MessageType::emote_plain("waves"), "Alice").as_deref(),
+            preview_text_of(&MessageType::emote_plain("waves"), "Alice").as_deref(),
             Some("Alice waves")
         );
     }
 
     #[test]
+    fn message_preview_text_flags_an_emote_as_already_naming_its_sender() {
+        // The defect this flag exists for: an emote's text *is* "<Name>
+        // waves", so a webview that also prefixes `You: ` on an own emote
+        // would render "You: Alice waves". The core states the property; the
+        // webview decides what to do about it.
+        let (text, names_sender) =
+            message_preview_text(&MessageType::emote_plain("waves"), "Alice")
+                .expect("an emote is previewable");
+        assert_eq!(text, "Alice waves");
+        assert!(names_sender);
+    }
+
+    #[test]
+    fn message_preview_text_does_not_flag_anything_but_an_emote_as_naming_its_sender() {
+        // The other arm. A `You: ` prefix on any of these is correct and
+        // useful, so the flag must not spread beyond the one case that
+        // composes a name into its own text.
+        for msgtype in [
+            MessageType::text_plain("ship it"),
+            MessageType::notice_plain("build green"),
+            image("photo.png", None),
+        ] {
+            let (_, names_sender) = message_preview_text(&msgtype, "Alice").expect("previewable");
+            assert!(
+                !names_sender,
+                "expected {msgtype:?} not to name its own sender"
+            );
+        }
+    }
+
+    #[test]
     fn message_preview_text_prefers_a_media_filename() {
         assert_eq!(
-            message_preview_text(&image("caption", Some("diagram.png")), "Alice").as_deref(),
+            preview_text_of(&image("caption", Some("diagram.png")), "Alice").as_deref(),
             Some("diagram.png")
         );
     }
@@ -3604,7 +3680,7 @@ mod tests {
         // ruma's `filename()` falls back to `body`, which is where a client
         // that sets no separate `filename` field puts the name.
         assert_eq!(
-            message_preview_text(&image("photo.png", None), "Alice").as_deref(),
+            preview_text_of(&image("photo.png", None), "Alice").as_deref(),
             Some("photo.png")
         );
     }
@@ -3614,11 +3690,11 @@ mod tests {
         // Same vocabulary as `timelineItemView.ts`'s `MEDIA_FILE_LABELS` and
         // its `m.image` alt fallback — never an invented emoji.
         assert_eq!(
-            message_preview_text(&image("   ", None), "Alice").as_deref(),
+            preview_text_of(&image("   ", None), "Alice").as_deref(),
             Some("Image")
         );
         assert_eq!(
-            message_preview_text(
+            preview_text_of(
                 &MessageType::File(FileMessageEventContent::plain(
                     String::new(),
                     owned_mxc_uri!("mxc://x.org/f")
@@ -3629,7 +3705,7 @@ mod tests {
             Some("File")
         );
         assert_eq!(
-            message_preview_text(
+            preview_text_of(
                 &MessageType::Audio(AudioMessageEventContent::plain(
                     String::new(),
                     owned_mxc_uri!("mxc://x.org/a")
@@ -3640,7 +3716,7 @@ mod tests {
             Some("Audio")
         );
         assert_eq!(
-            message_preview_text(
+            preview_text_of(
                 &MessageType::Video(VideoMessageEventContent::plain(
                     String::new(),
                     owned_mxc_uri!("mxc://x.org/v")
@@ -3658,7 +3734,7 @@ mod tests {
         // seven eligible msgtypes as an `Unsupported message (…)`
         // placeholder. Previewing its body would make the roster claim
         // something was said that the timeline itself refuses to show.
-        assert!(message_preview_text(
+        assert!(preview_text_of(
             &MessageType::Location(LocationMessageEventContent::new(
                 "here".into(),
                 "geo:0,0".into()
@@ -3672,9 +3748,8 @@ mod tests {
     fn message_preview_text_bounds_a_long_body() {
         // The bound must be enforced on the way *out* of this function, not
         // left to the caller — every arm is sender-controlled text.
-        let preview =
-            message_preview_text(&MessageType::text_plain("x".repeat(64 * 1024)), "Alice")
-                .expect("a long text body still previews");
+        let preview = preview_text_of(&MessageType::text_plain("x".repeat(64 * 1024)), "Alice")
+            .expect("a long text body still previews");
         assert_eq!(preview.chars().count(), PREVIEW_MAX_CHARS + 1);
     }
 
@@ -3682,7 +3757,7 @@ mod tests {
     fn message_preview_text_bounds_a_long_emote_including_its_sender_name() {
         // A hostile *display name* is as sender-controlled as the body, so
         // the bound has to apply to the composed line, not just the body.
-        let preview = message_preview_text(&MessageType::emote_plain("waves"), &"n".repeat(4096))
+        let preview = preview_text_of(&MessageType::emote_plain("waves"), &"n".repeat(4096))
             .expect("a long emote still previews");
         assert_eq!(preview.chars().count(), PREVIEW_MAX_CHARS + 1);
     }
@@ -3691,7 +3766,7 @@ mod tests {
     fn message_preview_text_bounds_a_long_media_filename() {
         // A filename is likewise attacker-influenced, and ruma imposes no
         // length limit on it.
-        let preview = message_preview_text(&image("x", Some(&"f".repeat(4096))), "Alice")
+        let preview = preview_text_of(&image("x", Some(&"f".repeat(4096))), "Alice")
             .expect("a long filename still previews");
         assert_eq!(preview.chars().count(), PREVIEW_MAX_CHARS + 1);
     }
@@ -3700,61 +3775,75 @@ mod tests {
     fn preview_from_classification_previews_a_message_and_leaves_the_event_type_unset() {
         // `lastEventType` is the webview's "this is a custom event" hook, so
         // an ordinary message must never populate it.
-        let (text, event_type) = preview_from_classification(
+        let preview = preview_from_classification(
             "message",
             None,
             Some(&MessageType::text_plain("ship it")),
             None,
             "Alice",
+            false,
         )
         .expect("a message is previewable");
-        assert_eq!(text, "ship it");
-        assert_eq!(event_type, None);
+        assert_eq!(preview.text, "ship it");
+        assert_eq!(preview.event_type, None);
+        assert!(!preview.is_own);
     }
 
     #[test]
     fn preview_from_classification_uses_a_custom_events_fallback_body_and_sets_its_type() {
-        let (text, event_type) = preview_from_classification(
+        let preview = preview_from_classification(
             "customMessage",
             Some("dev.supermessage.demo.note.v1"),
             None,
             Some("Approval needed"),
             "Alice",
+            false,
         )
         .expect("a custom event is previewable");
-        assert_eq!(text, "Approval needed");
-        assert_eq!(event_type.as_deref(), Some("dev.supermessage.demo.note.v1"));
+        assert_eq!(preview.text, "Approval needed");
+        assert_eq!(
+            preview.event_type.as_deref(),
+            Some("dev.supermessage.demo.note.v1")
+        );
+        // A schema author's fallback prose does not name its own sender, so
+        // `You: ` in front of it is right.
+        assert!(!preview.names_sender);
     }
 
     #[test]
     fn preview_from_classification_falls_back_to_a_generic_for_a_bodyless_custom_event() {
         // `docs/matrix-events.md` §G: no custom event should ever render as
         // nothing — the same rule `customEvents.ts` follows in the webview.
-        let (text, event_type) = preview_from_classification(
+        let preview = preview_from_classification(
             "customMessage",
             Some("dev.supermessage.demo.note.v1"),
             None,
             None,
             "Alice",
+            false,
         )
         .expect("a bodyless custom event still previews");
-        assert_eq!(text, "Custom event");
-        assert_eq!(event_type.as_deref(), Some("dev.supermessage.demo.note.v1"));
+        assert_eq!(preview.text, "Custom event");
+        assert_eq!(
+            preview.event_type.as_deref(),
+            Some("dev.supermessage.demo.note.v1")
+        );
     }
 
     #[test]
     fn preview_from_classification_bounds_a_custom_events_fallback_body() {
         // Straight off the wire from a homeserver, and `extract_custom_body`
         // imposes no length limit of its own.
-        let (text, _) = preview_from_classification(
+        let preview = preview_from_classification(
             "customMessage",
             Some("x.y.z"),
             None,
             Some(&"c".repeat(64 * 1024)),
             "Alice",
+            false,
         )
         .expect("a long custom body still previews");
-        assert_eq!(text.chars().count(), PREVIEW_MAX_CHARS + 1);
+        assert_eq!(preview.text.chars().count(), PREVIEW_MAX_CHARS + 1);
     }
 
     #[test]
@@ -3776,7 +3865,7 @@ mod tests {
             "failedToParse",
         ] {
             assert!(
-                preview_from_classification(kind, Some("m.room.name"), None, None, "Alice")
+                preview_from_classification(kind, Some("m.room.name"), None, None, "Alice", false)
                     .is_none(),
                 "expected no preview for {kind}"
             );
@@ -3788,7 +3877,7 @@ mod tests {
         // Defensive: `latest_event_preview` only ever passes `Some` alongside
         // `"message"` (both come from the same content), but a `None` here
         // must degrade to "no preview" rather than to an empty string.
-        assert!(preview_from_classification("message", None, None, None, "Alice").is_none());
+        assert!(preview_from_classification("message", None, None, None, "Alice", false).is_none());
     }
 
     // `reply_parent_label`: pure over the `(kind, detail)` pair

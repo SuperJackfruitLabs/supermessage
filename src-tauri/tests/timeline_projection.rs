@@ -804,6 +804,7 @@ async fn text_message_previews_as_its_body_with_no_sender_prefix() {
     // only ever adds one for your own messages.
     assert_eq!(preview.text, "hello world");
     assert!(!preview.is_own, "ALICE is not the harness's own user");
+    assert!(!preview.names_sender);
     assert_eq!(preview.event_type, None);
 }
 
@@ -853,16 +854,16 @@ async fn emote_previews_with_its_sender_the_way_the_timeline_renders_it() {
     })
     .await;
 
+    let preview = only_preview(&previews)
+        .as_ref()
+        .expect("an emote is previewable");
     // No profile is loaded against this harness, so the name falls back to
     // the raw user id — exactly as `Timeline.svelte`'s own
     // `senderDisplayName ?? sender` does for the same event.
-    assert_eq!(
-        only_preview(&previews)
-            .as_ref()
-            .expect("an emote is previewable")
-            .text,
-        format!("{} waves hello", *ALICE)
-    );
+    assert_eq!(preview.text, format!("{} waves hello", *ALICE));
+    // And the flag that stops a webview prefixing `You: ` onto a line that
+    // already names its sender.
+    assert!(preview.names_sender);
 }
 
 #[tokio::test]

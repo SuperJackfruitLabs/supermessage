@@ -37,6 +37,19 @@ pub struct RoomSummary {
     /// `core::rooms::project_room_parts`), so this can never claim ownership
     /// of a preview that doesn't exist.
     pub last_message_is_own: bool,
+    /// Whether [`Self::last_message`] already names its own sender, so a
+    /// caller adding a `You: `-style prefix would double-name them. True for
+    /// an emote, which renders as `"<Name> waves"` to match the timeline;
+    /// false for everything else, including when there is no preview at all.
+    ///
+    /// This exists because [`Self::last_message_is_own`] and the emote
+    /// rendering are each correct alone and wrong together: an own emote
+    /// would otherwise read `You: <MyName> waves`. The core states a
+    /// property of the string it produced rather than guessing what the
+    /// webview will do with it (see
+    /// `core::timeline::MessagePreview::names_sender` for the alternatives
+    /// this was chosen over).
+    pub last_message_names_sender: bool,
     /// The Matrix event type, populated **only** for a custom
     /// (`MsgLikeKind::Other`) event; `None` for an ordinary message. This is
     /// the hook §6.1.1's pending-decision path keys off.
