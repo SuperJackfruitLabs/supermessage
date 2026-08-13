@@ -69,6 +69,23 @@ describe("parseRoomIdentity", () => {
     expect(parseRoomIdentity("").name).toBe("Unnamed room");
     expect(parseRoomIdentity(" — ").name).toBe("Unnamed room");
   });
+
+  it("bounds an astral-heavy name without splitting a surrogate pair", () => {
+    // An emoji-heavy hostile name reaches the 120/40-code-unit boundary far
+    // sooner than an ASCII one does — each 🧠 is two UTF-16 code units, so a
+    // naive `.slice(0, max)` lands mid-pair long before 120 *characters* of
+    // ASCII would. `bound()` must count code points, not code units.
+    const astral = "🧠".repeat(200);
+    const parsed = parseRoomIdentity(`${astral} — ${astral}`);
+    expect([...parsed.name].length).toBeLessThanOrEqual(120);
+    expect([...parsed.role!].length).toBeLessThanOrEqual(40);
+    // A lone (unpaired) surrogate is the concrete symptom of a code-unit
+    // cut. Rebuilding each value from its own code points and comparing
+    // back is a stronger check than a regex: if the string round-trips
+    // unchanged, every code point in it is intact.
+    expect([...parsed.name].join("")).toBe(parsed.name);
+    expect([...parsed.role!].join("")).toBe(parsed.role);
+  });
 });
 
 describe("roomInitial", () => {

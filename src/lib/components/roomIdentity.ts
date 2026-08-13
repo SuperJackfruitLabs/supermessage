@@ -92,8 +92,23 @@ const EM_DASH_CODEPOINT = 0x2014;
  */
 const LEADING_TOKEN = /^(\S+)\s/;
 
+/**
+ * Caps `s` at `max` **code points**, not UTF-16 code units. Iterates via
+ * `[...s]` and slices the resulting array rather than `s.slice(0, max)`,
+ * which counts code units and can cut a surrogate pair in half — precisely
+ * the failure this module exists to rule out (see this module's doc
+ * comment and `looksLikeGlyph`'s). A 120-character `name` or 40-character
+ * `role` from a hostile, emoji-heavy homeserver name reaches that boundary
+ * easily, and it's this exact module that documents why a lone surrogate
+ * must never reach a caller. No ellipsis is appended: this is a
+ * layout-safety cap on the value, not a display excerpt — CSS
+ * (`text-overflow: ellipsis` or similar) owns visual truncation, the way
+ * every other roster/header string in this codebase already relies on CSS
+ * rather than a hard-truncated string with its own `…`.
+ */
 function bound(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) : s;
+  const codePoints = [...s];
+  return codePoints.length > max ? codePoints.slice(0, max).join("") : s;
 }
 
 /**
@@ -177,6 +192,23 @@ const DAY_MS = 86_400_000;
 const WEEK_MS = 7 * DAY_MS;
 
 /**
+ * The `>= 7 days` fallback formatter for {@link relativeTime}. `undefined`
+ * locale — the system locale — matches the precedent `Timeline.svelte`
+ * already sets for its own date/time formatters (`dateFormatter`/
+ * `timeFormatter`, both constructed with `undefined`): a roster row whose
+ * date reads `13 Aug` while the date divider six inches away in the
+ * timeline reads `Aug 13` (or vice versa) would be a locale inconsistency
+ * within the same screen. Built once at module scope rather than per call
+ * for the same reason `Timeline.svelte` does — `Intl.DateTimeFormat`
+ * construction is not cheap, and this runs once per roster row on every
+ * render.
+ */
+const dateFallbackFormatter = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+});
+
+/**
  * Formats `timestampMs` as a short relative age against `nowMs`: `"now"`
  * (under a minute), `"4m"`, `"2h"`, `"3d"`, then — once the gap reaches a
  * week — a short absolute date (`"Jul 14"`) rather than an ever-growing day
@@ -205,7 +237,5 @@ export function relativeTime(timestampMs: number | null, nowMs: number): string 
   if (deltaMs < DAY_MS) return `${Math.floor(deltaMs / HOUR_MS)}h`;
   if (deltaMs < WEEK_MS) return `${Math.floor(deltaMs / DAY_MS)}d`;
 
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
-    new Date(timestampMs),
-  );
+  return dateFallbackFormatter.format(new Date(timestampMs));
 }
