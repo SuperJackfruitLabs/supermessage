@@ -103,15 +103,20 @@ pub async fn send_message(
     timeline.send_text(&body).await
 }
 
-/// Fetches `room_id`'s avatar as a `data:` URI, or `None` when the room has
-/// no avatar (or its bytes don't sniff to a renderable image format — see
-/// `core::media::sniff_mime`). Fetched lazily and cached by the caller,
-/// keyed on the room's `avatarUrl` (the `mxc://` URI) — never carried in the
-/// streamed `RoomSummary` itself, per `core::dto`'s doc comment on IPC cost.
+/// Fetches `mxc_uri` as a `data:` URI, or `None` when its bytes don't sniff
+/// to a renderable image format (see `core::media::sniff_mime`). Takes the
+/// mxc URI directly rather than a room id — see `core::media`'s doc comment
+/// for why — which the caller (`avatarCache.svelte.ts`) already holds as a
+/// room's `avatarUrl` (`RoomSummary`'s `avatarUrl`, projected by
+/// `core::rooms::project_room` with a hero fallback — see
+/// `core::rooms::resolve_avatar_url`) or a user's own avatar mxc URI. Fetched
+/// lazily and cached by the caller, keyed on that same mxc URI — never
+/// carried in the streamed `RoomSummary` itself, per `core::dto`'s doc
+/// comment on IPC cost.
 #[tauri::command]
-pub async fn room_avatar(
-    room_id: String,
+pub async fn avatar_thumbnail(
+    mxc_uri: String,
     session: State<'_, Session>,
 ) -> Result<Option<String>, CoreError> {
-    session.room_avatar(&room_id).await
+    session.avatar_thumbnail(&mxc_uri).await
 }

@@ -32,7 +32,7 @@ export interface CoreStatus {
  * either). It is deliberately *not* the image data itself: `RoomSummary` is
  * re-sent whole on every room-list `Set` diff, and putting bytes here would
  * inflate every such update. Use it only as a change signal / cache key, and
- * call {@link roomAvatar} to resolve the actual pixels.
+ * call {@link avatarThumbnail} to resolve the actual pixels.
  */
 export interface RoomSummary {
   id: string;
@@ -190,14 +190,16 @@ export async function sendMessage(body: string): Promise<void> {
 }
 
 /**
- * Fetches `roomId`'s avatar as a `data:` URI, or `null` when the room has no
- * avatar (or the core couldn't identify its image format). Deliberately not
- * carried on `RoomSummary` — see that interface's doc comment — so callers
- * fetch this lazily, per room, and cache the result themselves (keyed on the
- * room's `avatarUrl`, not its id: see `$lib/components/RoomList.svelte`).
+ * Fetches `mxcUri` as a `data:` URI, or `null` when the core couldn't
+ * identify its bytes as a renderable image format. Takes the raw `mxc://`
+ * URI rather than a room id — a room's `RoomSummary.avatarUrl` is exactly
+ * such a URI (see that interface's doc comment for why it isn't image data
+ * itself), and this same command works for any other mxc URI too, e.g. a
+ * user's own avatar. Callers fetch this lazily and cache the result
+ * themselves, keyed on `mxcUri` (see `$lib/stores/avatarCache.svelte.ts`).
  */
-export async function roomAvatar(roomId: string): Promise<string | null> {
-  return invoke<string | null>("room_avatar", { roomId });
+export async function avatarThumbnail(mxcUri: string): Promise<string | null> {
+  return invoke<string | null>("avatar_thumbnail", { mxcUri });
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */

@@ -67,11 +67,40 @@ pub fn project_room_parts(
     }
 }
 
+/// Resolves the mxc URI to show as a room's avatar: the room's own
+/// `m.room.avatar` state event if it has one, else — mirroring Element's
+/// behavior — the sole hero's avatar when the room has exactly one hero.
+///
+/// `RoomInfo::avatar_url` (what `item.avatar_url()` reads) has no such
+/// fallback: it is `None` for any room that never had `m.room.avatar` set,
+/// which in practice is most 1:1 rooms — Matrix leaves a DM's "avatar" to be
+/// inferred from its sole other member, and Element does exactly that. Left
+/// unhandled, every one of those rooms would report no avatar at all despite
+/// Element showing a picture for the very same room.
+///
+/// Deliberately narrow: a room with more than one hero and no room avatar
+/// still resolves to `None`. With several members and no `m.room.avatar`,
+/// there is no one member whose picture uniquely represents the room —
+/// showing an arbitrary hero's face would misrepresent a group as a 1:1.
+///
+/// Pure and SDK-free, like [`project_room_parts`], so it's testable without
+/// a live `RoomListItem`; [`project_room`] is what extracts
+/// `hero_avatar_urls` from a real `Room::heroes()` call.
+fn resolve_avatar_url(
+    room_avatar_url: Option<String>,
+    hero_avatar_urls: &[Option<String>],
+) -> Option<String> {
+    room_avatar_url.or_else(|| match hero_avatar_urls {
+        [only_hero] => only_hero.clone(),
+        _ => None,
+    })
+}
+
 /// Project an SDK [`RoomListItem`] into the wire [`RoomSummary`].
 ///
 /// A thin adapter: it only extracts values and delegates to
-/// [`project_room_parts`], which carries the actual logic (and is what gets
-/// unit-tested).
+/// [`project_room_parts`] and [`resolve_avatar_url`], which carry the actual
+/// logic (and are what get unit-tested).
 ///
 /// `last_message` is left `None` here. A real preview requires decoding the
 /// latest event's content the same way `core::timeline`'s `project_item`
@@ -82,7 +111,15 @@ pub fn project_room_parts(
 pub fn project_room(item: &RoomListItem) -> RoomSummary {
     let id = item.room_id().to_string();
     let name = item.cached_display_name().map(|name| name.to_string());
-    let avatar_url = item.avatar_url().map(|url| url.to_string());
+    let hero_avatar_urls: Vec<Option<String>> = item
+        .heroes()
+        .iter()
+        .map(|hero| hero.avatar_url.as_ref().map(|url| url.to_string()))
+        .collect();
+    let avatar_url = resolve_avatar_url(
+        item.avatar_url().map(|url| url.to_string()),
+        &hero_avatar_urls,
+    );
     let unread = item.num_unread_messages();
     // `MilliSecondsSinceUnixEpoch` wraps `js_int::UInt`, which only converts
     // to `i64`/`i128` directly; it is always non-negative and within
@@ -285,6 +322,49 @@ mod tests {
 
     fn room(id: &str) -> RoomSummary {
         project_room_parts(id, None, None, 0, None, None)
+    }
+
+    #[test]
+    fn resolve_avatar_url_prefers_the_rooms_own_avatar_over_any_hero() {
+        let resolved = resolve_avatar_url(
+            Some("mxc://x.org/room-avatar".into()),
+            &[Some("mxc://x.org/hero-avatar".into())],
+        );
+        assert_eq!(resolved.as_deref(), Some("mxc://x.org/room-avatar"));
+    }
+
+    #[test]
+    fn resolve_avatar_url_falls_back_to_the_sole_heros_avatar() {
+        // The case this exists for: a DM with no `m.room.avatar` state
+        // event, same as Element's own fallback for rooms shaped like this.
+        let resolved = resolve_avatar_url(None, &[Some("mxc://x.org/hero-avatar".into())]);
+        assert_eq!(resolved.as_deref(), Some("mxc://x.org/hero-avatar"));
+    }
+
+    #[test]
+    fn resolve_avatar_url_is_none_for_a_multi_hero_room_with_no_room_avatar() {
+        // A group room with several members and no room avatar: no single
+        // hero's picture is "the room's" picture, so this must not pick one
+        // arbitrarily.
+        let resolved = resolve_avatar_url(
+            None,
+            &[
+                Some("mxc://x.org/a".into()),
+                Some("mxc://x.org/b".into()),
+                Some("mxc://x.org/c".into()),
+            ],
+        );
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn resolve_avatar_url_is_none_with_no_room_avatar_and_no_heroes() {
+        assert_eq!(resolve_avatar_url(None, &[]), None);
+    }
+
+    #[test]
+    fn resolve_avatar_url_is_none_when_the_sole_hero_has_no_avatar_either() {
+        assert_eq!(resolve_avatar_url(None, &[None]), None);
     }
 
     #[test]

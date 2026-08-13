@@ -12,11 +12,15 @@
   //
   // Avatars: `avatarUrl` is an `mxc://` URI a browser can't load directly
   // (and this homeserver's media endpoints are authenticated, so there's no
-  // bare `http(s)://` URL either — see `ipc.ts`'s `roomAvatar` doc comment).
-  // `avatarCache` resolves it to a `data:` URI via the `room_avatar` command,
-  // fetched lazily per room and cached by `avatarUrl` so the list never
-  // blocks on avatars: every row renders immediately with its initials, and
-  // swaps in the real image once (and if) the fetch resolves.
+  // bare `http(s)://` URL either — see `ipc.ts`'s `avatarThumbnail` doc
+  // comment). It's also not always the room's own avatar — the core falls
+  // back to a DM's sole other member when the room has no `m.room.avatar`
+  // (`core::rooms::resolve_avatar_url`), which is why "no avatarUrl" still
+  // means "no avatar to show", not "core bug". `avatarCache` resolves
+  // whatever mxc URI is set to a `data:` URI via the `avatar_thumbnail`
+  // command, fetched lazily per URI so the list never blocks on avatars:
+  // every row renders immediately with its initials, and swaps in the real
+  // image once (and if) the fetch resolves.
 
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
@@ -45,7 +49,7 @@
   {:else}
     {#each sortedRooms as room (room.id)}
       {@const selected = room.id === roomsStore.selectedId}
-      {@const avatar = avatarCache.get(room.id, room.avatarUrl)}
+      {@const avatar = avatarCache.get(room.avatarUrl)}
       <button
         type="button"
         onclick={() => roomsStore.select(room.id)}
