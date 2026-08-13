@@ -204,7 +204,7 @@
         />
       {:else}
         <span
-          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ui-lg text-content"
+          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-avatar text-content"
           aria-hidden="true"
         >
           {roomInitial(identity)}

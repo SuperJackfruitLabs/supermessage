@@ -108,6 +108,16 @@
   --text-ui-lg--line-height: 1.4;
   --text-ui-lg--font-weight: 600;
 
+  /* The one rank that is not text. A 64px avatar circle needs a glyph sized
+   * to the circle, and before this existed the room-info panel's fallback
+   * initial took `--text-ui-lg` — the largest rank the scale owned — so a
+   * 64px circle held a 15px letter and read as broken. Sized to the avatar,
+   * not to a reading rank, which is why it sits apart from the scale above
+   * rather than extending it: nothing else should reach for this. */
+  --text-avatar: 1.5rem; /* 24px, for a 64px circle */
+  --text-avatar--line-height: 1;
+  --text-avatar--font-weight: 500;
+
   --text-body: 0.9375rem; /* 15px */
   --text-body--line-height: 1.62;
   --text-body--font-weight: 400;
