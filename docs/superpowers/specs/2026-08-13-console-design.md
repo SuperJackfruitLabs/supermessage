@@ -83,6 +83,7 @@ Light (`:root`):
 | `--color-signal` | `#8a4e00` | **Pending decision only** |
 | `--color-signal-soft` | `#fdf3e2` | Pending-decision card ground |
 | `--color-danger` | `#b4232a` | Errors, failed sends |
+| `--color-scrim` | `rgb(22 24 33 / 0.45)` | Veil behind the modal info panel (§9) |
 
 Dark (`prefers-color-scheme: dark`):
 
@@ -102,15 +103,16 @@ Dark (`prefers-color-scheme: dark`):
 | `--color-signal` | `#f0a63c` |
 | `--color-signal-soft` | `#2e2317` |
 | `--color-danger` | `#f4756e` |
+| `--color-scrim` | `rgb(9 11 17 / 0.7)` |
 
 Both themes are first-class. Every value above must be checked against its
 own ground for contrast; `--color-content-faint` on `--color-surface` is the
 tightest pair and must still clear 4.5:1 for the 10.5px system lines it
 carries. Adjust the token, never the usage, if it does not.
 
-**These values are the shipped ones, revised three times during
+**These values are the shipped ones, revised four times during
 implementation and synced back here — the table is not the original draft.**
-All three revisions are worth knowing about, because all three were caught by
+All four revisions are worth knowing about, because all four were caught by
 rendering or review rather than by design:
 
 - The first draft's `faint` (`#8b90a0` / `#6b7183`) failed this section's own
@@ -135,6 +137,20 @@ rendering or review rather than by design:
   second, and drops `--color-content-faint` on the reading surface to
   4.29:1 — under §9's floor. The value keeps the ramp's `(R, R+2, R+8)`
   channel spacing, so the blue cast survives. Light is unchanged.
+- `--color-scrim` is new, added when the overlaying info panel became a real
+  modal (§9). It is not a fifth hue and not a new rank — light is
+  `--color-content` at 45% alpha, dark is the ramp's floor at 70% — but it
+  could not be expressed as an opacity modifier on an existing token, and
+  the reason is worth recording. The thing most often behind the scrim is
+  the roster, which is already `--color-surface-sunken`: a wash of sunken
+  over sunken is 1.0:1 and paints nothing, the same failure the header's
+  hover state had. And the two themes cannot share a direction, because
+  `--color-content` is near-black in light and near-white in dark — one
+  token expressed as a modifier would *lighten* the dark theme. The two
+  alphas differ for the same reason: matched on the perceived drop rather
+  than on the number, light falls 3.2× and dark 2.3×, and dark cannot reach
+  3.2 without erasing the region instead of veiling it (its ground is
+  already at the floor, so nearly all of the region's light is its text).
 
 The lesson for anyone extending this palette: a ratio that merely clears
 4.5:1 is not automatically finished. Check it against the *neighbouring rank*
@@ -191,7 +207,8 @@ renders in the designed face instead of falling back.
 **Sans italic is bundled too** (`wght-italic.css`), and this is not
 optional: with `font-synthesis: none`, an `<em>` inside an *own* message —
 which is set in sans, unlike a peer message — renders upright and loses its
-emphasis silently. Mono deliberately has no italic; see §6.3.
+emphasis silently. Mono deliberately has no italic; see §5.3 for what that
+costs an `<em>` inside inline code and how it is paid instead.
 
 **The risk this design takes, stated plainly:** serif message bodies in a
 chat client. Nobody does it. It is justified here because these are not chat
@@ -258,6 +275,20 @@ creation, encryption enabled), placeholders, event types and ids are mono.
 Everything a human or agent wrote to be read is serif. Chrome is sans. A
 reader learns this in about four seconds and never has to be told.
 
+**Emphasis inside inline code.** Mono carries no italic here (§4), and
+`font-synthesis: none` means a missing face is not faked — so
+`<em><code>x</code></em>` in a sender's formatted body composed to "mono
+italic" and rendered plainly upright, losing the emphasis with no fallback.
+Inline code inside an `<em>` therefore renders at mono **500** with the
+italic explicitly dropped, which is the one emphasis channel the face
+actually has. The residual, stated rather than hidden: `<strong><code>`
+asks for 600 and CSS font matching resolves it to the same bundled 500, so
+emphasis and strong emphasis are indistinguishable *inside inline code*.
+That is a real loss and it is the cheaper one — the alternatives are
+bundling a mono italic, which this design refuses, or giving `em` a
+non-typographic marker that would collide with the code chip's own ground
+and the link underline.
+
 ---
 
 ## 6. Layout
@@ -307,6 +338,19 @@ do not depend on the clock.
 - 24px avatar, name in `--text-ui-lg`, role as a bordered chip in
   `--text-label` (`--color-border`, `--color-content-muted`). Chip omitted
   when there is no role.
+- The chip has a hard ceiling and truncates; the name does not. A role is
+  bounded to 40 characters by the §5.1 parse, which caps the damage but
+  does not prevent a long one pushing the connection dot and `Info` off the
+  header, and the name is the more important half of the identity. **The
+  ceiling is sixteen characters of the chip's own text plus its own box**
+  — `calc(16ch + 16×0.08em + 1rem + 2px)`, 127px, 109px of text. Written
+  out because both short forms are wrong and the first one shipped: a bare
+  `max-w-[14ch]` is a *border-box* cap, so `px-2` and the border ate into
+  it and left 66px for the 68px `SQUAD LEAD` needs — the spec's own
+  canonical role (§1, §5.1) truncated at 1905px while the roster showed it
+  whole. Widening to `16ch` does not fix it either: `ch` is the advance of
+  `0` and `--text-label` adds `0.08em` of tracking per character, so 16ch
+  of box is about eleven characters of chip.
 - Right: the connection dot — **filled** for `live`, hollow for everything
   else — plus the state word in `--text-meta` lowercase mono. Colour:
   `--color-content-muted`, or `--color-danger` for `error`. Never amber.
@@ -395,6 +439,20 @@ messages are commands; they are not set for reading at length.
   layout — no bubble for peers, 6px radius on the image, filename in sans,
   size/kind line in mono.
 
+### 6.3.9 Typing indicator
+
+A fixed-height line between the timeline and the composer, mono
+`--text-meta` `--color-content-faint`, on `--color-surface-sunken`. **The
+ground is the field, not the shell's `--color-surface`.** It spans the full
+width of the pane, so on `surface` it was a lit bar across the gap between
+the sunken field and the sunken composer tray — the same "two lit regions"
+defect §6.2 describes for the header, one element lower and blinking in and
+out as somebody types. The sheet is the pane's only lit surface and it is a
+*column*; a full-width bar cannot join it, so it joins the field. The text
+rank stays faint (4.52:1 light / 4.91:1 dark on that ground): unlike the
+disabled `Send` in §6.4, this is not a control and has no second channel
+that would let the rank move up without saying something it does not mean.
+
 ### 6.4 Composer
 
 ```
@@ -407,7 +465,15 @@ messages are commands; they are not set for reading at length.
 - Textarea: transparent, borderless, Sans `--text-ui`. The **container**
   carries the focus ring (2px `--color-accent`, offset), so the whole strip
   responds as one instrument.
-- `Send` compact, `--color-accent`, with a `⏎` hint in mono at 70% opacity.
+- `Send` compact, `--color-accent`, with a `⏎` hint in mono at 70% opacity
+  (shipped at 80%: at 70% the hint composites under the 4.5:1 floor).
+  Disabled is a **ghost** — no fill, `--color-border` hairline, label in
+  `--color-content-muted`. The label rank is muted rather than faint
+  because dropping the fill exposes the composer tray, so the ground is
+  `--color-surface-sunken`, where faint measures 4.516:1 — over the floor
+  by rounding rather than by margin. Nothing is lost: the disabled state
+  is carried by the missing fill and the hairline, never by the label's
+  colour.
 - Reply strip above: 2px `--color-accent` left rail, `REPLYING TO <sender>`
   in `--text-label`, excerpt in serif `--text-meta`-sized, `✕` to cancel.
 - Send error: `--color-danger`, `SEND FAILED` in `--text-label`, the message
@@ -427,6 +493,18 @@ in favour of sigil-led mono lines (§5.2); set the topic in serif
 `--text-body` (it is prose); member rows show the display name in sans and
 the mxid in sigil-led mono; section rules become hairlines with
 `--text-label` headings.
+
+**Everything in this panel is on the §4 scale**, including the parts that
+are not prose: the panel's own `Room info` title is `--text-ui-lg` — the
+same rank as the room header's name, because the two title strips are the
+same kind of object and were the most visible place the panel and the
+header used two different type systems — the loading and error lines and
+the `Copy` button are `--text-ui`, and both avatar-initial fallbacks are
+`--text-ui`/`--text-ui-lg` rather than an ad-hoc size. The panel is the
+surface a reader compares directly against the header two inches away;
+nothing off-scale survives that comparison.
+
+Its dialog behaviour in the overlay geometry is §9's, not this section's.
 
 ---
 
@@ -549,11 +627,46 @@ Not announced in the UI, just true:
 - **Colour is never the only channel.** The connection dot pairs with a
   word; the pending card pairs amber with the `AWAITING YOUR DECISION`
   label; failed sends pair danger with text.
-- **Responsive:** below `840px` the room-info panel overlays instead of
+- **Responsive:** below `1238px` the room-info panel overlays instead of
   taking a column; below `640px` the roster collapses to a rail the room
   view can return to. This subsumes the carried "responsive layout polish"
   follow-up.
-- **Safe areas:** the existing `--inset-*` handling is preserved exactly.
+
+  **`1238`, revised from the `840` this first shipped with.** The panel
+  breakpoint has to test how much is left for the room pane, not how wide
+  the window is. The roster (288px) and the panel (320px) are both fixed,
+  so a panel taking a column leaves `viewport − 608`: at 839px the pane was
+  551px, and at **840px it was 232px** — one pixel of window bought a 58%
+  narrower reading surface, the room name collapsed to `B…`, and
+  dispatch-card values broke mid-word. `1238 = 288 + 320 + 630`, where 630
+  is the reading column's own full designed width at these viewports
+  (§6.3.0's `72ch` measure, 566px, plus the `lg` gutter it owns). The rule:
+  **the panel may take a column only when doing so costs the reading
+  surface nothing.** Below that it overlays, which subtracts nothing — it
+  is painted over the pane. A viewport query is the right instrument for a
+  remaining-width test precisely because the other two columns are fixed.
+
+- **The overlaying panel is a modal dialog; the column is not.** In the
+  overlay geometry the panel is opaque and covers controls that stay in the
+  document — at 480px, 57 of them in the harness, including a pending
+  decision's Approve and Decline. So *in that geometry only* it carries
+  `role="dialog"` and `aria-modal="true"` (on its own `<aside>`, replacing
+  the implicit `complementary` role and reusing its `aria-label` as the
+  dialog's name), takes focus on open, returns focus to `Info` on close,
+  closes on `Escape`, and renders a `--color-scrim` veil over the pane row.
+  Everything behind it is `inert`, which is what actually makes the covered
+  controls unreachable — by Tab, by pointer and in the accessibility tree —
+  rather than merely hard to reach. In the column layout every one of those
+  is absent: it covers nothing, so it traps nothing.
+- **Safe areas:** the existing `--inset-*` handling is preserved exactly,
+  with one thing made explicit that the two-pane assumption had left
+  implicit: **whichever pane is on screen pays the insets on the layout's
+  outer edges.** In the collapsed layout exactly one pane is visible, so
+  that pane pays both `--inset-left` and `--inset-right`. Hanging
+  `--inset-left` off the roster and `--inset-right` off the room pane is
+  correct only while both are on screen; below 640px it puts the back
+  button, the composer and the roster's unread badges under a device
+  cutout in landscape.
 - **user-select discipline** is preserved exactly: chrome is not selectable,
   content is `.selectable`.
 

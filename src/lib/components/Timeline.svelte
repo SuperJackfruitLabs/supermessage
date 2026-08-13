@@ -1024,7 +1024,7 @@
                 : 'text-content-muted'}"
             >
               {#if failed}
-                Failed to send
+                Not sent
               {:else if sending}
                 Sending…
               {:else}
@@ -1053,7 +1053,7 @@
          whether or not there is anything on the sheet — see the scroller
          below. -->
     <div class="flex h-full items-center justify-center bg-surface-sunken">
-      <p class="text-ui text-content-muted">No messages yet</p>
+      <p class="text-ui text-content-muted">Nothing here yet.</p>
     </div>
   {:else}
     <VList
@@ -1814,6 +1814,37 @@
 
   :global(.message-html em) {
     font-style: italic;
+  }
+
+  /*
+   * Emphasis inside inline code, which italics cannot express here.
+   *
+   * `code` below switches the run to `--font-mono`, and this app bundles
+   * IBM Plex Mono at 400 and 500 only — no italic file, deliberately (spec
+   * §4, §6.3: mono means machine, and mono ranks carry no italic).
+   * `font-synthesis: none` in `app.css` means the missing face is *not*
+   * faked, so `<em><code>x</code></em>` in a sender's formatted body
+   * previously composed to "mono italic" and rendered plainly upright: the
+   * emphasis vanished with no fallback at all.
+   *
+   * The fix uses the one emphasis channel the face actually has. 500 is a
+   * real bundled weight, so it renders; `font-style: normal` is explicit
+   * rather than incidental, so the declaration says out loud that the
+   * italic is being dropped on purpose rather than inherited by accident.
+   *
+   * The residual, stated plainly: `<strong><code>` asks for 600, which CSS
+   * font matching resolves to the same bundled 500, so emphasis and strong
+   * emphasis are indistinguishable *inside inline code*. Two ranks
+   * collapsing into one is a real loss and it is not fixable without
+   * either bundling a mono italic (which the design refuses) or inventing
+   * a non-typographic marker for `em` (a background, a rule) that would
+   * collide with the `code` chip's own ground and the link underline. One
+   * visible rank beats one silently discarded one.
+   */
+  :global(.message-html em code),
+  :global(.message-html code em) {
+    font-style: normal;
+    font-weight: 500;
   }
 
   :global(.message-html code) {

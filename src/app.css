@@ -71,6 +71,21 @@
 
   --color-danger: #b4232a;
 
+  /* The veil behind the room-info panel when it is a modal overlay rather
+   * than a third column (spec §9). Not a fifth hue and not a new rank —
+   * it is `--color-content` at 45% alpha, i.e. the ramp's own darkest end
+   * used as a wash.
+   *
+   * A scrim needs its own token rather than an opacity modifier on an
+   * existing one because the thing most often behind it is the roster,
+   * which is `--color-surface-sunken`: a wash of sunken over sunken is
+   * 1.0:1 and paints nothing, the same failure the header's hover state
+   * had before it was inverted. And the two themes cannot share one
+   * direction — `--color-content` is near-black in light and near-white
+   * in dark, so a single token expressed as a modifier would *lighten*
+   * the dark theme. Each theme names its own dark wash instead. */
+  --color-scrim: rgb(22 24 33 / 0.45);
+
   /* Type scale (spec §4). Letter-spacing and weight are set as theme
    * sub-properties per token so call sites only repeat the family
    * (font-sans/font-serif/font-mono) and, for --text-label, `uppercase` —
@@ -148,6 +163,36 @@
       --color-signal-soft: #2e2317;
 
       --color-danger: #f4756e;
+
+      /* Not the light theme's token with the ramp swapped: `--color-content`
+       * is #e8eaf0 here, and a white wash over a near-black roster reads as
+       * fog rather than as "unavailable". A dark theme scrims by going
+       * darker still, so this is the ramp's floor (#090b11) at a higher
+       * alpha, which is what it takes to register against grounds that are
+       * already dark.
+       *
+       * 0.70, not the light theme's 0.45, because the themes have to be
+       * matched on what a reader perceives — how far the veiled region
+       * drops — and not on the alpha. Measured as the mean luminance of
+       * the whole roster region, screenshot composited to canvas, panel
+       * shut vs scrimmed: light falls 0.908 → 0.283, a factor of 3.2. Dark
+       * fell 2.1× at 0.62 and 2.3× at 0.70.
+       *
+       * It does not reach 3.2 and cannot: the ground is already at the
+       * ramp's floor, so essentially all of the region's light is its
+       * *text*, and alpha composites in sRGB where that text's luminance
+       * falls off far more slowly than the arithmetic suggests. Matching
+       * light exactly would take an alpha near 0.95 — a region erased
+       * rather than veiled, which loses the "your roster is still there,
+       * just not right now" reading the scrim exists to give. 2.3× is the
+       * most the dark ramp has to give before the veil stops being a veil.
+       *
+       * (A WCAG-style ratio is the wrong instrument for this particular
+       * number — its +0.05 flare term swamps luminances this small,
+       * reporting 1.10:1 for a region that has visibly lost more than half
+       * its light. It is the right instrument for text pairs, which is why
+       * every other figure in this file is one.) */
+      --color-scrim: rgb(9 11 17 / 0.7);
     }
   }
 }

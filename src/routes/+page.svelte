@@ -16,7 +16,7 @@
   // used to build a second `Client` and a second set of streams, which
   // froze the room list for the whole session.
 
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { connectionStore } from "$lib/stores/connection.svelte";
@@ -38,18 +38,45 @@
    * The two responsive breakpoints (spec §9), as media queries rather than
    * CSS classes.
    *
-   * `839.98`/`639.98` rather than `839`/`638`: "below 840px" has to mean
+   * `1237.98`/`639.98` rather than `1237`/`639`: "below 1238px" has to mean
    * *below*, and a viewport is not necessarily an integer number of CSS
    * pixels (a fractional device-pixel-ratio, a zoom level, or a
-   * desktop-webview window dragged to 839.5px all produce one). `max-width:
-   * 839px` would leave 839.5px matching neither query; `839.98px` closes
-   * that gap at the same place `min-width: 840px` opens.
+   * desktop-webview window dragged to 1237.5px all produce one).
+   * `max-width: 1237px` would leave 1237.5px matching neither query;
+   * `1237.98px` closes that gap at the same place `min-width: 1238px`
+   * opens.
+   *
+   * **Why 1238 and not the 840 this shipped with.** The question the panel
+   * breakpoint has to answer is not "how wide is the window" but "how much
+   * is left for the room pane once the roster and the panel have taken
+   * theirs" — and the old query asked the first. The roster is `w-72`
+   * (288px, border included) and the panel is `w-80` (320px), both fixed,
+   * so the pane gets `viewport − 608` whenever the panel is a column. At
+   * 839px the panel overlaid and the pane was 551px; at 840px the panel
+   * took a column and the pane was **232px** — one pixel of extra window
+   * bought a 58% narrower reading surface, the room name collapsed to
+   * `B…`, and dispatch-card values broke mid-word into one-word-per-line
+   * ladders. The whole 840–1160px band rendered that way.
+   *
+   * 1238 = 288 (roster) + 320 (panel) + 630 (the sheet). 630px is not a
+   * round number picked to feel safe: it is the reading column's own full
+   * designed width at these viewports — `max-w-[calc(72ch+4rem)]` in
+   * `Timeline.svelte`, i.e. the 72ch measure (566px, measured) plus the
+   * `lg:px-8` gutter it owns. So the rule this encodes is: **the panel may
+   * take a column only when doing so costs the reading surface nothing.**
+   * Below that the panel overlays, which narrows nothing — it is painted
+   * over the pane rather than subtracting from it.
+   *
+   * A viewport query is the right instrument for a remaining-width test
+   * here precisely *because* both other columns are fixed: `viewport ≥
+   * 1238` and `viewport − 288 − 320 ≥ 630` are the same predicate, and
+   * `matchMedia` can only see the first.
    */
-  const PANEL_OVERLAY_QUERY = "(max-width: 839.98px)";
+  const PANEL_OVERLAY_QUERY = "(max-width: 1237.98px)";
   const ROSTER_COLLAPSE_QUERY = "(max-width: 639.98px)";
 
   /**
-   * Below 840px: the room-info panel stops taking a third column and
+   * Below 1238px: the room-info panel stops taking a third column and
    * overlays the room pane instead (spec §9).
    */
   let panelOverlay = $state(false);
@@ -178,6 +205,88 @@
   const panelTakesColumn = $derived(panelOpen && !panelOverlay);
 
   /**
+   * Whether the panel is a modal overlay rather than a third column — the
+   * only geometry in which it gets dialog semantics. In the wide layout it
+   * is a column beside the room pane, covers nothing, and must keep
+   * behaving like an ordinary region: no `role="dialog"`, no `aria-modal`,
+   * no scrim, no `inert` on its neighbours, and Escape left to whatever
+   * else might want it.
+   */
+  const panelIsModal = $derived(panelOpen && panelOverlay);
+
+  /**
+   * The safe-area padding each pane carries.
+   *
+   * The rule is "whichever element is on an outer edge of the layout pays
+   * that edge's inset", and the collapsed layout broke it by assuming the
+   * two panes are always both on screen. Below 640px exactly one of them
+   * is (`rosterVisible`/`roomVisible`, `display: none` for the other), so
+   * the *visible* pane is on both outer edges at once and has to pay both:
+   * with `--inset-left` living only on `<aside>`, the room pane's back
+   * button sat at x=12 under a simulated 44px cutout, and with
+   * `--inset-right` living only on `<section>`, the roster ran to x=479 of
+   * a 480px viewport. Landscape on a notched phone is exactly the case the
+   * collapse exists for.
+   *
+   * Above 640px nothing changes: the roster keeps the left inset, and the
+   * right one stays with whichever element is genuinely rightmost — the
+   * section, or `RoomInfoPanel` when it takes a column (see
+   * `panelTakesColumn`). `narrow` implies `panelOverlay` (640 < 1238), so
+   * the section never has to weigh both conditions at once.
+   */
+  const asideInsets = $derived(
+    narrow
+      ? "padding-left: var(--inset-left); padding-right: var(--inset-right);"
+      : "padding-left: var(--inset-left);",
+  );
+  const sectionInsets = $derived(
+    (narrow ? "padding-left: var(--inset-left); " : "") +
+      (panelTakesColumn ? "" : "padding-right: var(--inset-right);"),
+  );
+
+  /**
+   * The `Info` button, so focus can be put back on it when the modal
+   * overlay closes. A modal that returns focus to `document.body` strands
+   * a keyboard user at the top of the page with no memory of where they
+   * were; returning it to the control that opened the panel is the whole
+   * contract.
+   */
+  let infoButton = $state<HTMLButtonElement | null>(null);
+
+  /**
+   * Closes the panel and restores focus to `Info`.
+   *
+   * `await tick()` is load-bearing, not politeness: while the overlay is
+   * open the room pane is `inert`, and `Info` lives inside it. Focusing an
+   * inert element is a no-op, so the focus call has to happen after Svelte
+   * has flushed the DOM update that takes `inert` back off.
+   */
+  async function closeRoomInfo(): Promise<void> {
+    const restoreFocus = panelIsModal;
+    showRoomInfo = false;
+    if (!restoreFocus) return;
+    await tick();
+    infoButton?.focus();
+  }
+
+  /**
+   * Escape dismisses the modal overlay. Bound on the window rather than on
+   * the panel because the panel is not guaranteed to hold focus — the
+   * operator may have clicked the scrim, or focus may have been reset by
+   * something outside this component — and a modal that only closes while
+   * it happens to be focused is not really dismissible.
+   *
+   * Guarded on `panelIsModal`: in the column layout Escape must do
+   * nothing, because there the panel is not a dialog and nothing is
+   * covered.
+   */
+  function onWindowKeydown(event: KeyboardEvent): void {
+    if (!panelIsModal || event.key !== "Escape") return;
+    event.preventDefault();
+    void closeRoomInfo();
+  }
+
+  /**
    * Returns the collapsed layout to the roster. Clears the pane, never the
    * selection — see `roomPaneOpen`.
    */
@@ -260,12 +369,21 @@
   }
 </script>
 
+<!--
+  Top level, not inside the `restored` branch: `<svelte:window>` may only
+  appear at the top level of a component. The handler is a no-op unless
+  `panelIsModal`, which cannot be true before the app has rendered, so an
+  always-mounted listener costs one comparison per keystroke and nothing
+  else.
+-->
+<svelte:window onkeydown={onWindowKeydown} />
+
 {#if checking}
   <main
     class="flex min-h-dvh flex-col items-center justify-center bg-surface p-8"
     style="padding-top: calc(2rem + var(--inset-top)); padding-bottom: calc(2rem + var(--inset-bottom));"
   >
-    <p class="text-sm text-content-muted">Restoring session…</p>
+    <p class="text-ui text-content-muted">Restoring session…</p>
   </main>
 {:else if restored}
   <div class="flex h-dvh flex-col bg-surface" style="padding-top: var(--inset-top); padding-bottom: var(--inset-bottom);">
@@ -281,7 +399,8 @@
         class="{rosterVisible ? 'flex' : 'hidden'} {narrow
           ? 'min-w-0 flex-1'
           : 'w-72 shrink-0'} flex-col border-r border-border bg-surface-sunken"
-        style="padding-left: var(--inset-left);"
+        style={asideInsets}
+        inert={panelIsModal}
       >
         <div class="min-h-0 flex-1">
           <!--
@@ -307,15 +426,34 @@
             type="button"
             onclick={signOut}
             disabled={signingOut}
-            class="w-full rounded-md px-3 py-2 text-left text-sm text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
+            class="w-full rounded-md px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
           >
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
       </aside>
+      <!--
+        `inert` while the panel is a modal overlay, and this is the finding
+        it closes: the overlay is opaque and pinned over this pane's right
+        320px, but every control underneath it stayed in the tab order —
+        57 of them at 480px in the harness, including a pending decision's
+        Approve and Decline buttons, which a keyboard user could reach and
+        activate without ever seeing them. `inert` removes the whole
+        subtree from the tab order, from hit-testing and from the
+        accessibility tree in one attribute, which is exactly the scope
+        wanted; a hand-rolled focus trap would have covered the Tab case
+        and left `Decline` half-visible and still clickable with a mouse.
+
+        The roster carries it too (see its own attribute): `aria-modal`
+        claims everything outside the dialog is unavailable, and it has to
+        be true at 700px where the roster is beside the overlay rather
+        than under it. The scrim below is what makes that visible instead
+        of merely factual.
+      -->
       <section
         class="{roomVisible ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col"
-        style={panelTakesColumn ? "" : "padding-right: var(--inset-right);"}
+        style={sectionInsets}
+        inert={panelIsModal}
       >
         {#if roomsStore.selectedId}
           {@const headerAvatar = headerAvatarCache.get(roomsStore.selectedId)}
@@ -415,9 +553,31 @@
                   but does not prevent it. The name is the more important
                   half of the identity, so the chip is the one given a hard
                   ceiling and told to give way first.
+
+                  The ceiling is written out in full because the two
+                  obvious short forms are both wrong, and the first one
+                  shipped. `max-w-[14ch]` was a *border-box* cap — Tailwind
+                  sets `box-sizing: border-box` globally — so `px-2` and
+                  the 1px border ate into it: 84px of box, 66px of room,
+                  and `SQUAD LEAD` needs 68. The spec's own canonical role
+                  (§1, §5.1, §6.2) rendered `SQUAD LE…` at 1905px while the
+                  roster row two inches away showed it whole; `CODE &
+                  BUILD` (98px) lost four characters. Widening to
+                  `max-w-[16ch]` would not have fixed it either: `ch` is
+                  the *advance* of `0`, and `--text-label` adds `0.08em` of
+                  tracking to every character, so 16ch of box is only
+                  ~11 characters of chip.
+
+                  So the cap names what it actually means — sixteen
+                  characters of this element's own text (`16ch` of advance
+                  plus `16 × 0.08em` of tracking), plus the box it sits in
+                  (`px-2` = 1rem, and 2px of border). 127px total, 109px of
+                  text. `CODE & BUILD` fits with 29px to spare, and the
+                  40-character worst case still truncates rather than
+                  reaching the connection dot.
                 -->
                 <span
-                  class="min-w-0 max-w-[14ch] truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+                  class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
                 >
                   {selectedIdentity.role}
                 </span>
@@ -466,7 +626,8 @@
               -->
               <button
                 type="button"
-                onclick={() => (showRoomInfo = !showRoomInfo)}
+                bind:this={infoButton}
+                onclick={() => (showRoomInfo ? void closeRoomInfo() : (showRoomInfo = true))}
                 aria-pressed={showRoomInfo}
                 class="shrink-0 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content {showRoomInfo
                   ? 'bg-surface text-content'
@@ -487,9 +648,39 @@
           </div>
         {/if}
       </section>
+      {#if panelIsModal}
+        <!--
+          The scrim, and the honest half of `aria-modal`. Everything behind
+          the overlay is `inert` while it is open, which at 700px includes
+          a roster the overlay does not cover: without a veil that roster
+          would look ordinary and silently refuse clicks, which is a worse
+          bug than the one `inert` fixes. The scrim says "this is not
+          available right now" in the one channel a mouse user reads.
+
+          `bg-scrim`, not a token at an opacity modifier: a wash of
+          `--color-surface-sunken` over the roster — which is already
+          `--color-surface-sunken` — is a 1.0:1 no-op in light, the same
+          way the header's own hover state was before the branch's last
+          commit. `--color-scrim` is defined once in `app.css` and darkens
+          in both themes.
+
+          Not a `<button>`: it would be a second control named the same
+          thing as `Close room info` and a tab stop *outside* the dialog it
+          is scrimming. Escape and the panel's own ✕ are the labelled ways
+          out; this is the unlabelled convenience, so it is `aria-hidden`
+          and reachable only by pointer.
+        -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="absolute inset-0 z-10 bg-scrim"
+          aria-hidden="true"
+          onclick={() => void closeRoomInfo()}
+        ></div>
+      {/if}
       {#if panelOpen && roomsStore.selectedId}
         <!--
-          One call site, two geometries (spec §9). Below 840px the wrapper
+          One call site, two geometries (spec §9). Below 1238px the wrapper
           is an absolutely positioned overlay pinned to the right of the
           pane row and running its full height; at or above it, the wrapper
           is `display: contents` — it disappears from layout entirely and
@@ -498,14 +689,25 @@
           why this is one wrapper and not two branches rendering the same
           component: nothing about the panel itself changes between the two
           layouts, only whether it is in flow.
+
+          `modal` is the one thing that does change, and it is passed down
+          rather than applied here: the dialog role belongs on the panel's
+          own `<aside>`, where it replaces that element's implicit
+          `complementary` role and reuses its existing `aria-label` as the
+          dialog's name. Putting it on this wrapper instead would nest a
+          "Room info" dialog around a "Room info" region.
         -->
         <div
           class={panelOverlay
-            ? "absolute inset-y-0 right-0 z-10 flex max-w-full"
+            ? "absolute inset-y-0 right-0 z-20 flex max-w-full"
             : "contents"}
         >
           {#key roomsStore.selectedId}
-            <RoomInfoPanel roomId={roomsStore.selectedId} onClose={() => (showRoomInfo = false)} />
+            <RoomInfoPanel
+              roomId={roomsStore.selectedId}
+              modal={panelIsModal}
+              onClose={() => void closeRoomInfo()}
+            />
           {/key}
         </div>
       {/if}

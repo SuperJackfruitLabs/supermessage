@@ -114,7 +114,7 @@
 
 <nav aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
   {#if sortedRooms.length === 0}
-    <p class="px-4 py-6 text-center text-sm text-content-muted">No rooms yet.</p>
+    <p class="px-4 py-6 text-center text-ui text-content-muted">No rooms yet.</p>
   {:else}
     {#each sortedRooms as room (room.id)}
       {@const selected = room.id === roomsStore.selectedId}

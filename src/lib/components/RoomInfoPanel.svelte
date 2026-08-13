@@ -47,7 +47,32 @@
   import { parseRoomIdentity, roomInitial } from "./roomIdentity";
   import { initial, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
 
-  let { roomId, onClose }: { roomId: string; onClose: () => void } = $props();
+  /**
+   * `modal` is set only in the overlay geometry (`+page.svelte`'s
+   * `panelIsModal`). It is the *entire* behavioural difference between the
+   * panel's two lives: as a third column this is an ordinary
+   * `complementary` region that covers nothing and traps nothing, and it
+   * must stay that way — a dialog role and a focus move at 1905px would
+   * be a regression, not a fix.
+   */
+  let {
+    roomId,
+    onClose,
+    modal = false,
+  }: { roomId: string; onClose: () => void; modal?: boolean } = $props();
+
+  /**
+   * The panel root, so focus can be moved into the dialog when it opens as
+   * an overlay.
+   *
+   * Focus lands on the container rather than on `Close room info` for two
+   * reasons: a screen reader then announces the dialog's name and role
+   * ("Room info, dialog") instead of just naming a button, and the reader
+   * starts at the top of the panel's content rather than one Tab past it.
+   * `tabindex="-1"` below is what makes the container focusable without
+   * adding a tab stop.
+   */
+  let panelRoot = $state<HTMLElement | null>(null);
 
   const avatarCache = createAvatarCache();
   const memberAvatarCache = createMemberAvatarCache();
@@ -58,6 +83,7 @@
   let copied = $state(false);
 
   onMount(() => {
+    if (modal) panelRoot?.focus();
     roomInfo(roomId)
       .then((result) => {
         info = result;
@@ -103,7 +129,7 @@
 </script>
 
 <!--
-  `max-w-full` alongside `w-80 shrink-0`: below 840px `+page.svelte` renders
+  `max-w-full` alongside `w-80 shrink-0`: below 1238px `+page.svelte` renders
   this as an overlay pinned to the right of the room pane rather than as a
   third column, and on a viewport narrower than the panel itself a
   `shrink-0` flex item would simply hang off the edge. `max-width` clamps a
@@ -116,14 +142,39 @@
   the element that has to clear the right safe area. `+page.svelte`'s
   `<section>` gives the padding up exactly when this panel takes a column of
   its own; see `panelTakesColumn` there.
+
+  `role="dialog"` overrides this element's implicit `complementary` role
+  when — and only when — it is the modal overlay, so the existing
+  `aria-label` becomes the dialog's accessible name and nothing is
+  duplicated. In the column layout `role` and `aria-modal` are both
+  `undefined` and this is the same `complementary` region it always was.
+
+  `tabindex="-1"` is unconditional and static rather than tied to `modal`,
+  which is a compiler concession worth naming: a *dynamic* tabindex trips
+  `a11y_no_noninteractive_tabindex`, because the analyser cannot prove the
+  expression is negative. A constant `-1` adds no tab stop in either
+  layout — it only makes the element focusable by script, which is what
+  the modal open needs and what the column layout simply never uses.
 -->
 <aside
+  bind:this={panelRoot}
   aria-label="Room info"
+  role={modal ? "dialog" : undefined}
+  aria-modal={modal ? "true" : undefined}
+  tabindex="-1"
   class="flex h-full w-80 max-w-full shrink-0 flex-col overflow-y-auto border-l border-border bg-surface-sunken"
   style="padding-right: var(--inset-right);"
 >
   <div class="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-    <h2 class="text-sm font-semibold text-content">Room info</h2>
+    <!--
+      `text-ui-lg`, the room header's own rank (spec §4), not the `text-sm`
+      this shipped with: this bar and the room header two inches to its
+      left are the same kind of object — a pane's title strip — and were
+      set in two different type systems, one on the scale and one off it.
+      The weight comes with the token (`--text-ui-lg--font-weight: 600`),
+      so no `font-semibold` here.
+    -->
+    <h2 class="text-ui-lg text-content">Room info</h2>
     <button
       type="button"
       onclick={onClose}
@@ -135,9 +186,9 @@
   </div>
 
   {#if loading}
-    <p class="px-4 py-6 text-center text-sm text-content-muted">Loading…</p>
+    <p class="px-4 py-6 text-center text-ui text-content-muted">Loading…</p>
   {:else if loadError}
-    <p class="px-4 py-6 text-center text-sm text-content-muted">{loadError}</p>
+    <p class="px-4 py-6 text-center text-ui text-content-muted">{loadError}</p>
   {:else if info}
     {@const currentRoomId = info.roomId}
     {@const avatar = avatarCache.get(currentRoomId)}
@@ -153,7 +204,7 @@
         />
       {:else}
         <span
-          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-xl font-medium text-content"
+          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ui-lg text-content"
           aria-hidden="true"
         >
           {roomInitial(identity)}
@@ -241,7 +292,7 @@
         <button
           type="button"
           onclick={copyRoomId}
-          class="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
+          class="shrink-0 rounded-md border border-border px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
         >
           {copied ? "Copied" : "Copy"}
         </button>
@@ -267,7 +318,7 @@
               />
             {:else}
               <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-raised text-xs font-medium text-content"
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
                 aria-hidden="true"
               >
                 {initial(memberDisplayName(member))}

@@ -286,10 +286,29 @@
     whenever the composer is empty, which is most of the time, and an
     illegible label on the primary instrument's main control most of the
     time is a usability problem the exemption does not make go away.
-    Dropping the fill rather than fading it keeps the label readable
-    (`content-faint` on `surface`, 4.92:1) *and* strengthens the inert
-    signal instead of weakening it: an unfilled button plainly is not the
-    primary action, whereas a washed-out filled one just looks broken.
+    Dropping the fill rather than fading it keeps the label readable *and*
+    strengthens the inert signal instead of weakening it: an unfilled
+    button plainly is not the primary action, whereas a washed-out filled
+    one just looks broken.
+
+    **The label is `content-muted`, and the ground is not `surface`.** The
+    commit that made this a ghost recorded the label at 4.92:1 — which is
+    `content-faint` on `--color-surface`, a ground this button has never
+    had. Dropping the fill exposes whatever is behind it, and that is the
+    composer tray: `--color-surface-sunken`. Re-measured there by
+    compositing the painted stack, `content-faint` is **4.516:1 light /
+    4.911:1 dark** — over §9's floor, but in light by 0.016, which is
+    rounding, not margin. So the rank moves up one: `content-muted` on the
+    same ground measures **7.492:1 light / 9.697:1 dark** — not the 8.2:1
+    muted reads on the sheet, for the same reason the faint figure moved:
+    the ground here is sunken, and every number about this button has to
+    be taken against it.
+
+    Nothing is lost by that. The disabled state was never carried by the
+    label's colour — it is carried by the missing accent fill and the
+    hairline border that replaces it, which is exactly the argument for
+    the ghost in the first place. Fading the label *as well* was belt and
+    braces that cost legibility for a signal already fully delivered.
 
     The border is `border-transparent` when enabled rather than absent, so
     the box measures the same in both states — adding a border only on
@@ -301,7 +320,7 @@
     type="button"
     onclick={send}
     disabled={!canSend}
-    class="flex shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:border-border disabled:bg-transparent disabled:text-content-faint"
+    class="flex shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:border-border disabled:bg-transparent disabled:text-content-muted"
   >
     Send
     <!--
