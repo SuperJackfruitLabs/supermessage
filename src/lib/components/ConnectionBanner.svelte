@@ -26,15 +26,18 @@
 
 {#if connectionStore.state !== "live"}
   <div
-    class="flex shrink-0 items-center justify-center gap-1.5 border-b border-border bg-surface-raised px-4 py-2 text-sm {connectionStore.state ===
-    'error'
-      ? 'text-danger'
-      : 'text-content-muted'}"
+    class="flex h-6 shrink-0 items-center justify-center gap-1.5 border-b border-border bg-surface-raised px-4"
     role="status"
   >
-    <span class="font-medium">{labelFor(connectionStore.state)}</span>
+    <span
+      class="font-mono text-label uppercase {connectionStore.state === 'error'
+        ? 'text-danger'
+        : 'text-content-muted'}"
+    >
+      {labelFor(connectionStore.state)}
+    </span>
     {#if connectionStore.message}
-      <span class="text-content-muted">— {connectionStore.message}</span>
+      <span class="text-ui text-content-muted">— {connectionStore.message}</span>
     {/if}
   </div>
 {/if}

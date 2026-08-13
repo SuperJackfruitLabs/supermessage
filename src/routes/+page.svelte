@@ -19,6 +19,10 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
+  import { connectionStore } from "$lib/stores/connection.svelte";
+  import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
+  import { parseRoomIdentity, roomInitial } from "$lib/components/roomIdentity";
+  import type { ConnectionState } from "$lib/ipc";
   import RoomList from "$lib/components/RoomList.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
@@ -39,10 +43,45 @@
    */
   let showRoomInfo = $state(false);
 
-  const selectedRoomName = $derived(
-    roomsStore.rooms.find((room) => room.id === roomsStore.selectedId)?.name ??
-      roomsStore.selectedId,
+  // Same avatar-cache pattern `RoomList` uses, instantiated separately and
+  // keyed by room id — the header and the roster each fetch and cache their
+  // own copy rather than sharing one, per spec: no cross-component avatar
+  // cache exists in this codebase to share.
+  const headerAvatarCache = createAvatarCache();
+
+  /**
+   * The parsed identity (glyph/name/role) of the selected room, per spec
+   * §5.1/§6.2. Falls back to `roomsStore.selectedId` as the raw name, same
+   * as the header did before this parse existed, for the edge case where
+   * `selectedId` points at a room not (yet) present in `roomsStore.rooms`.
+   */
+  const selectedIdentity = $derived(
+    parseRoomIdentity(
+      roomsStore.rooms.find((room) => room.id === roomsStore.selectedId)?.name ??
+        roomsStore.selectedId ??
+        "",
+    ),
   );
+
+  /**
+   * The header connection dot's text alternative (spec §6.2, §9): colour is
+   * never the only channel, so this word always renders beside the dot
+   * inside a `role="status"` wrapper. Lowercase, unlike the banner's
+   * capitalized labels, because the two surfaces have different jobs — the
+   * dot is a compact at-a-glance state, the banner carries a sentence.
+   */
+  function connectionWord(state: ConnectionState): string {
+    switch (state) {
+      case "offline":
+        return "offline";
+      case "syncing":
+        return "syncing";
+      case "live":
+        return "live";
+      case "error":
+        return "error";
+    }
+  }
 
   /**
    * Whether `RoomInfoPanel` is actually going to render. Drives which of
@@ -134,29 +173,85 @@
         style={panelOpen ? "" : "padding-right: var(--inset-right);"}
       >
         {#if roomsStore.selectedId}
+          {@const headerAvatar = headerAvatarCache.get(roomsStore.selectedId)}
           <!--
-            The only header this room pane has: the selected room's name
-            (already known from `roomsStore.rooms`, no extra fetch) plus the
-            one way to reach the room-info panel — there was previously no
-            surface at all for a room's topic/alias/member list; see
-            `RoomInfoPanel.svelte`'s doc comment.
+            The only header this room pane has: the selected room's parsed
+            identity (avatar, name, role chip — spec §5.1/§6.2, already
+            known from `roomsStore.rooms`, no extra fetch) plus the
+            connection dot and the one way to reach the room-info panel —
+            there was previously no surface at all for a room's
+            topic/alias/member list; see `RoomInfoPanel.svelte`'s doc
+            comment.
+
+            No member count here by design (spec §6.2): it only comes from
+            `roomInfo`, fetched when the panel opens, and a stale or absent
+            number would be worse than none.
           -->
           <div
-            class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2"
+            class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2"
           >
-            <span class="min-w-0 truncate text-sm font-medium text-content">
-              {selectedRoomName}
-            </span>
-            <button
-              type="button"
-              onclick={() => (showRoomInfo = !showRoomInfo)}
-              aria-pressed={showRoomInfo}
-              class="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content {showRoomInfo
-                ? 'bg-surface-sunken text-content'
-                : ''}"
-            >
-              Room info
-            </button>
+            <div class="flex min-w-0 items-center gap-2">
+              {#if headerAvatar}
+                <img
+                  src={headerAvatar}
+                  alt=""
+                  aria-hidden="true"
+                  class="h-6 w-6 shrink-0 rounded-full object-cover"
+                  onerror={() => headerAvatarCache.markFailed(roomsStore.selectedId ?? "")}
+                />
+              {:else}
+                <span
+                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
+                  aria-hidden="true"
+                >
+                  {roomInitial(selectedIdentity)}
+                </span>
+              {/if}
+              <span class="min-w-0 truncate text-ui-lg text-content">{selectedIdentity.name}</span>
+              {#if selectedIdentity.role !== null}
+                <span
+                  class="shrink-0 truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+                >
+                  {selectedIdentity.role}
+                </span>
+              {/if}
+            </div>
+            <div class="flex shrink-0 items-center gap-3">
+              <!--
+                Colour is never the sole channel here (spec §9): the dot's
+                fill state (filled only for "live") and the word beside it
+                both carry the state, and `role="status"` names the pair to
+                assistive tech. Never amber — `--color-signal` is reserved
+                exclusively for the pending-decision card (spec §3, §6.2).
+              -->
+              <span class="flex items-center gap-1.5" role="status">
+                <span
+                  aria-hidden="true"
+                  class="h-2 w-2 rounded-full {connectionStore.state === 'live'
+                    ? 'bg-content-muted'
+                    : connectionStore.state === 'error'
+                      ? 'border border-danger'
+                      : 'border border-content-muted'}"
+                ></span>
+                <span
+                  class="font-mono text-meta {connectionStore.state === 'error'
+                    ? 'text-danger'
+                    : 'text-content-muted'}"
+                >
+                  {connectionWord(connectionStore.state)}
+                </span>
+              </span>
+              <button
+                type="button"
+                onclick={() => (showRoomInfo = !showRoomInfo)}
+                aria-pressed={showRoomInfo}
+                class="shrink-0 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content {showRoomInfo
+                  ? 'bg-surface-sunken text-content'
+                  : ''}"
+              >
+                Info
+              </button>
+            </div>
           </div>
           {#key roomsStore.selectedId}
             <Timeline roomId={roomsStore.selectedId} />
@@ -165,7 +260,7 @@
           <Composer roomId={roomsStore.selectedId} />
         {:else}
           <div class="flex flex-1 items-center justify-center">
-            <p class="text-sm text-content-muted">Select a room to start chatting</p>
+            <p class="text-ui text-content-muted">Choose a room from the roster.</p>
           </div>
         {/if}
       </section>
