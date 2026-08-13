@@ -188,31 +188,6 @@ pub async fn build_room_info(room: &Room) -> CoreResult<RoomInfoDto> {
     ))
 }
 
-/// Whether `requested` (the room id [`core::commands::room_info`]
-/// (`crate::core::commands::room_info`) was called with) names the same room
-/// as `focused` (the room id the currently installed timeline subscription
-/// belongs to, per `core::timeline::FocusedTimeline::snapshot` — the one
-/// public, side-effect-free way to read that without adding a new accessor
-/// to `core::timeline`, which this change does not touch; see
-/// `Session::room_info`'s doc comment for the full reasoning).
-///
-/// The same room-scoped guard every timeline command already takes —
-/// `core::timeline::verify_room_focus`, private to that module —
-/// reimplemented here as the identical plain string comparison rather than
-/// reached through it. Pure and SDK-free, like that function; see its doc
-/// comment for why string equality (not `RoomId` parsing) is the right
-/// comparison.
-pub fn verify_same_room(requested: &str, focused: &str) -> CoreResult<()> {
-    if requested == focused {
-        Ok(())
-    } else {
-        Err(CoreError::RoomChanged {
-            requested: requested.to_string(),
-            focused: focused.to_string(),
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,22 +270,5 @@ mod tests {
     #[test]
     fn should_fetch_full_member_list_is_false_for_an_empty_but_genuinely_empty_room() {
         assert!(!should_fetch_full_member_list(0, 0));
-    }
-
-    #[test]
-    fn verify_same_room_succeeds_when_the_requested_room_is_focused() {
-        assert!(verify_same_room("!a:x.org", "!a:x.org").is_ok());
-    }
-
-    #[test]
-    fn verify_same_room_fails_with_room_changed_when_a_different_room_is_focused() {
-        let err = verify_same_room("!a:x.org", "!b:x.org").unwrap_err();
-        match err {
-            CoreError::RoomChanged { requested, focused } => {
-                assert_eq!(requested, "!a:x.org");
-                assert_eq!(focused, "!b:x.org");
-            }
-            other => panic!("expected CoreError::RoomChanged, got {other:?}"),
-        }
     }
 }

@@ -1418,6 +1418,23 @@ impl FocusedTimeline {
     /// around it, the same split `should_reseed`/`emit_ops` and
     /// `truncate_reply_excerpt`/`reply_to_dto` already use elsewhere in this
     /// module.
+    /// Confirms `room_id` is the currently focused room, without handing back
+    /// the timeline.
+    ///
+    /// The check-only sibling of [`Self::active_timeline_for`], for callers
+    /// that need the room-scoping guarantee but not the `Timeline` — the
+    /// room-info panel, for one. Reading it via [`Self::snapshot`] instead
+    /// would clone the entire materialised item list just to compare one
+    /// string.
+    pub(crate) fn verify_focus(&self, room_id: &str) -> CoreResult<()> {
+        let handle = self
+            .0
+            .lock()
+            .map_err(|_| CoreError::Protocol("focused timeline lock poisoned".into()))?;
+        let handle = handle.as_ref().ok_or(CoreError::NotReady)?;
+        verify_room_focus(room_id, &handle.room_id)
+    }
+
     fn active_timeline_for(&self, room_id: &str) -> CoreResult<Arc<Timeline>> {
         let handle = self
             .0

@@ -20,7 +20,7 @@
 //! crashes at load time, the remaining lever is a `[patch.crates-io]` entry
 //! forcing `reqwest`'s `rustls-no-provider` feature.
 
-use std::sync::OnceLock;
+use std::sync::{Once, OnceLock};
 
 /// Set once `install_ring_provider` has run, recording whether *our* ring
 /// provider is the one that won the install race.
@@ -31,15 +31,30 @@ static RING_INSTALLED: OnceLock<bool> = OnceLock::new();
 /// Must run before any TLS is set up. Calling it twice is harmless: the second
 /// install fails, and we keep the first result.
 pub fn install_ring_provider() {
-    let installed = rustls::crypto::ring::default_provider()
-        .install_default()
-        .is_ok();
+    // `Once` rather than a bare call: this runs from every `Client` build and
+    // from many tests at once, and the install can only succeed for whichever
+    // caller gets there first. Without serialising, a losing caller's
+    // `is_ok() == false` could land in `RING_INSTALLED` *after* the winning
+    // caller's `true` — recording "ring is not active" for a process where it
+    // demonstrably is. That raced in the test suite under parallel threads.
+    //
+    // Serialising also stops the second and later calls logging a warning
+    // about an install they were never going to win.
+    static INSTALL_ONCE: Once = Once::new();
 
-    if !installed {
-        tracing::warn!("a rustls crypto provider was already installed; ring is not active");
-    }
+    INSTALL_ONCE.call_once(|| {
+        let installed = rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_ok();
 
-    let _ = RING_INSTALLED.set(installed);
+        if !installed {
+            tracing::warn!(
+                "another rustls crypto provider was installed before ours; ring is not active"
+            );
+        }
+
+        let _ = RING_INSTALLED.set(installed);
+    });
 }
 
 /// Which crypto provider is actually in force, for diagnostics.

@@ -523,8 +523,9 @@ impl Session {
     /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is.
     pub async fn room_info(&self, room_id: &str) -> CoreResult<RoomInfoDto> {
         let client = self.require_client().await?;
-        let (focused_room_id, _seq, _items) = self.focused.snapshot().await?;
-        room_info::verify_same_room(room_id, &focused_room_id)?;
+        // Check-only: `snapshot()` would clone the whole materialised item
+        // list just to read one room id.
+        self.focused.verify_focus(room_id)?;
 
         let parsed_room_id =
             RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
