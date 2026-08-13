@@ -307,6 +307,68 @@ pub fn apply_ops<T: Clone>(items: &mut Vec<T>, ops: &[DiffOp<T>]) {
     }
 }
 
+/// The length a list of `before` items would have after `ops` were folded
+/// into it via [`apply_ops`] — computed without either the list's actual
+/// content or mutating anything, just `before`'s count.
+///
+/// `core::timeline`'s re-seed detection (`decide_batch`, built on
+/// `should_reseed`) is what this exists for: it must know whether an
+/// incoming batch is *about to* empty an already-populated materialized
+/// list *before* deciding whether to fold that batch into the real shared
+/// state at all — folding first and deciding after would leave a window
+/// where the materialized list and the last-emitted sequence number
+/// disagree (see `core::timeline::TimelineState`'s doc comment for why that
+/// invariant is load-bearing for `snapshot`/resync), and cloning the whole
+/// real item list on every batch just to peek at a length is wasteful when
+/// only the length is ever in question.
+///
+/// Delegates to [`apply_ops`] itself, via a same-length placeholder list
+/// with every op's payload erased to `()`, rather than re-deriving each op's
+/// length effect independently — so this can never drift from what
+/// `apply_ops` (and the webview's identical `applyOps`) actually do to a
+/// list's length, the same reasoning [`apply_ops`]'s own doc comment gives
+/// for staying the single place that logic lives.
+pub fn ops_len_after<T>(before: usize, ops: &[DiffOp<T>]) -> usize {
+    let mut scratch = vec![(); before];
+    let erased: Vec<DiffOp<()>> = ops.iter().map(erase_op_value).collect();
+    apply_ops(&mut scratch, &erased);
+    scratch.len()
+}
+
+/// Erases a `DiffOp<T>`'s payload down to `()`, preserving every op's
+/// length-affecting shape (index, item count) — never its content. The
+/// private helper behind [`ops_len_after`]; not exported, since nothing
+/// outside that function needs a `DiffOp<()>`.
+///
+/// Exhaustive with no wildcard arm, like [`project_diff`]/[`apply_ops`]: a
+/// future `DiffOp` variant must fail this to compile rather than silently
+/// mis-measure a batch's effect on length.
+fn erase_op_value<T>(op: &DiffOp<T>) -> DiffOp<()> {
+    match op {
+        DiffOp::Append { values } => DiffOp::Append {
+            values: vec![(); values.len()],
+        },
+        DiffOp::Clear => DiffOp::Clear,
+        DiffOp::PushFront { .. } => DiffOp::PushFront { value: () },
+        DiffOp::PushBack { .. } => DiffOp::PushBack { value: () },
+        DiffOp::PopFront => DiffOp::PopFront,
+        DiffOp::PopBack => DiffOp::PopBack,
+        DiffOp::Insert { index, .. } => DiffOp::Insert {
+            index: *index,
+            value: (),
+        },
+        DiffOp::Set { index, .. } => DiffOp::Set {
+            index: *index,
+            value: (),
+        },
+        DiffOp::Remove { index } => DiffOp::Remove { index: *index },
+        DiffOp::Truncate { length } => DiffOp::Truncate { length: *length },
+        DiffOp::Reset { values } => DiffOp::Reset {
+            values: vec![(); values.len()],
+        },
+    }
+}
+
 /// Monotonic sequence number generator, starting at 1. The webview uses gaps
 /// in this sequence to detect a dropped event and force a resync.
 #[derive(Debug, Default)]
@@ -547,5 +609,82 @@ mod tests {
         apply_ops(&mut items, &[DiffOp::PopFront]);
         apply_ops(&mut items, &[DiffOp::PopBack]);
         assert_eq!(items, Vec::<i32>::new());
+    }
+
+    // ops_len_after: mirrors the apply_ops coverage above one-for-one (same
+    // ops, same before/after shapes), since this exists specifically to
+    // agree with apply_ops's own length effect without re-deriving it — a
+    // divergence here would corrupt `core::timeline`'s re-seed detection
+    // exactly the way a divergence in `apply_ops` itself would corrupt a
+    // resync (see this function's doc comment).
+    #[test]
+    fn ops_len_after_appends() {
+        assert_eq!(
+            ops_len_after(1, &[DiffOp::Append { values: vec![2, 3] }]),
+            3
+        );
+    }
+
+    #[test]
+    fn ops_len_after_clears() {
+        assert_eq!(ops_len_after(2, &[DiffOp::<i32>::Clear]), 0);
+    }
+
+    #[test]
+    fn ops_len_after_pushes_front_and_back() {
+        assert_eq!(ops_len_after(1, &[DiffOp::PushFront { value: 0 }]), 2);
+        assert_eq!(ops_len_after(1, &[DiffOp::PushBack { value: 2 }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_pops_front_and_back() {
+        assert_eq!(ops_len_after(2, &[DiffOp::<i32>::PopFront]), 1);
+        assert_eq!(ops_len_after(2, &[DiffOp::<i32>::PopBack]), 1);
+    }
+
+    #[test]
+    fn ops_len_after_pop_on_an_empty_list_is_a_no_op() {
+        assert_eq!(ops_len_after(0, &[DiffOp::<i32>::PopFront]), 0);
+        assert_eq!(ops_len_after(0, &[DiffOp::<i32>::PopBack]), 0);
+    }
+
+    #[test]
+    fn ops_len_after_inserts_and_removes() {
+        assert_eq!(
+            ops_len_after(2, &[DiffOp::Insert { index: 1, value: 9 }]),
+            3
+        );
+        assert_eq!(ops_len_after(3, &[DiffOp::<i32>::Remove { index: 1 }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_ignores_out_of_range_insert_and_remove() {
+        assert_eq!(
+            ops_len_after(2, &[DiffOp::Insert { index: 5, value: 9 }]),
+            2
+        );
+        assert_eq!(ops_len_after(2, &[DiffOp::<i32>::Remove { index: 5 }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_set_does_not_change_length() {
+        assert_eq!(ops_len_after(2, &[DiffOp::Set { index: 0, value: 9 }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_truncates_and_resets() {
+        assert_eq!(
+            ops_len_after(3, &[DiffOp::<i32>::Truncate { length: 1 }]),
+            1
+        );
+        assert_eq!(ops_len_after(3, &[DiffOp::Reset { values: vec![9, 9] }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_applies_a_batch_in_order() {
+        assert_eq!(
+            ops_len_after(1, &[DiffOp::PushBack { value: 2 }, DiffOp::<i32>::PopFront]),
+            1
+        );
     }
 }

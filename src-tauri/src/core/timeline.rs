@@ -47,26 +47,78 @@
 //! resume paginating backward from here, which is exactly what backward
 //! pagination through the just-recorded gap is for.
 //!
-//! So this module treats "the materialized item list just went from
-//! non-empty to empty while the subscription is still live" as a signal to
-//! re-seed the timeline the same way [`FocusedTimeline::subscribe`] seeds it
-//! the first time: a `paginate_backwards(INITIAL_PAGE_SIZE)` call. The
-//! trigger is decided by [`should_reseed`], a pure function over the
-//! materialized length before/after a fold and a re-seed counter — see its
-//! doc comment for why it keys on the length transition rather than which
-//! `DiffOp` produced it, and [`MAX_RESEED_ATTEMPTS`] for the loop bound. The
-//! re-seed call happens inside the same streaming task as the initial one,
-//! so it is cancelled the same way by a room switch (`FocusedTimeline::
-//! clear_and_join`'s `task.abort()`) — there is no separate task to leak or
-//! race against a teardown. Its resulting diffs arrive as ordinary batches
-//! on the same `stream.next()` loop and are folded/emitted through the same
-//! `seq` counter as everything else, so the webview's gap detector sees a
-//! continuous sequence, not a restart.
+//! So this module treats "the materialized item list is about to go from
+//! non-empty to empty" as a signal to re-seed the timeline the same way
+//! [`FocusedTimeline::subscribe`] seeds it the first time: a
+//! `paginate_backwards(INITIAL_PAGE_SIZE)` call. The trigger is decided by
+//! [`should_reseed`], a pure function over the materialized length
+//! before/after a batch would be folded and a re-seed counter — see its doc
+//! comment for why it keys on the length transition rather than which
+//! `DiffOp` produced it, and [`MAX_RESEED_ATTEMPTS`] for the loop bound.
+//!
+//! ### Coalescing the recovery into one visible transition
+//!
+//! An earlier version of this fix emitted the emptying batch as its own
+//! envelope and let the re-seed's diffs trickle in afterwards, exactly as
+//! `matrix_sdk_ui` produced them. That recovers correctly but is exactly
+//! what makes it *visible*: the webview renders the room empty for the
+//! envelope carrying the `Clear`, then watches it refill over the next
+//! couple of diffs a moment later — correct, but it looks broken.
+//!
+//! [`decide_batch`] is what stops the emptying batch from ever reaching
+//! [`emit_ops`] on its own. Given the materialized length before a batch and
+//! the batch itself, it decides purely (via [`should_reseed`], fed by
+//! `core::dto::ops_len_after`'s peek at what the batch's *length* effect
+//! would be — never mutating the real materialized list to find out, which
+//! is what keeps that peek from disturbing the "last-emitted `seq` and the
+//! materialized list stay mutually consistent" invariant [`TimelineState`]
+//! documents) whether to hand the batch back for the streaming task to fold
+//! and emit as usual, or to signal "hold this one — re-seed instead". On
+//! that second outcome the streaming task:
+//!
+//! 1. Never folds or emits the emptying batch at all — the materialized
+//!    state and last-emitted `seq` are untouched, so a `snapshot()` racing
+//!    this window still sees the old (stale, but self-consistent) content,
+//!    never a state that claims to be empty at a `seq` that never described
+//!    that.
+//! 2. Awaits the same inline `paginate_backwards(INITIAL_PAGE_SIZE)` call
+//!    the un-coalesced recovery used — same cancellation story: a room
+//!    switch's `task.abort()` (`FocusedTimeline::clear_and_join`) cancels it
+//!    exactly like every other await point in this task, no separate task to
+//!    leak or race against a teardown.
+//! 3. **Re-subscribes** — `Timeline::subscribe()` again, not a continuation
+//!    of the stream already in hand — for an authoritative snapshot of
+//!    whatever the timeline actually contains at that point, regardless of
+//!    whether the re-seed found history to show, found none (a real gap
+//!    that resolves to nothing further, or the timeline's genuine start), or
+//!    the `paginate_backwards` call itself returned an error: this step
+//!    doesn't branch on that result, it just re-subscribes either way, so a
+//!    failure converges on "whatever is really there right now" instead of
+//!    holding the stale pre-clear content forever.
+//! 4. Emits that snapshot as a single [`DiffOp::Reset`] — [`coalesced_reset`]
+//!    — through the exact same [`emit_ops`]/`seq` every other envelope on
+//!    this stream uses, so exactly one `seq` is consumed for the whole
+//!    transition and the webview's gap detector sees a continuous sequence,
+//!    not a restart. The webview goes directly from the old content to the
+//!    new; it never observes the empty state in between.
+//! 5. Swaps the task's stream onto the freshly-subscribed one and drops the
+//!    old one. This is what makes step 3 safe rather than merely
+//!    convenient: the old stream may still have diffs queued describing the
+//!    very transition just resolved (the `Clear` that triggered this, and
+//!    whatever the re-seed's own pagination produced) — those are never
+//!    read, folded, or emitted, they are discarded along with the stream
+//!    that held them, so nothing can double-apply on top of the `Reset`
+//!    that already accounts for all of it. The fresh stream's first future
+//!    diff picks up from exactly where the fresh snapshot left off, per
+//!    `Timeline::subscribe`'s own contract — the same guarantee the very
+//!    first subscription in [`FocusedTimeline::subscribe`] already relies
+//!    on.
 
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use eyeball_im::VectorDiff;
-use futures_util::{pin_mut, StreamExt};
+use futures_util::{Stream, StreamExt};
 use imbl::Vector;
 use matrix_sdk::ruma::events::room::message::{
     FormattedBody, MessageFormat, MessageType, RoomMessageEventContent,
@@ -89,8 +141,8 @@ use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
 use super::dto::{
-    apply_ops, op_name, project_diff, DiffEnvelope, DiffOp, MediaMetaDto, ReactionDto, ReplyToDto,
-    SeqCounter, TimelineItemDto,
+    apply_ops, op_name, ops_len_after, project_diff, DiffEnvelope, DiffOp, MediaMetaDto,
+    ReactionDto, ReplyToDto, SeqCounter, TimelineItemDto,
 };
 use super::error::{CoreError, CoreResult};
 
@@ -130,13 +182,32 @@ const INITIAL_PAGE_SIZE: u16 = 30;
 /// anything further: the existing manual recovery (switch rooms and back,
 /// which tears down and rebuilds this task from scratch — see
 /// [`FocusedTimeline::subscribe`]'s doc comment) still works exactly as it
-/// does today.
+/// does today. The only user-visible change at the cap is that
+/// [`decide_batch`] stops withholding the emptying batch and lets it through
+/// as an ordinary emit instead (see this module's "Coalescing the recovery
+/// into one visible transition" doc comment) — the room shows the old,
+/// pre-coalescing flicker rather than staying empty forever, which is still
+/// strictly better than an unbounded retry loop.
 const MAX_RESEED_ATTEMPTS: u32 = 3;
 
 /// The sequence number of the last diff folded into the materialized item
 /// list, and the resulting list itself — always mutually consistent (see
 /// `core::rooms::RoomListHandle`'s identical `RoomListSnapshot` for why).
 type TimelineState = (u64, Vec<TimelineItemDto>);
+
+/// The streaming task's diff stream, boxed to erase `Timeline::subscribe`'s
+/// concrete (unnameable) return type.
+///
+/// Needed because of the "Coalescing the recovery into one visible
+/// transition" mechanism above (this module's doc comment): the streaming
+/// task must be able to swap in a *fresh* stream, from a *later, separate*
+/// `subscribe()` call, after re-seeding. A plain `impl Stream` local can be
+/// pinned in place (`futures_util::pin_mut!`) and read from, but a pinned
+/// local can't be reassigned to point at a different value — boxing turns
+/// each stream into an owned, movable value instead, so the task can just do
+/// `current_stream = Box::pin(fresh_stream);` and carry on reading from the
+/// same variable.
+type TimelineDiffStream = Pin<Box<dyn Stream<Item = Vec<VectorDiff<Arc<TimelineItem>>>> + Send>>;
 
 /// What [`FocusedTimeline::snapshot`] hands the webview: `(subject, seq,
 /// items)` — the room id the snapshot belongs to, followed by the same
@@ -987,7 +1058,6 @@ impl FocusedTimeline {
         let subject = room_id.to_string();
         let paginator = Arc::clone(&timeline);
         let task = tokio::spawn(async move {
-            pin_mut!(stream);
             let mut seq = SeqCounter::default();
             // How many times this subscription has re-seeded itself after
             // the SDK emptied the timeline out from under it (see this
@@ -1026,33 +1096,62 @@ impl FocusedTimeline {
                 );
             }
 
-            while let Some(batch) = stream.next().await {
+            let mut current_stream: TimelineDiffStream = Box::pin(stream);
+            while let Some(batch) = current_stream.next().await {
                 let ops = project_batch(batch, &own_user);
-                let (before, after) = emit_ops(&app, &task_state, &mut seq, &subject, ops);
 
-                if should_reseed(before, after, reseed_attempts) {
-                    reseed_attempts += 1;
-                    tracing::warn!(
-                        subject = %subject,
-                        attempt = reseed_attempts,
-                        max_attempts = MAX_RESEED_ATTEMPTS,
-                        "timeline emptied out from under its subscription; re-seeding with a fresh back-pagination"
-                    );
+                // Read-only: just the current length, never a clone of the
+                // list itself — `decide_batch` only needs to know whether
+                // this batch is *about to* empty the list, and
+                // `core::dto::ops_len_after` answers that from a length
+                // alone. Nothing here mutates `task_state` yet — see this
+                // module's "Coalescing the recovery into one visible
+                // transition" doc comment for why that has to wait until
+                // the decision below is made.
+                let before = {
+                    let guard = task_state
+                        .lock()
+                        .expect("timeline state lock poisoned by an earlier panic");
+                    guard.1.len()
+                };
 
-                    // Same call, same reasoning as the initial seed above:
-                    // awaited inline in this task (not spawned), so a room
-                    // switch's `task.abort()` cancels it exactly like every
-                    // other await point here, and its resulting diffs arrive
-                    // as ordinary batches on `stream.next()` below — folded
-                    // and emitted through the same `seq` this loop already
-                    // owns, so the webview's gap detector sees a continuous
-                    // sequence rather than a restart.
-                    if let Err(err) = paginator.paginate_backwards(INITIAL_PAGE_SIZE).await {
+                match decide_batch(before, ops, reseed_attempts) {
+                    BatchDecision::Emit(ops) => {
+                        emit_ops(&app, &task_state, &mut seq, &subject, ops);
+                    }
+                    BatchDecision::ReseedInstead => {
+                        reseed_attempts += 1;
                         tracing::warn!(
-                            error = %err,
                             subject = %subject,
-                            "re-seeding back-pagination failed; the timeline may stay empty until the room is reopened"
+                            attempt = reseed_attempts,
+                            max_attempts = MAX_RESEED_ATTEMPTS,
+                            "timeline emptied out from under its subscription; re-seeding and coalescing into a single reset"
                         );
+
+                        // Same call, same reasoning as the initial seed
+                        // above: awaited inline in this task (not spawned),
+                        // so a room switch's `task.abort()` cancels it
+                        // exactly like every other await point here.
+                        if let Err(err) = paginator.paginate_backwards(INITIAL_PAGE_SIZE).await {
+                            tracing::warn!(
+                                error = %err,
+                                subject = %subject,
+                                "re-seeding back-pagination failed; converging on the timeline's live state anyway"
+                            );
+                        }
+
+                        // Re-subscribing — not continuing to read
+                        // `current_stream` — is what makes this resilient to
+                        // the failure above and gives an authoritative
+                        // snapshot to coalesce into one `Reset`, whatever
+                        // that snapshot turns out to hold. See this module's
+                        // doc comment for why the old stream's own queued
+                        // diffs are safe to discard once this has run.
+                        let (fresh_items, fresh_stream) = paginator.subscribe().await;
+                        let reset_ops = coalesced_reset(project_initial(&fresh_items, &own_user));
+                        emit_ops(&app, &task_state, &mut seq, &subject, reset_ops);
+
+                        current_stream = Box::pin(fresh_stream);
                     }
                 }
             }
@@ -1396,6 +1495,73 @@ impl FocusedTimeline {
 /// landing back at zero). See [`MAX_RESEED_ATTEMPTS`]'s doc comment.
 fn should_reseed(before: usize, after: usize, reseed_attempts: u32) -> bool {
     before > 0 && after == 0 && reseed_attempts < MAX_RESEED_ATTEMPTS
+}
+
+/// What the streaming task should do with one incoming diff batch —
+/// [`decide_batch`]'s result. See this module's "Coalescing the recovery
+/// into one visible transition" doc comment for the mechanism this exists
+/// to drive.
+#[derive(Debug, PartialEq)]
+enum BatchDecision {
+    /// Fold and emit `ops` exactly as received; no re-seed needed.
+    Emit(Vec<DiffOp<TimelineItemDto>>),
+    /// `ops` would empty an already-populated materialized list
+    /// ([`should_reseed`] fired). The caller must not fold or emit `ops` at
+    /// all — re-seed instead, and emit a single [`coalesced_reset`] once
+    /// that finishes.
+    ReseedInstead,
+}
+
+/// Pure decision for one incoming batch, given the materialized list's
+/// length *before* this batch and how many times this subscription has
+/// already re-seeded. Never touches the shared materialized state or the
+/// SDK — see [`should_reseed`] and `core::dto::ops_len_after`, the two pure
+/// functions this composes, for why that's possible without either folding
+/// `ops` into a real list or cloning one just to measure a length.
+///
+/// This is the seam that keeps the emptying batch from ever reaching
+/// [`emit_ops`] on its own: when [`should_reseed`] would fire, this returns
+/// [`BatchDecision::ReseedInstead`] and hands `ops` back to no one — the
+/// streaming task's `match` on the result has no arm that folds or emits it,
+/// so there is no path through this decision that lets the empty state
+/// reach the webview by itself. Every other case returns
+/// [`BatchDecision::Emit`] carrying `ops` straight back, unchanged, so an
+/// ordinary batch is folded and emitted exactly as it was before this
+/// module coalesced re-seeding — this function only ever *withholds* a
+/// batch, never rewrites one.
+fn decide_batch(
+    before: usize,
+    ops: Vec<DiffOp<TimelineItemDto>>,
+    reseed_attempts: u32,
+) -> BatchDecision {
+    let after = ops_len_after(before, &ops);
+    if should_reseed(before, after, reseed_attempts) {
+        BatchDecision::ReseedInstead
+    } else {
+        BatchDecision::Emit(ops)
+    }
+}
+
+/// Builds the single envelope's worth of ops for a coalesced re-seed
+/// transition, given the authoritative post-re-seed item list (from
+/// re-subscribing — see this module's doc comment for why that, not
+/// whatever the old stream still has queued, is the source of truth here).
+///
+/// Always exactly one [`DiffOp::Reset`], whether `fresh_items` is populated
+/// (the re-seed found history to show) or empty (a real gap that resolved
+/// to nothing further, the timeline's genuine start, or a failed
+/// `paginate_backwards` call the caller chose to proceed past anyway — see
+/// this module's tests for both: the streaming task never branches on *why*
+/// `fresh_items` came back the way it did, it just re-subscribes and hands
+/// whatever it got straight here). That uniformity is what makes both "the
+/// coalesced path is one transition, not empty-then-refill" and "a
+/// genuinely empty room still ends empty" hold at once: this function
+/// cannot produce more than one op, and an empty `fresh_items` produces a
+/// perfectly ordinary (if empty) `Reset`, not a special case.
+fn coalesced_reset(fresh_items: Vec<TimelineItemDto>) -> Vec<DiffOp<TimelineItemDto>> {
+    vec![DiffOp::Reset {
+        values: fresh_items,
+    }]
 }
 
 /// The actual comparison behind [`FocusedTimeline::active_timeline_for`]:
@@ -2163,6 +2329,170 @@ mod tests {
         assert!(
             !should_reseed(5, 0, MAX_RESEED_ATTEMPTS + 5),
             "expected well past the cap to stay stopped"
+        );
+    }
+
+    // `decide_batch`/`coalesced_reset`: the coalescing mechanism itself —
+    // pure, like `should_reseed` above, and exercised directly for the same
+    // reason. These cover exactly the properties this fix exists to
+    // guarantee (see this module's "Coalescing the recovery into one
+    // visible transition" doc comment): the batch that would empty the
+    // timeline is withheld rather than emitted, an ordinary batch passes
+    // through unchanged, a genuinely empty (or failed) re-seed still
+    // converges on an empty `Reset` rather than holding stale content, a
+    // repopulated re-seed becomes exactly one `Reset` rather than a
+    // `Clear` plus separate inserts, and the whole transition consumes
+    // exactly one sequence number.
+
+    /// A minimal `TimelineItemDto` for tests that only care about identity
+    /// (via `id`), not any of the other ~14 fields `project_item_parts`
+    /// takes.
+    fn minimal_dto(id: &str) -> TimelineItemDto {
+        project_item_parts(
+            id,
+            "message",
+            Some("m.text"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            false,
+            Vec::new(),
+        )
+    }
+
+    #[test]
+    fn decide_batch_holds_a_batch_that_would_empty_an_already_populated_list() {
+        // The trigger from this module's doc comment: a non-empty
+        // materialized list receiving a lone `Clear`.
+        assert_eq!(
+            decide_batch(20, vec![DiffOp::Clear], 0),
+            BatchDecision::ReseedInstead
+        );
+    }
+
+    #[test]
+    fn decide_batch_emits_an_ordinary_batch_unchanged() {
+        let ops = vec![DiffOp::PushBack {
+            value: minimal_dto("$new"),
+        }];
+        assert_eq!(decide_batch(3, ops.clone(), 0), BatchDecision::Emit(ops));
+    }
+
+    #[test]
+    fn decide_batch_emits_the_very_first_fold_even_though_it_stays_empty() {
+        // Mirrors `should_reseed_does_not_fire_on_the_very_first_fold`: a
+        // freshly-subscribed room's first (empty) batch is an ordinary
+        // emit, not a hold.
+        assert_eq!(
+            decide_batch(0, Vec::new(), 0),
+            BatchDecision::Emit(Vec::new())
+        );
+    }
+
+    #[test]
+    fn decide_batch_falls_back_to_emitting_once_the_reseed_budget_is_spent() {
+        // Mirrors `should_reseed_is_bounded_by_max_reseed_attempts`: past
+        // the cap, `decide_batch` must not keep withholding batches forever
+        // — it falls back to showing the bare `Clear` (the pre-coalescing
+        // behaviour) rather than looping. This is what keeps
+        // `MAX_RESEED_ATTEMPTS` meaningful in the coalesced shape: it still
+        // bounds how many times the streaming task will ever call
+        // `paginate_backwards`+`subscribe` for one subscription's lifetime.
+        let ops = vec![DiffOp::Clear];
+        assert_eq!(
+            decide_batch(5, ops.clone(), MAX_RESEED_ATTEMPTS),
+            BatchDecision::Emit(ops)
+        );
+    }
+
+    #[test]
+    fn coalesced_reset_produces_a_single_reset_op_when_history_is_found() {
+        // Never a `Clear` followed by separate inserts — the whole point of
+        // coalescing.
+        let a = minimal_dto("$a");
+        let b = minimal_dto("$b");
+        let ops = coalesced_reset(vec![a.clone(), b.clone()]);
+        assert_eq!(ops, vec![DiffOp::Reset { values: vec![a, b] }]);
+    }
+
+    #[test]
+    fn coalesced_reset_still_ends_empty_for_a_genuinely_empty_room() {
+        // A room that really has nothing to show after re-seeding (the
+        // timeline's actual start, or a real gap resolving to nothing
+        // further) must not be left showing stale pre-clear content.
+        assert_eq!(
+            coalesced_reset(Vec::new()),
+            vec![DiffOp::Reset { values: Vec::new() }]
+        );
+    }
+
+    #[test]
+    fn coalesced_reset_converges_regardless_of_why_fresh_items_is_what_it_is() {
+        // The streaming task calls this with whatever `Timeline::subscribe`
+        // returns *after* a re-seed attempt, whether that attempt's own
+        // `paginate_backwards` call succeeded or failed — see this module's
+        // doc comment for why re-subscribing unconditionally (rather than
+        // branching on that `Result`) is what makes a failure converge on
+        // the timeline's real state instead of holding stale content
+        // forever. From this function's point of view, "a failed re-seed
+        // that still found the last-persisted chunk" and "a successful
+        // re-seed" are the same input shape: whatever real items came back.
+        let dto = minimal_dto("$still-there");
+        assert_eq!(
+            coalesced_reset(vec![dto.clone()]),
+            vec![DiffOp::Reset { values: vec![dto] }]
+        );
+    }
+
+    #[test]
+    fn coalesced_recovery_consumes_exactly_one_sequence_number_for_the_whole_transition() {
+        let mut seq = SeqCounter::default();
+
+        // An ordinary batch (e.g. the initial seeding `Reset`) gets its own
+        // sequence number.
+        let seq_for_seed = seq.next_seq();
+
+        // A second ordinary batch — some real event before the gappy sync.
+        let ordinary = decide_batch(
+            20,
+            vec![DiffOp::PushBack {
+                value: minimal_dto("$x"),
+            }],
+            0,
+        );
+        assert!(matches!(ordinary, BatchDecision::Emit(_)));
+        let seq_for_ordinary = seq.next_seq();
+
+        // The gappy sync's `Clear` arrives: held, not emitted — so it must
+        // not consume a sequence number of its own.
+        let held = decide_batch(21, vec![DiffOp::Clear], 0);
+        assert_eq!(held, BatchDecision::ReseedInstead);
+
+        // The re-seed resolves; its coalesced `Reset` is the very next
+        // envelope, immediately after the last ordinary one — no gap, no
+        // number spent on the held `Clear`.
+        let reset_ops = coalesced_reset(vec![minimal_dto("$x")]);
+        let seq_for_reset = seq.next_seq();
+
+        assert_eq!(seq_for_seed, 1);
+        assert_eq!(seq_for_ordinary, 2);
+        assert_eq!(
+            seq_for_reset, 3,
+            "the whole clear-and-reseed transition must consume exactly one \
+             sequence number, immediately after the last ordinary one"
+        );
+        assert_eq!(
+            reset_ops.len(),
+            1,
+            "the coalesced transition must be exactly one op, not a Clear \
+             followed by separate inserts"
         );
     }
 
