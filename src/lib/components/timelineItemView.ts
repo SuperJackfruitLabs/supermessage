@@ -16,6 +16,7 @@
 // vocabulary directly.
 
 import type { ReplyTo, TimelineItem } from "$lib/ipc";
+import { customEventRegistry, resolveCustomEvent, type CustomEventView } from "./customEvents";
 
 /** What `Timeline.svelte` should render for a given timeline item. */
 export type ItemView =
@@ -49,6 +50,17 @@ export type ItemView =
       size: number | null;
       mimetype: string | null;
     }
+  /**
+   * A `kind: "customMessage"` item — Kaambaan cards/runs/permission
+   * requests/station status, per `docs/matrix-events.md` §G, once those
+   * schemas land; the shipped `dev.supermessage.demo.note.v1` renderer
+   * until then. `view` is the whole fallback-chain decision
+   * (`$lib/components/customEvents.ts`'s `resolveCustomEvent`) —
+   * `Timeline.svelte` renders its three states (a known renderer's fields,
+   * the plain-text fallback body, or the generic placeholder) but never
+   * makes that decision itself.
+   */
+  | { render: "customEvent"; view: CustomEventView }
   | { render: "none" };
 
 /** msgtype -> the render decision's `label` for the non-image media kinds. */
@@ -305,11 +317,20 @@ export function viewFor(item: TimelineItem): ItemView {
       return { render: "placeholder", text: "Encrypted message — this device has no key for it" };
 
     // Suite/custom message-like events (the actual product differentiator,
-    // per `docs/matrix-events.md` §G) — schema work is M1's first task, so
-    // for now this is a placeholder naming the event type rather than
-    // silence or "Unsupported event".
+    // per `docs/matrix-events.md` §G) — the registry/fallback-chain plumbing
+    // this refactor exists to build. `item.detail` is the Matrix event type
+    // (`core::timeline::classify_content`), `item.customPayload` its
+    // bounded `content` object (`null` for a local echo, or one that failed
+    // to bound — see `TimelineItem.customPayload`'s doc comment); a
+    // registered renderer, the plain-text `body` fallback, or the generic
+    // placeholder are `resolveCustomEvent`'s three possible outcomes, never
+    // silence. See `customEvents.ts`'s doc comment for the full chain and
+    // the versioning rule.
     case "customMessage":
-      return { render: "placeholder", text: `Custom event (${item.detail ?? "unknown"})` };
+      return {
+        render: "customEvent",
+        view: resolveCustomEvent(customEventRegistry, item.detail, item.customPayload, item.body),
+      };
 
     case "membership":
       return membershipView(item);

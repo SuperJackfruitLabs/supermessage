@@ -136,6 +136,22 @@ export interface TimelineItem {
    * anything on this object.
    */
   media: MediaMeta | null;
+  /**
+   * The event's raw `content` object, present only for `kind:
+   * "customMessage"` — mirrors `TimelineItemDto::custom_payload` from
+   * `src-tauri/src/core/dto.rs`. `null` for a local echo of a custom event
+   * (this app sends none today), for a payload that failed to bound (see
+   * that struct's doc comment for the byte cap and why it's dropped whole
+   * rather than truncated), or for every other `kind`.
+   *
+   * **Untrusted, arbitrary JSON from anyone who can send to the room.**
+   * Typed `unknown`, not a shaped interface, deliberately: nothing may read
+   * a field out of this without checking its type first (see
+   * `$lib/components/customEvents.ts`'s `safeStringField` for the pattern),
+   * and nothing read out of it may ever reach `{@html}`, an `href`, an
+   * `src`, or a `style` — nothing here narrows that responsibility away.
+   */
+  customPayload: unknown;
   timestampMs: number | null;
   isOwn: boolean;
   sendState: string | null;

@@ -158,6 +158,33 @@ pub struct TimelineItemDto {
     /// [`MediaMetaDto`]'s doc comment for why this never carries the
     /// media's actual bytes.
     pub media: Option<MediaMetaDto>,
+    /// The event's raw `content` object, present only for `kind:
+    /// "customMessage"` — this is the plumbing `docs/matrix-events.md` §G
+    /// describes for Kaambaan cards/runs/permission requests/station status
+    /// (see `core::timeline::custom_message_payload`). The SDK's
+    /// `MsgLikeKind::Other` discards a custom event's content entirely
+    /// (`matrix-sdk-ui`'s `OtherMessageLike` carries only the event type), so
+    /// this is read back out of `EventTimelineItem::original_json` instead —
+    /// which is `None` for a local echo (this app sends no custom events of
+    /// its own today, so that gap is only theoretical), and for anything
+    /// whose `content` isn't a JSON object.
+    ///
+    /// `None` also when the serialized `content` exceeds
+    /// [`crate::core::timeline::CUSTOM_PAYLOAD_MAX_BYTES`] — the whole
+    /// payload is dropped rather than truncated into a JSON fragment that
+    /// would fail to parse on the webview side; see
+    /// `core::timeline::bound_custom_payload`'s doc comment for why. `body`
+    /// (Matrix convention: a custom event should carry a plain-text
+    /// `content.body` fallback for clients that don't understand the type)
+    /// is extracted independently of this cap, so an oversized payload can
+    /// still degrade to a readable fallback line instead of the generic
+    /// placeholder.
+    ///
+    /// This is untrusted, arbitrary JSON from anyone who can send to the
+    /// room — the webview's custom-event registry
+    /// (`$lib/components/customEvents.ts`) must render every value out of it
+    /// as text only, never into `{@html}`, an `href`, an `src`, or a style.
+    pub custom_payload: Option<serde_json::Value>,
     pub timestamp_ms: Option<u64>,
     pub is_own: bool,
     pub send_state: Option<String>,

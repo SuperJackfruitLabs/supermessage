@@ -73,6 +73,7 @@
 use std::time::Duration;
 
 use futures_util::{pin_mut, StreamExt};
+use matrix_sdk::ruma::events::macros::EventContent;
 use matrix_sdk::ruma::events::room::message::{
     ImageMessageEventContent, MessageType, RedactedRoomMessageEventContent, RoomMessageEventContent,
 };
@@ -82,10 +83,29 @@ use matrix_sdk::test_utils::mocks::MatrixMockServer;
 use matrix_sdk_test::event_factory::EventFactory;
 use matrix_sdk_test::{JoinedRoomBuilder, ALICE, BOB};
 use matrix_sdk_ui::timeline::RoomExt;
+use serde::{Deserialize, Serialize};
 
 use supermessage_lib::core::dto::{apply_ops, project_diff, TimelineItemDto};
-use supermessage_lib::core::timeline::project_item;
+use supermessage_lib::core::timeline::{
+    project_item, timeline_event_filter, CUSTOM_PAYLOAD_MAX_BYTES,
+};
 use supermessage_lib::core::tls::install_ring_provider;
+
+/// A hand-rolled custom message-like event content, standing in for a real
+/// (not-yet-designed — see `docs/matrix-events.md` §G) Kaambaan schema, so
+/// `custom_message_payload`'s SDK-facing extraction (reading `content` back
+/// out of `EventTimelineItem::original_json`, since `MsgLikeKind::Other`
+/// itself discards it — see that function's doc comment) can be driven
+/// end-to-end through a genuine `matrix_sdk_ui::Timeline`, the same way every
+/// other event kind in this file is. Field names are plain Rust field names
+/// (no `#[serde(rename)]`), so the JSON keys below match verbatim.
+#[derive(Clone, Debug, Deserialize, Serialize, EventContent)]
+#[ruma_event(type = "dev.supermessage.demo.note.v1", kind = MessageLike)]
+struct DemoNoteEventContent {
+    schema_version: u32,
+    title: String,
+    body: String,
+}
 
 /// Joins a fresh room (`!room:example.org`) on a mocked homeserver, syncs in
 /// whatever `build` adds to it, and returns the resulting materialized
@@ -119,8 +139,17 @@ async fn projected_items(
         .expect("MatrixMockServer's client is always already logged in")
         .to_owned();
 
+    // Built with the app's own `timeline_event_filter`, not the SDK's plain
+    // default — `FocusedTimeline::subscribe` builds every real room's
+    // `Timeline` this same way (see that function's doc comment for why the
+    // default alone silently drops a custom message-like event before it
+    // ever reaches the timeline's item list at all), and this harness exists
+    // specifically to run tests through the *exact* production pipeline, not
+    // a reimplementation of it — see this file's doc comment.
     let timeline = room
-        .timeline()
+        .timeline_builder()
+        .event_filter(timeline_event_filter)
+        .build()
         .await
         .expect("Timeline::new against a mocked, joined room");
     let (initial, stream) = timeline.subscribe().await;
@@ -527,5 +556,79 @@ async fn formatted_body_is_hardened_end_to_end_against_sdk_produced_content() {
     assert!(
         !formatted.contains("evil.example"),
         "the remote img src must not survive end to end, got {formatted:?}"
+    );
+}
+
+#[tokio::test]
+async fn custom_message_like_event_projects_a_bounded_payload_and_fallback_body() {
+    let items = projected_items(|room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        let content = DemoNoteEventContent {
+            schema_version: 1,
+            title: "Deployed to staging".to_owned(),
+            body: "Card: Deployed to staging".to_owned(),
+        };
+        room.add_timeline_event(f.event(content).event_id(event_id!("$custom1")))
+    })
+    .await;
+
+    let real = real_items(&items);
+    assert_eq!(
+        real.len(),
+        1,
+        "expected exactly one real item, got {real:#?}"
+    );
+    let item = real[0];
+    assert_eq!(item.kind, "customMessage");
+    assert_eq!(
+        item.detail.as_deref(),
+        Some("dev.supermessage.demo.note.v1")
+    );
+    assert_eq!(item.body.as_deref(), Some("Card: Deployed to staging"));
+
+    let payload = item
+        .custom_payload
+        .as_ref()
+        .expect("a payload under the byte cap must be carried across IPC");
+    assert_eq!(payload["title"], "Deployed to staging");
+    assert_eq!(payload["schema_version"], 1);
+}
+
+#[tokio::test]
+async fn custom_message_like_event_drops_an_oversized_payload_but_keeps_the_fallback_body() {
+    // Comfortably over `CUSTOM_PAYLOAD_MAX_BYTES` once serialized (the field
+    // itself already exceeds the cap, so the surrounding JSON object pushes
+    // it further past it) — the whole point being that a genuinely oversized
+    // real-world event (a `Set` diff re-sending it wholesale every touch)
+    // must never reach the webview as a giant blob, but must still leave the
+    // reader something to read.
+    let huge_title = "x".repeat(CUSTOM_PAYLOAD_MAX_BYTES + 500);
+    let items = projected_items(move |room_id, room| {
+        let f = EventFactory::new().room(room_id).sender(&ALICE);
+        let content = DemoNoteEventContent {
+            schema_version: 1,
+            title: huge_title,
+            body: "fallback text for an oversized card".to_owned(),
+        };
+        room.add_timeline_event(f.event(content).event_id(event_id!("$custom2")))
+    })
+    .await;
+
+    let real = real_items(&items);
+    assert_eq!(
+        real.len(),
+        1,
+        "expected exactly one real item, got {real:#?}"
+    );
+    let item = real[0];
+    assert_eq!(item.kind, "customMessage");
+    assert!(
+        item.custom_payload.is_none(),
+        "an oversized payload must be dropped whole, not truncated"
+    );
+    assert_eq!(
+        item.body.as_deref(),
+        Some("fallback text for an oversized card"),
+        "the plain-text fallback body must survive even when the payload is dropped"
     );
 }

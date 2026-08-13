@@ -126,16 +126,19 @@ use matrix_sdk::ruma::events::room::message::{
 };
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::AnyMessageLikeEventContent;
+use matrix_sdk::ruma::events::AnySyncTimelineEvent;
 use matrix_sdk::ruma::html::{
     ElementAttributesSchemes, Html, HtmlSanitizerMode, ListBehavior, PropertiesNames,
     SanitizerConfig,
 };
+use matrix_sdk::ruma::room_version_rules::RoomVersionRules;
+use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{EventId, MilliSecondsSinceUnixEpoch, RoomId, UInt, UserId};
 use matrix_sdk::Client;
 use matrix_sdk_ui::timeline::{
-    EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, ReactionsByKeyBySender,
-    RoomExt, Timeline, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent,
-    TimelineItemKind, VirtualTimelineItem,
+    default_event_filter, EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind,
+    ReactionsByKeyBySender, RoomExt, Timeline, TimelineDetails, TimelineEventItemId, TimelineItem,
+    TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
 };
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
@@ -243,6 +246,7 @@ pub fn project_item_parts(
     body: Option<&str>,
     formatted_body: Option<&str>,
     media: Option<MediaMetaDto>,
+    custom_payload: Option<serde_json::Value>,
     timestamp_ms: Option<u64>,
     is_own: bool,
     send_state: Option<&str>,
@@ -260,6 +264,7 @@ pub fn project_item_parts(
         body: body.map(str::to_string),
         formatted_body: formatted_body.map(str::to_string),
         media,
+        custom_payload,
         timestamp_ms,
         is_own,
         send_state: send_state.map(str::to_string),
@@ -524,6 +529,156 @@ fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
         }),
         _ => None,
     }
+}
+
+/// Cap, in bytes of its own UTF-8 JSON serialization, on a custom event's
+/// `content` payload as it crosses IPC ([`TimelineItemDto::custom_payload`]).
+///
+/// This is the enforcement point `docs/matrix-events.md` §G calls for:
+/// Matrix's own event-size limit is 64KiB, and the timeline streams as
+/// `VectorDiff`s where a `Set` op re-sends the *whole* item (same reasoning
+/// as [`MediaMetaDto`]'s doc comment on why media bytes never cross IPC at
+/// all) — so an unbounded custom payload would let one 64KiB event turn every
+/// edit/reaction/redaction touching it into a 64KiB re-send, repeatedly, for
+/// as long as it stays in the materialized list. 8KiB is chosen to leave
+/// generous room for a real card/run/permission-request schema (structured
+/// JSON with a handful of string/number fields and short nested objects is a
+/// few hundred bytes to a couple of KiB in practice) while still capping the
+/// worst case at an eighth of the spec's own event-size ceiling, well clear
+/// of the rest of the event's envelope (`type`, `sender`, `event_id`,
+/// `origin_server_ts`, `unsigned`, …) that shares the same 64KiB budget. A
+/// schema that genuinely needs more than this should carry a reference (a
+/// Kaambaan card/run id the client resolves via its own API) rather than
+/// embedding the full payload inline — the same shape this app already uses
+/// for media (metadata inline, bytes fetched on demand).
+///
+/// Oversized payloads are **dropped whole**, never truncated — see
+/// [`bound_custom_payload`] — because a byte-truncated JSON object is not
+/// valid JSON, and the whole reason this crosses IPC as a `serde_json::Value`
+/// rather than a raw string is so the webview never has to parse (or fail to
+/// parse) attacker-influenced text at all.
+pub const CUSTOM_PAYLOAD_MAX_BYTES: usize = 8 * 1024;
+
+/// Extracts the plain-text fallback body Matrix convention puts on a custom
+/// event — `docs/matrix-events.md` §G requires "every one must carry a
+/// plain-text fallback body, so Element and Cinny remain usable clients
+/// against the same rooms" — from an already-parsed `content` object.
+///
+/// Pure: operates on a `serde_json::Value` already extracted from the SDK's
+/// raw JSON, so it's unit-testable with a plain JSON literal (see this
+/// module's tests) without a live timeline item. `None` when `content` isn't
+/// a JSON object, has no `body` field, or `body` isn't a string — a hostile
+/// or malformed payload degrades to "no fallback body" rather than this
+/// function guessing at a type coercion.
+fn extract_custom_body(content: &serde_json::Value) -> Option<String> {
+    content.get("body")?.as_str().map(str::to_string)
+}
+
+/// Bounds a custom event's `content` payload to `max_bytes` of its own
+/// serialized size, dropping it whole (never truncating) when it doesn't
+/// fit. See [`CUSTOM_PAYLOAD_MAX_BYTES`]'s doc comment for the limit and why
+/// dropping, not truncating, is the only sound option here.
+///
+/// Pure: takes and returns a plain `serde_json::Value`, no SDK type in
+/// sight, so it's unit-testable with hand-built JSON (see this module's
+/// tests) — [`custom_message_payload`] is the thin adapter that extracts
+/// `content` from the SDK's raw JSON and calls this.
+fn bound_custom_payload(content: serde_json::Value, max_bytes: usize) -> Option<serde_json::Value> {
+    let size = serde_json::to_string(&content)
+        .map(|s| s.len())
+        .unwrap_or(usize::MAX);
+    if size > max_bytes {
+        None
+    } else {
+        Some(content)
+    }
+}
+
+/// Extracts `(bounded payload, fallback body)` for a `kind: "customMessage"`
+/// item from its raw original-event JSON, if any.
+///
+/// `raw` is `EventTimelineItem::original_json()` — `None` for a local echo
+/// (`EventTimelineItemKind::Local`, verified against
+/// `matrix-sdk-ui-0.18.0/src/timeline/event_item/mod.rs`) as well as for a
+/// remote event the SDK genuinely has no raw JSON for. This app has no
+/// compose path for a custom event today (schemas don't exist yet to send),
+/// so the local-echo case is only theoretical for now — but it is exactly
+/// why this function, not a `.expect`, returns `(None, None)` for it: a
+/// just-sent custom event has nothing to project a payload or fallback body
+/// from until it round-trips from the server, and both fields already have a
+/// documented `None` meaning the webview's fallback chain
+/// (`$lib/components/customEvents.ts`) handles the same way it handles any
+/// other custom event with nothing to show — the generic placeholder, never
+/// a broken or blank render.
+///
+/// `MsgLikeKind::Other(OtherMessageLike)` carries only the event type (see
+/// this module's and `TimelineItemDto::custom_payload`'s doc comments) — this
+/// is the one place the content is read back from the raw event instead, via
+/// `Raw::get_field`, which parses just the requested top-level key rather
+/// than the whole event body into a typed struct ruma has no definition for.
+///
+/// Extracts the fallback `body` regardless of whether the payload itself
+/// passes [`bound_custom_payload`]'s size check — an oversized payload still
+/// degrades to a readable line instead of the generic placeholder, per
+/// `docs/matrix-events.md` §G's "no custom event should ever render as
+/// nothing".
+fn custom_message_payload(
+    raw: Option<&Raw<AnySyncTimelineEvent>>,
+) -> (Option<serde_json::Value>, Option<String>) {
+    let Some(raw) = raw else {
+        return (None, None);
+    };
+    let content: serde_json::Value = match raw.get_field("content") {
+        Ok(Some(value)) => value,
+        Ok(None) | Err(_) => return (None, None),
+    };
+    let body = extract_custom_body(&content);
+    let payload = bound_custom_payload(content, CUSTOM_PAYLOAD_MAX_BYTES);
+    (payload, body)
+}
+
+/// The event filter every room's `Timeline` is built with
+/// ([`FocusedTimeline::subscribe`]) — `matrix_sdk_ui`'s own
+/// [`default_event_filter`] plus one addition: an event whose content ruma
+/// couldn't match to any type it knows (ruma's own catch-all
+/// `AnyMessageLikeEventContent::_Custom` variant — verified against
+/// `ruma-macros-0.19.0/src/events/event_enum/event_kind_enum/content.rs`) is
+/// let through too.
+///
+/// This is the fix for a gap traced directly against `matrix-sdk-ui-0.18.0`'s
+/// source (`src/timeline/controller/mod.rs`, `default_event_filter`): its own
+/// match on a message-like event's content ends in an unqualified `_ =>
+/// false`, with **no exception for an unrecognized type**. Concretely, that
+/// means the plain `room.timeline()` this module used before this filter
+/// existed would silently drop a custom Kaambaan card/run/permission-request
+/// event *before it was ever added to the timeline's item list at all* — it
+/// would never become a `MsgLikeKind::Other` item, `original_json()` would
+/// never be called on it, and `docs/matrix-events.md` §G's whole "arrives as
+/// `MsgLikeKind::Other`" premise would be false in practice. Verified
+/// empirically too: an integration test against a real, SDK-built custom
+/// message-like event synced through a mocked homeserver timed out waiting
+/// for a diff batch under the plain default filter, and passed once this
+/// override was applied (see `tests/timeline_projection.rs`'s
+/// `custom_message_like_event_*` tests).
+///
+/// Every other event this app's default filter would already show or
+/// suppress is untouched — this only *adds back* the one case a custom event
+/// needs, via `default_event_filter(event, rules) ||` short-circuiting
+/// before this function's own check ever runs, so nothing here can make this
+/// app show anything the SDK's own filter wouldn't (edits, a redaction of an
+/// existing message, an aggregated beacon update, an `m.call.decline`, ...
+/// all stay exactly as suppressed as they were).
+pub fn timeline_event_filter(event: &AnySyncTimelineEvent, rules: &RoomVersionRules) -> bool {
+    if default_event_filter(event, rules) {
+        return true;
+    }
+    let AnySyncTimelineEvent::MessageLike(msg) = event else {
+        return false;
+    };
+    matches!(
+        msg.original_content(),
+        Some(AnyMessageLikeEventContent::_Custom(_))
+    )
 }
 
 /// Maps an SDK send state onto the wire vocabulary.
@@ -843,7 +998,16 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
         _ => None,
     };
     let message = event.content().as_message();
-    let body = message.map(|m| m.body().to_string());
+    // Only ever both `Some` for `kind == "customMessage"`, and mutually
+    // exclusive with `message` above (a `MsgLikeKind::Other` event has no
+    // `as_message()`) — see `custom_message_payload`'s doc comment for why
+    // this reads the raw event JSON instead of the SDK's parsed content.
+    let (custom_payload, custom_body) = if kind == "customMessage" {
+        custom_message_payload(event.original_json())
+    } else {
+        (None, None)
+    };
+    let body = message.map(|m| m.body().to_string()).or(custom_body);
     let formatted_body = message.and_then(|m| formatted_html_body(m.msgtype()));
     let media = message.and_then(|m| media_meta(m.msgtype()));
     let timestamp_ms = timestamp_to_millis(event.timestamp());
@@ -864,6 +1028,7 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
         body.as_deref(),
         formatted_body.as_deref(),
         media,
+        custom_payload,
         Some(timestamp_ms),
         is_own,
         send_state,
@@ -889,6 +1054,7 @@ fn project_virtual_item(
     project_item_parts(
         id,
         kind,
+        None,
         None,
         None,
         None,
@@ -1037,7 +1203,9 @@ impl FocusedTimeline {
             .get_room(&parsed_room_id)
             .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
         let timeline = room
-            .timeline()
+            .timeline_builder()
+            .event_filter(timeline_event_filter)
+            .build()
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))?;
         let timeline = Arc::new(timeline);
@@ -1688,6 +1856,7 @@ mod tests {
             Some("hello"),
             None,
             None,
+            None,
             Some(1_700_000_000_000),
             true,
             None,
@@ -1714,6 +1883,7 @@ mod tests {
         let dto = project_item_parts(
             "vd1",
             "dateDivider",
+            None,
             None,
             None,
             None,
@@ -1752,6 +1922,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(1_700_000_000_000),
             false,
             None,
@@ -1774,6 +1945,7 @@ mod tests {
             Some("@bot:x.org"),
             None,
             Some("build finished"),
+            None,
             None,
             None,
             Some(1_700_000_000_000),
@@ -1802,6 +1974,7 @@ mod tests {
             Some("plain"),
             Some("<p>rich</p>"),
             None,
+            None,
             Some(1_700_000_000_000),
             true,
             None,
@@ -1811,6 +1984,144 @@ mod tests {
         );
         assert_eq!(dto.body.as_deref(), Some("plain"));
         assert_eq!(dto.formatted_body.as_deref(), Some("<p>rich</p>"));
+    }
+
+    // `extract_custom_body`/`bound_custom_payload`/`custom_message_payload`:
+    // the plumbing `docs/matrix-events.md` §G describes — pure, SDK-free
+    // extraction and bounding of a custom event's `content`, tested directly
+    // with hand-built JSON the way `harden_formatted_body` is tested with
+    // hand-built HTML. `custom_message_payload` itself is the one SDK-facing
+    // adapter here, but `Raw<T>::deserialize` has no bound on `T` (see that
+    // impl in `ruma-common-0.19.0/src/serde/raw.rs`), so it can be
+    // constructed from a plain JSON string without a live timeline item —
+    // see `tests/timeline_projection.rs` for the same behaviour exercised
+    // end to end through a real, SDK-built event instead.
+
+    #[test]
+    fn extract_custom_body_finds_a_string_body_field() {
+        let content = serde_json::json!({ "body": "fallback text", "title": "Card" });
+        assert_eq!(
+            extract_custom_body(&content).as_deref(),
+            Some("fallback text")
+        );
+    }
+
+    #[test]
+    fn extract_custom_body_is_none_when_there_is_no_body_field() {
+        let content = serde_json::json!({ "title": "Card" });
+        assert!(extract_custom_body(&content).is_none());
+    }
+
+    #[test]
+    fn extract_custom_body_is_none_when_body_is_not_a_string() {
+        // A hostile or malformed payload — `body` typed as something other
+        // than a string must degrade to "no fallback body", never a panic or
+        // a stringified `[object Object]`-style coercion.
+        let content = serde_json::json!({ "body": { "nested": "object" } });
+        assert!(extract_custom_body(&content).is_none());
+
+        let content = serde_json::json!({ "body": 42 });
+        assert!(extract_custom_body(&content).is_none());
+    }
+
+    #[test]
+    fn extract_custom_body_is_none_for_a_non_object_content() {
+        let content = serde_json::json!("just a string, not an object");
+        assert!(extract_custom_body(&content).is_none());
+    }
+
+    #[test]
+    fn bound_custom_payload_keeps_a_payload_within_the_cap() {
+        let content = serde_json::json!({ "title": "Deployed to staging", "schema_version": 1 });
+        let bounded = bound_custom_payload(content.clone(), CUSTOM_PAYLOAD_MAX_BYTES);
+        assert_eq!(bounded, Some(content));
+    }
+
+    #[test]
+    fn bound_custom_payload_drops_a_payload_over_the_cap_whole_rather_than_truncating() {
+        let content = serde_json::json!({ "title": "x".repeat(CUSTOM_PAYLOAD_MAX_BYTES + 1) });
+        assert_eq!(
+            bound_custom_payload(content, CUSTOM_PAYLOAD_MAX_BYTES),
+            None
+        );
+    }
+
+    #[test]
+    fn bound_custom_payload_keeps_a_payload_landing_exactly_on_the_cap() {
+        // The cap is inclusive: `size > max_bytes` is the drop condition, so
+        // a payload serializing to exactly `max_bytes` must survive.
+        let content = serde_json::Value::String("x".repeat(10));
+        let size = serde_json::to_string(&content).unwrap().len();
+        assert_eq!(bound_custom_payload(content.clone(), size), Some(content));
+    }
+
+    #[test]
+    fn custom_message_payload_is_none_and_none_for_a_local_echo() {
+        // `EventTimelineItem::original_json()` is `None` for a local echo
+        // (`EventTimelineItemKind::Local`) — see this function's doc comment.
+        assert_eq!(custom_message_payload(None), (None, None));
+    }
+
+    #[test]
+    fn custom_message_payload_extracts_content_and_body_from_raw_event_json() {
+        let raw: Raw<AnySyncTimelineEvent> = serde_json::from_str(
+            r#"{
+                "type": "dev.supermessage.demo.note.v1",
+                "event_id": "$e1",
+                "sender": "@alice:example.org",
+                "origin_server_ts": 1700000000000,
+                "content": {
+                    "schema_version": 1,
+                    "title": "Deployed to staging",
+                    "body": "Card: Deployed to staging"
+                }
+            }"#,
+        )
+        .expect("hand-built raw sync timeline event JSON must deserialize");
+
+        let (payload, body) = custom_message_payload(Some(&raw));
+        assert_eq!(body.as_deref(), Some("Card: Deployed to staging"));
+        let payload = payload.expect("a small payload must be carried");
+        assert_eq!(payload["title"], "Deployed to staging");
+        assert_eq!(payload["schema_version"], 1);
+    }
+
+    #[test]
+    fn custom_message_payload_drops_an_oversized_payload_but_keeps_the_body() {
+        let huge = "x".repeat(CUSTOM_PAYLOAD_MAX_BYTES + 1000);
+        let json = serde_json::json!({
+            "type": "dev.supermessage.demo.note.v1",
+            "event_id": "$e2",
+            "sender": "@alice:example.org",
+            "origin_server_ts": 1_700_000_000_000_u64,
+            "content": {
+                "schema_version": 1,
+                "title": huge,
+                "body": "fallback text"
+            }
+        })
+        .to_string();
+        let raw: Raw<AnySyncTimelineEvent> = serde_json::from_str(&json)
+            .expect("hand-built raw sync timeline event JSON must deserialize");
+
+        let (payload, body) = custom_message_payload(Some(&raw));
+        assert!(payload.is_none(), "an oversized payload must be dropped");
+        assert_eq!(body.as_deref(), Some("fallback text"));
+    }
+
+    #[test]
+    fn custom_message_payload_is_none_and_none_when_content_is_missing() {
+        let raw: Raw<AnySyncTimelineEvent> = serde_json::from_str(
+            r#"{
+                "type": "dev.supermessage.demo.note.v1",
+                "event_id": "$e3",
+                "sender": "@alice:example.org",
+                "origin_server_ts": 1700000000000
+            }"#,
+        )
+        .expect("hand-built raw sync timeline event JSON must deserialize");
+
+        assert_eq!(custom_message_payload(Some(&raw)), (None, None));
     }
 
     #[test]
@@ -2362,13 +2673,14 @@ mod tests {
     // exactly one sequence number.
 
     /// A minimal `TimelineItemDto` for tests that only care about identity
-    /// (via `id`), not any of the other ~14 fields `project_item_parts`
+    /// (via `id`), not any of the other ~15 fields `project_item_parts`
     /// takes.
     fn minimal_dto(id: &str) -> TimelineItemDto {
         project_item_parts(
             id,
             "message",
             Some("m.text"),
+            None,
             None,
             None,
             None,
@@ -2804,6 +3116,7 @@ mod tests {
             Some("edited text"),
             None,
             None,
+            None,
             Some(1_700_000_000_000),
             true,
             None,
@@ -2829,6 +3142,7 @@ mod tests {
             Some("@me:x.org"),
             Some("Me"),
             Some("hi"),
+            None,
             None,
             None,
             Some(1_700_000_000_000),
@@ -2859,6 +3173,7 @@ mod tests {
             Some("@me:x.org"),
             Some("Me"),
             Some("a reply"),
+            None,
             None,
             None,
             Some(1_700_000_000_000),

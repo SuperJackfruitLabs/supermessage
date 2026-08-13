@@ -23,6 +23,7 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind">): Ti
     body: null,
     formattedBody: null,
     media: null,
+    customPayload: null,
     timestampMs: 1_700_000_000_000,
     isOwn: false,
     sendState: null,
@@ -204,14 +205,55 @@ describe("viewFor", () => {
     });
   });
 
-  it("names stickers, polls, calls and custom suite events as placeholders, not silence", () => {
+  it("names stickers, polls, calls as placeholders, not silence", () => {
     expect(viewFor(item({ kind: "sticker" })).render).toBe("placeholder");
     expect(viewFor(item({ kind: "poll" })).render).toBe("placeholder");
     expect(viewFor(item({ kind: "liveLocation" })).render).toBe("placeholder");
     expect(viewFor(item({ kind: "callInvite" })).render).toBe("placeholder");
     expect(viewFor(item({ kind: "rtcNotification" })).render).toBe("placeholder");
-    const custom = viewFor(item({ kind: "customMessage", detail: "org.supermessage.card" }));
-    expect(custom).toEqual({ render: "placeholder", text: "Custom event (org.supermessage.card)" });
+  });
+
+  describe("customMessage", () => {
+    // The registry/fallback-chain decision itself is covered exhaustively
+    // in `customEvents.test.ts` — these just confirm `viewFor` wires
+    // `item.detail`/`item.customPayload`/`item.body` into
+    // `resolveCustomEvent` (against the production `customEventRegistry`)
+    // rather than deciding anything itself.
+    it("dispatches to the customEvent render kind, never a bare placeholder for an unrecognized type", () => {
+      const view = viewFor(item({ kind: "customMessage", detail: "org.kaambaan.card.v1" }));
+      expect(view).toEqual({
+        render: "customEvent",
+        view: { status: "placeholder", text: "Custom event (org.kaambaan.card.v1)" },
+      });
+    });
+
+    it("falls back to the plain-text body for an unrecognized type that has one", () => {
+      const view = viewFor(
+        item({ kind: "customMessage", detail: "org.kaambaan.card.v1", body: "New card: Ship it" }),
+      );
+      expect(view).toEqual({
+        render: "customEvent",
+        view: { status: "fallbackBody", text: "New card: Ship it" },
+      });
+    });
+
+    it("renders through the shipped demo renderer for its own type", () => {
+      const view = viewFor(
+        item({
+          kind: "customMessage",
+          detail: "dev.supermessage.demo.note.v1",
+          customPayload: { title: "Deployed to staging" },
+        }),
+      );
+      expect(view).toEqual({
+        render: "customEvent",
+        view: {
+          status: "rendered",
+          fields: [{ label: "Note", value: "Deployed to staging" }],
+          newerVersion: false,
+        },
+      });
+    });
   });
 
   it("never returns an empty placeholder string, which would render as a bare empty line", () => {
@@ -221,7 +263,6 @@ describe("viewFor", () => {
       "poll",
       "redacted",
       "unableToDecrypt",
-      "customMessage",
       "liveLocation",
       "callInvite",
       "rtcNotification",
@@ -232,6 +273,17 @@ describe("viewFor", () => {
       if (view.render === "placeholder") {
         expect(view.text).not.toBe("");
       }
+    }
+  });
+
+  it("never returns an empty placeholder/fallback string for a customMessage item with nothing recognisable", () => {
+    // Same guarantee as the loop above, but `customMessage` nests its text
+    // inside `view.view` (the `resolveCustomEvent` result) rather than
+    // directly on the `ItemView`, so it can't share that loop's shape.
+    const view = viewFor(item({ kind: "customMessage" }));
+    expect(view.render).toBe("customEvent");
+    if (view.render === "customEvent" && view.view.status !== "rendered") {
+      expect(view.view.text).not.toBe("");
     }
   });
 });

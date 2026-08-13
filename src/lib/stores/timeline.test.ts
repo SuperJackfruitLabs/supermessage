@@ -36,6 +36,7 @@ function item(id: string): TimelineItem {
     body: id,
     formattedBody: null,
     media: null,
+    customPayload: null,
     timestampMs: 1_700_000_000_000,
     isOwn: false,
     sendState: null,

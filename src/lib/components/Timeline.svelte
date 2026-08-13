@@ -739,6 +739,97 @@
                   </p>
                 </div>
               </div>
+            {:else if view.render === "customEvent"}
+              <!--
+                A `kind: "customMessage"` item — Kaambaan cards/runs/
+                permission requests/station status once those schemas land
+                (`docs/matrix-events.md` §G), the demo renderer until then.
+                `view.view` is the whole `resolveCustomEvent` outcome
+                (`$lib/components/customEvents.ts`) — this block only
+                switches on its `status`, never decides anything itself.
+
+                Every value below is plain-text interpolation (`{...}`),
+                never `{@html}` — `content` is arbitrary JSON from anyone
+                who can send to the room, and a renderer's fields are
+                already bounded in count/length by `resolveCustomEvent`
+                before they ever reach here. `break-words` + the bubble's
+                own `max-w-[70%]`/`min-w-0` guard against a long unbroken
+                value or label widening the bubble, the same discipline
+                every other sender-controlled surface in this file follows.
+              -->
+              {#if view.view.status === "placeholder"}
+                <div class="flex justify-center py-1.5">
+                  <span class="text-xs text-content-muted italic">{view.view.text}</span>
+                </div>
+              {:else}
+                <div class="flex py-1 {item.isOwn ? 'justify-end' : 'justify-start'}">
+                  <div
+                    class="group min-w-0 max-w-[70%] rounded-2xl px-3 py-2 {item.isOwn
+                      ? 'bg-accent text-accent-content'
+                      : 'border border-border bg-surface-raised text-content'}"
+                  >
+                    {#if !item.isOwn}
+                      <p class="mb-0.5 text-xs font-medium text-content-muted">
+                        {item.senderDisplayName ?? item.sender ?? "Unknown"}
+                      </p>
+                    {/if}
+                    <p
+                      class="mb-1 text-[10px] font-semibold tracking-wide uppercase {item.isOwn
+                        ? 'text-accent-content/70'
+                        : 'text-content-muted'}"
+                    >
+                      Custom event
+                    </p>
+                    {#if view.view.status === "rendered"}
+                      <div class="selectable space-y-0.5 text-sm">
+                        <!--
+                          Keyed by index, not `field.label` — a renderer's
+                          fields are trusted (registered application code,
+                          not an array read straight off the payload), but a
+                          duplicate label is still possible and shouldn't be
+                          able to confuse Svelte's keyed reconciliation.
+                        -->
+                        {#each view.view.fields as field, i (i)}
+                          <p class="break-words">
+                            <span class="font-medium">{field.label}:</span>
+                            {field.value}
+                          </p>
+                        {/each}
+                      </div>
+                      {#if view.view.newerVersion}
+                        <p
+                          class="mt-1 text-[10px] italic {item.isOwn
+                            ? 'text-accent-content/70'
+                            : 'text-content-muted'}"
+                        >
+                          Shown from a newer version of this event
+                        </p>
+                      {/if}
+                    {:else}
+                      <!-- status === "fallbackBody": the plain-text
+                           `content.body` Matrix convention puts on every
+                           suite custom event, for a type this build has no
+                           renderer for. -->
+                      <p
+                        class="selectable text-sm whitespace-pre-wrap break-words {item.isOwn
+                          ? ''
+                          : 'text-content-muted'}"
+                      >
+                        {view.view.text}
+                      </p>
+                    {/if}
+                    {@render reactionsRow(item)}
+                    {@render messageActions(item)}
+                    <p
+                      class="mt-1 text-right text-[10px] {item.isOwn
+                        ? 'text-accent-content/70'
+                        : 'text-content-muted'}"
+                    >
+                      {formatTime(item.timestampMs)}
+                    </p>
+                  </div>
+                </div>
+              {/if}
             {:else if view.render === "system"}
               <!--
                 Membership lines, room creation, encryption enabled, room
