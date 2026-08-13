@@ -42,7 +42,25 @@ const TIMELINE_CHANNEL: &str = "timeline";
 /// The sequence number of the last diff folded into the materialized item
 /// list, and the resulting list itself — always mutually consistent (see
 /// `core::rooms::RoomListHandle`'s identical `RoomListSnapshot` for why).
-type TimelineSnapshot = (u64, Vec<TimelineItemDto>);
+type TimelineState = (u64, Vec<TimelineItemDto>);
+
+/// What [`FocusedTimeline::snapshot`] hands the webview: `(subject, seq,
+/// items)` — the room id the snapshot belongs to, followed by the same
+/// `(seq, items)` pair the room list returns.
+///
+/// The subject is not decoration. Spec §4 defines the sequence as
+/// "monotonic, per channel+**subject**", and the timeline channel's subject
+/// changes every time the user switches rooms. A snapshot without it cannot
+/// be checked against the room the webview currently has focused, so a
+/// resync issued during a room switch — where the fast mutex read behind
+/// this call easily beats the slow `room.timeline()` build behind
+/// `timeline_subscribe` — would be served out of the *previous* room's
+/// still-installed handle and silently install that room's messages, at that
+/// room's high seq, under the new room's header. The new room's stream then
+/// starts back at seq 1 and is discarded as duplicates, so the wrong
+/// messages stay until the next room switch. Returning the subject lets the
+/// webview reject exactly that.
+pub type TimelineSnapshot = (String, u64, Vec<TimelineItemDto>);
 
 /// Build a [`TimelineItemDto`] from already-extracted parts.
 ///
@@ -198,31 +216,41 @@ fn project_initial(items: &Vector<Arc<TimelineItem>>, own_user: &UserId) -> Vec<
 /// [`FocusedTimeline::send_text`] can drive it.
 ///
 /// Mirrors `core::rooms::RoomListHandle`'s shape: dropping a
-/// `TimelineHandle`, or calling [`TimelineHandle::stop`] on it, aborts the
-/// streaming task. [`FocusedTimeline`] is the sole owner, replacing and
-/// stopping any previous handle before storing a new one.
+/// `TimelineHandle`, or calling `stop_and_join` on it, aborts the streaming
+/// task. [`FocusedTimeline`] is the sole owner, replacing and stopping any
+/// previous handle before storing a new one.
 pub struct TimelineHandle {
+    /// The room this subscription is for — the `subject` every envelope it
+    /// emits is stamped with, and the one [`TimelineHandle::snapshot`]
+    /// returns so the webview can tell whose messages it is being handed.
+    room_id: String,
     timeline: Arc<Timeline>,
-    state: Arc<Mutex<TimelineSnapshot>>,
+    state: Arc<Mutex<TimelineState>>,
     task: JoinHandle<()>,
 }
 
 impl TimelineHandle {
-    /// Stops the background streaming task. Safe to call more than once, or
-    /// alongside letting the handle simply drop — both abort the same task.
-    pub fn stop(&self) {
+    /// Stops the background streaming task and waits for it to actually
+    /// finish, for the same reason as `core::rooms::RoomListHandle`'s
+    /// identical method: the task transitively holds the `Client` and so
+    /// keeps the store's SQLite files open, and `Session::logout` deletes
+    /// those files.
+    async fn stop_and_join(&mut self) {
         self.task.abort();
+        let _ = std::pin::Pin::new(&mut self.task).await;
     }
 
     /// A snapshot of the timeline as of the last diff this handle's task has
-    /// applied, plus the sequence number of that diff — read directly out of
-    /// the same state the streaming task maintains, not from a second
-    /// subscription. See `core::rooms::RoomListHandle::snapshot`'s doc
-    /// comment for why that distinction matters.
+    /// applied, plus the sequence number of that diff and the room it
+    /// belongs to — read directly out of the same state the streaming task
+    /// maintains, not from a second subscription. See
+    /// `core::rooms::RoomListHandle::snapshot`'s doc comment for why that
+    /// distinction matters, and [`TimelineSnapshot`] for why the room id
+    /// travels with it.
     fn snapshot(&self) -> CoreResult<TimelineSnapshot> {
         self.state
             .lock()
-            .map(|guard| guard.clone())
+            .map(|guard| (self.room_id.clone(), guard.0, guard.1.clone()))
             .map_err(|_| CoreError::Protocol("timeline state lock poisoned".into()))
     }
 }
@@ -258,7 +286,11 @@ impl FocusedTimeline {
         room_id: &str,
         app: AppHandle,
     ) -> CoreResult<()> {
-        self.clear();
+        // Waits for the previous room's task to be gone, not merely
+        // cancelled, before the (slow) build below starts — so it cannot
+        // still be emitting onto `TIMELINE_DIFF_EVENT` while the webview is
+        // already tracking the new room.
+        self.clear_and_join().await;
 
         let parsed_room_id =
             RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
@@ -281,7 +313,7 @@ impl FocusedTimeline {
         // timeline is empty" — consistent with `SeqCounter` starting at 1,
         // since the first envelope (seq 1, the seeding `Reset` below) is
         // exactly what turns this into the true state.
-        let state: Arc<Mutex<TimelineSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
+        let state: Arc<Mutex<TimelineState>> = Arc::new(Mutex::new((0, Vec::new())));
         let task_state = Arc::clone(&state);
 
         let subject = room_id.to_string();
@@ -309,6 +341,7 @@ impl FocusedTimeline {
             .lock()
             .map_err(|_| CoreError::Protocol("focused timeline lock poisoned".into()))? =
             Some(TimelineHandle {
+                room_id: room_id.to_string(),
                 timeline,
                 state,
                 task,
@@ -373,17 +406,33 @@ impl FocusedTimeline {
         ))
     }
 
-    /// Stops and drops the currently focused subscription, if any. A safe
+    /// Stops and drops the currently focused subscription, if any, and waits
+    /// for its streaming task to actually finish before returning. A safe
     /// no-op when nothing is focused.
-    fn clear(&self) {
-        let previous = self
-            .0
+    ///
+    /// `Session::logout` calls this before it wipes the encrypted store off
+    /// disk. Merely aborting is not enough there: the task holds
+    /// `Arc<Timeline>` -> `Room` -> `Client`, so until it has actually been
+    /// dropped the store's SQLite files are still open — which on Windows
+    /// makes `remove_dir_all` fail, and fail *after* the store passphrase
+    /// has already been deleted. See `Session::logout` for what that costs.
+    pub async fn clear_and_join(&self) {
+        let previous = self.take();
+        if let Some(mut previous) = previous {
+            previous.stop_and_join().await;
+        }
+    }
+
+    /// Takes the currently focused handle out, leaving nothing focused.
+    ///
+    /// The `Mutex` is `std::sync::Mutex`, so the guard cannot be held across
+    /// an await — taking the handle out under the lock and stopping it after
+    /// the guard is dropped is what keeps [`Self::clear_and_join`] legal.
+    fn take(&self) -> Option<TimelineHandle> {
+        self.0
             .lock()
             .expect("focused timeline lock poisoned by an earlier panic")
-            .take();
-        if let Some(previous) = previous {
-            previous.stop();
-        }
+            .take()
     }
 }
 
@@ -394,7 +443,7 @@ impl FocusedTimeline {
 /// is released, and the lock must be released before emitting).
 fn emit_ops(
     app: &AppHandle,
-    state: &Arc<Mutex<TimelineSnapshot>>,
+    state: &Arc<Mutex<TimelineState>>,
     seq: &mut SeqCounter,
     subject: &str,
     ops: Vec<DiffOp<TimelineItemDto>>,
