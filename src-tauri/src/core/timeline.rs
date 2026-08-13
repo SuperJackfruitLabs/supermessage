@@ -1446,7 +1446,7 @@ fn emit_ops(
     subject: &str,
     ops: Vec<DiffOp<TimelineItemDto>>,
 ) -> (usize, usize) {
-    let seq_no = seq.next();
+    let seq_no = seq.next_seq();
     let (before, after) = {
         let mut guard = state
             .lock()

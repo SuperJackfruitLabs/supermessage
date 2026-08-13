@@ -379,7 +379,7 @@ pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<
         let mut seq = SeqCounter::default();
         while let Some(batch) = stream.next().await {
             let ops = project_batch(batch);
-            let seq_no = seq.next();
+            let seq_no = seq.next_seq();
 
             // Fold this batch into the materialized list *before* emitting,
             // under the same lock `snapshot()` reads. A `snapshot()` call

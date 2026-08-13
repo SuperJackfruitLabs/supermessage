@@ -313,7 +313,7 @@ pub fn apply_ops<T: Clone>(items: &mut Vec<T>, ops: &[DiffOp<T>]) {
 pub struct SeqCounter(u64);
 
 impl SeqCounter {
-    pub fn next(&mut self) -> u64 {
+    pub fn next_seq(&mut self) -> u64 {
         self.0 += 1;
         self.0
     }
@@ -401,9 +401,9 @@ mod tests {
     #[test]
     fn sequence_numbers_start_at_one_and_increment() {
         let mut seq = SeqCounter::default();
-        assert_eq!(seq.next(), 1);
-        assert_eq!(seq.next(), 2);
-        assert_eq!(seq.next(), 3);
+        assert_eq!(seq.next_seq(), 1);
+        assert_eq!(seq.next_seq(), 2);
+        assert_eq!(seq.next_seq(), 3);
     }
 
     #[test]
