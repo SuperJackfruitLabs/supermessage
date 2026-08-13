@@ -35,12 +35,32 @@ function makeChannel() {
   };
 }
 
+/**
+ * Fake `makeSessionCommands`, mirroring the real `ipc.ts` factory's
+ * contract exactly: it returns `login`/`restoreSession` that call `onArm`
+ * before doing anything else, and there is no other way to get a working
+ * `login`/`restoreSession` out of it. This is what lets these tests verify
+ * `roomsStore` actually wires its `resetForNewSubscription` through as
+ * `onArm` — see `ipc.test.ts` for the real factory's own onArm-before-invoke
+ * ordering.
+ */
+function makeFakeSessionCommands(onArm: () => void) {
+  return {
+    login: vi.fn(async (_homeserver: string, _username: string, _password: string) => {
+      onArm();
+    }),
+    restoreSession: vi.fn(async () => {
+      onArm();
+      return true;
+    }),
+  };
+}
+
 function makeStore(channel: ReturnType<typeof makeChannel>) {
   return createRoomsStore({
     onRoomsDiff: channel.onRoomsDiff,
     roomsResync: vi.fn(),
-    login: vi.fn().mockResolvedValue(undefined),
-    restoreSession: vi.fn().mockResolvedValue(undefined),
+    makeSessionCommands: makeFakeSessionCommands,
     logout: vi.fn().mockResolvedValue(undefined),
   });
 }
