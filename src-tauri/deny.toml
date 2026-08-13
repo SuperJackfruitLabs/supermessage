@@ -1,0 +1,76 @@
+# cargo-deny policy — the machine-checkable form of AGENTS.md's licence rule.
+#
+# supermessage ships under MIT. The rule that follows from that, and from the
+# suite's own posture, is: permissive licences, plus MPL-2.0 so long as we do
+# not modify the file itself; GPL, AGPL and LGPL are refused outright. That
+# rule was previously prose in AGENTS.md, enforced by whoever remembered it.
+# This file makes CI enforce it, which matters most for the case nobody is
+# watching: a transitive dependency changing licence in a routine bump.
+#
+# Run locally with:  cargo deny --manifest-path src-tauri/Cargo.toml check
+
+[graph]
+# Check every platform we ship, not just the host. A dependency can be
+# pulled in on Windows alone and carry a licence the host build never sees.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-linux-android",
+]
+all-features = true
+
+[licenses]
+version = 2
+# Anything not on this list fails the build. Deliberately an allow-list
+# rather than a deny-list: a new copyleft licence appearing in the ecosystem
+# should stop CI by default, not slip through because we did not think to
+# name it.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    # Permitted only in unmodified form (AGENTS.md). MPL-2.0 is file-level
+    # copyleft: using the crate as a dependency carries no obligation on our
+    # own source, but patching one of its files would. If we ever need to
+    # fork an MPL crate, that is a licensing decision, not a routine patch.
+    "MPL-2.0",
+]
+confidence-threshold = 0.93
+
+# Note on `r-efi`: it is `MIT OR Apache-2.0 OR LGPL-2.1-or-later`. The LGPL
+# arm is one option of three in an OR expression, so cargo-deny satisfies it
+# from MIT and no exception is needed. It is called out here only because
+# grepping the dependency tree for "LGPL" finds it and the hit looks alarming
+# until you read the operator.
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[advisories]
+version = 2
+# Security advisories are a separate concern from licensing, and this file is
+# wired into a licence gate. `cargo deny check advisories` is worth adding on
+# a schedule once the project has a release cadence; failing PRs on a
+# freshly-published advisory in a transitive crate would block work that has
+# nothing to do with it.
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

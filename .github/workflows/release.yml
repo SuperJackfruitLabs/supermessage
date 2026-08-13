@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Buildable on demand without cutting a tag — useful for checking that a
+  # platform still compiles after a dependency bump, and for exercising this
+  # workflow itself without polluting the tag namespace.
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    permissions:
+      contents: write
+    strategy:
+      # One platform failing must not cancel the others: a green macOS build
+      # is still worth having while a Linux dependency is being fixed.
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS (universal)
+            runner: macos-latest
+            # A single binary carrying both arm64 and x86_64, so one .dmg
+            # covers every Mac. Costs build time; saves shipping two files
+            # and explaining which is which.
+            target: universal-apple-darwin
+            args: --target universal-apple-darwin
+          - label: Linux (x86_64)
+            # Deliberately not `ubuntu-latest`. glibc is forward- but not
+            # backward-compatible, so a binary linked against 24.04's glibc
+            # refuses to start on 22.04. Building on the oldest supported
+            # runner is what makes the artifact portable.
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ""
+          - label: Windows (x86_64)
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.runner == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            file \
+            wget
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The universal macOS build links both slices, so both targets have
+          # to be installed; on the other two this is the host target and the
+          # line is a no-op.
+          targets: ${{ matrix.runner == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # `tauri-action` runs `beforeBuildCommand` (`pnpm build`) itself, so
+          # the frontend is not built separately here.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('untagged-{0}', github.sha) }}
+          releaseName: supermessage ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+          releaseBody: |
+            Built from ${{ github.sha }}.
+
+            These binaries are **unsigned**. macOS Gatekeeper and Windows
+            SmartScreen will both warn on first run until signing is set up.
+          # Draft, always. Artifacts land on a release nobody can download
+          # until a human has looked at them — see the note above about these
+          # being unsigned.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

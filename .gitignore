@@ -13,3 +13,6 @@ vite.config.ts.timestamp-*
 # full checkout, so without this a `git add -A` from any tool or agent would
 # try to commit an entire second copy of the tree into the tree.
 .claude/worktrees/
+
+# Internal strategy notes — kept locally, not published. See README.
+docs/positioning.md
