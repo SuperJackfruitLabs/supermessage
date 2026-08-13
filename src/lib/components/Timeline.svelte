@@ -1784,27 +1784,64 @@
    * lowers a box's *min-content* size to one character, so the table had no
    * floor to compress against.
    *
-   * **What replaces it.** `width: 100%` with `min-width: max-content`, on a
-   * table that is once again a real `display: table`:
-   *   - `min-width: max-content` means no column can ever be compressed
-   *     below its natural width, so nothing inside a cell wraps and nothing
-   *     breaks mid-token — including a code span, which needs no rule of
-   *     its own here for that.
-   *   - `width: 100%` makes a table that *fits* stretch to the width of its
-   *     message block instead of huddling at its content width. Note what
+   * **What replaces it.** The table is a real `display: table` again with
+   * `width: 100%`, and the collapse is fixed where the collapse came from —
+   * the `overflow-wrap` inherited into the cells — rather than by taking
+   * the table out of the layout algorithm:
+   *   - `th`/`td` take `overflow-wrap: break-word`, which undoes the
+   *     container's `anywhere`. The distinction is the whole fix:
+   *     `break-word` permits a last-resort break but, unlike `anywhere`,
+   *     **does not lower min-content size**. So `10`'s min-content is the
+   *     whole two-character token and the `#` column cannot be squeezed
+   *     below it, while `Regression risk on every manual commit` still has
+   *     a min-content of just `Regression` and wraps at spaces the way a
+   *     prose column should.
+   *   - `code` inside a cell needs its own override, and this is not
+   *     belt-and-braces: `.message-html code` below sets `overflow-wrap:
+   *     anywhere` **on the code element itself**, which beats anything
+   *     inherited from the cell. With the cell rule alone,
+   *     `Path.mkdir(parents=True)` still broke across two lines (measured).
+   *     `normal` gives the span an unbreakable min-content, so its column
+   *     is never narrower than the span.
+   *   - Auto table layout then does the rest: every column gets at least
+   *     its min-content width, the table fits the block whenever the sum
+   *     fits, and it overflows only when the content genuinely cannot fit —
+   *     into `.message-html`'s `overflow-x: auto` above. That is why there
+   *     is deliberately no `overflow-x` or `max-width` on the table itself
+   *     any more: **the scroll container is the message body, not the
+   *     table.**
+   *   - `width: 100%` makes a table that fits stretch to the width of its
+   *     message block rather than huddling at its content width. Note what
    *     that is 100% *of*: the block is itself content-sized, so a message
    *     holding nothing but a two-column key/value table stays 150px wide
-   *     (measured) rather than stretching across the measure — the table
-   *     fills whatever the rest of the message has already claimed.
-   *   - When the two conflict — a table wider than the column — `min-width`
-   *     wins, the table overflows, and `.message-html`'s own `overflow-x:
-   *     auto` above scrolls it. That is why there is deliberately no
-   *     `overflow-x` or `max-width` on the table itself any more: **the
-   *     scroll container is the message body, not the table.**
-   * The same review table, re-measured: `#` column 41px with `10` on one
-   * line, every row a single 39px line, both code spans intact, the table
-   * 764px wide scrolling inside a 534px peer block — and the reading
+   *     (measured) — the table fills whatever the rest of the message has
+   *     already claimed.
+   * The review table, re-measured: `#` column 41px with `10` and `11` on
+   * one line, both code spans on one line, the prose column wrapping to
+   * three lines, table width = block width, **no scroll** — and the reading
    * column still 630 = 630.
+   *
+   * **`min-width: max-content` is not the floor to use**, though this rule
+   * carried it for one commit. max-content is "the width at which nothing
+   * needs to break", so it does not raise the floor, it bans wrapping: the
+   * same review table went to 1039px and scrolled inside a 566px block with
+   * the prose column forced onto a single line. Horizontal scrolling is the
+   * worst reading mode in a timeline and nearly every real table has a
+   * prose column, so that fires constantly. min-content is the floor; the
+   * `overflow-wrap` rules above are what make min-content mean something.
+   *
+   * **What still scrolls, and why it has to.** A cell holding one very long
+   * unbroken token — a 5001-character digest, measured — makes the table
+   * 37,602px wide and the message body scrolls, rather than breaking the
+   * token. That follows from the same property that fixes the `#` column:
+   * `break-word` does not lower min-content, and a column can never be
+   * narrower than its min-content, so the column is as wide as the token.
+   * The only way to break it is `anywhere` in cells, which is exactly what
+   * collapsed `10` into `1` over `0`. Capping cells with `max-width: 48ch`
+   * was measured as an escape and is worse: Chrome honours it on the box
+   * (table back to 566px) but the text simply spills out of the cell and
+   * past the grid — 34,628px of scrollable overflow with no border
+   * containing it. An honest scroll beats content escaping its own table.
    *
    * **Three shapes that look right and are not** (all measured in Chrome
    * before this was written, not reasoned about):
@@ -1824,15 +1861,14 @@
    *     `{@html}` from a core-sanitised string, and adding elements to it
    *     means changing `harden_formatted_body` on the Rust side.
    *
-   * **The trade this makes, stated plainly.** Because no cell wraps, a
-   * table one of whose cells holds a long sentence becomes a wide table
-   * that must be scrolled, where the old rule would have wrapped it into
-   * something narrow and unreadable. That is the intended direction — a
-   * table that scrolls is still a table — but it is a real cost, and the
-   * knob if it ever needs turning is `min-width`, not `display`. The
-   * affordance for that scroll is whatever the platform gives
-   * `.message-html`'s scrollbar, which on an overlay-scrollbar webview is
-   * nothing until you touch it — the same deal `pre` has had all along.
+   * **The trade this makes, stated plainly.** A table only scrolls when the
+   * sum of its columns' min-content widths exceeds the block — a genuinely
+   * unfittable table (30 columns, or an unbreakable token). Everything else
+   * wraps in place, which is the behaviour Element has and the one a
+   * timeline wants. When it does scroll, the affordance is whatever the
+   * platform gives `.message-html`'s scrollbar, which on an
+   * overlay-scrollbar webview is nothing until you touch it — the same deal
+   * `pre` has had all along.
    *
    * **Type ranks.** Cells leave the serif reading rank for `--font-sans`:
    * serif is this app's face for *prose you read*, and a table is data you
@@ -1863,7 +1899,6 @@
    */
   :global(.message-html table) {
     width: 100%;
-    min-width: max-content;
     border-collapse: collapse;
     font-family: var(--font-sans);
     font-size: 0.9em;
@@ -1873,10 +1908,23 @@
 
   :global(.message-html th),
   :global(.message-html td) {
+    overflow-wrap: break-word;
     border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     padding: 0.7em 0.9em;
     text-align: left;
     vertical-align: top;
+  }
+
+  /* Overrides `.message-html code`'s own `overflow-wrap: anywhere` below,
+   * which is set on the code element and so outranks the cell's rule above
+   * by inheritance. Without this line a code span in a cell still splits
+   * mid-token — the exact `Path.mkdir(parents=` / `True)` break this pass
+   * set out to fix. `normal` rather than `nowrap`: it leaves a genuine
+   * break opportunity usable as a last resort, and measured on every
+   * fixture the two are identical. */
+  :global(.message-html th code),
+  :global(.message-html td code) {
+    overflow-wrap: normal;
   }
 
   /* Left-aligned like the body cells, not centred (the UA default): a
