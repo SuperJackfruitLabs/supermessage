@@ -221,6 +221,49 @@ export function displayReactionKey(key: string): string {
   return `${codePoints.slice(0, REACTION_KEY_MAX_CODEPOINTS).join("")}…`;
 }
 
+/**
+ * Cap on a custom event type's *rendered* length, in Unicode code points,
+ * in the dispatch card's header (spec §7). Sized for the card's own
+ * measure: the header is `--text-label` mono (10px, `0.08em` tracking, so
+ * ~6.8px per glyph) inside a `68ch` serif card (~500px at 15px) that also
+ * carries a timestamp and 12px of padding on each side — a little over 60
+ * glyphs fit, and 48 leaves margin at a narrow window without cutting any
+ * plausible reverse-DNS type (`dev.supermessage.demo.note.v1` is 29).
+ */
+const EVENT_TYPE_MAX_CODEPOINTS = 48;
+
+/**
+ * The text to render for a custom event's Matrix type, truncated **from the
+ * left** with a leading ellipsis — `…supermessage.demo.note.v1`, never
+ * `dev.supermessage.dem…` (spec §7). A reverse-DNS type's tail is the
+ * informative part; its head is the namespace every event from one suite
+ * shares, so cutting the usual end throws away exactly the half that
+ * distinguishes one card from another.
+ *
+ * Done here, in a pure function, rather than with the `direction: rtl`
+ * CSS trick, because `eventType` is `TimelineItem.detail` — a
+ * sender-controlled string, not a value this app chose. An RTL base
+ * direction hands the Unicode bidi algorithm a hostile string and lets a
+ * crafted type reorder itself on screen (leading/trailing neutrals migrate
+ * across the run under rule N1, and any strong-RTL character pulls
+ * surrounding punctuation with it), which turns a header meant to identify
+ * a dispatch into a spoofing surface. A code-point slice reorders nothing
+ * and is unit-testable without a browser.
+ *
+ * Iterates by code point (`Array.from`), not UTF-16 code unit, for the same
+ * reason {@link displayReactionKey} does: a cut landing mid-surrogate
+ * would emit an unpaired half. `null`, empty, or whitespace-only degrades
+ * to `"unknown"` — the vocabulary `resolveCustomEvent`'s own generic
+ * placeholder already uses — never to an empty header.
+ */
+export function displayEventType(eventType: string | null): string {
+  const trimmed = eventType?.trim() ?? "";
+  if (trimmed === "") return "unknown";
+  const codePoints = Array.from(trimmed);
+  if (codePoints.length <= EVENT_TYPE_MAX_CODEPOINTS) return trimmed;
+  return `…${codePoints.slice(codePoints.length - EVENT_TYPE_MAX_CODEPOINTS).join("")}`;
+}
+
 /** Render decision for `kind: "message"`, switching on `msgtype`. */
 function messageView(item: TimelineItem): ItemView {
   const { msgtype } = item;

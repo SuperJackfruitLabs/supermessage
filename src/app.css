@@ -1,3 +1,14 @@
+@import "@fontsource-variable/ibm-plex-sans/wght.css";
+/* Sans italic is not decorative: `font-synthesis: none` is set below, so
+ * without a real italic file an `<em>` inside an own message — which is set
+ * in sans, unlike a peer message — renders upright and the emphasis is
+ * silently lost. Mono deliberately has no italic counterpart here; see
+ * spec §6.3 on why mono ranks carry no italic at all. */
+@import "@fontsource-variable/ibm-plex-sans/wght-italic.css";
+@import "@fontsource-variable/source-serif-4/opsz.css";
+@import "@fontsource-variable/source-serif-4/opsz-italic.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
 @import "tailwindcss";
 
 /*
@@ -5,38 +16,193 @@
  * See docs/tech-stack.md: skins are the only platform-branched layer; everything
  * else consumes these tokens. Desktop skins (Fluent-ish Windows, HIG macOS,
  * libadwaita Linux) and the Framework7 mobile skin override these, not components.
+ * Values below are the real "operator console, editorial reading" palette from
+ * docs/superpowers/specs/2026-08-13-console-design.md §3-4, not placeholders.
  */
 @theme {
-  /* System font stack. On iOS, -apple-system also carries Dynamic Type. */
+  /* System font stack. On iOS, -apple-system also carries Dynamic Type.
+   * Also the documented one-token revert path if the serif body experiment
+   * (spec §4) fails: swap --font-sans's value back to var(--font-system). */
   --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
     "Segoe UI", Roboto, Cantarell, "Noto Sans", Ubuntu, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    "Liberation Mono", monospace;
 
-  /* Neutral surface ramp — placeholder values; skins retint these. */
+  /* Bundled typefaces — CSP is default-src 'self', so nothing is fetched
+   * from a CDN. Chrome/UI/own messages: sans. Peer message bodies: serif.
+   * Data, labels, sigils, timestamps: mono. */
+  --font-sans: "IBM Plex Sans Variable", var(--font-system);
+  --font-serif: "Source Serif 4 Variable", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Neutral surface ramp — blue-cast slate, not black. */
   --color-surface: #ffffff;
-  --color-surface-sunken: #f6f6f7;
-  --color-surface-raised: #ffffff;
-  --color-border: #e3e3e6;
-  --color-content: #101013;
-  --color-content-muted: #62626b;
-  --color-accent: #3b5bdb;
+  --color-surface-sunken: #f4f5f8;
+  --color-surface-raised: #fbfbfd;
+  --color-border: #dfe1e8;
+  --color-border-strong: #c3c7d2;
+  --color-content: #161821;
+  /* #4a4f5e, not the spec's original #5f6472 — see the note on `faint`
+   * below. The whole ramp had to be re-spaced, not just its bottom rung. */
+  --color-content-muted: #4a4f5e;
+  /* Three text ranks on one ground is a tight brief, and the spec's first
+   * attempt (#8b90a0) failed its own 4.5:1 floor outright — as low as
+   * 2.92:1 on --color-surface-sunken. Raising `faint` to #6b7082 cleared
+   * the floor (4.92:1 here, 4.51:1 in dark) but left it only ~1.2:1 against
+   * `muted`, which is not a rank, just a wobble. The fix is to re-space the
+   * whole ramp from the top rather than to keep nudging its bottom: content
+   * ~15.9:1, muted ~8.2:1, faint ~4.9:1 is a real progression with the
+   * accessibility floor as its last step rather than its only constraint. */
+  --color-content-faint: #6b7082;
+
+  /* Chrome hue: indigo. */
+  --color-accent: #4249c4;
   --color-accent-content: #ffffff;
-  --color-danger: #c92a2a;
+  --color-accent-soft: #eceefb;
+
+  /* Signal: amber, reserved exclusively for a pending decision (spec §3).
+   * Not used anywhere in this task. */
+  /* #8a4e00, not the spec's original #a35c00: that read 4.63:1 against
+   * --color-signal-soft, clearing the 4.5:1 floor by almost nothing while
+   * carrying the 10px `AWAITING YOUR DECISION` label — the smallest text in
+   * the app, on the one element the operator must never miss. 6.0:1 gives
+   * that label the margin its job deserves. Dark mode needs no change
+   * (#f0a63c on #2e2317 is 7.5:1). */
+  --color-signal: #8a4e00;
+  --color-signal-soft: #fdf3e2;
+
+  --color-danger: #b4232a;
+
+  /* The veil behind the room-info panel when it is a modal overlay rather
+   * than a third column (spec §9). Not a fifth hue and not a new rank —
+   * it is `--color-content` at 45% alpha, i.e. the ramp's own darkest end
+   * used as a wash.
+   *
+   * A scrim needs its own token rather than an opacity modifier on an
+   * existing one because the thing most often behind it is the roster,
+   * which is `--color-surface-sunken`: a wash of sunken over sunken is
+   * 1.0:1 and paints nothing, the same failure the header's hover state
+   * had before it was inverted. And the two themes cannot share one
+   * direction — `--color-content` is near-black in light and near-white
+   * in dark, so a single token expressed as a modifier would *lighten*
+   * the dark theme. Each theme names its own dark wash instead. */
+  --color-scrim: rgb(22 24 33 / 0.45);
+
+  /* Type scale (spec §4). Letter-spacing and weight are set as theme
+   * sub-properties per token so call sites only repeat the family
+   * (font-sans/font-serif/font-mono) and, for --text-label, `uppercase` —
+   * Tailwind v4's @theme has no text-transform convention. --text-ui is
+   * deliberately left without a fixed weight: the spec calls for
+   * "Sans 400/500" depending on call site. */
+  --text-label: 0.625rem; /* 10px */
+  --text-label--line-height: 1.2;
+  --text-label--letter-spacing: 0.08em;
+  --text-label--font-weight: 500;
+
+  --text-meta: 0.65625rem; /* 10.5px */
+  --text-meta--line-height: 1.3;
+  --text-meta--font-weight: 400;
+
+  --text-ui: 0.8125rem; /* 13px */
+  --text-ui--line-height: 1.4;
+
+  --text-ui-lg: 0.9375rem; /* 15px */
+  --text-ui-lg--line-height: 1.4;
+  --text-ui-lg--font-weight: 600;
+
+  /* The one rank that is not text. A 64px avatar circle needs a glyph sized
+   * to the circle, and before this existed the room-info panel's fallback
+   * initial took `--text-ui-lg` — the largest rank the scale owned — so a
+   * 64px circle held a 15px letter and read as broken. Sized to the avatar,
+   * not to a reading rank, which is why it sits apart from the scale above
+   * rather than extending it: nothing else should reach for this. */
+  --text-avatar: 1.5rem; /* 24px, for a 64px circle */
+  --text-avatar--line-height: 1;
+  --text-avatar--font-weight: 500;
+
+  --text-body: 0.9375rem; /* 15px */
+  --text-body--line-height: 1.62;
+  --text-body--font-weight: 400;
+
+  --text-body-own: 0.875rem; /* 14px */
+  --text-body-own--line-height: 1.5;
+  --text-body-own--font-weight: 400;
 }
 
 @layer theme {
   @media (prefers-color-scheme: dark) {
     :root {
-      --color-surface: #1a1a1e;
-      --color-surface-sunken: #121215;
-      --color-surface-raised: #232329;
-      --color-border: #33333b;
-      --color-content: #f2f2f4;
-      --color-content-muted: #9a9aa4;
-      --color-accent: #748ffc;
-      --color-accent-content: #10101a;
-      --color-danger: #ff6b6b;
+      --color-surface: #14161c;
+      /* #090b11, not the spec's original #101218. The sheet-on-field step —
+       * the reading column on `--color-surface` over the timeline field,
+       * roster, header and composer on `--color-surface-sunken` — is what
+       * the whole three-level depth story rests on, and at #101218 it
+       * measured 1.035:1 in dark against 1.090:1 in light: less than half
+       * the step, and effectively subliminal across 1050px of field at
+       * 1905px. #090b11 restores it to 1.088:1, matching light.
+       *
+       * Darkening `sunken` rather than lightening `surface`, because
+       * lightening is not available: `--color-surface` would have to reach
+       * ~#191b23 to open the same step, which collapses surface-vs-raised
+       * from 1.085:1 to 1.031:1 — deleting the *third* level to fix the
+       * second — and drops `--color-content-faint` on the reading surface
+       * from 4.52:1 to 4.29:1, under §9's floor. Splitting the difference
+       * (#0c0e13 / #16181f) still lands faint at 4.43:1. Only the sunken
+       * end can move.
+       *
+       * The value continues the ramp's own construction rather than being
+       * picked for the ratio alone: #14161c and #101218 are both (R, R+2,
+       * R+8), and so is #090b11 — the blue cast survives the darkening.
+       * Everything that sits on this ground gets *easier*, not harder:
+       * content 15.56→16.35, muted 9.23→9.70, faint 4.67→4.91, and the
+       * `--color-border` hairline 1.34→1.41. Measured, composited, in the
+       * built app. The light ramp is untouched. */
+      --color-surface-sunken: #090b11;
+      --color-surface-raised: #1b1e26;
+      --color-border: #282c37;
+      --color-border-strong: #3a3f4e;
+      --color-content: #e8eaf0;
+      /* Re-spaced upward for the same reason the light ramp was re-spaced
+       * downward — see the light block's note on `faint`. */
+      --color-content-muted: #b0b6c6;
+      --color-content-faint: #787f91;
+
+      --color-accent: #8b9bf7;
+      --color-accent-content: #12141b;
+      --color-accent-soft: #242a44;
+
+      --color-signal: #f0a63c;
+      --color-signal-soft: #2e2317;
+
+      --color-danger: #f4756e;
+
+      /* Not the light theme's token with the ramp swapped: `--color-content`
+       * is #e8eaf0 here, and a white wash over a near-black roster reads as
+       * fog rather than as "unavailable". A dark theme scrims by going
+       * darker still, so this is the ramp's floor (#090b11) at a higher
+       * alpha, which is what it takes to register against grounds that are
+       * already dark.
+       *
+       * 0.70, not the light theme's 0.45, because the themes have to be
+       * matched on what a reader perceives — how far the veiled region
+       * drops — and not on the alpha. Measured as the mean luminance of
+       * the whole roster region, screenshot composited to canvas, panel
+       * shut vs scrimmed: light falls 0.908 → 0.283, a factor of 3.2. Dark
+       * fell 2.1× at 0.62 and 2.3× at 0.70.
+       *
+       * It does not reach 3.2 and cannot: the ground is already at the
+       * ramp's floor, so essentially all of the region's light is its
+       * *text*, and alpha composites in sRGB where that text's luminance
+       * falls off far more slowly than the arithmetic suggests. Matching
+       * light exactly would take an alpha near 0.95 — a region erased
+       * rather than veiled, which loses the "your roster is still there,
+       * just not right now" reading the scrim exists to give. 2.3× is the
+       * most the dark ramp has to give before the veil stops being a veil.
+       *
+       * (A WCAG-style ratio is the wrong instrument for this particular
+       * number — its +0.05 flare term swamps luminances this small,
+       * reporting 1.10:1 for a region that has visibly lost more than half
+       * its light. It is the right instrument for text pairs, which is why
+       * every other figure in this file is one.) */
+      --color-scrim: rgb(9 11 17 / 0.7);
     }
   }
 }
@@ -49,7 +215,7 @@
     --inset-bottom: env(safe-area-inset-bottom, 0px);
     --inset-left: env(safe-area-inset-left, 0px);
 
-    font-family: var(--font-system);
+    font-family: var(--font-sans);
     color: var(--color-content);
     background-color: var(--color-surface);
     font-synthesis: none;
@@ -79,5 +245,21 @@
   .selectable {
     -webkit-user-select: text;
     user-select: text;
+  }
+
+  /* Motion budget (spec §8): almost none, deliberately. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
 }

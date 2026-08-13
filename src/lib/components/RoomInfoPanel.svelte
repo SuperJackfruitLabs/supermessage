@@ -44,9 +44,35 @@
   import { roomInfo, type RoomInfo } from "$lib/ipc";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
-  import { initial, memberDisplayName, roomDisplayName } from "./roomInfoView";
+  import { parseRoomIdentity, roomInitial } from "./roomIdentity";
+  import { initial, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
 
-  let { roomId, onClose }: { roomId: string; onClose: () => void } = $props();
+  /**
+   * `modal` is set only in the overlay geometry (`+page.svelte`'s
+   * `panelIsModal`). It is the *entire* behavioural difference between the
+   * panel's two lives: as a third column this is an ordinary
+   * `complementary` region that covers nothing and traps nothing, and it
+   * must stay that way — a dialog role and a focus move at 1905px would
+   * be a regression, not a fix.
+   */
+  let {
+    roomId,
+    onClose,
+    modal = false,
+  }: { roomId: string; onClose: () => void; modal?: boolean } = $props();
+
+  /**
+   * The panel root, so focus can be moved into the dialog when it opens as
+   * an overlay.
+   *
+   * Focus lands on the container rather than on `Close room info` for two
+   * reasons: a screen reader then announces the dialog's name and role
+   * ("Room info, dialog") instead of just naming a button, and the reader
+   * starts at the top of the panel's content rather than one Tab past it.
+   * `tabindex="-1"` below is what makes the container focusable without
+   * adding a tab stop.
+   */
+  let panelRoot = $state<HTMLElement | null>(null);
 
   const avatarCache = createAvatarCache();
   const memberAvatarCache = createMemberAvatarCache();
@@ -57,6 +83,7 @@
   let copied = $state(false);
 
   onMount(() => {
+    if (modal) panelRoot?.focus();
     roomInfo(roomId)
       .then((result) => {
         info = result;
@@ -101,12 +128,53 @@
   }
 </script>
 
+<!--
+  `max-w-full` alongside `w-80 shrink-0`: below 1238px `+page.svelte` renders
+  this as an overlay pinned to the right of the room pane rather than as a
+  third column, and on a viewport narrower than the panel itself a
+  `shrink-0` flex item would simply hang off the edge. `max-width` clamps a
+  flex item's used size regardless of `shrink-0`, so this is the one guard
+  that holds at every width; it never binds in the column layout.
+
+  `padding-right: var(--inset-right)`: this panel is the rightmost content
+  on screen whenever it renders — the third column in the wide layout, and
+  an overlay flush to the pane's right edge in the collapsed one — so it is
+  the element that has to clear the right safe area. `+page.svelte`'s
+  `<section>` gives the padding up exactly when this panel takes a column of
+  its own; see `panelTakesColumn` there.
+
+  `role="dialog"` overrides this element's implicit `complementary` role
+  when — and only when — it is the modal overlay, so the existing
+  `aria-label` becomes the dialog's accessible name and nothing is
+  duplicated. In the column layout `role` and `aria-modal` are both
+  `undefined` and this is the same `complementary` region it always was.
+
+  `tabindex="-1"` is unconditional and static rather than tied to `modal`,
+  which is a compiler concession worth naming: a *dynamic* tabindex trips
+  `a11y_no_noninteractive_tabindex`, because the analyser cannot prove the
+  expression is negative. A constant `-1` adds no tab stop in either
+  layout — it only makes the element focusable by script, which is what
+  the modal open needs and what the column layout simply never uses.
+-->
 <aside
+  bind:this={panelRoot}
   aria-label="Room info"
-  class="flex h-full w-80 shrink-0 flex-col overflow-y-auto border-l border-border bg-surface-sunken"
+  role={modal ? "dialog" : undefined}
+  aria-modal={modal ? "true" : undefined}
+  tabindex="-1"
+  class="flex h-full w-80 max-w-full shrink-0 flex-col overflow-y-auto border-l border-border bg-surface-sunken"
+  style="padding-right: var(--inset-right);"
 >
   <div class="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-    <h2 class="text-sm font-semibold text-content">Room info</h2>
+    <!--
+      `text-ui-lg`, the room header's own rank (spec §4), not the `text-sm`
+      this shipped with: this bar and the room header two inches to its
+      left are the same kind of object — a pane's title strip — and were
+      set in two different type systems, one on the scale and one off it.
+      The weight comes with the token (`--text-ui-lg--font-weight: 600`),
+      so no `font-semibold` here.
+    -->
+    <h2 class="text-ui-lg text-content">Room info</h2>
     <button
       type="button"
       onclick={onClose}
@@ -118,12 +186,13 @@
   </div>
 
   {#if loading}
-    <p class="px-4 py-6 text-center text-sm text-content-muted">Loading…</p>
+    <p class="px-4 py-6 text-center text-ui text-content-muted">Loading…</p>
   {:else if loadError}
-    <p class="px-4 py-6 text-center text-sm text-content-muted">{loadError}</p>
+    <p class="px-4 py-6 text-center text-ui text-content-muted">{loadError}</p>
   {:else if info}
     {@const currentRoomId = info.roomId}
     {@const avatar = avatarCache.get(currentRoomId)}
+    {@const identity = parseRoomIdentity(roomDisplayName(info))}
     <div class="flex flex-col items-center gap-2 border-b border-border px-4 py-5">
       {#if avatar}
         <img
@@ -135,52 +204,95 @@
         />
       {:else}
         <span
-          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-xl font-medium text-content"
+          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-avatar text-content"
           aria-hidden="true"
         >
-          {initial(roomDisplayName(info))}
+          {roomInitial(identity)}
         </span>
       {/if}
-      <p class="selectable max-w-full text-center text-base font-semibold break-words text-content">
-        {roomDisplayName(info)}
+      <p class="selectable max-w-full text-center text-ui-lg break-words text-content">
+        {identity.name}
       </p>
+      {#if identity.role !== null}
+        <span
+          class="shrink-0 truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+        >
+          {identity.role}
+        </span>
+      {/if}
     </div>
 
     {#if info.topic}
       <div class="border-b border-border px-4 py-3">
-        <h3 class="mb-1 text-xs font-medium text-content-muted">Topic</h3>
-        <p class="selectable text-sm break-words text-content">{info.topic}</p>
+        <h3 class="mb-1 font-mono text-label text-content-muted uppercase">Topic</h3>
+        <p class="selectable font-serif text-body break-words text-content">{info.topic}</p>
       </div>
     {/if}
 
     {#if info.canonicalAlias || info.altAliases.length > 0}
+      <!--
+        No "Address"/"Alternative addresses" heading (spec §5.2): the
+        leading `#` sigil, rendered in --color-content-faint, is the label.
+        Canonical-vs-alternative is a distinction sighted readers no longer
+        get a heading for either — it now rides on two cues instead: the
+        canonical alias always renders first, and its rest-of-id text is a
+        touch heavier (font-medium vs the alt aliases' regular weight).
+        Neither cue reaches a screen reader (DOM order is preserved, but
+        weight isn't announced, and "first" isn't itself an announced
+        relationship), so each line also carries an sr-only prefix
+        ("Canonical address"/"Alternative address") — content a sighted
+        reader doesn't see, restoring parity rather than leaving an AT user
+        to infer canonical-ness from the mere absence of a marker on later
+        rows.
+      -->
       <div class="border-b border-border px-4 py-3">
-        <h3 class="mb-1 text-xs font-medium text-content-muted">
-          {info.canonicalAlias && info.altAliases.length > 0
-            ? "Addresses"
-            : info.altAliases.length > 0
-              ? "Alternative addresses"
-              : "Address"}
-        </h3>
+        <!--
+          Visually hidden, but a real `h3` — see the room-id section for the
+          reasoning that applies to both.
+        -->
+        <h3 class="sr-only">Addresses</h3>
         {#if info.canonicalAlias}
-          <p class="selectable text-sm break-words text-content">{info.canonicalAlias}</p>
+          {@const parsed = splitSigil(info.canonicalAlias)}
+          <p class="selectable font-mono text-meta font-medium break-words">
+            <span class="sr-only">Canonical address: </span><span class="text-content-faint"
+              >{parsed.sigil}</span
+            ><span class="text-content-muted">{parsed.rest}</span>
+          </p>
         {/if}
         {#each info.altAliases as alias (alias)}
-          <p class="selectable text-sm break-words text-content-muted">{alias}</p>
+          {@const parsed = splitSigil(alias)}
+          <p class="selectable font-mono text-meta break-words">
+            <span class="sr-only">Alternative address: </span><span class="text-content-faint"
+              >{parsed.sigil}</span
+            ><span class="text-content-muted">{parsed.rest}</span>
+          </p>
         {/each}
       </div>
     {/if}
 
+    {@const roomIdParsed = splitSigil(info.roomId)}
     <div class="border-b border-border px-4 py-3">
-      <h3 class="mb-1 text-xs font-medium text-content-muted">Room ID</h3>
+      <!--
+        Dropping the visible headings (spec §5.2) also dropped them from the
+        accessibility tree, and a heading is not only a label — it is a
+        navigation landmark. Heading-jump then skipped straight from "Topic"
+        to "N members", so the aliases and the room id became reachable only
+        by reading the panel linearly, while a sighted user still finds them
+        instantly by their sigils. `sr-only` restores the landmark without
+        putting the heading back on screen: the sigil remains the visible
+        label, and both kinds of reader get the same three stops.
+      -->
+      <h3 class="sr-only">Room ID</h3>
       <div class="flex items-center gap-2">
-        <p class="selectable min-w-0 flex-1 font-mono text-xs break-words text-content">
-          {info.roomId}
+        <p class="selectable min-w-0 flex-1 font-mono text-meta break-words">
+          <span class="text-content-faint">{roomIdParsed.sigil}</span><span
+            class="text-content-muted">{roomIdParsed.rest}</span
+          >
         </p>
         <button
           type="button"
           onclick={copyRoomId}
-          class="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
+          class="shrink-0 rounded-md border border-border px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
         >
           {copied ? "Copied" : "Copy"}
         </button>
@@ -188,7 +300,7 @@
     </div>
 
     <div class="min-h-0 flex-1 px-4 py-3">
-      <h3 class="mb-2 text-xs font-medium text-content-muted">
+      <h3 class="mb-2 font-mono text-label text-content-muted uppercase">
         {info.activeMemberCount}
         {info.activeMemberCount === 1 ? "member" : "members"}
       </h3>
@@ -206,7 +318,7 @@
               />
             {:else}
               <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-raised text-xs font-medium text-content"
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
                 aria-hidden="true"
               >
                 {initial(memberDisplayName(member))}
@@ -221,12 +333,15 @@
                 `truncate` (nowrap + ellipsis) would also just hide a long
                 name outright rather than let the reader see it wrap.
               -->
-              <span class="selectable block text-sm text-content break-words">
+              <span class="selectable block font-sans text-ui text-content break-words">
                 {memberDisplayName(member)}
               </span>
               {#if member.displayName}
-                <span class="selectable block text-xs text-content-muted break-words">
-                  {member.userId}
+                {@const parsedMember = splitSigil(member.userId)}
+                <span class="selectable block font-mono text-meta break-words">
+                  <span class="text-content-faint">{parsedMember.sigil}</span><span
+                    class="text-content-muted">{parsedMember.rest}</span
+                  >
                 </span>
               {/if}
             </span>

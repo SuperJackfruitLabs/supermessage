@@ -221,12 +221,28 @@
   }
 </script>
 
+<!--
+  Separation from the timeline/typing indicator above is a ground change
+  (surface → surface-sunken), not a hairline: this strip and `Timeline`'s
+  date-divider rule already lean on hairlines constantly (roster rows, the
+  room header, the connection banner), so one more directly under the
+  typing indicator would just read as a fourth stacked bar rather than a
+  boundary. A change of ground reads as a distinct zone — "you have left
+  the reading surface and entered the instrument" — without adding a line,
+  and it's consistent with `--color-surface-sunken`'s existing job as the
+  inset/well tone (roster, info panel, and formerly this same textarea).
+  Deliberately no border-t on any of the three strips below: they now share
+  one ground and read as a single contiguous instrument rather than three
+  independently bordered bars.
+-->
 {#if replyTarget}
-  <div class="flex shrink-0 items-center gap-2 border-t border-border bg-surface-sunken px-4 py-2 text-xs">
-    <div class="min-w-0 flex-1 truncate">
-      <span class="font-medium text-content">Replying to {replyTarget.sender}</span>
+  <div class="flex shrink-0 items-start gap-2 border-l-2 border-l-accent bg-surface-sunken px-4 py-2">
+    <div class="min-w-0 flex-1">
+      <p class="truncate font-mono text-label text-content-muted uppercase">
+        Replying to {replyTarget.sender}
+      </p>
       {#if replyTarget.excerpt}
-        <span class="text-content-muted">— {replyTarget.excerpt}</span>
+        <p class="mt-0.5 truncate font-serif text-meta text-content-muted">{replyTarget.excerpt}</p>
       {/if}
     </div>
     <button
@@ -240,29 +256,85 @@
   </div>
 {/if}
 {#if sendError}
-  <div class="flex shrink-0 items-center border-t border-border bg-surface-sunken px-4 py-2 text-xs">
-    <p class="selectable text-danger" role="alert">{sendError}</p>
+  <div class="flex shrink-0 flex-col gap-0.5 bg-surface-sunken px-4 py-2">
+    <span class="font-mono text-label text-danger uppercase">Send failed</span>
+    <p class="selectable text-ui text-content" role="alert">{sendError}</p>
   </div>
 {/if}
 <div
-  class="flex shrink-0 items-end gap-2 border-t border-border bg-surface px-4 py-3"
+  class="flex shrink-0 items-end gap-2 bg-surface-sunken px-4 py-3"
   style="padding-bottom: calc(0.75rem + var(--inset-bottom));"
 >
-  <textarea
-    bind:value
-    onkeydown={handleKeydown}
-    oninput={handleInput}
-    disabled={sending}
-    rows="1"
-    placeholder={replyTarget ? `Reply to ${replyTarget.sender}…` : "Message…"}
-    class="max-h-40 min-h-10 flex-1 resize-none rounded-md border border-border bg-surface-sunken px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
-  ></textarea>
+  <div
+    class="flex min-w-0 flex-1 items-end gap-1.5 rounded-md px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
+  >
+    <span class="shrink-0 pb-1.5 font-mono text-content-faint" aria-hidden="true">›</span>
+    <textarea
+      bind:value
+      onkeydown={handleKeydown}
+      oninput={handleInput}
+      disabled={sending}
+      rows="1"
+      placeholder={replyTarget ? `Reply to ${replyTarget.sender}…` : "Message…"}
+      class="max-h-40 min-h-10 flex-1 resize-none bg-transparent py-1 font-sans text-ui text-content outline-none placeholder:text-content-faint disabled:opacity-60"
+    ></textarea>
+  </div>
+  <!--
+    Disabled is a *ghost*, not a faded fill. `disabled:opacity-60` over the
+    accent fill measured 2.04:1 light / 2.17:1 dark. WCAG exempts inactive
+    controls, so that was not a violation — but this button is disabled
+    whenever the composer is empty, which is most of the time, and an
+    illegible label on the primary instrument's main control most of the
+    time is a usability problem the exemption does not make go away.
+    Dropping the fill rather than fading it keeps the label readable *and*
+    strengthens the inert signal instead of weakening it: an unfilled
+    button plainly is not the primary action, whereas a washed-out filled
+    one just looks broken.
+
+    **The label is `content-muted`, and the ground is not `surface`.** The
+    commit that made this a ghost recorded the label at 4.92:1 — which is
+    `content-faint` on `--color-surface`, a ground this button has never
+    had. Dropping the fill exposes whatever is behind it, and that is the
+    composer tray: `--color-surface-sunken`. Re-measured there by
+    compositing the painted stack, `content-faint` is **4.516:1 light /
+    4.911:1 dark** — over §9's floor, but in light by 0.016, which is
+    rounding, not margin. So the rank moves up one: `content-muted` on the
+    same ground measures **7.492:1 light / 9.697:1 dark** — not the 8.2:1
+    muted reads on the sheet, for the same reason the faint figure moved:
+    the ground here is sunken, and every number about this button has to
+    be taken against it.
+
+    Nothing is lost by that. The disabled state was never carried by the
+    label's colour — it is carried by the missing accent fill and the
+    hairline border that replaces it, which is exactly the argument for
+    the ghost in the first place. Fading the label *as well* was belt and
+    braces that cost legibility for a signal already fully delivered.
+
+    The border is `border-transparent` when enabled rather than absent, so
+    the box measures the same in both states — adding a border only on
+    `:disabled` would shift the button by a pixel every time the composer
+    goes from empty to non-empty, which is on the first keystroke of every
+    message.
+  -->
   <button
     type="button"
     onclick={send}
     disabled={!canSend}
-    class="shrink-0 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-opacity disabled:opacity-60"
+    class="flex shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:border-border disabled:bg-transparent disabled:text-content-muted"
   >
     Send
+    <!--
+      80%, not the spec's literal 70% (§6.4). The hint is quieter than the
+      label either way, but at 70% `--color-accent-content` composites to
+      4.32:1 (light) / 4.14:1 (dark) against `--color-accent` — under the
+      4.5:1 floor §9 sets for the same design. 80% reads 5.12:1 / 5.09:1 and
+      is still visibly secondary. Same precedent as the palette's own
+      revisions: where §9's floor and a literal value in the spec disagree,
+      the floor wins and the value moves. Measured by compositing the layer
+      stack in a canvas, not by parsing `getComputedStyle` — this element's
+      colour is an alpha over an accent ground, which is precisely the case
+      an rgba-parsing probe gets wrong.
+    -->
+    <span aria-hidden="true" class="font-mono opacity-80">⏎</span>
   </button>
 </div>

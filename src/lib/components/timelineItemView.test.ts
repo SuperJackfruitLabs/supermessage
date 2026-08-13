@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canReplyOrReact,
+  displayEventType,
   displayReactionKey,
   replyPreviewExcerpt,
   replyQuoteView,
@@ -252,6 +253,7 @@ describe("viewFor", () => {
           status: "rendered",
           fields: [{ label: "Note", value: "Deployed to staging" }],
           newerVersion: false,
+          decision: null,
         },
       });
     });
@@ -419,5 +421,49 @@ describe("displayReactionKey", () => {
     // `Array.from` at the same count it was capped to.
     const codePoints = Array.from(displayed.replace(/…$/, ""));
     expect(codePoints.every((cp) => cp === "🎉")).toBe(true);
+  });
+});
+
+describe("displayEventType", () => {
+  it("leaves a normal reverse-DNS type untouched", () => {
+    expect(displayEventType("dev.supermessage.demo.note.v1")).toBe("dev.supermessage.demo.note.v1");
+  });
+
+  it("truncates from the LEFT, keeping the informative tail, with a leading ellipsis", () => {
+    const type = `org.example.${"namespace.".repeat(20)}permission.request.v1`;
+    const displayed = displayEventType(type);
+    expect(displayed.startsWith("…")).toBe(true);
+    expect(displayed.endsWith("permission.request.v1")).toBe(true);
+    // The regression this guards: the ordinary right-truncation everything
+    // else in this module does would keep the shared namespace prefix and
+    // throw away the only part that names the event.
+    expect(displayed.endsWith("…")).toBe(false);
+    expect(displayed.startsWith("org.example.")).toBe(false);
+  });
+
+  it("caps the rendered length", () => {
+    const displayed = displayEventType("a".repeat(500));
+    // 48 kept code points plus the one-character leading ellipsis.
+    expect(Array.from(displayed)).toHaveLength(49);
+  });
+
+  it("caps by Unicode code point, not UTF-16 code unit, so it never splits a surrogate pair", () => {
+    // A Matrix event type is sender-controlled and need not be ASCII.
+    const displayed = displayEventType("🎉".repeat(80));
+    const codePoints = Array.from(displayed.replace(/^…/, ""));
+    expect(codePoints).toHaveLength(48);
+    expect(codePoints.every((cp) => cp === "🎉")).toBe(true);
+  });
+
+  it("degrades a missing, empty or whitespace-only type to 'unknown', never an empty header", () => {
+    expect(displayEventType(null)).toBe("unknown");
+    expect(displayEventType("")).toBe("unknown");
+    expect(displayEventType("   ")).toBe("unknown");
+  });
+
+  it("trims surrounding whitespace rather than rendering it", () => {
+    expect(displayEventType("  dev.supermessage.demo.note.v1  ")).toBe(
+      "dev.supermessage.demo.note.v1",
+    );
   });
 });

@@ -28,16 +28,49 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind" | "id
   };
 }
 
-function membership(id: string, detail: string | null, name: string): TimelineItem {
-  return item({ id, kind: "membership", detail, senderDisplayName: name });
+/** Overrides shape shared by every object-argument fixture builder below. */
+type ItemOverrides = Partial<TimelineItem> & Pick<TimelineItem, "id">;
+
+// `membership` and `dateDivider` below keep their original (id, ...) call
+// shape for the membership-grouping tests above, and additionally accept a
+// single overrides object — the shape the sender-run tests need (they set
+// `sender`/`timestampMs` directly, which the positional shape has no room
+// for) — via a second overload. Same fixture builder, not a second one.
+function membership(id: string, detail: string | null, name: string): TimelineItem;
+function membership(overrides: ItemOverrides): TimelineItem;
+function membership(idOrOverrides: string | ItemOverrides, detail?: string | null, name?: string): TimelineItem {
+  if (typeof idOrOverrides === "string") {
+    return item({ id: idOrOverrides, kind: "membership", detail: detail ?? null, senderDisplayName: name ?? null });
+  }
+  return item({ kind: "membership", ...idOrOverrides });
 }
 
-function message(id: string, body = "hi"): TimelineItem {
-  return item({ id, kind: "message", msgtype: "m.text", body });
+// Same two-shape pattern as `membership`/`dateDivider` above: the original
+// positional call (used throughout the membership-grouping tests) plus an
+// overrides-object overload (used by the sender-run tests below, which need
+// `sender`/`timestampMs` set per-call). Previously duplicated as a second
+// `msg()` builder; collapsed into one name per code review.
+function message(id: string, body?: string): TimelineItem;
+function message(overrides: ItemOverrides): TimelineItem;
+function message(idOrOverrides: string | ItemOverrides, body = "hi"): TimelineItem {
+  if (typeof idOrOverrides === "string") {
+    return item({ id: idOrOverrides, kind: "message", msgtype: "m.text", body });
+  }
+  return item({ kind: "message", msgtype: "m.text", body: "hi", ...idOrOverrides });
 }
 
-function dateDivider(id: string): TimelineItem {
-  return item({ id, kind: "dateDivider", timestampMs: 1_700_000_000_000 });
+function dateDivider(id: string): TimelineItem;
+function dateDivider(overrides: ItemOverrides): TimelineItem;
+function dateDivider(idOrOverrides: string | ItemOverrides): TimelineItem {
+  if (typeof idOrOverrides === "string") {
+    return item({ id: idOrOverrides, kind: "dateDivider", timestampMs: 1_700_000_000_000 });
+  }
+  return item({ kind: "dateDivider", ...idOrOverrides });
+}
+
+/** A custom-message item (`kind: "customMessage"`) — spec §7's bordered card. */
+function custom(overrides: ItemOverrides): TimelineItem {
+  return item({ kind: "customMessage", ...overrides });
 }
 
 describe("groupTimelineItems", () => {
@@ -53,7 +86,7 @@ describe("groupTimelineItems", () => {
   it("passes non-membership items through unchanged, keyed on their own id", () => {
     const msg = message("msg1");
     const rows = groupTimelineItems([msg]);
-    expect(rows).toEqual([{ type: "item", key: "msg1", item: msg }]);
+    expect(rows).toEqual([{ type: "item", key: "msg1", item: msg, continuesRun: false }]);
   });
 
   it("wraps a single membership item as a group that reads naturally (not 'and 0 others')", () => {
@@ -108,7 +141,7 @@ describe("groupTimelineItems", () => {
     ]);
     expect(rows).toHaveLength(3);
     expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice and Bob joined the room" });
-    expect(rows[1]).toEqual({ type: "item", key: "msg1", item: msg });
+    expect(rows[1]).toEqual({ type: "item", key: "msg1", item: msg, continuesRun: false });
     expect(rows[2]).toMatchObject({ type: "membershipGroup", text: "Carol joined the room" });
   });
 
@@ -121,7 +154,7 @@ describe("groupTimelineItems", () => {
     ]);
     expect(rows).toHaveLength(3);
     expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice joined the room" });
-    expect(rows[1]).toEqual({ type: "item", key: "d1", item: divider });
+    expect(rows[1]).toEqual({ type: "item", key: "d1", item: divider, continuesRun: false });
     expect(rows[2]).toMatchObject({ type: "membershipGroup", text: "Bob joined the room" });
   });
 
@@ -190,9 +223,100 @@ describe("groupTimelineItems", () => {
     const items = [message("msg1"), dateDivider("d1"), message("msg2")];
     const rows = groupTimelineItems(items);
     expect(rows).toEqual([
-      { type: "item", key: "msg1", item: items[0] },
-      { type: "item", key: "d1", item: items[1] },
-      { type: "item", key: "msg2", item: items[2] },
+      { type: "item", key: "msg1", item: items[0], continuesRun: false },
+      { type: "item", key: "d1", item: items[1], continuesRun: false },
+      { type: "item", key: "msg2", item: items[2], continuesRun: false },
     ]);
+  });
+});
+
+describe("sender runs", () => {
+  it("marks a second message from the same sender within the window", () => {
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 1_000 }),
+      message({ id: "$2", sender: "@a:x", timestampMs: 61_000 }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, true]);
+  });
+
+  it("breaks a run past the five-minute window", () => {
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
+      message({ id: "$2", sender: "@a:x", timestampMs: 5 * 60_000 + 1 }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
+  });
+
+  it("breaks a run on a different sender", () => {
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
+      message({ id: "$2", sender: "@b:x", timestampMs: 1_000 }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
+  });
+
+  it("breaks a run across a date divider", () => {
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
+      // `sender` set to match the surrounding messages — unrealistic for a
+      // real dateDivider item (which always carries `sender: null`) but
+      // deliberate here: this isolates the "message-shaped" kind check from
+      // the sender check. If the divider defaulted to its own sender, the
+      // run would break on the sender mismatch alone and this test would
+      // stay green even if the kind check were deleted entirely.
+      dateDivider({ id: "d1", sender: "@a:x", timestampMs: 500 }),
+      message({ id: "$2", sender: "@a:x", timestampMs: 1_000 }),
+    ]);
+    const flags = rows.filter((r) => r.type === "item").map((r) => r.type === "item" && r.continuesRun);
+    expect(flags).toEqual([false, false, false]);
+  });
+
+  it("breaks a run across a membership group", () => {
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
+      membership({ id: "$m", sender: "@c:x", timestampMs: 500 }),
+      message({ id: "$2", sender: "@a:x", timestampMs: 1_000 }),
+    ]);
+    const last = rows.at(-1)!;
+    expect(last.type === "item" && last.continuesRun).toBe(false);
+  });
+
+  it("never continues a run from an item with a null sender", () => {
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: null, timestampMs: 0 }),
+      message({ id: "$2", sender: null, timestampMs: 1_000 }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
+  });
+
+  it("does not continue a run into a dispatch card", () => {
+    // A custom event is a bordered object of its own (spec §7); it always
+    // carries its own header, so it neither continues nor extends a run.
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
+      custom({ id: "$2", sender: "@a:x", timestampMs: 1_000 }),
+      message({ id: "$3", sender: "@a:x", timestampMs: 2_000 }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false, false]);
+  });
+
+  it("continues a run when the current message arrives a second earlier than its predecessor", () => {
+    // Real Matrix timelines can produce out-of-order timestamps (local echo
+    // vs. server time, federation lag) — a few seconds out of order from
+    // the same sender should still read as one continuous run.
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 10_000 }),
+      message({ id: "$2", sender: "@a:x", timestampMs: 9_000 }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, true]);
+  });
+
+  it("breaks a run when the current message arrives a full day earlier than its predecessor", () => {
+    const oneDayMs = 24 * 60 * 60_000;
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 10_000 }),
+      message({ id: "$2", sender: "@a:x", timestampMs: 10_000 - oneDayMs }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
   });
 });
