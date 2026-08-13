@@ -184,7 +184,27 @@ impl Session {
     ) -> CoreResult<()> {
         let _lifecycle = self.lifecycle.lock().await;
         self.login(homeserver, username, password).await?;
-        self.start_streams(app).await
+        self.start_or_roll_back(app).await
+    }
+
+    /// Starts the streams, and on failure leaves *nothing* installed rather
+    /// than a client with no streams behind it.
+    ///
+    /// A half-started session is worse than no session: the client would
+    /// still satisfy [`Self::is_active`], so a later `restore_and_start`
+    /// short-circuits on it and the user sits in a logged-in UI with a dead
+    /// sync and an empty room list, with no way back except signing out. The
+    /// persisted session in the keyring is deliberately left alone — the
+    /// next `restore_and_start` then gets a clean full attempt instead of
+    /// minting another device with a fresh login.
+    async fn start_or_roll_back(&self, app: AppHandle) -> CoreResult<()> {
+        if let Err(err) = self.start_streams(app).await {
+            self.stop_room_list().await;
+            self.stop_sync().await;
+            *self.client.write().await = None;
+            return Err(err);
+        }
+        Ok(())
     }
 
     /// Restores a persisted session and starts its streams, as one
@@ -206,13 +226,19 @@ impl Session {
     /// for every caller, present and future.
     pub async fn restore_and_start(&self, app: AppHandle) -> CoreResult<bool> {
         let _lifecycle = self.lifecycle.lock().await;
-        if self.is_active().await {
+        // Deliberately "already *running*", not merely "a client exists".
+        // A client with no streams behind it is exactly the state a failed
+        // start leaves behind, and short-circuiting on it would strand the
+        // user in a logged-in UI with dead sync forever. `start_or_roll_back`
+        // makes that state unreachable from here; this makes the guard say
+        // what it actually means either way.
+        if self.is_running().await {
             return Ok(true);
         }
         if !self.restore().await? {
             return Ok(false);
         }
-        self.start_streams(app).await?;
+        self.start_or_roll_back(app).await?;
         Ok(true)
     }
 
@@ -333,15 +359,43 @@ impl Session {
         self.client.read().await.clone()
     }
 
-    /// Whether a session is currently active — i.e. whether a `Client` (and
-    /// therefore, since they are started together, a `SyncService` and a
-    /// room-list task) already exists.
+    /// Whether a client is logged in at all, regardless of whether its
+    /// streams are up.
+    pub async fn is_active(&self) -> bool {
+        self.client.read().await.is_some()
+    }
+
+    /// Whether a client is logged in **and** both of its streams are
+    /// running — the state a usable session is actually in.
     ///
     /// This is the predicate [`Self::restore_and_start`]'s idempotence guard
     /// is built on; see that method for what a second, unguarded restore
-    /// costs.
-    pub async fn is_active(&self) -> bool {
-        self.client.read().await.is_some()
+    /// costs. It deliberately checks the streams too and not just the
+    /// client: the two come apart, because the client is installed before
+    /// its streams start, so [`Self::is_active`] alone would also be true of
+    /// a session whose start failed half way — precisely the state the guard
+    /// must not mistake for a healthy one.
+    pub async fn is_running(&self) -> bool {
+        self.is_active().await
+            && self.sync.read().await.is_some()
+            && self.rooms.read().await.is_some()
+    }
+
+    /// Subscribes the focused timeline to `room_id`, serialized against the
+    /// session transitions.
+    ///
+    /// Holds [`Session::lifecycle`] for the same reason `logout` does, and
+    /// specifically against `logout`: without it, a subscribe landing in the
+    /// window between `logout`'s teardown and its `remove_store()` would
+    /// install a fresh timeline task holding `Arc<Timeline>` -> `Room` ->
+    /// `Client`, keeping the store's SQLite files open across the very
+    /// deletion the teardown exists to make safe. Harmless on POSIX, but on
+    /// Windows `remove_dir_all` then fails *after* the passphrase has been
+    /// dropped, leaving a store nothing can ever open again.
+    pub async fn subscribe_timeline(&self, room_id: &str, app: AppHandle) -> CoreResult<()> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let client = self.require_client().await?;
+        self.focused.subscribe(&client, room_id, app).await
     }
 
     /// Like [`Self::client`], but fails with [`CoreError::NotReady`] when
@@ -500,6 +554,17 @@ mod tests {
         assert!(
             session.is_active().await,
             "a completed login must leave the session active"
+        );
+
+        // `login` installs the client but starts no streams, which is
+        // exactly the shape a *failed* `start_streams` would leave behind.
+        // The idempotence guard must not read that as a healthy session:
+        // if it did, the redundant `restore_session` would short-circuit and
+        // the user would sit in a logged-in UI with dead sync and an empty
+        // room list, recoverable only by signing out.
+        assert!(
+            !session.is_running().await,
+            "a client with no streams behind it must not count as running"
         );
 
         // A genuine app-relaunch would build a brand new `Session` reading
