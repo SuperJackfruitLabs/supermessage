@@ -17,18 +17,16 @@
 // folded onto the old session's leftover items. Silent corruption, not
 // staleness.
 //
-// So `login`/`restoreSession` are exposed here, not (just) as bare
-// `ipc.ts` calls a future login screen might reach for directly — routing
-// session start through this store makes the re-arm structurally part of
-// starting a session rather than a step a caller has to remember. See
-// `ipc.ts`'s doc comments on `login`/`restoreSession` for the same warning
-// from the other direction.
+// So `login`/`restoreSession` are exposed here, backed by
+// `ipc.ts::makeSessionCommands`, which structurally cannot hand back a
+// working `login`/`restoreSession` function without also being given the
+// re-arm callback — see that function's doc comment for why a bare export
+// with a warning comment wasn't enough.
 
 import {
-  login as defaultLogin,
   logout as defaultLogout,
+  makeSessionCommands as defaultMakeSessionCommands,
   onRoomsDiff as defaultOnRoomsDiff,
-  restoreSession as defaultRestoreSession,
   roomsResync as defaultRoomsResync,
   type RoomSummary,
 } from "$lib/ipc";
@@ -38,16 +36,14 @@ import { timelineStore } from "./timeline.svelte";
 export interface RoomsStoreDeps {
   roomsResync: typeof defaultRoomsResync;
   onRoomsDiff: typeof defaultOnRoomsDiff;
-  login: typeof defaultLogin;
-  restoreSession: typeof defaultRestoreSession;
+  makeSessionCommands: typeof defaultMakeSessionCommands;
   logout: typeof defaultLogout;
 }
 
 const defaultDeps: RoomsStoreDeps = {
   roomsResync: defaultRoomsResync,
   onRoomsDiff: defaultOnRoomsDiff,
-  login: defaultLogin,
-  restoreSession: defaultRestoreSession,
+  makeSessionCommands: defaultMakeSessionCommands,
   logout: defaultLogout,
 };
 
@@ -63,24 +59,10 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     },
   });
 
-  /**
-   * Logs in and re-arms the room-list tracker for the session the core is
-   * about to start streaming. Re-arms *before* calling `login` — the
-   * backend spawns its streaming task, which can emit its first envelope,
-   * before the `login` command's promise resolves back here, so the reset
-   * must be in place before that race can happen (same reasoning as
-   * `timelineStore.subscribeTo`).
-   */
-  async function login(homeserver: string, username: string, password: string): Promise<void> {
-    gapSync.resetForNewSubscription();
-    await deps.login(homeserver, username, password);
-  }
-
-  /** Restores a persisted session, if any, re-arming the tracker the same way `login` does. */
-  async function restoreSession(): Promise<boolean> {
-    gapSync.resetForNewSubscription();
-    return deps.restoreSession();
-  }
+  // The only way to obtain `login`/`restoreSession` — supplying the arm
+  // callback isn't optional, it's how you get the functions in the first
+  // place.
+  const { login, restoreSession } = deps.makeSessionCommands(() => gapSync.resetForNewSubscription());
 
   /**
    * Logs out and clears local room/selection state. Re-arms the tracker

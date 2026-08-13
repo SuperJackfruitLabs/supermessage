@@ -85,31 +85,37 @@ export async function coreStatus(): Promise<CoreStatus> {
 }
 
 /**
- * Logs in with a homeserver, username and password, then starts syncing.
+ * Builds the `login`/`restoreSession` commands, each wired to call `onArm`
+ * *before* invoking the underlying Tauri command.
  *
- * Do not call this directly to start a session — call `roomsStore.login`
- * instead. The core restarts its room-list sequence counter from scratch
- * every time this starts streaming (`SeqCounter::default()` inside
- * `spawn_room_list`, run again on every login), and `roomsStore.login`
- * re-arms the room-list `DiffTracker` for that before calling this. Calling
- * this bare function directly leaves the tracker expecting the previous
- * session's sequence numbers, and the new session's early diffs get
- * silently dropped as apparent duplicates rather than triggering a resync —
- * see `rooms.svelte.ts`'s module doc comment for the full hazard.
- */
-export async function login(homeserver: string, username: string, password: string): Promise<void> {
-  await invoke<void>("login", { homeserver, username, password });
-}
-
-/**
- * Attempts to restore a previously persisted session. `false` = nothing to
- * restore.
+ * `login` and `restore_session` are deliberately **not** exported as bare
+ * functions the way every other command in this file is. The core restarts
+ * its room-list sequence counter from scratch every time either of them
+ * starts streaming (`SeqCounter::default()` inside `spawn_room_list`, run
+ * again on every `start_streams` call), so whatever calls them must first
+ * re-arm the room-list `DiffTracker` — see `rooms.svelte.ts`'s module doc
+ * comment for the full hazard this guards against.
  *
- * Same warning as `login`: call `roomsStore.restoreSession` instead of this
- * directly — it re-arms the room-list tracker first for the same reason.
+ * A doc-comment warning on a bare exported function isn't enough — nothing
+ * stops a future caller from importing it directly and skipping the
+ * re-arm, silently reintroducing the corruption. Requiring `onArm` as a
+ * constructor argument instead means there is no way to obtain a working
+ * `login`/`restoreSession` function without supplying it: the arm is part
+ * of the function's own body, not a step the caller has to remember to
+ * take first. `rooms.svelte.ts` is the sole caller, passing its
+ * `gapSync.resetForNewSubscription` as `onArm`.
  */
-export async function restoreSession(): Promise<boolean> {
-  return invoke<boolean>("restore_session");
+export function makeSessionCommands(onArm: () => void) {
+  return {
+    async login(homeserver: string, username: string, password: string): Promise<void> {
+      onArm();
+      await invoke<void>("login", { homeserver, username, password });
+    },
+    async restoreSession(): Promise<boolean> {
+      onArm();
+      return invoke<boolean>("restore_session");
+    },
+  };
 }
 
 /** Logs out, clearing the session, secrets and local stores. */
