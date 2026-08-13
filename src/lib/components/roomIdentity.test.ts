@@ -70,21 +70,62 @@ describe("parseRoomIdentity", () => {
     expect(parseRoomIdentity(" — ").name).toBe("Unnamed room");
   });
 
-  it("bounds an astral-heavy name without splitting a surrogate pair", () => {
-    // An emoji-heavy hostile name reaches the 120/40-code-unit boundary far
-    // sooner than an ASCII one does — each 🧠 is two UTF-16 code units, so a
-    // naive `.slice(0, max)` lands mid-pair long before 120 *characters* of
-    // ASCII would. `bound()` must count code points, not code units.
-    const astral = "🧠".repeat(200);
-    const parsed = parseRoomIdentity(`${astral} — ${astral}`);
+  it("bounds a name/role at an odd offset without splitting a surrogate pair", () => {
+    // `MAX_NAME_CHARS` (120) and `MAX_ROLE_CHARS` (40) are both even, and
+    // every 𝕏 is a 2-code-unit surrogate pair — so an *all-astral* run cuts
+    // cleanly at those lengths even under a naive `s.slice(0, max)` (which
+    // counts UTF-16 code units), by pure coincidence of parity. That
+    // coincidence would hide a code-unit-based regression completely. A
+    // single leading BMP character ("a") shifts every following pair onto
+    // an odd offset, so a naive slice lands its cut *inside* a pair instead
+    // of between two: `"a" + "𝕏".repeat(200)` naively sliced to 120 code
+    // units keeps "a" plus 119 units of astral content — 59 whole pairs and
+    // one lone leading (high) surrogate.
+    const name = `a${"𝕏".repeat(200)}`;
+    const role = `a${"𝕏".repeat(60)}`;
+    const parsed = parseRoomIdentity(`${name} — ${role}`);
+
     expect([...parsed.name].length).toBeLessThanOrEqual(120);
     expect([...parsed.role!].length).toBeLessThanOrEqual(40);
-    // A lone (unpaired) surrogate is the concrete symptom of a code-unit
-    // cut. Rebuilding each value from its own code points and comparing
-    // back is a stronger check than a regex: if the string round-trips
-    // unchanged, every code point in it is intact.
-    expect([...parsed.name].join("")).toBe(parsed.name);
-    expect([...parsed.role!].join("")).toBe(parsed.role);
+
+    // The concrete, direct symptom of a code-unit cut: iterating with
+    // `[...s]` yields a lone surrogate as its own single-element
+    // "character" once it's no longer paired. Assert every element is a
+    // real code point outside the surrogate range, rather than a
+    // round-trip check (`[...s].join("") === s` holds for *any* string,
+    // including one containing a lone surrogate, so it proves nothing).
+    for (const ch of parsed.name) {
+      const cp = ch.codePointAt(0)!;
+      expect(cp < 0xd800 || cp > 0xdfff).toBe(true);
+    }
+    for (const ch of parsed.role!) {
+      const cp = ch.codePointAt(0)!;
+      expect(cp < 0xd800 || cp > 0xdfff).toBe(true);
+    }
+  });
+
+  it("keeps an 8-code-point ZWJ sequence as a glyph, at the boundary", () => {
+    // "👩‍❤️‍💋‍👨" (the "kiss: woman, man" ZWJ sequence) is exactly 8 code
+    // points: WOMAN, ZWJ, HEAVY BLACK HEART, VARIATION SELECTOR-16, ZWJ,
+    // KISS MARK, ZWJ, MAN. It must still parse as a single glyph.
+    const kiss = "👩‍❤️‍💋‍👨";
+    expect([...kiss].length).toBe(8);
+    const parsed = parseRoomIdentity(`${kiss} Newlyweds — Support`);
+    expect(parsed.glyph).toBe(kiss);
+    expect(parsed.name).toBe("Newlyweds");
+  });
+
+  it("rejects a long astral run as a glyph — it's a word, not a symbol", () => {
+    // Nothing about "outside ASCII, followed by whitespace" otherwise stops
+    // an enormous astral-only run with no internal whitespace from reading
+    // as one giant "glyph" token. It must fall back to being read as (part
+    // of) the name instead, whole and untruncated by the glyph path.
+    const word = "𝕏".repeat(50_000);
+    const parsed = parseRoomIdentity(`${word} Something`);
+    expect(parsed.glyph).toBeNull();
+    // Bounded by MAX_NAME_CHARS like any other long name — not silently
+    // dropped, and not truncated to a handful of characters as a "glyph".
+    expect([...parsed.name].length).toBeLessThanOrEqual(120);
   });
 });
 

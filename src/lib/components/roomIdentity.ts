@@ -93,6 +93,16 @@ const EM_DASH_CODEPOINT = 0x2014;
 const LEADING_TOKEN = /^(\S+)\s/;
 
 /**
+ * Upper bound, in code points, on a run that can still count as a single
+ * glyph — see {@link looksLikeGlyph}. A ZWJ family sequence like
+ * 👨‍👩‍👧‍👦 (four person emoji joined by three ZWJs) is 7 code points, and a
+ * flag or keycap sequence with a variation selector is well under that, so
+ * 8 admits every real emoji cluster while still rejecting a run that is
+ * obviously a word rather than a symbol.
+ */
+const MAX_GLYPH_CODE_POINTS = 8;
+
+/**
  * Caps `s` at `max` **code points**, not UTF-16 code units. Iterates via
  * `[...s]` and slices the resulting array rather than `s.slice(0, max)`,
  * which counts code units and can cut a surrogate pair in half — precisely
@@ -105,6 +115,20 @@ const LEADING_TOKEN = /^(\S+)\s/;
  * (`text-overflow: ellipsis` or similar) owns visual truncation, the way
  * every other roster/header string in this codebase already relies on CSS
  * rather than a hard-truncated string with its own `…`.
+ *
+ * This is code-point-safe, not grapheme-cluster-safe: a cut landing inside
+ * a ZWJ sequence still splits it into its component code points rather
+ * than keeping the cluster whole. That's a deliberate, narrower guarantee
+ * than {@link looksLikeGlyph}'s, not an oversight: the one place a
+ * mangled cluster would actually be conspicuous — the glyph — is never
+ * routed through `bound()` at all (see {@link MAX_GLYPH_CODE_POINTS}; a
+ * glyph candidate that's too long to plausibly be a cluster is rejected as
+ * a glyph entirely, not truncated into one). `name` and `role` are long
+ * display strings where a cut at 120/40 code points already reads as a
+ * cut; a boundary that happens to land mid-cluster there is cosmetically
+ * indistinguishable from one that lands between two independent
+ * characters, so the extra grapheme-aware bookkeeping (`Intl.Segmenter`)
+ * buys nothing a reader would notice.
  */
 function bound(s: string, max: number): string {
   const codePoints = [...s];
@@ -114,7 +138,8 @@ function bound(s: string, max: number): string {
 /**
  * Whether `token` (the run of non-whitespace characters before the first
  * space) is shaped like a glyph rather than an ordinary word: its first
- * code point must be outside the ASCII range. Iterates code points
+ * code point must be outside the ASCII range, and the whole run must not
+ * exceed {@link MAX_GLYPH_CODE_POINTS}. Iterates code points
  * (`[...token]`), not UTF-16 code units, so a check against an astral
  * character (anything above U+FFFF, encoded as a surrogate pair) reads its
  * whole first code point rather than half of it — the exact bug this
@@ -129,12 +154,27 @@ function bound(s: string, max: number): string {
  * `"— Squad Lead"`, which has no whitespace *before* the dash and so never
  * matches {@link SEPARATOR} either) must come back as that whole string
  * verbatim rather than having the dash misread as a one-character glyph.
+ *
+ * The length cap exists because a "glyph" is meant to be one character for
+ * an avatar circle, and nothing about "outside ASCII, followed by
+ * whitespace" otherwise stops a 50,000-code-point run of astral characters
+ * (a single all-caps mathematical-alphanumeric "word", say) from qualifying
+ * — it has no internal whitespace, so it reads as one giant token. Rejecting
+ * it as a glyph, rather than truncating it into one, is deliberate: a
+ * 50,000-code-point run is not an over-long glyph, it's a word, and cutting
+ * it down to 8 code points would silently discard the other 49,992 instead
+ * of leaving them where a caller can still read them, in `name`.
  */
 function looksLikeGlyph(token: string): boolean {
-  const first = [...token][0];
+  const codePoints = [...token];
+  const first = codePoints[0];
   if (first === undefined) return false;
   const codePoint = first.codePointAt(0)!;
-  return codePoint > 0x7f && codePoint !== EM_DASH_CODEPOINT;
+  return (
+    codePoint > 0x7f &&
+    codePoint !== EM_DASH_CODEPOINT &&
+    codePoints.length <= MAX_GLYPH_CODE_POINTS
+  );
 }
 
 /**
