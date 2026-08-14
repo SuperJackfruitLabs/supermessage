@@ -194,3 +194,56 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
     expect(store.rooms.map((r) => r.id)).toEqual(["!next:y"]);
   });
 });
+
+// The roster is a *view* of the account's rooms, and since the spaces rail
+// landed the reader can narrow it. The room pane must survive that: design
+// §7 requires the open room to keep showing when a space filter excludes it.
+//
+// The timeline half of that is free — nothing re-subscribes. The header was
+// not: it looked the selected id up in `rooms` and, finding nothing, fell
+// back to the raw `!id:server`. This is the store-side half of the fix.
+describe("the selected room's name", () => {
+  function named(id: string, name: string): RoomSummary {
+    return { ...room(id), name };
+  }
+
+  it("comes from the live roster entry, so a rename lands immediately", () => {
+    const channel = makeChannel();
+    const store = makeStore(channel);
+    channel.emit(env(1, [{ op: "reset", values: [named("!a:x", "🧠 Buddhimaan — Squad Lead")] }]));
+    store.select("!a:x");
+
+    channel.emit(env(2, [{ op: "set", index: 0, value: named("!a:x", "🧠 Buddhimaan — Fleet Lead") }]));
+
+    expect(store.selectedRoomName).toBe("🧠 Buddhimaan — Fleet Lead");
+  });
+
+  it("survives the selected room being filtered out of the roster", () => {
+    // Exactly what a space switch does: the core re-emits the roster as a
+    // Reset that no longer contains the open room. The selection, the
+    // timeline and the name all have to outlive it.
+    const channel = makeChannel();
+    const store = makeStore(channel);
+    channel.emit(
+      env(1, [{ op: "reset", values: [named("!a:x", "🧠 Buddhimaan — Squad Lead"), named("!b:x", "Ops")] }]),
+    );
+    store.select("!a:x");
+
+    channel.emit(env(2, [{ op: "reset", values: [named("!b:x", "Ops")] }]));
+
+    expect(store.selectedId).toBe("!a:x");
+    expect(store.selectedRoomName).toBe("🧠 Buddhimaan — Squad Lead");
+  });
+
+  it("is null with nothing selected, and again after logout", async () => {
+    const channel = makeChannel();
+    const store = makeStore(channel);
+    expect(store.selectedRoomName).toBeNull();
+
+    channel.emit(env(1, [{ op: "reset", values: [named("!a:x", "Ops")] }]));
+    store.select("!a:x");
+    await store.logout();
+
+    expect(store.selectedRoomName).toBeNull();
+  });
+});

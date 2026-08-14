@@ -337,6 +337,54 @@ export interface Reaction {
 }
 
 /**
+ * One joined space, mirroring `SpaceSummary` from
+ * `src-tauri/src/core/spaces.rs`. Returned by {@link spacesList}; the rail
+ * (`$lib/components/SpacesRail.svelte`) is its only consumer.
+ *
+ * A space **is a room** — same state, same timeline, marked only by
+ * `m.room.type: "m.space"` — which is why `name` gets parsed by the same
+ * `parseRoomIdentity` the roster uses (a space can carry the `glyph — Name
+ * — Role` structure too) and why its avatar is fetched with the ordinary
+ * {@link roomAvatar}, keyed on this `id`.
+ */
+export interface SpaceSummary {
+  id: string;
+  /**
+   * The space's display name, **never empty**: the core falls back to the
+   * room id, the same convention `RoomSummary.name` follows. Still
+   * server-controlled text — bound and escape it like any other such
+   * string, never `{@html}`.
+   */
+  name: string;
+  /**
+   * The space's own `m.room.avatar` as a raw `mxc://` URI, or `null`.
+   * **Not loadable image data** and not a reason to skip the fetch — the
+   * same rules as {@link RoomSummary.avatarUrl}: call {@link roomAvatar}
+   * with this space's `id` unconditionally and let it resolve.
+   *
+   * Unlike a room's, this has no hero/two-person fallback behind it: those
+   * rules infer a *conversation's* picture from the person on the other
+   * side, and a space is not a conversation. A space with no avatar shows
+   * its parsed initial in the rail (spaces-rail design §6).
+   */
+  avatarUrl: string | null;
+  /**
+   * How many **joined** rooms the reader will actually see when they select
+   * this space: the size of the flattened subtree, which is the very list
+   * that becomes the roster's filter. Not the `m.space.child` count —
+   * children we have not joined, and nested spaces, are excluded, because a
+   * space advertising twelve and then revealing four is worse than showing
+   * no number at all.
+   *
+   * **`0` is a real, expected value**, not a "still loading" state: a space
+   * whose joined children are all gone is still a space, and selecting it
+   * yields an empty roster. Render it as the honest answer, never as an
+   * error or a spinner.
+   */
+  childCount: number;
+}
+
+/**
  * Mirrors `CoreError::kind()` from `src-tauri/src/core/error.rs`.
  *
  * `"roomChanged"` is distinct from `"protocol"`/`"notReady"` on purpose: it
@@ -374,6 +422,17 @@ export interface Reaction {
  *   switching back, while this one means there is nothing left to recover.
  *   See `$lib/components/stagedAttachment.ts`'s `attachmentFailure`, which
  *   is the one place that mapping is written down.
+ *
+ * `"unknownSpace"` is a refusal in that same sense — nothing was filtered,
+ * the roster is exactly as it was — and it is the one kind here with a
+ * mandated *recovery*, not just a message: {@link spaceSelect} named a space
+ * this account has not joined (it was left, or it never existed), so the
+ * rail is highlighting an entry that is gone. The caller must re-fetch
+ * {@link spacesList} and move its selection back to "All rooms". The core
+ * deliberately refuses rather than quietly widening the roster, which would
+ * show every room in the account underneath a highlight still claiming to
+ * be scoped to one space. See `$lib/stores/spaces.svelte.ts`, which is the
+ * one place that recovery is implemented.
  */
 export type CoreErrorKind =
   | "auth"
@@ -383,7 +442,8 @@ export type CoreErrorKind =
   | "notReady"
   | "roomChanged"
   | "attachmentTooLarge"
-  | "unknownAttachment";
+  | "unknownAttachment"
+  | "unknownSpace";
 
 /**
  * Mirrors the serialized shape of `CoreError`. Every command in this file
@@ -568,6 +628,53 @@ export async function logout(): Promise<void> {
  */
 export async function roomsResync(): Promise<[number, RoomSummary[]]> {
   return invoke<[number, RoomSummary[]]>("rooms_resync");
+}
+
+/**
+ * The account's joined spaces, sorted by name — see {@link SpaceSummary}.
+ *
+ * A one-shot fetch, not a third diff-streamed channel (spaces-rail design
+ * §5): spaces change far less than the room list, so this is `room_info`'s
+ * shape rather than `rooms_resync`'s. Re-invoke on session start, and after
+ * an {@link spaceSelect} `"unknownSpace"` refusal.
+ *
+ * Rejects with a `"notReady"`-kind {@link CoreError} before login.
+ */
+export async function spacesList(): Promise<SpaceSummary[]> {
+  return invoke<SpaceSummary[]>("spaces_list");
+}
+
+/**
+ * Scopes the roster to `spaceId`'s flattened subtree; `null` restores every
+ * room, which is the rail's "All rooms" entry.
+ *
+ * **Resolves as soon as the selection is queued, not once the roster has
+ * changed** — and the re-filtered roster is not this function's return
+ * value. It arrives afterwards on the ordinary {@link onRoomsDiff} channel
+ * as a `Reset`-bearing envelope carrying **the next sequence number**, like
+ * every other batch the core emits.
+ *
+ * So a caller must **not** call {@link roomsResync} and must **not** re-arm
+ * the room-list `DiffTracker` in response to selecting a space. Both are the
+ * corruption hazard `$lib/stores/rooms.svelte.ts`'s module doc comment
+ * describes at length: the tracker only detects gaps *forward*, so telling
+ * it to expect a fresh sequence for a stream that is not restarting makes
+ * the very next envelope read as an already-applied duplicate, silently
+ * dropped, with later ops folding onto stale items. The continuity is
+ * structural core-side (`drive_room_list` has one counter and one emit
+ * path), and this is the webview's half of keeping it.
+ *
+ * Never touches the focused room or its timeline (design §7): **a space
+ * switch must not re-subscribe the timeline**, and if the open room is
+ * filtered out of the roster the room pane keeps showing it.
+ *
+ * Rejects with a `"notReady"`-kind {@link CoreError} before login, and an
+ * `"unknownSpace"`-kind one for a space this account has not joined —
+ * without filtering anything. See {@link CoreErrorKind} for the recovery
+ * that kind obliges.
+ */
+export async function spaceSelect(spaceId: string | null): Promise<void> {
+  await invoke<void>("space_select", { spaceId });
 }
 
 /** Subscribes to `roomId`'s timeline, replacing any previously focused room. */

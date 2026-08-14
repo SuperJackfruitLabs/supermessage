@@ -19,11 +19,14 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
+  import { spacesStore } from "$lib/stores/spaces.svelte";
   import { connectionStore } from "$lib/stores/connection.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { parseRoomIdentity, roomInitial } from "$lib/components/roomIdentity";
+  import { railEntries } from "$lib/components/spacesRailView";
   import type { ConnectionState } from "$lib/ipc";
   import RoomList from "$lib/components/RoomList.svelte";
+  import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
   import Composer from "$lib/components/Composer.svelte";
@@ -71,15 +74,42 @@
    * here precisely *because* both other columns are fixed: `viewport ≥
    * 1238` and `viewport − 288 − 320 ≥ 630` are the same predicate, and
    * `matchMedia` can only see the first.
+   *
+   * **And 1294 when the spaces rail is up.** The rail is a fourth fixed
+   * column, 56px wide, so on an account with spaces the same subtraction
+   * reads `viewport − 344 − 320`, and the threshold that keeps the sheet at
+   * its full 630 moves with it: 1294 = 56 + 288 + 320 + 630. Keeping the
+   * single 1238 would have quietly re-broken the rule this constant exists
+   * to encode — across 1238–1293 the panel would take a column and leave the
+   * pane 574px, short of the sheet's own designed width. Not the 232px
+   * catastrophe that motivated the revision, which is exactly why it would
+   * have gone unnoticed.
+   *
+   * Two queries rather than one computed string because `matchMedia` is
+   * cheap to hold open and a rail can appear (or not) after mount, when
+   * `spaces_list` lands — see `panelOverlay` below, which picks between
+   * them.
    */
   const PANEL_OVERLAY_QUERY = "(max-width: 1237.98px)";
+  const PANEL_OVERLAY_WITH_RAIL_QUERY = "(max-width: 1293.98px)";
   const ROSTER_COLLAPSE_QUERY = "(max-width: 639.98px)";
 
+  /** Whether the spaces rail is rendering — the same question
+   * `SpacesRail.svelte` asks, through the same function, so the two can
+   * never disagree about whether there is a fourth column. */
+  const railVisible = $derived(railEntries(spacesStore.spaces).length > 0);
+
+  /** The raw state of the two panel-breakpoint queries. Read through
+   * `panelOverlay`, never directly. */
+  let panelOverlayWithoutRail = $state(false);
+  let panelOverlayWithRail = $state(false);
+
   /**
-   * Below 1238px: the room-info panel stops taking a third column and
-   * overlays the room pane instead (spec §9).
+   * Below 1238px — or below 1294px with the spaces rail up — the room-info
+   * panel stops taking a third column and overlays the room pane instead
+   * (spec §9).
    */
-  let panelOverlay = $state(false);
+  const panelOverlay = $derived(railVisible ? panelOverlayWithRail : panelOverlayWithoutRail);
   /**
    * Below 640px: the roster and the room pane no longer fit side by side,
    * so exactly one of them is on screen at a time and `roomPaneOpen`
@@ -127,14 +157,16 @@
    * The parsed identity (glyph/name/role) of the selected room, per spec
    * §5.1/§6.2. Falls back to `roomsStore.selectedId` as the raw name, same
    * as the header did before this parse existed, for the edge case where
-   * `selectedId` points at a room not (yet) present in `roomsStore.rooms`.
+   * `selectedId` names a room the store has never had a summary for.
+   *
+   * Reads `selectedRoomName` rather than searching `roomsStore.rooms`
+   * itself, and the difference is the spaces rail: a space filter can
+   * legitimately remove the *open* room from the roster (design §7 requires
+   * the pane to keep showing it), and searching the roster made the header
+   * fall back to `!id:server` the instant it did.
    */
   const selectedIdentity = $derived(
-    parseRoomIdentity(
-      roomsStore.rooms.find((room) => room.id === roomsStore.selectedId)?.name ??
-        roomsStore.selectedId ??
-        "",
-    ),
+    parseRoomIdentity(roomsStore.selectedRoomName ?? roomsStore.selectedId ?? ""),
   );
 
   /**
@@ -233,8 +265,16 @@
    * section, or `RoomInfoPanel` when it takes a column (see
    * `panelTakesColumn`). `narrow` implies `panelOverlay` (640 < 1238), so
    * the section never has to weigh both conditions at once.
+   *
+   * This now sits on the **roster group** — the wrapper holding the spaces
+   * rail and the roster — rather than on `<aside>` itself, which is why the
+   * rail's arrival did not need a second inset rule. Whichever of the two is
+   * actually leftmost, the group is, and the padding lands outside both. The
+   * wrapper carries `bg-surface-sunken` so the padded strip is still the
+   * roster's own ground under a cutout rather than a bar of the shell's
+   * `--color-surface` showing through.
    */
-  const asideInsets = $derived(
+  const rosterGroupInsets = $derived(
     narrow
       ? "padding-left: var(--inset-left); padding-right: var(--inset-right);"
       : "padding-left: var(--inset-left);",
@@ -381,6 +421,7 @@
   // teardown — an `async` one returns a promise Svelte will not call.
   onMount(() => {
     const overlayQuery = window.matchMedia(PANEL_OVERLAY_QUERY);
+    const railOverlayQuery = window.matchMedia(PANEL_OVERLAY_WITH_RAIL_QUERY);
     const collapseQuery = window.matchMedia(ROSTER_COLLAPSE_QUERY);
 
     function applyCollapse(matches: boolean): void {
@@ -396,15 +437,21 @@
       applyCollapse(event.matches);
     }
     function onOverlayChange(event: MediaQueryListEvent): void {
-      panelOverlay = event.matches;
+      panelOverlayWithoutRail = event.matches;
+    }
+    function onRailOverlayChange(event: MediaQueryListEvent): void {
+      panelOverlayWithRail = event.matches;
     }
 
-    panelOverlay = overlayQuery.matches;
+    panelOverlayWithoutRail = overlayQuery.matches;
+    panelOverlayWithRail = railOverlayQuery.matches;
     applyCollapse(collapseQuery.matches);
     overlayQuery.addEventListener("change", onOverlayChange);
+    railOverlayQuery.addEventListener("change", onRailOverlayChange);
     collapseQuery.addEventListener("change", onCollapseChange);
     return () => {
       overlayQuery.removeEventListener("change", onOverlayChange);
+      railOverlayQuery.removeEventListener("change", onRailOverlayChange);
       collapseQuery.removeEventListener("change", onCollapseChange);
     };
   });
@@ -423,7 +470,15 @@
     }
     if (!restored) {
       await goto("/login");
+      return;
     }
+    // Session start is the spaces rail's one-shot fetch (spaces-rail design
+    // §5). Spaces change far less than the room list, so they are not a
+    // third streamed channel — and this is the moment there is a session to
+    // ask. Not awaited: the rail appearing (or not) must not hold up the
+    // roster and timeline, which are already streaming by now, and `load`
+    // reports its own failures rather than throwing.
+    void spacesStore.load();
   });
 
   /**
@@ -444,6 +499,12 @@
     } catch (err) {
       console.error("logout failed", err);
     } finally {
+      // Whichever way logout went, the account's spaces are no longer this
+      // app's to show — `roomsStore.logout` clears the room list in its own
+      // `finally` for exactly the same reason. Without this the next
+      // account's mount would render the previous one's rail for the frames
+      // between restoring and its own `spaces_list` landing.
+      spacesStore.clear();
       signingOut = false;
     }
     await goto("/login");
@@ -481,43 +542,78 @@
       and the bottom safe area rather than covering the banner too.
     -->
     <div class="relative flex min-h-0 flex-1">
-      <aside
+      <!--
+        The roster group: the spaces rail and the roster, which travel
+        together.
+
+        **The rail collapses with the roster, and that is the whole narrow
+        -layout decision** (spaces-rail design §7). Below 640px exactly one
+        pane is on screen, and the rail is part of the navigation pane, not
+        of the room pane — so when the roster is showing, the rail is beside
+        it, and when the room pane is showing, both are gone. The reader
+        reaches the rail exactly the way they already reach the roster: the
+        header's "‹ Rooms" button.
+
+        The alternative — hiding the rail below 640px while keeping the
+        filter — is the one thing §7 rules out by name: a space selected at
+        1905px would survive a resize to 700px with no affordance left to
+        clear it, and the roster would look like an account that had lost
+        most of its rooms. Keeping the rail costs 56px of a 640px-or-narrower
+        viewport, which the roster (already `flex-1` there) absorbs; losing
+        the way back costs the reader their rooms.
+
+        Everything that used to live on `<aside>` and describes *the
+        navigation column as a whole* moved here: which pane is visible, the
+        safe-area insets (see `rosterGroupInsets`), and `inert` while the
+        info panel is a modal overlay — the rail is behind that overlay at
+        700px exactly as the roster is, and `aria-modal`'s claim has to be
+        true of both. `<aside>`'s own classes are otherwise unchanged.
+      -->
+      <div
         class="{rosterVisible ? 'flex' : 'hidden'} {narrow
           ? 'min-w-0 flex-1'
-          : 'w-72 shrink-0'} flex-col border-r border-border bg-surface-sunken"
-        style={asideInsets}
+          : 'shrink-0'} bg-surface-sunken"
+        style={rosterGroupInsets}
         inert={panelIsModal}
       >
-        <div class="min-h-0 flex-1">
+        <SpacesRail />
+        <aside
+          class="flex {narrow
+            ? 'min-w-0 flex-1'
+            : 'w-72 shrink-0'} flex-col border-r border-border bg-surface-sunken"
+        >
+          <div class="min-h-0 flex-1">
+            <!--
+              `onSelect` is how the collapsed layout learns a room was
+              chosen. It is a notification, not the selection itself:
+              `RoomList` still owns the `roomsStore.select` call (see its doc
+              comment), and this page only decides which pane to show as a
+              result. A `$effect` watching `selectedId` could not do this job
+              — choosing the room that is *already* selected doesn't change
+              that value, so returning to it from the roster would silently
+              do nothing.
+            -->
+            <RoomList onSelect={() => (roomPaneOpen = true)} />
+          </div>
           <!--
-            `onSelect` is how the collapsed layout learns a room was chosen.
-            It is a notification, not the selection itself: `RoomList` still
-            owns the `roomsStore.select` call (see its doc comment), and
-            this page only decides which pane to show as a result. A
-            `$effect` watching `selectedId` could not do this job — choosing
-            the room that is *already* selected doesn't change that value,
-            so returning to it from the roster would silently do nothing.
+            The only user-reachable way out of a session: switch accounts,
+            clear a corrupted local store, or wipe local history and crypto
+            keys off this device. Parked at the foot of the sidebar rather
+            than given chrome of its own — it's a rarely-used escape hatch,
+            not a primary action, and M0 has no account menu to hang it off.
           -->
-          <RoomList onSelect={() => (roomPaneOpen = true)} />
-        </div>
-        <!--
-          The only user-reachable way out of a session: switch accounts,
-          clear a corrupted local store, or wipe local history and crypto
-          keys off this device. Parked at the foot of the sidebar rather
-          than given chrome of its own — it's a rarely-used escape hatch,
-          not a primary action, and M0 has no account menu to hang it off.
-        -->
-        <div class="shrink-0 border-t border-border p-2">
-          <button
-            type="button"
-            onclick={signOut}
-            disabled={signingOut}
-            class="w-full rounded-md px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
-          >
-            {signingOut ? "Signing out…" : "Sign out"}
-          </button>
-        </div>
-      </aside>
+          <div class="shrink-0 border-t border-border p-2">
+            <button
+              type="button"
+              onclick={signOut}
+              disabled={signingOut}
+              class="w-full rounded-md px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
+          </div>
+        </aside>
+      </div>
       <!--
         `inert` while the panel is a modal overlay, and this is the finding
         it closes: the overlay is opaque and pinned over this pane's right

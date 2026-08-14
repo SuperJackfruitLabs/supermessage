@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { makeSessionCommands } = await import("./ipc");
+const { makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -75,5 +75,41 @@ describe("makeSessionCommands", () => {
 
     void login("https://example.org", "alice", "hunter2");
     expect(armed).toBe(true);
+  });
+});
+
+// The spaces commands are ordinary bare exports — unlike `login`/
+// `restoreSession` there is nothing to re-arm, and re-arming is precisely
+// what `space_select` must *not* provoke (see its doc comment). What is
+// worth pinning down is the wire format, which fails at runtime with
+// "invalid args" rather than at compile time if the argument name drifts
+// from the Rust side's `space_id`.
+describe("the spaces commands", () => {
+  it("passes the space id as camelCase spaceId", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await spaceSelect("!space:x.org");
+
+    expect(invokeMock).toHaveBeenCalledWith("space_select", { spaceId: "!space:x.org" });
+  });
+
+  it("sends an explicit null for All rooms rather than omitting the argument", async () => {
+    // The core's parameter is `Option<String>`, so an omitted key would also
+    // deserialize as `None` — but only by luck of Tauri's argument handling.
+    // Saying `null` out loud is what makes "restore every room" a value this
+    // function passes rather than an absence it hopes will be read that way.
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await spaceSelect(null);
+
+    expect(invokeMock).toHaveBeenCalledWith("space_select", { spaceId: null });
+  });
+
+  it("lists spaces with no arguments and returns them unchanged", async () => {
+    const summaries = [{ id: "!a:x.org", name: "Alpha", avatarUrl: null, childCount: 2 }];
+    invokeMock.mockResolvedValueOnce(summaries);
+
+    await expect(spacesList()).resolves.toEqual(summaries);
+    expect(invokeMock).toHaveBeenCalledWith("spaces_list");
   });
 });

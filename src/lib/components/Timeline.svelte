@@ -648,7 +648,16 @@
   }
 
   /** Every room id the account is currently in, for `resolveInAppRoomId`'s
-   * membership check. See {@link selectKnownRoom}'s doc comment. */
+   * membership check. See {@link selectKnownRoom}'s doc comment.
+   *
+   * Known limitation since the spaces rail landed, recorded rather than
+   * hidden: while a space is selected the roster is *filtered*, so a link to
+   * a joined room outside that space no longer resolves in-app and falls
+   * through to opening matrix.to instead. It degrades rather than breaks,
+   * and there is no unfiltered room-id source in the core's command surface
+   * to consult — `rooms_resync` serves the filtered list too. If in-app
+   * routing across spaces matters later, that is a core change, not a
+   * webview one. */
   function knownRoomIds(): readonly string[] {
     return roomsStore.rooms.map((room) => room.id);
   }

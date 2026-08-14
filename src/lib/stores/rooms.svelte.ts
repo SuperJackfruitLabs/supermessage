@@ -54,6 +54,30 @@ const defaultDeps: RoomsStoreDeps = {
 export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
   let rooms = $state<RoomSummary[]>([]);
   let selectedId = $state<string | null>(null);
+  /**
+   * The selected room's name as of the moment it was chosen — the fallback
+   * for when the roster stops listing it.
+   *
+   * The roster is not the set of rooms this account is in; it is a *view* of
+   * that set, and since the spaces rail landed it is a view the reader can
+   * narrow. Selecting a space filters the room list, and the spaces-rail
+   * design (§7) requires the room pane to keep showing whatever is open even
+   * when it drops out of the roster — filtering a navigation surface must
+   * not close what someone is reading.
+   *
+   * Without this, it half-did. The timeline stayed (nothing re-subscribes),
+   * but the room header derived its name by looking the selected id up in
+   * `rooms` — so the moment the filter excluded that room the header fell
+   * back to the raw `!id:server`, and the avatar's initial with it. Caught by
+   * rendering it, not by reading the code.
+   *
+   * Deliberately captured at select time and not maintained afterwards: the
+   * live roster wins whenever it still lists the room (see
+   * `selectedRoomName`), so this is only ever read for a room the roster has
+   * stopped describing — at which point a rename we would have missed is not
+   * something any other source could tell us either.
+   */
+  let selectedName = $state<string | null>(null);
   // Whether a session is already established in the core. Not `$state`:
   // nothing renders it, and `restoreSession` must read it synchronously
   // before its first await.
@@ -126,6 +150,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
       sessionActive = false;
       gapSync.resetForNewSubscription();
       selectedId = null;
+      selectedName = null;
     }
   }
 
@@ -137,6 +162,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
    */
   function select(id: string): void {
     selectedId = id;
+    selectedName = rooms.find((room) => room.id === id)?.name ?? null;
     timelineStore.subscribeTo(id).catch((err: unknown) => {
       console.error("failed to subscribe to timeline for room", id, err);
     });
@@ -148,6 +174,19 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     },
     get selectedId(): string | null {
       return selectedId;
+    },
+    /**
+     * The selected room's name, `null` when nothing is selected.
+     *
+     * The live roster entry whenever there is one, so a rename lands
+     * immediately; the name remembered at select time when the roster no
+     * longer lists the room — which today means a space filter excludes it.
+     * See `selectedName` for why the room pane must not degrade to a raw
+     * room id in that case.
+     */
+    get selectedRoomName(): string | null {
+      if (selectedId === null) return null;
+      return rooms.find((room) => room.id === selectedId)?.name ?? selectedName;
     },
     select,
     login,
