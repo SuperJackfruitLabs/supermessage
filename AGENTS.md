@@ -150,9 +150,39 @@ is worth reaching for before trusting a UI claim made from code reading alone.
 
 ## Testing strategy
 
-`cargo test` covers the Rust core (currently one test, pinning the ring crypto
-provider). There is no frontend test runner yet — add one when the first real
-stores land. Two quality requirements from `docs/tech-stack.md` shape the rest:
+`cargo test` covers the Rust core (288 tests) and `pnpm test` the frontend
+(327, vitest). Both are clean, and CI runs them on every PR along with
+`clippy -D warnings` and a dependency-licence gate.
+
+### A test that has never failed is not yet a regression test
+
+This is the single most repeated defect on this project. **Four separate
+times** a test was written, shipped green, and later shown to pass against a
+deliberately broken implementation. In every case the code happened to be
+correct and the test was worthless — which is worse than no test, because it
+buys unearned confidence and stops the next person looking.
+
+The failures were not careless. Each was a plausible-looking assertion:
+
+- An assertion that was a *tautology* — `[...s].join("") === s` holds for every
+  string, including one containing the lone surrogate it was meant to catch.
+- An assertion whose *fixture masked the clause under test* — a date-divider
+  case that broke a sender-run on a mismatched sender, so the kind check it
+  claimed to verify never ran.
+- An assertion against a bound that could not be crossed — the naive cut landed
+  exactly on a code-point boundary because the limit was even and the character
+  two units wide.
+- An assertion whose outcome depended on the *scheduler* — `tokio::select!`
+  randomises branch order, so a sequence-continuity test sometimes exercised
+  the path where a restarted counter still looks correct.
+
+So: **mutate the implementation, watch the test fail, restore, and record what
+you saw.** For anything touching ordering, concurrency or a boundary, run the
+mutated version several times — the scheduler case passed on some runs and not
+others, and one green run proves nothing. Falsification is the standard here,
+not thoroughness.
+
+Two quality requirements from `docs/tech-stack.md` shape the rest:
 
 - **Per-engine visual QA** across WebKit (iOS/macOS), WebView2 (Windows), and WebKitGTK (Linux, including the oldest supported distro version).
 - A **native-feel behavior budget** (non-negotiable checklist): iOS keyboard webview-resize fix, safe-area handling, haptics via `tauri-plugin-haptics`, native popup context menus (no HTML dropdowns for OS-level actions), platform scrollbar discipline, system font stacks/Dynamic Type, strict `user-select` discipline.
