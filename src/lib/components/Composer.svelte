@@ -42,13 +42,53 @@
   // *whether* a given moment warrants a `setTyping` call at all; this file
   // only decides *when* those moments are (a keystroke, a pause, a send, a
   // switch, an unmount).
+  //
+  // A staged attachment is a *third* piece of per-room state with the same
+  // hazard, held in `StagedAttachmentTracker` (`./stagedAttachment.ts`) for
+  // the same reason the draft is held in `DraftTracker`: everything room-
+  // scoped in this component has to be scoped explicitly, because the
+  // component itself is never remounted. Two things about it differ from
+  // the draft and are decided in that file's doc comments rather than here:
+  // there is at most **one** attachment (the core replaces rather than
+  // accumulates), and a room switch **discards** it rather than preserving
+  // it per room (the core has already dropped the token by then, so a
+  // preserved strip would be offering to send a file that can no longer be
+  // sent). See `stagedAttachment.ts`'s `StagedAttachmentTracker`.
+  //
+  // Send is **repurposed, not disabled**, while a file is staged: it reads
+  // `Send file` and sends the attachment. §8 of the attachments design
+  // offers either, requiring only that the two are never ambiguous at the
+  // same moment. Disabling was rejected because the strip is the confirm
+  // step §2 requires, and a confirm step needs an *affirmative* control —
+  // with Send disabled, the only enabled control on the strip would be
+  // "Remove", i.e. a review step whose sole available answer is "no". The
+  // genuinely ambiguous moments are a staged file alongside something else
+  // the reader could expect to go with it — draft text (captions are out of
+  // scope for this cut, §1) or a pending reply (an attachment carries no
+  // `in_reply_to`) — and the strip states which of those Send will leave
+  // behind whenever one is present (`sendCaveat`), while the button itself
+  // names its object either way.
 
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { DraftTracker } from "./draftTracker";
   import { TYPING_STOP_AFTER_MS, TypingTracker } from "./typingTracker";
-  import type { CoreError } from "$lib/ipc";
+  import {
+    attachmentFailure,
+    sendCaveat,
+    stagedStripView,
+    StagedAttachmentTracker,
+    type AttachmentFailure,
+  } from "./stagedAttachment";
+  import {
+    attachmentDiscard,
+    attachmentSend,
+    attachmentStage,
+    onStagedAttachment,
+    type CoreError,
+    type StagedAttachment,
+  } from "$lib/ipc";
 
   let { roomId }: { roomId: string } = $props();
 
@@ -56,16 +96,48 @@
   let value = $state("");
   let sending = $state(false);
   /**
-   * Set only for the one failure mode worth calling out by name: the core
-   * rejected a send with `CoreError.kind === "roomChanged"` because the
-   * reader switched rooms before it went through (see `send`'s `catch`
-   * below and `$lib/ipc.ts`'s `CoreErrorKind` doc comment). Every other
-   * failure still just logs to the console — this is not a general-purpose
-   * error banner — but a room-changed rejection is the one case where
-   * silence would look like the message went through when it didn't, which
-   * is worse than an ordinary visible failure.
+   * The last refusal worth showing, or `null`.
+   *
+   * For a **text** send this stays exactly what it was: set only for
+   * `CoreError.kind === "roomChanged"` (see `send`'s `catch` below and
+   * `$lib/ipc.ts`'s `CoreErrorKind` doc comment), because a room-changed
+   * rejection is the one case where silence would look like the message
+   * went through when it didn't. Every other text-send failure still just
+   * logs to the console; this is not a general-purpose error banner.
+   *
+   * For an **attachment** every failure surfaces, and that asymmetry is
+   * deliberate rather than an oversight. A failed text send leaves the draft
+   * in the box, so the reader can see for themselves that nothing went; a
+   * failed attachment leaves *nothing* on screen — the strip is gone,
+   * because the token is spent or unreachable either way (see
+   * `attachmentSend`'s doc comment) — so a silent failure is indistinguish-
+   * able from a successful send until the echo fails to arrive. It also has
+   * refusals a reader can actually act on ("that file is 200.0 MiB, but this
+   * homeserver accepts at most 50.0 MiB"), which is the entire reason the
+   * core gives them typed kinds.
+   *
+   * `{ label, message }` rather than a bare string so the eyebrow can name
+   * *which* refusal this is — `attachmentFailure` in `./stagedAttachment.ts`
+   * is the one place that mapping lives.
    */
-  let sendError = $state<string | null>(null);
+  let failure = $state<AttachmentFailure | null>(null);
+
+  /**
+   * The one file staged for the currently focused room, or `null` — a
+   * `$state` mirror of `attachments`, which is a plain class for the same
+   * reason `DraftTracker` is (unit-testable without a component-testing
+   * setup this project does not have).
+   *
+   * Every write to it goes through `refreshStaged`, which re-reads the
+   * tracker *for the current room* rather than assigning whatever value is
+   * to hand. That is what makes the room-scoping rule impossible to bypass
+   * by accident: there is no path that sets this to an attachment without
+   * asking the tracker whether it belongs to `roomId`.
+   */
+  const attachments = new StagedAttachmentTracker();
+  let staged = $state<StagedAttachment | null>(null);
+  /** Whether a native picker is currently open, so a second click cannot open a second one. */
+  let staging = $state(false);
 
   const typingTracker = new TypingTracker();
   // The pending inactivity timer that fires `stopTyping` after a pause in
@@ -128,6 +200,179 @@
   // notice active in whichever room was last focused.
   onDestroy(() => stopTyping(roomId));
 
+  /** Re-reads the tracker for the room currently focused. The only writer of `staged`. */
+  function refreshStaged(): void {
+    staged = attachments.stagedFor(roomId);
+  }
+
+  /**
+   * Tells the core to drop a staged file. Fire-and-forget: `attachment_discard`
+   * never rejects (see its doc comment), and a discard that somehow failed
+   * would leave a path pinned for at most the core's ten-minute staging
+   * timeout — not something to put in front of the reader on a path whose
+   * whole purpose is cancelling.
+   */
+  function discardStaged(token: string): void {
+    void attachmentDiscard(token).catch((err: unknown) => {
+      console.error("failed to discard a staged attachment", err);
+    });
+  }
+
+  /**
+   * Takes ownership of a freshly staged file for `forRoomId` — from either
+   * source, since a picked file and a dropped one arrive in the same shape.
+   *
+   * Overwrites rather than accumulates: the core holds one staged file per
+   * room and drops the superseded token itself, so a list here would be a
+   * list of tokens that mostly no longer resolve. The superseded one is
+   * discarded anyway, because the *cross-room* case (a drop landing while
+   * the reader is switching) is one the core has not already cleaned up.
+   */
+  function adoptStaged(forRoomId: string, attachment: StagedAttachment): void {
+    const superseded = attachments.stage(forRoomId, attachment);
+    if (superseded !== null && superseded.token !== attachment.token) {
+      discardStaged(superseded.token);
+    }
+    refreshStaged();
+  }
+
+  /**
+   * Opens the native picker for the focused room and stages what comes back.
+   *
+   * **A `null` result is the reader cancelling, and is not an error** — it is
+   * the most common outcome of opening a file chooser (design §7). Reporting
+   * it would put a failure on screen every time someone pressed Escape, and
+   * a `catch` that fires on the normal path is one that eventually swallows a
+   * real failure.
+   *
+   * `roomId` is snapshotted before the await for the same reason `send`
+   * snapshots it: a file chooser is open for as long as a human takes to
+   * browse their home directory, and the token that comes back is bound to
+   * the room it was opened for. If the reader has moved on by then the file
+   * is discarded immediately rather than held for a room they are no longer
+   * in — and they are told, because a picked file that silently produced no
+   * strip would look like the app had ignored them. The refusal is
+   * synthesized rather than caught: the core has no reason to reject here
+   * (it verified the room before opening the dialog, not after), but the
+   * reader's situation is exactly the one `roomChanged` describes, so it
+   * reuses that wording rather than inventing a second phrasing for it.
+   */
+  async function attach(): Promise<void> {
+    if (staging) return;
+    const forRoomId = roomId;
+    staging = true;
+    failure = null;
+    try {
+      const picked = await attachmentStage(forRoomId);
+      if (picked === null) return;
+      if (roomId !== forRoomId) {
+        discardStaged(picked.token);
+        failure = attachmentFailure({ kind: "roomChanged", message: "" }, "attach");
+        return;
+      }
+      adoptStaged(forRoomId, picked);
+    } catch (err) {
+      console.error("failed to stage an attachment", err);
+      failure = attachmentFailure(err, "attach");
+    } finally {
+      staging = false;
+    }
+  }
+
+  /** The way out the review step (design §2) requires: drop the strip and the core's copy with it. */
+  function removeStaged(): void {
+    const removed = attachments.take();
+    if (removed !== null) discardStaged(removed.token);
+    failure = null;
+    refreshStaged();
+  }
+
+  /**
+   * Sends the staged file. Called from `send` when there is one, so Enter
+   * and the Send button behave identically — see this file's top-of-script
+   * comment for why Send is repurposed rather than disabled.
+   *
+   * The strip goes on **every** outcome, success or failure, and that is the
+   * fail-closed reading of the token rules rather than a shortcut:
+   * `attachment_send` consumes the token before it reads a byte, so after
+   * any failure past that point there is nothing left to retry, and the two
+   * refusals that *don't* consume (`roomChanged`, `unknownAttachment`) leave
+   * a token this room can't use anyway. Leaving the strip up would offer a
+   * second press of Send that could only ever produce `unknownAttachment` —
+   * or, worse, look like a retry of a send that had actually gone through.
+   * The discard covers the one case where the core may still hold it.
+   *
+   * `attachments.takeToken` rather than `take`, so a send that resolves
+   * *after* the reader has already attached a different file clears the send
+   * it belonged to and not the new strip — the same "don't touch state that
+   * has moved on during an await" rule `send` applies to the draft.
+   */
+  async function sendStaged(sentRoomId: string, attachment: StagedAttachment): Promise<void> {
+    stopTyping(sentRoomId);
+    sending = true;
+    failure = null;
+    try {
+      await attachmentSend(sentRoomId, attachment.token);
+      attachments.takeToken(attachment.token);
+    } catch (err) {
+      console.error("failed to send attachment", err);
+      failure = attachmentFailure(err, "send");
+      const abandoned = attachments.takeToken(attachment.token);
+      if (abandoned !== null) discardStaged(abandoned.token);
+    } finally {
+      sending = false;
+      refreshStaged();
+    }
+  }
+
+  // A file dropped on the window, staged by the **Rust** drag-drop handler.
+  //
+  // `sm://attachment/staged` is the only drop channel this webview listens
+  // on, and the rule is enforced by review rather than by the platform:
+  // Tauri's own `tauri://drag-drop` still reaches the webview carrying the
+  // dropped files' **raw filesystem paths**, and cannot be switched off
+  // while keeping the Rust handler that stages them (`disable_drag_drop_handler()`
+  // turns off both). So the design's §3 guarantee is narrower than "the
+  // webview never sees a path" — what actually holds is that *our* IPC
+  // surface carries none, and that nothing here asks for the one Tauri
+  // offers. If you are here to add a second drop handler: don't. There is
+  // no capability to gain from it (this event already carries everything
+  // the composer renders) and the cost is attacker-reachable paths in
+  // webview memory. See `$lib/ipc.ts`'s `onStagedAttachment` and
+  // `core::attachments::on_files_dropped`.
+  //
+  // The payload names no room — a drop lands on whatever the reader is
+  // looking at, which the core resolves from its own focused timeline — so
+  // it is attributed to `roomId` as read at the moment the event arrives.
+  // No await sits between the two, so there is no window for them to
+  // disagree, unlike the picker path above.
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    let stopped = false;
+    onStagedAttachment((payload) => adoptStaged(roomId, payload))
+      .then((fn) => {
+        if (stopped) void fn();
+        else unlisten = fn;
+      })
+      .catch((err: unknown) => {
+        console.error("failed to subscribe to staged attachments", err);
+      });
+    return () => {
+      stopped = true;
+      unlisten?.();
+    };
+  });
+
+  // The attachment's own destruction path, alongside the typing notice's:
+  // this pane being torn down (signing out is the only way today) must not
+  // leave the core holding a path for a session that is over. `Session::logout`
+  // clears the whole staging map anyway, so this is belt and braces for
+  // every *other* reason this component might be destroyed.
+  onDestroy(() => {
+    const abandoned = attachments.take();
+    if (abandoned !== null) discardStaged(abandoned.token);
+  });
+
   $effect(() => {
     if (roomId !== previousRoomId) {
       // Stop typing in the *outgoing* room before switching state to the
@@ -139,13 +384,26 @@
       // `drafts.switchTo` already uses for "no before room yet".
       if (previousRoomId !== null) stopTyping(previousRoomId);
       value = drafts.switchTo(roomId, value);
+      // The staged attachment is discarded by the switch rather than kept
+      // per room, unlike the draft immediately above — and the asymmetry is
+      // the core's, not a choice made here. `Session::subscribe_timeline`
+      // calls `StagedAttachments::retain_room(new_room)` after every
+      // successful subscribe, so the outgoing room's token stops resolving
+      // whether the webview forgets it or not. Keeping the strip would keep
+      // a promise the core has already broken; discarding it here also
+      // stops the path being pinned until the staging timeout sweeps it.
+      // See `stagedAttachment.ts`'s `StagedAttachmentTracker` doc comment.
+      const abandoned = attachments.switchTo(roomId);
+      if (abandoned !== null) discardStaged(abandoned.token);
+      refreshStaged();
       previousRoomId = roomId;
       // A room-changed send error names the room switch that caused it;
       // once the reader has switched again, it's talking about a switch
       // that's no longer the current one, so it stops being useful and
       // starts being confusing pinned against whatever room they're looking
-      // at now.
-      sendError = null;
+      // at now. The same holds for every attachment refusal: each one is
+      // about a file that no longer exists in this room's composer.
+      failure = null;
     }
   });
 
@@ -153,7 +411,12 @@
   const replyTarget = $derived(replyTargetStore.get(roomId));
 
   const trimmed = $derived(value.trim());
-  const canSend = $derived(trimmed !== "" && !sending);
+  /**
+   * A staged file is enough on its own — Send is the affirmative half of the
+   * confirm step, so it cannot require text the design explicitly does not
+   * support sending alongside a file (captions are out of scope, §1).
+   */
+  const canSend = $derived((trimmed !== "" || staged !== null) && !sending);
 
   /** Cancels the pending reply for `roomId` without discarding the draft text. */
   function cancelReply(): void {
@@ -164,6 +427,17 @@
     if (!canSend) return;
     const body = trimmed;
     const sentRoomId = roomId;
+    // The attachment wins whenever there is one: Send is repurposed rather
+    // than disabled while a file is staged (see this file's top-of-script
+    // comment), and the strip says so in as many words whenever there is
+    // draft text that could make the question ambiguous. The draft is left
+    // exactly where it is — this cut sends a file *or* a message, never one
+    // captioned with the other.
+    const attachment = attachments.stagedFor(sentRoomId);
+    if (attachment !== null) {
+      await sendStaged(sentRoomId, attachment);
+      return;
+    }
     // Snapshot *before* the `await` below: if the reader switches rooms
     // while this send is in flight, `replyTargetStore.get(roomId)` would
     // read the *newly* focused room's target, not the one this send was
@@ -177,7 +451,7 @@
     // goes out rather than up to `TYPING_NOTICE_TIMEOUT` (4s) later.
     stopTyping(sentRoomId);
     sending = true;
-    sendError = null;
+    failure = null;
     try {
       if (target) {
         await timelineStore.sendReply(sentRoomId, body, target.eventId);
@@ -205,8 +479,13 @@
       // exactly like the doc comment at the top of this file promises,
       // whichever room they now belong to.
       if ((err as CoreError)?.kind === "roomChanged") {
-        sendError =
-          "Not sent — you switched rooms before this went through. Your draft is safe; try again.";
+        // Unchanged wording, unchanged condition — only the shape moved, to
+        // give attachment refusals an eyebrow of their own.
+        failure = {
+          label: "Send failed",
+          message:
+            "Not sent — you switched rooms before this went through. Your draft is safe; try again.",
+        };
       }
     } finally {
       sending = false;
@@ -257,11 +536,84 @@
     </div>
   </div>
 {/if}
-{#if sendError}
+{#if failure}
   <div class="shrink-0 bg-surface-sunken px-4 py-2">
     <div class="mx-auto flex w-full max-w-[72ch] flex-col gap-0.5">
-    <span class="font-mono text-label text-danger uppercase">Send failed</span>
-    <p class="selectable text-ui text-content" role="alert">{sendError}</p>
+    <span class="font-mono text-label text-danger uppercase">{failure.label}</span>
+    <p class="selectable text-ui text-content" role="alert">{failure.message}</p>
+    </div>
+  </div>
+{/if}
+<!--
+  The staged-attachment strip: the review step the attachments design's §2
+  requires, in the reply strip's shape (same 2px accent rail, same edge-to-
+  edge sunken-family ground, same centred `72ch` column) and directly above
+  the composer, because it is about what Send is going to do next.
+
+  **Louder than the reply strip, on purpose.** §2's reasoning is that this
+  client cannot delete a message: there is no redaction command, so a file
+  sent by a mis-click is permanent and visible to everyone in the room, with
+  no recourse inside the app. A review step that has to stop that has to be
+  seen, so the ground lifts off the tray to `--color-accent-soft` and the
+  remove affordance is a labelled button rather than the reply strip's bare
+  `✕`. Neither is a new colour and neither is `--color-signal`, which stays
+  reserved for a pending decision (spec §3) — amber here would mean the
+  operator owed someone an answer, and they do not; they owe *themselves* a
+  glance.
+
+  Three facts, in the order a reader checks them: what it is called, what it
+  actually is, and what Send will do with it. The middle line is
+  content-sniffed by the core, not read off the extension — which is why it
+  is worth screen space in a *confirm* step: `holiday.png` that reads
+  `application/octet-stream` is not a photo, and the extension is the one
+  part of the name a truncation can hide.
+
+  The filename is plain text through Svelte's own escaping — never `{@html}`
+  (§9) — and is bounded and neutralized before it gets here
+  (`sanitizeFilename`), because a filename may legally contain newlines and
+  bidi overrides and is sender-controlled once echoed back.
+-->
+{#if staged}
+  {@const view = stagedStripView(staged)}
+  <!--
+    The moments Send could be read two ways: a file staged *and* something
+    else in the composer a reader could expect to go with it — draft text
+    (captions are out of scope, §1) or a pending reply (an attachment
+    carries no `in_reply_to`). `sendCaveat` is the one place that wording
+    lives, and returns `null` when there is nothing to disambiguate.
+  -->
+  {@const caveat = sendCaveat(trimmed !== "", replyTarget !== null)}
+  <div class="shrink-0 border-l-2 border-l-accent bg-accent-soft px-4 py-2">
+    <div class="mx-auto flex w-full max-w-[72ch] items-start gap-3">
+      <div class="min-w-0 flex-1">
+        <!--
+          The eyebrow takes `--color-accent`, and that is the measurement
+          that made it: on the composer tray the strip's own ground carries
+          the "look here" alone, and `--color-accent-soft` over
+          `--color-surface-sunken` is **1.059:1 in light** against 1.395:1
+          in dark — weaker than the 1.090:1 sheet-on-field step the whole
+          depth story rests on (spec §3), i.e. subliminal in exactly the
+          theme most people use. An accent eyebrow is a second channel that
+          does not depend on that step surviving, and it measures 6.10:1
+          light / 5.46:1 dark on this ground. Amber would be louder and is
+          forbidden: `--color-signal` means the operator owes someone an
+          answer (§3), and they owe this one only to themselves.
+        -->
+        <p class="font-mono text-label text-accent uppercase">Attached</p>
+        <p class="truncate text-ui font-medium text-content" title={view.filename}>{view.filename}</p>
+        <p class="mt-0.5 truncate font-mono text-meta text-content-muted">{view.summary}</p>
+        {#if caveat}
+          <p class="mt-1 text-ui text-content-muted">{caveat}</p>
+        {/if}
+      </div>
+      <button
+        type="button"
+        onclick={removeStaged}
+        aria-label="Remove attachment"
+        class="shrink-0 rounded-md border border-border-strong px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
+      >
+        Remove
+      </button>
     </div>
   </div>
 {/if}
@@ -279,6 +631,37 @@
   style="padding-bottom: calc(0.75rem + var(--inset-bottom));"
 >
   <div class="mx-auto flex w-full max-w-[72ch] items-end gap-2">
+  <!--
+    The attach control, left of the input (design §8).
+
+    **A glyph, not an icon.** Spec §11 ships no icon set and lists the two
+    characters in use (`✕`, `›`); one control is not a reason to start one,
+    and a paperclip emoji would be a third typeface's worth of colour
+    rendering in a monochrome console. `+` in mono is the same vernacular as
+    the `›` prompt beside it.
+
+    **A glyph is not a label**, so the accessible name is a real one and the
+    glyph is `aria-hidden`. The `title` says the other half — that dropping
+    a file works too — which is the only *standing* mention of drag-and-drop
+    anywhere; the drop-active state in `+page.svelte` can only be seen while
+    a file is already in the air.
+
+    Ghosted while a picker is open rather than fading the label, matching
+    Send's own disabled treatment: `hover:bg-surface`, not
+    `hover:bg-surface-sunken`, because this sits *on* the sunken tray and a
+    sunken hover would be 1.0:1 — the same inversion the room header's
+    controls already make.
+  -->
+  <button
+    type="button"
+    onclick={attach}
+    disabled={staging}
+    aria-label="Attach a file"
+    title="Attach a file — or drop one on the window"
+    class="flex shrink-0 items-center justify-center rounded-md px-2.5 py-2 font-mono text-ui-lg text-content-muted transition-colors hover:bg-surface hover:text-content disabled:text-content-faint disabled:hover:bg-transparent"
+  >
+    <span aria-hidden="true">+</span>
+  </button>
   <div
     class="flex min-w-0 flex-1 items-end gap-1.5 rounded-md px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
   >
@@ -336,7 +719,14 @@
     disabled={!canSend}
     class="flex shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:border-border disabled:bg-transparent disabled:text-content-muted"
   >
-    Send
+    <!--
+      The label names its object whenever there is one. This is half of the
+      "never ambiguous at the same moment" rule §8 sets — the other half is
+      the strip's own line about what happens to the draft text — and it is
+      the half that is always on screen: a reader who has scrolled the strip
+      out of mind still sees that this button is about a file.
+    -->
+    {staged ? "Send file" : "Send"}
     <!--
       80%, not the spec's literal 70% (§6.4). The hint is quieter than the
       label either way, but at 70% `--color-accent-content` composites to

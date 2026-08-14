@@ -16,7 +16,7 @@
   // used to build a second `Client` and a second set of streams, which
   // froze the room list for the whole session.
 
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { connectionStore } from "$lib/stores/connection.svelte";
@@ -294,6 +294,87 @@
     roomPaneOpen = false;
   }
 
+  /**
+   * Whether a file is currently being dragged over the window.
+   *
+   * The attachments design (§8) asks for a visible drop state, "or the
+   * reader cannot tell the app accepts drops at all", in `--color-accent` —
+   * this is not a decision, so it does not get the signal colour.
+   *
+   * **What actually drives it, stated honestly, because the answer is
+   * platform-dependent.** The drop itself is handled entirely in Rust
+   * (`core::attachments::on_files_dropped`, which stages the file and emits
+   * `sm://attachment/staged`); nothing here touches the dropped file, reads
+   * `dataTransfer`, or listens for Tauri's `tauri://drag-drop` — see
+   * `Composer.svelte`'s listener comment for why that last one is a rule
+   * rather than a preference. What this needs is only the *hover* fact, and
+   * the DOM's own drag events are the one source of it that carries no
+   * paths at all. They are best-effort: Tauri's OS-level drag-drop handler
+   * intercepts drags before the webview sees them on Windows (which is why
+   * `dragDropEnabled: false` exists), so on that platform this state may
+   * never light up and the standing hint on the composer's attach control
+   * ("or drop one on the window") is what tells the reader drops work. The
+   * alternative — `tauri://drag-enter`/`drag-over` — reports the hover
+   * reliably on every platform *and* hands the webview the raw paths of the
+   * files being dragged, which is precisely the thing §3's discipline
+   * exists to refuse.
+   *
+   * `preventDefault` on both events is defensive, not participatory: if a
+   * drag *does* reach the webview, the default action for dropping a file
+   * on a page is to navigate to it, which would replace the running app
+   * with a `file://` view of whatever was dropped. Cancelling the default
+   * suppresses that; the Rust handler is upstream and unaffected.
+   */
+  let dropActive = $state(false);
+  /**
+   * `dragleave` fires on every element boundary crossed, including ones
+   * inside the window, so it cannot be trusted on its own to mean "the drag
+   * has left". A short grace period that any subsequent `dragover` cancels
+   * is the standard fix. The longer idle timer below covers the case that
+   * has no DOM event at all: a drop consumed by Tauri's own handler, after
+   * which no further `dragover` ever arrives.
+   */
+  const DROP_LEAVE_GRACE_MS = 120;
+  const DROP_IDLE_MS = 1200;
+  let dropClearTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function scheduleDropClear(delayMs: number): void {
+    clearTimeout(dropClearTimer);
+    dropClearTimer = setTimeout(() => {
+      dropActive = false;
+    }, delayMs);
+  }
+
+  function onWindowDragOver(event: DragEvent): void {
+    event.preventDefault();
+    dropActive = true;
+    scheduleDropClear(DROP_IDLE_MS);
+  }
+
+  function onWindowDragLeave(): void {
+    scheduleDropClear(DROP_LEAVE_GRACE_MS);
+  }
+
+  function onWindowDrop(event: DragEvent): void {
+    // Deliberately reads nothing off `event.dataTransfer`: the file is the
+    // Rust handler's business, and this handler's only job is to stop the
+    // webview navigating to it.
+    event.preventDefault();
+    clearTimeout(dropClearTimer);
+    dropActive = false;
+  }
+
+  onDestroy(() => clearTimeout(dropClearTimer));
+
+  /**
+   * Whether to *show* the drop state. A drop with no room focused is
+   * ignored by the core (`on_files_dropped` logs "no room is focused" and
+   * returns), so promising otherwise would be a lie — and the strip it
+   * would produce has nowhere to appear, since the composer only exists
+   * inside a selected room.
+   */
+  const showDropState = $derived(dropActive && roomVisible && roomsStore.selectedId !== null);
+
   // The `matchMedia` listeners behind `panelOverlay`/`narrow`. A separate,
   // *synchronous* `onMount` from the session-restore one below, because
   // only a synchronous callback's return value is used as the unmount
@@ -376,7 +457,12 @@
   always-mounted listener costs one comparison per keystroke and nothing
   else.
 -->
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window
+  onkeydown={onWindowKeydown}
+  ondragover={onWindowDragOver}
+  ondragleave={onWindowDragLeave}
+  ondrop={onWindowDrop}
+/>
 
 {#if checking}
   <main
@@ -450,8 +536,23 @@
         than under it. The scrim below is what makes that visible instead
         of merely factual.
       -->
+      <!--
+        `relative` unconditionally, so the drop notice below can be pinned
+        inside this pane without the class list changing between states —
+        the same reasoning as Send's `border-transparent`: a box that
+        measures the same in both states cannot shift by a pixel when it
+        changes.
+
+        The drop state itself is an inset 2px `--color-accent` outline on
+        this pane, matching the focus ring's own weight and offset (spec §9)
+        because it means the same kind of thing: *this* is what your input
+        is about to land in. `outline` rather than a border, so nothing
+        reflows while a file is in the air.
+      -->
       <section
-        class="{roomVisible ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col"
+        class="{roomVisible ? 'flex' : 'hidden'} relative min-w-0 flex-1 flex-col {showDropState
+          ? 'outline outline-2 -outline-offset-2 outline-accent'
+          : ''}"
         style={sectionInsets}
         inert={panelIsModal}
       >
@@ -645,6 +746,31 @@
         {:else}
           <div class="flex flex-1 items-center justify-center">
             <p class="text-ui text-content-muted">Choose a room from the roster.</p>
+          </div>
+        {/if}
+        {#if showDropState}
+          <!--
+            The word half of the drop state — an outline alone says
+            "something is happening here", not "let go and this becomes an
+            attachment". Sits just above the composer, where the staged
+            strip is about to appear, so the eye is already in the right
+            place when it does.
+
+            `aria-hidden` and `pointer-events-none`: this is a pointer-only
+            affordance with no keyboard or screen-reader equivalent (there
+            is no way to drag a file without a pointer), and announcing a
+            transient hover state would be noise. The attach button's own
+            accessible name is the reachable path to the same outcome.
+          -->
+          <div
+            class="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center pb-24"
+            aria-hidden="true"
+          >
+            <p
+              class="rounded-full border border-accent bg-surface-raised px-3 py-1 font-mono text-label text-accent uppercase"
+            >
+              Drop to attach
+            </p>
           </div>
         {/if}
       </section>

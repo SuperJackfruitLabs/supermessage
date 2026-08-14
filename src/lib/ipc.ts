@@ -341,7 +341,8 @@ export interface Reaction {
  *
  * `"roomChanged"` is distinct from `"protocol"`/`"notReady"` on purpose: it
  * means a room-scoped command ({@link sendMessage}, {@link sendReply},
- * {@link toggleReaction}, {@link timelinePaginateBack}) named a `roomId`
+ * {@link toggleReaction}, {@link timelinePaginateBack},
+ * {@link attachmentStage}, {@link attachmentSend}) named a `roomId`
  * that wasn't the room actually focused when the core got around to running
  * it — the caller lost a race against a room switch — and **the command did
  * not act**. Every other kind here describes something that went wrong
@@ -350,8 +351,39 @@ export interface Reaction {
  * surface it, not swallow it the way a generic failure might be: a send
  * that silently landed nowhere still needs the reader to know it needs
  * retrying, the same way a send that visibly failed does.
+ *
+ * The two attachment kinds are refusals in the same sense — nothing was
+ * sent, nothing was read — and they must not be collapsed into each other,
+ * because the reader's next move differs:
+ *
+ * - `"attachmentTooLarge"` comes from `core::attachments::check_upload_size`
+ *   (attachments design §4), at staging time *and* again immediately before
+ *   the bytes are read at send time. Its `message` already names both real
+ *   sizes in binary units — *"that file is 200.0 MiB, but this homeserver
+ *   accepts at most 50.0 MiB"* — because "upload failed" is not something a
+ *   reader can act on. Show the core's own message; do not replace it with a
+ *   generic one, and do not restate the numbers in decimal units (a
+ *   homeserver limit is a power of two, so "52.4 MB" against a "50 MB"
+ *   limit reads as a contradiction).
+ * - `"unknownAttachment"` means the staging token names nothing: already
+ *   sent (tokens are single use), discarded, swept by the core's staging
+ *   timeout, or dropped by a room switch or a logout. The file is *gone* and
+ *   the reader has to attach it again. This is the kind that is easiest to
+ *   confuse with `"roomChanged"` and must not be: `"roomChanged"` means the
+ *   file is **still staged, for a different room** and is recoverable by
+ *   switching back, while this one means there is nothing left to recover.
+ *   See `$lib/components/stagedAttachment.ts`'s `attachmentFailure`, which
+ *   is the one place that mapping is written down.
  */
-export type CoreErrorKind = "auth" | "network" | "store" | "protocol" | "notReady" | "roomChanged";
+export type CoreErrorKind =
+  | "auth"
+  | "network"
+  | "store"
+  | "protocol"
+  | "notReady"
+  | "roomChanged"
+  | "attachmentTooLarge"
+  | "unknownAttachment";
 
 /**
  * Mirrors the serialized shape of `CoreError`. Every command in this file
@@ -407,10 +439,82 @@ export interface TypingPayload {
   users: TypingUser[];
 }
 
+/**
+ * A file the core has staged for sending, mirroring `StagedAttachment` from
+ * `src-tauri/src/core/attachments.rs`. Returned by {@link attachmentStage}
+ * and carried, byte for byte the same shape, on {@link onStagedAttachment} —
+ * so a picked file and a dropped file are the same thing to the composer.
+ *
+ * **There is no path here, and there is never going to be one** (attachments
+ * design §3). The webview is told what it needs to render the review strip
+ * and nothing that identifies a location on disk; {@link token} is what
+ * comes back on send. A Rust-side test asserts this payload is exactly these
+ * six fields, so a `path`/`dir`/`source` added to the struct later fails
+ * there rather than quietly shipping a filesystem location into the webview.
+ *
+ * The token's rules, all enforced in the core and all worth knowing here
+ * because each one is a way a send can legitimately fail:
+ *
+ * - **Single use.** Consumed by {@link attachmentSend} *before* a byte is
+ *   read, so a replay cannot re-send the file — and so a failed send leaves
+ *   the token spent. A second press of Send on the same strip gets
+ *   `"unknownAttachment"`, which is why the composer drops the strip on a
+ *   failure instead of offering a retry it cannot honour.
+ * - **Bound to the room it was staged for.** Sending it into another room is
+ *   refused with `"roomChanged"`, without sending and without consuming.
+ * - **Bounded lifetime.** The core sweeps a staged file after ten minutes,
+ *   on logout, and on a room switch. Nothing tells the webview when that
+ *   happens; the token simply stops resolving.
+ * - **One per room.** Staging a second file for the same room *replaces* the
+ *   first and drops its token (see `StagedAttachments::insert_at`). The
+ *   composer must overwrite what it is showing rather than accumulate a
+ *   list — there is no multi-attachment state to hold, on either side.
+ */
+export interface StagedAttachment {
+  /** Opaque, unguessable, single use, room-bound. Carries no path information. */
+  token: string;
+  /**
+   * The file's own name on disk. Local rather than sender-controlled at this
+   * point — but it is echoed back from the homeserver once sent, at which
+   * point it is (spec §9), and a filename can legally contain newlines,
+   * control characters and bidi overrides. Bound and neutralize it before
+   * rendering (`$lib/components/stagedAttachment.ts`'s `sanitizeFilename`),
+   * never `{@html}` it.
+   */
+  filename: string;
+  /** The file's size in bytes, as `stat` reported it before anything was read. */
+  sizeBytes: number;
+  /**
+   * Detected from the file's *content*, not from its extension (design §5:
+   * "an extension is a claim, not a fact"), falling back to
+   * `"application/octet-stream"` when nothing recognised it — which is the
+   * honest encoding of "we could not tell" and maps to `m.file`.
+   */
+  mime: string;
+  /**
+   * Image pixel width, read from the file header. **The key is absent, not
+   * `null`**, for anything that is not an image and for an image whose
+   * header could not be parsed — hence `width?: number` rather than the
+   * `number | null` every other optional field in this file uses. This is
+   * the one place the attachment DTO departs from the house convention, and
+   * it is deliberate on the Rust side
+   * (`#[serde(skip_serializing_if = "Option::is_none")]`).
+   */
+  width?: number;
+  /** Image pixel height. Absent, not `null`, exactly like {@link StagedAttachment.width}. */
+  height?: number;
+}
+
 const ROOMS_DIFF_EVENT = "sm://rooms/diff";
 const TIMELINE_DIFF_EVENT = "sm://timeline/diff";
 const CONNECTION_EVENT = "sm://connection";
 const TYPING_EVENT = "sm://typing";
+/**
+ * A file dropped on the window and staged by the **Rust** drag-drop handler
+ * (`core::attachments::on_files_dropped`). See {@link onStagedAttachment} —
+ * and read that function's comment before adding any other drop handling.
+ */
+const STAGED_ATTACHMENT_EVENT = "sm://attachment/staged";
 
 /** Queries the core's basic identity — platform, crypto provider, SDK link. */
 export async function coreStatus(): Promise<CoreStatus> {
@@ -654,6 +758,117 @@ export async function roomInfo(roomId: string): Promise<RoomInfo> {
  */
 export async function memberAvatar(mxcUri: string): Promise<string | null> {
   return invoke<string | null>("member_avatar", { mxcUri });
+}
+
+/**
+ * Opens the **native** file picker for `roomId` and stages whatever the
+ * reader chooses, resolving to its metadata — or to `null` when they
+ * cancelled.
+ *
+ * **`null` is not an error, and it is the common case.** Cancelling is the
+ * most frequent outcome of opening a picker (design §7), so it comes back as
+ * a normal empty result. Callers must branch on the value, never treat the
+ * empty case as something to `catch` — a `try`/`catch` that reports "couldn't
+ * attach that file" every time someone presses Escape in a file chooser will
+ * also eventually swallow a real failure.
+ *
+ * The picker is opened from Rust, not from JavaScript, which is the whole
+ * reason this command exists rather than the webview opening one itself:
+ * `capabilities/default.json` grants no `dialog:*` and no `fs:*` permission,
+ * so nothing running in this webview can learn — or read — a path. What
+ * comes back is an opaque token (see {@link StagedAttachment}).
+ *
+ * Nothing is read here beyond a header: the file is `stat`ed and
+ * size-checked against the homeserver's `m.upload.size` *before* any read
+ * (design §4), and its first few KiB are probed for mime type and image
+ * dimensions. The body is only read at {@link attachmentSend} time.
+ *
+ * `roomId` is verified against whichever room is actually focused, the same
+ * way {@link sendMessage}'s is, before the dialog even opens. Rejects with a
+ * `"roomChanged"`-kind {@link CoreError} on a mismatch, and with an
+ * `"attachmentTooLarge"`-kind one — naming both sizes — for a file over the
+ * limit. Staging a second file for the same room replaces the first; see
+ * {@link StagedAttachment}.
+ */
+export async function attachmentStage(roomId: string): Promise<StagedAttachment | null> {
+  return invoke<StagedAttachment | null>("attachment_stage", { roomId });
+}
+
+/**
+ * Reads, uploads and sends the staged file `token` stands for, into
+ * `roomId`. **Consumes the token**, whether or not the send then succeeds.
+ *
+ * Sends through the core's send queue, the same path {@link sendMessage}
+ * uses, so the attachment gets a local echo immediately, retries across a
+ * reconnect and orders against other sends. Like {@link sendMessage} it
+ * appends nothing to `timelineStore.items` itself — the echo arrives through
+ * the diff stream {@link onTimelineDiff} subscribes to, which is the rule
+ * this codebase has broken once and paid for.
+ *
+ * The three refusals a caller has to tell apart (see {@link CoreErrorKind}):
+ *
+ * - `"roomChanged"` — either the room is no longer focused or the token was
+ *   staged for a different one. Nothing was sent and **the token was not
+ *   consumed**: the file is still staged for the room it was picked in.
+ * - `"unknownAttachment"` — the token names nothing at all: spent, discarded,
+ *   expired, or dropped by a room switch or logout. There is nothing to
+ *   recover; the reader has to attach the file again.
+ * - `"attachmentTooLarge"` — re-checked here, immediately before the read,
+ *   because a file on disk can grow between staging and sending (a download
+ *   completing, a log file, a video still rendering).
+ */
+export async function attachmentSend(roomId: string, token: string): Promise<void> {
+  await invoke<void>("attachment_send", { roomId, token });
+}
+
+/**
+ * Discards a staged file — what the composer's "remove" affordance calls,
+ * and the way out the review step (design §2) requires.
+ *
+ * **Never rejects**, including for a token that is already gone: discarding
+ * twice, discarding one the core's timeout already swept, or discarding one
+ * a room switch already dropped is the outcome the caller wanted either way.
+ * That is what makes it safe to call unconditionally on every path that
+ * abandons an attachment (remove, room switch, a failed send, teardown)
+ * without first working out whether the core still holds it.
+ *
+ * Takes no room id: a token identifies exactly one staged file, and the room
+ * it belongs to is the core's business, not the caller's.
+ */
+export async function attachmentDiscard(token: string): Promise<void> {
+  await invoke<void>("attachment_discard", { token });
+}
+
+/**
+ * Subscribes to files dropped on the window and staged by the core, on
+ * {@link STAGED_ATTACHMENT_EVENT}.
+ *
+ * **This is the only drop channel the webview may listen on, and the rule is
+ * enforced by review rather than by the platform.** Tauri's own
+ * `tauri://drag-drop` (and its `drag-enter`/`drag-over` siblings) still reach
+ * this webview carrying the **raw filesystem paths** of the dropped files,
+ * and cannot be suppressed while keeping the Rust handler that stages them:
+ * `disable_drag_drop_handler()` turns off both at once. So the honest
+ * statement of what the design's §3 buys is narrower than "the webview never
+ * sees a path" — it is that *our* IPC surface never carries one, no command
+ * we expose will read a path the webview supplies, and no filesystem
+ * capability is granted, so knowing a path confers nothing.
+ *
+ * The part that only discipline can hold is this one: nothing in this
+ * codebase listens for `tauri://drag-drop`. Adding a second drop handler
+ * "just to show a filename sooner" would put attacker-reachable paths into
+ * webview memory for no capability we do not already have through this
+ * event, and would be a review defect rather than a bug the type system can
+ * catch. See `core::attachments::on_files_dropped`.
+ *
+ * The payload is the same {@link StagedAttachment} {@link attachmentStage}
+ * returns, and it names **no room** — a drop lands on whatever room is
+ * focused, so the core resolves that itself. The handler must therefore
+ * attribute the file to the room it believes is focused *at the moment the
+ * event arrives*, and re-check it before sending.
+ */
+export function onStagedAttachment(handler: (staged: StagedAttachment) => void): Promise<UnlistenFn> {
+  return listen<StagedAttachment>(STAGED_ATTACHMENT_EVENT, (event) => handler(event.payload));
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
