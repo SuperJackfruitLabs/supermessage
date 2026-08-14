@@ -55,6 +55,29 @@ with a script, anything that gets to call `invoke`. A token that indexes a
 server-side map is inert in a way a filesystem path is not, and this codebase
 has already shipped one HTML-injection scare.
 
+### What this does not achieve — corrected after implementation
+
+The heading above overstates it, and the honest version matters more than the
+tidy one. **Tauri's own `tauri://drag-drop` event still reaches the webview
+carrying raw paths, and cannot be suppressed** while keeping the Rust handler:
+`disable_drag_drop_handler()` turns off both at once. So a dropped file's path
+*is* available in the webview whether we want it or not.
+
+What actually holds is narrower, and still worth having:
+
+- **Our IPC surface carries no paths.** Every command and event we define
+  passes tokens. Nothing we expose can be asked to read an arbitrary file.
+- **The frontend listens for `sm://attachment/staged` and never for
+  `tauri://drag-drop`.** That is a discipline, enforced by review rather than
+  by the platform — so it belongs in a comment at the listener, where someone
+  adding a second drop handler will read it.
+- **No filesystem capability is granted** to the webview, so knowing a path
+  does not confer the ability to read it.
+
+The residual is that a compromised webview learns the paths of files the user
+drops. That is a real reduction from the guarantee this section originally
+claimed, and it is a platform limitation rather than a design choice.
+
 ### Token rules
 
 - Minted per staged file; opaque, unguessable, no path information encoded.
