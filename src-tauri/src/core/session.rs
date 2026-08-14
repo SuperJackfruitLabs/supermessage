@@ -33,8 +33,9 @@ use super::dto::RoomSummary;
 use super::error::{CoreError, CoreResult};
 use super::media;
 use super::room_info::{self, RoomInfoDto};
-use super::rooms::{self, RoomListHandle};
+use super::rooms::{self, RoomListHandle, SpaceSelection};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
+use super::spaces::{self, SpaceSummary};
 use super::sync::{self, SyncHandle};
 use super::timeline::FocusedTimeline;
 use super::tls;
@@ -384,6 +385,81 @@ impl Session {
         let rooms = self.rooms.read().await;
         let handle = rooms.as_ref().ok_or(CoreError::NotReady)?;
         handle.snapshot()
+    }
+
+    /// The account's joined spaces, each with the count of joined rooms its
+    /// subtree flattens to — the spaces rail's whole data set.
+    ///
+    /// **A one-shot fetch, not a third diff-streamed channel** (spaces-rail
+    /// design §5). Spaces change far less than the room list; the frontend
+    /// re-fetches on session start and after a resync. Promoting this to a
+    /// stream later is a contained change, and starting there would be
+    /// machinery bought before it is needed.
+    ///
+    /// **Deliberately not serialized through [`Self::lifecycle`]**, for the
+    /// reason [`Self::room_avatar`]'s doc comment gives: this is a one-shot
+    /// read that clones the client, walks the local state store and returns,
+    /// leaving nothing running. Losing a race with `logout` fails the call
+    /// rather than leaking a handle across the teardown.
+    ///
+    /// Fails with [`CoreError::NotReady`] when nothing is logged in.
+    pub async fn spaces_list(&self) -> CoreResult<Vec<SpaceSummary>> {
+        let client = self.require_client().await?;
+        Ok(spaces::build_space_index(&client).await?.summaries())
+    }
+
+    /// Scopes the roster to `space_id`'s flattened subtree, or restores every
+    /// room when it is `None`.
+    ///
+    /// **Nothing about the focused room or its timeline is touched** (design
+    /// §7). Filtering the roster is a change to a navigation surface; the
+    /// room pane keeps showing whatever the reader is reading, even if the
+    /// switch filters it out of the list. A space switch that re-subscribed
+    /// the timeline would restart *that* channel's sequence counter behind a
+    /// `DiffTracker` armed for the old one, which is the same silent
+    /// corruption the room-list channel guards against — so this deliberately
+    /// has no path to `subscribe_timeline`.
+    ///
+    /// **Refuses rather than no-ops when there is no session.**
+    /// `NotReady` — the same answer every other command gives — because a
+    /// selection with nothing to select from is a frontend bug, and silently
+    /// swallowing it would let the rail believe the roster is scoped when no
+    /// roster exists. The frontend re-fetches `spaces_list` on session start
+    /// anyway, so there is no legitimate caller in that state.
+    ///
+    /// **A space that has vanished fails with [`CoreError::UnknownSpace`]**
+    /// rather than falling back to "All rooms" — see
+    /// `core::spaces::SpaceIndex::rooms_in` for why the silent fall back is
+    /// the worse of the two.
+    ///
+    /// **Selection does not survive logout, by construction.** It lives in
+    /// the room-list stream task, which `logout` stops
+    /// ([`Self::stop_room_list`]); the next session's task starts at
+    /// [`SpaceSelection::All`]. Nothing here persists it, and nothing should:
+    /// a restored session's spaces may not be the previous account's at all.
+    pub async fn select_space(&self, space_id: Option<&str>) -> CoreResult<()> {
+        let client = self.require_client().await?;
+
+        let selection = match space_id {
+            None => SpaceSelection::All,
+            Some(space_id) => {
+                let parsed =
+                    RoomId::parse(space_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+                let room_ids = spaces::build_space_index(&client)
+                    .await?
+                    .rooms_in(&parsed)?;
+                SpaceSelection::Space { room_ids }
+            }
+        };
+
+        // Resolved *before* the handle is borrowed, so the subtree walk never
+        // holds the room-list lock, and so a `NotReady`/`UnknownSpace`
+        // refusal leaves the running filter untouched.
+        let rooms = self.rooms.read().await;
+        rooms
+            .as_ref()
+            .ok_or(CoreError::NotReady)?
+            .select_space(selection)
     }
 
     /// Clones the active client handle. `Client` is internally reference

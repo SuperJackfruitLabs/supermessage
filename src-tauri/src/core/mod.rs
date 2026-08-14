@@ -18,6 +18,7 @@ pub mod room_info;
 pub mod rooms;
 pub mod secrets;
 pub mod session;
+pub mod spaces;
 pub mod sync;
 pub mod timeline;
 pub mod tls;

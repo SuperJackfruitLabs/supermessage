@@ -60,6 +60,19 @@ pub enum CoreError {
     /// rather than failures — nothing was sent either way.
     #[error("that file is no longer staged; pick it again")]
     UnknownAttachment,
+    /// `space_select` named a room that is not a space this account has
+    /// joined: left since the rail was last fetched, never joined, or simply
+    /// not a space. See `core::spaces::SpaceIndex::rooms_in`.
+    ///
+    /// A refusal, not a failure — nothing about the roster changed. Its own
+    /// variant so the frontend can branch: the right response is to re-fetch
+    /// `spaces_list` and move its own selection back to "All rooms", which
+    /// is a different reaction from the one a generic `protocol` error would
+    /// get. Silently widening the roster core-side instead would leave the
+    /// rail highlighting a space that no longer exists while showing every
+    /// room in the account underneath it.
+    #[error("no joined space with id {space_id}")]
+    UnknownSpace { space_id: String },
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;
@@ -75,6 +88,7 @@ impl CoreError {
             Self::RoomChanged { .. } => "roomChanged",
             Self::AttachmentTooLarge { .. } => "attachmentTooLarge",
             Self::UnknownAttachment => "unknownAttachment",
+            Self::UnknownSpace { .. } => "unknownSpace",
         }
     }
 }
@@ -137,5 +151,15 @@ mod tests {
         let json = serde_json::to_value(CoreError::UnknownAttachment).unwrap();
         assert_eq!(json["kind"], "unknownAttachment");
         assert!(json["message"].as_str().is_some_and(|m| !m.is_empty()));
+    }
+
+    #[test]
+    fn unknown_space_serializes_with_its_own_kind_and_names_the_space() {
+        let json = serde_json::to_value(CoreError::UnknownSpace {
+            space_id: "!gone:x.org".into(),
+        })
+        .unwrap();
+        assert_eq!(json["kind"], "unknownSpace");
+        assert!(json["message"].as_str().unwrap().contains("!gone:x.org"));
     }
 }

@@ -13,20 +13,30 @@
 //! [`RoomListHandle::snapshot`] serve a resync out of the live task's own
 //! state instead of opening a second, independently-numbered subscription —
 //! see that method's doc comment for why a second subscription cannot work.
+//!
+//! The spaces rail scopes this same stream rather than adding a second one
+//! (spaces-rail design §4): [`RoomListHandle::select_space`] sends a
+//! [`SpaceSelection`] down a channel into the running task, which swaps the
+//! filter. Everything about *why* that has to be a channel, and why the
+//! resulting re-emission must not restart the sequence counter, is on
+//! [`drive_room_list`].
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use eyeball_im::VectorDiff;
-use futures_util::{pin_mut, StreamExt};
+use futures_util::{pin_mut, Stream, StreamExt};
 use matrix_sdk::ruma::{OwnedRoomId, UserId};
 use matrix_sdk::{Room, RoomMemberships};
 use matrix_sdk_ui::room_list_service::filters::{
-    new_filter_all, new_filter_non_left, new_filter_not, new_filter_space,
+    new_filter_all, new_filter_identifiers, new_filter_non_left, new_filter_not, new_filter_space,
+    BoxedFilterFn,
 };
 use matrix_sdk_ui::room_list_service::RoomListItem;
 use matrix_sdk_ui::timeline::{LatestEventValue, Profile, RoomExt, TimelineDetails};
 use tauri::{AppHandle, Emitter};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::dto::{
@@ -456,6 +466,192 @@ async fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomS
         .collect()
 }
 
+/// Which rooms the roster is scoped to.
+///
+/// Sent into the running stream task rather than applied by the caller: the
+/// dynamic-adapter controller lives inside that task and cannot be reached
+/// from a command — see [`drive_room_list`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpaceSelection {
+    /// No space selected: every non-left, non-space room. The state a
+    /// session starts in, and what "All rooms" restores.
+    All,
+    /// A space is selected. Carries the *already flattened* joined room ids
+    /// beneath it (`core::spaces::SpaceIndex::rooms_in`), not the space id:
+    /// flattening needs the client and a subtree walk, and the stream task
+    /// has no business doing either.
+    Space { room_ids: Vec<OwnedRoomId> },
+}
+
+/// The roster's filter for a given selection (spaces-rail design §4).
+///
+/// `all([non_left, not(space)])` unscoped, plus an `identifiers` clause when
+/// a space is selected.
+///
+/// The first two clauses are unchanged from `b27b6f0` and must stay: a Matrix
+/// space *is* a room — same state, same timeline — marked only by
+/// `m.room.type: m.space` on its creation event. Without `not(space)` a space
+/// arrives in the roster as an ordinary room, with a timeline nobody writes
+/// to and an unread count that means nothing. That was reported from real
+/// use: a space called "SuperChotuVerse" sitting in the list looking like a
+/// conversation.
+///
+/// `new_filter_space` **keeps** spaces rather than removing them, despite a
+/// doc comment that reads "filter out rooms that are spaces" — its body is
+/// `|room| room.cached_is_space`, returned directly. It is an include-filter
+/// with an exclude-sounding description, so it has to be wrapped in `not`
+/// here. `core::spaces::build_space_index` uses the very same constructor
+/// *unwrapped* to enumerate spaces for the rail; sharing it is what keeps the
+/// two surfaces agreeing about which rooms one hides and the other lists.
+///
+/// The `not(space)` clause stays even when a space is selected, and it is not
+/// redundant with the identifier list: a selected space's subtree can contain
+/// subspaces, and the reader must not find them sitting in the roster
+/// pretending to be conversations. `core::spaces` already leaves them out of
+/// the flattened list, so this is belt-and-braces on the clause that carries
+/// the reasoning.
+fn room_list_filter(selection: &SpaceSelection) -> BoxedFilterFn {
+    let mut clauses: Vec<BoxedFilterFn> = vec![
+        Box::new(new_filter_non_left()),
+        Box::new(new_filter_not(Box::new(new_filter_space()))),
+    ];
+    if let SpaceSelection::Space { room_ids } = selection {
+        // Children we have not joined disappear for free (§4): they are not
+        // in the room list at all, so this clause never matches them.
+        clauses.push(Box::new(new_filter_identifiers(room_ids.clone())));
+    }
+    Box::new(new_filter_all(clauses))
+}
+
+/// Drives one room-list stream for its whole life: projects every batch,
+/// stamps it, folds it into the materialized snapshot, and emits it — and
+/// applies space selections as they arrive.
+///
+/// **Why a channel at all.** The filter is set through the dynamic-adapter
+/// controller, which is created inside the spawned task (it has to be — see
+/// [`spawn_room_list`]'s doc comment on the borrow the stream holds). A
+/// `space_select` command therefore cannot reach it directly; it hands a
+/// [`SpaceSelection`] to this loop instead, which owns the controller.
+///
+/// **Why the re-emission must not restart the counter, which is the whole
+/// point of this function.** `set_filter` makes the SDK's stream yield a
+/// fresh `VectorDiff::Reset` carrying the newly filtered list. The webview's
+/// `DiffTracker` handles `Reset` fine. What it cannot survive is a *sequence
+/// restart it was not armed for*: `DiffTracker.apply` only ever detects gaps
+/// **forward**, so an envelope numbered lower than expected reads as an
+/// already-applied duplicate and is silently dropped — no gap, no resync —
+/// and once the new numbering climbs back past the stale expected value its
+/// ops fold onto leftover state from before the switch. Silent corruption,
+/// not staleness, and this codebase has shipped that exact bug before (see
+/// `src/lib/stores/rooms.svelte.ts`'s module comment, and
+/// `Session::restore_and_start`).
+///
+/// The structural defence is that there is no second emit path. Applying a
+/// selection does nothing but call `apply_selection`; the `Reset` it provokes
+/// comes back through the *same* `stream.next()` arm as every other batch and
+/// is stamped by the same [`SeqCounter`], which is owned here and never
+/// replaced. A future edit that wanted to emit the new list "directly" from
+/// the selection arm would have to reintroduce a counter to do it, and that
+/// is the mutation `space_selection_reemits_through_the_same_sequence`
+/// catches.
+///
+/// Generic over the batch type and over projection, emission and filter
+/// application, so the loop can be driven in a unit test with a hand-fed
+/// stream instead of a live homeserver. `spawn_room_list` is the only
+/// production caller and supplies the real four.
+///
+/// Both `select!` arms are cancel-safe: `StreamExt::next` keeps its state in
+/// the stream rather than the future, and `mpsc::UnboundedReceiver::recv`
+/// documents cancel safety explicitly, so a batch and a selection racing each
+/// other cannot lose either one.
+async fn drive_room_list<Batch, S, Project, Projected, Apply, Emit>(
+    stream: S,
+    mut selections: mpsc::UnboundedReceiver<SpaceSelection>,
+    mut project: Project,
+    mut apply_selection: Apply,
+    mut emit: Emit,
+    state: &Mutex<RoomListSnapshot>,
+) where
+    S: Stream<Item = Batch>,
+    Project: FnMut(Batch) -> Projected,
+    Projected: Future<Output = Vec<DiffOp<RoomSummary>>>,
+    Apply: FnMut(&SpaceSelection),
+    Emit: FnMut(DiffEnvelope<RoomSummary>),
+{
+    pin_mut!(stream);
+    // Created once, here, for the life of the stream. Nothing in this
+    // function may ever hand out a second one.
+    let mut seq = SeqCounter::default();
+    // Gates the selection arm off once every sender is gone. Without it that
+    // arm would be ready-with-`None` on every pass and spin the loop at full
+    // speed; a `select!` branch whose precondition is false is not polled at
+    // all. It must gate the *branch*, not be handled inside the arm body —
+    // anything awaited in an arm body blocks the stream arm too, which would
+    // stall the roster rather than merely stop accepting selections.
+    let mut selections_open = true;
+
+    loop {
+        tokio::select! {
+            batch = stream.next() => {
+                let Some(batch) = batch else { break };
+                let ops = project(batch).await;
+                let seq_no = seq.next_seq();
+
+                // Fold this batch into the materialized list *before*
+                // emitting, under the same lock `snapshot()` reads. A
+                // `snapshot()` call that races this either observes the state
+                // from just before this batch or from just after it — never a
+                // torn mix of "the new seq number with the old list" or vice
+                // versa.
+                let folded_len = {
+                    let mut guard = state
+                        .lock()
+                        .expect("room list state lock poisoned by an earlier panic");
+                    apply_ops(&mut guard.1, &ops);
+                    guard.0 = seq_no;
+                    guard.1.len()
+                };
+
+                tracing::debug!(
+                    seq = seq_no,
+                    ops = ops.len(),
+                    kinds = ?ops.iter().map(op_name).collect::<Vec<_>>(),
+                    rooms = folded_len,
+                    "emitting room list diff"
+                );
+
+                emit(DiffEnvelope {
+                    channel: ROOMS_CHANNEL.into(),
+                    subject: String::new(),
+                    seq: seq_no,
+                    ops,
+                });
+            }
+            selection = selections.recv(), if selections_open => {
+                match selection {
+                    Some(selection) => {
+                        tracing::debug!(
+                            scoped = matches!(selection, SpaceSelection::Space { .. }),
+                            "applying a space selection to the room list filter"
+                        );
+                        // Deliberately the *only* thing this arm does. The
+                        // new list comes back as a `Reset` on the stream arm
+                        // above, through the one sequence counter — see this
+                        // function's doc comment.
+                        apply_selection(&selection);
+                    }
+                    // Every sender is gone; no further selection can arrive.
+                    // The roster keeps streaming — losing the rail must not
+                    // cost the reader their room list. In practice this
+                    // cannot happen while the task lives, since the sender
+                    // sits in the `RoomListHandle` whose `Drop` aborts it.
+                    None => selections_open = false,
+                }
+            }
+        }
+    }
+}
+
 /// Owns the background task streaming the room list to the webview.
 ///
 /// Mirrors `core::sync::SyncHandle`'s shape: dropping a `RoomListHandle`, or
@@ -468,10 +664,31 @@ async fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomS
 /// from a corrupted stream.
 pub struct RoomListHandle {
     state: Arc<Mutex<RoomListSnapshot>>,
+    /// The way into the running task's filter (see [`drive_room_list`]).
+    /// Dropped with the handle, which is also what ends any space selection:
+    /// the selection is task state, so a logout — which stops the task —
+    /// resets the roster to [`SpaceSelection::All`] with no extra bookkeeping.
+    selections: mpsc::UnboundedSender<SpaceSelection>,
     task: JoinHandle<()>,
 }
 
 impl RoomListHandle {
+    /// Scopes the roster to `selection`, or restores every room with
+    /// [`SpaceSelection::All`].
+    ///
+    /// Returns as soon as the selection is queued — the re-filtered list
+    /// arrives asynchronously on [`ROOMS_DIFF_EVENT`] as an ordinary
+    /// `Reset`-bearing envelope, with the next sequence number, like any
+    /// other batch. Callers must not wait for it or resync against it.
+    ///
+    /// Fails only when the streaming task is already gone, which for a
+    /// handle the session still holds means it panicked.
+    pub fn select_space(&self, selection: SpaceSelection) -> CoreResult<()> {
+        self.selections
+            .send(selection)
+            .map_err(|_| CoreError::Protocol("the room list stream is no longer running".into()))
+    }
+
     /// Stops the background streaming task and waits for it to actually
     /// finish. Safe to call more than once, and safe alongside letting the
     /// handle simply drop (`Drop` aborts the same task).
@@ -552,71 +769,43 @@ pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<
     let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
     let task_state = Arc::clone(&state);
 
+    // Unbounded so `select_space` never awaits and never blocks a command
+    // thread. A reader clicking the rail generates a handful of messages at
+    // human speed; the only way this could grow is if the stream task were
+    // wedged, in which case a bounded channel would just move the wedge to
+    // the caller.
+    let (selections_tx, selections_rx) = mpsc::unbounded_channel::<SpaceSelection>();
+
     let task = tokio::spawn(async move {
         let (stream, controller) = room_list.entries_with_dynamic_adapters(ROOM_LIST_PAGE_SIZE);
-        // Non-left, and not a space.
-        //
-        // A Matrix space *is* a room — same state, same timeline — marked only
-        // by `m.room.type: m.space` on its creation event. Without the second
-        // clause a space arrives in the roster as an ordinary room, with a
-        // timeline nobody writes to and an unread count that means nothing.
-        // That was reported from real use: a space called "SuperChotuVerse"
-        // sitting in the list looking like a conversation.
-        //
-        // `new_filter_space` **keeps** spaces rather than removing them,
-        // despite a doc comment that reads "filter out rooms that are spaces"
-        // — its body is `|room| room.cached_is_space`, returned directly. It
-        // is an include-filter with an exclude-sounding description, so it has
-        // to be wrapped in `not` here. Anyone who reads that comment and uses
-        // the filter bare gets exactly the opposite of what they wanted; the
-        // same constructor is what a future space rail will use *unwrapped*,
-        // to enumerate spaces rather than to hide them.
-        controller.set_filter(Box::new(new_filter_all(vec![
-            Box::new(new_filter_non_left()),
-            Box::new(new_filter_not(Box::new(new_filter_space()))),
-        ])));
-        pin_mut!(stream);
+        // A session starts unscoped; the rail selects into it afterwards.
+        controller.set_filter(room_list_filter(&SpaceSelection::All));
 
-        let mut seq = SeqCounter::default();
-        while let Some(batch) = stream.next().await {
-            let ops = project_batch(batch).await;
-            let seq_no = seq.next_seq();
-
-            // Fold this batch into the materialized list *before* emitting,
-            // under the same lock `snapshot()` reads. A `snapshot()` call
-            // that races this either observes the state from just before
-            // this batch or from just after it — never a torn mix of "the
-            // new seq number with the old list" or vice versa.
-            let folded_len = {
-                let mut guard = task_state
-                    .lock()
-                    .expect("room list state lock poisoned by an earlier panic");
-                apply_ops(&mut guard.1, &ops);
-                guard.0 = seq_no;
-                guard.1.len()
-            };
-
-            tracing::debug!(
-                seq = seq_no,
-                ops = ops.len(),
-                kinds = ?ops.iter().map(op_name).collect::<Vec<_>>(),
-                rooms = folded_len,
-                "emitting room list diff"
-            );
-
-            let envelope = DiffEnvelope {
-                channel: ROOMS_CHANNEL.into(),
-                subject: String::new(),
-                seq: seq_no,
-                ops,
-            };
-            if let Err(err) = app.emit(ROOMS_DIFF_EVENT, &envelope) {
-                tracing::warn!(error = %err, "failed to emit {ROOMS_DIFF_EVENT}");
-            }
-        }
+        drive_room_list(
+            stream,
+            selections_rx,
+            project_batch,
+            |selection| {
+                // `set_filter` returns false only when the stream has been
+                // dropped, which cannot be the case while `drive_room_list`
+                // is still polling it.
+                controller.set_filter(room_list_filter(selection));
+            },
+            |envelope| {
+                if let Err(err) = app.emit(ROOMS_DIFF_EVENT, &envelope) {
+                    tracing::warn!(error = %err, "failed to emit {ROOMS_DIFF_EVENT}");
+                }
+            },
+            &task_state,
+        )
+        .await;
     });
 
-    Ok(RoomListHandle { state, task })
+    Ok(RoomListHandle {
+        state,
+        selections: selections_tx,
+        task,
+    })
 }
 
 #[cfg(test)]
@@ -843,6 +1032,25 @@ mod tests {
         assert_eq!(snapshot.1, vec![room("!a:x.org"), room("!b:x.org")]);
     }
 
+    /// A `RoomListHandle` around an arbitrary task, for the handle-lifecycle
+    /// tests. The selection channel's receiver is returned alongside so it
+    /// stays alive — dropping it would close the channel and make
+    /// `select_space` fail for reasons that have nothing to do with the task.
+    fn handle_for(
+        state: Arc<Mutex<RoomListSnapshot>>,
+        task: JoinHandle<()>,
+    ) -> (RoomListHandle, mpsc::UnboundedReceiver<SpaceSelection>) {
+        let (selections, rx) = mpsc::unbounded_channel();
+        (
+            RoomListHandle {
+                state,
+                selections,
+                task,
+            },
+            rx,
+        )
+    }
+
     #[tokio::test]
     async fn stop_and_join_aborts_the_background_task_and_waits_for_it() {
         let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
@@ -851,7 +1059,7 @@ mod tests {
                 tokio::time::sleep(Duration::from_secs(3600)).await;
             }
         });
-        let mut handle = RoomListHandle { state, task };
+        let (mut handle, _selections) = handle_for(state, task);
 
         assert!(!handle.task.is_finished());
         handle.stop_and_join().await;
@@ -875,9 +1083,222 @@ mod tests {
         }));
 
         let task = tokio::spawn(async {});
-        let handle = RoomListHandle { state, task };
+        let (handle, _selections) = handle_for(state, task);
 
         let err = handle.snapshot().unwrap_err();
         assert_eq!(err.kind(), "protocol");
+    }
+
+    #[tokio::test]
+    async fn select_space_fails_once_the_stream_task_is_gone() {
+        // The receiver is dropped with the task's scope here, standing in for
+        // a task that has ended. `select_space` must report that rather than
+        // pretending the roster was scoped.
+        let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
+        let (selections, rx) = mpsc::unbounded_channel();
+        let handle = RoomListHandle {
+            state,
+            selections,
+            task: tokio::spawn(async {}),
+        };
+        drop(rx);
+
+        let err = handle.select_space(SpaceSelection::All).unwrap_err();
+        assert_eq!(err.kind(), "protocol");
+    }
+
+    // -- the driver loop, and the sequence continuity it exists to protect --
+
+    /// Turns a receiver into a `Stream`, so a test can hand `drive_room_list`
+    /// batches one at a time and in a known order relative to selections.
+    ///
+    /// `unfold` keeps its in-flight future inside the stream rather than the
+    /// `Next` future, so this stays cancel-safe under `select!` exactly like
+    /// the SDK stream it stands in for.
+    fn stream_of<T>(rx: mpsc::UnboundedReceiver<T>) -> impl Stream<Item = T> {
+        futures_util::stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|item| (item, rx))
+        })
+    }
+
+    /// A batch of already-projected ops — what `project_batch` would have
+    /// returned — so the driver can be exercised without a `RoomListItem`.
+    fn push(id: &str) -> Vec<DiffOp<RoomSummary>> {
+        vec![DiffOp::PushBack { value: room(id) }]
+    }
+
+    fn reset(ids: &[&str]) -> Vec<DiffOp<RoomSummary>> {
+        vec![DiffOp::Reset {
+            values: ids.iter().map(|id| room(id)).collect(),
+        }]
+    }
+
+    fn room_id(id: &str) -> OwnedRoomId {
+        matrix_sdk::ruma::RoomId::parse(id).unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_driver_stamps_batches_with_a_monotonic_sequence_and_folds_them() {
+        let (batches_tx, batches_rx) = mpsc::unbounded_channel();
+        let (_selections_tx, selections_rx) = mpsc::unbounded_channel();
+        let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
+        let emitted = Arc::new(Mutex::new(Vec::new()));
+
+        batches_tx.send(push("!a:x.org")).unwrap();
+        batches_tx.send(push("!b:x.org")).unwrap();
+        drop(batches_tx);
+
+        let sink = Arc::clone(&emitted);
+        drive_room_list(
+            stream_of(batches_rx),
+            selections_rx,
+            |ops: Vec<DiffOp<RoomSummary>>| async move { ops },
+            |_| {},
+            |envelope| sink.lock().unwrap().push(envelope),
+            &state,
+        )
+        .await;
+
+        let seqs: Vec<u64> = emitted.lock().unwrap().iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, vec![1, 2]);
+        let snapshot = state.lock().unwrap().clone();
+        assert_eq!(snapshot.0, 2);
+        assert_eq!(snapshot.1, vec![room("!a:x.org"), room("!b:x.org")]);
+    }
+
+    #[tokio::test]
+    async fn space_selection_reemits_through_the_same_sequence() {
+        // The hazard this whole design exists for (spaces-rail design §4,
+        // and `rooms.svelte.ts`'s module comment). A filter change makes the
+        // SDK re-emit the list as a `Reset`; the frontend's `DiffTracker`
+        // handles `Reset` fine, but it only detects gaps *forward*, so a
+        // `Reset` numbered back at 1 would read as an already-applied
+        // duplicate, be dropped silently, and leave every later op folding
+        // onto pre-switch state.
+        //
+        // The selection arm is wired to push a `Reset` into the batch stream,
+        // which is exactly what `set_filter` provokes from the real SDK
+        // stream.
+        //
+        // **The ordering here is load-bearing and deliberately not left to
+        // `select!`.** `tokio::select!` polls its branches in random order,
+        // so queueing the selection up front would let it be applied *before*
+        // the two ordinary batches on some runs — and a counter that restarts
+        // before it has counted anything still produces 1, 2, 3, which is
+        // exactly the bug passing its own test. The selection is therefore
+        // sent from the emit sink, once the second ordinary envelope has
+        // already been stamped, so the re-emission is unambiguously the third.
+        let (batches_tx, batches_rx) = mpsc::unbounded_channel();
+        let (selections_tx, selections_rx) = mpsc::unbounded_channel();
+        let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
+        let emitted = Arc::new(Mutex::new(Vec::new()));
+        let applied = Arc::new(Mutex::new(Vec::new()));
+
+        batches_tx.send(push("!a:x.org")).unwrap();
+        batches_tx.send(push("!b:x.org")).unwrap();
+
+        let sink = Arc::clone(&emitted);
+        let seen = Arc::clone(&applied);
+        // Held only by the selection closure, so the stream ends once that
+        // closure has used it — the way the real stream ends when the handle
+        // is dropped.
+        let mut sdk = Some(batches_tx.clone());
+        drop(batches_tx);
+        let mut select_after_two = Some(selections_tx);
+        drive_room_list(
+            stream_of(batches_rx),
+            selections_rx,
+            |ops: Vec<DiffOp<RoomSummary>>| async move { ops },
+            move |selection| {
+                seen.lock().unwrap().push(selection.clone());
+                // Stands in for the SDK's own reaction to `set_filter`: the
+                // dynamic-adapter stream restarts and yields a `Reset`
+                // carrying the newly filtered list.
+                sdk.take().unwrap().send(reset(&["!b:x.org"])).unwrap();
+            },
+            move |envelope| {
+                sink.lock().unwrap().push(envelope);
+                if sink.lock().unwrap().len() == 2 {
+                    select_after_two
+                        .take()
+                        .unwrap()
+                        .send(SpaceSelection::Space {
+                            room_ids: vec![room_id("!b:x.org")],
+                        })
+                        .unwrap();
+                }
+            },
+            &state,
+        )
+        .await;
+
+        let envelopes = emitted.lock().unwrap().clone();
+        let seqs: Vec<u64> = envelopes.iter().map(|e| e.seq).collect();
+        assert_eq!(
+            seqs,
+            vec![1, 2, 3],
+            "the re-emitted list must continue the sequence, not restart it"
+        );
+        // The last envelope is the re-filtered list, and it is an ordinary
+        // `Reset` op — nothing about it is special-cased on the wire.
+        assert!(matches!(
+            envelopes.last().unwrap().ops.as_slice(),
+            [DiffOp::Reset { .. }]
+        ));
+        assert_eq!(
+            envelopes.last().unwrap().channel,
+            ROOMS_CHANNEL,
+            "the re-emission must not invent a channel of its own"
+        );
+
+        // The materialized snapshot moved with it, so a resync served after
+        // the switch describes the scoped roster at the scoped sequence.
+        let snapshot = state.lock().unwrap().clone();
+        assert_eq!(snapshot.0, 3);
+        assert_eq!(snapshot.1, vec![room("!b:x.org")]);
+
+        assert_eq!(
+            *applied.lock().unwrap(),
+            vec![SpaceSelection::Space {
+                room_ids: vec![room_id("!b:x.org")],
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_closed_selection_channel_does_not_stop_the_roster() {
+        // The sender lives in the `RoomListHandle`; if it were dropped while
+        // the task ran, a naive `select!` would spin on a permanently-ready
+        // `recv()` or tear the stream down. Neither is acceptable — the
+        // roster has to keep streaming.
+        let (batches_tx, batches_rx) = mpsc::unbounded_channel();
+        let (selections_tx, selections_rx) = mpsc::unbounded_channel::<SpaceSelection>();
+        let state: Arc<Mutex<RoomListSnapshot>> = Arc::new(Mutex::new((0, Vec::new())));
+        let emitted = Arc::new(Mutex::new(Vec::new()));
+
+        drop(selections_tx);
+        batches_tx.send(push("!a:x.org")).unwrap();
+        drop(batches_tx);
+
+        let sink = Arc::clone(&emitted);
+        drive_room_list(
+            stream_of(batches_rx),
+            selections_rx,
+            |ops: Vec<DiffOp<RoomSummary>>| async move { ops },
+            |_| panic!("no selection can arrive on a closed channel"),
+            |envelope| sink.lock().unwrap().push(envelope),
+            &state,
+        )
+        .await;
+
+        assert_eq!(
+            emitted
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|e| e.seq)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
     }
 }

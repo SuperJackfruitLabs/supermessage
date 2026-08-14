@@ -13,6 +13,7 @@ use super::dto::RoomSummary;
 use super::error::CoreError;
 use super::room_info::RoomInfoDto;
 use super::session::Session;
+use super::spaces::SpaceSummary;
 use super::timeline::{FocusedTimeline, TimelineSnapshot};
 
 /// Logs in with a username and password, then starts sync and room-list
@@ -61,6 +62,52 @@ pub async fn rooms_resync(
     session: State<'_, Session>,
 ) -> Result<(u64, Vec<RoomSummary>), CoreError> {
     session.rooms_snapshot().await
+}
+
+/// The account's joined spaces for the spaces rail: `{ id, name, avatarUrl,
+/// childCount }` each, sorted by name.
+///
+/// `childCount` is the number of **joined** rooms in the space's flattened
+/// subtree — precisely the rooms [`space_select`] will leave in the roster,
+/// since both come from the same walk. A space advertising twelve and then
+/// revealing four is worse than showing no number at all.
+///
+/// A one-shot fetch, not a stream (spaces-rail design §5): re-invoke on
+/// session start and after a resync. Fails with a `notReady`-kind
+/// [`CoreError`] before login.
+#[tauri::command]
+pub async fn spaces_list(session: State<'_, Session>) -> Result<Vec<SpaceSummary>, CoreError> {
+    session.spaces_list().await
+}
+
+/// Scopes the room list to `space_id`'s flattened subtree. `null` (or an
+/// omitted argument) restores every room — the rail's "All rooms" entry.
+///
+/// Returns as soon as the selection is queued into the room-list stream task.
+/// The re-filtered roster arrives afterwards on the ordinary `sm://rooms/diff`
+/// channel as a `Reset`-bearing envelope carrying **the next sequence
+/// number**, like any other batch — callers must not resync against it or
+/// re-arm their `DiffTracker` for it. See `core::rooms::drive_room_list` for
+/// why that continuity is the load-bearing part.
+///
+/// **Never touches the focused room or its timeline** (design §7): the
+/// roster is a navigation surface, and filtering it must not close what the
+/// reader is reading.
+///
+/// Fails with a `notReady`-kind [`CoreError`] before login (a selection with
+/// no roster to scope is a caller bug, not something to swallow), and an
+/// `unknownSpace`-kind one when `space_id` is not a space this account has
+/// joined — left since the rail was last fetched, say. The right response to
+/// that is to re-invoke [`spaces_list`] and move the rail's own selection
+/// back to "All rooms"; the core deliberately does not do it silently, which
+/// would leave the rail highlighting a space that no longer exists while
+/// showing every room in the account underneath it.
+#[tauri::command]
+pub async fn space_select(
+    space_id: Option<String>,
+    session: State<'_, Session>,
+) -> Result<(), CoreError> {
+    session.select_space(space_id.as_deref()).await
 }
 
 /// Subscribes to `room_id`'s timeline, replacing any previously focused room.
