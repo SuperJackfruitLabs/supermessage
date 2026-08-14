@@ -21,7 +21,9 @@ use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use matrix_sdk::ruma::{OwnedRoomId, UserId};
 use matrix_sdk::{Room, RoomMemberships};
-use matrix_sdk_ui::room_list_service::filters::new_filter_non_left;
+use matrix_sdk_ui::room_list_service::filters::{
+    new_filter_all, new_filter_non_left, new_filter_not, new_filter_space,
+};
 use matrix_sdk_ui::room_list_service::RoomListItem;
 use matrix_sdk_ui::timeline::{LatestEventValue, Profile, RoomExt, TimelineDetails};
 use tauri::{AppHandle, Emitter};
@@ -552,7 +554,27 @@ pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<
 
     let task = tokio::spawn(async move {
         let (stream, controller) = room_list.entries_with_dynamic_adapters(ROOM_LIST_PAGE_SIZE);
-        controller.set_filter(Box::new(new_filter_non_left()));
+        // Non-left, and not a space.
+        //
+        // A Matrix space *is* a room — same state, same timeline — marked only
+        // by `m.room.type: m.space` on its creation event. Without the second
+        // clause a space arrives in the roster as an ordinary room, with a
+        // timeline nobody writes to and an unread count that means nothing.
+        // That was reported from real use: a space called "SuperChotuVerse"
+        // sitting in the list looking like a conversation.
+        //
+        // `new_filter_space` **keeps** spaces rather than removing them,
+        // despite a doc comment that reads "filter out rooms that are spaces"
+        // — its body is `|room| room.cached_is_space`, returned directly. It
+        // is an include-filter with an exclude-sounding description, so it has
+        // to be wrapped in `not` here. Anyone who reads that comment and uses
+        // the filter bare gets exactly the opposite of what they wanted; the
+        // same constructor is what a future space rail will use *unwrapped*,
+        // to enumerate spaces rather than to hide them.
+        controller.set_filter(Box::new(new_filter_all(vec![
+            Box::new(new_filter_non_left()),
+            Box::new(new_filter_not(Box::new(new_filter_space()))),
+        ])));
         pin_mut!(stream);
 
         let mut seq = SeqCounter::default();
