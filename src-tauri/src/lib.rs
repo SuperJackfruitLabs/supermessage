@@ -17,12 +17,14 @@
 pub mod core;
 
 use serde::Serialize;
-use tauri::{Manager, Url, WebviewWindowBuilder};
+use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
+use crate::core::attachments;
 use crate::core::commands::{
-    login, logout, mark_room_read, media_fetch, member_avatar, restore_session, room_avatar,
-    room_info, rooms_resync, send_message, send_reply, set_typing, timeline_paginate_back,
-    timeline_resync, timeline_subscribe, toggle_reaction,
+    attachment_discard, attachment_send, attachment_stage, login, logout, mark_room_read,
+    media_fetch, member_avatar, restore_session, room_avatar, room_info, rooms_resync,
+    send_message, send_reply, set_typing, timeline_paginate_back, timeline_resync,
+    timeline_subscribe, toggle_reaction,
 };
 use crate::core::secrets::KeyringStore;
 use crate::core::{session::Session, tls};
@@ -120,6 +122,30 @@ pub fn run() {
             );
         })
         .plugin(tauri_plugin_opener::init())
+        // Registered for its **Rust** API only (`core::attachments` calls
+        // `app.dialog().file()`). No `dialog:*` permission appears in
+        // `capabilities/default.json`, so the webview cannot invoke a single
+        // one of this plugin's commands — which is the point: a picker the
+        // webview opened would hand *the webview* a path, and the
+        // attachments design (§3) exists to stop exactly that.
+        .plugin(tauri_plugin_dialog::init())
+        // The Rust-side drag-drop handler the attachments design §3 requires.
+        // Tauri also emits its own `tauri://drag-drop` (carrying raw paths)
+        // to the webview and offers no way to suppress just that —
+        // `disable_drag_drop_handler()` would turn the OS handler off
+        // entirely and Rust would stop seeing drops too. So the guarantee
+        // this buys is about *our* IPC surface: no command and no `sm://`
+        // event ever carries a path, and the frontend listens for
+        // `sm://attachment/staged` rather than for Tauri's built-in event.
+        //
+        // `WindowEvent`, not `WebviewEvent`: for a `WebviewWindow` — the only
+        // kind this app builds — the drop arrives on the window, and this is
+        // the handler Tauri's own documented example uses.
+        .on_window_event(|window, event| {
+            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+                attachments::on_files_dropped(window.app_handle(), paths.clone());
+            }
+        })
         .setup(|app| {
             // `tauri.conf.json`'s `main` window has `create: false` — that
             // suppresses Tauri's own automatic pre-`setup` creation
@@ -152,6 +178,11 @@ pub fn run() {
             // both views of it pointing at one object — see
             // `Session::focused_timeline`.
             app.manage(session.focused_timeline());
+            // Same reasoning as the focused timeline above, one step further:
+            // the attachment commands and the drag-drop handler both reach
+            // the staged-file map directly, and `logout` has to clear it, so
+            // all three must see the *one* map the session owns.
+            app.manage(session.staged_attachments());
             app.manage(session);
             Ok(())
         })
@@ -173,6 +204,9 @@ pub fn run() {
             media_fetch,
             room_info,
             member_avatar,
+            attachment_stage,
+            attachment_send,
+            attachment_discard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -43,7 +43,10 @@ async-trait = "0.1"
 # base64`); listed directly since core::media calls it by name.
 base64 = "0.22"
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+# `fs` for `tokio::fs::{metadata, read}` in core::attachments: a `stat` and a
+# whole-file read both block, and doing either on a runtime worker thread
+# would stall every other task on it for as long as the disk takes.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
@@ -52,6 +55,47 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # reqwest/rustls (= aws-lc-rs), so both providers are compiled in and rustls
 # has no implicit default — one must be installed at startup.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+
+# The native file picker (core::attachments). Used through its **Rust** API
+# (`DialogExt::dialog().file()`), never its JS one — see
+# docs/superpowers/specs/2026-08-14-attachments-design.md §3. That is why
+# `capabilities/default.json` grants no `dialog:*` permission at all: the
+# webview must not be able to open a picker, because a picker it opened
+# would hand *it* the path. The plugin drags `tauri-plugin-fs` in as a Rust
+# dependency of its own (it registers picked/dropped paths with the fs
+# scope); that is a crate in the tree, not a capability, and no `fs:*`
+# permission is granted either.
+tauri-plugin-dialog = "2"
+
+# Image dimensions from the file *header* (core::attachments::image_dimensions).
+# MIT, zero dependencies, pure header parsing — deliberately not the `image`
+# crate: §5 needs two integers, and running a full decoder over a file a
+# stranger may have chosen is a far larger attack surface for no gain.
+#
+# `default-features = false` plus an explicit format list, rather than the
+# default "every format the crate knows": each feature is a separate parser
+# compiled in, and the ~18 left off (dds, ktx2, vtf, psd, pvrtc, aesprite,
+# …) are formats nobody attaches to a chat message. A format that isn't
+# enabled simply yields no dimensions, which degrades to "an image with no
+# width/height in its `info`" — the same thing that happens for a truncated
+# or malformed header. The list below is every `image/*` type
+# `mime_from_content` can actually recognise.
+imagesize = { version = "0.15", default-features = false, features = [
+    "bmp", "gif", "heif", "ico", "jpeg", "jxl", "png", "tiff", "webp",
+] }
+
+# Content-based mime detection (core::attachments::mime_from_content). §5:
+# "an extension is a claim, not a fact". Already resolved transitively via
+# tauri (see `cargo tree -i infer`); listed directly since core::attachments
+# calls it by name. Reads only the first few KiB of the file, never the
+# whole thing — which is the entire point at staging time (§4).
+infer = "0.19"
+
+# `mime::Mime`, the type `Timeline::send_attachment` takes and the type the
+# SDK's own mime-family -> msgtype mapping switches on (see
+# `msgtype_for_mime`). Already in the tree via reqwest/matrix-sdk; listed
+# directly for the same reason `base64` is.
+mime = "0.3"
 
 [dev-dependencies]
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,

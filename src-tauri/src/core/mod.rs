@@ -8,6 +8,7 @@
 //! `session` owns the client; `commands` is the seam where the webview's
 //! Tauri invocations reach it.
 
+pub mod attachments;
 pub mod auth;
 pub mod commands;
 pub mod dto;

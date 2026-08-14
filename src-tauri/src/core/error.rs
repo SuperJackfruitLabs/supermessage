@@ -33,6 +33,33 @@ pub enum CoreError {
     /// didn't go through at all.
     #[error("wrong room: requested {requested}, but {focused} is now focused")]
     RoomChanged { requested: String, focused: String },
+    /// A file was refused before being read because it is bigger than the
+    /// homeserver will accept — `core::attachments::check_upload_size`, the
+    /// enforcement point for the attachments design's §4.
+    ///
+    /// Its own variant, rather than a `Store`/`Protocol` string, for the
+    /// reason that section gives: "upload failed" is not something a reader
+    /// can act on. Both numbers are on the wire so the webview can say *this
+    /// file is 214.7 MiB, the limit is 50.0 MiB* — which tells the reader to
+    /// send a link instead, where "failed" would only tell them to try
+    /// again. The message renders them in binary units
+    /// (`core::attachments::format_bytes`) because homeserver limits are
+    /// powers of two and a decimal "52.4 MB" against a "50 MB" limit reads
+    /// as a contradiction.
+    #[error("that file is {}, but this homeserver accepts at most {}", crate::core::attachments::format_bytes(*bytes), crate::core::attachments::format_bytes(*limit))]
+    AttachmentTooLarge { bytes: u64, limit: u64 },
+    /// A staging token named no staged file: it was already sent (they are
+    /// single use), discarded, swept by the staging timeout, or dropped
+    /// because the reader switched rooms or logged out. See
+    /// `core::attachments::StagedAttachments`.
+    ///
+    /// Distinct from [`Self::RoomChanged`] on purpose. `RoomChanged` means
+    /// *the file is still staged, but not for the room you named* and is
+    /// recoverable by switching back; this one means there is nothing left
+    /// to send and the reader has to pick the file again. Both are refusals
+    /// rather than failures — nothing was sent either way.
+    #[error("that file is no longer staged; pick it again")]
+    UnknownAttachment,
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;
@@ -46,6 +73,8 @@ impl CoreError {
             Self::Protocol(_) => "protocol",
             Self::NotReady => "notReady",
             Self::RoomChanged { .. } => "roomChanged",
+            Self::AttachmentTooLarge { .. } => "attachmentTooLarge",
+            Self::UnknownAttachment => "unknownAttachment",
         }
     }
 }
@@ -88,5 +117,25 @@ mod tests {
         let message = json["message"].as_str().unwrap();
         assert!(message.contains("!a:x.org"));
         assert!(message.contains("!b:x.org"));
+    }
+
+    #[test]
+    fn attachment_too_large_serializes_with_its_own_kind_and_names_both_sizes() {
+        let json = serde_json::to_value(CoreError::AttachmentTooLarge {
+            bytes: 200 * 1024 * 1024,
+            limit: 50 * 1024 * 1024,
+        })
+        .unwrap();
+        assert_eq!(json["kind"], "attachmentTooLarge");
+        let message = json["message"].as_str().unwrap();
+        assert!(message.contains("200.0 MiB"), "got {message}");
+        assert!(message.contains("50.0 MiB"), "got {message}");
+    }
+
+    #[test]
+    fn unknown_attachment_serializes_with_its_own_kind() {
+        let json = serde_json::to_value(CoreError::UnknownAttachment).unwrap();
+        assert_eq!(json["kind"], "unknownAttachment");
+        assert!(json["message"].as_str().is_some_and(|m| !m.is_empty()));
     }
 }

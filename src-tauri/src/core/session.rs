@@ -26,6 +26,7 @@ use matrix_sdk::{
 use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 
+use super::attachments;
 use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
 use super::dto::RoomSummary;
@@ -61,6 +62,13 @@ pub struct Session {
     // `Arc<Timeline>` -> `Room` -> `Client`, which keeps the store's SQLite
     // files open, and `logout` deletes those files.
     focused: Arc<FocusedTimeline>,
+    // Files the reader has picked or dropped but not yet sent. Also handed
+    // to Tauri as managed state (see `Session::staged_attachments`), and
+    // owned here for the same reason `focused` is: `logout` has to clear it.
+    // A staging token is a path this process is holding on behalf of an
+    // account; outliving that account it becomes a path held on behalf of
+    // whoever logs in next.
+    staged: Arc<attachments::StagedAttachments>,
     // Serializes whole session transitions (login, restore, logout) against
     // each other — see this module's doc comment.
     lifecycle: Mutex<()>,
@@ -76,6 +84,7 @@ impl Session {
             sync: RwLock::new(None),
             rooms: RwLock::new(None),
             focused: Arc::new(FocusedTimeline::default()),
+            staged: Arc::new(attachments::StagedAttachments::default()),
             lifecycle: Mutex::new(()),
         }
     }
@@ -92,6 +101,20 @@ impl Session {
     /// clearing a timeline nothing else ever uses.
     pub fn focused_timeline(&self) -> Arc<FocusedTimeline> {
         Arc::clone(&self.focused)
+    }
+
+    /// The staged-attachment map this session owns, for registration as
+    /// Tauri managed state alongside the session itself.
+    ///
+    /// Same shape, and same reason, as [`Self::focused_timeline`]: the
+    /// attachment commands reach it directly, and [`Self::logout`] must be
+    /// able to clear it. Registering an independent
+    /// `StagedAttachments::default()` as managed state would leave logout
+    /// clearing a map nothing else ever touches, which is the failure mode
+    /// worth naming here because it would be *silent* — the commands would
+    /// work perfectly and the staged paths would simply survive the logout.
+    pub fn staged_attachments(&self) -> Arc<attachments::StagedAttachments> {
+        Arc::clone(&self.staged)
     }
 
     /// Logs in fresh with a username and password, building a new client
@@ -156,6 +179,11 @@ impl Session {
         // Order is dependency order: the focused timeline hangs off a
         // `Room`, the room list off the sync service's `RoomListService`,
         // and the sync service off the client.
+        // Before anything else, and unconditionally: a staged file is a path
+        // this process is holding for an account that is about to stop
+        // existing. Nothing here can fail, so it needs no rollback and can
+        // safely precede the parts that can.
+        self.staged.clear();
         self.focused.clear_and_join().await;
         self.stop_room_list().await;
         self.stop_sync().await;
@@ -397,10 +425,20 @@ impl Session {
     /// deletion the teardown exists to make safe. Harmless on POSIX, but on
     /// Windows `remove_dir_all` then fails *after* the passphrase has been
     /// dropped, leaving a store nothing can ever open again.
+    ///
+    /// Also the enforcement point for "a staged attachment is discarded on
+    /// room switch" (attachments design §3): a token minted while room A was
+    /// focused can never be redeemed once B is focused — both
+    /// `FocusedTimeline`'s guard and the token's own room binding refuse it —
+    /// so keeping it would pin a path nothing can ever use. The discard runs
+    /// *after* the subscribe succeeds, so a failed room switch leaves the
+    /// reader's staged file exactly where it was.
     pub async fn subscribe_timeline(&self, room_id: &str, app: AppHandle) -> CoreResult<()> {
         let _lifecycle = self.lifecycle.lock().await;
         let client = self.require_client().await?;
-        self.focused.subscribe(&client, room_id, app).await
+        self.focused.subscribe(&client, room_id, app).await?;
+        self.staged.retain_room(room_id);
+        Ok(())
     }
 
     /// Like [`Self::client`], but fails with [`CoreError::NotReady`] when

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
+use super::attachments::{self, StagedAttachment, StagedAttachments};
 use super::dto::RoomSummary;
 use super::error::CoreError;
 use super::room_info::RoomInfoDto;
@@ -265,4 +266,87 @@ pub async fn member_avatar(
     session: State<'_, Session>,
 ) -> Result<Option<String>, CoreError> {
     session.member_avatar(&mxc_uri).await
+}
+
+/// Opens the native file picker for `room_id` and stages whatever the reader
+/// chooses, returning `{ token, filename, sizeBytes, mime, width?, height? }`
+/// — or `null` when they cancelled.
+///
+/// **Cancelling is not an error** (attachments design §7). It is the most
+/// common outcome of opening a picker, so it comes back as a normal empty
+/// result rather than something the frontend has to catch.
+///
+/// The picker is opened **from Rust**, through `tauri-plugin-dialog`'s Rust
+/// API. That is the whole reason this command exists rather than the webview
+/// opening a picker itself and passing a path down: `capabilities/default.json`
+/// grants no `dialog:*` (and no `fs:*`) permission, so there is no way for
+/// anything running in the webview to learn where a file lives. What comes
+/// back is an opaque token; the path stays in `core::attachments`.
+///
+/// `room_id` is verified against whichever room is actually focused before
+/// the dialog opens, the same guard [`send_message`] takes — see
+/// `core::attachments::stage_from_picker`. Nothing is read here: the file is
+/// `stat`ed and size-checked against the homeserver's `m.upload.size`, and
+/// its first few KiB are probed for mime type and image dimensions, but the
+/// body is only read at [`attachment_send`] time (§4).
+#[tauri::command]
+pub async fn attachment_stage(
+    room_id: String,
+    app: AppHandle,
+    session: State<'_, Session>,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+    staged: State<'_, Arc<StagedAttachments>>,
+) -> Result<Option<StagedAttachment>, CoreError> {
+    attachments::stage_from_picker(&app, &session, &timeline, &staged, &room_id).await
+}
+
+/// Reads, uploads and sends the file `token` stands for, into `room_id`.
+/// **Consumes the token**, so a replay cannot re-send the file.
+///
+/// `room_id` is verified twice over, and the two checks are not redundant:
+/// against whichever room is actually focused (the same guard
+/// [`send_message`] takes, failing with a `roomChanged`-kind [`CoreError`])
+/// *and* against the room the token was staged for (failing the same way).
+/// The first catches a stale send; the second catches a stale token — a
+/// webview that kept a token across a room switch. Neither refusal sends
+/// anything, and a room mismatch leaves the file staged so the reader can
+/// switch back.
+///
+/// Fails with an `unknownAttachment`-kind [`CoreError`] when the token names
+/// nothing: already sent, discarded, swept by the staging timeout, or
+/// dropped by a room switch or a logout. Fails with an
+/// `attachmentTooLarge`-kind one, naming both sizes, when the file exceeds
+/// the homeserver's limit — re-checked here, immediately before the read,
+/// because the file on disk can grow between staging and sending.
+///
+/// Sends through the **send queue** (§6), the same path [`send_message`]
+/// uses, so the attachment gets a local echo, retries across a reconnect,
+/// and orders against other sends. Emits nothing itself: the echo arrives
+/// through the timeline diff stream like every other event.
+#[tauri::command]
+pub async fn attachment_send(
+    room_id: String,
+    token: String,
+    session: State<'_, Session>,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+    staged: State<'_, Arc<StagedAttachments>>,
+) -> Result<(), CoreError> {
+    attachments::send_staged(&session, &timeline, &staged, &room_id, &token).await
+}
+
+/// Discards a staged file — the "remove" affordance on the composer's staged
+/// strip, which is the way out the review step (§2) requires.
+///
+/// Takes no room id and never fails, including for a token that is already
+/// gone. Discarding twice, or discarding one the staging timeout already
+/// swept, is the outcome the caller wanted either way, and an error there
+/// would only give the frontend a failure to handle on the path whose whole
+/// purpose is cancelling.
+#[tauri::command]
+pub async fn attachment_discard(
+    token: String,
+    staged: State<'_, Arc<StagedAttachments>>,
+) -> Result<(), CoreError> {
+    staged.discard(&token);
+    Ok(())
 }

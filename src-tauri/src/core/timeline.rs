@@ -2100,7 +2100,29 @@ impl FocusedTimeline {
         verify_room_focus(room_id, &handle.room_id)
     }
 
-    fn active_timeline_for(&self, room_id: &str) -> CoreResult<Arc<Timeline>> {
+    /// The room the timeline is currently focused on, or `None` when nothing
+    /// is focused.
+    ///
+    /// For the one caller that has no room id to check *against*: the Rust
+    /// drag-drop handler (`core::attachments::on_files_dropped`). A file
+    /// dropped on the window names no room — it lands on whatever the reader
+    /// is looking at — so unlike every other room-scoped path here, this one
+    /// has to *read* the focused room rather than verify one. Everything
+    /// that does have a room id in hand goes through
+    /// [`Self::verify_focus`]/[`Self::active_timeline_for`] instead, which
+    /// are race-free in a way this cannot be: the answer is stale the moment
+    /// it is returned. That is acceptable here only because the staged token
+    /// it produces is *bound* to whatever room this returned, and the send
+    /// that eventually redeems it takes the full guard.
+    pub(crate) fn focused_room_id(&self) -> Option<String> {
+        self.0
+            .lock()
+            .ok()?
+            .as_ref()
+            .map(|handle| handle.room_id.clone())
+    }
+
+    pub(crate) fn active_timeline_for(&self, room_id: &str) -> CoreResult<Arc<Timeline>> {
         let handle = self
             .0
             .lock()

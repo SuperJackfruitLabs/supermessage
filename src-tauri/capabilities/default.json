@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window. Deliberately unchanged by the attachments work: `tauri-plugin-dialog` and `tauri-plugin-fs` are in the dependency tree, but NO `dialog:*` or `fs:*` permission is granted, because the attachments design (docs/superpowers/specs/2026-08-14-attachments-design.md §3) requires that a filesystem path never reach the webview. The picker is opened from Rust and drops are handled by a Rust window handler; the webview only ever sees an opaque staging token. If you find yourself adding a `dialog:` or `fs:` permission here, stop — that undoes the whole design. The attachment commands themselves (`attachment_stage`, `attachment_send`, `attachment_discard`) are this app's own `#[tauri::command]`s and need no permission entry, and listening for `sm://attachment/staged` is covered by `core:default`.",
   "windows": ["main"],
   "permissions": [
     "core:default",
