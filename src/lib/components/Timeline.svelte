@@ -274,6 +274,8 @@
   import { tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
+  import EmojiPicker from "./EmojiPicker.svelte";
+  import { QUICK_REACTIONS } from "./emojiPicker";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import {
@@ -545,13 +547,14 @@
   }
 
   /**
-   * The fixed set of one-click reactions offered on every eligible message.
-   * Small and fixed on purpose — the task brief calls for exactly this, not
-   * a full emoji picker (out of scope for this pass): clicking an existing
-   * chip already covers reacting with anything someone else in the room
-   * already used.
+   * The event id whose reaction picker is open, or null.
+   *
+   * One at a time, and held here rather than per row: the picker floats over
+   * the timeline instead of expanding a row, because `VList` measures row
+   * heights and a row that grows mid-scroll is the thing that surface handles
+   * worst.
    */
-  const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "🙏"];
+  let pickingReactionFor = $state<string | null>(null);
 
   /**
    * Toggles `key` as a reaction on `eventId`. Never mutates
@@ -870,6 +873,19 @@
           {emoji}
         </button>
       {/each}
+      <!--
+        The six above stay the fast path — one click, no panel. This is for
+        everything else, which used to be reachable only if somebody else in
+        the room had already reacted with it.
+      -->
+      <button
+        type="button"
+        onclick={() => (pickingReactionFor = item.id)}
+        aria-label="React with another emoji"
+        class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+      >
+        +
+      </button>
     </div>
   {/if}
 {/snippet}
@@ -2090,3 +2106,19 @@
     white-space: pre;
   }
 </style>
+
+{#if pickingReactionFor !== null}
+  <!--
+    Mounted once for the whole timeline rather than per row: only one picker
+    can be open, and a row that mounts a dialog is a row whose height depends
+    on state the virtualizer cannot see.
+  -->
+  <EmojiPicker
+    onPick={(emoji) => {
+      const target = pickingReactionFor;
+      pickingReactionFor = null;
+      if (target !== null) handleToggleReaction(target, emoji);
+    }}
+    onClose={() => (pickingReactionFor = null)}
+  />
+{/if}
