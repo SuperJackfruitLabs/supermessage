@@ -22,10 +22,10 @@ use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 use crate::core::attachments;
 use crate::core::commands::{
     attachment_discard, attachment_send, attachment_stage, create_room, invite_user, join_room,
-    join_room_by_alias, leave_room, login, logout, mark_room_read, media_download, media_fetch,
-    member_avatar, restore_session, room_avatar, room_info, rooms_resync, search_messages,
-    send_message, send_reply, set_typing, space_select, spaces_list, timeline_paginate_back,
-    timeline_resync, timeline_subscribe, toggle_reaction,
+    join_room_by_alias, leave_room, log_from_webview, login, logout, mark_room_read,
+    media_download, media_fetch, member_avatar, restore_session, room_avatar, room_info,
+    rooms_resync, search_messages, send_message, send_reply, set_typing, space_select, spaces_list,
+    timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
 };
 use crate::core::secrets::KeyringStore;
 use crate::core::{session::Session, tls};
@@ -113,7 +113,20 @@ pub fn run() {
         "starting supermessage core"
     );
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // The embedded WebDriver server, so this app's UI can be driven and its
+    // DOM read without a human at the keyboard — the only way to test what a
+    // row actually renders as, which is the whole symptom of the timeline bug
+    // this was added for. `tauri-driver` cannot do it: macOS has no WKWebView
+    // driver at all.
+    //
+    // Debug builds only, and not merely by convention: this is a remote-control
+    // surface on the running app, and a shipped binary must not carry one.
+    #[cfg(all(debug_assertions, feature = "wdio"))]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+
+    builder
         .on_page_load(|webview, payload| {
             tracing::debug!(
                 label = webview.label(),
@@ -212,6 +225,7 @@ pub fn run() {
             media_fetch,
             media_download,
             search_messages,
+            log_from_webview,
             room_info,
             member_avatar,
             attachment_stage,

@@ -96,6 +96,12 @@ infer = "0.19"
 # `msgtype_for_mime`). Already in the tree via reqwest/matrix-sdk; listed
 # directly for the same reason `base64` is.
 mime = "0.3"
+# The embedded WebDriver server the WDIO Tauri service drives on macOS, where
+# `tauri-driver` does not work at all (no WKWebView driver exists). Debug builds
+# only — see `lib.rs`, where it is registered behind `debug_assertions`. It is
+# how this app's UI can be tested at all without a human at the keyboard, which
+# matters for a bug whose only symptom is what the rendered rows look like.
+tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 
 [dev-dependencies]
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
@@ -125,3 +131,8 @@ matrix-sdk-test = "0.18"
 # Only CI caught this: locally `unexpected_cfgs` is a warning, and CI sets
 # `RUSTFLAGS: -D warnings`, which is the point of setting it.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ruma_unstable_exhaustive_types)'] }
+
+[features]
+# On by default in a debug build; a release build never compiles it in.
+default = ["wdio"]
+wdio = ["dep:tauri-plugin-wdio-webdriver"]

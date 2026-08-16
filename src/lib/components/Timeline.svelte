@@ -1272,7 +1272,15 @@
           against a rhythm that was measured. See the report for the
           rendered check that this reads as a sheet and not a stripe.
         -->
+        <!--
+          `data-testid` is the handle the driven UI test selects rows by
+          (`e2e/timeline-rows.spec.ts`). It is here rather than on any inner
+          branch because the invariants worth testing are about ROWS — a
+          message row with no text in it, a row with no height — and those are
+          properties of this box whatever it ends up containing.
+        -->
         <div
+          data-testid="timeline-row"
           class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-serif text-body lg:max-w-[calc(72ch+4rem)] lg:px-8"
         >
           {#if row.type === "membershipGroup"}

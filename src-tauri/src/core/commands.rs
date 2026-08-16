@@ -343,6 +343,28 @@ pub async fn invite_user(
     session.invite_user(&room_id, &user_id).await
 }
 
+/// Forwards a line from the webview into this process's tracing output.
+///
+/// Tauri on macOS runs a WKWebView, whose inspector speaks Safari's Web
+/// Inspector protocol — there is no CDP endpoint to attach to, so the webview's
+/// console is invisible to anything but a human with the window in front of
+/// them. A bug that spans the boundary (the timeline's diff stream on one side,
+/// the list that renders it on the other) is then diagnosed from half the
+/// evidence.
+///
+/// This puts both halves in one stream. Deliberately dumb: a level and a
+/// string, no structure to keep in step with the caller, and it never fails —
+/// a logging call that can throw would be a new failure mode in the paths it is
+/// meant to observe.
+#[tauri::command]
+pub fn log_from_webview(level: String, message: String) {
+    match level.as_str() {
+        "error" => tracing::error!(target: "webview", "{message}"),
+        "warn" => tracing::warn!(target: "webview", "{message}"),
+        _ => tracing::info!(target: "webview", "{message}"),
+    }
+}
+
 #[tauri::command]
 pub async fn search_messages(
     term: String,

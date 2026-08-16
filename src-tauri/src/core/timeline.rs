@@ -116,6 +116,7 @@
 
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use eyeball_im::VectorDiff;
 use futures_util::{Stream, StreamExt};
@@ -213,6 +214,14 @@ const INITIAL_PAGE_SIZE: u16 = 30;
 /// pre-coalescing flicker rather than staying empty forever, which is still
 /// strictly better than an unbounded retry loop.
 const MAX_RESEED_ATTEMPTS: u32 = 3;
+
+/// How long the re-seed waits for the timeline to refill before it accepts
+/// that the room really is empty.
+///
+/// The rebuild follows the clear by milliseconds in practice (10ms in the live
+/// log that found this), so this is a ceiling rather than a delay anybody
+/// waits out — the loop stops the moment there is something to show.
+const RESEED_SETTLE: Duration = Duration::from_millis(500);
 
 /// The sequence number of the last diff folded into the materialized item
 /// list, and the resulting list itself — always mutually consistent (see
@@ -1815,10 +1824,42 @@ impl FocusedTimeline {
                         // doc comment for why the old stream's own queued
                         // diffs are safe to discard once this has run.
                         let (fresh_items, fresh_stream) = paginator.subscribe().await;
-                        let reset_ops = coalesced_reset(project_initial(&fresh_items, &own_user));
-                        emit_ops(&app, &task_state, &mut seq, &subject, reset_ops);
+                        let mut fresh_stream: TimelineDiffStream = Box::pin(fresh_stream);
+                        let mut fresh = project_initial(&fresh_items, &own_user);
 
-                        current_stream = Box::pin(fresh_stream);
+                        // An empty snapshot here is almost never an empty
+                        // room. The clear that brought us here arrives in its
+                        // own batch, *before* the events that replace it, so
+                        // re-subscribing a moment later finds a timeline that
+                        // has not refilled yet — and resetting the webview to
+                        // that is precisely the blank-then-refill this path
+                        // exists to prevent. Live logs caught it doing exactly
+                        // that: `reset items=0` followed by a 31-op rebuild,
+                        // ending five messages shorter than before.
+                        //
+                        // So wait, briefly, for the rebuild. A genuinely empty
+                        // room costs one `RESEED_SETTLE` and still ends empty,
+                        // which is the right answer for it.
+                        if fresh.is_empty() {
+                            while let Ok(Some(batch)) =
+                                tokio::time::timeout(RESEED_SETTLE, fresh_stream.next()).await
+                            {
+                                apply_ops(&mut fresh, &project_batch(batch, &own_user));
+                                if !fresh.is_empty() {
+                                    break;
+                                }
+                            }
+                        }
+
+                        emit_ops(
+                            &app,
+                            &task_state,
+                            &mut seq,
+                            &subject,
+                            coalesced_reset(fresh),
+                        );
+
+                        current_stream = fresh_stream;
                     }
                 }
             }
