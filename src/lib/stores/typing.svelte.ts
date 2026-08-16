@@ -19,6 +19,27 @@
 
 import { onTyping as defaultOnTyping, type TypingPayload, type TypingUser } from "$lib/ipc";
 
+/**
+ * How long a typing notice is believed without being renewed.
+ *
+ * A typing notice is a *claim with a deadline* — the sender says "I am typing,
+ * ask again within N seconds" — and the homeserver publishes the end of it as
+ * an ordinary ephemeral event. Ephemeral events are the one class Matrix never
+ * retransmits: miss it on a gap, a resync or a dropped socket and nothing will
+ * ever say "they stopped".
+ *
+ * That is not hypothetical. An agent answered, the bridge sent its stop, the
+ * homeserver broadcast `user_ids: []` — verified against it directly — and the
+ * indicator still sat there until the reader left the room and came back,
+ * because `focus` was the only thing that ever cleared it.
+ *
+ * 30 seconds because that is the timeout the AgentPod bridge sends and renews
+ * at 20s intervals while an agent is genuinely working; a live typist always
+ * refreshes well inside this window, so the only notice this expires is one
+ * whose ending was lost.
+ */
+export const TYPING_TTL_MS = 30_000;
+
 export interface TypingStoreDeps {
   onTyping: typeof defaultOnTyping;
 }
@@ -31,10 +52,35 @@ export function createTypingStore(deps: TypingStoreDeps = defaultDeps) {
   // room has ever been subscribed to).
   let roomId: string | null = null;
   let users = $state<TypingUser[]>([]);
+  /** Fires when the current notice has gone unrenewed for too long. */
+  let expiry: ReturnType<typeof setTimeout> | null = null;
+
+  function clearExpiry(): void {
+    if (expiry !== null) {
+      clearTimeout(expiry);
+      expiry = null;
+    }
+  }
+
+  /**
+   * Applies a payload and arms (or disarms) the expiry that outlives it.
+   *
+   * An empty list needs no timer — it IS the end. A non-empty one restarts the
+   * clock, so a typist who keeps renewing is never cut off mid-thought.
+   */
+  function apply(next: TypingUser[]): void {
+    users = next;
+    clearExpiry();
+    if (next.length === 0) return;
+    expiry = setTimeout(() => {
+      expiry = null;
+      users = [];
+    }, TYPING_TTL_MS);
+  }
 
   deps.onTyping((payload: TypingPayload) => {
     if (payload.roomId !== roomId) return;
-    users = payload.users;
+    apply(payload.users);
   }).catch((err: unknown) => {
     console.error("typingStore: failed to subscribe to typing events", err);
   });
@@ -47,6 +93,7 @@ export function createTypingStore(deps: TypingStoreDeps = defaultDeps) {
    */
   function focus(newRoomId: string): void {
     roomId = newRoomId;
+    clearExpiry();
     users = [];
   }
 

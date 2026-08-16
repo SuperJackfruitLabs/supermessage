@@ -5,8 +5,8 @@
 //
 // Fakes only — no Tauri runtime.
 
-import { describe, expect, it } from "vitest";
-import { createTypingStore } from "./typing.svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTypingStore, TYPING_TTL_MS } from "./typing.svelte";
 import type { TypingPayload, TypingUser } from "$lib/ipc";
 
 const ROOM_A = "!a:example.org";
@@ -85,5 +85,78 @@ describe("typingStore", () => {
     channel.emit({ roomId: ROOM_A, users: [user("@alice:example.org")] });
 
     expect(store.users).toEqual([]);
+  });
+});
+
+describe("a typing notice whose ending never arrives", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("expires on its own instead of sitting there forever", () => {
+    // The failure this closes: an agent answered, the bridge sent its stop and
+    // the homeserver broadcast `user_ids: []`, and the indicator still sat
+    // under the composer until the reader left the room and came back —
+    // `focus` was the only thing that ever cleared it. Ephemeral events are
+    // the one class Matrix never retransmits, so "we were told" cannot be the
+    // only way this ends.
+    vi.useFakeTimers();
+    const channel = makeChannel();
+    const store = createTypingStore({ onTyping: channel.onTyping });
+    store.focus(ROOM_A);
+
+    channel.emit({ roomId: ROOM_A, users: [user("@agent:example.org")] });
+    expect(store.users).toHaveLength(1);
+
+    vi.advanceTimersByTime(TYPING_TTL_MS - 1);
+    expect(store.users).toHaveLength(1);
+
+    vi.advanceTimersByTime(1);
+    expect(store.users).toEqual([]);
+  });
+
+  it("keeps showing a typist who renews inside the window", () => {
+    // A long turn renews every 20s. Expiring one mid-thought would be a
+    // different bug wearing the same clothes.
+    vi.useFakeTimers();
+    const channel = makeChannel();
+    const store = createTypingStore({ onTyping: channel.onTyping });
+    store.focus(ROOM_A);
+
+    channel.emit({ roomId: ROOM_A, users: [user("@agent:example.org")] });
+    for (let i = 0; i < 5; i += 1) {
+      vi.advanceTimersByTime(20_000);
+      channel.emit({ roomId: ROOM_A, users: [user("@agent:example.org")] });
+    }
+
+    expect(store.users).toHaveLength(1);
+  });
+
+  it("clears at once when the ending does arrive, without waiting out the clock", () => {
+    vi.useFakeTimers();
+    const channel = makeChannel();
+    const store = createTypingStore({ onTyping: channel.onTyping });
+    store.focus(ROOM_A);
+
+    channel.emit({ roomId: ROOM_A, users: [user("@agent:example.org")] });
+    channel.emit({ roomId: ROOM_A, users: [] });
+
+    expect(store.users).toEqual([]);
+  });
+
+  it("does not resurrect a typist after the room changed", () => {
+    // The expiry must not fire against whatever room is focused later — it
+    // would clear a live typist in a different conversation.
+    vi.useFakeTimers();
+    const channel = makeChannel();
+    const store = createTypingStore({ onTyping: channel.onTyping });
+    store.focus(ROOM_A);
+    channel.emit({ roomId: ROOM_A, users: [user("@agent:example.org")] });
+
+    store.focus(ROOM_B);
+    channel.emit({ roomId: ROOM_B, users: [user("@other:example.org")] });
+    vi.advanceTimersByTime(TYPING_TTL_MS - 1);
+
+    expect(store.users).toHaveLength(1);
   });
 });
