@@ -2900,7 +2900,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn media_filename_takes_the_last_path_component_a_sender_supplied() {
         use matrix_sdk::ruma::events::room::message::FileMessageEventContent;
         use matrix_sdk::ruma::events::room::MediaSource;
@@ -2937,6 +2936,7 @@ mod tests {
         assert_eq!(media_filename(&MessageType::File(content)), "download");
     }
 
+    #[test]
     fn message_media_source_extracts_the_source_for_media_msgtypes_and_none_otherwise() {
         use matrix_sdk::ruma::events::room::message::ImageMessageEventContent;
         use matrix_sdk::ruma::OwnedMxcUri;
