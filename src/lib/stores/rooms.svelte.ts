@@ -39,6 +39,7 @@ import {
 } from "$lib/ipc";
 import { startGapSync } from "./gapSync";
 import { timelineStore } from "./timeline.svelte";
+import { spacesStore } from "./spaces.svelte";
 
 export interface RoomsStoreDeps {
   roomsResync: typeof defaultRoomsResync;
@@ -47,6 +48,14 @@ export interface RoomsStoreDeps {
   logout: typeof defaultLogout;
   joinRoom: typeof defaultJoinRoom;
   leaveRoom: typeof defaultLeaveRoom;
+  /**
+   * Re-reads the joined spaces. Called after a join, because the invitation
+   * that was just accepted may have been a space — and a space leaves the
+   * roster the moment it is joined (see `core::rooms::roster_admits`), so
+   * without this it would disappear from one surface without appearing in the
+   * other until the next launch.
+   */
+  reloadSpaces: () => Promise<void>;
 }
 
 const defaultDeps: RoomsStoreDeps = {
@@ -56,6 +65,7 @@ const defaultDeps: RoomsStoreDeps = {
   logout: defaultLogout,
   joinRoom: defaultJoinRoom,
   leaveRoom: defaultLeaveRoom,
+  reloadSpaces: () => spacesStore.load(),
 };
 
 export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
@@ -189,6 +199,13 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
    */
   async function acceptInvitation(id: string): Promise<void> {
     await deps.joinRoom(id);
+    // Only after the join resolved: a refresh on a refused join would be a
+    // wasted round trip, and the failure is the caller's to show.
+    await deps.reloadSpaces().catch((err: unknown) => {
+      // A stale rail is a cosmetic problem and the join already happened;
+      // failing the whole action here would say the opposite.
+      console.error("failed to refresh spaces after accepting an invitation", err);
+    });
   }
 
   /** Declines the invitation to `id` (or leaves the room, which is the same call). */

@@ -73,6 +73,7 @@ function makeStore(
   invites: {
     joinRoom?: (roomId: string) => Promise<void>;
     leaveRoom?: (roomId: string) => Promise<void>;
+    reloadSpaces?: () => Promise<void>;
   } = {},
 ) {
   return createRoomsStore({
@@ -82,6 +83,7 @@ function makeStore(
     logout: vi.fn().mockResolvedValue(undefined),
     joinRoom: invites.joinRoom ?? vi.fn().mockResolvedValue(undefined),
     leaveRoom: invites.leaveRoom ?? vi.fn().mockResolvedValue(undefined),
+    reloadSpaces: invites.reloadSpaces ?? vi.fn().mockResolvedValue(undefined),
   });
 }
 
@@ -321,5 +323,45 @@ describe("roomsStore: invitations (issue #1)", () => {
     await store.declineInvitation("!invited:x");
 
     expect(leaveRoom).toHaveBeenCalledWith("!invited:x");
+  });
+});
+
+describe("accepting an invitation that turns out to be a space", () => {
+  it("re-reads the spaces, or the space lands in neither surface", () => {
+    // A space leaves the roster the moment it is joined (`roster_admits`), and
+    // the rail only ever enumerated joined spaces at load time. Without this
+    // refresh the row vanishes and nothing takes its place until relaunch —
+    // which is exactly how AgentPod's purpose spaces would have felt.
+    const channel = makeChannel();
+    const reloadSpaces = vi.fn().mockResolvedValue(undefined);
+    const store = makeStore(channel, vi.fn(), { reloadSpaces });
+
+    return store.acceptInvitation("!space:x").then(() => {
+      expect(reloadSpaces).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("does not re-read them when the join was refused", () => {
+    const channel = makeChannel();
+    const reloadSpaces = vi.fn().mockResolvedValue(undefined);
+    const store = makeStore(channel, vi.fn(), {
+      joinRoom: vi.fn().mockRejectedValue(new Error("M_FORBIDDEN")),
+      reloadSpaces,
+    });
+
+    return store.acceptInvitation("!space:x").catch(() => {
+      expect(reloadSpaces).not.toHaveBeenCalled();
+    });
+  });
+
+  it("still counts the join as done when the refresh fails", () => {
+    // A stale rail is cosmetic and the join already happened; rejecting here
+    // would tell the operator the opposite of what occurred.
+    const channel = makeChannel();
+    const store = makeStore(channel, vi.fn(), {
+      reloadSpaces: vi.fn().mockRejectedValue(new Error("offline")),
+    });
+
+    return expect(store.acceptInvitation("!space:x")).resolves.toBeUndefined();
   });
 });
