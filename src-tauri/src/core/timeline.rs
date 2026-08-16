@@ -1537,6 +1537,25 @@ impl Drop for TimelineHandle {
     }
 }
 
+/// Builds the content for a sent message, parsing markdown into an HTML
+/// `formatted_body`.
+///
+/// Received HTML has always rendered here — code blocks, links, lists, the
+/// substance of talking to an agent about work — while everything sent went
+/// out as flat text. The asymmetry was the whole bug: the SDK's `markdown`
+/// feature has been compiled in since the first commit and unused on this
+/// path.
+///
+/// `text_markdown` leaves the plain `body` as exactly what was typed and adds
+/// `formatted_body` **only when the parse produces something different**, so a
+/// message with no markdown in it is byte-for-byte what it was before, and a
+/// client that renders no HTML still shows the source text. That is the same
+/// contract Element sends under, including its consequence: `2 * 3 * 4` picks
+/// up emphasis, because there is no way to tell that apart from intent.
+pub fn markdown_message(body: &str) -> RoomMessageEventContent {
+    RoomMessageEventContent::text_markdown(body)
+}
+
 /// Tauri managed state holding the currently focused room's timeline
 /// subscription, if any. Exactly one at a time — see this module's doc
 /// comment.
@@ -1814,8 +1833,7 @@ impl FocusedTimeline {
     /// either case, nothing is sent.
     pub async fn send_text(&self, room_id: &str, body: &str) -> CoreResult<()> {
         let timeline = self.active_timeline_for(room_id)?;
-        let content =
-            AnyMessageLikeEventContent::RoomMessage(RoomMessageEventContent::text_plain(body));
+        let content = AnyMessageLikeEventContent::RoomMessage(markdown_message(body));
         timeline
             .send(content)
             .await
@@ -1873,7 +1891,7 @@ impl FocusedTimeline {
         let event_id =
             EventId::parse(in_reply_to).map_err(|e| CoreError::Protocol(e.to_string()))?;
         let timeline = self.active_timeline_for(room_id)?;
-        let content = RoomMessageEventContentWithoutRelation::text_plain(body);
+        let content = RoomMessageEventContentWithoutRelation::text_markdown(body);
         timeline
             .send_reply(content, event_id)
             .await
@@ -3775,6 +3793,52 @@ mod tests {
             "Alice"
         )
         .is_none());
+    }
+
+    /// The formatted (HTML) body a sent message carries, if any.
+    fn formatted_of(body: &str) -> Option<String> {
+        match markdown_message(body).msgtype {
+            MessageType::Text(text) => text.formatted.map(|f| f.body),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_message_with_no_markup_gains_no_formatted_body() {
+        // The common case must be untouched: same bytes on the wire as before
+        // markdown existed here, and no HTML for a client to render instead.
+        assert_eq!(formatted_of("just a sentence"), None);
+    }
+
+    #[test]
+    fn a_code_block_survives_as_html() {
+        // The reason this exists: talking to an agent about work means code,
+        // and a fenced block used to arrive as flat text while the same block
+        // *received* rendered properly.
+        let html = formatted_of("```\nls -la\n```").expect("a fenced block is markdown");
+        assert!(
+            html.contains("<code>"),
+            "expected a code element, got {html}"
+        );
+    }
+
+    #[test]
+    fn a_list_and_a_link_survive_as_html() {
+        let html = formatted_of("- one\n- two").expect("a list is markdown");
+        assert!(html.contains("<li>"), "expected list items, got {html}");
+
+        let link = formatted_of("[docs](https://example.org)").expect("a link is markdown");
+        assert!(link.contains("href=\"https://example.org\""), "got {link}");
+    }
+
+    #[test]
+    fn the_plain_body_stays_exactly_what_was_typed() {
+        // A client that renders no HTML shows `body`, so it has to remain the
+        // source text rather than a stripped rendering of it.
+        match markdown_message("- one\n- two").msgtype {
+            MessageType::Text(text) => assert_eq!(text.body, "- one\n- two"),
+            _ => panic!("a text message"),
+        }
     }
 
     #[test]
