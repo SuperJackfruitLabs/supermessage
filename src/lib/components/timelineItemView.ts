@@ -23,6 +23,13 @@ export type ItemView =
   | { render: "bubble"; muted: boolean }
   | { render: "emote" }
   | { render: "system"; text: string }
+  /**
+   * The line between what has been read and what has not, which the SDK
+   * inserts at most once per timeline. Carries no text: the divider says
+   * everything, and a label repeated at every scroll position would be
+   * chrome pretending to be content.
+   */
+  | { render: "unreadMarker" }
   | { render: "placeholder"; text: string }
   /**
    * An `m.image` message. `alt` is always non-empty (falls back through
@@ -393,9 +400,12 @@ export function viewFor(item: TimelineItem): ItemView {
 
     // `dateDivider` is the third virtual kind and is handled by the
     // component itself, since it renders real content (a formatted date).
+    // Where the reader left off. The SDK inserts this once, at the boundary
+    // between what has been read and what has not, and it used to render
+    // nothing at all — so opening a room with 14 unread dropped you at the
+    // bottom with no way to see where they started.
     case "readMarker":
-      // No visual form yet — M2 per `docs/matrix-events.md` Table E.
-      return { render: "none" };
+      return { render: "unreadMarker" };
 
     // The boundary marker the SDK inserts once back-pagination reaches the
     // genuine start of a room's history — always at most once, and always
