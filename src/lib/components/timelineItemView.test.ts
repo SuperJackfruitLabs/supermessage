@@ -196,8 +196,12 @@ describe("viewFor", () => {
     });
   });
 
-  it("renders nothing for the read marker, which legitimately has no visual form yet", () => {
-    expect(viewFor(item({ kind: "readMarker" }))).toEqual({ render: "none" });
+  it("renders the read marker as the line between read and unread", () => {
+    // It used to render nothing, so opening a room with 14 unread dropped you
+    // at the bottom with no way to see where they began. The marker carries no
+    // text of its own: the divider says it, and a label repeated at every
+    // scroll position would be chrome pretending to be content.
+    expect(viewFor(item({ kind: "readMarker" }))).toEqual({ render: "unreadMarker" });
   });
 
   it("renders the timeline-start virtual item as the 'Beginning of the room' system line", () => {

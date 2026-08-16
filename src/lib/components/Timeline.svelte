@@ -537,6 +537,11 @@
   }
 
   function handleScroll(offset: number): void {
+    // Kept current so `unreadAbove` can tell whether the marker is still
+    // above the viewport — the only thing the jump button keys off.
+    // `findItemIndex` answers "which row is at this offset", and the offset is
+    // exactly what this handler is given.
+    if (vlist) firstVisibleIndex = vlist.findItemIndex(offset);
     if (!vlist) return;
     const distanceFromBottom = vlist.getScrollSize() - vlist.getViewportSize() - offset;
     followBottom = distanceFromBottom < BOTTOM_THRESHOLD;
@@ -555,6 +560,35 @@
    * worst.
    */
   let pickingReactionFor = $state<string | null>(null);
+
+  /**
+   * Where the unread marker sits in `displayRows`, or -1 when there is none.
+   *
+   * The SDK inserts the marker at most once, at the boundary between read and
+   * unread, so this is a lookup rather than a computation. -1 rather than null
+   * because it feeds `scrollToIndex` directly.
+   */
+  /** The topmost row the viewport currently shows, written by `handleScroll`. */
+  let firstVisibleIndex = $state(0);
+
+  const unreadIndex = $derived(
+    displayRows.findIndex((row) => row.type === "item" && row.item.kind === "readMarker")
+  );
+
+  /**
+   * Whether the marker has scrolled off the top.
+   *
+   * `firstVisibleIndex` is written by `handleScroll`, so this recomputes as
+   * the reader moves. The button exists for one situation — you opened a room
+   * with unread messages and were dropped at the bottom — and must not sit
+   * there once the line it points at is on screen.
+   */
+  const unreadAbove = $derived(unreadIndex >= 0 && firstVisibleIndex > unreadIndex);
+
+  function jumpToUnread(): void {
+    if (unreadIndex < 0) return;
+    vlist?.scrollToIndex(unreadIndex, { align: "start" });
+  }
 
   /**
    * Toggles `key` as a reaction on `eventId`. Never mutates
@@ -1098,7 +1132,25 @@
   </div>
 {/snippet}
 
-<div class="min-h-0 flex-1">
+<div class="relative min-h-0 flex-1">
+  {#if unreadAbove}
+    <!--
+      Only while the line is off the top. It exists for one situation — you
+      opened a room with unread messages and were dropped at the bottom — and a
+      button that stayed put once the thing it points at is on screen would be
+      chrome, not navigation.
+    -->
+    <div class="pointer-events-none absolute inset-x-0 top-2 z-20 flex justify-center">
+      <button
+        type="button"
+        onclick={jumpToUnread}
+        class="pointer-events-auto rounded-full border border-accent/40 bg-surface px-3 py-1 text-ui text-accent shadow-sm transition-colors hover:bg-surface-raised"
+      >
+        Jump to unread
+      </button>
+    </div>
+  {/if}
+
   {#if timelineStore.items.length === 0}
     <!-- `bg-surface-sunken` here too, so the pane's ground is the field
          whether or not there is anything on the sheet — see the scroller
@@ -1596,6 +1648,17 @@
                     </div>
                   </div>
                 {/if}
+              {:else if view.render === "unreadMarker"}
+                <!--
+                  Where you left off. A rule with a word on it, in the accent
+                  rather than the signal colour: this is navigation, not a
+                  decision waiting on you (spec §3 reserves amber for that).
+                -->
+                <div class="flex items-center gap-3 py-2" data-testid="unread-marker">
+                  <span class="h-px flex-1 bg-accent/40"></span>
+                  <span class="font-mono text-meta uppercase tracking-wide text-accent">New</span>
+                  <span class="h-px flex-1 bg-accent/40"></span>
+                </div>
               {:else if view.render === "system"}
                 <!-- Membership lines, room creation, encryption enabled, room
                      replaced — see `logLine` for why this row looks the way
