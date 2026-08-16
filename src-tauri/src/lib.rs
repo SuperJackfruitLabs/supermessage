@@ -22,8 +22,8 @@ use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 use crate::core::attachments;
 use crate::core::commands::{
     attachment_discard, attachment_send, attachment_stage, join_room, leave_room, login, logout,
-    mark_room_read, media_fetch, member_avatar, restore_session, room_avatar, room_info,
-    rooms_resync, send_message, send_reply, set_typing, space_select, spaces_list,
+    mark_room_read, media_download, media_fetch, member_avatar, restore_session, room_avatar,
+    room_info, rooms_resync, send_message, send_reply, set_typing, space_select, spaces_list,
     timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
 };
 use crate::core::secrets::KeyringStore;
@@ -206,6 +206,7 @@ pub fn run() {
             leave_room,
             room_avatar,
             media_fetch,
+            media_download,
             room_info,
             member_avatar,
             attachment_stage,

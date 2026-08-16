@@ -273,6 +273,7 @@
 
   import { tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
+  import { mediaDownload } from "$lib/ipc";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
   import { QUICK_REACTIONS } from "./emojiPicker";
@@ -555,6 +556,45 @@
    * worst.
    */
   let pickingReactionFor = $state<string | null>(null);
+
+  /** The event whose media is being saved, so its own button can say so. */
+  let savingMedia = $state<string | null>(null);
+
+  /**
+   * What to say under the row once a save finished — where it went, or why it
+   * did not.
+   *
+   * In place rather than as a banner: the reader asked about *this* file, and
+   * a path only means anything next to the thing it is a path to. This app has
+   * no toast surface, and inventing one for a line of text would be a bigger
+   * change than the feature it serves.
+   */
+  let saveNote = $state<{ eventId: string; text: string; failed: boolean } | null>(null);
+
+  /**
+   * Saves a message's media to a path the reader chooses.
+   *
+   * The dialog is opened on the Rust side (`Session::media_download`), so this
+   * hands over an event id and nothing else — a path named here would be a
+   * path the webview controls.
+   *
+   * A cancelled dialog resolves to null and says nothing: the reader knows
+   * they cancelled, and announcing it would be noise.
+   */
+  async function saveMedia(eventId: string, filename: string): Promise<void> {
+    if (savingMedia !== null) return;
+    savingMedia = eventId;
+    saveNote = null;
+    try {
+      const path = await mediaDownload(eventId);
+      if (path !== null) saveNote = { eventId, text: `Saved to ${path}`, failed: false };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      saveNote = { eventId, text: `Could not save ${filename}: ${reason}`, failed: true };
+    } finally {
+      savingMedia = null;
+    }
+  }
 
   /**
    * Toggles `key` as a reaction on `eventId`. Never mutates
@@ -1332,9 +1372,11 @@
               {:else if view.render === "mediaFile"}
                 <!--
                   `m.file`/`m.audio`/`m.video`: an informative row (filename,
-                  size, kind), no playback or download action yet — see
-                  `.superpowers/sdd/2026-08-13-m0-spine/media-report.md` for
-                  what a follow-up would need to add either.
+                  size, kind) with a Save action. No in-app playback — that is
+                  still a follow-up (see
+                  `.superpowers/sdd/2026-08-13-m0-spine/media-report.md`) — but
+                  a file you can save is a file you can open, which is the part
+                  that was actually missing.
 
                   Filename in sans, the kind/size line in mono (spec §6.3) —
                   both named explicitly rather than inherited, since a peer
@@ -1363,7 +1405,24 @@
                         {view.label}{view.size != null ? ` · ${formatFileSize(view.size)}` : ""}
                       </span>
                     </span>
+                    <button
+                      type="button"
+                      onclick={() => void saveMedia(item.id, view.filename)}
+                      disabled={savingMedia === item.id}
+                      class="ml-auto shrink-0 rounded px-2 py-1 text-ui text-content-muted transition-colors hover:bg-surface-sunken hover:text-content disabled:opacity-50"
+                    >
+                      {savingMedia === item.id ? "Saving…" : "Save"}
+                    </button>
                   </div>
+                  {#if saveNote?.eventId === item.id}
+                    <p
+                      class="mt-1 font-mono text-meta {saveNote.failed
+                        ? 'text-destructive'
+                        : 'text-content-muted'}"
+                    >
+                      {saveNote.text}
+                    </p>
+                  {/if}
                 {/snippet}
                 {@render messageBlock(item, continuesRun, mediaFileContent)}
               {:else if view.render === "customEvent"}

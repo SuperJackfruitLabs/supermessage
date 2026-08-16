@@ -499,6 +499,32 @@ fn uint_to_u64(value: UInt) -> u64 {
 /// to `core::media::message_media_thumbnail` — never through
 /// [`TimelineItemDto`], which carries only [`MediaMetaDto`]'s plain metadata
 /// (see that struct's doc comment for why bytes/sources never cross IPC).
+/// The name a media message should be saved under.
+///
+/// `filename()` on each content type, which falls back to `body` when the
+/// event carried no separate filename — the same resolution `media_meta` uses
+/// for the row's label, so what the timeline calls a file is what lands on
+/// disk. Anything without one is `download`, because a save dialog with an
+/// empty name is a dialog nobody can complete.
+pub fn media_filename(msgtype: &MessageType) -> String {
+    let name = match msgtype {
+        MessageType::Image(m) => m.filename().to_string(),
+        MessageType::File(m) => m.filename().to_string(),
+        MessageType::Audio(m) => m.filename().to_string(),
+        MessageType::Video(m) => m.filename().to_string(),
+        _ => String::new(),
+    };
+
+    // A name is not a path. A sender controls this string, and `../` in it
+    // would aim the save dialog somewhere the reader did not choose.
+    let base = name.rsplit(['/', '\\']).next().unwrap_or("").trim();
+    if base.is_empty() || base == "." || base == ".." {
+        "download".to_string()
+    } else {
+        base.to_string()
+    }
+}
+
 fn message_media_source(msgtype: &MessageType) -> Option<MediaSource> {
     match msgtype {
         MessageType::Image(m) => Some(m.source.clone()),
@@ -2034,6 +2060,29 @@ impl FocusedTimeline {
     /// both exactly like "there is nothing to fetch", not an error.
     ///
     /// Fails with [`CoreError::NotReady`] when no room is focused at all.
+    /// The media source **and the name it should be saved under**.
+    ///
+    /// One lookup rather than two: the filename lives on the same message
+    /// content as the source, and fetching the item twice would let the two
+    /// disagree if the timeline moved in between.
+    pub async fn media_descriptor(
+        &self,
+        event_id: &EventId,
+    ) -> CoreResult<Option<(MediaSource, String)>> {
+        let timeline = self.active_timeline()?;
+        let Some(item) = timeline.item_by_event_id(event_id).await else {
+            return Ok(None);
+        };
+        let Some(message) = item.content().as_message() else {
+            return Ok(None);
+        };
+        let msgtype = message.msgtype();
+        let Some(source) = message_media_source(msgtype) else {
+            return Ok(None);
+        };
+        Ok(Some((source, media_filename(msgtype))))
+    }
+
     pub async fn media_source(&self, event_id: &EventId) -> CoreResult<Option<MediaSource>> {
         let timeline = self.active_timeline()?;
         let Some(item) = timeline.item_by_event_id(event_id).await else {
@@ -2851,6 +2900,43 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn media_filename_takes_the_last_path_component_a_sender_supplied() {
+        use matrix_sdk::ruma::events::room::message::FileMessageEventContent;
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let named = |name: &str| {
+            let mut content = FileMessageEventContent::new(
+                name.to_string(),
+                MediaSource::Plain(OwnedMxcUri::from("mxc://x.org/a")),
+            );
+            content.filename = Some(name.to_string());
+            media_filename(&MessageType::File(content))
+        };
+
+        // A name is not a path, and the sender chose this string. Suggesting
+        // it verbatim would aim the save dialog somewhere the reader did not.
+        assert_eq!(named("../../etc/passwd"), "passwd");
+        assert_eq!(named("/tmp/evil.sh"), "evil.sh");
+        assert_eq!(named("notes.md"), "notes.md");
+    }
+
+    #[test]
+    fn media_filename_falls_back_rather_than_offering_an_empty_name() {
+        use matrix_sdk::ruma::events::room::message::FileMessageEventContent;
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        // A save dialog with an empty name is one nobody can complete.
+        let mut content = FileMessageEventContent::new(
+            String::new(),
+            MediaSource::Plain(OwnedMxcUri::from("mxc://x.org/a")),
+        );
+        content.filename = Some("   ".to_string());
+        assert_eq!(media_filename(&MessageType::File(content)), "download");
+    }
+
     fn message_media_source_extracts_the_source_for_media_msgtypes_and_none_otherwise() {
         use matrix_sdk::ruma::events::room::message::ImageMessageEventContent;
         use matrix_sdk::ruma::OwnedMxcUri;
