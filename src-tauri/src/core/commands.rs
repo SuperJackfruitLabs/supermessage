@@ -165,9 +165,14 @@ pub async fn timeline_resync(
 pub async fn send_message(
     room_id: String,
     body: String,
+    // The members this message addresses, as user ids. Optional so an older
+    // caller (and every test that predates mentions) still compiles.
+    mentions: Option<Vec<String>>,
     timeline: State<'_, Arc<FocusedTimeline>>,
 ) -> Result<(), CoreError> {
-    timeline.send_text(&room_id, &body).await
+    timeline
+        .send_text(&room_id, &body, &mentions.unwrap_or_default())
+        .await
 }
 
 /// Sends a plain-text reply to `in_reply_to` (a parent event id) in

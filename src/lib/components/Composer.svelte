@@ -69,7 +69,16 @@
   // behind whenever one is present (`sendCaveat`), while the button itself
   // names its object either way.
 
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
+  import { roomInfo } from "$lib/ipc";
+  import {
+    applyMention,
+    collectMentions,
+    findMentionQuery,
+    matchMentions,
+    mentionLabel,
+    type Mentionable,
+  } from "./mentions";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { DraftTracker } from "./draftTracker";
@@ -94,6 +103,66 @@
 
   const drafts = new DraftTracker();
   let value = $state("");
+
+  // ── Mentions ──────────────────────────────────────────────────────────────
+  //
+  // A mission room holds several agents and a person, and "can you retry that"
+  // addresses nobody. `m.mentions` is also how an agent's own Matrix client
+  // decides a message was meant for it, so this is on the integration path,
+  // not only the ergonomics one.
+
+  /** The focused room's joined members, loaded once per room. */
+  let members = $state<Mentionable[]>([]);
+  /** The textarea, so the caret position can be read and restored. */
+  let input = $state<HTMLTextAreaElement | undefined>();
+  /** Which suggestion is highlighted, or -1 when the list is closed. */
+  let mentionCursor = $state(-1);
+  /** What is being typed after an `@`, or null when nothing is. */
+  let mentionQuery = $state<string | null>(null);
+
+  const mentionMatches = $derived(
+    mentionQuery === null ? [] : matchMentions(mentionQuery, members)
+  );
+
+  /**
+   * Loads the room's members for autocomplete.
+   *
+   * Failure is silent by design: mentions are a convenience, and a room whose
+   * member list could not be read must still be a room you can type in.
+   */
+  $effect(() => {
+    const id = roomId;
+    members = [];
+    void roomInfo(id)
+      .then((info) => {
+        // The room may have changed while this was in flight.
+        if (id === roomId) members = info.members;
+      })
+      .catch(() => {});
+  });
+
+  /** Reads the caret and reopens (or closes) the suggestion list. */
+  function refreshMentionQuery(): void {
+    const caret = input?.selectionStart ?? value.length;
+    const found = findMentionQuery(value, caret);
+    mentionQuery = found?.query ?? null;
+    mentionCursor = found === null ? -1 : 0;
+  }
+
+  /** Completes the mention at the caret with `member`. */
+  function chooseMention(member: Mentionable): void {
+    const caret = input?.selectionStart ?? value.length;
+    const next = applyMention(value, caret, member);
+    value = next.text;
+    mentionQuery = null;
+    mentionCursor = -1;
+    // Restored after Svelte writes the new value, or the caret jumps to the
+    // end and the reader has to find their place again.
+    void tick().then(() => {
+      input?.focus();
+      input?.setSelectionRange(next.caret, next.caret);
+    });
+  }
   let sending = $state(false);
   /**
    * The last refusal worth showing, or `null`.
@@ -188,6 +257,7 @@
 
   /** `textarea`'s `oninput` — routes to `handleTyping`/`stopTyping` depending on whether anything is left to be "typing". */
   function handleInput(): void {
+    refreshMentionQuery();
     if (value.trim() === "") {
       stopTyping(roomId);
     } else {
@@ -456,7 +526,10 @@
       if (target) {
         await timelineStore.sendReply(sentRoomId, body, target.eventId);
       } else {
-        await timelineStore.send(sentRoomId, body);
+        // Resolved from the finished text rather than tracked as the reader
+        // types: a mention that was typed and then deleted must not still be
+        // reported, and one pasted in whole should count.
+        await timelineStore.send(sentRoomId, body, collectMentions(body, members));
       }
       if (roomId === sentRoomId) {
         value = "";
@@ -493,6 +566,34 @@
   }
 
   function handleKeydown(event: KeyboardEvent): void {
+    // The suggestion list owns these keys while it is open — Enter completes
+    // the mention rather than sending a half-typed name.
+    if (mentionQuery !== null && mentionMatches.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        mentionCursor = (mentionCursor + 1) % mentionMatches.length;
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        mentionCursor =
+          (mentionCursor - 1 + mentionMatches.length) % mentionMatches.length;
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const picked = mentionMatches[Math.max(mentionCursor, 0)];
+        if (picked) chooseMention(picked);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        mentionQuery = null;
+        mentionCursor = -1;
+        return;
+      }
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send();
@@ -630,7 +731,8 @@
   class="shrink-0 bg-surface-sunken px-4 py-3"
   style="padding-bottom: calc(0.75rem + var(--inset-bottom));"
 >
-  <div class="mx-auto flex w-full max-w-[72ch] items-end gap-2">
+  <!-- `relative` so the mention list can hang above the strip without moving it. -->
+  <div class="relative mx-auto flex w-full max-w-[72ch] items-end gap-2">
   <!--
     The attach control, left of the input (design §8).
 
@@ -652,6 +754,41 @@
     sunken hover would be 1.0:1 — the same inversion the room header's
     controls already make.
   -->
+  {#if mentionQuery !== null && mentionMatches.length > 0}
+    <!--
+      Above the composer, not below it: the composer already sits at the
+      bottom of the window, and a list opening downwards would open off-screen.
+      Absolute so it cannot push the timeline as it grows and shrinks — the
+      reading surface must not move while somebody types a name.
+    -->
+    <ul
+      class="absolute bottom-full left-2 z-30 mb-1 max-h-56 w-72 overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-lg"
+      role="listbox"
+      aria-label="Mention a member"
+    >
+      {#each mentionMatches as member, index (member.userId)}
+        <li>
+          <button
+            type="button"
+            role="option"
+            aria-selected={index === mentionCursor}
+            onclick={() => chooseMention(member)}
+            class="flex w-full items-baseline gap-2 px-3 py-1.5 text-left transition-colors {index ===
+            mentionCursor
+              ? 'bg-surface-sunken'
+              : 'hover:bg-surface-sunken'}"
+          >
+            <span class="truncate font-sans text-ui text-content">{mentionLabel(member)}</span>
+            {#if member.displayName !== null}
+              <span class="truncate font-mono text-meta text-content-faint">
+                {member.userId}
+              </span>
+            {/if}
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
   <button
     type="button"
     onclick={attach}
@@ -667,8 +804,11 @@
   >
     <span class="shrink-0 pb-1.5 font-mono text-content-faint" aria-hidden="true">›</span>
     <textarea
+      bind:this={input}
       bind:value
       onkeydown={handleKeydown}
+      onclick={refreshMentionQuery}
+      onkeyup={refreshMentionQuery}
       oninput={handleInput}
       disabled={sending}
       rows="1"

@@ -148,8 +148,8 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
    * `roomId` through is only to give that check something real to compare
    * against.
    */
-  async function send(roomId: string, body: string): Promise<void> {
-    await deps.sendMessage(roomId, body);
+  async function send(roomId: string, body: string, mentions: string[] = []): Promise<void> {
+    await deps.sendMessage(roomId, body, mentions);
   }
 
   /**

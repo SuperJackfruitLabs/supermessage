@@ -734,7 +734,11 @@ export async function timelineResync(): Promise<[string, number, TimelineItem[]]
 }
 
 /**
- * Sends a plain-text message to `roomId`.
+ * Sends a message to `roomId`, with `mentions` carried as `m.mentions`.
+ *
+ * A mention is not decoration: `m.mentions` is what a client keys a highlight
+ * off, and how an agent running its own Matrix client decides a message in a
+ * room full of agents was addressed to it.
  *
  * `roomId` must be the room the caller actually means, same as
  * {@link timelinePaginateBack}'s `roomId` — the core verifies it against
@@ -746,8 +750,12 @@ export async function timelineResync(): Promise<[string, number, TimelineItem[]]
  * message would otherwise fail just because it landed in the wrong room —
  * see {@link CoreErrorKind}'s doc comment.
  */
-export async function sendMessage(roomId: string, body: string): Promise<void> {
-  await invoke<void>("send_message", { roomId, body });
+export async function sendMessage(
+  roomId: string,
+  body: string,
+  mentions: string[] = [],
+): Promise<void> {
+  return invoke<void>("send_message", { roomId, body, mentions });
 }
 
 /**
