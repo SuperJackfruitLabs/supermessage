@@ -128,6 +128,7 @@ use matrix_sdk::ruma::events::room::message::{
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::AnyMessageLikeEventContent;
 use matrix_sdk::ruma::events::AnySyncTimelineEvent;
+use matrix_sdk::ruma::events::Mentions;
 use matrix_sdk::ruma::html::{
     ElementAttributesSchemes, Html, HtmlSanitizerMode, ListBehavior, PropertiesNames,
     SanitizerConfig,
@@ -1582,6 +1583,35 @@ pub fn markdown_message(body: &str) -> RoomMessageEventContent {
     RoomMessageEventContent::text_markdown(body)
 }
 
+/// The same, with `m.mentions` attached when the message addresses somebody.
+///
+/// A mention is not decoration: `m.mentions` is what a client keys a highlight
+/// off, and it is how an agent running its own Matrix client decides a message
+/// in a room full of agents was meant for it. Without it, "@analyst-echo can
+/// you retry" is a sentence that happens to contain a name.
+///
+/// An id that will not parse is dropped rather than failing the send. The
+/// webview built this list from the room's own member list, so a bad one means
+/// a bug here — and losing a highlight is a smaller harm than losing the
+/// message.
+pub fn mentioning_message(body: &str, mentions: &[String]) -> RoomMessageEventContent {
+    let content = markdown_message(body);
+    if mentions.is_empty() {
+        return content;
+    }
+
+    let user_ids: Vec<OwnedUserId> = mentions
+        .iter()
+        .filter_map(|id| UserId::parse(id).ok())
+        .collect();
+
+    if user_ids.is_empty() {
+        return content;
+    }
+
+    content.add_mentions(Mentions::with_user_ids(user_ids))
+}
+
 /// Tauri managed state holding the currently focused room's timeline
 /// subscription, if any. Exactly one at a time — see this module's doc
 /// comment.
@@ -1857,9 +1887,14 @@ impl FocusedTimeline {
     /// Fails with [`CoreError::NotReady`] when no room is focused, or
     /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is — in
     /// either case, nothing is sent.
-    pub async fn send_text(&self, room_id: &str, body: &str) -> CoreResult<()> {
+    pub async fn send_text(
+        &self,
+        room_id: &str,
+        body: &str,
+        mentions: &[String],
+    ) -> CoreResult<()> {
         let timeline = self.active_timeline_for(room_id)?;
-        let content = AnyMessageLikeEventContent::RoomMessage(markdown_message(body));
+        let content = AnyMessageLikeEventContent::RoomMessage(mentioning_message(body, mentions));
         timeline
             .send(content)
             .await
@@ -4302,7 +4337,7 @@ mod tests {
     #[tokio::test]
     async fn focused_timeline_send_text_reports_not_ready_when_nothing_is_focused() {
         let focused = FocusedTimeline::default();
-        let err = focused.send_text("!a:x.org", "hi").await.unwrap_err();
+        let err = focused.send_text("!a:x.org", "hi", &[]).await.unwrap_err();
         assert_eq!(err.kind(), "notReady");
     }
 
