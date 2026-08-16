@@ -10,7 +10,12 @@
     "sourceMap": true,
     "strict": true,
     "moduleResolution": "bundler"
-  }
+  },
+  // The driven UI tests are a separate program: they run under WebdriverIO's
+  // globals (`browser`, `$$`, `expect`), not in the app or its unit tests, and
+  // letting those types into this project pulls WDIO's whole tree into every
+  // `svelte-check` run. They have their own tsconfig in `e2e/`.
+  "exclude": ["e2e", "wdio.conf.ts", "node_modules", ".svelte-kit/**/*.d.ts"]
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
   // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
   //

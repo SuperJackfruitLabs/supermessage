@@ -1260,3 +1260,102 @@ async fn a_message_from_another_client_survives_this_client_having_sent_one_of_i
         "the message sent from elsewhere must not be swallowed by this client's own echo"
     );
 }
+
+#[tokio::test]
+async fn a_gappy_sync_clears_the_timeline_and_the_rebuild_arrives_separately() {
+    // The shape behind the screenshot, reproduced: a *limited* (gappy) sync
+    // makes the SDK clear the room's timeline and rebuild it, and the clear
+    // arrives in its own batch — before the rebuild exists.
+    //
+    // That is why `FocusedTimeline`'s re-seed used to blank the room: it
+    // snapshots the timeline the moment it notices the clear, and at that
+    // moment the timeline is empty.
+    install_ring_provider();
+
+    let room_id = room_id!("!room:example.org");
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    server.mock_room_state_encryption().plain().mount().await;
+    let room = server.sync_joined_room(&client, room_id).await;
+
+    let timeline = room
+        .timeline_builder()
+        .event_filter(timeline_event_filter)
+        .track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents)
+        .build()
+        .await
+        .expect("Timeline::new against a mocked, joined room");
+    let (initial, stream) = timeline.subscribe().await;
+    assert!(initial.is_empty());
+    pin_mut!(stream);
+
+    let own_user = client.user_id().expect("logged in").to_owned();
+    let mut items: Vec<TimelineItemDto> = Vec::new();
+
+    let fold = |items: &mut Vec<TimelineItemDto>,
+                batch: Vec<eyeball_im::VectorDiff<std::sync::Arc<TimelineItem>>>| {
+        let ops: Vec<_> = batch
+            .into_iter()
+            .map(|diff| {
+                project_diff(diff, |item| {
+                    project_item(&item, &own_user).expect("project_item is total")
+                })
+            })
+            .collect();
+        apply_ops(items, &ops);
+    };
+
+    let f = EventFactory::new().room(room_id).sender(&ALICE);
+    server
+        .sync_room(
+            &client,
+            JoinedRoomBuilder::new(room_id)
+                .add_timeline_event(f.text_msg("first").event_id(event_id!("$first"))),
+        )
+        .await;
+    while let Ok(Some(batch)) =
+        tokio::time::timeout(Duration::from_millis(400), stream.next()).await
+    {
+        fold(&mut items, batch);
+    }
+    assert_eq!(real_items(&items).len(), 1, "the room has one message");
+
+    // A gappy sync: the homeserver is saying "there is history you have not
+    // seen between what you had and this".
+    server
+        .sync_room(
+            &client,
+            JoinedRoomBuilder::new(room_id)
+                .set_timeline_limited()
+                .set_timeline_prev_batch("gap-token")
+                .add_timeline_event(f.text_msg("after the gap").event_id(event_id!("$second"))),
+        )
+        .await;
+
+    // Fold ONE batch — whatever the SDK emits first.
+    let first_batch = tokio::time::timeout(Duration::from_millis(400), stream.next())
+        .await
+        .expect("a batch follows a limited sync")
+        .expect("the stream is alive");
+    fold(&mut items, first_batch);
+
+    // This is the moment that matters. If the first batch emptied the list,
+    // anything that resets the webview here shows a blank room — and the
+    // rebuild is in a later batch.
+    if items.is_empty() {
+        let rebuilt = tokio::time::timeout(Duration::from_millis(400), stream.next())
+            .await
+            .expect("the rebuild follows the clear")
+            .expect("the stream is alive");
+        fold(&mut items, rebuilt);
+    }
+
+    let bodies: Vec<&str> = real_items(&items)
+        .iter()
+        .filter_map(|i| i.body.as_deref())
+        .collect();
+    assert!(
+        bodies.contains(&"after the gap"),
+        "the timeline must end up holding what the gappy sync delivered, got {bodies:?}"
+    );
+}

@@ -2,7 +2,8 @@ import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 
-// @ts-expect-error process is a nodejs global
+// `process` is typed now that @types/node is in the tree (WebdriverIO brought
+// it). The `@ts-expect-error` that used to sit here started failing as unused.
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/

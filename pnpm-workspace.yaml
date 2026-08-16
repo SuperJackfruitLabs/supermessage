@@ -4,5 +4,13 @@
 #
 # esbuild's postinstall fetches the platform binary it is a wrapper around.
 # Without it vite has no bundler and `pnpm tauri dev` cannot start.
+#
+# edgedriver and geckodriver arrive under WebdriverIO and want to download
+# browser drivers at install time. This app is not a browser and is driven
+# through the Tauri service's own embedded WebDriver, so both are refused:
+# nothing here needs them, and a build script that reaches the network is not
+# worth running for a capability nobody uses.
 allowBuilds:
+  edgedriver: false
   esbuild: true
+  geckodriver: false
