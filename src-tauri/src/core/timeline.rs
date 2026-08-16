@@ -147,7 +147,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 
 use super::dto::{
-    apply_ops, op_name, ops_len_after, project_diff, DiffEnvelope, DiffOp, MediaMetaDto,
+    apply_ops, op_name, op_values, ops_len_after, project_diff, DiffEnvelope, DiffOp, MediaMetaDto,
     ReactionDto, ReplyToDto, SeqCounter, TimelineItemDto, TypingUserDto,
 };
 use super::error::{CoreError, CoreResult};
@@ -2333,6 +2333,17 @@ fn emit_ops(
         subject = subject,
         ops = ops.len(),
         kinds = ?ops.iter().map(op_name).collect::<Vec<_>>(),
+        // The ids each op carries, not just how many. Issue #2 is a report
+        // that one specific event never reached the screen, and a line saying
+        // "pushBack, 1 item" cannot tell anyone *which* event that was — or,
+        // more to the point, that the missing one was never in any op at all.
+        // This is what makes the next reproduction decisive rather than
+        // another round of reading code that turns out to be innocent.
+        ids = ?ops
+            .iter()
+            .flat_map(op_values)
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
         items = folded_len,
         "emitting timeline diff"
     );

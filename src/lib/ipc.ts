@@ -46,6 +46,17 @@ export interface CoreStatus {
  * {@link roomAvatar} unconditionally, for every room, and let it resolve
  * (and return `null` when there is genuinely nothing to show).
  */
+/**
+ * This account's relationship to a room, mirroring `Membership` in
+ * `src-tauri/src/core/dto.rs`.
+ *
+ * The roster lists invited rooms alongside joined ones (the core filters with
+ * `new_filter_non_left`), so this is the only thing distinguishing "a room" from
+ * "an invitation to a room" — see `$lib/components/invitationView.ts` for what
+ * the UI does with each state.
+ */
+export type Membership = "joined" | "invited" | "left" | "knocked" | "banned";
+
 export interface RoomSummary {
   id: string;
   name: string;
@@ -123,6 +134,14 @@ export interface RoomSummary {
    */
   lastEventType: string | null;
   lastActivityMs: number | null;
+  /**
+   * Whether this account has joined the room or has merely been invited to
+   * it — see {@link Membership}.
+   *
+   * An invitation carries no readable history and cannot be posted to, so
+   * both the roster row and the room pane branch on it (issue #1).
+   */
+  membership: Membership;
 }
 
 /**
@@ -810,6 +829,28 @@ export async function markRoomRead(roomId: string): Promise<boolean> {
  * `roomId` (see `$lib/stores/avatarCache.svelte.ts` for why room id rather
  * than mxc URI, and the trade-off that implies).
  */
+/**
+ * Accepts an invitation to `roomId`.
+ *
+ * Nothing is returned and nothing needs to be: joining changes the room's
+ * state, and the room-list stream emits the resulting diff like any other
+ * change, so the roster and the room pane update themselves. A homeserver
+ * refusal **rejects** rather than resolving quietly — the invitation must
+ * stay on screen when the join did not happen.
+ */
+export async function joinRoom(roomId: string): Promise<void> {
+  return invoke<void>("join_room", { roomId });
+}
+
+/**
+ * Declines an invitation to `roomId`, or leaves a room already joined — one
+ * call for both, because Matrix has one call for both (declining an
+ * invitation *is* `POST /leave`). The wording is the webview's to choose.
+ */
+export async function leaveRoom(roomId: string): Promise<void> {
+  return invoke<void>("leave_room", { roomId });
+}
+
 export async function roomAvatar(roomId: string): Promise<string | null> {
   return invoke<string | null>("room_avatar", { roomId });
 }

@@ -44,6 +44,7 @@
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { parseRoomIdentity, relativeTime, roomInitial } from "./roomIdentity";
   import { composeRoomPreview } from "./roomPreview";
+  import { isInvitation } from "./invitationView";
   import { DECISION_BEARING_EVENT_TYPES } from "./customEvents";
 
   /**
@@ -144,8 +145,13 @@
     role: string | null,
     unread: number,
     pendingDecision: boolean,
+    invited: boolean,
   ): string {
     const parts = [name];
+    // Right after the name, because it changes what the row *is*: an
+    // invitation is not a conversation yet, and a reader who learns that last
+    // has already formed the wrong idea of the row.
+    if (invited) parts.push("Invitation");
     if (role !== null) parts.push(role);
     if (unread > 0) parts.push(`${unread} unread`);
     if (pendingDecision) parts.push("Approval needed");
@@ -170,6 +176,7 @@
         rest of the row" flag any more.
       -->
       {@const showRoleTime = identity.role !== null || time !== null}
+      {@const invited = isInvitation(room.membership)}
       <button
         type="button"
         onclick={() => chooseRoom(room.id)}
@@ -179,6 +186,7 @@
           identity.role,
           room.unread,
           preview?.pending ?? false,
+          invited,
         )}
         class="flex gap-3 border-l-2 pr-4 pl-[10px] text-left transition-colors {selected
           ? 'border-l-accent bg-surface'
@@ -215,7 +223,20 @@
         <span class="min-w-0 flex-1 border-b border-border py-3">
           <span class="flex items-center justify-between gap-2">
             <span class="truncate text-ui font-medium text-content">{identity.name}</span>
-            {#if room.unread > 0}
+            {#if invited}
+              <!--
+                An invitation reads as a room in every other respect — name,
+                avatar, position in the roster — so without this the only
+                honest thing about the row is what happens when you open it.
+                Outlined rather than filled: it is a state, not a count, and
+                the filled accent pill is the unread number's.
+              -->
+              <span
+                class="shrink-0 rounded-full border border-accent px-1.5 py-0.5 font-mono text-meta text-accent"
+              >
+                Invitation
+              </span>
+            {:else if room.unread > 0}
               <!--
                 No `aria-label` of its own. The button above sets an explicit
                 one covering name, role and unread count, and an explicit

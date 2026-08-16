@@ -270,6 +270,27 @@ pub async fn room_avatar(
 /// `core::timeline::FocusedTimeline::media_source` for the full reasoning.
 /// Callers fetch this lazily per item and cache the result themselves, keyed
 /// on the event id (see `$lib/stores/mediaCache.svelte.ts`).
+/// Accepts an invitation to `room_id` (issue #1). Idempotent against an
+/// already-joined room; a homeserver refusal is returned rather than
+/// swallowed, so the invitation stays on screen when the join did not
+/// happen.
+///
+/// The roster updates itself: joining changes the room's state, and the
+/// room-list stream emits the resulting diff like any other change. Nothing
+/// here re-reads the list.
+#[tauri::command]
+pub async fn join_room(room_id: String, session: State<'_, Session>) -> Result<(), CoreError> {
+    session.join_room(&room_id).await
+}
+
+/// Declines an invitation to `room_id`, or leaves a room already joined —
+/// one command for both, because Matrix has one call for both (see
+/// `Session::leave_room`).
+#[tauri::command]
+pub async fn leave_room(room_id: String, session: State<'_, Session>) -> Result<(), CoreError> {
+    session.leave_room(&room_id).await
+}
+
 #[tauri::command]
 pub async fn media_fetch(
     event_id: String,

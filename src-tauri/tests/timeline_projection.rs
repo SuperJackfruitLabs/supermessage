@@ -1005,3 +1005,258 @@ async fn an_undecryptable_message_is_not_previewable() {
 
     assert_eq!(only_preview(&previews), &None);
 }
+
+/// One sync's worth of events, as a boxed builder — the shape
+/// [`projected_items_across_syncs`] takes a list of. Named rather than
+/// written inline so the signature stays readable (and clippy's
+/// `type_complexity` lint stays quiet).
+type SyncBuild = Box<dyn FnOnce(&RoomId, JoinedRoomBuilder) -> JoinedRoomBuilder + Send>;
+
+/// The same fold as [`projected`], but across **several** syncs instead of
+/// one — each `build` synced in turn and its resulting diff batch folded onto
+/// the list the previous one left behind.
+///
+/// Why this exists next to the single-sync harness: [`projected`] only ever
+/// exercises a timeline being *seeded*, and a message that arrives while the
+/// room is already open takes the other path — a live diff batch folded into
+/// a non-empty list, which is what `FocusedTimeline::subscribe`'s streaming
+/// loop does for every event after the first. Issue #2 is a report about
+/// exactly that path, and the single-sync harness cannot see it.
+async fn projected_items_across_syncs(builds: Vec<SyncBuild>) -> Vec<TimelineItemDto> {
+    install_ring_provider();
+
+    let room_id = room_id!("!room:example.org");
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    server.mock_room_state_encryption().plain().mount().await;
+    let room = server.sync_joined_room(&client, room_id).await;
+
+    let own_user = client
+        .user_id()
+        .expect("MatrixMockServer's client is always already logged in")
+        .to_owned();
+
+    let timeline = room
+        .timeline_builder()
+        .event_filter(timeline_event_filter)
+        .track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents)
+        .build()
+        .await
+        .expect("Timeline::new against a mocked, joined room");
+    let (initial, stream) = timeline.subscribe().await;
+    assert!(initial.is_empty(), "a freshly joined room must start empty");
+
+    pin_mut!(stream);
+    let mut items: Vec<TimelineItemDto> = Vec::new();
+
+    for build in builds {
+        server
+            .sync_room(&client, build(room_id, JoinedRoomBuilder::new(room_id)))
+            .await;
+
+        let batch = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("the timeline must emit a diff batch for the events just synced in")
+            .expect("the timeline stream must not end while its Timeline is still alive");
+
+        let ops: Vec<_> = batch
+            .into_iter()
+            .map(|diff| {
+                project_diff(diff, |item| {
+                    project_item(&item, &own_user)
+                        .expect("project_item is total over TimelineItemKind")
+                })
+            })
+            .collect();
+        apply_ops(&mut items, &ops);
+    }
+
+    items
+}
+
+#[tokio::test]
+async fn a_message_this_account_sent_from_another_client_reaches_the_timeline() {
+    // Issue #2. An agent room is exactly where a person uses several clients:
+    // the console on a laptop, Element on a phone, this on the desktop. A
+    // message sent by the same account elsewhere arrives with an event id and
+    // no local echo to reconcile against — the one shape the send path never
+    // produces — and it was reported absent while the agent's reply to it
+    // rendered, which reads as an agent answering a question nobody asked.
+    let own_user = user_id!("@example:localhost");
+    let items = projected_items(move |room_id, room| {
+        let f = EventFactory::new().room(room_id);
+        room.add_timeline_event(
+            f.text_msg("What is 2+2? One short answer.")
+                .sender(own_user)
+                .event_id(event_id!("$asked-elsewhere")),
+        )
+        .add_timeline_event(
+            f.text_msg("4.")
+                .sender(&ALICE)
+                .event_id(event_id!("$answer")),
+        )
+    })
+    .await;
+
+    let real = real_items(&items);
+    let bodies: Vec<&str> = real.iter().filter_map(|i| i.body.as_deref()).collect();
+    assert_eq!(
+        bodies,
+        vec!["What is 2+2? One short answer.", "4."],
+        "both events are on the server; both must be in the timeline"
+    );
+    assert!(real[0].is_own, "the account's own message, sent elsewhere");
+}
+
+#[tokio::test]
+async fn a_message_this_account_sent_from_another_client_arrives_while_the_room_is_open() {
+    // The live path, not the seeding one: the room already has history on
+    // screen when the message lands. That is the situation issue #2
+    // describes — the console on a laptop, Element on a phone, this on the
+    // desktop — and the reply to the missing message rendered, so whatever
+    // dropped it acted on the sender rather than on the batch.
+    let own_user = user_id!("@example:localhost");
+    let items = projected_items_across_syncs(vec![
+        Box::new(|room_id: &RoomId, room: JoinedRoomBuilder| {
+            let f = EventFactory::new().room(room_id).sender(&ALICE);
+            room.add_timeline_event(
+                f.text_msg("Hey! What's up, Buddy?")
+                    .event_id(event_id!("$greeting")),
+            )
+        }),
+        Box::new(move |room_id: &RoomId, room: JoinedRoomBuilder| {
+            let f = EventFactory::new().room(room_id);
+            room.add_timeline_event(
+                f.text_msg("What is 2+2? One short answer.")
+                    .sender(own_user)
+                    .event_id(event_id!("$asked-elsewhere-live")),
+            )
+        }),
+        Box::new(|room_id: &RoomId, room: JoinedRoomBuilder| {
+            let f = EventFactory::new().room(room_id).sender(&ALICE);
+            room.add_timeline_event(f.text_msg("4.").event_id(event_id!("$answer-live")))
+        }),
+    ])
+    .await;
+
+    let real = real_items(&items);
+    let bodies: Vec<&str> = real.iter().filter_map(|i| i.body.as_deref()).collect();
+    assert_eq!(
+        bodies,
+        vec![
+            "Hey! What's up, Buddy?",
+            "What is 2+2? One short answer.",
+            "4."
+        ],
+        "the question must be between the greeting and its answer, not missing from between them"
+    );
+}
+
+#[tokio::test]
+async fn a_message_from_another_client_survives_this_client_having_sent_one_of_its_own() {
+    // Issue #2, with the one condition the two tests above leave out: this
+    // client had already **sent** into the room. That is the difference
+    // between the report and a clean-room timeline — "Buddy." went out from
+    // here, and the message that went missing was the next thing the same
+    // account said, from somewhere else.
+    //
+    // It matters because a sent message leaves a local echo behind, and
+    // reconciling a remote event against a local echo is the one piece of
+    // machinery that looks at whether an event is *ours*. An own event
+    // arriving with no echo to match is exactly the input that machinery has
+    // no reason to expect.
+    install_ring_provider();
+
+    let room_id = room_id!("!room:example.org");
+    let own_user = user_id!("@example:localhost");
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    server.mock_room_state_encryption().plain().mount().await;
+    server
+        .mock_room_send()
+        .ok(event_id!("$buddy"))
+        .mount()
+        .await;
+    let room = server.sync_joined_room(&client, room_id).await;
+
+    let timeline = room
+        .timeline_builder()
+        .event_filter(timeline_event_filter)
+        .track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents)
+        .build()
+        .await
+        .expect("Timeline::new against a mocked, joined room");
+    let (initial, stream) = timeline.subscribe().await;
+    assert!(initial.is_empty());
+    pin_mut!(stream);
+
+    let mut items: Vec<TimelineItemDto> = Vec::new();
+
+    /// Folds every batch the timeline has ready, stopping once it goes quiet.
+    /// A send produces several (the local echo, then its send state), so
+    /// "exactly one batch per step" cannot be assumed here the way it can for
+    /// a plain sync.
+    macro_rules! drain {
+        () => {
+            while let Ok(Some(batch)) =
+                tokio::time::timeout(Duration::from_millis(500), stream.next()).await
+            {
+                let ops: Vec<_> = batch
+                    .into_iter()
+                    .map(|diff| {
+                        project_diff(diff, |item| {
+                            project_item(&item, own_user)
+                                .expect("project_item is total over TimelineItemKind")
+                        })
+                    })
+                    .collect();
+                apply_ops(&mut items, &ops);
+            }
+        };
+    }
+
+    // This client sends, the way the operator did.
+    timeline
+        .send(RoomMessageEventContent::text_plain("Buddy.").into())
+        .await
+        .expect("the send queue accepts the message");
+    drain!();
+
+    // The homeserver echoes it back, resolving the local echo.
+    server
+        .sync_room(
+            &client,
+            JoinedRoomBuilder::new(room_id).add_timeline_event(
+                EventFactory::new()
+                    .room(room_id)
+                    .text_msg("Buddy.")
+                    .sender(own_user)
+                    .event_id(event_id!("$buddy")),
+            ),
+        )
+        .await;
+    drain!();
+
+    // And now the same account says something else, from somewhere else.
+    server
+        .sync_room(
+            &client,
+            JoinedRoomBuilder::new(room_id).add_timeline_event(
+                EventFactory::new()
+                    .room(room_id)
+                    .text_msg("What is 2+2? One short answer.")
+                    .sender(own_user)
+                    .event_id(event_id!("$asked-after-sending")),
+            ),
+        )
+        .await;
+    drain!();
+
+    let real = real_items(&items);
+    let bodies: Vec<&str> = real.iter().filter_map(|i| i.body.as_deref()).collect();
+    assert_eq!(
+        bodies,
+        vec!["Buddy.", "What is 2+2? One short answer."],
+        "the message sent from elsewhere must not be swallowed by this client's own echo"
+    );
+}
