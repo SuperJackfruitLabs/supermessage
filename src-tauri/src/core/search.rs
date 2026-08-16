@@ -184,7 +184,7 @@ mod tests {
         // Rank across rooms is not something a reader can reason about; "when"
         // is. Built by hand rather than through `ResultRoomEvents`, whose
         // fields are what this sorts *after*.
-        let mut rows = vec![
+        let mut rows = [
             SearchResultDto {
                 event_id: "$old".into(),
                 room_id: "!r:x".into(),
