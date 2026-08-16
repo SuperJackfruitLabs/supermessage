@@ -874,6 +874,22 @@ export async function mediaFetch(eventId: string): Promise<string | null> {
 }
 
 /**
+ * Saves an event's media **in full**, wherever the reader chooses. Resolves to
+ * the path written, or `null` when they cancelled the dialog (or the event
+ * carries no media).
+ *
+ * The counterpart to {@link mediaFetch}, which only ever returns a 640px
+ * thumbnail: an agent sending a log, a diff or a full-size screenshot was
+ * previously something you could see the existence of and nothing more.
+ *
+ * Takes an event id and nothing else. The save dialog is opened on the Rust
+ * side, so no path the webview could name decides where bytes land.
+ */
+export async function mediaDownload(eventId: string): Promise<string | null> {
+  return invoke<string | null>("media_download", { eventId });
+}
+
+/**
  * Fetches `roomId`'s room-info panel data — name, topic, canonical alias,
  * alt aliases, room id and joined member list — mirroring `RoomInfoDto`
  * from `src-tauri/src/core/room_info.rs`.

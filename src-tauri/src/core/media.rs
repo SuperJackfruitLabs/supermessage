@@ -92,6 +92,29 @@ pub async fn avatar_thumbnail(client: &Client, mxc_uri: &str) -> CoreResult<Opti
 /// redesign here — see `core::timeline::FocusedTimeline::media_source` for
 /// where the `MediaSource` this function receives actually comes from (the
 /// live timeline item, looked up by event id, never a cached mxc string).
+/// Fetches a media message's **whole** file, not a thumbnail.
+///
+/// The receive side has only ever been a 640px thumbnail for images and a
+/// labelled row for everything else, which means an agent could send you an
+/// artifact — a log, a diff, a config, a screenshot at full size — and you
+/// could see that it existed and nothing more. This is the other half.
+///
+/// Returns raw bytes rather than a `data:` URI: this is destined for a file on
+/// disk, and base64 in the middle of that would inflate a 40MB video by a
+/// third for no reader.
+pub async fn message_media_file(client: &Client, source: MediaSource) -> CoreResult<Vec<u8>> {
+    let request = MediaRequestParameters {
+        source,
+        format: MediaFormat::File,
+    };
+
+    client
+        .media()
+        .get_media_content(&request, true)
+        .await
+        .map_err(|e| CoreError::Network(e.to_string()))
+}
+
 pub async fn message_media_thumbnail(
     client: &Client,
     source: MediaSource,

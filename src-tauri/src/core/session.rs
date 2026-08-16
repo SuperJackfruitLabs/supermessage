@@ -24,6 +24,7 @@ use matrix_sdk::{
     Client,
 };
 use tauri::AppHandle;
+use tauri_plugin_dialog::DialogExt;
 use tokio::sync::{Mutex, RwLock};
 
 use super::attachments;
@@ -593,6 +594,67 @@ impl Session {
     /// lock to have protected. Losing a race with a concurrent `logout`
     /// here just fails the call rather than leaking a live handle across
     /// the teardown.
+    /// Fetches an event's media in full and saves it wherever the reader
+    /// chooses, returning that path — or `None` when they cancelled, or the
+    /// event carries no media.
+    ///
+    /// The save dialog is opened from the **Rust** side, like the attachment
+    /// picker (`core::attachments`) and for the same reason: a path chosen in
+    /// the webview would be a path the webview controls. Here the webview
+    /// names an event; everything about where the bytes land is decided out
+    /// here, and the sender's filename is stripped to its last component
+    /// before it is ever suggested (`core::timeline::media_filename`).
+    ///
+    /// Awaits a oneshot rather than blocking: the dialog stays up for as long
+    /// as somebody browses their home directory, and a blocked worker thread
+    /// would be held for all of it.
+    pub async fn media_download(
+        &self,
+        app: &AppHandle,
+        event_id: &str,
+    ) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        let parsed_event_id =
+            EventId::parse(event_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+
+        let Some((source, filename)) = self.focused.media_descriptor(&parsed_event_id).await?
+        else {
+            return Ok(None);
+        };
+
+        // Fetched before the dialog, so a reader who has chosen a path is not
+        // then made to wait on a 40MB download with no explanation — and so a
+        // failed fetch never leaves a zero-byte file behind.
+        let bytes = media::message_media_file(&client, source).await?;
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.dialog()
+            .file()
+            .set_file_name(&filename)
+            .save_file(move |picked| {
+                // Gone only if this command was cancelled, in which case there
+                // is nobody left to tell.
+                let _ = tx.send(picked);
+            });
+
+        let Some(path) = rx
+            .await
+            .map_err(|_| CoreError::Protocol("the save dialog closed unexpectedly".into()))?
+        else {
+            return Ok(None);
+        };
+
+        let path = path
+            .into_path()
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+
+        tokio::fs::write(&path, &bytes)
+            .await
+            .map_err(|e| CoreError::Protocol(format!("could not write {}: {e}", path.display())))?;
+
+        Ok(Some(path.display().to_string()))
+    }
+
     pub async fn media_fetch(&self, event_id: &str) -> CoreResult<Option<String>> {
         let client = self.require_client().await?;
         let parsed_event_id =

@@ -291,6 +291,21 @@ pub async fn leave_room(room_id: String, session: State<'_, Session>) -> Result<
     session.leave_room(&room_id).await
 }
 
+/// Saves an event's media in full, wherever the reader chooses. Returns the
+/// path written, or `null` when they cancelled or the event carries no media.
+///
+/// Takes an event id, never a path or a URL: the save dialog is opened on the
+/// Rust side (see `Session::media_download`), so nothing the webview says can
+/// decide where bytes land.
+#[tauri::command]
+pub async fn media_download(
+    event_id: String,
+    app: tauri::AppHandle,
+    session: State<'_, Session>,
+) -> Result<Option<String>, CoreError> {
+    session.media_download(&app, &event_id).await
+}
+
 #[tauri::command]
 pub async fn media_fetch(
     event_id: String,
