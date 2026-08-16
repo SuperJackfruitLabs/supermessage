@@ -308,6 +308,41 @@ pub async fn leave_room(room_id: String, session: State<'_, Session>) -> Result<
 /// Server-side search: see `core::search`'s module doc for why, and for the
 /// condition it rests on (these rooms are unencrypted, so the homeserver can
 /// index them — an encrypted room simply will not appear in results).
+/// Creates a room, returning its id.
+///
+/// `isDirect` decides which half of a client's list it lands in — a room with
+/// one other person is a DM, and filing thirty of those as group rooms buries
+/// the three group rooms that matter.
+#[tauri::command]
+pub async fn create_room(
+    name: String,
+    invite: Vec<String>,
+    is_direct: bool,
+    session: State<'_, Session>,
+) -> Result<String, CoreError> {
+    session.create_room(&name, &invite, is_direct).await
+}
+
+/// Joins a room by id or alias — `#agentpod_missions:id.agentpod.dev` is the
+/// shape an operator is actually handed.
+#[tauri::command]
+pub async fn join_room_by_alias(
+    alias_or_id: String,
+    session: State<'_, Session>,
+) -> Result<String, CoreError> {
+    session.join_room_by_alias(&alias_or_id).await
+}
+
+/// Invites somebody to a room this account is in.
+#[tauri::command]
+pub async fn invite_user(
+    room_id: String,
+    user_id: String,
+    session: State<'_, Session>,
+) -> Result<(), CoreError> {
+    session.invite_user(&room_id, &user_id).await
+}
+
 #[tauri::command]
 pub async fn search_messages(
     term: String,

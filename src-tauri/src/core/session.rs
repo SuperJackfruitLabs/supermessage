@@ -20,7 +20,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use matrix_sdk::{
-    ruma::{EventId, RoomId},
+    ruma::{
+        api::client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
+        EventId, RoomId, RoomOrAliasId, UserId,
+    },
     Client,
 };
 use tauri::AppHandle;
@@ -737,6 +740,84 @@ impl Session {
     /// homeserver refuses — a failed join is returned, so the invitation
     /// stays on screen rather than the row quietly turning into a room the
     /// account is not in.
+    /// Creates a room and returns its id.
+    ///
+    /// `invite` is a list of user ids to invite at creation rather than
+    /// afterwards, because that is the only place the DM flag can be set — the
+    /// same reason AgentPod's bridge creates its agent rooms that way.
+    ///
+    /// `is_direct` decides which half of a client's list this lands in. A room
+    /// with one other person in it is a DM, and a client that files it as a
+    /// group room is one where thirty agent conversations bury the three group
+    /// rooms that matter.
+    pub async fn create_room(
+        &self,
+        name: &str,
+        invite: &[String],
+        is_direct: bool,
+    ) -> CoreResult<String> {
+        let client = self.require_client().await?;
+
+        let mut request = CreateRoomRequest::new();
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            request.name = Some(trimmed.to_string());
+        }
+        request.is_direct = is_direct;
+        request.preset = Some(if is_direct {
+            RoomPreset::TrustedPrivateChat
+        } else {
+            RoomPreset::PrivateChat
+        });
+        request.invite = invite
+            .iter()
+            .filter_map(|id| UserId::parse(id).ok())
+            .collect();
+
+        let room = client
+            .create_room(request)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+
+        Ok(room.room_id().to_string())
+    }
+
+    /// Joins a room by id **or alias** — `#agentpod_missions:id.agentpod.dev`
+    /// is the shape an operator is actually given.
+    ///
+    /// Separate from [`Self::join_room`], which accepts an invitation to a room
+    /// the client already knows about: this one reaches a room it has never
+    /// seen, which is a different request to the homeserver and a different
+    /// failure when it is refused.
+    pub async fn join_room_by_alias(&self, alias_or_id: &str) -> CoreResult<String> {
+        let client = self.require_client().await?;
+        let target = RoomOrAliasId::parse(alias_or_id.trim())
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+
+        let room = client
+            .join_room_by_id_or_alias(&target, &[])
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+
+        Ok(room.room_id().to_string())
+    }
+
+    /// Invites `user_id` to `room_id`.
+    pub async fn invite_user(&self, room_id: &str, user_id: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        let parsed_room_id =
+            RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let parsed_user_id =
+            UserId::parse(user_id.trim()).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let room = client
+            .get_room(&parsed_room_id)
+            .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
+
+        room.invite_user_by_id(&parsed_user_id)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
     pub async fn join_room(&self, room_id: &str) -> CoreResult<()> {
         let client = self.require_client().await?;
         let parsed_room_id =
