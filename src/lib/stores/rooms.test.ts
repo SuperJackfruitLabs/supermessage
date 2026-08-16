@@ -11,9 +11,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRoomsStore } from "./rooms.svelte";
 import type { DiffEnvelope } from "./diff";
-import type { RoomSummary } from "$lib/ipc";
+import type { Membership, RoomSummary } from "$lib/ipc";
 
-function room(id: string): RoomSummary {
+function room(id: string, membership: Membership = "joined"): RoomSummary {
   return {
     id,
     name: id,
@@ -24,6 +24,7 @@ function room(id: string): RoomSummary {
     lastMessageNamesSender: false,
     lastEventType: null,
     lastActivityMs: null,
+    membership,
   };
 }
 
@@ -69,12 +70,18 @@ function makeFakeSessionCommands(onArm: () => void) {
 function makeStore(
   channel: ReturnType<typeof makeChannel>,
   roomsResync: () => Promise<[number, RoomSummary[]]> = vi.fn(),
+  invites: {
+    joinRoom?: (roomId: string) => Promise<void>;
+    leaveRoom?: (roomId: string) => Promise<void>;
+  } = {},
 ) {
   return createRoomsStore({
     onRoomsDiff: channel.onRoomsDiff,
     roomsResync,
     makeSessionCommands: makeFakeSessionCommands,
     logout: vi.fn().mockResolvedValue(undefined),
+    joinRoom: invites.joinRoom ?? vi.fn().mockResolvedValue(undefined),
+    leaveRoom: invites.leaveRoom ?? vi.fn().mockResolvedValue(undefined),
   });
 }
 
@@ -245,5 +252,74 @@ describe("the selected room's name", () => {
     await store.logout();
 
     expect(store.selectedRoomName).toBeNull();
+  });
+});
+
+describe("roomsStore: invitations (issue #1)", () => {
+  it("reports the selected room's membership, so the pane can tell a room from an invitation", () => {
+    const channel = makeChannel();
+    const store = makeStore(channel);
+
+    channel.emit(
+      env(1, [
+        { op: "reset", values: [room("!joined:x"), room("!invited:x", "invited")] },
+      ]),
+    );
+
+    store.select("!invited:x");
+    expect(store.selectedMembership).toBe("invited");
+
+    store.select("!joined:x");
+    expect(store.selectedMembership).toBe("joined");
+  });
+
+  it("claims no membership for a room the roster no longer lists", () => {
+    // `selectedRoomName` keeps a remembered fallback for this case; membership
+    // deliberately does not. A guess of "joined" would put a composer in front
+    // of a room nothing can vouch for.
+    const channel = makeChannel();
+    const store = makeStore(channel);
+
+    channel.emit(env(1, [{ op: "reset", values: [room("!gone:x")] }]));
+    store.select("!gone:x");
+    channel.emit(env(2, [{ op: "reset", values: [] }]));
+
+    expect(store.selectedMembership).toBeNull();
+  });
+
+  it("accepts an invitation without writing the membership itself", async () => {
+    // The join lands as an ordinary room-list diff. Writing `joined` here as
+    // well would show the composer before the homeserver agreed — and leave it
+    // showing if the join never happened.
+    const channel = makeChannel();
+    const joinRoom = vi.fn().mockResolvedValue(undefined);
+    const store = makeStore(channel, vi.fn(), { joinRoom });
+
+    channel.emit(env(1, [{ op: "reset", values: [room("!invited:x", "invited")] }]));
+    store.select("!invited:x");
+    await store.acceptInvitation("!invited:x");
+
+    expect(joinRoom).toHaveBeenCalledWith("!invited:x");
+    expect(store.selectedMembership).toBe("invited");
+  });
+
+  it("surfaces a refused join rather than resolving quietly", async () => {
+    // A swallowed failure would take the invitation off screen while the
+    // account is still not in the room.
+    const channel = makeChannel();
+    const joinRoom = vi.fn().mockRejectedValue(new Error("M_FORBIDDEN"));
+    const store = makeStore(channel, vi.fn(), { joinRoom });
+
+    await expect(store.acceptInvitation("!invited:x")).rejects.toThrow("M_FORBIDDEN");
+  });
+
+  it("declines through leave, which is the one call Matrix has for both", async () => {
+    const channel = makeChannel();
+    const leaveRoom = vi.fn().mockResolvedValue(undefined);
+    const store = makeStore(channel, vi.fn(), { leaveRoom });
+
+    await store.declineInvitation("!invited:x");
+
+    expect(leaveRoom).toHaveBeenCalledWith("!invited:x");
   });
 });

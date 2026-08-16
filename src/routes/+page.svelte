@@ -30,6 +30,8 @@
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
   import Composer from "$lib/components/Composer.svelte";
+  import InvitationPanel from "$lib/components/InvitationPanel.svelte";
+  import { roomAffordance } from "$lib/components/invitationView";
   import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
 
@@ -838,7 +840,21 @@
             <Timeline roomId={roomsStore.selectedId} />
           {/key}
           <TypingIndicator />
-          <Composer roomId={roomsStore.selectedId} />
+          <!--
+            The composer is for rooms this account is *in*. An invitation gets
+            Accept / Decline in the same place instead (issue #1), and a room
+            that is neither — left, knocked, banned — gets neither: there is
+            nothing honest to offer, and a composer that fails at the
+            homeserver takes a message and loses it.
+          -->
+          {#if roomAffordance(roomsStore.selectedMembership ?? "joined") === "respondToInvitation"}
+            <InvitationPanel
+              roomId={roomsStore.selectedId}
+              roomName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
+            />
+          {:else if roomAffordance(roomsStore.selectedMembership ?? "joined") === "compose"}
+            <Composer roomId={roomsStore.selectedId} />
+          {/if}
         {:else}
           <div class="flex flex-1 items-center justify-center">
             <p class="text-ui text-content-muted">Choose a room from the roster.</p>

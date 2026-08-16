@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, Stream, StreamExt};
 use matrix_sdk::ruma::{OwnedRoomId, UserId};
-use matrix_sdk::{Room, RoomMemberships};
+use matrix_sdk::{Room, RoomMemberships, RoomState};
 use matrix_sdk_ui::room_list_service::filters::{
     new_filter_all, new_filter_identifiers, new_filter_non_left, new_filter_not, new_filter_space,
     BoxedFilterFn,
@@ -40,7 +40,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::dto::{
-    apply_ops, op_name, op_values, project_diff, DiffEnvelope, DiffOp, RoomSummary, SeqCounter,
+    apply_ops, op_name, op_values, project_diff, DiffEnvelope, DiffOp, Membership, RoomSummary,
+    SeqCounter,
 };
 use super::error::{CoreError, CoreResult};
 use super::sync::SyncHandle;
@@ -81,6 +82,7 @@ pub fn project_room_parts(
     unread: u64,
     preview: Option<MessagePreview>,
     last_activity_ms: Option<u64>,
+    membership: Membership,
 ) -> RoomSummary {
     let (last_message, last_message_is_own, last_message_names_sender, last_event_type) =
         match preview {
@@ -102,6 +104,22 @@ pub fn project_room_parts(
         last_message_names_sender,
         last_event_type,
         last_activity_ms,
+        membership,
+    }
+}
+
+/// Maps the SDK's `RoomState` onto the wire [`Membership`].
+///
+/// Exhaustive on purpose: a state added by a future SDK release must be a
+/// compile error here rather than silently projecting as `Joined`, which
+/// would put a composer in front of a room this account cannot post to.
+fn project_membership(state: RoomState) -> Membership {
+    match state {
+        RoomState::Joined => Membership::Joined,
+        RoomState::Invited => Membership::Invited,
+        RoomState::Left => Membership::Left,
+        RoomState::Knocked => Membership::Knocked,
+        RoomState::Banned => Membership::Banned,
     }
 }
 
@@ -416,7 +434,15 @@ pub fn project_room(item: &RoomListItem, preview: Option<MessagePreview>) -> Roo
         .latest_event_timestamp()
         .map(|ts| i64::from(ts.get()) as u64);
 
-    project_room_parts(&id, name, avatar_url, unread, preview, last_activity_ms)
+    project_room_parts(
+        &id,
+        name,
+        avatar_url,
+        unread,
+        preview,
+        last_activity_ms,
+        project_membership(item.state()),
+    )
 }
 
 /// Project a raw batch of SDK diffs into the wire ops for one envelope.
@@ -818,15 +844,30 @@ mod tests {
     fn room_summary_falls_back_to_the_room_id_when_unnamed() {
         // project_room_parts is the pure inner function taking already-extracted
         // values, so it can be tested without constructing an SDK RoomListItem.
-        let summary = project_room_parts("!abc:example.org", None, None, 0, None, None);
+        let summary = project_room_parts(
+            "!abc:example.org",
+            None,
+            None,
+            0,
+            None,
+            None,
+            Membership::Joined,
+        );
         assert_eq!(summary.name, "!abc:example.org");
         assert_eq!(summary.id, "!abc:example.org");
     }
 
     #[test]
     fn room_summary_prefers_the_display_name() {
-        let summary =
-            project_room_parts("!abc:example.org", Some("Ops".into()), None, 3, None, None);
+        let summary = project_room_parts(
+            "!abc:example.org",
+            Some("Ops".into()),
+            None,
+            3,
+            None,
+            None,
+            Membership::Joined,
+        );
         assert_eq!(summary.name, "Ops");
         assert_eq!(summary.unread, 3);
     }
@@ -845,6 +886,7 @@ mod tests {
                 event_type: None,
             }),
             Some(1_700_000_000_000),
+            Membership::Joined,
         );
         assert_eq!(summary.avatar_url.as_deref(), Some("mxc://example.org/abc"));
         assert_eq!(summary.last_message.as_deref(), Some("hello"));
@@ -865,6 +907,7 @@ mod tests {
                 event_type: Some("dev.supermessage.gate.v1".into()),
             }),
             None,
+            Membership::Joined,
         );
         assert_eq!(summary.last_message.as_deref(), Some("Approval needed"));
         assert!(summary.last_message_is_own);
@@ -892,6 +935,7 @@ mod tests {
                 event_type: None,
             }),
             None,
+            Membership::Joined,
         );
         assert!(summary.last_message_is_own);
         assert!(summary.last_message_names_sender);
@@ -904,7 +948,15 @@ mod tests {
         // webview the nothing was ours, or that it was a custom event —
         // either would light up a `You: ` prefix or the pending-decision
         // branch on an empty preview line.
-        let summary = project_room_parts("!abc:example.org", None, None, 0, None, None);
+        let summary = project_room_parts(
+            "!abc:example.org",
+            None,
+            None,
+            0,
+            None,
+            None,
+            Membership::Joined,
+        );
         assert_eq!(summary.last_message, None);
         assert!(!summary.last_message_is_own);
         assert!(!summary.last_message_names_sender);
@@ -912,7 +964,21 @@ mod tests {
     }
 
     fn room(id: &str) -> RoomSummary {
-        project_room_parts(id, None, None, 0, None, None)
+        project_room_parts(id, None, None, 0, None, None, Membership::Joined)
+    }
+
+    #[test]
+    fn every_sdk_room_state_projects_to_its_own_membership() {
+        // Issue #1: the roster lists invited rooms (`new_filter_non_left`)
+        // and had no way to say so. Asserted state by state rather than only
+        // for `Invited`, because the bug this closes was a *missing*
+        // distinction — one that a projection collapsing anything unfamiliar
+        // into `Joined` would reintroduce without failing a test.
+        assert_eq!(project_membership(RoomState::Joined), Membership::Joined);
+        assert_eq!(project_membership(RoomState::Invited), Membership::Invited);
+        assert_eq!(project_membership(RoomState::Left), Membership::Left);
+        assert_eq!(project_membership(RoomState::Knocked), Membership::Knocked);
+        assert_eq!(project_membership(RoomState::Banned), Membership::Banned);
     }
 
     #[test]

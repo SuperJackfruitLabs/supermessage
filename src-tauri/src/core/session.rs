@@ -650,6 +650,56 @@ impl Session {
         room_info::build_room_info(&room).await
     }
 
+    /// Accepts an invitation to `room_id`.
+    ///
+    /// Issue #1: every bridged agent room arrives as an invitation, and
+    /// until this existed there was no way to act on one — the client built
+    /// for rooms whose other occupants are agents could not enter a single
+    /// one of them.
+    ///
+    /// Deliberately not guarded on the room's current state: `Room::join`
+    /// against an already-joined room is a no-op the homeserver answers
+    /// happily, and a double-click on Accept is not an error worth
+    /// reporting. What it must not do is silently succeed when the
+    /// homeserver refuses — a failed join is returned, so the invitation
+    /// stays on screen rather than the row quietly turning into a room the
+    /// account is not in.
+    pub async fn join_room(&self, room_id: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        let parsed_room_id =
+            RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let room = client
+            .get_room(&parsed_room_id)
+            .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
+
+        room.join()
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
+    /// Declines an invitation to `room_id`, or leaves a room already joined.
+    ///
+    /// One call for both, because Matrix has one: declining an invitation
+    /// *is* `POST /leave`. The webview distinguishes them in its wording
+    /// (`Decline` on an invitation) rather than in the protocol.
+    ///
+    /// The room does not disappear from the roster as a result — the room
+    /// list is filtered with `new_filter_non_left`, so the SDK drops it on
+    /// the next sync, which is the diff the roster is already built to fold
+    /// in.
+    pub async fn leave_room(&self, room_id: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        let parsed_room_id =
+            RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let room = client
+            .get_room(&parsed_room_id)
+            .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
+
+        room.leave()
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
     /// Fetches a room member's avatar as a `data:` URI, given the raw
     /// `mxc://` URI already carried on their `RoomInfoDto` member entry (see
     /// [`Self::room_info`]).

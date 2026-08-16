@@ -8,6 +8,29 @@
 use eyeball_im::VectorDiff;
 use serde::Serialize;
 
+/// This account's relationship to a room.
+///
+/// The roster is filtered with `new_filter_non_left`, so an **invited** room
+/// is listed exactly like a joined one — and until this field existed the
+/// webview could not tell the two apart. That is issue #1: 32 agent rooms
+/// arrived as invites, each rendering as a room with one unreadable state
+/// event in it and no way to accept, because nothing in the wire format said
+/// "this is an invitation".
+///
+/// Carried as an enum rather than an `is_invite` boolean: `Knocked` and
+/// `Banned` are states the SDK can report, and a boolean would have to fold
+/// them into "joined", which is the kind of lie that costs a second bug
+/// later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Membership {
+    Joined,
+    Invited,
+    Left,
+    Knocked,
+    Banned,
+}
+
 /// A single room as summarized for the room list.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +83,11 @@ pub struct RoomSummary {
     /// `core::rooms::room_preview`).
     pub last_event_type: Option<String>,
     pub last_activity_ms: Option<u64>,
+    /// This account's relationship to the room — see [`Membership`]. The
+    /// roster row and the timeline both branch on it: an invitation is not a
+    /// conversation yet, and offering a composer for a room you have not
+    /// joined would fail at the homeserver.
+    pub membership: Membership,
 }
 
 /// Media metadata projected from an `m.image`/`m.file`/`m.audio`/`m.video`

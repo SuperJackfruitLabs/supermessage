@@ -28,10 +28,13 @@
 // shipped on this branch: see `restoreSession` below.
 
 import {
+  joinRoom as defaultJoinRoom,
+  leaveRoom as defaultLeaveRoom,
   logout as defaultLogout,
   makeSessionCommands as defaultMakeSessionCommands,
   onRoomsDiff as defaultOnRoomsDiff,
   roomsResync as defaultRoomsResync,
+  type Membership,
   type RoomSummary,
 } from "$lib/ipc";
 import { startGapSync } from "./gapSync";
@@ -42,6 +45,8 @@ export interface RoomsStoreDeps {
   onRoomsDiff: typeof defaultOnRoomsDiff;
   makeSessionCommands: typeof defaultMakeSessionCommands;
   logout: typeof defaultLogout;
+  joinRoom: typeof defaultJoinRoom;
+  leaveRoom: typeof defaultLeaveRoom;
 }
 
 const defaultDeps: RoomsStoreDeps = {
@@ -49,6 +54,8 @@ const defaultDeps: RoomsStoreDeps = {
   onRoomsDiff: defaultOnRoomsDiff,
   makeSessionCommands: defaultMakeSessionCommands,
   logout: defaultLogout,
+  joinRoom: defaultJoinRoom,
+  leaveRoom: defaultLeaveRoom,
 };
 
 export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
@@ -168,6 +175,27 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     });
   }
 
+  /**
+   * Accepts the invitation to `id`.
+   *
+   * Nothing is updated here on success: joining changes the room's state on
+   * the homeserver, the core's room-list stream emits the resulting diff, and
+   * the roster folds it in like any other change. Writing an optimistic
+   * `membership` here as well would put the composer on screen before the
+   * join landed — and leave it there if it never did.
+   *
+   * Rejects rather than swallowing a failure, so the caller can keep the
+   * invitation on screen and say what happened.
+   */
+  async function acceptInvitation(id: string): Promise<void> {
+    await deps.joinRoom(id);
+  }
+
+  /** Declines the invitation to `id` (or leaves the room, which is the same call). */
+  async function declineInvitation(id: string): Promise<void> {
+    await deps.leaveRoom(id);
+  }
+
   return {
     get rooms(): RoomSummary[] {
       return rooms;
@@ -188,7 +216,21 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
       if (selectedId === null) return null;
       return rooms.find((room) => room.id === selectedId)?.name ?? selectedName;
     },
+    /**
+     * The selected room's membership, `null` when nothing is selected or the
+     * roster no longer lists it.
+     *
+     * Unlike `selectedRoomName` there is no remembered fallback: a room the
+     * roster has stopped listing is one whose state nothing can vouch for,
+     * and guessing `joined` would put a composer in front of it.
+     */
+    get selectedMembership(): Membership | null {
+      if (selectedId === null) return null;
+      return rooms.find((room) => room.id === selectedId)?.membership ?? null;
+    },
     select,
+    acceptInvitation,
+    declineInvitation,
     login,
     restoreSession,
     logout,
