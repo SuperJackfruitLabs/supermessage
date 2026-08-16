@@ -31,6 +31,7 @@
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
+  import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
   import { roomAffordance } from "$lib/components/invitationView";
   import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
@@ -151,6 +152,8 @@
   let showRoomInfo = $state(false);
   /** Whether the search panel is up. Fleet-wide, so not scoped to a room. */
   let searchOpen = $state(false);
+  /** Whether the create/join panel is up. */
+  let newRoomOpen = $state(false);
 
   // Same avatar-cache pattern `RoomList` uses, instantiated separately and
   // keyed by room id — the header and the roster each fetch and cache their
@@ -587,6 +590,20 @@
             ? 'min-w-0 flex-1'
             : 'w-72 shrink-0'} flex-col border-r border-border bg-surface-sunken"
         >
+          <!--
+            Starting a conversation sits above the roster, where the list of
+            conversations is — not in the room header, which is about the room
+            you are already in.
+          -->
+          <div class="shrink-0 px-3 py-2">
+            <button
+              type="button"
+              onclick={() => (newRoomOpen = true)}
+              class="w-full rounded-md border border-border px-3 py-1.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
+            >
+              New conversation
+            </button>
+          </div>
           <div class="min-h-0 flex-1">
             <!--
               `onSelect` is how the collapsed layout learns a room was
@@ -972,4 +989,8 @@
 
 {#if searchOpen}
   <SearchPanel onClose={() => (searchOpen = false)} />
+{/if}
+
+{#if newRoomOpen}
+  <NewRoomPanel onClose={() => (newRoomOpen = false)} />
 {/if}

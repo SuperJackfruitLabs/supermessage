@@ -846,6 +846,37 @@ export async function markRoomRead(roomId: string): Promise<boolean> {
  * refusal **rejects** rather than resolving quietly — the invitation must
  * stay on screen when the join did not happen.
  */
+/**
+ * Creates a room and resolves to its id.
+ *
+ * `isDirect` decides which half of a client's list it lands in: a room with
+ * one other person is a DM, and filing thirty of those as group rooms buries
+ * the few group rooms that matter. Invitees are sent at creation, because that
+ * is the only place the DM flag can be set.
+ */
+export async function createRoom(
+  name: string,
+  invite: string[],
+  isDirect: boolean,
+): Promise<string> {
+  return invoke<string>("create_room", { name, invite, isDirect });
+}
+
+/**
+ * Joins a room by id or alias, resolving to its id.
+ *
+ * Distinct from {@link joinRoom}, which accepts an invitation to a room the
+ * client already knows: this one reaches a room it has never seen.
+ */
+export async function joinRoomByAlias(aliasOrId: string): Promise<string> {
+  return invoke<string>("join_room_by_alias", { aliasOrId });
+}
+
+/** Invites somebody to a room this account is in. */
+export async function inviteUser(roomId: string, userId: string): Promise<void> {
+  return invoke<void>("invite_user", { roomId, userId });
+}
+
 export async function joinRoom(roomId: string): Promise<void> {
   return invoke<void>("join_room", { roomId });
 }
