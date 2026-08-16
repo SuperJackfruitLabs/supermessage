@@ -3816,7 +3816,10 @@ mod tests {
         // and a fenced block used to arrive as flat text while the same block
         // *received* rendered properly.
         let html = formatted_of("```\nls -la\n```").expect("a fenced block is markdown");
-        assert!(html.contains("<code>"), "expected a code element, got {html}");
+        assert!(
+            html.contains("<code>"),
+            "expected a code element, got {html}"
+        );
     }
 
     #[test]
