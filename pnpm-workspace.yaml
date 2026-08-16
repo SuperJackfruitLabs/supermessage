@@ -1,2 +1,8 @@
+# pnpm refuses to run a dependency's install scripts unless it is named here,
+# and refuses the whole install while one is left undecided — which is what the
+# placeholder this file was generated with did.
+#
+# esbuild's postinstall fetches the platform binary it is a wrapper around.
+# Without it vite has no bundler and `pnpm tauri dev` cannot start.
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
