@@ -16,6 +16,7 @@ pub mod error;
 pub mod media;
 pub mod room_info;
 pub mod rooms;
+pub mod search;
 pub mod secrets;
 pub mod session;
 pub mod spaces;

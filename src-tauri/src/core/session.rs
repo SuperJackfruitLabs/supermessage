@@ -35,6 +35,7 @@ use super::error::{CoreError, CoreResult};
 use super::media;
 use super::room_info::{self, RoomInfoDto};
 use super::rooms::{self, RoomListHandle, SpaceSelection};
+use super::search::{self, SearchResultDto};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
 use super::spaces::{self, SpaceSummary};
 use super::sync::{self, SyncHandle};
@@ -608,6 +609,16 @@ impl Session {
     /// Awaits a oneshot rather than blocking: the dialog stays up for as long
     /// as somebody browses their home directory, and a blocked worker thread
     /// would be held for all of it.
+    /// Searches every room this account can see.
+    ///
+    /// Server-side (`POST /_matrix/client/v3/search`) — see `core::search` for
+    /// why that rather than a local index, and for the one condition it rests
+    /// on: these rooms are unencrypted, so the homeserver can index them.
+    pub async fn search_messages(&self, term: &str) -> CoreResult<Vec<SearchResultDto>> {
+        let client = self.require_client().await?;
+        search::search_messages(&client, term).await
+    }
+
     pub async fn media_download(
         &self,
         app: &AppHandle,

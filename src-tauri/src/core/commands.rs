@@ -12,6 +12,7 @@ use super::attachments::{self, StagedAttachment, StagedAttachments};
 use super::dto::RoomSummary;
 use super::error::CoreError;
 use super::room_info::RoomInfoDto;
+use super::search::SearchResultDto;
 use super::session::Session;
 use super::spaces::SpaceSummary;
 use super::timeline::{FocusedTimeline, TimelineSnapshot};
@@ -302,6 +303,19 @@ pub async fn leave_room(room_id: String, session: State<'_, Session>) -> Result<
 /// Takes an event id, never a path or a URL: the save dialog is opened on the
 /// Rust side (see `Session::media_download`), so nothing the webview says can
 /// decide where bytes land.
+/// Searches every room this account can see for `term`, newest first.
+///
+/// Server-side search: see `core::search`'s module doc for why, and for the
+/// condition it rests on (these rooms are unencrypted, so the homeserver can
+/// index them — an encrypted room simply will not appear in results).
+#[tauri::command]
+pub async fn search_messages(
+    term: String,
+    session: State<'_, Session>,
+) -> Result<Vec<SearchResultDto>, CoreError> {
+    session.search_messages(&term).await
+}
+
 #[tauri::command]
 pub async fn media_download(
     event_id: String,

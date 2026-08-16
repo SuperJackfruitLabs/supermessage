@@ -30,6 +30,7 @@
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
   import Composer from "$lib/components/Composer.svelte";
+  import SearchPanel from "$lib/components/SearchPanel.svelte";
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
   import { roomAffordance } from "$lib/components/invitationView";
   import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
@@ -148,6 +149,8 @@
    * thing for a room-switch effect to have to remember to do.
    */
   let showRoomInfo = $state(false);
+  /** Whether the search panel is up. Fleet-wide, so not scoped to a room. */
+  let searchOpen = $state(false);
 
   // Same avatar-cache pattern `RoomList` uses, instantiated separately and
   // keyed by room id — the header and the roster each fetch and cache their
@@ -823,6 +826,20 @@
                 ground was never the only channel — but a state a sighted
                 operator cannot see is still a state that is not working.
               -->
+              <!--
+                Search is a fleet-wide action, not a room one, but this header
+                is where the reader's hands already are — and a second control
+                strip for one button would be a worse answer than borrowing
+                this one.
+              -->
+              <button
+                type="button"
+                onclick={() => (searchOpen = true)}
+                aria-label="Search messages"
+                class="shrink-0 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content"
+              >
+                Search
+              </button>
               <button
                 type="button"
                 bind:this={infoButton}
@@ -951,4 +968,8 @@
       {/if}
     </div>
   </div>
+{/if}
+
+{#if searchOpen}
+  <SearchPanel onClose={() => (searchOpen = false)} />
 {/if}
