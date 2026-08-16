@@ -897,6 +897,30 @@ export async function mediaDownload(eventId: string): Promise<string | null> {
   return invoke<string | null>("media_download", { eventId });
 }
 
+/** One search hit, mirroring `SearchResultDto` in `src-tauri/src/core/search.rs`. */
+export interface SearchResult {
+  eventId: string;
+  roomId: string;
+  sender: string;
+  /** The message text, never HTML — see the Rust struct's doc comment. */
+  body: string;
+  timestampMs: number | null;
+}
+
+/**
+ * Searches every room this account can see, newest first.
+ *
+ * Server-side (`POST /_matrix/client/v3/search`), which rests on these rooms
+ * being unencrypted — an encrypted room simply will not appear in results.
+ * See `core::search`'s module doc for why that trade was taken.
+ *
+ * An empty term resolves to an empty list without asking the homeserver, since
+ * it would otherwise ask for the whole of history.
+ */
+export async function searchMessages(term: string): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>("search_messages", { term });
+}
+
 /**
  * Fetches `roomId`'s room-info panel data — name, topic, canonical alias,
  * alt aliases, room id and joined member list — mirroring `RoomInfoDto`
