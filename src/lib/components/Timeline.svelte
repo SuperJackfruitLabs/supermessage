@@ -302,6 +302,7 @@
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
   import { shouldRepin } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
+  import AgentProse from "./AgentProse.svelte";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -1561,7 +1562,17 @@
                     >
                       {@html item.formattedBody}
                     </div>
-                  {:else}
+                  {:else if item.isOwn}
+                    <!--
+                      What the operator typed, exactly as typed. *You type,
+                      they write* (spec §6.3): an own message is a command, and
+                      rendering markdown in it would mean a stray asterisk
+                      silently changing what you appear to have said. The
+                      client also sends it as plain `m.text`, so this is what
+                      every other client in the room sees too — rendering it
+                      one way here and another way everywhere else would be the
+                      worse lie.
+                    -->
                     <p
                       class="selectable whitespace-pre-wrap break-words {view.muted && !item.isOwn
                         ? 'text-content-muted'
@@ -1569,6 +1580,27 @@
                     >
                       {item.body}
                     </p>
+                  {:else}
+                    <!--
+                      An agent's message with no `formattedBody` — which is all
+                      of them, since the hub sends plain `m.text`. Markdown is
+                      what agents actually write, and it used to land as
+                      literal `**` and `---` in the middle of the prose. See
+                      `AgentProse.svelte` for why this renders to components
+                      rather than through `{@html}`, given that `item.body` has
+                      been through none of the sanitising `formattedBody` has.
+                    -->
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                      class="selectable break-words {view.muted ? 'text-content-muted' : ''}"
+                      onclick={(e: MouseEvent) =>
+                        handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
+                      onauxclick={(e: MouseEvent) =>
+                        handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
+                    >
+                      <AgentProse content={item.body ?? ""} />
+                    </div>
                   {/if}
                 {/snippet}
                 {@render messageBlock(item, continuesRun, bubbleContent)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { animateList } from "./animateList";
   // The sidebar: rooms sorted by recency, selecting one drives the timeline
   // subscription via `roomsStore.select`.
   //
@@ -159,7 +160,14 @@
   }
 </script>
 
-<nav aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
+<!--
+  The roster reorders itself constantly — it is sorted by last activity, so any
+  message in any room moves a row, and a row that teleports past its neighbours
+  reads as a different room having appeared. `animateList` moves it instead.
+  Safe here, and specifically not in the timeline: see that action's doc comment
+  for why a virtualized list must never have it.
+-->
+<nav use:animateList aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
   {#if sortedRooms.length === 0}
     <p class="px-4 py-6 text-center text-ui text-content-muted">No rooms yet.</p>
   {:else}

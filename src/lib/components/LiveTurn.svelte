@@ -39,6 +39,7 @@
   import { liveStore } from "$lib/stores/live.svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { createPacer } from "./pacer";
+  import AgentProse from "./AgentProse.svelte";
 
   let { roomId, senderName }: { roomId: string | null; senderName: string | null } = $props();
 
@@ -213,8 +214,17 @@
         when the real message lands, which reads as a flicker at exactly the
         moment the reader is watching most closely.
       -->
-      <p class="max-w-[68ch] font-serif text-body whitespace-pre-wrap text-content">
-        {visible}<!--
+      <!--
+        The same renderer the landed message uses (`AgentProse`), for the same
+        reason this component copies the sender line and the measure: what is
+        on screen now is about to *become* that message, and an answer that
+        arrives as `**bold**` and settles into bold is the seam this whole
+        component exists to close. `parseIncompleteMarkdown` is what makes it
+        safe to do mid-word — a half-typed `**bo` stays text until its closing
+        marker lands, rather than flickering into emphasis and back.
+      -->
+      <div class="max-w-[68ch] font-serif text-body text-content">
+        <AgentProse content={visible} /><!--
           The caret: one honest signal that this is still arriving. A static
           label can go stale — the text can stop moving while the label still
           says "writing" — but a caret sitting immediately after the last
@@ -226,7 +236,7 @@
           class="ml-0.5 inline-block h-[1em] w-[0.45em] translate-y-[0.1em] animate-pulse bg-content-muted align-baseline"
           aria-hidden="true"
         ></span>
-      </p>
+      </div>
     </div>
   </div>
 {/if}
