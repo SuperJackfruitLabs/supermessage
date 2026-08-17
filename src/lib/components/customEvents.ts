@@ -502,12 +502,124 @@ export const demoNoteRenderer: CustomEventRenderer = {
   },
 };
 
+
+/**
+ * What an agent did during one turn — AgentPod's `dev.agentpod.turn.v1`.
+ *
+ * The first renderer here for a real event type rather than a demonstration.
+ * It reads a bounded summary and nothing else: the wire carries at most twenty
+ * tool records and a set of counts, and a card is a summary surface, not a log
+ * viewer. Tool *output* never crosses the bridge at all.
+ *
+ * Reads named fields one level at a time, per this module's rules — but two of
+ * the fields it wants are a number and an array, which `safeStringField` cannot
+ * express, so it does that reading itself with the same discipline: check the
+ * shape, take the value, never coerce, never recurse.
+ */
+export const TURN_ACTIVITY_EVENT_TYPE = "dev.agentpod.turn.v1";
+
+/** A finite number at `content[key]`, or null. The numeric `safeStringField`. */
+function safeNumberField(content: unknown, key: string): number | null {
+  if (content === null || typeof content !== "object") return null;
+  const value = (content as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export const turnActivityRenderer: CustomEventRenderer = {
+  eventType: TURN_ACTIVITY_EVENT_TYPE,
+  maxKnownSchemaVersion: 1,
+  render(content) {
+    if (content === null || typeof content !== "object") return { fields: [] };
+    const counts = (content as Record<string, unknown>).counts;
+    const total = safeNumberField(counts, "total");
+    const failed = safeNumberField(counts, "failed") ?? 0;
+    const omitted = safeNumberField(counts, "omitted") ?? 0;
+
+    const rawTools = (content as Record<string, unknown>).tools;
+    const tools = Array.isArray(rawTools) ? rawTools : [];
+
+    const fields: CustomEventField[] = [];
+    // The headline first: a reader scanning a conversation wants "it did seven
+    // things and one failed" before it wants to know which seven.
+    if (total !== null) {
+      const failedNote = failed > 0 ? `, ${failed} failed` : "";
+      fields.push({ label: "Did", value: `${total} ${total === 1 ? "thing" : "things"}${failedNote}` });
+    }
+
+    for (const entry of tools) {
+      // `FIELD_MAX_COUNT` truncates anyway; stopping here keeps the headline
+      // row from being the one that gets dropped.
+      if (fields.length >= FIELD_MAX_COUNT - 1) break;
+      const title = safeStringField(entry, "title", FIELD_VALUE_MAX_CHARS);
+      if (title === null) continue;
+      const status = safeStringField(entry, "status", FIELD_LABEL_MAX_CHARS);
+      // The status is the label, so the card reads as a list of what happened
+      // rather than a list of identical rows.
+      fields.push({ label: status ?? "did", value: title });
+    }
+
+    if (omitted > 0) {
+      fields.push({ label: "and", value: `${omitted} more not listed` });
+    }
+    return { fields };
+  },
+};
+
+/**
+ * A permission request a reader can answer — AgentPod's
+ * `dev.agentpod.permission.v1`, and the first renderer anywhere to set a
+ * `decision`.
+ *
+ * **`CustomEventDecisionOption.id` carries the option's NAME, not its
+ * `option_id`.** That reads backwards until you see what `id` is for: it is
+ * handed to `onDecide` verbatim and sent, and the room transcript is a shared
+ * human record. The hub's own prose prints option names alongside the numbers
+ * "because '1' alone would make the transcript unreadable afterwards" — and a
+ * button that leaves `allow_once` in the room is the same mistake in a
+ * different alphabet. `matchPermissionAnswer` on the hub accepts the number,
+ * the name, or the id, so any of the three would work; the name is the one a
+ * person reading the room later will understand.
+ *
+ * The event is sent *beside* an ordinary prose message carrying the same
+ * question, so a client that never renders this — Element, or this one before
+ * the renderer existed — is exactly as able to answer as it always was.
+ */
+export const PERMISSION_REQUEST_EVENT_TYPE = "dev.agentpod.permission.v1";
+
+export const permissionRequestRenderer: CustomEventRenderer = {
+  eventType: PERMISSION_REQUEST_EVENT_TYPE,
+  maxKnownSchemaVersion: 1,
+  render(content) {
+    const title = safeStringField(content, "title", FIELD_VALUE_MAX_CHARS);
+    if (title === null) return { fields: [] };
+
+    const rawOptions = (content as Record<string, unknown>).options;
+    const options: CustomEventDecisionOption[] = [];
+    if (Array.isArray(rawOptions)) {
+      for (const entry of rawOptions) {
+        const name = safeStringField(entry, "name", FIELD_LABEL_MAX_CHARS);
+        // An option with no name is one nothing could label or answer with.
+        if (name === null) continue;
+        options.push({ id: name, label: name });
+      }
+    }
+
+    const fields: CustomEventField[] = [{ label: "Wants to", value: title }];
+    // No options means nothing to decide — `boundDecision` would reject an
+    // empty list anyway, and the card falls back to describing the request.
+    if (options.length === 0) return { fields };
+    return { fields, decision: { prompt: `Allow ${title}?`, options } };
+  },
+};
+
 /** The registry `timelineItemView.ts`/`Timeline.svelte` render through in
  * production. Pre-populated with {@link demoNoteRenderer} — register a real
  * renderer here (see this module's doc comment for the call shape) once
  * Kaambaan's schemas land. */
 export const customEventRegistry: CustomEventRegistry = createCustomEventRegistry([
   demoNoteRenderer,
+  turnActivityRenderer,
+  permissionRequestRenderer,
 ]);
 
 /**
@@ -546,6 +658,14 @@ export const customEventRegistry: CustomEventRegistry = createCustomEventRegistr
  *    `core::timeline::timeline_event_filter` had to patch for the timeline,
  *    except it lives inside the SDK's own background task with no builder
  *    hook to override it.
+ *
+ * **`dev.agentpod.permission.v1` is the obvious candidate and is deliberately
+ * not here.** It landed with a renderer that sets a `decision`, so reason 1 no
+ * longer applies to it — the card renders buttons today. Reason 2 does: the
+ * roster still receives `lastEventType: null` for it, so adding it would change
+ * nothing a reader could see while converting a *proven*-dead path into an
+ * untested one that merely looks alive. The card is where the amber belongs
+ * until the core can resolve its own preview event.
  *
  * Reason 2 **survives reason 1 being fixed**: landing the schema does not
  * make ruma recognize it. Adding a type here the day the schema lands would

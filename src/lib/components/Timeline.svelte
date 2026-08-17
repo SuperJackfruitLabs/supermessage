@@ -862,7 +862,19 @@
    * evidence in the console instead of a silent click.
    */
   function onDecide(itemId: string, optionId: string): void {
-    console.warn("dispatch decision has no outbound event type yet", { itemId, optionId });
+    // `optionId` is the option's *name* — see `permissionRequestRenderer`,
+    // which puts the name in `CustomEventDecisionOption.id` precisely because
+    // this is what gets sent and the room is a shared human record. The hub's
+    // `matchPermissionAnswer` accepts the number, the name or the id, so this
+    // resolves through the path a reader typing "Allow once" already uses.
+    //
+    // An ordinary message, not a custom event: the answer needs no new
+    // vocabulary, and sending it as text means the transcript afterwards reads
+    // as a person deciding rather than as a machine exchange. It also keeps
+    // this the same send path Element would use.
+    void timelineStore.send(roomId, optionId).catch((err: unknown) => {
+      console.error("failed to send a decision", { itemId, optionId, err });
+    });
   }
 
   /**
