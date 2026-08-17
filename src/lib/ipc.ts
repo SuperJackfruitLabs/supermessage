@@ -603,6 +603,12 @@ const TIMELINE_DIFF_EVENT = "sm://timeline/diff";
 const CONNECTION_EVENT = "sm://connection";
 const TYPING_EVENT = "sm://typing";
 /**
+ * A turn's text while it is still being written — see `core::live`. Carried on
+ * to-device messages, so it is **not history**: nothing here has been stored in
+ * a room, and the real message follows when the turn ends.
+ */
+const LIVE_EVENT = "sm://live";
+/**
  * A file dropped on the window and staged by the **Rust** drag-drop handler
  * (`core::attachments::on_files_dropped`). See {@link onStagedAttachment} —
  * and read that function's comment before adding any other drop handling.
@@ -1138,6 +1144,26 @@ export async function connectionState(): Promise<ConnectionPayload> {
 /** Subscribes to connection-health updates on {@link CONNECTION_EVENT}. */
 export function onConnection(handler: (payload: ConnectionPayload) => void): Promise<UnlistenFn> {
   return listen<ConnectionPayload>(CONNECTION_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * One update to a turn in progress, mirroring `core::live::LivePayload`.
+ *
+ * `text` is **everything the agent has said this turn**, not the increment —
+ * to-device delivery is at-least-once and unordered, so the core hands over
+ * whole text and drops anything stale before it reaches here.
+ */
+export interface LivePayload {
+  roomId: string;
+  seq: number;
+  text: string;
+  /** The turn is over; the room now holds the real message. */
+  done: boolean;
+}
+
+/** Subscribes to live turn text on {@link LIVE_EVENT}. */
+export function onLive(handler: (payload: LivePayload) => void): Promise<UnlistenFn> {
+  return listen<LivePayload>(LIVE_EVENT, (event) => handler(event.payload));
 }
 
 /** Subscribes to typing-state updates on {@link TYPING_EVENT}. */
