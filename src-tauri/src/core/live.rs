@@ -69,6 +69,71 @@ pub struct LivePayload {
 /// Tauri event channel carrying live turn text to the webview.
 pub const LIVE_EVENT: &str = "sm://live";
 
+/// One delta of a turn's *reasoning*, as AgentPod sends it.
+///
+/// Byte-for-byte the same body as a stream delta, and a different type. The
+/// shape is reused so everything below — `supersedes`, `starts_new_turn`,
+/// `LiveState`, and the webview's reveal pacing — works on it unchanged. The
+/// type differs because a reader must be able to tell an agent's thinking from
+/// its answer, and because the two arrive interleaved.
+///
+/// Reasoning never reaches a room at all, on either side of the bridge. It is
+/// watchable while it happens and then gone; the console's transcript is where
+/// it is kept.
+#[derive(Clone, Debug, Deserialize, Serialize, EventContent)]
+#[ruma_event(type = "dev.agentpod.thought.delta", kind = ToDevice)]
+pub struct ThoughtDeltaToDeviceEventContent {
+    pub room_id: String,
+    pub session_id: String,
+    pub seq: u64,
+    /// Everything the agent has thought this turn, not the increment.
+    pub text: String,
+    pub done: bool,
+}
+
+/// One tool call's state, as AgentPod sends it.
+#[derive(Clone, Debug, Deserialize, Serialize, EventContent)]
+#[ruma_event(type = "dev.agentpod.tool.update", kind = ToDevice)]
+pub struct ToolUpdateToDeviceEventContent {
+    pub room_id: String,
+    pub session_id: String,
+    /// Monotonic within a turn. Carried for the webview to order by; see
+    /// `listen` for why this channel is not de-duplicated here.
+    pub seq: u64,
+    /// The identity later updates merge onto.
+    pub tool_call_id: String,
+    pub title: String,
+    /// ACP's tool kind. Absent when the harness did not say, and opaque display
+    /// text when it did — never switched on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// `pending` | `in_progress` | `completed` | `failed`, passed through as a
+    /// string so a harness inventing a fifth lands as unknown rather than as a
+    /// deserialization failure that would drop the whole event.
+    pub status: String,
+    #[serde(default)]
+    pub locations: Vec<String>,
+}
+
+/// What the webview is told when a tool call moves.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolPayload {
+    pub room_id: String,
+    pub seq: u64,
+    pub tool_call_id: String,
+    pub title: String,
+    pub kind: Option<String>,
+    pub status: String,
+    pub locations: Vec<String>,
+}
+
+/// Tauri event channel carrying an agent's reasoning to the webview.
+pub const THOUGHT_EVENT: &str = "sm://thought";
+
+/// Tauri event channel carrying tool-call state to the webview.
+pub const TOOL_EVENT: &str = "sm://tool";
+
 /// Whether a delta is newer than what the receiver already has for this turn.
 ///
 /// Pure, and the only rule worth testing here: `seq` decides, never arrival
@@ -136,6 +201,23 @@ impl LiveState {
     }
 }
 
+/// The reasoning channel's own [`LiveState`].
+///
+/// A newtype rather than a second `Arc<LiveState>`, because
+/// `add_event_handler_context` keys contexts **by type**: registering the same
+/// type twice would hand both handlers the same map, and an answer delta and a
+/// thought delta for one room would evict each other's sequence number — each
+/// stream dropping roughly half of the other's deltas as stale.
+#[derive(Debug, Default)]
+pub struct ThoughtState(LiveState);
+
+impl ThoughtState {
+    /// Whether this reasoning delta is worth showing. Same rules as the answer's.
+    pub fn accept(&self, room_id: &str, session_id: &str, seq: u64, done: bool) -> bool {
+        self.0.accept(room_id, session_id, seq, done)
+    }
+}
+
 /// Listen for live turn text and forward it to the webview.
 ///
 /// Registered against the client, so it dies with the session — a logout
@@ -143,6 +225,7 @@ impl LiveState {
 pub fn listen(client: &Client, app: AppHandle) -> EventHandlerHandle {
     client.add_event_handler_context(app);
     client.add_event_handler_context(std::sync::Arc::new(LiveState::default()));
+    client.add_event_handler_context(std::sync::Arc::new(ThoughtState::default()));
 
     client.add_event_handler(
         |ev: StreamDeltaToDeviceEvent,
@@ -168,7 +251,113 @@ pub fn listen(client: &Client, app: AppHandle) -> EventHandlerHandle {
                 tracing::warn!(error = %err, "failed to emit {LIVE_EVENT}");
             }
         },
+    );
+
+    client.add_event_handler(
+        |ev: ThoughtDeltaToDeviceEvent,
+         app: Ctx<AppHandle>,
+         state: Ctx<std::sync::Arc<ThoughtState>>| async move {
+            let content = ev.content;
+            if !state.accept(
+                &content.room_id,
+                &content.session_id,
+                content.seq,
+                content.done,
+            ) {
+                return;
+            }
+
+            let payload = LivePayload {
+                room_id: content.room_id,
+                seq: content.seq,
+                text: content.text,
+                done: content.done,
+            };
+            if let Err(err) = app.emit(THOUGHT_EVENT, &payload) {
+                tracing::warn!(error = %err, "failed to emit {THOUGHT_EVENT}");
+            }
+        },
+    );
+
+    // Deliberately **not** de-duplicated here, unlike the two text channels.
+    //
+    // `LiveState` forgets a room when a turn ends, and it learns that from a
+    // delta's `done`. A tool update has no `done`: the turn ends elsewhere. So a
+    // room's last tool sequence would outlive its turn, and the next turn —
+    // whose counter restarts at 1 — would have every update dropped as stale.
+    //
+    // Ordering still matters (a `completed` overtaken by an `in_progress` would
+    // stick), so the rule lives in the webview store instead, per tool call id,
+    // next to the turn-end clear that bounds it. Volume makes that affordable:
+    // tens of updates a turn, against hundreds of text deltas.
+    client.add_event_handler(
+        |ev: ToolUpdateToDeviceEvent, app: Ctx<AppHandle>| async move {
+            let content = ev.content;
+            let payload = ToolPayload {
+                room_id: content.room_id,
+                seq: content.seq,
+                tool_call_id: content.tool_call_id,
+                title: content.title,
+                kind: content.kind,
+                status: content.status,
+                locations: content.locations,
+            };
+            if let Err(err) = app.emit(TOOL_EVENT, &payload) {
+                tracing::warn!(error = %err, "failed to emit {TOOL_EVENT}");
+            }
+        },
     )
+}
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+
+    /// The reasoning channel keeps its own record of what a room has shown.
+    ///
+    /// `add_event_handler_context` keys contexts by type, so a second
+    /// `Arc<LiveState>` would have been *the same* map: an agent answering and
+    /// thinking at once writes both channels for one room, and each delta would
+    /// have evicted the other's sequence number. Roughly half of both streams
+    /// would vanish, and the half that survived would look like a network
+    /// problem rather than a bug.
+    #[test]
+    fn the_two_text_channels_do_not_evict_each_other() {
+        let answer = LiveState::default();
+        let thought = ThoughtState::default();
+
+        assert!(answer.accept("!r", "s1", 1, false));
+        assert!(answer.accept("!r", "s1", 2, false));
+
+        // The reasoning channel has seen nothing for this room, so its own
+        // first delta is news even though the answer is already at seq 2.
+        assert!(thought.accept("!r", "s1", 1, false));
+        assert!(thought.accept("!r", "s1", 2, false));
+
+        // And neither has been set back by the other.
+        assert!(!answer.accept("!r", "s1", 2, false));
+        assert!(!thought.accept("!r", "s1", 2, false));
+    }
+
+    #[test]
+    fn reasoning_follows_the_same_staleness_rules_as_an_answer() {
+        let thought = ThoughtState::default();
+        assert!(thought.accept("!r", "s1", 5, false));
+        // Older: a duplicate the network delivered twice.
+        assert!(!thought.accept("!r", "s1", 4, false));
+        // A new turn restarts at 1, and is not stale.
+        assert!(thought.accept("!r", "s2", 1, false));
+    }
+
+    #[test]
+    fn a_finished_turn_is_forgotten_on_the_reasoning_channel_too() {
+        let thought = ThoughtState::default();
+        assert!(thought.accept("!r", "s1", 1, false));
+        assert!(thought.accept("!r", "s1", 2, true));
+        // Forgotten, so the same session's next turn starts clean rather than
+        // being judged against a sequence that no longer means anything.
+        assert!(thought.accept("!r", "s1", 1, false));
+    }
 }
 
 #[cfg(test)]
