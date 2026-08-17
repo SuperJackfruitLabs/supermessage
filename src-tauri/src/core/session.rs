@@ -303,6 +303,24 @@ impl Session {
         Ok(())
     }
 
+    /// The connection health right now, for a webview that missed the
+    /// transition.
+    ///
+    /// Nothing re-emits [`sync::CONNECTION_EVENT`] between transitions, and a
+    /// healthy session transitions to `Running` once and then stops — so a
+    /// webview created after that (right-click → Reload, or an HMR module
+    /// swap) has nothing to listen for and would show "Offline" over a live
+    /// connection until something went wrong. Asking is the only way to
+    /// learn it.
+    ///
+    /// No session, no sync handle, and `offline` is simply true.
+    pub async fn connection_state(&self) -> sync::ConnectionPayload {
+        match self.sync.read().await.as_ref() {
+            Some(handle) => handle.connection(),
+            None => sync::ConnectionPayload::offline(),
+        }
+    }
+
     /// Stops sync and drops the handle, if any is running. A safe no-op when
     /// nothing was started.
     pub async fn stop_sync(&self) {

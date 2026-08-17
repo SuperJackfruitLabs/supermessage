@@ -40,6 +40,7 @@ use matrix_sdk_ui::room_list_service::filters::new_filter_space;
 use matrix_sdk_ui::room_list_service::RoomListItem;
 use serde::Serialize;
 
+use super::dto::Membership;
 use super::error::{CoreError, CoreResult};
 
 /// How many `m.space.child` hops [`SpaceGraph::flatten`] will follow before it
@@ -53,7 +54,7 @@ use super::error::{CoreError, CoreResult};
 /// space, which is a visibly incomplete list rather than a hung app.
 pub const MAX_SPACE_DEPTH: usize = 8;
 
-/// One joined space, as the rail renders it.
+/// One space, as the rail renders it — joined, or merely invited.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceSummary {
@@ -72,15 +73,28 @@ pub struct SpaceSummary {
     /// a space is not a conversation. A space with no avatar falls back to
     /// its parsed initial in the rail (design §6).
     pub avatar_url: Option<String>,
-    /// How many **joined** rooms the reader will see when they select this
-    /// space: the size of [`SpaceGraph::flatten`]'s result, which is the very
-    /// same list that becomes the roster filter's identifier clause.
+    /// How many rooms the reader will see when they select this space: the
+    /// size of [`SpaceGraph::flatten`]'s result, which is the very same list
+    /// that becomes the roster filter's identifier clause.
     ///
-    /// Joined-only, and spaces-excluded, on purpose (§5). `m.space.child` can
-    /// name rooms we are not in and subspaces the roster hides, and counting
-    /// either would advertise "12" and then reveal four. The count and the
-    /// filter come from one function so they cannot drift.
+    /// Counts what the roster would show — joined rooms **and pending
+    /// invitations**, both of which it lists — and excludes subspaces and
+    /// rooms we have no membership of at all (§5). `m.space.child` can name
+    /// rooms we have never been offered, and counting those would advertise
+    /// "12" and then reveal four. The count and the filter come from one
+    /// function so they cannot drift.
     pub child_count: u64,
+    /// This account's relationship to the space: `joined` for a space in the
+    /// rail's ordinary sense, `invited` for one being offered.
+    ///
+    /// An invitation is a rail entry rather than a roster row (design §4, and
+    /// the reason `core::rooms::roster_admits` hides *every* space): a space
+    /// is not a conversation, so it has no business in a list of
+    /// conversations even for the seconds before it is accepted. It carries
+    /// `child_count: 0` and has no entry in the graph — [`Self::rooms_in`]
+    /// answers `UnknownSpace` for it, which is correct, because a subtree you
+    /// have not joined is not a filter you can apply.
+    pub membership: Membership,
 }
 
 /// Whether an `m.space.child` event actually declares a child.
@@ -99,9 +113,9 @@ fn declares_a_child(via: &[OwnedServerName]) -> bool {
     !via.is_empty()
 }
 
-/// The `m.space.child` edges of every **joined** space, plus every joined
-/// non-space room — enough to answer "what would the roster show under this
-/// space?" without touching the SDK again.
+/// The `m.space.child` edges of every **joined** space, plus every non-space
+/// room the roster can show — enough to answer "what would the roster show
+/// under this space?" without touching the SDK again.
 ///
 /// Pure and SDK-free (`OwnedRoomId` is a validated string, not a live room
 /// handle), so the traversal below is unit-testable against hand-built
@@ -118,9 +132,16 @@ pub struct SpaceGraph {
     /// that is a space we have *not* joined has no entry, which is correct:
     /// we hold none of its state and cannot see through it.
     children: HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
-    /// Every joined room that is *not* a space — the only rooms the roster
-    /// can ever show, since its filter carries `not(space)`.
-    joined_rooms: HashSet<OwnedRoomId>,
+    /// Every non-space room the roster can show — **joined and invited
+    /// alike**, since its filter is `non_left` and `not(space)`.
+    ///
+    /// Invitations were missing here at first, and the result was the whole
+    /// rail looking broken: AgentPod provisions a room per agent and invites
+    /// the operator to each, so a freshly-built fleet is a space full of
+    /// nothing but invitations. Every space counted zero and filtered to an
+    /// empty roster, while the invitations sat plainly in All rooms. A room
+    /// the roster lists is a room a space filter must be able to keep.
+    roster_rooms: HashSet<OwnedRoomId>,
 }
 
 impl SpaceGraph {
@@ -129,9 +150,9 @@ impl SpaceGraph {
         self.children.insert(space_id, children);
     }
 
-    /// Records a joined, non-space room.
+    /// Records a non-space room the roster can show — joined or invited.
     fn add_room(&mut self, room_id: OwnedRoomId) {
-        self.joined_rooms.insert(room_id);
+        self.roster_rooms.insert(room_id);
     }
 
     /// Whether `space_id` is a space this account has joined — the check
@@ -140,8 +161,9 @@ impl SpaceGraph {
         self.children.contains_key(space_id)
     }
 
-    /// Every **joined, non-space** room anywhere beneath `root`, each exactly
-    /// once, following `m.space.child` edges down to at most `max_depth`
+    /// Every **non-space room the roster can show** anywhere beneath `root`
+    /// — joined or invited — each exactly once, following `m.space.child`
+    /// edges down to at most `max_depth`
     /// hops.
     ///
     /// Full-subtree, not just the top level (§3): selecting a mission shows
@@ -190,7 +212,7 @@ impl SpaceGraph {
                     if !visited.insert(child) {
                         continue;
                     }
-                    if self.joined_rooms.contains(child) {
+                    if self.roster_rooms.contains(child) {
                         found.push(child.clone());
                     }
                     // A child that is itself a joined space is descended
@@ -214,8 +236,9 @@ impl SpaceGraph {
 #[derive(Debug, Default, Clone)]
 pub struct SpaceIndex {
     graph: SpaceGraph,
-    /// The joined spaces' identity fields, in the order the rail renders
-    /// them (see [`Self::summaries`]).
+    /// Every space the rail draws — joined and invited alike — in the order
+    /// it renders them (see [`Self::summaries`]). Only the joined ones are in
+    /// `graph`.
     spaces: Vec<SpaceIdentity>,
 }
 
@@ -225,11 +248,12 @@ struct SpaceIdentity {
     id: OwnedRoomId,
     name: String,
     avatar_url: Option<String>,
+    membership: Membership,
 }
 
 impl SpaceIndex {
-    /// The rail's entries, each carrying the count of joined rooms its
-    /// subtree flattens to.
+    /// The rail's entries, each carrying the count of rooms its subtree
+    /// flattens to.
     ///
     /// Sorted by name, then by room id as a tiebreak. `Client::joined_rooms`
     /// returns rooms in whatever order the state store iterates, which is not
@@ -243,10 +267,28 @@ impl SpaceIndex {
                 id: space.id.to_string(),
                 name: space.name.clone(),
                 avatar_url: space.avatar_url.clone(),
-                child_count: self.graph.flatten(&space.id, MAX_SPACE_DEPTH).len() as u64,
+                // Zero for an invitation, and not because counting is hard:
+                // the subtree of a space you have not joined is not visible
+                // to you, so any number here would be invented.
+                child_count: match space.membership {
+                    Membership::Joined => {
+                        self.graph.flatten(&space.id, MAX_SPACE_DEPTH).len() as u64
+                    }
+                    _ => 0,
+                },
+                membership: space.membership,
             })
             .collect();
-        summaries.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+        // Invitations sort below the joined spaces rather than among them:
+        // the rail is a navigation surface, and an entry you cannot navigate
+        // to yet sitting between two you can is a worse list than one with a
+        // pending tail.
+        summaries.sort_by(|a, b| {
+            pending_rank(a.membership)
+                .cmp(&pending_rank(b.membership))
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.id.cmp(&b.id))
+        });
         summaries
     }
 
@@ -357,6 +399,7 @@ pub async fn build_space_index(client: &Client) -> CoreResult<SpaceIndex> {
                 id: room.room_id().to_owned(),
                 name: space_display_name(&item, &room),
                 avatar_url: room.avatar_url().map(|url| url.to_string()),
+                membership: Membership::Joined,
             });
             index.graph.add_space(room.room_id().to_owned(), children);
         } else {
@@ -364,7 +407,40 @@ pub async fn build_space_index(client: &Client) -> CoreResult<SpaceIndex> {
         }
     }
 
+    // Invitations to spaces, which the roster no longer carries. Their
+    // children are deliberately not read: `m.space.child` lives on the space,
+    // and an invitation grants no access to a room's state — the request
+    // would fail, and a "5 rooms" badge on something you cannot see inside is
+    // a promise this cannot keep. They go nowhere near the graph either, so
+    // selecting one still fails `UnknownSpace`.
+    for room in client.invited_rooms() {
+        let item = RoomListItem::from(room.clone());
+        if is_space(&item) {
+            index.spaces.push(SpaceIdentity {
+                id: room.room_id().to_owned(),
+                name: space_display_name(&item, &room),
+                avatar_url: room.avatar_url().map(|url| url.to_string()),
+                membership: Membership::Invited,
+            });
+        } else {
+            // An invitation to an ordinary room is in the roster, so it has to
+            // be filterable by space like anything else there. Leaving these
+            // out is what made every accepted space look empty: a
+            // freshly-provisioned fleet is a space whose children are all
+            // invitations, so each one counted zero and filtered to nothing.
+            index.graph.add_room(room.room_id().to_owned());
+        }
+    }
+
     Ok(index)
+}
+
+/// Where a space sorts relative to the others: joined first, pending after.
+fn pending_rank(membership: Membership) -> u8 {
+    match membership {
+        Membership::Joined => 0,
+        _ => 1,
+    }
 }
 
 /// A space's label for the rail: its computed display name, then its
@@ -583,6 +659,7 @@ mod tests {
                 id: id(space),
                 name: (*name).to_string(),
                 avatar_url: None,
+                membership: Membership::Joined,
             });
         }
         for room in rooms {
@@ -631,6 +708,80 @@ mod tests {
                 .child_count,
             0
         );
+    }
+
+    /// Adds a space we have only been invited to — no graph entry, because we
+    /// hold none of its state.
+    fn invite(idx: &mut SpaceIndex, space: &str, name: &str) {
+        idx.spaces.push(SpaceIdentity {
+            id: id(space),
+            name: name.to_string(),
+            avatar_url: None,
+            membership: Membership::Invited,
+        });
+    }
+
+    #[test]
+    fn a_space_counts_the_invitations_filed_under_it() {
+        // The bug this exists for: AgentPod provisions a room per agent and
+        // invites the operator to each, so a freshly-built fleet is a space
+        // whose children are ALL invitations. Counting only joined rooms made
+        // every space report zero and filter to an empty roster, while the
+        // invitations themselves sat plainly in All rooms — the space looked
+        // broken, and the rooms looked unfiled.
+        //
+        // `index`'s room list is what `build_space_index` puts in the graph,
+        // which is now every non-space room the roster can show, invitations
+        // included.
+        let idx = index(
+            &[("guild", "guild", &["invited-agent", "joined-agent"])],
+            &["invited-agent", "joined-agent"],
+        );
+
+        assert_eq!(idx.summaries()[0].child_count, 2);
+        assert_eq!(idx.rooms_in(&id("guild")).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn an_invitation_is_a_rail_entry_the_roster_never_sees() {
+        // The roster hides every space now (`core::rooms::roster_admits`), so
+        // if the rail did not carry invitations there would be nowhere left
+        // to accept one from.
+        let mut idx = index(&[], &[]);
+        invite(&mut idx, "guild", "guild");
+
+        let summaries = idx.summaries();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].name, "guild");
+        assert_eq!(summaries[0].membership, Membership::Invited);
+    }
+
+    #[test]
+    fn an_invitation_counts_no_children_and_cannot_be_selected() {
+        // Both halves of the same fact: we are not in the space, so we can
+        // see neither its subtree nor filter the roster by it. A number here
+        // would be invented, and a selection would scope the roster to
+        // nothing while the rail claimed otherwise.
+        let mut idx = index(&[], &[]);
+        invite(&mut idx, "ashram", "ashram");
+
+        assert_eq!(idx.summaries()[0].child_count, 0);
+        assert!(matches!(
+            idx.rooms_in(&id("ashram")),
+            Err(CoreError::UnknownSpace { .. })
+        ));
+    }
+
+    #[test]
+    fn invitations_sort_below_the_spaces_we_are_actually_in() {
+        // Even when the invitation's name would sort first: an entry you
+        // cannot navigate to yet, sitting between two you can, is a worse
+        // list than one with a pending tail.
+        let mut idx = index(&[("m", "Mike", &[]), ("z", "Zulu", &[])], &[]);
+        invite(&mut idx, "a", "Alpha");
+
+        let names: Vec<String> = idx.summaries().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, vec!["Mike", "Zulu", "Alpha"]);
     }
 
     #[test]

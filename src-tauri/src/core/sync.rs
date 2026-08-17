@@ -28,10 +28,23 @@ use super::error::{CoreError, CoreResult};
 /// connection indicator.
 pub const CONNECTION_EVENT: &str = "sm://connection";
 
+/// What the webview is told about the connection, whether it was pushed on
+/// [`CONNECTION_EVENT`] or pulled by the `connection_state` command.
 #[derive(Debug, Serialize)]
-struct ConnectionPayload {
-    state: &'static str,
-    message: Option<String>,
+pub struct ConnectionPayload {
+    pub state: &'static str,
+    pub message: Option<String>,
+}
+
+impl ConnectionPayload {
+    /// The state to report when there is no session, and so no sync service
+    /// to ask.
+    pub fn offline() -> Self {
+        Self {
+            state: "offline",
+            message: None,
+        }
+    }
 }
 
 /// A running [`SyncService`] plus the background task mirroring its state
@@ -59,6 +72,16 @@ impl SyncHandle {
     /// task to project rooms/timelines to the webview.
     pub fn room_list_service(&self) -> Arc<RoomListService> {
         self.service.room_list_service()
+    }
+
+    /// The connection health as of right now.
+    ///
+    /// [`CONNECTION_EVENT`] only fires on transitions, so a webview that
+    /// starts up mid-session — a reload, an HMR module swap — has no way to
+    /// learn a state whose transition happened before it was listening. This
+    /// is how it asks instead.
+    pub fn connection(&self) -> ConnectionPayload {
+        connection_payload(&self.service.state().get())
     }
 }
 
@@ -122,15 +145,20 @@ fn connection_state_name(state: &State) -> &'static str {
     }
 }
 
-fn emit_connection_state(app: &AppHandle, state: &State) {
-    let message = match state {
-        State::Error(err) => Some(err.to_string()),
-        _ => None,
-    };
-    let payload = ConnectionPayload {
+/// An SDK sync state as the webview is told about it — the one place that
+/// mapping is made, so a pushed event and a pulled answer can never disagree.
+fn connection_payload(state: &State) -> ConnectionPayload {
+    ConnectionPayload {
         state: connection_state_name(state),
-        message,
-    };
+        message: match state {
+            State::Error(err) => Some(err.to_string()),
+            _ => None,
+        },
+    }
+}
+
+fn emit_connection_state(app: &AppHandle, state: &State) {
+    let payload = connection_payload(state);
     if let Err(err) = app.emit(CONNECTION_EVENT, &payload) {
         tracing::warn!(error = %err, "failed to emit {CONNECTION_EVENT}");
     }
@@ -145,5 +173,26 @@ mod tests {
         assert_eq!(super::connection_state_name(&State::Idle), "offline");
         assert_eq!(super::connection_state_name(&State::Running), "live");
         assert_eq!(super::connection_state_name(&State::Terminated), "offline");
+    }
+
+    #[test]
+    fn a_pulled_answer_says_the_same_thing_a_pushed_event_would() {
+        // The `connection_state` command exists so a reloaded webview can
+        // ask instead of waiting for a transition that has already happened.
+        // Its answer going through the same mapping as the event is what
+        // makes the two interchangeable — a second mapping that drifted
+        // would show one thing on reload and another the moment the next
+        // transition landed.
+        let live = super::connection_payload(&State::Running);
+        assert_eq!(live.state, "live");
+        assert_eq!(live.message, None);
+
+        let idle = super::connection_payload(&State::Idle);
+        assert_eq!(idle.state, "offline");
+        assert_eq!(idle.message, None);
+
+        // And with nothing running at all, the honest answer is the same one
+        // the store already defaults to.
+        assert_eq!(super::ConnectionPayload::offline().state, "offline");
     }
 }

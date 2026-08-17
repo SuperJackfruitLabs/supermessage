@@ -356,7 +356,8 @@ export interface Reaction {
 }
 
 /**
- * One joined space, mirroring `SpaceSummary` from
+ * One space the rail draws — joined, or merely invited — mirroring
+ * `SpaceSummary` from
  * `src-tauri/src/core/spaces.rs`. Returned by {@link spacesList}; the rail
  * (`$lib/components/SpacesRail.svelte`) is its only consumer.
  *
@@ -401,6 +402,19 @@ export interface SpaceSummary {
    * error or a spinner.
    */
   childCount: number;
+  /**
+   * Whether this account has joined the space or has only been invited to
+   * it — see {@link Membership}. Never `left`, `knocked` or `banned`: the
+   * core enumerates joined and invited rooms and nothing else.
+   *
+   * An invitation is a **rail** entry, not a roster row: a space is not a
+   * conversation, so it does not belong in a list of them even for the
+   * seconds before it is accepted (`core::rooms::roster_admits` hides every
+   * space). It carries `childCount: 0` — the subtree of a space you have not
+   * joined is not visible, so any number would be invented — and selecting
+   * it is not a thing that can work; offer Accept / Decline instead.
+   */
+  membership: Membership;
 }
 
 /**
@@ -1106,6 +1120,19 @@ export function onRoomsDiff(handler: (env: DiffEnvelope<RoomSummary>) => void): 
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */
 export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineItem>) => void): Promise<UnlistenFn> {
   return listen<DiffEnvelope<TimelineItem>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * The core's connection health *right now*, rather than at the next
+ * transition.
+ *
+ * {@link onConnection} only fires on change, so a webview that starts up
+ * mid-session — a reload, or an HMR module swap — has no way to learn a
+ * state it was not listening for when it happened. This is that way.
+ * Reports `offline` when there is no session at all.
+ */
+export async function connectionState(): Promise<ConnectionPayload> {
+  return invoke<ConnectionPayload>("connection_state");
 }
 
 /** Subscribes to connection-health updates on {@link CONNECTION_EVENT}. */

@@ -113,6 +113,14 @@ export function createSpacesStore(deps: SpacesStoreDeps = defaultDeps) {
    * the only branch that recurses passes `null`.
    */
   async function select(spaceId: string | null): Promise<void> {
+    // An invitation is in this list but is not a filter. Selecting it would
+    // earn an `unknownSpace` refusal — correctly, since we hold none of the
+    // space's state — and the recovery below would then reset the roster to
+    // "All rooms", clearing a filter the reader never asked to clear. The
+    // rail offers Accept / Decline for these instead; this is the guard
+    // behind that, so no other caller can select one by accident.
+    if (spaceId !== null && pending.some((space) => space.id === spaceId)) return;
+
     const previous = selectedId;
     selectedId = spaceId;
     try {
@@ -142,9 +150,22 @@ export function createSpacesStore(deps: SpacesStoreDeps = defaultDeps) {
     selectedId = null;
   }
 
+  /**
+   * The spaces we have been *invited* to, in the order the core sorted them
+   * (after the joined ones).
+   *
+   * A separate view rather than a flag the rail filters on, because two
+   * surfaces need it: the rail draws these as pending entries, and the panel
+   * that offers Accept / Decline looks the chosen one up here by id.
+   */
+  const pending = $derived(spaces.filter((space) => space.membership === "invited"));
+
   return {
     get spaces(): SpaceSummary[] {
       return spaces;
+    },
+    get pending(): SpaceSummary[] {
+      return pending;
     },
     get selectedId(): string | null {
       return selectedId;

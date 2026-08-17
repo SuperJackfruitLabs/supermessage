@@ -535,22 +535,22 @@ pub enum SpaceSelection {
 /// pretending to be conversations. `core::spaces` already leaves them out of
 /// the flattened list, so this is belt-and-braces on the clause that carries
 /// the reasoning.
-/// Keeps spaces out of the roster — **except one we have only been invited to**.
+/// Keeps spaces out of the roster, whatever our membership of them.
 ///
-/// A joined space in the roster is the bug the `not(space)` clause was added
-/// for: a timeline nobody writes to, an unread count that means nothing, and a
-/// row that looks like a conversation.
+/// A joined space in the roster is the bug this clause was added for: a
+/// timeline nobody writes to, an unread count that means nothing, and a row
+/// that looks like a conversation.
 ///
-/// An *invited* space is the opposite problem. The rail enumerates joined
-/// spaces, so an invitation appears in neither surface — and there is no third
-/// place to put it. That is not hypothetical: AgentPod files agents under one
-/// space per purpose and invites the operator to each, and both invitations
-/// were invisible here while Element showed them plainly.
-///
-/// So an invitation is treated as what it is — an invitation, which the roster
-/// already knows how to render and act on (`Membership::Invited`). Accepting it
-/// joins the space, at which point this clause hides it and the rail picks it
-/// up, which is the transition the reader expects to see.
+/// An *invited* space was briefly let through, because the rail enumerated
+/// only joined spaces and an invitation would otherwise have appeared in
+/// neither surface. That solved invisibility by putting the invitation in the
+/// wrong place: AgentPod invites the operator to one space per node, and those
+/// two rows landed among forty agent-room invitations in a list of
+/// conversations, which is the clutter the roster exists to avoid. The rail
+/// carries invitations itself now (`core::spaces::build_space_index`), so this
+/// is one rule again — and `state` is left in the signature because the
+/// question "may this room appear in the roster?" is one membership could
+/// plausibly answer differently tomorrow, and the tests span every state.
 fn hide_spaces_we_are_in() -> BoxedFilterFn {
     let is_space = new_filter_space();
     Box::new(move |room| roster_admits(is_space(room), room.state()))
@@ -562,8 +562,8 @@ fn hide_spaces_we_are_in() -> BoxedFilterFn {
 /// Pure like [`project_room_parts`] and [`resolve_avatar_url`], and for the
 /// same reason — the adapter above is one line and cannot really be wrong,
 /// while this is the part that can.
-pub fn roster_admits(is_space: bool, state: RoomState) -> bool {
-    !is_space || state == RoomState::Invited
+pub fn roster_admits(is_space: bool, _state: RoomState) -> bool {
+    !is_space
 }
 
 fn room_list_filter(selection: &SpaceSelection) -> BoxedFilterFn {
@@ -1014,15 +1014,28 @@ mod tests {
     }
 
     #[test]
-    fn the_roster_hides_a_space_we_are_in_and_shows_one_we_were_invited_to() {
-        // A joined space in the roster is the bug `not(space)` exists for: a
+    fn the_roster_hides_a_space_whatever_our_membership_of_it() {
+        // A joined space in the roster is the bug this clause exists for: a
         // timeline nobody writes to and an unread count that means nothing.
         assert!(!roster_admits(true, RoomState::Joined));
 
-        // An invited space is the opposite problem. The rail lists JOINED
-        // spaces, so an invitation appears in neither surface — AgentPod's
-        // per-purpose spaces were invisible here while Element showed them.
-        assert!(roster_admits(true, RoomState::Invited));
+        // An *invited* space used to be let through, because the rail
+        // enumerated only joined spaces and an invitation would otherwise
+        // appear in neither surface. That put it in the wrong one: a space is
+        // not a conversation, and two node-space invitations sitting among
+        // forty agent-room invitations is exactly the clutter the roster is
+        // meant to be free of. The rail lists invitations now
+        // (`core::spaces::build_space_index`), so the roster can go back to
+        // one rule.
+        for state in [
+            RoomState::Joined,
+            RoomState::Invited,
+            RoomState::Left,
+            RoomState::Knocked,
+            RoomState::Banned,
+        ] {
+            assert!(!roster_admits(true, state), "space in {state:?}");
+        }
     }
 
     #[test]

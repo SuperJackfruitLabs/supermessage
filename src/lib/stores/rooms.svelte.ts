@@ -208,9 +208,22 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     });
   }
 
-  /** Declines the invitation to `id` (or leaves the room, which is the same call). */
+  /**
+   * Declines the invitation to `id` (or leaves the room, which is the same
+   * call).
+   *
+   * Refreshes the rail afterwards for the same reason accepting does, and it
+   * matters more here: an invited *space* is a rail entry and never a roster
+   * row. The roster is diffed, so a declined room leaves it unaided; the rail
+   * is a one-shot fetch, so a declined space would go on being offered until
+   * the next launch. Cosmetic if it fails, exactly as on the accept path —
+   * the leave already happened.
+   */
   async function declineInvitation(id: string): Promise<void> {
     await deps.leaveRoom(id);
+    await deps.reloadSpaces().catch((err: unknown) => {
+      console.error("failed to refresh spaces after declining an invitation", err);
+    });
   }
 
   return {

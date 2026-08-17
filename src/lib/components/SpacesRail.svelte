@@ -32,10 +32,30 @@
   // No unread badges in this cut (§6): a badge on a space would have to sum
   // its subtree's unread counts and keep that sum current as rooms change.
   // Worth doing; not worth blocking the rail on.
+  //
+  // **Invitations live here too**, drawn as pending entries. They used to be
+  // roster rows, which put two node-space invitations among forty agent-room
+  // ones in a list of conversations — a space is not a conversation, so the
+  // roster hides every space now and this is the only surface an invitation
+  // has. A pending entry does not select: there is no subtree to scope the
+  // roster to until it is accepted, so clicking one asks the page to offer
+  // Accept / Decline instead.
 
   import { spacesStore } from "$lib/stores/spaces.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { railEntries } from "./spacesRailView";
+
+  interface Props {
+    /**
+     * Called with the space id when a pending entry is clicked — the page
+     * opens the invitation panel. Required rather than optional: a rail that
+     * can draw an invitation it cannot act on is the bug this whole change is
+     * fixing, one surface further in.
+     */
+    onInvitation: (spaceId: string) => void;
+  }
+
+  const { onInvitation }: Props = $props();
 
   // The same per-component cache the roster and the room header each keep
   // (see `avatarCache.svelte.ts`): keyed by room id, fetched lazily, and
@@ -70,7 +90,10 @@
       -->
       <button
         type="button"
-        onclick={() => void spacesStore.select(entry.spaceId)}
+        onclick={() =>
+          entry.pending && entry.spaceId !== null
+            ? onInvitation(entry.spaceId)
+            : void spacesStore.select(entry.spaceId)}
         aria-current={selected ? "true" : undefined}
         aria-label={entry.label}
         title={entry.label}
@@ -83,7 +106,9 @@
             src={avatar}
             alt=""
             aria-hidden="true"
-            class="h-8 w-8 rounded-full object-cover"
+            class="h-8 w-8 rounded-full object-cover {entry.pending
+              ? 'border border-dashed border-accent opacity-70'
+              : ''}"
             onerror={() => avatarCache.markFailed(entry.spaceId ?? "")}
           />
         {:else if entry.spaceId === null}
@@ -101,8 +126,18 @@
             {entry.initial}
           </span>
         {:else}
+          <!--
+            A pending space wears a dashed ring in the accent: it is a real
+            entry with a real name, but not somewhere the reader is yet, and
+            the broken outline says "not settled" without a badge or a colour
+            that means something else (spec §3 reserves amber for a pending
+            decision, which this is not — nobody is waiting on an answer to
+            do their work).
+          -->
           <span
-            class="flex h-8 w-8 items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
+            class="flex h-8 w-8 items-center justify-center rounded-full text-ui font-medium {entry.pending
+              ? 'border border-dashed border-accent bg-transparent text-accent'
+              : 'bg-surface-raised text-content'}"
             aria-hidden="true"
           >
             {entry.initial}

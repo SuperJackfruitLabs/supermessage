@@ -56,7 +56,22 @@ export interface RailEntry {
    * which has no avatar to fall back *from*.
    */
   initial: string;
+  /**
+   * Whether this entry is an **invitation** rather than a space the reader is
+   * in. `false` for "All rooms" and for every joined space.
+   *
+   * The rail has one click handler and two kinds of entry underneath it,
+   * doing opposite things: a joined space filters the roster, while an
+   * invitation cannot — there is no subtree to scope to, and the core answers
+   * `unknownSpace` — and opens Accept / Decline instead. Carried as a flag on
+   * the entry rather than looked up from the summaries again in the
+   * component, so the branch is decided in the module that has tests.
+   */
+  pending: boolean;
 }
+
+/** What an invitation says where a joined space says how many rooms it holds. */
+const INVITATION_LABEL = "Invitation";
 
 /** The label the "All rooms" entry always carries. */
 const ALL_ROOMS_LABEL = "All rooms";
@@ -92,7 +107,8 @@ function roomCountPhrase(count: number): string | null {
 
 /**
  * The accessible name for one space's entry: name, role (when the name
- * carries the `glyph — Name — Role` structure), then the room count.
+ * carries the `glyph — Name — Role` structure), then the room count — or,
+ * for an invitation, the word `Invitation` in the count's place.
  *
  * Comma-joined in that order, the same shape and for the same reasons as
  * `RoomList.svelte`'s `rowAriaLabel`: the most identifying fact first, and
@@ -107,8 +123,15 @@ export function spaceEntryLabel(space: SpaceSummary): string {
   const identity = parseRoomIdentity(space.name);
   const parts = [identity.name];
   if (identity.role !== null) parts.push(identity.role);
-  const count = roomCountPhrase(space.childCount);
-  if (count !== null) parts.push(count);
+  // An invitation never counts rooms. `childCount` is 0 for one, and "No
+  // rooms" would be a claim about the contents of a space we are not in and
+  // cannot see into — where what we actually know is that we were asked.
+  if (space.membership === "invited") {
+    parts.push(INVITATION_LABEL);
+  } else {
+    const count = roomCountPhrase(space.childCount);
+    if (count !== null) parts.push(count);
+  }
   return parts.join(", ");
 }
 
@@ -124,11 +147,12 @@ export function spaceEntryLabel(space: SpaceSummary): string {
 export function railEntries(spaces: SpaceSummary[]): RailEntry[] {
   if (spaces.length === 0) return [];
   return [
-    { spaceId: null, label: ALL_ROOMS_LABEL, initial: ALL_ROOMS_INITIAL },
+    { spaceId: null, label: ALL_ROOMS_LABEL, initial: ALL_ROOMS_INITIAL, pending: false },
     ...spaces.map((space) => ({
       spaceId: space.id,
       label: spaceEntryLabel(space),
       initial: roomInitial(parseRoomIdentity(space.name)),
+      pending: space.membership === "invited",
     })),
   ];
 }

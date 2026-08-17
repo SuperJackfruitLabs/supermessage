@@ -32,6 +32,7 @@
   import Composer from "$lib/components/Composer.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
+  import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
   import { roomAffordance } from "$lib/components/invitationView";
   import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
@@ -154,6 +155,21 @@
   let searchOpen = $state(false);
   /** Whether the create/join panel is up. */
   let newRoomOpen = $state(false);
+  /**
+   * The space whose invitation is being answered, or `null`.
+   *
+   * Held as an id rather than the summary itself so the panel keeps naming
+   * the right space if the rail is re-read underneath it; the name is looked
+   * up from the store at render time, and a space that disappears from the
+   * list closes the panel rather than leaving it offering a vanished
+   * invitation.
+   */
+  let spaceInviteId = $state<string | null>(null);
+  const spaceInvite = $derived(
+    spaceInviteId === null
+      ? null
+      : (spacesStore.pending.find((space) => space.id === spaceInviteId) ?? null),
+  );
 
   // Same avatar-cache pattern `RoomList` uses, instantiated separately and
   // keyed by room id — the header and the roster each fetch and cache their
@@ -584,7 +600,7 @@
         style={rosterGroupInsets}
         inert={panelIsModal}
       >
-        <SpacesRail />
+        <SpacesRail onInvitation={(spaceId) => (spaceInviteId = spaceId)} />
         <aside
           class="flex {narrow
             ? 'min-w-0 flex-1'
@@ -989,6 +1005,14 @@
 
 {#if searchOpen}
   <SearchPanel onClose={() => (searchOpen = false)} />
+{/if}
+
+{#if spaceInvite !== null}
+  <SpaceInvitePanel
+    spaceId={spaceInvite.id}
+    spaceName={spaceInvite.name}
+    onClose={() => (spaceInviteId = null)}
+  />
 {/if}
 
 {#if newRoomOpen}
