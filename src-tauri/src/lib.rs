@@ -126,6 +126,13 @@ pub fn run() {
     #[cfg(all(debug_assertions, feature = "wdio"))]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
+    // The MCP bridge — same reasoning as the line above, one notch stricter.
+    // It is a remote-control surface *and* an arbitrary-JS surface, so it is
+    // not in `default`: a debug build does not carry it unless the developer
+    // asked for it with `--features mcp`.
+    #[cfg(all(debug_assertions, feature = "mcp"))]
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+
     builder
         .on_page_load(|webview, payload| {
             tracing::debug!(

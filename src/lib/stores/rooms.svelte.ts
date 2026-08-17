@@ -145,6 +145,32 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     if (sessionActive) return true;
     const restored = await commands.restoreSession();
     sessionActive = restored;
+
+    // Ask for the roster rather than waiting to be told about it.
+    //
+    // `restore_session` is a no-op in the core when a session is already
+    // running (see its doc comment), so nothing re-emits — and the diff
+    // channel only speaks when something *changes*. A store built after the
+    // core's opening batch therefore starts empty and stays empty until the
+    // next change happens along, which in a quiet account can be minutes.
+    // That is every webview reload, and every HMR module swap in development:
+    // a healthy core, a synced account, and "No rooms yet" on screen.
+    //
+    // Seeding is cheap (one snapshot, no round trip to the homeserver) and
+    // idempotent — `seed` resets the tracker to whatever the core currently
+    // holds, which after a genuine fresh login is the same list the opening
+    // batch is about to deliver.
+    // Best-effort, and deliberately so: a snapshot that fails must not fail
+    // the restore behind it. The session is up either way, the diff channel
+    // will still deliver the next change, and a roster that fills a moment
+    // late beats a login that reports failure because a convenience call
+    // rejected.
+    if (restored) {
+      await gapSync.seed().catch((err: unknown) => {
+        console.error("roomsStore: failed to seed the roster after restore", err);
+      });
+    }
+
     return restored;
   }
 

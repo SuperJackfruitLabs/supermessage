@@ -30,6 +30,9 @@ importers:
         specifier: ^0.50.1
         version: 0.50.1(svelte@5.56.9)
     devDependencies:
+      '@hypothesi/tauri-plugin-mcp-bridge':
+        specifier: 0.12.0
+        version: 0.12.0(@tauri-apps/api@2.11.1)
       '@sveltejs/adapter-static':
         specifier: ^3.0.6
         version: 3.0.10(@sveltejs/kit@2.70.2(@sveltejs/vite-plugin-svelte@5.1.1(supports-color@8.1.1)(svelte@5.56.9)(vite@6.4.3(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.56.9)(typescript@5.6.3)(vite@6.4.3(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.12)(yaml@2.9.0)))
@@ -424,6 +427,11 @@ packages:
 
   '@fontsource/ibm-plex-mono@5.3.0':
     resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
+
+  '@hypothesi/tauri-plugin-mcp-bridge@0.12.0':
+    resolution: {integrity: sha512-+ae788I3jaL6ze2WrUZHQLAsMd4oQP/uO+c8y0FUzr1ExSI75UXMVfMoe1i23gWNsXACw6Snp2g+cIJn7TgU3g==}
+    peerDependencies:
+      '@tauri-apps/api': ^2.0.0
 
   '@inquirer/ansi@1.0.2':
     resolution: {integrity: sha512-S8qNSZiYzFd0wAcyG5AXCvUHC5Sr7xpZ9wZ2py9XR88jUz8wooStVx5M6dRzczbBWjic9NP7+rY0Xi7qqK/aMQ==}
@@ -3201,6 +3209,10 @@ snapshots:
   '@fontsource-variable/source-serif-4@5.3.0': {}
 
   '@fontsource/ibm-plex-mono@5.3.0': {}
+
+  '@hypothesi/tauri-plugin-mcp-bridge@0.12.0(@tauri-apps/api@2.11.1)':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
 
   '@inquirer/ansi@1.0.2': {}
 

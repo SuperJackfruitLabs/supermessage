@@ -379,3 +379,54 @@ describe("accepting an invitation that turns out to be a space", () => {
     return expect(store.acceptInvitation("!space:x")).resolves.toBeUndefined();
   });
 });
+
+describe("seeding the roster after a restore", () => {
+  it("asks for a snapshot, because nothing is going to re-emit one", async () => {
+    // Found by reloading the running app on 2026-08-17: a healthy, synced core
+    // behind an empty roster reading "No rooms yet". The diff channel only
+    // speaks when something *changes*, and `restore_session` is a no-op in the
+    // core when a session is already up — so a store built after the opening
+    // batch (a webview reload, an HMR module swap) has nothing to wait for. It
+    // is not a gap: no envelope ever arrived to be out of sequence with.
+    //
+    // Same shape as the connection indicator's bug, fixed the same morning: a
+    // channel that only pushes needs something that also asks.
+    const channel = makeChannel();
+    const roomsResync = vi.fn().mockResolvedValue([7, [room("!a:x"), room("!b:x")]]);
+    const store = makeStore(channel, roomsResync);
+
+    await store.restoreSession();
+    await flush();
+
+    expect(roomsResync).toHaveBeenCalled();
+    expect(store.rooms.map((r) => r.id)).toEqual(["!a:x", "!b:x"]);
+  });
+
+  it("picks up the live stream from where the snapshot left off", async () => {
+    // The seed sets the tracker to the snapshot's sequence, so the next live
+    // envelope must apply normally rather than reading as a gap and starting
+    // an immediate second round trip.
+    const channel = makeChannel();
+    const roomsResync = vi.fn().mockResolvedValue([7, [room("!a:x")]]);
+    const store = makeStore(channel, roomsResync);
+
+    await store.restoreSession();
+    await flush();
+    roomsResync.mockClear();
+
+    channel.emit(env(8, [{ op: "pushBack", value: room("!b:x") }]));
+
+    expect(store.rooms.map((r) => r.id)).toEqual(["!a:x", "!b:x"]);
+    expect(roomsResync).not.toHaveBeenCalled();
+  });
+
+  it("does not fail the restore when the snapshot does", async () => {
+    // The session is up either way; a roster that fills late beats a login
+    // reporting failure because a convenience call rejected.
+    const channel = makeChannel();
+    const roomsResync = vi.fn().mockRejectedValue(new Error("nope"));
+    const store = makeStore(channel, roomsResync);
+
+    await expect(store.restoreSession()).resolves.toBe(true);
+  });
+});
