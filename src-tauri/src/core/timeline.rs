@@ -56,6 +56,30 @@
 //! comment for why it keys on the length transition rather than which
 //! `DiffOp` produced it, and [`MAX_RESEED_ATTEMPTS`] for the loop bound.
 //!
+//! ### The second trigger: a limited sync
+//!
+//! The same machinery recovers a second, quite different event, added
+//! 2026-08-17. On a **limited (gappy) sync** the event cache unloads its
+//! linked chunk and reloads only the last one
+//! (matrix-org/matrix-rust-sdk#4694). The list does not empty — it *shrinks* —
+//! and then refills over the following seconds as pagination catches up. On
+//! the live fleet that was measured at 16 items -> 13 -> back up, with a
+//! five-second hole in the middle of a conversation, which reads as messages
+//! vanishing and returning.
+//!
+//! That unload is deliberate on the SDK's part and worth keeping: with a hot
+//! cache holding `E1` and a sync returning `[Gap, E3]`, keeping both renders a
+//! timeline that looks continuous while silently omitting `E2`. The SDK's
+//! maintainers chose correctness over smoothness knowingly. **No client on
+//! this SDK smooths it** — Element X applies each diff as it arrives, Fractal
+//! minimizes batches but exempts `Reset`, and iamb sidesteps the whole thing
+//! by not using `matrix-sdk-ui` at all.
+//!
+//! So the recovery is the same one described below — withhold, paginate,
+//! re-subscribe, emit one `Reset` — reached by [`reset_shrank`] instead of
+//! [`should_reseed`], and bounded by its own counter because a limited sync is
+//! routine rather than a fault. See [`should_backfill`].
+//!
 //! ### Coalescing the recovery into one visible transition
 //!
 //! An earlier version of this fix emitted the emptying batch as its own
@@ -1742,6 +1766,8 @@ impl FocusedTimeline {
             // and `should_reseed`). Lives here, not in `TimelineState`,
             // for the same reason `seq` does: only this task ever needs it.
             let mut reseed_attempts: u32 = 0;
+            // Consecutive limited-sync recoveries; reset by any ordinary emit.
+            let mut backfill_attempts: u32 = 0;
 
             // The initial `Vector` `subscribe()` returns becomes the
             // stream's first envelope as a single `Reset`, so the webview
@@ -1792,18 +1818,36 @@ impl FocusedTimeline {
                     guard.1.len()
                 };
 
-                match decide_batch(before, ops, reseed_attempts) {
+                match decide_batch(before, ops, reseed_attempts, backfill_attempts) {
                     BatchDecision::Emit(ops) => {
+                        // Progress. A limited sync is routine, so the bound on
+                        // recovering from one is "three in a row that achieved
+                        // nothing", not "three per subscription" — see
+                        // `should_backfill`.
+                        backfill_attempts = 0;
                         emit_ops(&app, &task_state, &mut seq, &subject, ops);
                     }
-                    BatchDecision::ReseedInstead => {
-                        reseed_attempts += 1;
-                        tracing::warn!(
-                            subject = %subject,
-                            attempt = reseed_attempts,
-                            max_attempts = MAX_RESEED_ATTEMPTS,
-                            "timeline emptied out from under its subscription; re-seeding and coalescing into a single reset"
-                        );
+                    BatchDecision::ReseedInstead(reason) => {
+                        match reason {
+                            ReseedReason::Emptied => {
+                                reseed_attempts += 1;
+                                tracing::warn!(
+                                    subject = %subject,
+                                    attempt = reseed_attempts,
+                                    max_attempts = MAX_RESEED_ATTEMPTS,
+                                    "timeline emptied out from under its subscription; re-seeding and coalescing into a single reset"
+                                );
+                            }
+                            ReseedReason::Shrank => {
+                                backfill_attempts += 1;
+                                tracing::info!(
+                                    subject = %subject,
+                                    attempt = backfill_attempts,
+                                    max_attempts = MAX_RESEED_ATTEMPTS,
+                                    "a limited sync unloaded part of this timeline; paginating it back before the gap can be seen"
+                                );
+                            }
+                        }
 
                         // Same call, same reasoning as the initial seed
                         // above: awaited inline in this task (not spawned),
@@ -2345,19 +2389,78 @@ fn should_reseed(before: usize, after: usize, reseed_attempts: u32) -> bool {
     before > 0 && after == 0 && reseed_attempts < MAX_RESEED_ATTEMPTS
 }
 
+/// Whether a batch is a **wholesale replacement that came back shorter** —
+/// the limited-sync unload.
+///
+/// On a limited (gappy) sync the event cache unloads its linked chunk and
+/// reloads just the last one (matrix-rust-sdk#4694). That is deliberate and
+/// correct: with a hot cache holding `E1` and a sync returning `[Gap, E3]`,
+/// keeping both would render `E1, E3` — a timeline that looks continuous while
+/// silently omitting `E2`. Shrinking to the fresh window and letting pagination
+/// refill is what prevents a *false* timeline, and the SDK's maintainers chose
+/// it knowing it blinks: correctness over smoothness.
+///
+/// Observed against the live homeserver on 2026-08-17: a room's materialized
+/// list went 16 -> 13 on a lone `Reset`, then climbed back over the following
+/// five seconds as pagination refilled it. Five seconds of genuinely missing
+/// history, in the middle of a conversation.
+///
+/// **This keys on the op, not on the effect — deliberately, and unlike its
+/// sibling [`should_reseed`].** That function's doc explains why length alone
+/// is the right signal for emptying: several different ops leave the list
+/// empty and all of them mean the same thing. Here the reverse holds. "Fewer
+/// items than before" is ambiguous — a redaction shrinks the list by one and
+/// means nothing of the sort — while `Reset` is unambiguous by construction:
+/// it is the SDK saying "here is the list now, wholesale", which is exactly
+/// and only what the unload produces. Keying on length would re-seed the room
+/// every time somebody deleted a message.
+fn reset_shrank(before: usize, after: usize, ops: &[DiffOp<TimelineItemDto>]) -> bool {
+    after < before && ops.iter().any(|op| matches!(op, DiffOp::Reset { .. }))
+}
+
+/// Whether a shrinking `Reset` should be recovered from rather than shown.
+///
+/// Bounded separately from [`should_reseed`], and the reason matters: an
+/// emptied timeline is a fault, rare, and three attempts per subscription is a
+/// generous ceiling. A limited sync is **routine** — a busy room sees them all
+/// day — so a per-subscription cap would be spent within minutes and every
+/// later unload would render raw. The caller therefore resets this counter on
+/// every ordinary emit, making the bound "three *consecutive* recoveries that
+/// achieved nothing", which is loop protection without a budget that normal use
+/// can exhaust.
+fn should_backfill(
+    before: usize,
+    after: usize,
+    ops: &[DiffOp<TimelineItemDto>],
+    backfill_attempts: u32,
+) -> bool {
+    reset_shrank(before, after, ops) && backfill_attempts < MAX_RESEED_ATTEMPTS
+}
+
 /// What the streaming task should do with one incoming diff batch —
 /// [`decide_batch`]'s result. See this module's "Coalescing the recovery
 /// into one visible transition" doc comment for the mechanism this exists
 /// to drive.
+/// Why a batch is being recovered from rather than shown.
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum ReseedReason {
+    /// The batch would empty an already-populated list ([`should_reseed`]) —
+    /// a fault, and rare.
+    Emptied,
+    /// The batch is a wholesale `Reset` that came back shorter
+    /// ([`reset_shrank`]) — a limited sync, and routine.
+    Shrank,
+}
+
 #[derive(Debug, PartialEq)]
 enum BatchDecision {
     /// Fold and emit `ops` exactly as received; no re-seed needed.
     Emit(Vec<DiffOp<TimelineItemDto>>),
-    /// `ops` would empty an already-populated materialized list
-    /// ([`should_reseed`] fired). The caller must not fold or emit `ops` at
-    /// all — re-seed instead, and emit a single [`coalesced_reset`] once
-    /// that finishes.
-    ReseedInstead,
+    /// `ops` must not be folded or emitted at all: re-seed instead, and emit
+    /// a single [`coalesced_reset`] once that finishes. The reason rides along
+    /// because the two triggers are bounded by different counters — see
+    /// [`ReseedReason`].
+    ReseedInstead(ReseedReason),
 }
 
 /// Pure decision for one incoming batch, given the materialized list's
@@ -2369,7 +2472,7 @@ enum BatchDecision {
 ///
 /// This is the seam that keeps the emptying batch from ever reaching
 /// [`emit_ops`] on its own: when [`should_reseed`] would fire, this returns
-/// [`BatchDecision::ReseedInstead`] and hands `ops` back to no one — the
+/// [`BatchDecision::ReseedInstead(ReseedReason::Emptied)`] and hands `ops` back to no one — the
 /// streaming task's `match` on the result has no arm that folds or emits it,
 /// so there is no path through this decision that lets the empty state
 /// reach the webview by itself. Every other case returns
@@ -2381,10 +2484,13 @@ fn decide_batch(
     before: usize,
     ops: Vec<DiffOp<TimelineItemDto>>,
     reseed_attempts: u32,
+    backfill_attempts: u32,
 ) -> BatchDecision {
     let after = ops_len_after(before, &ops);
     if should_reseed(before, after, reseed_attempts) {
-        BatchDecision::ReseedInstead
+        BatchDecision::ReseedInstead(ReseedReason::Emptied)
+    } else if should_backfill(before, after, &ops, backfill_attempts) {
+        BatchDecision::ReseedInstead(ReseedReason::Shrank)
     } else {
         BatchDecision::Emit(ops)
     }
@@ -3467,12 +3573,91 @@ mod tests {
     }
 
     #[test]
+    fn a_reset_that_comes_back_shorter_is_recovered_from_not_shown() {
+        // The limited-sync unload, measured live on 2026-08-17: a room went
+        // 16 -> 13 on a lone `Reset` and took five seconds to climb back.
+        // Held and recovered, so the reader never sees the hole.
+        let ops = vec![DiffOp::Reset {
+            values: (0..13).map(|i| minimal_dto(&format!("$e{i}"))).collect(),
+        }];
+
+        assert_eq!(
+            decide_batch(16, ops, 0, 0),
+            BatchDecision::ReseedInstead(ReseedReason::Shrank)
+        );
+    }
+
+    #[test]
+    fn a_reset_that_grows_or_holds_the_list_is_an_ordinary_batch() {
+        // A `Reset` is how the SDK says "here is the list now" — most of them
+        // are not losing anything, and re-seeding on those would paginate the
+        // room on every ordinary resync.
+        let grew = vec![DiffOp::Reset {
+            values: (0..20).map(|i| minimal_dto(&format!("$e{i}"))).collect(),
+        }];
+        assert!(matches!(
+            decide_batch(16, grew, 0, 0),
+            BatchDecision::Emit(_)
+        ));
+
+        let same = vec![DiffOp::Reset {
+            values: (0..16).map(|i| minimal_dto(&format!("$e{i}"))).collect(),
+        }];
+        assert!(matches!(
+            decide_batch(16, same, 0, 0),
+            BatchDecision::Emit(_)
+        ));
+    }
+
+    #[test]
+    fn a_redaction_shrinks_the_list_without_triggering_a_re_seed() {
+        // The reason `reset_shrank` keys on the op rather than the length,
+        // unlike `should_reseed`: "fewer items" is ambiguous. Somebody deleting
+        // a message must not paginate the room.
+        let ops = vec![DiffOp::Remove { index: 2 }];
+
+        assert!(matches!(
+            decide_batch(16, ops, 0, 0),
+            BatchDecision::Emit(_)
+        ));
+    }
+
+    #[test]
+    fn consecutive_limited_syncs_stop_being_recovered_at_the_cap() {
+        // Loop protection: if pagination keeps achieving nothing, stop
+        // withholding and let the shrink through rather than retry forever.
+        let ops = vec![DiffOp::Reset {
+            values: vec![minimal_dto("$only")],
+        }];
+
+        assert!(matches!(
+            decide_batch(16, ops.clone(), 0, MAX_RESEED_ATTEMPTS),
+            BatchDecision::Emit(_)
+        ));
+        assert_eq!(
+            decide_batch(16, ops, 0, MAX_RESEED_ATTEMPTS - 1),
+            BatchDecision::ReseedInstead(ReseedReason::Shrank)
+        );
+    }
+
+    #[test]
+    fn an_emptying_batch_still_reports_itself_as_emptied() {
+        // The two triggers are bounded by different counters, so the reason
+        // has to survive the decision — a limited sync must never spend the
+        // emptied budget, or a genuinely emptied timeline would find it gone.
+        assert_eq!(
+            decide_batch(20, vec![DiffOp::Clear], 0, MAX_RESEED_ATTEMPTS),
+            BatchDecision::ReseedInstead(ReseedReason::Emptied)
+        );
+    }
+
+    #[test]
     fn decide_batch_holds_a_batch_that_would_empty_an_already_populated_list() {
         // The trigger from this module's doc comment: a non-empty
         // materialized list receiving a lone `Clear`.
         assert_eq!(
-            decide_batch(20, vec![DiffOp::Clear], 0),
-            BatchDecision::ReseedInstead
+            decide_batch(20, vec![DiffOp::Clear], 0, 0),
+            BatchDecision::ReseedInstead(ReseedReason::Emptied)
         );
     }
 
@@ -3481,7 +3666,7 @@ mod tests {
         let ops = vec![DiffOp::PushBack {
             value: minimal_dto("$new"),
         }];
-        assert_eq!(decide_batch(3, ops.clone(), 0), BatchDecision::Emit(ops));
+        assert_eq!(decide_batch(3, ops.clone(), 0, 0), BatchDecision::Emit(ops));
     }
 
     #[test]
@@ -3490,7 +3675,7 @@ mod tests {
         // freshly-subscribed room's first (empty) batch is an ordinary
         // emit, not a hold.
         assert_eq!(
-            decide_batch(0, Vec::new(), 0),
+            decide_batch(0, Vec::new(), 0, 0),
             BatchDecision::Emit(Vec::new())
         );
     }
@@ -3506,7 +3691,7 @@ mod tests {
         // `paginate_backwards`+`subscribe` for one subscription's lifetime.
         let ops = vec![DiffOp::Clear];
         assert_eq!(
-            decide_batch(5, ops.clone(), MAX_RESEED_ATTEMPTS),
+            decide_batch(5, ops.clone(), MAX_RESEED_ATTEMPTS, 0),
             BatchDecision::Emit(ops)
         );
     }
@@ -3565,14 +3750,15 @@ mod tests {
                 value: minimal_dto("$x"),
             }],
             0,
+            0,
         );
         assert!(matches!(ordinary, BatchDecision::Emit(_)));
         let seq_for_ordinary = seq.next_seq();
 
         // The gappy sync's `Clear` arrives: held, not emitted — so it must
         // not consume a sequence number of its own.
-        let held = decide_batch(21, vec![DiffOp::Clear], 0);
-        assert_eq!(held, BatchDecision::ReseedInstead);
+        let held = decide_batch(21, vec![DiffOp::Clear], 0, 0);
+        assert_eq!(held, BatchDecision::ReseedInstead(ReseedReason::Emptied));
 
         // The re-seed resolves; its coalesced `Reset` is the very next
         // envelope, immediately after the last ordinary one — no gap, no
