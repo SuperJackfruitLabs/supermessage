@@ -185,6 +185,34 @@ function groupText(items: TimelineItem[]): string {
  * grouping never destabilises the key of an item that isn't even part of a
  * run.
  */
+/**
+ * A row's key: its identity, plus whatever changes the row's *shape*.
+ *
+ * virtua stores measured item sizes **per key** (its README's FAQ, "Why my
+ * items are squashed (or rendered inconsistently) on resize/add/remove?"), and
+ * `VListHandle` exposes no way to ask for a remeasure. So a row whose key does
+ * not change keeps the height it was first measured at, however much its
+ * content grows.
+ *
+ * That was invisible while the core replayed the SDK's remove-then-readd
+ * literally: every update destroyed the row and built a new one, which
+ * re-measured it as a side effect. Once `core::dto::collapse_reinsertions`
+ * stopped a message vanishing on every send, the cost showed up in its place —
+ * a reaction arriving grew the content past the cached height and the chip was
+ * painted over by the row beneath it.
+ *
+ * So the reaction count rides in the key. Not the whole item, which would
+ * remount a row for a changed timestamp and undo the fix above; and not
+ * identity alone, which is what produced the clipped chip.
+ *
+ * Known gap, left deliberately: an **edit** can also change a row's height, and
+ * is not in the key. No report of it, and guessing at which fields matter is
+ * how this ends up keyed on everything. Add it when something demonstrates it.
+ */
+function rowKey(item: TimelineItem): string {
+  return `${item.id}:${item.reactions.length}`;
+}
+
 export function groupTimelineItems(items: readonly TimelineItem[]): TimelineDisplayRow[] {
   const rows: TimelineDisplayRow[] = [];
   let run: TimelineItem[] = [];
@@ -216,7 +244,12 @@ export function groupTimelineItems(items: readonly TimelineItem[]): TimelineDisp
       // `rows.at(-1)` here is the previous *display* row, including a
       // membership group `flushRun()` may have just pushed above — see the
       // module doc comment for why that's what the sender-run rule reads.
-      rows.push({ type: "item", key: item.id, item, continuesRun: continuesSenderRun(rows.at(-1), item) });
+      rows.push({
+        type: "item",
+        key: rowKey(item),
+        item,
+        continuesRun: continuesSenderRun(rows.at(-1), item),
+      });
     }
   }
   flushRun();
