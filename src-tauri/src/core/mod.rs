@@ -13,6 +13,7 @@ pub mod auth;
 pub mod commands;
 pub mod dto;
 pub mod error;
+pub mod live;
 pub mod media;
 pub mod room_info;
 pub mod rooms;

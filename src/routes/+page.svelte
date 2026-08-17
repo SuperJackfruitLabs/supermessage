@@ -29,6 +29,7 @@
   import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
+  import LiveTurn from "$lib/components/LiveTurn.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
@@ -889,6 +890,12 @@
           {#key roomsStore.selectedId}
             <Timeline roomId={roomsStore.selectedId} />
           {/key}
+          <!--
+            The answer as it is written, between the timeline and the typing
+            line: closest to where it will land, and outside the virtual list
+            on purpose — see `LiveTurn.svelte`.
+          -->
+          <LiveTurn roomId={roomsStore.selectedId} />
           <TypingIndicator />
           <!--
             The composer is for rooms this account is *in*. An invitation gets

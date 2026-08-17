@@ -35,6 +35,7 @@ use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
 use super::dto::RoomSummary;
 use super::error::{CoreError, CoreResult};
+use super::live;
 use super::media;
 use super::room_info::{self, RoomInfoDto};
 use super::rooms::{self, RoomListHandle, SpaceSelection};
@@ -390,9 +391,18 @@ impl Session {
         self.stop_room_list().await;
         self.stop_sync().await;
         self.start_sync(app.clone()).await?;
-        if let Err(err) = self.start_room_list(app).await {
+        if let Err(err) = self.start_room_list(app.clone()).await {
             self.stop_sync().await;
             return Err(err);
+        }
+
+        // The live view of a turn in progress (`core::live`). Registered on the
+        // client, so it needs no teardown of its own: `logout` builds a new
+        // client and this goes with the old one. Deliberately not fallible —
+        // a session without a live view is a session that works, just without
+        // watching an agent think.
+        if let Ok(client) = self.require_client().await {
+            live::listen(&client, app);
         }
         Ok(())
     }
