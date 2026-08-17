@@ -1,6 +1,6 @@
 [package]
 name = "supermessage"
-version = "0.0.5"
+version = "0.0.6"
 description = "Cross-platform, agent-aware Matrix chat client"
 authors = ["supermessage contributors"]
 license = "MIT"
