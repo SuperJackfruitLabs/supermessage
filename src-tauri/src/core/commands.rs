@@ -15,6 +15,7 @@ use super::room_info::RoomInfoDto;
 use super::search::SearchResultDto;
 use super::session::Session;
 use super::spaces::SpaceSummary;
+use super::sync::ConnectionPayload;
 use super::timeline::{FocusedTimeline, TimelineSnapshot};
 
 /// Logs in with a username and password, then starts sync and room-list
@@ -53,6 +54,17 @@ pub async fn restore_session(
 #[tauri::command]
 pub async fn logout(session: State<'_, Session>) -> Result<(), CoreError> {
     session.logout().await
+}
+
+/// The core's connection health right now.
+///
+/// `sm://connection` fires on transitions only, so a webview that reloads
+/// mid-session never hears the `Running` it missed and would show "Offline"
+/// over a live connection. This is how it asks instead — see
+/// `Session::connection_state`.
+#[tauri::command]
+pub async fn connection_state(session: State<'_, Session>) -> Result<ConnectionPayload, CoreError> {
+    Ok(session.connection_state().await)
 }
 
 /// A full snapshot of the room list — the sequence number of the last diff

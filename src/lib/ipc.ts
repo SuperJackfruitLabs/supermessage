@@ -1108,6 +1108,19 @@ export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineItem>) => voi
   return listen<DiffEnvelope<TimelineItem>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
 }
 
+/**
+ * The core's connection health *right now*, rather than at the next
+ * transition.
+ *
+ * {@link onConnection} only fires on change, so a webview that starts up
+ * mid-session — a reload, or an HMR module swap — has no way to learn a
+ * state it was not listening for when it happened. This is that way.
+ * Reports `offline` when there is no session at all.
+ */
+export async function connectionState(): Promise<ConnectionPayload> {
+  return invoke<ConnectionPayload>("connection_state");
+}
+
 /** Subscribes to connection-health updates on {@link CONNECTION_EVENT}. */
 export function onConnection(handler: (payload: ConnectionPayload) => void): Promise<UnlistenFn> {
   return listen<ConnectionPayload>(CONNECTION_EVENT, (event) => handler(event.payload));
