@@ -301,6 +301,7 @@
   } from "./timelineItemView";
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
   import { shouldRepin } from "./timelineFollow";
+  import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -380,6 +381,45 @@
   });
 
   let displayRows = $derived(view.rows);
+
+  /**
+   * Whether the wait for this room has outlasted a flinch.
+   *
+   * A boolean rather than a live millisecond count on purpose: `paneState`
+   * only ever compares against one threshold, and a timer that re-renders the
+   * pane sixty times a second to answer a yes/no question is the wrong shape.
+   * The timeout is cleared whenever the room answers, so a switch that lands
+   * promptly never schedules a second render at all.
+   */
+  let waitedLongEnough = $state(false);
+
+  $effect(() => {
+    // Keyed on the room, not on `loaded`: the threshold now gates the *empty*
+    // verdict as well as the loading one, so the clock has to keep running
+    // after the room answers. This pane is remounted per room
+    // (`{#key roomsStore.selectedId}` in `+page.svelte`), so in practice the
+    // timer is armed once and cleared on the way out.
+    void roomId;
+    waitedLongEnough = false;
+    const timer = setTimeout(() => {
+      waitedLongEnough = true;
+    }, LOADING_AFTER_MS);
+    return () => clearTimeout(timer);
+  });
+
+  /**
+   * What this pane is showing: the room, an honest "nothing here", a quiet
+   * wait, or an admission that the wait is long. See `timelinePane.ts` — the
+   * distinction it draws is between a room with nothing in it and a room that
+   * has not answered yet, which this pane could not previously make.
+   */
+  let pane = $derived(
+    paneState({
+      loaded: timelineStore.loaded,
+      rowCount: displayRows.length,
+      waitingMs: waitedLongEnough ? LOADING_AFTER_MS : 0,
+    }),
+  );
 
   /**
    * The id of the last own item in `timelineStore.items` whose `kind` this
@@ -634,8 +674,15 @@
     const scroller = box.firstElementChild as HTMLElement | null;
     if (!scroller) return;
 
-    let previous = { viewport: 0, content: 0 };
     const measure = () => ({ viewport: scroller.clientHeight, content: scroller.scrollHeight });
+
+    // Land at the tail rather than travelling to it. The list opens at the
+    // newest message, so the first-load scroll has nowhere to go — where
+    // before it started at offset 0 and jumped ~9300px once the rows measured.
+    // Seeding `previous` from the same measurement keeps that pin from also
+    // reading as the first growth.
+    scroller.scrollTop = scroller.scrollHeight;
+    let previous = measure();
 
     const react = () => {
       const next = measure();
@@ -1333,12 +1380,22 @@
     </div>
   {/if}
 
-  {#if timelineStore.items.length === 0}
-    <!-- `bg-surface-sunken` here too, so the pane's ground is the field
-         whether or not there is anything on the sheet — see the scroller
-         below. -->
+  {#if pane !== "rows"}
+    <!--
+      `bg-surface-sunken` here too, so the pane's ground is the field whether
+      or not there is anything on the sheet — see the scroller below.
+
+      Three states share this box on purpose, and it is the same box each
+      time: switching between them changes only the words, never the ground,
+      so a room arriving is one fade rather than a sequence of layouts. See
+      `timelinePane.ts` for why `settling` says nothing at all.
+    -->
     <div class="flex h-full items-center justify-center bg-surface-sunken">
-      <p class="text-ui text-content-muted">Nothing here yet.</p>
+      {#if pane === "empty"}
+        <p class="fade-in text-ui text-content-muted">Nothing here yet.</p>
+      {:else if pane === "loading"}
+        <p class="fade-in text-ui text-content-faint">Loading conversation…</p>
+      {/if}
     </div>
   {:else}
     <!--
@@ -1350,7 +1407,7 @@
       This wrapper contains exactly one thing, and `h-full` keeps the list's
       `height: 100%` resolving against the same box it did before.
     -->
-    <div bind:this={scrollBox} class="h-full">
+    <div bind:this={scrollBox} class="fade-in h-full">
     <VList
       bind:this={vlist}
       data={displayRows}
@@ -1906,6 +1963,45 @@
 </div>
 
 <style>
+  /*
+   * Arriving, rather than appearing.
+   *
+   * A room switch was measured at four visual states in 145ms: the empty-state
+   * message, then bare scroller, then thirteen rows mounted but every one
+   * `visibility: hidden` because virtua had not measured them, then the
+   * settled room. The middle two are unavoidable — virtua has to mount a row
+   * before it can measure it — but they do not have to be *watched*. Fading
+   * the list in over that window covers the mount, the measurement, and the
+   * scroll landing at the tail, so what a reader sees is one room resolving
+   * instead of four states arguing.
+   *
+   * On the list as a whole, deliberately, and never on individual rows: virtua
+   * mounts and unmounts rows continuously as you scroll, so a per-row fade
+   * would shimmer down the page for the entire length of a conversation. The
+   * one moment worth covering is the one where a whole room appears at once.
+   *
+   * `prefers-reduced-motion` drops it to nothing rather than shortening it.
+   * The fade is decoration over a state that is already correct.
+   */
+  .fade-in {
+    animation: fade-in 140ms ease-out both;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in {
+      animation: none;
+    }
+  }
+
   /*
    * The dispatch card's frame (spec §7) — the timeline's only bordered
    * object, and the only place `--color-signal` (amber) appears anywhere in
