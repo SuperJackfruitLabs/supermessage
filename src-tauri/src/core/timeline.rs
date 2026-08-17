@@ -1760,14 +1760,15 @@ impl FocusedTimeline {
         let paginator = Arc::clone(&timeline);
         let task = tokio::spawn(async move {
             let mut seq = SeqCounter::default();
-            // How many times this subscription has re-seeded itself after
-            // the SDK emptied the timeline out from under it (see this
-            // module's "Recovering from an emptied timeline" doc comment
-            // and `should_reseed`). Lives here, not in `TimelineState`,
-            // for the same reason `seq` does: only this task ever needs it.
-            let mut reseed_attempts: u32 = 0;
-            // Consecutive limited-sync recoveries; reset by any ordinary emit.
-            let mut backfill_attempts: u32 = 0;
+            // How much recovery this subscription has left, for each of the
+            // two things it can recover from (see this module's "Recovering
+            // from an emptied timeline" doc comment, `should_reseed`, and
+            // `should_backfill`). Both budgets count *consecutive* failures
+            // and refill on any ordinary emit — see `RecoveryBudget`, and the
+            // live sequence in its doc comment for what a lifetime budget cost
+            // a reader. Lives here, not in `TimelineState`, for the same
+            // reason `seq` does: only this task ever needs it.
+            let mut budget = RecoveryBudget::default();
 
             // The initial `Vector` `subscribe()` returns becomes the
             // stream's first envelope as a single `Reset`, so the webview
@@ -1818,31 +1819,35 @@ impl FocusedTimeline {
                     guard.1.len()
                 };
 
-                match decide_batch(before, ops, reseed_attempts, backfill_attempts) {
+                match decide_batch(
+                    before,
+                    ops,
+                    budget.reseed_attempts,
+                    budget.backfill_attempts,
+                ) {
                     BatchDecision::Emit(ops) => {
-                        // Progress. A limited sync is routine, so the bound on
-                        // recovering from one is "three in a row that achieved
-                        // nothing", not "three per subscription" — see
-                        // `should_backfill`.
-                        backfill_attempts = 0;
+                        // A batch got through, so neither recovery is stuck.
+                        // Both bounds are "three in a row that achieved
+                        // nothing", never "three per subscription" — see
+                        // `RecoveryBudget`.
+                        budget.on_progress();
                         emit_ops(&app, &task_state, &mut seq, &subject, ops);
                     }
                     BatchDecision::ReseedInstead(reason) => {
+                        let attempt = budget.on_recovery(reason);
                         match reason {
                             ReseedReason::Emptied => {
-                                reseed_attempts += 1;
                                 tracing::warn!(
                                     subject = %subject,
-                                    attempt = reseed_attempts,
+                                    attempt,
                                     max_attempts = MAX_RESEED_ATTEMPTS,
                                     "timeline emptied out from under its subscription; re-seeding and coalescing into a single reset"
                                 );
                             }
                             ReseedReason::Shrank => {
-                                backfill_attempts += 1;
                                 tracing::info!(
                                     subject = %subject,
-                                    attempt = backfill_attempts,
+                                    attempt,
                                     max_attempts = MAX_RESEED_ATTEMPTS,
                                     "a limited sync unloaded part of this timeline; paginating it back before the gap can be seen"
                                 );
@@ -2420,14 +2425,11 @@ fn reset_shrank(before: usize, after: usize, ops: &[DiffOp<TimelineItemDto>]) ->
 
 /// Whether a shrinking `Reset` should be recovered from rather than shown.
 ///
-/// Bounded separately from [`should_reseed`], and the reason matters: an
-/// emptied timeline is a fault, rare, and three attempts per subscription is a
-/// generous ceiling. A limited sync is **routine** — a busy room sees them all
-/// day — so a per-subscription cap would be spent within minutes and every
-/// later unload would render raw. The caller therefore resets this counter on
-/// every ordinary emit, making the bound "three *consecutive* recoveries that
-/// achieved nothing", which is loop protection without a budget that normal use
-/// can exhaust.
+/// Bounded separately from [`should_reseed`] — the two recoveries must never
+/// spend each other's budget, which is why [`ReseedReason`] survives the
+/// decision at all. Both are bounded on *consecutive* failures rather than per
+/// subscription; see [`RecoveryBudget`] for why, and for the live sequence that
+/// proved a per-subscription cap wrong.
 fn should_backfill(
     before: usize,
     after: usize,
@@ -2435,6 +2437,68 @@ fn should_backfill(
     backfill_attempts: u32,
 ) -> bool {
     reset_shrank(before, after, ops) && backfill_attempts < MAX_RESEED_ATTEMPTS
+}
+
+/// How much recovery a subscription has left, for each of the two things it
+/// can recover from — and, more to the point, **when that refills**.
+///
+/// Both budgets bound *consecutive* failures, not a subscription's lifetime.
+/// [`Self::on_progress`] is called for every ordinary batch that reaches the
+/// webview, so the bound reads "three recoveries in a row that achieved
+/// nothing" — loop protection that normal use cannot exhaust.
+///
+/// The limited-sync budget was always this. The emptied budget was not, on the
+/// reasoning that an emptied timeline is "a fault, rare, and three attempts per
+/// subscription is a generous ceiling". Watched failing on 2026-08-17 — one
+/// room, one subscription, five minutes:
+///
+/// ```text
+/// 10:36:56  timeline emptied out from under its subscription  attempt=1 max_attempts=3
+/// 10:37:32  timeline emptied out from under its subscription  attempt=2 max_attempts=3
+/// 10:41:51  timeline emptied out from under its subscription  attempt=3 max_attempts=3
+/// ```
+///
+/// Every one recovered, with ordinary batches flowing in between. Nothing was
+/// wrong; the counter only ever went up. The *next* emptying found the budget
+/// spent and was emitted raw, and the reader's room collapsed from 19834px of
+/// history to 1001px with the scroll position at 0 — the ground going out from
+/// under someone mid-conversation. "Rare" was the premise, and it was wrong.
+///
+/// Refilling cannot reintroduce an infinite loop, for the same reason it
+/// doesn't for a limited sync: refills require a batch to have *got through*,
+/// and a run that achieves nothing produces no such batch. The independent
+/// `before == 0` exclusion in [`should_reseed`] still bounds a genuinely empty
+/// room on its own, without consulting a counter at all.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct RecoveryBudget {
+    /// Consecutive recoveries from an emptied timeline ([`ReseedReason::Emptied`]).
+    reseed_attempts: u32,
+    /// Consecutive recoveries from a limited sync ([`ReseedReason::Shrank`]).
+    backfill_attempts: u32,
+}
+
+impl RecoveryBudget {
+    /// An ordinary batch reached the webview: the stream is alive and
+    /// delivering, so whatever went wrong before is behind us. Both budgets
+    /// refill.
+    ///
+    /// Deliberately *not* called for a recovery's own emit — that one is the
+    /// attempt, not evidence it worked. Only a subsequent ordinary batch is.
+    fn on_progress(&mut self) {
+        self.reseed_attempts = 0;
+        self.backfill_attempts = 0;
+    }
+
+    /// Spends one attempt from the budget `reason` draws on, and returns the
+    /// attempt number just spent — the `attempt=N` the caller logs.
+    fn on_recovery(&mut self, reason: ReseedReason) -> u32 {
+        let counter = match reason {
+            ReseedReason::Emptied => &mut self.reseed_attempts,
+            ReseedReason::Shrank => &mut self.backfill_attempts,
+        };
+        *counter += 1;
+        *counter
+    }
 }
 
 /// What the streaming task should do with one incoming diff batch —
@@ -3659,6 +3723,84 @@ mod tests {
             decide_batch(20, vec![DiffOp::Clear], 0, 0),
             BatchDecision::ReseedInstead(ReseedReason::Emptied)
         );
+    }
+
+    // `RecoveryBudget` — the two counters that bound recovery, and *when they
+    // refill*.
+    //
+    // The regression these guard was watched happening on 2026-08-17. One room,
+    // one subscription, five minutes:
+    //
+    //   10:36:56  timeline emptied out ... attempt=1 max_attempts=3
+    //   10:37:32  timeline emptied out ... attempt=2 max_attempts=3
+    //   10:41:51  timeline emptied out ... attempt=3 max_attempts=3
+    //
+    // Every one of those recovered — the room was whole again seconds later,
+    // and ordinary batches flowed in between. But `reseed_attempts` only ever
+    // counted up, so the budget was spent by a sequence in which nothing had
+    // gone wrong, and the *next* emptying was emitted raw: the reader's room
+    // collapsed from 19834px of history to 1001px and the scroll position went
+    // to 0. Reported as the view "scrolling from somewhere way up".
+
+    #[test]
+    fn an_ordinary_batch_refills_both_budgets() {
+        let mut budget = RecoveryBudget::default();
+        budget.on_recovery(ReseedReason::Emptied);
+        budget.on_recovery(ReseedReason::Shrank);
+        budget.on_progress();
+        assert_eq!(budget, RecoveryBudget::default());
+    }
+
+    #[test]
+    fn emptyings_that_each_recovered_never_exhaust_the_budget() {
+        // The live sequence above, with the ordinary batches that flowed
+        // between them. However many times this happens, the room is never
+        // left to collapse.
+        let mut budget = RecoveryBudget::default();
+        for _ in 0..(MAX_RESEED_ATTEMPTS * 5) {
+            assert!(
+                should_reseed(20, 0, budget.reseed_attempts),
+                "an emptying that follows a healthy batch must still be recoverable"
+            );
+            budget.on_recovery(ReseedReason::Emptied);
+            budget.on_progress();
+        }
+        assert!(should_reseed(20, 0, budget.reseed_attempts));
+    }
+
+    #[test]
+    fn consecutive_emptyings_that_achieve_nothing_still_stop() {
+        // The other half: loop protection is what the budget is *for*, and
+        // refilling on progress must not cost it. With no progress between
+        // them, the bound holds exactly where it did before.
+        let mut budget = RecoveryBudget::default();
+        for _ in 0..MAX_RESEED_ATTEMPTS {
+            assert!(should_reseed(20, 0, budget.reseed_attempts));
+            budget.on_recovery(ReseedReason::Emptied);
+        }
+        assert!(!should_reseed(20, 0, budget.reseed_attempts));
+    }
+
+    #[test]
+    fn a_limited_sync_never_spends_the_emptied_budget() {
+        // The two counters stay independent, which is why `ReseedReason`
+        // survives the decision at all.
+        let mut budget = RecoveryBudget::default();
+        for _ in 0..MAX_RESEED_ATTEMPTS {
+            budget.on_recovery(ReseedReason::Shrank);
+        }
+        assert_eq!(budget.reseed_attempts, 0);
+        assert!(should_reseed(20, 0, budget.reseed_attempts));
+    }
+
+    #[test]
+    fn on_recovery_reports_the_attempt_number_it_just_spent() {
+        // The number the log line prints, so "attempt=3 max_attempts=3" means
+        // what a reader of the log thinks it means.
+        let mut budget = RecoveryBudget::default();
+        assert_eq!(budget.on_recovery(ReseedReason::Emptied), 1);
+        assert_eq!(budget.on_recovery(ReseedReason::Emptied), 2);
+        assert_eq!(budget.on_recovery(ReseedReason::Shrank), 1);
     }
 
     #[test]
