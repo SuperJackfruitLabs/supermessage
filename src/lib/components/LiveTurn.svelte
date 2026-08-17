@@ -35,27 +35,70 @@
   // much an agent writes.
 
   import { liveStore } from "$lib/stores/live.svelte";
+  import { timelineStore } from "$lib/stores/timeline.svelte";
 
   let { roomId, senderName }: { roomId: string | null; senderName: string | null } = $props();
 
   const text = $derived(liveStore.get(roomId));
 
   /**
-   * Keep the newest text in view as it arrives.
+   * The name the arriving message will carry, taken from the last thing this
+   * agent actually said in this room.
    *
-   * Only when the reader is already at the bottom: someone who has scrolled up
-   * inside a long stream is reading, and yanking them back down would be the
-   * same discourtesy as auto-scrolling a timeline out from under someone.
+   * The room's own title is close but not the same string — the header says
+   * `krishna` while a message says `krishna (openclaw @ ashram)` — and using
+   * it meant the sender line still changed as the answer landed, which is the
+   * seam this component exists to close. The timeline already holds the exact
+   * text, so it is read from there rather than reconstructed or shipped down
+   * the wire a second time.
+   *
+   * Falls back to the room name for the one case the timeline cannot answer:
+   * an agent's very first message in a room nobody has spoken in yet.
    */
+  const writerName = $derived.by(() => {
+    const items = timelineStore.items;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]!;
+      if (item.kind === "message" && !item.isOwn && item.senderDisplayName !== null) {
+        return item.senderDisplayName;
+      }
+    }
+    return senderName;
+  });
+
   let box = $state<HTMLElement | null>(null);
 
-  $effect(() => {
-    // Touch `text` so this re-runs on every delta.
+  /**
+   * Whether the reader was at the bottom *before* the new text was laid out.
+   *
+   * This has to be measured in `$effect.pre`, and the first attempt got it
+   * wrong by measuring after: once the delta is in the DOM the box is already
+   * taller, so "are we at the bottom" answers about a layout that no longer
+   * exists, and every stream past the cap looked pinned whether it was or not.
+   */
+  let wasAtBottom = true;
+
+  $effect.pre(() => {
+    // Read `text` so this runs before every delta's layout, not just the first.
     void text;
     const el = box;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom < 48) el.scrollTop = el.scrollHeight;
+    // 48px of slack: a reader a line or two off the bottom is still following,
+    // and demanding exactness would drop them the moment a line wrapped.
+    wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  });
+
+  /**
+   * Follow the writing, unless the reader has gone looking.
+   *
+   * Someone who scrolled up inside a long stream is reading something; yanking
+   * them back down is the same discourtesy as scrolling a timeline out from
+   * under them. So this follows only what was already being followed.
+   */
+  $effect(() => {
+    void text;
+    const el = box;
+    if (el && wasAtBottom) el.scrollTop = el.scrollHeight;
   });
 </script>
 
@@ -67,7 +110,7 @@
   -->
   <div
     bind:this={box}
-    class="max-h-[33vh] shrink-0 overflow-y-auto border-t border-border bg-surface px-4 py-3 lg:px-8"
+    class="live-turn max-h-[33vh] shrink-0 overflow-y-auto bg-surface px-4 pt-4 pb-3 lg:px-8"
     role="status"
     aria-live="polite"
     aria-label="The agent is writing"
@@ -85,7 +128,7 @@
         moment they are paying most attention.
       -->
       <p class="mb-1 flex items-baseline gap-2 font-mono text-meta text-content-muted">
-        <span class="min-w-0 truncate text-label uppercase">{senderName ?? "Agent"}</span>
+        <span class="min-w-0 truncate text-label uppercase">{writerName ?? "Agent"}</span>
         <span class="shrink-0">Writing…</span>
       </p>
       <!--
@@ -111,3 +154,23 @@
     </div>
   </div>
 {/if}
+
+<style>
+  /*
+    The top edge fades instead of being ruled.
+
+    A hard border made this read as a separate panel bolted under the
+    conversation — a slab with the answer trapped in it. What it actually is is
+    the next message, arriving. So the text dissolves as it scrolls out of the
+    top rather than being sliced by a line, which says "there is more above,
+    continuous with this" without drawing a boundary the answer will not have
+    once it lands in the timeline.
+
+    `mask-image` rather than a gradient overlay: an overlay would need to match
+    the sheet colour and would therefore be wrong in the other theme.
+  */
+  .live-turn {
+    mask-image: linear-gradient(to bottom, transparent 0, black 1.25rem);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 1.25rem);
+  }
+</style>
