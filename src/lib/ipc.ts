@@ -356,7 +356,8 @@ export interface Reaction {
 }
 
 /**
- * One joined space, mirroring `SpaceSummary` from
+ * One space the rail draws — joined, or merely invited — mirroring
+ * `SpaceSummary` from
  * `src-tauri/src/core/spaces.rs`. Returned by {@link spacesList}; the rail
  * (`$lib/components/SpacesRail.svelte`) is its only consumer.
  *
@@ -401,6 +402,19 @@ export interface SpaceSummary {
    * error or a spinner.
    */
   childCount: number;
+  /**
+   * Whether this account has joined the space or has only been invited to
+   * it — see {@link Membership}. Never `left`, `knocked` or `banned`: the
+   * core enumerates joined and invited rooms and nothing else.
+   *
+   * An invitation is a **rail** entry, not a roster row: a space is not a
+   * conversation, so it does not belong in a list of them even for the
+   * seconds before it is accepted (`core::rooms::roster_admits` hides every
+   * space). It carries `childCount: 0` — the subtree of a space you have not
+   * joined is not visible, so any number would be invented — and selecting
+   * it is not a thing that can work; offer Accept / Decline instead.
+   */
+  membership: Membership;
 }
 
 /**

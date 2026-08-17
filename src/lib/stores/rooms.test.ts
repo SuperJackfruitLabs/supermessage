@@ -324,6 +324,20 @@ describe("roomsStore: invitations (issue #1)", () => {
 
     expect(leaveRoom).toHaveBeenCalledWith("!invited:x");
   });
+
+  it("refreshes the rail after declining, because a space is only listed there", async () => {
+    // The mirror of the accept path, and it matters more now that an invited
+    // space is a rail entry rather than a roster row. The roster is diffed —
+    // a declined room leaves it on its own. The rail is a one-shot fetch, so
+    // a declined space would sit there being offered until the next launch.
+    const channel = makeChannel();
+    const reloadSpaces = vi.fn().mockResolvedValue(undefined);
+    const store = makeStore(channel, vi.fn(), { reloadSpaces });
+
+    await store.declineInvitation("!invited:x");
+
+    expect(reloadSpaces).toHaveBeenCalled();
+  });
 });
 
 describe("accepting an invitation that turns out to be a space", () => {

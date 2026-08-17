@@ -26,6 +26,7 @@ function space(overrides: Partial<SpaceSummary> = {}): SpaceSummary {
     name: "Fleet",
     avatarUrl: null,
     childCount: 3,
+    membership: "joined",
     ...overrides,
   };
 }
@@ -43,7 +44,12 @@ describe("railEntries", () => {
     const entries = railEntries([space({ id: "!a:x.org", name: "Alpha" })]);
 
     expect(entries).toHaveLength(2);
-    expect(entries[0]).toEqual({ spaceId: null, label: "All rooms", initial: "All" });
+    expect(entries[0]).toEqual({
+      spaceId: null,
+      label: "All rooms",
+      initial: "All",
+      pending: false,
+    });
     expect(entries[1]!.spaceId).toBe("!a:x.org");
   });
 
@@ -115,5 +121,42 @@ describe("spaceEntryLabel", () => {
     );
 
     expect(label).toBe(`${"a".repeat(120)}, ${"b".repeat(40)}, 1 room`);
+  });
+});
+
+describe("an invitation in the rail", () => {
+  it("is marked pending, so a click can offer Accept instead of filtering", () => {
+    // Selecting a space you have not joined cannot work — the core answers
+    // `unknownSpace`, correctly, because there is no subtree to scope the
+    // roster to. The entry has to say so, or the rail's one click handler
+    // has no way to tell the two kinds apart.
+    const entries = railEntries([
+      space({ id: "!joined:x.org", name: "Fleet" }),
+      space({ id: "!invited:x.org", name: "guild", childCount: 0, membership: "invited" }),
+    ]);
+
+    expect(entries.map((entry) => [entry.spaceId, entry.pending])).toEqual([
+      [null, false],
+      ["!joined:x.org", false],
+      ["!invited:x.org", true],
+    ]);
+  });
+
+  it("says it is an invitation instead of counting rooms it cannot see", () => {
+    // "No rooms" would be a claim about the space's contents. We are not in
+    // it; we do not know its contents. What we know is that we were asked.
+    const label = spaceEntryLabel(
+      space({ name: "guild", childCount: 0, membership: "invited" }),
+    );
+
+    expect(label).toBe("guild, Invitation");
+  });
+
+  it("still names a role the space carries", () => {
+    const label = spaceEntryLabel(
+      space({ name: "\u2699 guild — Work", childCount: 0, membership: "invited" }),
+    );
+
+    expect(label).toBe("guild, Work, Invitation");
   });
 });

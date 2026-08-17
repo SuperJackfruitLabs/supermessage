@@ -141,3 +141,37 @@ rail. It appears when the account has at least one.
   at narrow widths it collapses with them.
 - No new `{@html}`. A space name is server-controlled and gets bounded and
   escaped like every other such string.
+
+---
+
+## 8. Amendment, 2026-08-17: invitations
+
+Written after the rail met a real fleet. Two things this design got wrong, both
+in the same place — it assumed a space and its rooms are things you are already
+*in*.
+
+**An invitation to a space is a rail entry, not a roster row.** §4's filter
+originally hid every space, which left an invitation with nowhere to appear:
+the rail enumerated joined spaces, and the roster hid spaces, so it showed up in
+neither while Element displayed it plainly. The first fix let invited spaces
+through into the roster — and that put two node-space invitations among forty
+agent-room ones, in a list of conversations, which is precisely the clutter §4
+exists to prevent. A space is not a conversation. So the roster hides every
+space again, `spaces_list` reports invited spaces alongside joined ones with a
+`membership` field, and the rail draws them as pending entries — dashed ring,
+`Invitation` in place of a room count, and a click that opens Accept / Decline
+rather than a filter. There is nothing to filter by: we hold none of the
+space's state, so `rooms_in` answers `UnknownSpace` for it, correctly.
+
+**A space's children include rooms you have only been invited to.** §5 defined
+`childCount` as the joined rooms in the subtree, and the filter agreed with it,
+so the two could not drift — but both were wrong together. AgentPod provisions
+one room per agent and invites the operator to each, so a freshly-built fleet is
+a space whose children are *all* invitations: every space reported zero and
+filtered to an empty roster while its rooms sat visibly in All rooms. The rule
+is now "every room the roster can show", which is what §4's filter (`non_left`
+and `not(space)`) already meant. Rooms we have no membership of at all are still
+excluded, so a space still cannot advertise twelve and reveal four.
+
+Declining now re-reads the rail, for the same reason accepting does: the roster
+is diffed and heals itself, the rail is a one-shot fetch and does not.

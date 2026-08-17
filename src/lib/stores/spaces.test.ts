@@ -17,7 +17,11 @@ import { createSpacesStore } from "./spaces.svelte";
 import type { CoreError, SpaceSummary } from "$lib/ipc";
 
 function space(id: string, name = id): SpaceSummary {
-  return { id, name, avatarUrl: null, childCount: 2 };
+  return { id, name, avatarUrl: null, childCount: 2, membership: "joined" };
+}
+
+function invitedSpace(id: string, name = id): SpaceSummary {
+  return { id, name, avatarUrl: null, childCount: 0, membership: "invited" };
 }
 
 function coreError(kind: CoreError["kind"]): CoreError {
@@ -181,5 +185,37 @@ describe("spacesStore.clear", () => {
 
     expect(store.spaces).toEqual([]);
     expect(store.selectedId).toBeNull();
+  });
+});
+
+describe("an invitation to a space", () => {
+  it("is listed separately, so the panel has something to offer", async () => {
+    const { store } = makeStore(async () => [
+      space("!joined:x.org"),
+      invitedSpace("!invited:x.org", "guild"),
+    ]);
+
+    await store.load();
+
+    expect(store.pending.map((s) => s.id)).toEqual(["!invited:x.org"]);
+  });
+
+  it("is never selected, because there is no subtree to scope the roster to", async () => {
+    // The core would answer `unknownSpace` and the store would recover by
+    // resetting to All rooms — a correct but pointless round trip that also
+    // clears a filter the reader never asked to clear. Refusing locally
+    // keeps the click harmless.
+    const { store, deps } = makeStore(async () => [
+      space("!joined:x.org"),
+      invitedSpace("!invited:x.org", "guild"),
+    ]);
+    await store.load();
+    await store.select("!joined:x.org");
+    deps.spaceSelect.mockClear();
+
+    await store.select("!invited:x.org");
+
+    expect(deps.spaceSelect).not.toHaveBeenCalled();
+    expect(store.selectedId).toBe("!joined:x.org");
   });
 });
