@@ -895,7 +895,10 @@
             line: closest to where it will land, and outside the virtual list
             on purpose — see `LiveTurn.svelte`.
           -->
-          <LiveTurn roomId={roomsStore.selectedId} />
+          <LiveTurn
+            roomId={roomsStore.selectedId}
+            senderName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
+          />
           <TypingIndicator />
           <!--
             The composer is for rooms this account is *in*. An invitation gets
