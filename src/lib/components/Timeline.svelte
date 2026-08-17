@@ -1,13 +1,26 @@
 <script lang="ts">
   // The message pane for the focused room. Virtualized with virtua's
-  // `VList` (`shift: true`) so that back-pagination — which prepends older
-  // history at the top of an already-inverted (newest-at-bottom) list —
-  // never jerks the scroll position. See virtua's own docs on the `shift`
-  // prop: "scroll position will be maintained from the end ... when items
-  // are added to/removed from start", which is exactly the prepend case
-  // here. `getKey` is `row.key`, never the array index — virtua's README
-  // calls out index keys as broken specifically when `shift` is on, since
-  // prepending renumbers every existing index.
+  // `VList`, whose `shift` prop keeps back-pagination — which prepends older
+  // history at the top of an already-inverted (newest-at-bottom) list — from
+  // jerking the scroll position. virtua's docs: "scroll position will be
+  // maintained from the end ... when items are added to/removed from start".
+  //
+  // `shift` is **per update**, never a constant, and the second half of that
+  // same doc sentence is why: "recommended to set to false if modifications
+  // occur in the middle or end of the list to prevent unexpected behavior".
+  // This list is modified at the end constantly — every message sent or
+  // received, and every reaction, since the row key carries the reaction
+  // count. It shipped hard-coded `true` and the unexpected behaviour was
+  // severe: a sent message moved every cached offset down by its own height
+  // and virtua unmounted the rows actually on screen, leaving up to 602px of
+  // a 911px viewport with no row painted in it until a manual scroll. So the
+  // value comes from `shouldShift` (see `timelineGrouping.ts` for the rule
+  // and the measurements), derived in the same pass as the rows it describes
+  // — `view` below.
+  //
+  // `getKey` is `row.key`, never the array index — virtua's README calls out
+  // index keys as broken specifically when `shift` is on, since prepending
+  // renumbers every existing index.
   //
   // `VList` is driven by `displayRows`, a `$derived` of
   // `timelineStore.items` through `timelineGrouping.ts`'s
@@ -286,7 +299,7 @@
     replyQuoteView,
     viewFor,
   } from "./timelineItemView";
-  import { groupTimelineItems, type TimelineDisplayRow } from "./timelineGrouping";
+  import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -334,13 +347,38 @@
   let followBottom = $state(true);
 
   /**
-   * The list `VList` actually renders — `timelineStore.items` with
-   * consecutive membership changes collapsed. Recomputes whenever the store
-   * publishes a new `items` array; see this file's top-of-script doc
-   * comment for why that's automatic and why it never disturbs the raw
-   * array itself.
+   * The row keys `VList` was last given. Deliberately a plain variable and
+   * not `$state`: nothing renders it, and making it reactive would mean
+   * writing a tracked value from inside a `$derived`, which re-invalidates
+   * the derivation that just wrote it.
    */
-  let displayRows = $derived(groupTimelineItems(timelineStore.items));
+  let previousRowKeys: string[] = [];
+
+  /**
+   * The rows `VList` renders, **and** the `shift` value that describes how
+   * they changed — derived together, in one pass, on purpose.
+   *
+   * They have to arrive at virtua in the same update. `shift` is a claim
+   * about the `data` handed over alongside it; computing it in a second
+   * `$derived` would let virtua see the new rows while still holding the
+   * previous frame's answer for how they got there, which is the same class
+   * of mistake as the hard-coded `true` this replaces (see `shouldShift`).
+   * Returning one object makes that ordering unrepresentable rather than
+   * merely unlikely.
+   *
+   * `groupTimelineItems` recomputes whenever the store publishes a new
+   * `items` array; see this file's top-of-script doc comment for why that's
+   * automatic and why it never disturbs the raw array itself.
+   */
+  let view = $derived.by(() => {
+    const rows = groupTimelineItems(timelineStore.items);
+    const keys = rows.map((row) => row.key);
+    const shift = shouldShift(previousRowKeys, keys);
+    previousRowKeys = keys;
+    return { rows, shift };
+  });
+
+  let displayRows = $derived(view.rows);
 
   /**
    * The id of the last own item in `timelineStore.items` whose `kind` this
@@ -1236,7 +1274,7 @@
       bind:this={vlist}
       data={displayRows}
       getKey={(row: TimelineDisplayRow) => row.key}
-      shift
+      shift={view.shift}
       onscroll={handleScroll}
       class="bg-surface-sunken"
     >
