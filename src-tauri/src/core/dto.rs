@@ -7,6 +7,7 @@
 
 use eyeball_im::VectorDiff;
 use serde::Serialize;
+use std::collections::HashSet;
 
 /// This account's relationship to a room.
 ///
@@ -446,6 +447,75 @@ where
 /// variant, this must fail to compile rather than silently leave the
 /// materialized view out of sync with what was already emitted, which would
 /// corrupt every resync served from it.
+/// Collapse a batch that takes items out and puts the same items back.
+///
+/// **The problem this solves.** On send, `matrix-sdk-ui` emits `Remove` then
+/// `PushBack` for the message being confirmed — the item leaves the list and
+/// rejoins it at the same place. Replayed literally by a UI that renders a
+/// list, the row disappears and reappears. That is the "Buddy? disappeared and
+/// then reappeared" report of 2026-08-17, and it is visible in the core's own
+/// log as `["remove", "pushBack"]` batches carrying one id.
+///
+/// **The rule.** If the batch leaves the sequence of ids exactly as it found
+/// it, then nothing moved, and the only honest thing the batch can be saying is
+/// "these items' contents changed". So it becomes a `Set` per carried item, at
+/// the index that item already occupies. Anything that changes the sequence —
+/// a real arrival, a reorder, a `Reset` that shrinks the list — is passed
+/// through untouched, because those genuinely move rows and a `Set` cannot say
+/// so.
+///
+/// Only items the batch actually carried are re-sent. A `Set` costs the webview
+/// a re-render of that row, so re-sending the whole list would trade a flicker
+/// for a stutter.
+///
+/// **Deliberately conservative.** Fractal solves the general case with a full
+/// id-diff that computes minimal splices (`timeline_diff_minimizer`); this
+/// handles only the case where the membership *and order* are unchanged, which
+/// is the one the reported bug is made of. The general version can come later
+/// with the tests to justify it. (Approach only — fractal is GPLv3 and this
+/// crate is MIT, so nothing here is derived from its source.)
+pub fn collapse_reinsertions<T, F>(
+    before_ids: &[String],
+    after: &[T],
+    ops: Vec<DiffOp<T>>,
+    id_of: F,
+) -> Vec<DiffOp<T>>
+where
+    T: Clone,
+    F: Fn(&T) -> &str,
+{
+    if before_ids.len() != after.len()
+        || before_ids
+            .iter()
+            .zip(after.iter())
+            .any(|(before, item)| before != id_of(item))
+    {
+        return ops;
+    }
+
+    let carried: HashSet<&str> = ops
+        .iter()
+        .flat_map(op_values)
+        .map(&id_of)
+        .collect();
+
+    // A batch that changed nothing and carried nothing is not something this
+    // can improve on — hand it back rather than inventing an empty batch.
+    if carried.is_empty() {
+        return ops;
+    }
+
+    after
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| carried.contains(id_of(item)))
+        .map(|(index, item)| DiffOp::Set {
+            index,
+            value: item.clone(),
+        })
+        .collect()
+}
+
 pub fn apply_ops<T: Clone>(items: &mut Vec<T>, ops: &[DiffOp<T>]) {
     for op in ops {
         match op {
@@ -897,5 +967,120 @@ mod tests {
         assert_eq!(op_values(&DiffOp::<i32>::PopBack), empty);
         assert_eq!(op_values(&DiffOp::<i32>::Remove { index: 0 }), empty);
         assert_eq!(op_values(&DiffOp::<i32>::Truncate { length: 0 }), empty);
+    }
+
+    /// A stand-in for a timeline item: an identity and some content.
+    #[derive(Debug, Clone, PartialEq)]
+    struct Row(&'static str, &'static str);
+
+    fn ids(rows: &[Row]) -> Vec<String> {
+        rows.iter().map(|r| r.0.to_string()).collect()
+    }
+
+    #[test]
+    fn a_remove_then_readd_of_the_same_item_collapses_to_one_set() {
+        // The batch this exists for, seen against the live homeserver on
+        // 2026-08-17: sending a message makes the SDK emit `remove` then
+        // `pushBack` for the message being confirmed. Replayed literally, the
+        // row leaves the list and comes back — which is what "Buddy?
+        // disappeared and then reappeared" was.
+        //
+        // The list is the same before and after, so nothing needs to move.
+        let before = [Row("a", "one"), Row("b", "two")];
+        let ops = vec![
+            DiffOp::Remove { index: 1 },
+            DiffOp::PushBack {
+                value: Row("b", "two (confirmed)"),
+            },
+        ];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops, |row| row.0);
+
+        assert_eq!(
+            collapsed,
+            vec![DiffOp::Set {
+                index: 1,
+                value: Row("b", "two (confirmed)")
+            }]
+        );
+    }
+
+    #[test]
+    fn an_item_that_really_arrives_is_left_alone() {
+        // The shape changed, so the batch says something a `Set` cannot.
+        let before = [Row("a", "one")];
+        let ops = vec![DiffOp::PushBack {
+            value: Row("b", "two"),
+        }];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops.clone(), |row| row.0);
+
+        assert_eq!(collapsed, ops);
+    }
+
+    #[test]
+    fn a_reset_that_shrinks_the_list_is_left_alone() {
+        // The limited-sync unload (matrix-rust-sdk#4694). It is not a
+        // reinsertion and must not be silently swallowed: the events really
+        // are gone from the SDK's own list until pagination refills them.
+        let before = [Row("a", "one"), Row("b", "two"), Row("c", "three")];
+        let ops = vec![DiffOp::Reset {
+            values: vec![Row("c", "three")],
+        }];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops.clone(), |row| row.0);
+
+        assert_eq!(collapsed, ops);
+    }
+
+    #[test]
+    fn a_reorder_is_left_alone_even_though_the_membership_is_the_same() {
+        // Same ids, different order. Emitting `Set`s here would leave the two
+        // rows swapped on screen relative to the core's list.
+        let before = [Row("a", "one"), Row("b", "two")];
+        let ops = vec![
+            DiffOp::Remove { index: 0 },
+            DiffOp::PushBack {
+                value: Row("a", "one"),
+            },
+        ];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops.clone(), |row| row.0);
+
+        assert_eq!(collapsed, ops);
+    }
+
+    #[test]
+    fn only_the_items_the_batch_carried_are_re_sent() {
+        // A batch that churns one row must not re-send the whole list: every
+        // `Set` is a row the webview re-renders.
+        let before = [Row("a", "one"), Row("b", "two"), Row("c", "three")];
+        let ops = vec![
+            DiffOp::Remove { index: 2 },
+            DiffOp::PushBack {
+                value: Row("c", "three!"),
+            },
+        ];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops, |row| row.0);
+
+        assert_eq!(collapsed.len(), 1);
+        assert_eq!(
+            collapsed[0],
+            DiffOp::Set {
+                index: 2,
+                value: Row("c", "three!")
+            }
+        );
     }
 }

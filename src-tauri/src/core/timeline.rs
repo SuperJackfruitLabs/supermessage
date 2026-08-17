@@ -149,8 +149,9 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 
 use super::dto::{
-    apply_ops, op_name, op_values, ops_len_after, project_diff, DiffEnvelope, DiffOp, MediaMetaDto,
-    ReactionDto, ReplyToDto, SeqCounter, TimelineItemDto, TypingUserDto,
+    apply_ops, collapse_reinsertions, op_name, op_values, ops_len_after, project_diff,
+    DiffEnvelope, DiffOp, MediaMetaDto, ReactionDto, ReplyToDto, SeqCounter, TimelineItemDto,
+    TypingUserDto,
 };
 use super::error::{CoreError, CoreResult};
 
@@ -2460,33 +2461,53 @@ fn emit_ops(
     ops: Vec<DiffOp<TimelineItemDto>>,
 ) -> (usize, usize) {
     let seq_no = seq.next_seq();
-    let (before, after) = {
+
+    // Captured before `ops` is consumed below: this is the evidence of what the
+    // SDK actually did, and it stays in the log even when what goes on the wire
+    // is collapsed. A line reading `sdk=["remove","pushBack"] sent=["set"]` is
+    // what makes the collapse auditable rather than mysterious.
+    let sdk_kinds: Vec<&'static str> = ops.iter().map(op_name).collect();
+    let sdk_ids: Vec<String> = ops
+        .iter()
+        .flat_map(op_values)
+        .map(|item| item.id.clone())
+        .collect();
+
+    let (before, after, wire_ops) = {
         let mut guard = state
             .lock()
             .expect("timeline state lock poisoned by an earlier panic");
         let before = guard.1.len();
+        // The ids as they stand *before* folding — half of what decides whether
+        // this batch moved anything. Ids only, not a clone of the list: the
+        // comparison needs identity, and cloning every item on every batch to
+        // learn nothing more would be a real cost on a busy room.
+        let before_ids: Vec<String> = guard.1.iter().map(|item| item.id.clone()).collect();
+
         apply_ops(&mut guard.1, &ops);
         guard.0 = seq_no;
-        (before, guard.1.len())
+
+        // A batch that put the list back exactly as it found it did not move a
+        // row, and must not be replayed as though it did — see
+        // `core::dto::collapse_reinsertions`.
+        let wire_ops = collapse_reinsertions(&before_ids, &guard.1, ops, |item| item.id.as_str());
+        (before, guard.1.len(), wire_ops)
     };
     let folded_len = after;
 
     tracing::debug!(
         seq = seq_no,
         subject = subject,
-        ops = ops.len(),
-        kinds = ?ops.iter().map(op_name).collect::<Vec<_>>(),
+        ops = wire_ops.len(),
+        kinds = ?sdk_kinds,
+        sent = ?wire_ops.iter().map(op_name).collect::<Vec<_>>(),
         // The ids each op carries, not just how many. Issue #2 is a report
         // that one specific event never reached the screen, and a line saying
         // "pushBack, 1 item" cannot tell anyone *which* event that was — or,
         // more to the point, that the missing one was never in any op at all.
         // This is what makes the next reproduction decisive rather than
         // another round of reading code that turns out to be innocent.
-        ids = ?ops
-            .iter()
-            .flat_map(op_values)
-            .map(|item| item.id.as_str())
-            .collect::<Vec<_>>(),
+        ids = ?sdk_ids,
         items = folded_len,
         "emitting timeline diff"
     );
@@ -2495,7 +2516,7 @@ fn emit_ops(
         channel: TIMELINE_CHANNEL.into(),
         subject: subject.to_string(),
         seq: seq_no,
-        ops,
+        ops: wire_ops,
     };
     if let Err(err) = app.emit(TIMELINE_DIFF_EVENT, &envelope) {
         tracing::warn!(error = %err, "failed to emit {TIMELINE_DIFF_EVENT}");

@@ -83,10 +83,10 @@ describe("groupTimelineItems", () => {
     expect(items[1]).toBe(copy[1]);
   });
 
-  it("passes non-membership items through unchanged, keyed on their own id", () => {
+  it("passes non-membership items through unchanged, keyed on their own id and shape", () => {
     const msg = message("msg1");
     const rows = groupTimelineItems([msg]);
-    expect(rows).toEqual([{ type: "item", key: "msg1", item: msg, continuesRun: false }]);
+    expect(rows).toEqual([{ type: "item", key: "msg1:0", item: msg, continuesRun: false }]);
   });
 
   it("wraps a single membership item as a group that reads naturally (not 'and 0 others')", () => {
@@ -141,7 +141,7 @@ describe("groupTimelineItems", () => {
     ]);
     expect(rows).toHaveLength(3);
     expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice and Bob joined the room" });
-    expect(rows[1]).toEqual({ type: "item", key: "msg1", item: msg, continuesRun: false });
+    expect(rows[1]).toEqual({ type: "item", key: "msg1:0", item: msg, continuesRun: false });
     expect(rows[2]).toMatchObject({ type: "membershipGroup", text: "Carol joined the room" });
   });
 
@@ -154,7 +154,7 @@ describe("groupTimelineItems", () => {
     ]);
     expect(rows).toHaveLength(3);
     expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice joined the room" });
-    expect(rows[1]).toEqual({ type: "item", key: "d1", item: divider, continuesRun: false });
+    expect(rows[1]).toEqual({ type: "item", key: "d1:0", item: divider, continuesRun: false });
     expect(rows[2]).toMatchObject({ type: "membershipGroup", text: "Bob joined the room" });
   });
 
@@ -223,9 +223,9 @@ describe("groupTimelineItems", () => {
     const items = [message("msg1"), dateDivider("d1"), message("msg2")];
     const rows = groupTimelineItems(items);
     expect(rows).toEqual([
-      { type: "item", key: "msg1", item: items[0], continuesRun: false },
-      { type: "item", key: "d1", item: items[1], continuesRun: false },
-      { type: "item", key: "msg2", item: items[2], continuesRun: false },
+      { type: "item", key: "msg1:0", item: items[0], continuesRun: false },
+      { type: "item", key: "d1:0", item: items[1], continuesRun: false },
+      { type: "item", key: "msg2:0", item: items[2], continuesRun: false },
     ]);
   });
 });
@@ -318,5 +318,44 @@ describe("sender runs", () => {
       message({ id: "$2", sender: "@a:x", timestampMs: 10_000 - oneDayMs }),
     ]);
     expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
+  });
+});
+
+describe("a row's key encodes its shape, not just its identity", () => {
+  // virtua stores item sizes PER KEY (its README's FAQ: "Why my items are
+  // squashed... Item sizes are stored per key"). A row whose key is unchanged
+  // keeps its measured height even when its content grows — and there is no
+  // remeasure method on `VListHandle` to ask for better.
+  //
+  // That was invisible until the core stopped replaying the SDK's
+  // remove-then-readd as a literal removal (`collapse_reinsertions`): the row
+  // used to be destroyed and rebuilt on every update, which re-measured it for
+  // free. With the row updating in place, a reaction arriving grew the content
+  // past the cached height and the chip was painted over by the next row.
+  //
+  // So the key carries what changes the row's *shape*. Identity alone is not
+  // enough; the whole item is far too much, because then every timestamp tick
+  // would remount the row.
+
+  it("changes when a reaction arrives, so the row is measured again", () => {
+    const before = groupTimelineItems([message({ id: "$a", reactions: [] })]);
+    const after = groupTimelineItems([
+      message({ id: "$a", reactions: [{ key: "✅", count: 1, byMe: false }] }),
+    ]);
+
+    expect(before[0]!.key).not.toBe(after[0]!.key);
+  });
+
+  it("is stable when only the body changes, so a row is not remounted for nothing", () => {
+    const before = groupTimelineItems([message({ id: "$a", body: "hi" })]);
+    const after = groupTimelineItems([message({ id: "$a", body: "hi there" })]);
+
+    expect(before[0]!.key).toBe(after[0]!.key);
+  });
+
+  it("still distinguishes two different messages", () => {
+    const rows = groupTimelineItems([message({ id: "$a" }), message({ id: "$b" })]);
+
+    expect(rows[0]!.key).not.toBe(rows[1]!.key);
   });
 });
