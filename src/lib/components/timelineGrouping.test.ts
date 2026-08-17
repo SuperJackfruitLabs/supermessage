@@ -4,7 +4,7 @@
 // run).
 
 import { describe, expect, it } from "vitest";
-import { groupTimelineItems } from "./timelineGrouping";
+import { groupTimelineItems, shouldShift } from "./timelineGrouping";
 import type { TimelineItem } from "$lib/ipc";
 
 function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind" | "id">): TimelineItem {
@@ -357,5 +357,70 @@ describe("a row's key encodes its shape, not just its identity", () => {
     const rows = groupTimelineItems([message({ id: "$a" }), message({ id: "$b" })]);
 
     expect(rows[0]!.key).not.toBe(rows[1]!.key);
+  });
+});
+
+// `shouldShift` — the value handed to virtua's `shift` prop.
+//
+// The regression these guard: `shift` used to be hard-coded `true`, which told
+// virtua that *every* change happened at the head of the list. Measured in the
+// running app on 2026-08-17, one appended message moved every cached offset
+// down by its own height (108px), virtua's range computation then pointed at
+// the wrong rows, and up to 602px of the 911px viewport painted no row at all
+// and stayed that way. The same probe with `shift` off peaked at a 125px
+// one-frame transient. See the module doc comment for the contract.
+describe("shouldShift", () => {
+  it("is off for an appended message — the case that blanked the viewport", () => {
+    expect(shouldShift(["$a:0", "$b:0"], ["$a:0", "$b:0", "$c:0"])).toBe(false);
+  });
+
+  it("is on for back-paginated history, which is what the prop is for", () => {
+    expect(shouldShift(["$c:0", "$d:0"], ["$a:0", "$b:0", "$c:0", "$d:0"])).toBe(true);
+  });
+
+  it("is off when nothing moved", () => {
+    expect(shouldShift(["$a:0", "$b:0"], ["$a:0", "$b:0"])).toBe(false);
+  });
+
+  it("is off on the first load, when there is no previous list to anchor to", () => {
+    expect(shouldShift([], ["$a:0", "$b:0"])).toBe(false);
+  });
+
+  it("is off when the list empties, since there is nothing left to hold in place", () => {
+    expect(shouldShift(["$a:0", "$b:0"], [])).toBe(false);
+  });
+
+  it("is off when no row survives — a room switch, not a change to this list", () => {
+    expect(shouldShift(["$a:0", "$b:0"], ["$x:0", "$y:0"])).toBe(false);
+  });
+
+  it("is off when a reaction rewrites the last row's key, which is an end change", () => {
+    // `rowKey` puts the reaction count in the key, so a 👀 landing on the
+    // newest message changes that row's key without moving anything above it.
+    expect(shouldShift(["$a:0", "$b:0"], ["$a:0", "$b:1"])).toBe(false);
+  });
+
+  it("is off when a reaction rewrites a middle row's key", () => {
+    expect(shouldShift(["$a:0", "$b:0", "$c:0"], ["$a:0", "$b:1", "$c:0"])).toBe(false);
+  });
+
+  it("is on when a limited sync unloads the head and pagination puts more back", () => {
+    // The `reset_shrank` path (`core::timeline`): the oldest rows are dropped
+    // and older history is paginated back in, so the surviving rows end up
+    // further down than they started.
+    expect(shouldShift(["$c:0", "$d:0", "$e:0"], ["$a:0", "$b:0", "$d:0", "$e:0"])).toBe(true);
+  });
+
+  it("is on when rows are only removed from the head, so the tail stays put", () => {
+    // virtua's prop covers items "added or removed from the beginning"; the
+    // reader is looking at the tail either way.
+    expect(shouldShift(["$a:0", "$b:0", "$c:0"], ["$c:0"])).toBe(true);
+  });
+
+  it("judges by the first row that survived, not by the one that vanished", () => {
+    // `$a` dropped off the head and `$d` arrived at the tail in the same
+    // batch. The head change is the one that decides it: `$b` moved up, so
+    // the tail has to be held in place.
+    expect(shouldShift(["$a:0", "$b:0", "$c:0"], ["$b:0", "$c:0", "$d:0"])).toBe(true);
   });
 });

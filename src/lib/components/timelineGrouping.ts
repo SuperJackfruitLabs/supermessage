@@ -213,6 +213,60 @@ function rowKey(item: TimelineItem): string {
   return `${item.id}:${item.reactions.length}`;
 }
 
+/**
+ * The value for virtua's `shift` prop, given the row keys before and after an
+ * update: **true only when the list changed at its head.**
+ *
+ * `shift` tells virtua to hold the scroll position against the *end* of the
+ * list rather than the start, which is what you want when rows are added to or
+ * removed from the beginning — back-pagination prepending older history, or a
+ * limited sync unloading the oldest events. virtua's own docs are explicit
+ * that it is for that case and no other: "recommended to set to false if
+ * modifications occur in the middle or end of the list to prevent unexpected
+ * behavior".
+ *
+ * It shipped hard-coded `true`, which claimed *every* update was a head
+ * change. Measured in the running app on 2026-08-17: sending one message moved
+ * every cached offset down by that message's own height (108px, matching the
+ * appended row exactly), virtua's range computation then pointed at the wrong
+ * rows, and it unmounted the ones actually on screen. Up to 602px of a 911px
+ * viewport painted no row at all — bare `--color-surface-sunken` where the
+ * sheet should be — and stayed blank until a manual scroll forced a
+ * recomputation. The same probe with `shift` off peaked at a 125px transient
+ * lasting a single frame. The reader's report was "all previous messages
+ * disappeared until I scrolled", and the history was never gone: virtua simply
+ * was not painting it.
+ *
+ * The test is whether the rows that **survived** the update moved. The first
+ * key present in both lists is found, and its index compared: same index means
+ * everything above it is unchanged and the edit landed in the middle or at the
+ * end; a different index means rows were inserted or dropped above it, which
+ * is exactly the case `shift` exists for. Scanning for the first *survivor*
+ * rather than trusting `previous[0]` is what makes a batch that drops the
+ * oldest row and prepends history — `core::timeline`'s `reset_shrank` path —
+ * still read as a head change.
+ *
+ * No survivor at all means these two lists are not versions of each other (a
+ * room switch), and an empty list on either side means there is nothing to
+ * hold in place. Both answer `false`, which is virtua's ordinary
+ * anchor-from-the-start behaviour.
+ *
+ * Pure over the two key arrays, so the decision is testable without a DOM —
+ * the rendering it drives is not, which is why the numbers above were measured
+ * against the running app and are quoted here rather than asserted.
+ */
+export function shouldShift(previous: readonly string[], next: readonly string[]): boolean {
+  if (previous.length === 0 || next.length === 0) return false;
+
+  const indexInNext = new Map(next.map((key, index) => [key, index]));
+  for (let i = 0; i < previous.length; i += 1) {
+    const moved = indexInNext.get(previous[i]!);
+    if (moved === undefined) continue;
+    return moved !== i;
+  }
+  return false;
+}
+
 export function groupTimelineItems(items: readonly TimelineItem[]): TimelineDisplayRow[] {
   const rows: TimelineDisplayRow[] = [];
   let run: TimelineItem[] = [];
