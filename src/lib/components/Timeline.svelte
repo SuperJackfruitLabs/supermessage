@@ -300,6 +300,7 @@
     viewFor,
   } from "./timelineItemView";
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
+  import { shouldRepin } from "./timelineFollow";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -589,6 +590,76 @@
       void requestOlderMessages();
     }
   }
+
+  /**
+   * The box wrapping `VList`, bound so the tail-following observer below can
+   * reach virtua's scroller. Null until the list mounts — which is exactly
+   * when that observer should start, and why this is what it depends on.
+   */
+  let scrollBox = $state<HTMLElement | null>(null);
+
+  /**
+   * Keep a reader who is at the tail *at* the tail, whatever moves.
+   *
+   * Two things push the tail under the fold and neither of them is a scroll,
+   * so nothing else in this file notices:
+   *
+   *  - a sibling panel opens and takes height out of this pane (`LiveTurn`
+   *    alone takes up to 33vh);
+   *  - the content grows — a message arrives, or virtua measures a row it had
+   *    been estimating and finds it taller.
+   *
+   * The second is why this exists rather than leaving it to the arriving-item
+   * effect above. That effect fires one `scrollToIndex` a `tick()` after the
+   * item lands, which is *before* virtua has measured it: it aims at an
+   * estimate, lands short, and nothing re-aims once the real height is known.
+   * A 1721px reply arriving that way left the reader looking at their own sent
+   * message with the entire answer below the fold. Re-pinning on the size
+   * change is immune to that ordering, because it fires again on every
+   * correction. See `shouldRepin` for both measurements.
+   *
+   * It hangs off `scrollBox` rather than the pane, and the first attempt got
+   * that wrong in a way worth recording: the pane also holds the jump-to-unread
+   * button and the empty state, so its first child is whichever of those
+   * happens to be mounted, and an effect keyed on the pane never re-runs when
+   * the list finally appears in place of "Nothing here yet." It measured the
+   * wrong box and then never measured again — the live panel opened, the tail
+   * slid 393px under the fold exactly as before, and the tests still passed
+   * because none of this is what a unit test can see.
+   */
+  $effect(() => {
+    const box = scrollBox;
+    if (!box) return;
+    // virtua's scroller: the only child of a box that wraps only the list.
+    const scroller = box.firstElementChild as HTMLElement | null;
+    if (!scroller) return;
+
+    let previous = { viewport: 0, content: 0 };
+    const measure = () => ({ viewport: scroller.clientHeight, content: scroller.scrollHeight });
+
+    const react = () => {
+      const next = measure();
+      if (shouldRepin(previous, next, followBottom)) {
+        // Assigning `scrollTop` rather than `scrollToIndex`: the bottom of the
+        // scroller is exact and needs no index, no measurement and no guess
+        // about which row is last, and the browser clamps it for us. It fires
+        // an ordinary scroll event, so `handleScroll` recomputes
+        // `followBottom` from the corrected position and agrees.
+        scroller.scrollTop = scroller.scrollHeight;
+      }
+      previous = next;
+    };
+
+    // The pane's own height, and the scrolled content's — the two things
+    // `shouldRepin` compares. One observer watches both boxes; which one moved
+    // is exactly what the predicate works out.
+    const observer = new ResizeObserver(react);
+    observer.observe(scroller);
+    const content = scroller.firstElementChild;
+    if (content) observer.observe(content);
+
+    return () => observer.disconnect();
+  });
 
   /**
    * The event id whose reaction picker is open, or null.
@@ -1270,6 +1341,16 @@
       <p class="text-ui text-content-muted">Nothing here yet.</p>
     </div>
   {:else}
+    <!--
+      A plain box around the list, bound so the tail-following observer can
+      reach virtua's scroller deterministically. `VList` is a component and
+      `bind:this` on it yields a `VListHandle`, which exposes no element; and
+      the pane above holds the jump button and the empty state as well, so
+      "the pane's first child" is whichever of those happens to be mounted.
+      This wrapper contains exactly one thing, and `h-full` keeps the list's
+      `height: 100%` resolving against the same box it did before.
+    -->
+    <div bind:this={scrollBox} class="h-full">
     <VList
       bind:this={vlist}
       data={displayRows}
@@ -1820,6 +1901,7 @@
         </div>
       {/snippet}
     </VList>
+    </div>
   {/if}
 </div>
 
