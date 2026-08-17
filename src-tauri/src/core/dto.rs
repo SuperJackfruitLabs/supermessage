@@ -493,11 +493,7 @@ where
         return ops;
     }
 
-    let carried: HashSet<&str> = ops
-        .iter()
-        .flat_map(op_values)
-        .map(&id_of)
-        .collect();
+    let carried: HashSet<&str> = ops.iter().flat_map(op_values).map(&id_of).collect();
 
     // A batch that changed nothing and carried nothing is not something this
     // can improve on — hand it back rather than inventing an empty batch.
