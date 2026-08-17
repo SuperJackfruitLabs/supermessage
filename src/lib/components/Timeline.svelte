@@ -924,9 +924,29 @@
       dispatch card, right edge for an own bubble. `font-sans` for the
       same reason the reaction chips carry it: this is chrome, and the
       column it now sits directly on is set in the reading serif.
+
+      **It is positioned, not laid out**, and that is worth the extra
+      mechanism. In normal flow this row reserved 26px on *every* message
+      forever — measured in the running app on 2026-08-17: a one-line
+      message came to 142px, of which 54px was the bubble and 88px was
+      chrome, 26 of it this row sitting at `opacity: 0`. Reserving space
+      was what kept the layout from jumping on hover; overlaying the gap
+      below the block achieves the same thing for nothing, because that
+      gap is the next message's top padding and is empty by construction.
+
+      `pointer-events-none` until revealed so an invisible row cannot eat
+      a click meant for the message underneath it, and `top-full` rather
+      than a fixed offset so it always sits immediately beneath its own
+      block whatever that block contains.
+
+      **It has to fit the gap it overlays**, and that was measured, not
+      guessed: with `mt-1` it ended 6px past where the next message's first
+      line begins, so hovering one message painted its controls over the
+      text of the next. No margin, and the gap below (`pt-6` on the block
+      that follows) is 24px against this row's 22px.
     -->
     <div
-      class="mt-1 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {alignEnd
+      class="pointer-events-none absolute top-full right-0 left-0 z-10 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 {alignEnd
         ? '-mr-1.5 justify-end'
         : '-ml-1.5'}"
     >
@@ -1094,7 +1114,20 @@
     so a message with no reactions and no available actions still
     contributes exactly its own height and the rhythm above is untouched.
   -->
-  <div class="group flex flex-col {continuesRun ? 'pt-5' : 'pt-8'}">
+  <!--
+    `relative` anchors the hover-actions overlay (`messageActions`), which no
+    longer takes height of its own.
+
+    `pt-6` where a run starts, down from `pt-8`, and `pt-4` inside one. 32px
+    between speakers is generous for a two-person room, and measured against the
+    rest of the block it was the largest single piece of chrome around a
+    one-line message.
+
+    The exact numbers are load-bearing rather than taste: this gap is what the
+    hover-actions overlay sits in, so it must stay at least as tall as that row
+    (22px) or hovering a message covers the next one's first line.
+  -->
+  <div class="group relative flex flex-col {continuesRun ? 'pt-4' : 'pt-6'}">
     <div class="flex {item.isOwn ? 'justify-end' : 'justify-start'}">
       <div
         class="flex min-w-0 flex-col text-content {item.isOwn
