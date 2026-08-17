@@ -60,6 +60,12 @@ export interface GapSyncDeps<T> {
 }
 
 export interface GapSyncController<T> {
+  /**
+   * Fetch a snapshot now, without waiting for a gap to reveal that one is
+   * needed — for a store built after the core has already emitted its opening
+   * state. See the implementation for what that costs and why it is not a gap.
+   */
+  seed: () => Promise<void>;
   /** Stops listening for good (e.g. on logout/teardown). */
   unlisten: () => void;
   /**
@@ -145,6 +151,30 @@ export function startGapSync<T>(deps: GapSyncDeps<T>): GapSyncController<T> {
     });
 
   return {
+    /**
+     * Seed from a snapshot without waiting for a gap to reveal that one is
+     * needed.
+     *
+     * The channel only speaks when something *changes*. A store created after
+     * the core has already emitted its opening state — a webview reload, or
+     * vite replacing the module graph in development — therefore starts empty
+     * and stays empty until the next change happens along, which in a quiet
+     * account can be minutes. It is not a gap, because no envelope ever
+     * arrived to be out of sequence with; the tracker is simply at zero and
+     * nothing will tell it otherwise.
+     *
+     * Observed twice within ten minutes while working on the running app on
+     * 2026-08-17: reload the webview mid-session and the roster is empty with
+     * a perfectly healthy core behind it. Same shape as the connection
+     * indicator's, fixed the same morning — a channel that only pushes needs
+     * something that also asks.
+     *
+     * Goes through the same path as a gap recovery, so the in-flight guard,
+     * the generation check and the subject check all apply unchanged.
+     */
+    async seed(): Promise<void> {
+      await doResync(generation);
+    },
     unlisten(): void {
       stopped = true;
       unlistenFn?.();

@@ -102,6 +102,13 @@ mime = "0.3"
 # how this app's UI can be tested at all without a human at the keyboard, which
 # matters for a bug whose only symptom is what the rendered rows look like.
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+# Lets a coding assistant *see* this app: screenshots, DOM and CSS, console
+# logs, IPC traffic. Optional and NOT in `default`, unlike `wdio` — three
+# rendering faults in one day got past every test here because nothing could
+# look at the screen, and this is the answer to that; but it executes arbitrary
+# JS in the webview and opens a socket, so it is compiled in only when somebody
+# asks for it by name (`--features mcp`), never in CI and never in a release.
+tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 
 [dev-dependencies]
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
@@ -136,3 +143,4 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ruma_unstable_exhaustive_t
 # On by default in a debug build; a release build never compiles it in.
 default = ["wdio"]
 wdio = ["dep:tauri-plugin-wdio-webdriver"]
+mcp = ["dep:tauri-plugin-mcp-bridge"]
