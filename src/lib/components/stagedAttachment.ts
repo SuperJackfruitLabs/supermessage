@@ -334,7 +334,7 @@ export function attachmentFailure(err: unknown, phase: AttachmentPhase): Attachm
   }
 }
 
-/** Truncates to {@link MAX_FAILURE_CHARS} code units with an ellipsis — the same display-truncation shape `customEvents.ts` uses. */
+/** Truncates to {@link MAX_FAILURE_CHARS} code units with an ellipsis — the same display-truncation shape `core::custom_events` uses. */
 function bound(value: string): string {
   if (value.length <= MAX_FAILURE_CHARS) return value;
   return `${value.slice(0, MAX_FAILURE_CHARS)}…`;

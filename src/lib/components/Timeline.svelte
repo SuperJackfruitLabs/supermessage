@@ -48,7 +48,7 @@
   //    incoming message.
   //
   // Every item renders something or is deliberately silent — there is no
-  // "falls through the template" case. `timelineItemView.ts` classifies each
+  // "falls through the template" case. `core::item_view` classifies each
   // item into a render decision (bubble / emote / system line / placeholder
   // / nothing); this component only switches on that decision, it never
   // inspects the wire `kind` itself beyond `dateDivider`, which renders real
@@ -131,7 +131,7 @@
   //     than shrinking to fit.
   //   - **The event type truncates from the left**, with a leading ellipsis
   //     (`…supermessage.demo.note.v1`), in `displayEventType`
-  //     (`timelineItemView.ts`) — a pure, unit-tested code-point slice
+  //     (`core::item_view`) — a pure, unit-tested code-point slice
   //     rather than the `direction: rtl` CSS trick, because the type is a
   //     sender-controlled string and an RTL base direction lets the bidi
   //     algorithm visually reorder a crafted one. See that function's doc
@@ -147,10 +147,10 @@
   //     cannot render is not worth a bordered object.
   // Every label, value, prompt and option label is plain-text `{...}`
   // interpolation. `content` is arbitrary JSON from anyone who can send to
-  // the room, and `resolveCustomEvent` has already bounded and validated
-  // all of it (`customEvents.ts` — `boundFields`, `boundDecision`); the
-  // `{@html}` precedent below applies to `item.formattedBody` alone and
-  // must never be extended to a custom payload.
+  // the room, and `core::custom_events` has already bounded and validated all
+  // of it (`bound_fields`, `bound_decision`) before it ever reaches a host.
+  // Nothing read out of a custom payload may be rendered as anything but
+  // text — not as markup, not as an `href`, not as an `src`, not as a style.
   //
   // Never optimistically appends: `timelineStore.items` is driven entirely
   // by the diff stream (see `timeline.svelte.ts`), including the local echo
@@ -184,33 +184,28 @@
   // failing to decode — converges on `mediaCache.hasFailed`, which falls
   // back to the plain-text placeholder row, never a broken-image icon.
   //
-  // A bubble renders `item.formattedBody` with `{@html}` when present,
-  // falling back to the plain `item.body` otherwise (the `{#if
-  // item.formattedBody}` branch in the bubble markup below). `{@html}` is
-  // otherwise a red flag in a Svelte app — it is safe here **only** because
-  // of guarantees made entirely on the Rust side, before this string ever
-  // crosses IPC:
-  //   1. `core::timeline::formatted_html_body` only populates `formattedBody`
-  //      for a `format: "org.matrix.custom.html"` body, and only after
-  //      `matrix_sdk_ui::timeline::Message::from_event` has already run
-  //      ruma's `HtmlSanitizerMode::Compat` allowlist sanitiser over it
-  //      (`matrix-sdk-ui`'s own `DEFAULT_SANITIZER_MODE`) — that pass is
-  //      reliable for *element*/*attribute* allowlisting (no `<script>`, no
-  //      `on*` handler, no `style` attribute survives it, on any element).
-  //   2. `core::timeline::harden_formatted_body` then runs a second,
-  //      narrower pass. This is **not** belt-and-braces on top of a working
-  //      upstream check: ruma-html 0.8.0 has a real bug in the loop that
-  //      checks `<a href>`/`<img src>` *schemes* (see that function's own
-  //      doc comment for the exact mechanism), and without this second
-  //      pass, `<a class="x" href="javascript:alert(1)">` and `<img
-  //      alt="a" src="https://evil.example/beacon.png">` both reach this
-  //      component's `{@html}` unchanged. This pass is what actually
-  //      removes `<img>`/`<mx-reply>` outright and restricts `<a href>` to
-  //      `http`/`https`/`mailto`/`matrix`.
-  // If a future change needs to render more of the timeline as HTML, run it
-  // through that same core-side path — never pipe a fresh string through
-  // `{@html}` here just because this precedent exists; the guarantee lives
-  // in the Rust code that produced the string, not in this file.
+  // **There is no `{@html}` in this file any more, and there is nothing left
+  // here for one to be needed for.** A bubble renders `view.blocks` through
+  // `RichText.svelte` — data, not markup — and `core::rich` produced those
+  // blocks from whichever of the two paths the message had: a sanitised
+  // `formatted_body` from a human's client, or the raw markdown an agent
+  // wrote. Every string in a block reaches the DOM through Svelte's default
+  // `{...}` escaping.
+  //
+  // The sanitising itself did not go away, it just stopped being this file's
+  // problem to justify. `core::timeline::formatted_html_body` still only
+  // populates a formatted body for `format: "org.matrix.custom.html"`, still
+  // after ruma's Compat allowlist pass, and `harden_formatted_body` still
+  // runs the second, narrower pass that exists because ruma-html 0.8.0 has a
+  // real bug in its `<a href>`/`<img src>` scheme check — without it,
+  // `<a href="javascript:alert(1)">` survives. That pass removes `<img>` and
+  // `<mx-reply>` outright and restricts `<a href>` to
+  // `http`/`https`/`mailto`/`matrix`.
+  //
+  // What changed is where the guarantee has to be argued. It lives in the
+  // Rust that produced the blocks, and iOS inherits it rather than
+  // re-arguing it. If a future change needs to render something new, give it
+  // a block — do not reintroduce an escape hatch here.
   //
   // Replies/reactions (M2, `docs/matrix-events.md` Table A) are interactive
   // as of this pass — editing is still a follow-up. `replyQuote`/
@@ -218,7 +213,7 @@
   // once by `messageBlock` (see the reading-surface note above) rather than
   // duplicated per branch. Several things worth calling out:
   //   - A reply's parent (`item.replyTo`) may not have loaded —
-  //     `replyQuoteView` (`timelineItemView.ts`) reduces the SDK's four
+  //     `replyQuoteView` (`core::item_view`) reduces the SDK's four
   //     `TimelineDetails` states to two outcomes: `available` (something to
   //     quote) or not (render "Original message unavailable", never an
   //     empty quote or a spinner — this build never calls
@@ -246,7 +241,7 @@
   //     arrives back through the same diff stream this component only ever
   //     reads. Adding a second, local update here would double-render,
   //     exactly the bug that note already guards `Composer` against.
-  //   - Both controls are gated by `canReplyOrReact` (`timelineItemView.ts`):
+  //   - Both controls are gated by `core::item_view::can_reply_or_react` (`core::item_view`):
   //     an item only has a real Matrix event id — which `Timeline::
   //     toggle_reaction`/`send_reply` both require — once the server has
   //     echoed it back, never while it's still a local echo
@@ -913,14 +908,14 @@
    * option id and the event it answers. Two further things this slot waits
    * on, both that team's to design rather than this app's to invent: the
    * inbound schema whose renderer sets `CustomEventRenderResult.decision`
-   * (`customEvents.ts`, "Decisions"), and the outbound decision event type
+   * (`core::custom_events`, "Decisions"), and the outbound decision event type
    * itself. Note also that "gate" is two mechanisms there — a stage-review
    * gate, which resolves today, and a mid-run elicitation, which currently
    * has no return path at all — so this may end up answering two event
    * types rather than one.
    *
    * Nothing in this build can reach it: no shipped renderer sets
-   * `decision`, so `resolveCustomEvent` returns `decision: null` for every
+   * `decision`, so `core::custom_events::resolve_custom_event` returns `decision: null` for every
    * real event and the branch that renders these buttons never executes.
    * That is the spec's requirement, not an accident — §7.1: "Do not ship a
    * visible button that does nothing." It logs rather than being an empty
@@ -1009,7 +1004,7 @@
                sticker, a poll, undecryptable, ...) — `quote.label` is the
                same short classification text `core::timeline::
                reply_parent_label` computes for it, so this reads with the
-               vocabulary `viewFor`'s own placeholders already use. Fixes
+               vocabulary `core::item_view::view_for`'s own placeholders already use. Fixes
                the review finding that this used to render as a bare sender
                name with no indication why. -->
           <!-- Mono, and *not* italic: these two lines share the placeholder
@@ -1307,7 +1302,7 @@
     "2px": the gap above a row must not depend on whether the row above it
     happened to render an actions row. `messageActions` is hidden with
     `opacity`, never `display: none` (it has to stay in the tab order), so
-    it occupies ~26px of layout whenever `canReplyOrReact` is true and 0px
+    it occupies ~26px of layout whenever `core::item_view::can_reply_or_react` is true and 0px
     when it is not — a local echo, a failed send, anything without a server
     event id yet. At `pt-0.5` that made the gap between two run
     continuations 28px in the common case but **2px** in the other, which
@@ -1790,8 +1785,8 @@
                   item: Kaambaan cards/runs/permission requests/station status
                   once those schemas land (`docs/matrix-events.md` §G), the
                   demo renderer until then. `view.view` is the whole
-                  `resolveCustomEvent` outcome
-                  (`$lib/components/customEvents.ts`) — this block only
+                  `core::custom_events::resolve_custom_event` outcome
+                  (`core::custom_events`) — this block only
                   switches on its `status`, never decides anything itself.
                   See this file's top-of-script doc comment for the four
                   decisions this markup expresses.
@@ -1799,7 +1794,7 @@
                   Every value below is plain-text interpolation (`{...}`),
                   never `{@html}`, never an `href`/`src`/inline style —
                   `content` is arbitrary JSON from anyone who can send to the
-                  room, and `resolveCustomEvent` has already bounded its
+                  room, and `core::custom_events::resolve_custom_event` has already bounded its
                   fields and validated its decision before either reaches
                   here. `break-words` + the card's own `max-w-[68ch]`/
                   `min-w-0` guard against a long unbroken value, label or
@@ -1933,9 +1928,9 @@
                             UNREACHABLE IN THIS BUILD — do not go looking for
                             these buttons in the running app. No shipped
                             renderer sets `CustomEventRenderResult.decision`
-                            (`customEvents.ts` "Decisions"; the demo renderer
+                            (`core::custom_events` "Decisions"; the demo renderer
                             never does, and a unit test holds it that way), so
-                            `resolveCustomEvent` returns `decision: null` for
+                            `core::custom_events::resolve_custom_event` returns `decision: null` for
                             every real event and this block never executes.
                             That is spec §7.1's requirement — "do not ship a
                             visible button that does nothing" — and the reason
@@ -2037,12 +2032,12 @@
                   (the common case in a real encrypted room), redactions,
                   media, stickers, polls, custom suite events. Never the bare
                   empty bubble that rendering nothing used to produce — see
-                  `timelineItemView.ts`. Rendered as the same log row as a
+                  `core::item_view`. Rendered as the same log row as a
                   system line, deliberately: see `logLine`.
                 -->
                 {@render logLine(view.text)}
               {/if}
-              <!-- view.render === "none": deliberately silent, see `timelineItemView.ts`. -->
+              <!-- view.render === "none": deliberately silent, see `core::item_view`. -->
             {/if}
           {/if}
         </div>

@@ -399,6 +399,22 @@ fileprivate class UniffiHandleMap<T> {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -491,6 +507,239 @@ fileprivate struct FfiConverterString: FfiConverter {
         writeInt(&buf, len)
         writeBytes(&buf, value.utf8)
     }
+}
+
+
+/**
+ * A pending decision the reader still owes an answer to.
+ *
+ * A **UI contract, not a wire schema** — that distinction is the point. A
+ * renderer translates whatever its event type actually carries into this
+ * shape; it never passes a payload object through.
+ */
+public struct CustomEventDecision {
+    public var prompt: String
+    public var options: [CustomEventDecisionOption]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(prompt: String, options: [CustomEventDecisionOption]) {
+        self.prompt = prompt
+        self.options = options
+    }
+}
+
+
+
+extension CustomEventDecision: Equatable, Hashable {
+    public static func ==(lhs: CustomEventDecision, rhs: CustomEventDecision) -> Bool {
+        if lhs.prompt != rhs.prompt {
+            return false
+        }
+        if lhs.options != rhs.options {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(prompt)
+        hasher.combine(options)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CustomEventDecision {
+        return
+            try CustomEventDecision(
+                prompt: FfiConverterString.read(from: &buf), 
+                options: FfiConverterSequenceTypeCustomEventDecisionOption.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CustomEventDecision, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.prompt, into: &buf)
+        FfiConverterSequenceTypeCustomEventDecisionOption.write(value.options, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventDecision_lift(_ buf: RustBuffer) throws -> CustomEventDecision {
+    return try FfiConverterTypeCustomEventDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventDecision_lower(_ value: CustomEventDecision) -> RustBuffer {
+    return FfiConverterTypeCustomEventDecision.lower(value)
+}
+
+
+/**
+ * One answer the reader can give.
+ */
+public struct CustomEventDecisionOption {
+    /**
+     * Display text, bounded like any other field.
+     */
+    public var label: String
+    /**
+     * An **identifier**, never rendered: it is handed back verbatim when the
+     * reader answers. Deliberately not truncated — silently shortening
+     * `approve-restart-hermes-gateway…` would produce a value the far end
+     * has never heard of, which is a wrong answer sent confidently and
+     * strictly worse than a long string in a callback. Its length is already
+     * bounded upstream by `timeline::CUSTOM_PAYLOAD_MAX_BYTES`.
+     */
+    public var id: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Display text, bounded like any other field.
+         */label: String, 
+        /**
+         * An **identifier**, never rendered: it is handed back verbatim when the
+         * reader answers. Deliberately not truncated — silently shortening
+         * `approve-restart-hermes-gateway…` would produce a value the far end
+         * has never heard of, which is a wrong answer sent confidently and
+         * strictly worse than a long string in a callback. Its length is already
+         * bounded upstream by `timeline::CUSTOM_PAYLOAD_MAX_BYTES`.
+         */id: String) {
+        self.label = label
+        self.id = id
+    }
+}
+
+
+
+extension CustomEventDecisionOption: Equatable, Hashable {
+    public static func ==(lhs: CustomEventDecisionOption, rhs: CustomEventDecisionOption) -> Bool {
+        if lhs.label != rhs.label {
+            return false
+        }
+        if lhs.id != rhs.id {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(label)
+        hasher.combine(id)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCustomEventDecisionOption: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CustomEventDecisionOption {
+        return
+            try CustomEventDecisionOption(
+                label: FfiConverterString.read(from: &buf), 
+                id: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CustomEventDecisionOption, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterString.write(value.id, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventDecisionOption_lift(_ buf: RustBuffer) throws -> CustomEventDecisionOption {
+    return try FfiConverterTypeCustomEventDecisionOption.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventDecisionOption_lower(_ value: CustomEventDecisionOption) -> RustBuffer {
+    return FfiConverterTypeCustomEventDecisionOption.lower(value)
+}
+
+
+/**
+ * One labelled row on a card. Both halves are display text.
+ */
+public struct CustomEventField {
+    public var label: String
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(label: String, value: String) {
+        self.label = label
+        self.value = value
+    }
+}
+
+
+
+extension CustomEventField: Equatable, Hashable {
+    public static func ==(lhs: CustomEventField, rhs: CustomEventField) -> Bool {
+        if lhs.label != rhs.label {
+            return false
+        }
+        if lhs.value != rhs.value {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(label)
+        hasher.combine(value)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCustomEventField: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CustomEventField {
+        return
+            try CustomEventField(
+                label: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CustomEventField, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventField_lift(_ buf: RustBuffer) throws -> CustomEventField {
+    return try FfiConverterTypeCustomEventField.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventField_lower(_ value: CustomEventField) -> RustBuffer {
+    return FfiConverterTypeCustomEventField.lower(value)
 }
 
 
@@ -653,6 +902,81 @@ public func FfiConverterTypeMediaMetaDto_lower(_ value: MediaMetaDto) -> RustBuf
 
 
 /**
+ * A member a message can address.
+ */
+public struct Mentionable {
+    public var userId: String
+    /**
+     * The member's display name, `None` when they have none set.
+     */
+    public var displayName: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(userId: String, 
+        /**
+         * The member's display name, `None` when they have none set.
+         */displayName: String?) {
+        self.userId = userId
+        self.displayName = displayName
+    }
+}
+
+
+
+extension Mentionable: Equatable, Hashable {
+    public static func ==(lhs: Mentionable, rhs: Mentionable) -> Bool {
+        if lhs.userId != rhs.userId {
+            return false
+        }
+        if lhs.displayName != rhs.displayName {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(userId)
+        hasher.combine(displayName)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMentionable: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Mentionable {
+        return
+            try Mentionable(
+                userId: FfiConverterString.read(from: &buf), 
+                displayName: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Mentionable, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterOptionString.write(value.displayName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMentionable_lift(_ buf: RustBuffer) throws -> Mentionable {
+    return try FfiConverterTypeMentionable.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMentionable_lower(_ value: Mentionable) -> RustBuffer {
+    return FfiConverterTypeMentionable.lower(value)
+}
+
+
+/**
  * One reaction key aggregated across senders on a message (see
  * `core::timeline::project_reactions`), projected from the SDK's
  * `ReactionsByKeyBySender`.
@@ -665,6 +989,18 @@ public struct ReactionDto {
      * free-text field from a sender.
      */
     public var key: String
+    /**
+     * The same key, bounded for rendering.
+     *
+     * Separate from [`Self::key`] because they are different things that
+     * happen to usually look alike: `key` is wire data, compared
+     * byte-for-byte against what other clients sent, and truncating it would
+     * break that comparison. This is the display form, and it exists here
+     * rather than in a host because a key is arbitrary sender-controlled
+     * text and bounding it is the same overflow guard every other free-text
+     * field from a sender gets.
+     */
+    public var displayKey: String
     /**
      * How many distinct senders have reacted with this key.
      */
@@ -685,6 +1021,17 @@ public struct ReactionDto {
          * free-text field from a sender.
          */key: String, 
         /**
+         * The same key, bounded for rendering.
+         *
+         * Separate from [`Self::key`] because they are different things that
+         * happen to usually look alike: `key` is wire data, compared
+         * byte-for-byte against what other clients sent, and truncating it would
+         * break that comparison. This is the display form, and it exists here
+         * rather than in a host because a key is arbitrary sender-controlled
+         * text and bounding it is the same overflow guard every other free-text
+         * field from a sender gets.
+         */displayKey: String, 
+        /**
          * How many distinct senders have reacted with this key.
          */count: UInt32, 
         /**
@@ -692,6 +1039,7 @@ public struct ReactionDto {
          * interaction pass needs to render this chip as already-active/toggled.
          */byMe: Bool) {
         self.key = key
+        self.displayKey = displayKey
         self.count = count
         self.byMe = byMe
     }
@@ -702,6 +1050,9 @@ public struct ReactionDto {
 extension ReactionDto: Equatable, Hashable {
     public static func ==(lhs: ReactionDto, rhs: ReactionDto) -> Bool {
         if lhs.key != rhs.key {
+            return false
+        }
+        if lhs.displayKey != rhs.displayKey {
             return false
         }
         if lhs.count != rhs.count {
@@ -715,6 +1066,7 @@ extension ReactionDto: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(key)
+        hasher.combine(displayKey)
         hasher.combine(count)
         hasher.combine(byMe)
     }
@@ -729,6 +1081,7 @@ public struct FfiConverterTypeReactionDto: FfiConverterRustBuffer {
         return
             try ReactionDto(
                 key: FfiConverterString.read(from: &buf), 
+                displayKey: FfiConverterString.read(from: &buf), 
                 count: FfiConverterUInt32.read(from: &buf), 
                 byMe: FfiConverterBool.read(from: &buf)
         )
@@ -736,6 +1089,7 @@ public struct FfiConverterTypeReactionDto: FfiConverterRustBuffer {
 
     public static func write(_ value: ReactionDto, into buf: inout [UInt8]) {
         FfiConverterString.write(value.key, into: &buf)
+        FfiConverterString.write(value.displayKey, into: &buf)
         FfiConverterUInt32.write(value.count, into: &buf)
         FfiConverterBool.write(value.byMe, into: &buf)
     }
@@ -943,6 +1297,309 @@ public func FfiConverterTypeReplyToDto_lower(_ value: ReplyToDto) -> RustBuffer 
 }
 
 
+public struct RichListItem {
+    public var blocks: [RichBlock]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(blocks: [RichBlock]) {
+        self.blocks = blocks
+    }
+}
+
+
+
+extension RichListItem: Equatable, Hashable {
+    public static func ==(lhs: RichListItem, rhs: RichListItem) -> Bool {
+        if lhs.blocks != rhs.blocks {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(blocks)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRichListItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RichListItem {
+        return
+            try RichListItem(
+                blocks: FfiConverterSequenceTypeRichBlock.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RichListItem, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeRichBlock.write(value.blocks, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichListItem_lift(_ buf: RustBuffer) throws -> RichListItem {
+    return try FfiConverterTypeRichListItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichListItem_lower(_ value: RichListItem) -> RustBuffer {
+    return FfiConverterTypeRichListItem.lower(value)
+}
+
+
+public struct RichTableCell {
+    public var inlines: [RichInline]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(inlines: [RichInline]) {
+        self.inlines = inlines
+    }
+}
+
+
+
+extension RichTableCell: Equatable, Hashable {
+    public static func ==(lhs: RichTableCell, rhs: RichTableCell) -> Bool {
+        if lhs.inlines != rhs.inlines {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(inlines)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRichTableCell: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RichTableCell {
+        return
+            try RichTableCell(
+                inlines: FfiConverterSequenceTypeRichInline.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RichTableCell, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeRichInline.write(value.inlines, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichTableCell_lift(_ buf: RustBuffer) throws -> RichTableCell {
+    return try FfiConverterTypeRichTableCell.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichTableCell_lower(_ value: RichTableCell) -> RustBuffer {
+    return FfiConverterTypeRichTableCell.lower(value)
+}
+
+
+public struct RichTableRow {
+    public var cells: [RichTableCell]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(cells: [RichTableCell]) {
+        self.cells = cells
+    }
+}
+
+
+
+extension RichTableRow: Equatable, Hashable {
+    public static func ==(lhs: RichTableRow, rhs: RichTableRow) -> Bool {
+        if lhs.cells != rhs.cells {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(cells)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRichTableRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RichTableRow {
+        return
+            try RichTableRow(
+                cells: FfiConverterSequenceTypeRichTableCell.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RichTableRow, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeRichTableCell.write(value.cells, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichTableRow_lift(_ buf: RustBuffer) throws -> RichTableRow {
+    return try FfiConverterTypeRichTableRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichTableRow_lower(_ value: RichTableRow) -> RustBuffer {
+    return FfiConverterTypeRichTableRow.lower(value)
+}
+
+
+/**
+ * The parsed structure of a room name.
+ */
+public struct RoomIdentity {
+    /**
+     * The leading emoji or symbol, `None` when the name does not start with
+     * one.
+     */
+    public var glyph: String?
+    /**
+     * The room's display name. **Never empty** — a name that would otherwise
+     * be blank becomes the literal `"Unnamed room"`, so a host can render it
+     * straight into a roster row or an avatar without an emptiness check.
+     */
+    public var name: String
+    /**
+     * The role or team half after the em dash, `None` when there is none.
+     */
+    public var role: String?
+    /**
+     * The single character for an avatar's fallback slot: the glyph when
+     * there is one, otherwise the first character of the *parsed* name,
+     * uppercased.
+     *
+     * Carried rather than left to a host because it is derived from `name`
+     * after parsing, never from the raw room name — for a structured room the
+     * raw first character is the glyph itself, and for an unstructured one it
+     * could be leading whitespace or punctuation the parse already stripped.
+     */
+    public var initial: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The leading emoji or symbol, `None` when the name does not start with
+         * one.
+         */glyph: String?, 
+        /**
+         * The room's display name. **Never empty** — a name that would otherwise
+         * be blank becomes the literal `"Unnamed room"`, so a host can render it
+         * straight into a roster row or an avatar without an emptiness check.
+         */name: String, 
+        /**
+         * The role or team half after the em dash, `None` when there is none.
+         */role: String?, 
+        /**
+         * The single character for an avatar's fallback slot: the glyph when
+         * there is one, otherwise the first character of the *parsed* name,
+         * uppercased.
+         *
+         * Carried rather than left to a host because it is derived from `name`
+         * after parsing, never from the raw room name — for a structured room the
+         * raw first character is the glyph itself, and for an unstructured one it
+         * could be leading whitespace or punctuation the parse already stripped.
+         */initial: String) {
+        self.glyph = glyph
+        self.name = name
+        self.role = role
+        self.initial = initial
+    }
+}
+
+
+
+extension RoomIdentity: Equatable, Hashable {
+    public static func ==(lhs: RoomIdentity, rhs: RoomIdentity) -> Bool {
+        if lhs.glyph != rhs.glyph {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.role != rhs.role {
+            return false
+        }
+        if lhs.initial != rhs.initial {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(glyph)
+        hasher.combine(name)
+        hasher.combine(role)
+        hasher.combine(initial)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomIdentity: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomIdentity {
+        return
+            try RoomIdentity(
+                glyph: FfiConverterOptionString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                role: FfiConverterOptionString.read(from: &buf), 
+                initial: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RoomIdentity, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.glyph, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.role, into: &buf)
+        FfiConverterString.write(value.initial, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomIdentity_lift(_ buf: RustBuffer) throws -> RoomIdentity {
+    return try FfiConverterTypeRoomIdentity.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomIdentity_lower(_ value: RoomIdentity) -> RustBuffer {
+    return FfiConverterTypeRoomIdentity.lower(value)
+}
+
+
 /**
  * A room's descriptive metadata plus its joined member list, for the
  * room-info panel.
@@ -950,6 +1607,14 @@ public func FfiConverterTypeReplyToDto_lower(_ value: ReplyToDto) -> RustBuffer 
 public struct RoomInfoDto {
     public var roomId: String
     public var name: String?
+    /**
+     * The display name parsed into sigil / name / role.
+     *
+     * Resolved against the same fallback the panel used to apply by hand —
+     * the trimmed name, or the room id when there is none — so the header and
+     * the roster row cannot disagree about what a room is called.
+     */
+    public var identity: RoomIdentity
     public var topic: String?
     public var canonicalAlias: String?
     public var altAliases: [String]
@@ -971,7 +1636,14 @@ public struct RoomInfoDto {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(roomId: String, name: String?, topic: String?, canonicalAlias: String?, altAliases: [String], 
+    public init(roomId: String, name: String?, 
+        /**
+         * The display name parsed into sigil / name / role.
+         *
+         * Resolved against the same fallback the panel used to apply by hand —
+         * the trimmed name, or the room id when there is none — so the header and
+         * the roster row cannot disagree about what a room is called.
+         */identity: RoomIdentity, topic: String?, canonicalAlias: String?, altAliases: [String], 
         /**
          * The room's active (joined + invited) member count
          * (`Room::active_members_count`) — a cheap, always-current figure read
@@ -987,6 +1659,7 @@ public struct RoomInfoDto {
          */members: [RoomMemberDto]) {
         self.roomId = roomId
         self.name = name
+        self.identity = identity
         self.topic = topic
         self.canonicalAlias = canonicalAlias
         self.altAliases = altAliases
@@ -1003,6 +1676,9 @@ extension RoomInfoDto: Equatable, Hashable {
             return false
         }
         if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.identity != rhs.identity {
             return false
         }
         if lhs.topic != rhs.topic {
@@ -1026,6 +1702,7 @@ extension RoomInfoDto: Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(roomId)
         hasher.combine(name)
+        hasher.combine(identity)
         hasher.combine(topic)
         hasher.combine(canonicalAlias)
         hasher.combine(altAliases)
@@ -1044,6 +1721,7 @@ public struct FfiConverterTypeRoomInfoDto: FfiConverterRustBuffer {
             try RoomInfoDto(
                 roomId: FfiConverterString.read(from: &buf), 
                 name: FfiConverterOptionString.read(from: &buf), 
+                identity: FfiConverterTypeRoomIdentity.read(from: &buf), 
                 topic: FfiConverterOptionString.read(from: &buf), 
                 canonicalAlias: FfiConverterOptionString.read(from: &buf), 
                 altAliases: FfiConverterSequenceString.read(from: &buf), 
@@ -1055,6 +1733,7 @@ public struct FfiConverterTypeRoomInfoDto: FfiConverterRustBuffer {
     public static func write(_ value: RoomInfoDto, into buf: inout [UInt8]) {
         FfiConverterString.write(value.roomId, into: &buf)
         FfiConverterOptionString.write(value.name, into: &buf)
+        FfiConverterTypeRoomIdentity.write(value.identity, into: &buf)
         FfiConverterOptionString.write(value.topic, into: &buf)
         FfiConverterOptionString.write(value.canonicalAlias, into: &buf)
         FfiConverterSequenceString.write(value.altAliases, into: &buf)
@@ -1180,6 +1859,205 @@ public func FfiConverterTypeRoomMemberDto_lift(_ buf: RustBuffer) throws -> Room
 #endif
 public func FfiConverterTypeRoomMemberDto_lower(_ value: RoomMemberDto) -> RustBuffer {
     return FfiConverterTypeRoomMemberDto.lower(value)
+}
+
+
+/**
+ * A composed preview line.
+ */
+public struct RoomPreview {
+    /**
+     * Ready to render as text. Never empty.
+     */
+    public var text: String
+    /**
+     * Whether this is the pending-decision line rather than a message
+     * preview — the row's amber switch.
+     *
+     * `true` only ever means "the operator owes someone an answer". It is not
+     * a severity, a warning, or an error.
+     */
+    public var pending: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Ready to render as text. Never empty.
+         */text: String, 
+        /**
+         * Whether this is the pending-decision line rather than a message
+         * preview — the row's amber switch.
+         *
+         * `true` only ever means "the operator owes someone an answer". It is not
+         * a severity, a warning, or an error.
+         */pending: Bool) {
+        self.text = text
+        self.pending = pending
+    }
+}
+
+
+
+extension RoomPreview: Equatable, Hashable {
+    public static func ==(lhs: RoomPreview, rhs: RoomPreview) -> Bool {
+        if lhs.text != rhs.text {
+            return false
+        }
+        if lhs.pending != rhs.pending {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+        hasher.combine(pending)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomPreview {
+        return
+            try RoomPreview(
+                text: FfiConverterString.read(from: &buf), 
+                pending: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RoomPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterBool.write(value.pending, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomPreview_lift(_ buf: RustBuffer) throws -> RoomPreview {
+    return try FfiConverterTypeRoomPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomPreview_lower(_ value: RoomPreview) -> RustBuffer {
+    return FfiConverterTypeRoomPreview.lower(value)
+}
+
+
+/**
+ * A room together with every decision the core made about it.
+ *
+ * The same shape, and the same reason, as [`TimelineRow`]: a host draws a
+ * roster row from a name already split into sigil/name/role, a preview line
+ * already composed, and an affordance already chosen — none of which it can
+ * go and fetch mid-render.
+ */
+public struct RoomRow {
+    public var room: RoomSummary
+    /**
+     * The name parsed into the suite's `<glyph> <Name> — <Role>` convention.
+     */
+    public var identity: RoomIdentity
+    /**
+     * The preview line, or `None` when the row shows none. There is no
+     * placeholder: a row with nothing to say says nothing.
+     */
+    public var preview: RoomPreview?
+    /**
+     * What the room pane may offer for this membership.
+     */
+    public var affordance: RoomAffordance
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(room: RoomSummary, 
+        /**
+         * The name parsed into the suite's `<glyph> <Name> — <Role>` convention.
+         */identity: RoomIdentity, 
+        /**
+         * The preview line, or `None` when the row shows none. There is no
+         * placeholder: a row with nothing to say says nothing.
+         */preview: RoomPreview?, 
+        /**
+         * What the room pane may offer for this membership.
+         */affordance: RoomAffordance) {
+        self.room = room
+        self.identity = identity
+        self.preview = preview
+        self.affordance = affordance
+    }
+}
+
+
+
+extension RoomRow: Equatable, Hashable {
+    public static func ==(lhs: RoomRow, rhs: RoomRow) -> Bool {
+        if lhs.room != rhs.room {
+            return false
+        }
+        if lhs.identity != rhs.identity {
+            return false
+        }
+        if lhs.preview != rhs.preview {
+            return false
+        }
+        if lhs.affordance != rhs.affordance {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(room)
+        hasher.combine(identity)
+        hasher.combine(preview)
+        hasher.combine(affordance)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomRow {
+        return
+            try RoomRow(
+                room: FfiConverterTypeRoomSummary.read(from: &buf), 
+                identity: FfiConverterTypeRoomIdentity.read(from: &buf), 
+                preview: FfiConverterOptionTypeRoomPreview.read(from: &buf), 
+                affordance: FfiConverterTypeRoomAffordance.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RoomRow, into buf: inout [UInt8]) {
+        FfiConverterTypeRoomSummary.write(value.room, into: &buf)
+        FfiConverterTypeRoomIdentity.write(value.identity, into: &buf)
+        FfiConverterOptionTypeRoomPreview.write(value.preview, into: &buf)
+        FfiConverterTypeRoomAffordance.write(value.affordance, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomRow_lift(_ buf: RustBuffer) throws -> RoomRow {
+    return try FfiConverterTypeRoomRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomRow_lower(_ value: RoomRow) -> RustBuffer {
+    return FfiConverterTypeRoomRow.lower(value)
 }
 
 
@@ -1574,6 +2452,15 @@ public struct SpaceSummary {
      * have not joined is not a filter you can apply.
      */
     public var membership: Membership
+    /**
+     * The name parsed into the suite's `<glyph> <Name> — <Role>` convention.
+     *
+     * Carried for the same reason a room's is: the rail draws a sigil and a
+     * label while rendering, and markup cannot await. A space is named by the
+     * same convention as a room, so it is parsed by the same code rather than
+     * by a second copy that would drift.
+     */
+    public var identity: RoomIdentity
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1617,12 +2504,21 @@ public struct SpaceSummary {
          * `child_count: 0` and has no entry in the graph — [`Self::rooms_in`]
          * answers `UnknownSpace` for it, which is correct, because a subtree you
          * have not joined is not a filter you can apply.
-         */membership: Membership) {
+         */membership: Membership, 
+        /**
+         * The name parsed into the suite's `<glyph> <Name> — <Role>` convention.
+         *
+         * Carried for the same reason a room's is: the rail draws a sigil and a
+         * label while rendering, and markup cannot await. A space is named by the
+         * same convention as a room, so it is parsed by the same code rather than
+         * by a second copy that would drift.
+         */identity: RoomIdentity) {
         self.id = id
         self.name = name
         self.avatarUrl = avatarUrl
         self.childCount = childCount
         self.membership = membership
+        self.identity = identity
     }
 }
 
@@ -1645,6 +2541,9 @@ extension SpaceSummary: Equatable, Hashable {
         if lhs.membership != rhs.membership {
             return false
         }
+        if lhs.identity != rhs.identity {
+            return false
+        }
         return true
     }
 
@@ -1654,6 +2553,7 @@ extension SpaceSummary: Equatable, Hashable {
         hasher.combine(avatarUrl)
         hasher.combine(childCount)
         hasher.combine(membership)
+        hasher.combine(identity)
     }
 }
 
@@ -1669,7 +2569,8 @@ public struct FfiConverterTypeSpaceSummary: FfiConverterRustBuffer {
                 name: FfiConverterString.read(from: &buf), 
                 avatarUrl: FfiConverterOptionString.read(from: &buf), 
                 childCount: FfiConverterUInt64.read(from: &buf), 
-                membership: FfiConverterTypeMembership.read(from: &buf)
+                membership: FfiConverterTypeMembership.read(from: &buf), 
+                identity: FfiConverterTypeRoomIdentity.read(from: &buf)
         )
     }
 
@@ -1679,6 +2580,7 @@ public struct FfiConverterTypeSpaceSummary: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.avatarUrl, into: &buf)
         FfiConverterUInt64.write(value.childCount, into: &buf)
         FfiConverterTypeMembership.write(value.membership, into: &buf)
+        FfiConverterTypeRoomIdentity.write(value.identity, into: &buf)
     }
 }
 
@@ -2056,6 +2958,188 @@ public func FfiConverterTypeTimelineItemDto_lower(_ value: TimelineItemDto) -> R
 
 
 /**
+ * A timeline item together with the render decision the core made for it.
+ *
+ * The view travels with the item rather than being asked for per row. A host
+ * calling `view_for` itself would pay an FFI round trip **per visible row per
+ * scroll frame** — the one cost profile a lazy list cannot absorb — and would
+ * re-parse the message's markdown on every re-render. Computing it once, where
+ * the item is built, means a message is parsed once in its lifetime.
+ *
+ * `item` keeps its own shape rather than being flattened in, so consumers that
+ * want raw fields — search results, room previews — are unaffected.
+ */
+public struct TimelineRow {
+    public var item: TimelineItemDto
+    public var view: ItemView
+    /**
+     * Who to attribute this item to: display name, then the raw sender id,
+     * then a generic placeholder. Never empty.
+     */
+    public var senderName: String
+    /**
+     * The verb phrase for a membership change — "joined the room" — and
+     * `None` for every other kind.
+     *
+     * Carried separately from [`Self::view`] even though the view's `System`
+     * text already embeds it, because a *grouped* run of membership changes
+     * composes one sentence out of many names and a single verb ("Alice, Bob
+     * and 3 others joined the room"). A host doing that needs the verb by
+     * itself, and re-deriving it from a rendered sentence is parsing your own
+     * output.
+     */
+    public var membershipVerb: String?
+    /**
+     * The quoted parent, when this item is a reply.
+     */
+    public var replyQuote: ReplyQuoteView?
+    /**
+     * Whether this item can be replied to or reacted to — false while it is
+     * still a local echo with no real event id.
+     */
+    public var canReplyOrReact: Bool
+    /**
+     * A short preview of this item's own body, for the composer's
+     * "Replying to …" row when someone replies *to* it. `None` when there is
+     * nothing to preview — a media message with no caption, say.
+     *
+     * A snapshot, not a binding: the composer keeps whatever it was handed
+     * when the reply was started, so a parent that is later redacted or
+     * scrolls out of the materialised timeline does not make the preview
+     * change or vanish underneath the person writing.
+     */
+    public var replyPreview: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(item: TimelineItemDto, view: ItemView, 
+        /**
+         * Who to attribute this item to: display name, then the raw sender id,
+         * then a generic placeholder. Never empty.
+         */senderName: String, 
+        /**
+         * The verb phrase for a membership change — "joined the room" — and
+         * `None` for every other kind.
+         *
+         * Carried separately from [`Self::view`] even though the view's `System`
+         * text already embeds it, because a *grouped* run of membership changes
+         * composes one sentence out of many names and a single verb ("Alice, Bob
+         * and 3 others joined the room"). A host doing that needs the verb by
+         * itself, and re-deriving it from a rendered sentence is parsing your own
+         * output.
+         */membershipVerb: String?, 
+        /**
+         * The quoted parent, when this item is a reply.
+         */replyQuote: ReplyQuoteView?, 
+        /**
+         * Whether this item can be replied to or reacted to — false while it is
+         * still a local echo with no real event id.
+         */canReplyOrReact: Bool, 
+        /**
+         * A short preview of this item's own body, for the composer's
+         * "Replying to …" row when someone replies *to* it. `None` when there is
+         * nothing to preview — a media message with no caption, say.
+         *
+         * A snapshot, not a binding: the composer keeps whatever it was handed
+         * when the reply was started, so a parent that is later redacted or
+         * scrolls out of the materialised timeline does not make the preview
+         * change or vanish underneath the person writing.
+         */replyPreview: String?) {
+        self.item = item
+        self.view = view
+        self.senderName = senderName
+        self.membershipVerb = membershipVerb
+        self.replyQuote = replyQuote
+        self.canReplyOrReact = canReplyOrReact
+        self.replyPreview = replyPreview
+    }
+}
+
+
+
+extension TimelineRow: Equatable, Hashable {
+    public static func ==(lhs: TimelineRow, rhs: TimelineRow) -> Bool {
+        if lhs.item != rhs.item {
+            return false
+        }
+        if lhs.view != rhs.view {
+            return false
+        }
+        if lhs.senderName != rhs.senderName {
+            return false
+        }
+        if lhs.membershipVerb != rhs.membershipVerb {
+            return false
+        }
+        if lhs.replyQuote != rhs.replyQuote {
+            return false
+        }
+        if lhs.canReplyOrReact != rhs.canReplyOrReact {
+            return false
+        }
+        if lhs.replyPreview != rhs.replyPreview {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(item)
+        hasher.combine(view)
+        hasher.combine(senderName)
+        hasher.combine(membershipVerb)
+        hasher.combine(replyQuote)
+        hasher.combine(canReplyOrReact)
+        hasher.combine(replyPreview)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TimelineRow {
+        return
+            try TimelineRow(
+                item: FfiConverterTypeTimelineItemDto.read(from: &buf), 
+                view: FfiConverterTypeItemView.read(from: &buf), 
+                senderName: FfiConverterString.read(from: &buf), 
+                membershipVerb: FfiConverterOptionString.read(from: &buf), 
+                replyQuote: FfiConverterOptionTypeReplyQuoteView.read(from: &buf), 
+                canReplyOrReact: FfiConverterBool.read(from: &buf), 
+                replyPreview: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TimelineRow, into buf: inout [UInt8]) {
+        FfiConverterTypeTimelineItemDto.write(value.item, into: &buf)
+        FfiConverterTypeItemView.write(value.view, into: &buf)
+        FfiConverterString.write(value.senderName, into: &buf)
+        FfiConverterOptionString.write(value.membershipVerb, into: &buf)
+        FfiConverterOptionTypeReplyQuoteView.write(value.replyQuote, into: &buf)
+        FfiConverterBool.write(value.canReplyOrReact, into: &buf)
+        FfiConverterOptionString.write(value.replyPreview, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTimelineRow_lift(_ buf: RustBuffer) throws -> TimelineRow {
+    return try FfiConverterTypeTimelineRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTimelineRow_lower(_ value: TimelineRow) -> RustBuffer {
+    return FfiConverterTypeTimelineRow.lower(value)
+}
+
+
+/**
  * One member currently typing in a room, projected from the SDK's
  * `Vec<OwnedUserId>` (`Room::subscribe_to_typing_notifications`) plus a
  * best-effort local member-list lookup for a display name — see
@@ -2151,6 +3235,473 @@ public func FfiConverterTypeTypingUserDto_lift(_ buf: RustBuffer) throws -> Typi
 public func FfiConverterTypeTypingUserDto_lower(_ value: TypingUserDto) -> RustBuffer {
     return FfiConverterTypeTypingUserDto.lower(value)
 }
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The outcome of the whole fallback chain — what a host switches on.
+ */
+
+public enum CustomEventView {
+    
+    case rendered(fields: [CustomEventField], 
+        /**
+         * The payload declared a `schema_version` above what this renderer
+         * knows. Rendered anyway, best effort, and flagged.
+         */newerVersion: Bool, 
+        /**
+         * Always present on this variant so a host never has to distinguish
+         * "no decision" from "this variant has no such field". Only this
+         * variant can carry one: the other two mean no renderer produced
+         * anything, so nothing could have set a decision.
+         */decision: CustomEventDecision?
+    )
+    /**
+     * No renderer produced anything, but the event carried a plain-text
+     * `body` fallback, as Matrix convention asks of a custom event.
+     */
+    case fallbackBody(text: String
+    )
+    /**
+     * Nothing usable at all. Never empty — an empty card reads as a
+     * rendering fault rather than as an unsupported event.
+     */
+    case placeholder(text: String
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCustomEventView: FfiConverterRustBuffer {
+    typealias SwiftType = CustomEventView
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CustomEventView {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .rendered(fields: try FfiConverterSequenceTypeCustomEventField.read(from: &buf), newerVersion: try FfiConverterBool.read(from: &buf), decision: try FfiConverterOptionTypeCustomEventDecision.read(from: &buf)
+        )
+        
+        case 2: return .fallbackBody(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .placeholder(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CustomEventView, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .rendered(fields,newerVersion,decision):
+            writeInt(&buf, Int32(1))
+            FfiConverterSequenceTypeCustomEventField.write(fields, into: &buf)
+            FfiConverterBool.write(newerVersion, into: &buf)
+            FfiConverterOptionTypeCustomEventDecision.write(decision, into: &buf)
+            
+        
+        case let .fallbackBody(text):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .placeholder(text):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(text, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventView_lift(_ buf: RustBuffer) throws -> CustomEventView {
+    return try FfiConverterTypeCustomEventView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventView_lower(_ value: CustomEventView) -> RustBuffer {
+    return FfiConverterTypeCustomEventView.lower(value)
+}
+
+
+
+extension CustomEventView: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The render decision for one item.
+ *
+ * `dateDivider` has no variant here: it renders real content (a formatted
+ * date) rather than a decision this vocabulary covers, and the host handles
+ * it before asking.
+ */
+
+public enum ItemView {
+    
+    /**
+     * An ordinary message. `muted` is `m.notice` — automated output from
+     * bridges and agents, de-emphasised but never suppressed, since it is
+     * the msgtype most of this org's agent traffic actually uses.
+     *
+     * `blocks` is the parsed body, so a host draws rich text without
+     * touching markdown or HTML itself. See `crate::rich`.
+     */
+    case bubble(muted: Bool, blocks: [RichBlock]
+    )
+    case emote
+    case system(text: String
+    )
+    /**
+     * The line between what has been read and what has not, which the SDK
+     * inserts at most once per timeline.
+     *
+     * Carries no text: the divider says everything, and a label repeated at
+     * every scroll position would be chrome pretending to be content.
+     */
+    case unreadMarker
+    case placeholder(text: String
+    )
+    /**
+     * An `m.image`. `alt` is never empty — it falls back through the media
+     * filename, then the plain body, to a generic label — because this is
+     * genuine message content rather than decoration.
+     *
+     * `width`/`height` are the image's own pixel dimensions, `None` when the
+     * sender's client never reported them. A host uses them to reserve the
+     * thumbnail's box *before* its bytes are requested, so a lazy list never
+     * reflows once they land.
+     */
+    case image(alt: String, width: UInt64?, height: UInt64?
+    )
+    /**
+     * An `m.file`/`m.audio`/`m.video`: an informative row naming what the
+     * message is. `label` is precomputed so a host needs no msgtype table.
+     */
+    case mediaFile(label: MediaFileLabel, filename: String, size: UInt64?, mimetype: String?
+    )
+    /**
+     * A suite event — a Kaambaan card or run, a permission request, station
+     * status. `view` is the whole fallback-chain decision: a host renders its
+     * three states but never makes that decision itself.
+     */
+    case customEvent(view: CustomEventView, 
+        /**
+         * The Matrix event type as the card's header should show it —
+         * truncated from the left, never from the right, and never rendered
+         * with a right-to-left base direction. See [`display_event_type`]:
+         * this string is sender-controlled, and the obvious CSS approach
+         * hands the bidi algorithm a hostile string and lets a crafted type
+         * reorder itself on screen.
+         */eventType: String
+    )
+    case none
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
+    typealias SwiftType = ItemView
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ItemView {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .bubble(muted: try FfiConverterBool.read(from: &buf), blocks: try FfiConverterSequenceTypeRichBlock.read(from: &buf)
+        )
+        
+        case 2: return .emote
+        
+        case 3: return .system(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .unreadMarker
+        
+        case 5: return .placeholder(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .image(alt: try FfiConverterString.read(from: &buf), width: try FfiConverterOptionUInt64.read(from: &buf), height: try FfiConverterOptionUInt64.read(from: &buf)
+        )
+        
+        case 7: return .mediaFile(label: try FfiConverterTypeMediaFileLabel.read(from: &buf), filename: try FfiConverterString.read(from: &buf), size: try FfiConverterOptionUInt64.read(from: &buf), mimetype: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 8: return .customEvent(view: try FfiConverterTypeCustomEventView.read(from: &buf), eventType: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 9: return .none
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ItemView, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .bubble(muted,blocks):
+            writeInt(&buf, Int32(1))
+            FfiConverterBool.write(muted, into: &buf)
+            FfiConverterSequenceTypeRichBlock.write(blocks, into: &buf)
+            
+        
+        case .emote:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .system(text):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case .unreadMarker:
+            writeInt(&buf, Int32(4))
+        
+        
+        case let .placeholder(text):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .image(alt,width,height):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(alt, into: &buf)
+            FfiConverterOptionUInt64.write(width, into: &buf)
+            FfiConverterOptionUInt64.write(height, into: &buf)
+            
+        
+        case let .mediaFile(label,filename,size,mimetype):
+            writeInt(&buf, Int32(7))
+            FfiConverterTypeMediaFileLabel.write(label, into: &buf)
+            FfiConverterString.write(filename, into: &buf)
+            FfiConverterOptionUInt64.write(size, into: &buf)
+            FfiConverterOptionString.write(mimetype, into: &buf)
+            
+        
+        case let .customEvent(view,eventType):
+            writeInt(&buf, Int32(8))
+            FfiConverterTypeCustomEventView.write(view, into: &buf)
+            FfiConverterString.write(eventType, into: &buf)
+            
+        
+        case .none:
+            writeInt(&buf, Int32(9))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeItemView_lift(_ buf: RustBuffer) throws -> ItemView {
+    return try FfiConverterTypeItemView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeItemView_lower(_ value: ItemView) -> RustBuffer {
+    return FfiConverterTypeItemView.lower(value)
+}
+
+
+
+extension ItemView: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What a parsed matrix.to or `matrix:` link addresses.
+ */
+
+public enum MatrixLinkTarget {
+    
+    case room(roomId: String, eventId: String?
+    )
+    case roomAlias(alias: String, eventId: String?
+    )
+    case user(userId: String
+    )
+    /**
+     * Recognisably a matrix link — so it must never fall through as though
+     * this parser did not understand matrix links at all — but too malformed,
+     * or an address form the grammar does not define, to extract anything
+     * from. Distinct from `None`, which means "not a matrix link".
+     */
+    case unknown
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMatrixLinkTarget: FfiConverterRustBuffer {
+    typealias SwiftType = MatrixLinkTarget
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MatrixLinkTarget {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .room(roomId: try FfiConverterString.read(from: &buf), eventId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 2: return .roomAlias(alias: try FfiConverterString.read(from: &buf), eventId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 3: return .user(userId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .unknown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MatrixLinkTarget, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .room(roomId,eventId):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(roomId, into: &buf)
+            FfiConverterOptionString.write(eventId, into: &buf)
+            
+        
+        case let .roomAlias(alias,eventId):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(alias, into: &buf)
+            FfiConverterOptionString.write(eventId, into: &buf)
+            
+        
+        case let .user(userId):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(userId, into: &buf)
+            
+        
+        case .unknown:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMatrixLinkTarget_lift(_ buf: RustBuffer) throws -> MatrixLinkTarget {
+    return try FfiConverterTypeMatrixLinkTarget.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMatrixLinkTarget_lower(_ value: MatrixLinkTarget) -> RustBuffer {
+    return FfiConverterTypeMatrixLinkTarget.lower(value)
+}
+
+
+
+extension MatrixLinkTarget: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The human-facing kind name for a non-image attachment.
+ *
+ * **Deliberately not `rename_all`d.** Every other enum here serialises
+ * camelCase because a host switches on the tag; this one is *printed*. A
+ * row reading "file · 2.1 MB" instead of "File · 2.1 MB" is the kind of
+ * defect that survives review because it looks like a style choice.
+ */
+
+public enum MediaFileLabel {
+    
+    case file
+    case audio
+    case video
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMediaFileLabel: FfiConverterRustBuffer {
+    typealias SwiftType = MediaFileLabel
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MediaFileLabel {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .file
+        
+        case 2: return .audio
+        
+        case 3: return .video
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MediaFileLabel, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .file:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .audio:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .video:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMediaFileLabel_lift(_ buf: RustBuffer) throws -> MediaFileLabel {
+    return try FfiConverterTypeMediaFileLabel.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMediaFileLabel_lower(_ value: MediaFileLabel) -> RustBuffer {
+    return FfiConverterTypeMediaFileLabel.lower(value)
+}
+
+
+
+extension MediaFileLabel: Equatable, Hashable {}
+
+
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -2252,6 +3803,412 @@ extension Membership: Equatable, Hashable {}
 
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The quoted parent of a reply, as a host sees it.
+ */
+
+public enum ReplyQuoteView {
+    
+    /**
+     * The parent's details never loaded — a real and common outcome, not an
+     * edge case. The core already folds Unavailable/Pending/Error together,
+     * so this is the one shape a host needs. It renders as "Original message
+     * unavailable" rather than an empty quote or a spinner that will never
+     * resolve on its own.
+     */
+    case unavailable
+    /**
+     * `excerpt` and `label` are mutually exclusive: `label` is only ever
+     * `Some` when `excerpt` is `None`. A ready parent can still have nothing
+     * to quote — a redacted, sticker, poll or undecryptable parent has a
+     * sender but no body — and `label` is the short classification of why,
+     * in the same vocabulary this module's placeholders use.
+     */
+    case available(sender: String, excerpt: String?, label: String?
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReplyQuoteView: FfiConverterRustBuffer {
+    typealias SwiftType = ReplyQuoteView
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReplyQuoteView {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .unavailable
+        
+        case 2: return .available(sender: try FfiConverterString.read(from: &buf), excerpt: try FfiConverterOptionString.read(from: &buf), label: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ReplyQuoteView, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .unavailable:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .available(sender,excerpt,label):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(sender, into: &buf)
+            FfiConverterOptionString.write(excerpt, into: &buf)
+            FfiConverterOptionString.write(label, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReplyQuoteView_lift(_ buf: RustBuffer) throws -> ReplyQuoteView {
+    return try FfiConverterTypeReplyQuoteView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReplyQuoteView_lower(_ value: ReplyQuoteView) -> RustBuffer {
+    return FfiConverterTypeReplyQuoteView.lower(value)
+}
+
+
+
+extension ReplyQuoteView: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * One block-level element.
+ */
+
+public enum RichBlock {
+    
+    case paragraph(inlines: [RichInline]
+    )
+    case heading(level: UInt8, inlines: [RichInline]
+    )
+    case codeBlock(language: String?, text: String
+    )
+    case blockQuote(blocks: [RichBlock]
+    )
+    case list(ordered: Bool, start: UInt32, items: [RichListItem]
+    )
+    case thematicBreak
+    case table(header: [RichTableCell], rows: [RichTableRow]
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRichBlock: FfiConverterRustBuffer {
+    typealias SwiftType = RichBlock
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RichBlock {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .paragraph(inlines: try FfiConverterSequenceTypeRichInline.read(from: &buf)
+        )
+        
+        case 2: return .heading(level: try FfiConverterUInt8.read(from: &buf), inlines: try FfiConverterSequenceTypeRichInline.read(from: &buf)
+        )
+        
+        case 3: return .codeBlock(language: try FfiConverterOptionString.read(from: &buf), text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .blockQuote(blocks: try FfiConverterSequenceTypeRichBlock.read(from: &buf)
+        )
+        
+        case 5: return .list(ordered: try FfiConverterBool.read(from: &buf), start: try FfiConverterUInt32.read(from: &buf), items: try FfiConverterSequenceTypeRichListItem.read(from: &buf)
+        )
+        
+        case 6: return .thematicBreak
+        
+        case 7: return .table(header: try FfiConverterSequenceTypeRichTableCell.read(from: &buf), rows: try FfiConverterSequenceTypeRichTableRow.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RichBlock, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .paragraph(inlines):
+            writeInt(&buf, Int32(1))
+            FfiConverterSequenceTypeRichInline.write(inlines, into: &buf)
+            
+        
+        case let .heading(level,inlines):
+            writeInt(&buf, Int32(2))
+            FfiConverterUInt8.write(level, into: &buf)
+            FfiConverterSequenceTypeRichInline.write(inlines, into: &buf)
+            
+        
+        case let .codeBlock(language,text):
+            writeInt(&buf, Int32(3))
+            FfiConverterOptionString.write(language, into: &buf)
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .blockQuote(blocks):
+            writeInt(&buf, Int32(4))
+            FfiConverterSequenceTypeRichBlock.write(blocks, into: &buf)
+            
+        
+        case let .list(ordered,start,items):
+            writeInt(&buf, Int32(5))
+            FfiConverterBool.write(ordered, into: &buf)
+            FfiConverterUInt32.write(start, into: &buf)
+            FfiConverterSequenceTypeRichListItem.write(items, into: &buf)
+            
+        
+        case .thematicBreak:
+            writeInt(&buf, Int32(6))
+        
+        
+        case let .table(header,rows):
+            writeInt(&buf, Int32(7))
+            FfiConverterSequenceTypeRichTableCell.write(header, into: &buf)
+            FfiConverterSequenceTypeRichTableRow.write(rows, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichBlock_lift(_ buf: RustBuffer) throws -> RichBlock {
+    return try FfiConverterTypeRichBlock.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichBlock_lower(_ value: RichBlock) -> RustBuffer {
+    return FfiConverterTypeRichBlock.lower(value)
+}
+
+
+
+extension RichBlock: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * One inline-level element.
+ */
+
+public enum RichInline {
+    
+    case text(text: String
+    )
+    case emphasis(inlines: [RichInline]
+    )
+    case strong(inlines: [RichInline]
+    )
+    case code(text: String
+    )
+    case link(href: String, inlines: [RichInline]
+    )
+    case `break`
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRichInline: FfiConverterRustBuffer {
+    typealias SwiftType = RichInline
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RichInline {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .text(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .emphasis(inlines: try FfiConverterSequenceTypeRichInline.read(from: &buf)
+        )
+        
+        case 3: return .strong(inlines: try FfiConverterSequenceTypeRichInline.read(from: &buf)
+        )
+        
+        case 4: return .code(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .link(href: try FfiConverterString.read(from: &buf), inlines: try FfiConverterSequenceTypeRichInline.read(from: &buf)
+        )
+        
+        case 6: return .`break`
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RichInline, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .text(text):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .emphasis(inlines):
+            writeInt(&buf, Int32(2))
+            FfiConverterSequenceTypeRichInline.write(inlines, into: &buf)
+            
+        
+        case let .strong(inlines):
+            writeInt(&buf, Int32(3))
+            FfiConverterSequenceTypeRichInline.write(inlines, into: &buf)
+            
+        
+        case let .code(text):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .link(href,inlines):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(href, into: &buf)
+            FfiConverterSequenceTypeRichInline.write(inlines, into: &buf)
+            
+        
+        case .`break`:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichInline_lift(_ buf: RustBuffer) throws -> RichInline {
+    return try FfiConverterTypeRichInline.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRichInline_lower(_ value: RichInline) -> RustBuffer {
+    return FfiConverterTypeRichInline.lower(value)
+}
+
+
+
+extension RichInline: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the room pane should offer.
+ */
+
+public enum RoomAffordance {
+    
+    /**
+     * An ordinary room: write in it.
+     */
+    case compose
+    /**
+     * An invitation: accept or decline.
+     */
+    case respondToInvitation
+    /**
+     * Nothing honest to offer, and inventing an affordance for a state
+     * nobody can act on is worse than a quiet pane.
+     */
+    case nothing
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomAffordance: FfiConverterRustBuffer {
+    typealias SwiftType = RoomAffordance
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomAffordance {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .compose
+        
+        case 2: return .respondToInvitation
+        
+        case 3: return .nothing
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RoomAffordance, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .compose:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .respondToInvitation:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .nothing:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomAffordance_lift(_ buf: RustBuffer) throws -> RoomAffordance {
+    return try FfiConverterTypeRoomAffordance.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomAffordance_lower(_ value: RoomAffordance) -> RustBuffer {
+    return FfiConverterTypeRoomAffordance.lower(value)
+}
+
+
+
+extension RoomAffordance: Equatable, Hashable {}
+
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -2303,6 +4260,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeCustomEventDecision: FfiConverterRustBuffer {
+    typealias SwiftType = CustomEventDecision?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCustomEventDecision.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCustomEventDecision.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeMediaMetaDto: FfiConverterRustBuffer {
     typealias SwiftType = MediaMetaDto?
 
@@ -2343,6 +4324,54 @@ fileprivate struct FfiConverterOptionTypeReplyToDto: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeReplyToDto.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeRoomPreview: FfiConverterRustBuffer {
+    typealias SwiftType = RoomPreview?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRoomPreview.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRoomPreview.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeReplyQuoteView: FfiConverterRustBuffer {
+    typealias SwiftType = ReplyQuoteView?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeReplyQuoteView.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeReplyQuoteView.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -2400,6 +4429,56 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeCustomEventDecisionOption: FfiConverterRustBuffer {
+    typealias SwiftType = [CustomEventDecisionOption]
+
+    public static func write(_ value: [CustomEventDecisionOption], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCustomEventDecisionOption.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CustomEventDecisionOption] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CustomEventDecisionOption]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCustomEventDecisionOption.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCustomEventField: FfiConverterRustBuffer {
+    typealias SwiftType = [CustomEventField]
+
+    public static func write(_ value: [CustomEventField], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCustomEventField.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CustomEventField] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CustomEventField]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCustomEventField.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeReactionDto: FfiConverterRustBuffer {
     typealias SwiftType = [ReactionDto]
 
@@ -2425,6 +4504,81 @@ fileprivate struct FfiConverterSequenceTypeReactionDto: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeRichListItem: FfiConverterRustBuffer {
+    typealias SwiftType = [RichListItem]
+
+    public static func write(_ value: [RichListItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRichListItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RichListItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RichListItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRichListItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRichTableCell: FfiConverterRustBuffer {
+    typealias SwiftType = [RichTableCell]
+
+    public static func write(_ value: [RichTableCell], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRichTableCell.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RichTableCell] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RichTableCell]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRichTableCell.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRichTableRow: FfiConverterRustBuffer {
+    typealias SwiftType = [RichTableRow]
+
+    public static func write(_ value: [RichTableRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRichTableRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RichTableRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RichTableRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRichTableRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeRoomMemberDto: FfiConverterRustBuffer {
     typealias SwiftType = [RoomMemberDto]
 
@@ -2442,6 +4596,56 @@ fileprivate struct FfiConverterSequenceTypeRoomMemberDto: FfiConverterRustBuffer
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRoomMemberDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRichBlock: FfiConverterRustBuffer {
+    typealias SwiftType = [RichBlock]
+
+    public static func write(_ value: [RichBlock], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRichBlock.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RichBlock] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RichBlock]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRichBlock.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRichInline: FfiConverterRustBuffer {
+    typealias SwiftType = [RichInline]
+
+    public static func write(_ value: [RichInline], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRichInline.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RichInline] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RichInline]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRichInline.read(from: &buf))
         }
         return seq
     }

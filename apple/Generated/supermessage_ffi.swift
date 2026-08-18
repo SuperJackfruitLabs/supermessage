@@ -1397,11 +1397,11 @@ public func FfiConverterTypeRoomDiffEnvelope_lower(_ value: RoomDiffEnvelope) ->
  */
 public struct RoomsSnapshot {
     public var seq: UInt64
-    public var rooms: [RoomSummary]
+    public var rooms: [RoomRow]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(seq: UInt64, rooms: [RoomSummary]) {
+    public init(seq: UInt64, rooms: [RoomRow]) {
         self.seq = seq
         self.rooms = rooms
     }
@@ -1435,13 +1435,13 @@ public struct FfiConverterTypeRoomsSnapshot: FfiConverterRustBuffer {
         return
             try RoomsSnapshot(
                 seq: FfiConverterUInt64.read(from: &buf), 
-                rooms: FfiConverterSequenceTypeRoomSummary.read(from: &buf)
+                rooms: FfiConverterSequenceTypeRoomRow.read(from: &buf)
         )
     }
 
     public static func write(_ value: RoomsSnapshot, into buf: inout [UInt8]) {
         FfiConverterUInt64.write(value.seq, into: &buf)
-        FfiConverterSequenceTypeRoomSummary.write(value.rooms, into: &buf)
+        FfiConverterSequenceTypeRoomRow.write(value.rooms, into: &buf)
     }
 }
 
@@ -1668,11 +1668,11 @@ public func FfiConverterTypeTimelineDiffEnvelope_lower(_ value: TimelineDiffEnve
 public struct TimelineSnapshot {
     public var roomId: String
     public var seq: UInt64
-    public var items: [TimelineItemDto]
+    public var items: [TimelineRow]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(roomId: String, seq: UInt64, items: [TimelineItemDto]) {
+    public init(roomId: String, seq: UInt64, items: [TimelineRow]) {
         self.roomId = roomId
         self.seq = seq
         self.items = items
@@ -1712,14 +1712,14 @@ public struct FfiConverterTypeTimelineSnapshot: FfiConverterRustBuffer {
             try TimelineSnapshot(
                 roomId: FfiConverterString.read(from: &buf), 
                 seq: FfiConverterUInt64.read(from: &buf), 
-                items: FfiConverterSequenceTypeTimelineItemDto.read(from: &buf)
+                items: FfiConverterSequenceTypeTimelineRow.read(from: &buf)
         )
     }
 
     public static func write(_ value: TimelineSnapshot, into buf: inout [UInt8]) {
         FfiConverterString.write(value.roomId, into: &buf)
         FfiConverterUInt64.write(value.seq, into: &buf)
-        FfiConverterSequenceTypeTimelineItemDto.write(value.items, into: &buf)
+        FfiConverterSequenceTypeTimelineRow.write(value.items, into: &buf)
     }
 }
 
@@ -2065,24 +2065,24 @@ extension FfiEvent: Equatable, Hashable {}
 
 public enum RoomDiffOp {
     
-    case append(values: [RoomSummary]
+    case append(values: [RoomRow]
     )
     case clear
-    case pushFront(value: RoomSummary
+    case pushFront(value: RoomRow
     )
-    case pushBack(value: RoomSummary
+    case pushBack(value: RoomRow
     )
     case popFront
     case popBack
-    case insert(index: UInt32, value: RoomSummary
+    case insert(index: UInt32, value: RoomRow
     )
-    case set(index: UInt32, value: RoomSummary
+    case set(index: UInt32, value: RoomRow
     )
     case remove(index: UInt32
     )
     case truncate(length: UInt32
     )
-    case reset(values: [RoomSummary]
+    case reset(values: [RoomRow]
     )
 }
 
@@ -2097,25 +2097,25 @@ public struct FfiConverterTypeRoomDiffOp: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .append(values: try FfiConverterSequenceTypeRoomSummary.read(from: &buf)
+        case 1: return .append(values: try FfiConverterSequenceTypeRoomRow.read(from: &buf)
         )
         
         case 2: return .clear
         
-        case 3: return .pushFront(value: try FfiConverterTypeRoomSummary.read(from: &buf)
+        case 3: return .pushFront(value: try FfiConverterTypeRoomRow.read(from: &buf)
         )
         
-        case 4: return .pushBack(value: try FfiConverterTypeRoomSummary.read(from: &buf)
+        case 4: return .pushBack(value: try FfiConverterTypeRoomRow.read(from: &buf)
         )
         
         case 5: return .popFront
         
         case 6: return .popBack
         
-        case 7: return .insert(index: try FfiConverterUInt32.read(from: &buf), value: try FfiConverterTypeRoomSummary.read(from: &buf)
+        case 7: return .insert(index: try FfiConverterUInt32.read(from: &buf), value: try FfiConverterTypeRoomRow.read(from: &buf)
         )
         
-        case 8: return .set(index: try FfiConverterUInt32.read(from: &buf), value: try FfiConverterTypeRoomSummary.read(from: &buf)
+        case 8: return .set(index: try FfiConverterUInt32.read(from: &buf), value: try FfiConverterTypeRoomRow.read(from: &buf)
         )
         
         case 9: return .remove(index: try FfiConverterUInt32.read(from: &buf)
@@ -2124,7 +2124,7 @@ public struct FfiConverterTypeRoomDiffOp: FfiConverterRustBuffer {
         case 10: return .truncate(length: try FfiConverterUInt32.read(from: &buf)
         )
         
-        case 11: return .reset(values: try FfiConverterSequenceTypeRoomSummary.read(from: &buf)
+        case 11: return .reset(values: try FfiConverterSequenceTypeRoomRow.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -2137,7 +2137,7 @@ public struct FfiConverterTypeRoomDiffOp: FfiConverterRustBuffer {
         
         case let .append(values):
             writeInt(&buf, Int32(1))
-            FfiConverterSequenceTypeRoomSummary.write(values, into: &buf)
+            FfiConverterSequenceTypeRoomRow.write(values, into: &buf)
             
         
         case .clear:
@@ -2146,12 +2146,12 @@ public struct FfiConverterTypeRoomDiffOp: FfiConverterRustBuffer {
         
         case let .pushFront(value):
             writeInt(&buf, Int32(3))
-            FfiConverterTypeRoomSummary.write(value, into: &buf)
+            FfiConverterTypeRoomRow.write(value, into: &buf)
             
         
         case let .pushBack(value):
             writeInt(&buf, Int32(4))
-            FfiConverterTypeRoomSummary.write(value, into: &buf)
+            FfiConverterTypeRoomRow.write(value, into: &buf)
             
         
         case .popFront:
@@ -2165,13 +2165,13 @@ public struct FfiConverterTypeRoomDiffOp: FfiConverterRustBuffer {
         case let .insert(index,value):
             writeInt(&buf, Int32(7))
             FfiConverterUInt32.write(index, into: &buf)
-            FfiConverterTypeRoomSummary.write(value, into: &buf)
+            FfiConverterTypeRoomRow.write(value, into: &buf)
             
         
         case let .set(index,value):
             writeInt(&buf, Int32(8))
             FfiConverterUInt32.write(index, into: &buf)
-            FfiConverterTypeRoomSummary.write(value, into: &buf)
+            FfiConverterTypeRoomRow.write(value, into: &buf)
             
         
         case let .remove(index):
@@ -2186,7 +2186,7 @@ public struct FfiConverterTypeRoomDiffOp: FfiConverterRustBuffer {
         
         case let .reset(values):
             writeInt(&buf, Int32(11))
-            FfiConverterSequenceTypeRoomSummary.write(values, into: &buf)
+            FfiConverterSequenceTypeRoomRow.write(values, into: &buf)
             
         }
     }
@@ -2221,24 +2221,24 @@ extension RoomDiffOp: Equatable, Hashable {}
 
 public enum TimelineDiffOp {
     
-    case append(values: [TimelineItemDto]
+    case append(values: [TimelineRow]
     )
     case clear
-    case pushFront(value: TimelineItemDto
+    case pushFront(value: TimelineRow
     )
-    case pushBack(value: TimelineItemDto
+    case pushBack(value: TimelineRow
     )
     case popFront
     case popBack
-    case insert(index: UInt32, value: TimelineItemDto
+    case insert(index: UInt32, value: TimelineRow
     )
-    case set(index: UInt32, value: TimelineItemDto
+    case set(index: UInt32, value: TimelineRow
     )
     case remove(index: UInt32
     )
     case truncate(length: UInt32
     )
-    case reset(values: [TimelineItemDto]
+    case reset(values: [TimelineRow]
     )
 }
 
@@ -2253,25 +2253,25 @@ public struct FfiConverterTypeTimelineDiffOp: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .append(values: try FfiConverterSequenceTypeTimelineItemDto.read(from: &buf)
+        case 1: return .append(values: try FfiConverterSequenceTypeTimelineRow.read(from: &buf)
         )
         
         case 2: return .clear
         
-        case 3: return .pushFront(value: try FfiConverterTypeTimelineItemDto.read(from: &buf)
+        case 3: return .pushFront(value: try FfiConverterTypeTimelineRow.read(from: &buf)
         )
         
-        case 4: return .pushBack(value: try FfiConverterTypeTimelineItemDto.read(from: &buf)
+        case 4: return .pushBack(value: try FfiConverterTypeTimelineRow.read(from: &buf)
         )
         
         case 5: return .popFront
         
         case 6: return .popBack
         
-        case 7: return .insert(index: try FfiConverterUInt32.read(from: &buf), value: try FfiConverterTypeTimelineItemDto.read(from: &buf)
+        case 7: return .insert(index: try FfiConverterUInt32.read(from: &buf), value: try FfiConverterTypeTimelineRow.read(from: &buf)
         )
         
-        case 8: return .set(index: try FfiConverterUInt32.read(from: &buf), value: try FfiConverterTypeTimelineItemDto.read(from: &buf)
+        case 8: return .set(index: try FfiConverterUInt32.read(from: &buf), value: try FfiConverterTypeTimelineRow.read(from: &buf)
         )
         
         case 9: return .remove(index: try FfiConverterUInt32.read(from: &buf)
@@ -2280,7 +2280,7 @@ public struct FfiConverterTypeTimelineDiffOp: FfiConverterRustBuffer {
         case 10: return .truncate(length: try FfiConverterUInt32.read(from: &buf)
         )
         
-        case 11: return .reset(values: try FfiConverterSequenceTypeTimelineItemDto.read(from: &buf)
+        case 11: return .reset(values: try FfiConverterSequenceTypeTimelineRow.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -2293,7 +2293,7 @@ public struct FfiConverterTypeTimelineDiffOp: FfiConverterRustBuffer {
         
         case let .append(values):
             writeInt(&buf, Int32(1))
-            FfiConverterSequenceTypeTimelineItemDto.write(values, into: &buf)
+            FfiConverterSequenceTypeTimelineRow.write(values, into: &buf)
             
         
         case .clear:
@@ -2302,12 +2302,12 @@ public struct FfiConverterTypeTimelineDiffOp: FfiConverterRustBuffer {
         
         case let .pushFront(value):
             writeInt(&buf, Int32(3))
-            FfiConverterTypeTimelineItemDto.write(value, into: &buf)
+            FfiConverterTypeTimelineRow.write(value, into: &buf)
             
         
         case let .pushBack(value):
             writeInt(&buf, Int32(4))
-            FfiConverterTypeTimelineItemDto.write(value, into: &buf)
+            FfiConverterTypeTimelineRow.write(value, into: &buf)
             
         
         case .popFront:
@@ -2321,13 +2321,13 @@ public struct FfiConverterTypeTimelineDiffOp: FfiConverterRustBuffer {
         case let .insert(index,value):
             writeInt(&buf, Int32(7))
             FfiConverterUInt32.write(index, into: &buf)
-            FfiConverterTypeTimelineItemDto.write(value, into: &buf)
+            FfiConverterTypeTimelineRow.write(value, into: &buf)
             
         
         case let .set(index,value):
             writeInt(&buf, Int32(8))
             FfiConverterUInt32.write(index, into: &buf)
-            FfiConverterTypeTimelineItemDto.write(value, into: &buf)
+            FfiConverterTypeTimelineRow.write(value, into: &buf)
             
         
         case let .remove(index):
@@ -2342,7 +2342,7 @@ public struct FfiConverterTypeTimelineDiffOp: FfiConverterRustBuffer {
         
         case let .reset(values):
             writeInt(&buf, Int32(11))
-            FfiConverterSequenceTypeTimelineItemDto.write(values, into: &buf)
+            FfiConverterSequenceTypeTimelineRow.write(values, into: &buf)
             
         }
     }
@@ -2532,6 +2532,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeMatrixLinkTarget: FfiConverterRustBuffer {
+    typealias SwiftType = MatrixLinkTarget?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeMatrixLinkTarget.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeMatrixLinkTarget.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -2607,23 +2631,73 @@ fileprivate struct FfiConverterSequenceTypeTimelineDiffOp: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeRoomSummary: FfiConverterRustBuffer {
-    typealias SwiftType = [RoomSummary]
+fileprivate struct FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer {
+    typealias SwiftType = [Mentionable]
 
-    public static func write(_ value: [RoomSummary], into buf: inout [UInt8]) {
+    public static func write(_ value: [Mentionable], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeRoomSummary.write(item, into: &buf)
+            FfiConverterTypeMentionable.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RoomSummary] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Mentionable] {
         let len: Int32 = try readInt(&buf)
-        var seq = [RoomSummary]()
+        var seq = [Mentionable]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeRoomSummary.read(from: &buf))
+            seq.append(try FfiConverterTypeMentionable.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRichBlock: FfiConverterRustBuffer {
+    typealias SwiftType = [RichBlock]
+
+    public static func write(_ value: [RichBlock], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRichBlock.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RichBlock] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RichBlock]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRichBlock.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRoomRow: FfiConverterRustBuffer {
+    typealias SwiftType = [RoomRow]
+
+    public static func write(_ value: [RoomRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRoomRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RoomRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RoomRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRoomRow.read(from: &buf))
         }
         return seq
     }
@@ -2682,23 +2756,23 @@ fileprivate struct FfiConverterSequenceTypeSpaceSummary: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeTimelineItemDto: FfiConverterRustBuffer {
-    typealias SwiftType = [TimelineItemDto]
+fileprivate struct FfiConverterSequenceTypeTimelineRow: FfiConverterRustBuffer {
+    typealias SwiftType = [TimelineRow]
 
-    public static func write(_ value: [TimelineItemDto], into buf: inout [UInt8]) {
+    public static func write(_ value: [TimelineRow], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeTimelineItemDto.write(item, into: &buf)
+            FfiConverterTypeTimelineRow.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TimelineItemDto] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TimelineRow] {
         let len: Int32 = try readInt(&buf)
-        var seq = [TimelineItemDto]()
+        var seq = [TimelineRow]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeTimelineItemDto.read(from: &buf))
+            seq.append(try FfiConverterTypeTimelineRow.read(from: &buf))
         }
         return seq
     }
@@ -2714,6 +2788,53 @@ fileprivate struct FfiConverterSequenceTypeTimelineItemDto: FfiConverterRustBuff
 
 
 
+
+
+
+
+
+/**
+ * The user ids a finished message mentions, for `m.mentions`.
+ */
+public func collectMentions(text: String, members: [Mentionable]) -> [String] {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_collect_mentions(
+        FfiConverterString.lower(text),
+        FfiConverterSequenceTypeMentionable.lower(members),$0
+    )
+})
+}
+/**
+ * Parse a matrix.to URL or a `matrix:` URI into what it addresses.
+ *
+ * A free function for the same reason as `rich_blocks_from_markdown`: it
+ * touches no session state, and making it a `Core` method would imply it
+ * needed a signed-in client.
+ */
+public func parseMatrixLink(href: String) -> MatrixLinkTarget? {
+    return try!  FfiConverterOptionTypeMatrixLinkTarget.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_parse_matrix_link(
+        FfiConverterString.lower(href),$0
+    )
+})
+}
+/**
+ * Parse a live turn's partial markdown into blocks.
+ *
+ * A free function rather than a `Core` method: it touches no session state,
+ * and making it one would imply it needed a signed-in client. A landed
+ * message already carries its blocks on `TimelineRow`; this is for a turn
+ * still arriving on the live channel, so the two render through the same
+ * parser and a turn does not change appearance the instant it lands.
+ */
+public func richBlocksFromMarkdown(source: String) -> [RichBlock] {
+    return try!  FfiConverterSequenceTypeRichBlock.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_rich_blocks_from_markdown(
+        FfiConverterString.lower(source),$0
+    )
+})
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -2728,6 +2849,15 @@ private var initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_supermessage_ffi_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_collect_mentions() != 57065) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741) {
         return InitializationResult.apiChecksumMismatch

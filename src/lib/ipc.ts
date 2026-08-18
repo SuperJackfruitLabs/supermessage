@@ -31,7 +31,7 @@ export interface CoreStatus {
  * `lastMessageNamesSender` are `false` and `lastEventType` is `null`. The
  * core returns facts, never a composed display string — building the line
  * (including the `You: ` prefix) is the webview's job, and
- * `$lib/components/roomPreview.ts` is the one place it happens.
+ * `core::room_preview` is the one place it happens.
  *
  * `avatarUrl` is the room's raw `mxc://` URI when the room has one set, but
  * it is **not** the full picture: it's `null` for a room whose "avatar" is
@@ -119,8 +119,8 @@ export interface RoomSummary {
    * whenever there is no preview.
    *
    * The hook the roster's pending-decision path keys off
-   * (`$lib/components/roomPreview.ts` against
-   * `customEvents.ts`'s `DECISION_BEARING_EVENT_TYPES`). Unreachable in
+   * (`core::room_preview` against
+   * `core::custom_events`'s `core::room_preview`'s decision-bearing types). Unreachable in
    * production **twice over**, and the second reason survives the first
    * being fixed: no gate schema exists yet, *and* the SDK's latest-event
    * builder ends its message-like arm in an unqualified catch-all that
@@ -193,7 +193,7 @@ export interface RoomInfo {
  * Matrix event-type string. `msgtype` is only populated for `kind:
  * "message"`; `detail` carries kind-specific context (a membership change's
  * change kind, a state event's event type, a custom event's event type, …).
- * `$lib/components/timelineItemView.ts` is what turns this into a render
+ * `core::item_view` is what turns this into a render
  * decision — see its doc comment and `docs/matrix-events.md` for the full
  * mapping.
  */
@@ -249,7 +249,7 @@ export interface TimelineItem {
    * **Untrusted, arbitrary JSON from anyone who can send to the room.**
    * Typed `unknown`, not a shaped interface, deliberately: nothing may read
    * a field out of this without checking its type first (see
-   * `$lib/components/customEvents.ts`'s `safeStringField` for the pattern),
+   * `core::custom_events`'s `core::custom_events::safe_string_field` for the pattern),
    * and nothing read out of it may ever reach `{@html}`, an `href`, an
    * `src`, or a `style` — nothing here narrows that responsibility away.
    */
@@ -335,11 +335,11 @@ export interface ReplyTo {
    * undecryptable parent has a sender but no body. Classified in the core
    * the same way a top-level item is (`core::timeline::reply_parent_label`,
    * built on `classify_content`), so it reads with the same vocabulary
-   * `$lib/components/timelineItemView.ts`'s `viewFor` placeholders already
+   * `core::item_view`'s `core::item_view::view_for` placeholders already
    * use (e.g. `"Message deleted"`). `null` whenever `excerpt` is non-null,
    * and always `null` when `available` is `false` (that case already has
    * its own "Original message unavailable" wording — see `ReplyQuoteView`
-   * in `timelineItemView.ts`).
+   * in `core::item_view`).
    */
   label: string | null;
 }
@@ -375,7 +375,7 @@ export interface Reaction {
  *
  * A space **is a room** — same state, same timeline, marked only by
  * `m.room.type: "m.space"` — which is why `name` gets parsed by the same
- * `parseRoomIdentity` the roster uses (a space can carry the `glyph — Name
+ * `core::room_identity::parse_room_identity` the roster uses (a space can carry the `glyph — Name
  * — Role` structure too) and why its avatar is fetched with the ordinary
  * {@link roomAvatar}, keyed on this `id`.
  */
@@ -1004,7 +1004,7 @@ export async function sendMessage(
  *
  * `inReplyTo` must be a real Matrix event id, not a local echo's transaction
  * id — see `TimelineItem.sendState`'s doc comment and
- * `$lib/components/timelineItemView.ts`'s `canReplyOrReact` for the rule the
+ * `core::item_view`'s `core::item_view::can_reply_or_react` for the rule the
  * webview uses to only ever offer this for an item that already has one.
  */
 export async function sendReply(roomId: string, body: string, inReplyTo: string): Promise<void> {

@@ -9,7 +9,7 @@
 // single one of them. Element could; this could not.
 //
 // The decision lives here rather than inline in the components for the same
-// reason `roomPreview.ts` and `timelineItemView.ts` exist: it is a rule about
+// reason `core::room_preview` and `core::item_view` exist: it is a rule about
 // what the operator is offered, it has more than one case, and a rule with
 // cases is worth testing without mounting a component.
 

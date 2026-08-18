@@ -3,7 +3,7 @@
 // small, uniform target type describing what they address: a room (by id or
 // alias), a user, or something too malformed/unsupported to extract
 // anything useful from. Pure and DOM-free, like `timelineGrouping.ts`/
-// `timelineItemView.ts`/`draftTracker.ts`: no store import, no Svelte, so
+// `core::item_view`/`draftTracker.ts`: no store import, no Svelte, so
 // it's unit-testable without a DOM (this project's vitest runs with
 // `environment: "node"`).
 //

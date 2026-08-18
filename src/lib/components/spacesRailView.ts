@@ -1,7 +1,7 @@
 // What the spaces rail renders, as a pure function of the core's
 // `spaces_list()` result.
 //
-// Kept out of `SpacesRail.svelte` for the same reason `roomPreview.ts` and
+// Kept out of `SpacesRail.svelte` for the same reason `core::room_preview` and
 // `stagedAttachment.ts` are kept out of their components: this project's
 // vitest runs with `environment: "node"` and has no component-testing setup,
 // so anything that has to be *proved* rather than looked at lives in a plain

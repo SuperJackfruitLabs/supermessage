@@ -5,14 +5,14 @@
   //
   // Each row surfaces the structure spec §5.1/§6.1 calls for: the room name
   // is parsed into glyph/name/role via `roomIdentity.ts`'s
-  // `parseRoomIdentity`, the avatar fallback goes through `roomInitial`
+  // `core::room_identity::parse_room_identity`, the avatar fallback goes through `core::room_identity`'s `initial`
   // (never the raw name's first character — see that module's doc comment
   // for the astral-surrogate bug this replaces), and the second line (role
   // and/or relative last activity) is built from that parse plus
   // `relativeTime`.
   //
   // The third line is the message preview (spec §6.1.1), composed from
-  // `RoomSummary`'s four `last*` fields by `roomPreview.ts` — including the
+  // `RoomSummary`'s four `last*` fields by `core::room_preview` — including the
   // `You: ` prefix, which is the webview's to add and only for our own
   // non-emote messages. It arrived after the two lines above it and is a
   // further line beyond them, not a replacement for either.
@@ -138,7 +138,7 @@
    *   only. That is the one thing an accessible name must not do. It is
    *   included for exactly the reason the unread count is, and it is
    *   unreachable in production today for the reasons
-   *   `DECISION_BEARING_EVENT_TYPES` documents.
+   *   `core::room_preview`'s decision-bearing types documents.
    */
   function rowAriaLabel(
     name: string,
@@ -299,7 +299,7 @@
               read has nothing left to say. `--color-signal` overrides
               both on the pending path — the only place amber appears
               outside the dispatch card (spec §3), and unreachable today
-              (see `DECISION_BEARING_EVENT_TYPES`).
+              (see `core::room_preview`'s decision-bearing types).
 
               `truncate` rather than a hard-cut string: the core bounds the
               text at 100 code points for transport, CSS owns what the

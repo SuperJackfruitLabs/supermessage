@@ -9,17 +9,17 @@
 // the whole string on one line and throwing it away.
 //
 // A room *without* that structure — a DM, a human-named room, a bridge like
-// "aether-dispatches" — is not a broken room. `parseRoomIdentity` must
+// "aether-dispatches" — is not a broken room. `core::room_identity::parse_room_identity` must
 // degrade it silently to `{glyph: null, name: <the whole trimmed string>,
 // role: null}`, never a placeholder or an error state. This module has no
 // idea which rooms live on which homeserver; it just describes one string
 // format and falls back safely whenever a string doesn't match it.
 //
 // Both functions are pure (no DOM, no store, no Svelte) so they're
-// unit-testable exactly the way `timelineItemView.ts` and `draftTracker.ts`
+// unit-testable exactly the way `core::item_view` and `draftTracker.ts`
 // already are in this codebase's `environment: "node"` vitest setup. Task 3
 // (`RoomList`), Task 4 (the room header) and Task 9 (the info panel) all
-// consume `RoomIdentity` and `roomInitial`; the roster additionally uses
+// consume `RoomIdentity` and `core::room_identity`'s `initial`; the roster additionally uses
 // `relativeTime` for its "· 4m" line (spec §6.1).
 
 // The parse itself now lives in `core::room_identity`: it is the suite's

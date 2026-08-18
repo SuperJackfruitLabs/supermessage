@@ -1,6 +1,6 @@
 // Pure display helpers for `RoomInfoPanel.svelte` — the same split every
 // other component in this codebase makes between presentation logic that's
-// worth unit-testing (`timelineItemView.ts`, `timelineGrouping.ts`,
+// worth unit-testing (`core::item_view`, `timelineGrouping.ts`,
 // `draftTracker.ts`) and the Svelte markup that calls it. No DOM, no store:
 // every function here takes plain values from `RoomInfo`/`RoomMember`
 // (`$lib/ipc.ts`) and returns a plain value, so it's testable in this

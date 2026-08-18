@@ -4,7 +4,7 @@
 // calls for collapsing these runs; this module is the pure grouping logic
 // `Timeline.svelte` renders from.
 //
-// Kept in its own module, mirroring `timelineItemView.ts` and
+// Kept in its own module, mirroring `core::item_view` and
 // `draftTracker.ts`, so the grouping is unit-testable without a DOM.
 //
 // This is a *presentation*-layer concern only. The timeline is driven by
@@ -76,7 +76,7 @@
 // Like the membership-run grouping above, this does not consult
 // `timelineItemView.viewFor` — it reads `kind`/`sender`/`timestampMs`
 // directly off `TimelineItem`, for the same reason: staying decoupled from
-// the render-decision vocabulary so a future `viewFor` change can't
+// the render-decision vocabulary so a future `core::item_view::view_for` change can't
 // silently change which messages collapse into a run.
 
 import type { ItemView, TimelineItem, TimelineRow } from "$lib/ipc";
@@ -161,7 +161,7 @@ function joinNames(names: string[]): string {
  *
  * Names at most `MAX_NAMED` people explicitly, then "and N other(s)" — a
  * run of any size produces a sentence of bounded length, and a run of
- * exactly one reads exactly like the ungrouped `timelineItemView.ts`
+ * exactly one reads exactly like the ungrouped `core::item_view`
  * membership line ("Alice joined the room"), never "Alice and 0 others".
  */
 function groupText(rows: TimelineRow[]): string {

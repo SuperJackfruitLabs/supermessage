@@ -57,7 +57,7 @@
 // Pure functions, not Svelte event handlers themselves, so they're
 // unit-testable without a DOM (this project's vitest runs with
 // `environment: "node"`, same constraint `draftTracker.ts` and
-// `timelineItemView.ts` are built around): they take the minimal shape they
+// `core::item_view` are built around): they take the minimal shape they
 // need out of the click event and element, plus injectable `open`/
 // `selectRoom`/`knownRoomIds` functions, so a test can hand them plain fakes
 // and assert on those instead of asserting anything about real navigation or
