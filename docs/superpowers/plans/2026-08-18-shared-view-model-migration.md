@@ -53,7 +53,7 @@ The spec names this the first task for a reason: `RichBlock` contains `Vec<RichB
 **Interfaces:**
 - Produces: a recorded yes/no in the task's commit message. No lasting code.
 
-- [ ] **Step 1: Add a minimal recursive pair of types to the FFI crate**
+- [x] **Step 1: Add a minimal recursive pair of types to the FFI crate**
 
 ```rust
 // TEMPORARY — deleted at the end of this task. Proving UniFFI 0.28 can
@@ -65,25 +65,25 @@ pub enum ProbeBlock {
 }
 ```
 
-- [ ] **Step 2: Build the library and generate bindings**
+- [x] **Step 2: Build the library and generate bindings**
 
 Run: `cargo build -p supermessage-ffi --lib && cargo run -q -p supermessage-ffi --bin uniffi-bindgen -- generate --library target/debug/libsupermessage_ffi.a --language swift --out-dir /tmp/probe-bindings`
 
 Expected: either a clean generate, or a hard error naming the recursive type.
 
-- [ ] **Step 3: Inspect the generated Swift**
+- [x] **Step 3: Inspect the generated Swift**
 
 Run: `grep -n "ProbeBlock" /tmp/probe-bindings/supermessage_ffi.swift | head -20`
 
 Expected (success): a declaration reading `public indirect enum ProbeBlock`. The `indirect` keyword is the whole question — Swift cannot compile a recursive value type without it.
 
-- [ ] **Step 4: Compile the generated Swift to be sure it is not merely emitted**
+- [x] **Step 4: Compile the generated Swift to be sure it is not merely emitted**
 
 Run: `swiftc -typecheck /tmp/probe-bindings/supermessage_ffi.swift 2>&1 | head -20`
 
 Expected: no error mentioning "recursive" or "indirect". (Other errors about missing C symbols are expected and irrelevant — this is a typecheck of one file out of its module.)
 
-- [ ] **Step 5: Remove the probe types and record the answer**
+- [x] **Step 5: Remove the probe types and record the answer**
 
 Delete `ProbeBlock`. Then commit:
 
@@ -97,6 +97,30 @@ grep AND swiftc OUTPUT HERE>."
 ```
 
 **If it failed:** stop and report. The fallback is in the spec §3.3.1 — a flat pre-order `Vec<RichToken>` with explicit open/close markers that each host folds into a tree. That changes tasks 2, 3 and 6 and needs a spec amendment before proceeding.
+
+---
+
+**RESULT (18 Aug 2026): PASS — the fallback is not needed.**
+
+The generated enum is **not** marked `indirect`, and UniFFI says outright that
+it does not support indirect enums (mozilla/uniffi-rs#396). That turns out not
+to matter, and Step 3's stated indicator was wrong: Swift requires `indirect`
+only for *direct* recursion. Here the recursion passes through an `Array`,
+which is reference-backed and fixed-size, so the generated
+`case nest(blocks: [ProbeBlock])` is legal as written.
+
+Verified positively rather than inferred — the shape, in isolation:
+
+```
+swiftc -typecheck rec.swift   -> OK
+swiftc -O rec.swift && ./rec  -> OK   (a recursive depth() walk over a nested value returns 3)
+```
+
+The full generated file does not typecheck standalone, but that is a cascade
+from the absent C module: **every** converter reports non-conformance,
+`FfiConverterString` included. Nothing is specific to the recursive type.
+
+No code survives this task, so there is no commit for it.
 
 ---
 
