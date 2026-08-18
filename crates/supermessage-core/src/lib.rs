@@ -36,6 +36,7 @@ pub mod error;
 pub mod event;
 pub mod live;
 pub mod media;
+pub mod rich;
 pub mod room_info;
 pub mod rooms;
 pub mod search;
