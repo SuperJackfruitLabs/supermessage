@@ -35,7 +35,7 @@ use super::error::{CoreError, CoreResult};
 pub const SEARCH_LIMIT: u32 = 20;
 
 /// One hit, as the webview shows it.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResultDto {
     pub event_id: String,

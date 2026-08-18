@@ -20,7 +20,7 @@ use super::error::{CoreError, CoreResult};
 
 /// One joined member of a room, as shown in the room-info panel's member
 /// list.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomMemberDto {
     pub user_id: String,
@@ -39,7 +39,7 @@ pub struct RoomMemberDto {
 
 /// A room's descriptive metadata plus its joined member list, for the
 /// room-info panel.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomInfoDto {
     pub room_id: String,

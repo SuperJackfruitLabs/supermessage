@@ -1,3 +1,10 @@
+// The same limit the core carries, and for the same reason: `timeline_subscribe`
+// blocks on `Timeline::subscribe`'s deeply-nested stream type, and computing
+// its layout overflows rustc's default query recursion limit. An attribute
+// cannot cross a crate boundary, so every crate that lays that type out needs
+// its own.
+#![recursion_limit = "256"]
+
 //! supermessage's core, as Swift and Kotlin see it.
 //!
 //! This crate is an adapter and nothing else. It owns no logic: every method
@@ -139,12 +146,269 @@ impl Core {
     /// Every room this account is in, with the sequence number the snapshot
     /// was taken at.
     ///
+    /// The desktop host calls this `rooms_resync`, which is the one place the
+    /// two vocabularies differ. The desktop name describes when it is called —
+    /// after a reload, to catch up; this one describes what it returns. A host
+    /// that has been backgrounded and lost diffs calls it for the same reason
+    /// either way.
+    ///
     /// The `seq` matters: room-list diffs arriving afterwards carry increasing
     /// sequence numbers, and a host that applies one older than its snapshot
     /// would move rows that have already moved.
     pub fn rooms_snapshot(&self) -> Result<RoomsSnapshot, FfiError> {
         let (seq, rooms) = self.runtime.block_on(self.session.rooms_snapshot())?;
         Ok(RoomsSnapshot { seq, rooms })
+    }
+
+    /// Focus a room and start streaming its timeline.
+    ///
+    /// Diffs arrive on the sink as `TimelineDiff`, carrying the `seq` their
+    /// ordering depends on. Only one room is focused at a time — subscribing
+    /// to a second replaces the first, which is what makes `room_id`
+    /// verification meaningful on every write below.
+    pub fn timeline_subscribe(
+        &self,
+        room_id: String,
+        sink: Box<dyn EventSink>,
+    ) -> Result<(), FfiError> {
+        let sink: Arc<dyn CoreSink> = Arc::new(events::HostSink(sink));
+        self.runtime
+            .block_on(self.session.subscribe_timeline(&room_id, sink))?;
+        Ok(())
+    }
+
+    /// Load older messages. `true` means the start of the room was reached and
+    /// there is nothing more to ask for.
+    pub fn timeline_paginate_back(&self, room_id: String, count: u16) -> Result<bool, FfiError> {
+        Ok(self.runtime.block_on(
+            self.session
+                .focused_timeline()
+                .paginate_back(&room_id, count),
+        )?)
+    }
+
+    /// The focused timeline as of now: its room, the sequence number, and the
+    /// items. A host that has just subscribed uses this rather than waiting
+    /// for a diff that may not come until something changes.
+    pub fn timeline_resync(&self) -> Result<TimelineSnapshot, FfiError> {
+        let (room_id, seq, items) = self
+            .runtime
+            .block_on(self.session.focused_timeline().snapshot())?;
+        Ok(TimelineSnapshot {
+            room_id,
+            seq,
+            items,
+        })
+    }
+
+    /// Mark the room read up to its latest event.
+    pub fn mark_room_read(&self, room_id: String) -> Result<(), FfiError> {
+        self.runtime
+            .block_on(self.session.focused_timeline().mark_read(&room_id))?;
+        Ok(())
+    }
+
+    /// Send a plain-text message to the focused room.
+    ///
+    /// `room_id` is checked against whichever room is actually focused before
+    /// anything is sent — the fix for a wrong-recipient race, and the reason
+    /// every write here takes a room id it could otherwise infer.
+    ///
+    /// `mentions` are user ids to notify; empty is the ordinary case.
+    pub fn send_message(
+        &self,
+        room_id: String,
+        body: String,
+        mentions: Vec<String>,
+    ) -> Result<(), FfiError> {
+        self.runtime.block_on(
+            self.session
+                .focused_timeline()
+                .send_text(&room_id, &body, &mentions),
+        )?;
+        Ok(())
+    }
+
+    /// Reply to `in_reply_to`, an event id in the focused room.
+    pub fn send_reply(
+        &self,
+        room_id: String,
+        body: String,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.runtime
+            .block_on(
+                self.session
+                    .focused_timeline()
+                    .send_reply(&room_id, &body, &in_reply_to),
+            )?;
+        Ok(())
+    }
+
+    /// Add or remove a reaction. Returns whether the reaction is now present.
+    pub fn toggle_reaction(
+        &self,
+        room_id: String,
+        event_id: String,
+        key: String,
+    ) -> Result<bool, FfiError> {
+        Ok(self.runtime.block_on(
+            self.session
+                .focused_timeline()
+                .toggle_reaction(&room_id, &event_id, &key),
+        )?)
+    }
+
+    /// Tell the room whether this account is typing.
+    pub fn set_typing(&self, room_id: String, typing: bool) -> Result<(), FfiError> {
+        self.runtime
+            .block_on(self.session.focused_timeline().set_typing(&room_id, typing))?;
+        Ok(())
+    }
+
+    /// Accept an invitation, or join a room already known by id.
+    pub fn join_room(&self, room_id: String) -> Result<(), FfiError> {
+        self.runtime.block_on(self.session.join_room(&room_id))?;
+        Ok(())
+    }
+
+    /// Leave a room. It disappears from the roster on the next diff.
+    pub fn leave_room(&self, room_id: String) -> Result<(), FfiError> {
+        self.runtime.block_on(self.session.leave_room(&room_id))?;
+        Ok(())
+    }
+
+    /// Create a room and return its id.
+    ///
+    /// `is_direct` marks it as a one-to-one conversation, which changes how
+    /// clients name and group it rather than anything about the room itself.
+    pub fn create_room(
+        &self,
+        name: String,
+        invite: Vec<String>,
+        is_direct: bool,
+    ) -> Result<String, FfiError> {
+        Ok(self
+            .runtime
+            .block_on(self.session.create_room(&name, &invite, is_direct))?)
+    }
+
+    /// Join by alias (`#room:server`) or id, returning the id joined.
+    pub fn join_room_by_alias(&self, alias_or_id: String) -> Result<String, FfiError> {
+        Ok(self
+            .runtime
+            .block_on(self.session.join_room_by_alias(&alias_or_id))?)
+    }
+
+    /// Invite someone to a room.
+    pub fn invite_user(&self, room_id: String, user_id: String) -> Result<(), FfiError> {
+        self.runtime
+            .block_on(self.session.invite_user(&room_id, &user_id))?;
+        Ok(())
+    }
+
+    /// A room's avatar as a `data:` URI, if it has one.
+    pub fn room_avatar(&self, room_id: String) -> Result<Option<String>, FfiError> {
+        Ok(self.runtime.block_on(self.session.room_avatar(&room_id))?)
+    }
+
+    /// A member's avatar as a `data:` URI, given its `mxc:` URI.
+    pub fn member_avatar(&self, mxc_uri: String) -> Result<Option<String>, FfiError> {
+        Ok(self
+            .runtime
+            .block_on(self.session.member_avatar(&mxc_uri))?)
+    }
+
+    /// An event's media as a `data:` URI, fetched and decrypted.
+    ///
+    /// There is deliberately no `media_download` here, unlike the desktop
+    /// host. That command exists to open a *save panel* and write the bytes to
+    /// a path the person chooses — a desktop gesture. On iOS the host fetches
+    /// with this and hands the result to a share sheet, which is the platform's
+    /// own answer to the same question and needs no file picker crossing the
+    /// FFI.
+    pub fn media_fetch(&self, event_id: String) -> Result<Option<String>, FfiError> {
+        Ok(self.runtime.block_on(self.session.media_fetch(&event_id))?)
+    }
+
+    /// Stage a file the host has already chosen.
+    ///
+    /// The desktop command opens the picker from Rust; this takes a path
+    /// instead, because on iOS the document picker is a SwiftUI presentation
+    /// and the core has no business summoning it. The host picks, then stages.
+    pub fn attachment_stage_path(
+        &self,
+        room_id: String,
+        path: String,
+    ) -> Result<StagedFile, FfiError> {
+        let staged = self.session.staged_attachments();
+        let meta = self.runtime.block_on(async {
+            let client = self.session.require_client().await?;
+            supermessage_core::attachments::stage_path(
+                &client,
+                &staged,
+                &room_id,
+                std::path::PathBuf::from(path),
+            )
+            .await
+        })?;
+        Ok(meta.into())
+    }
+
+    /// Upload and send the staged file `token` names.
+    ///
+    /// **Consumes the token**, so a replay cannot re-send the file. `room_id`
+    /// is checked against both the focused room and the room the token was
+    /// staged for — the first catches a stale send, the second a token kept
+    /// across a room switch.
+    pub fn attachment_send(&self, room_id: String, token: String) -> Result<(), FfiError> {
+        let staged = self.session.staged_attachments();
+        let focused = self.session.focused_timeline();
+        self.runtime
+            .block_on(supermessage_core::attachments::send_staged(
+                &self.session,
+                &focused,
+                &staged,
+                &room_id,
+                &token,
+            ))?;
+        Ok(())
+    }
+
+    /// Throw a staged file away without sending it.
+    pub fn attachment_discard(&self, token: String) {
+        self.session.staged_attachments().discard(&token);
+    }
+
+    /// The spaces this account is in, for the roster's rail.
+    pub fn spaces_list(&self) -> Result<Vec<supermessage_core::spaces::SpaceSummary>, FfiError> {
+        Ok(self.runtime.block_on(self.session.spaces_list())?)
+    }
+
+    /// Filter the room list to a space, or `None` to clear the filter.
+    ///
+    /// The filter lives in the core, not the host: the next room-list diff
+    /// reflects it, so both hosts see the same rooms for the same selection.
+    pub fn space_select(&self, space_id: Option<String>) -> Result<(), FfiError> {
+        self.runtime
+            .block_on(self.session.select_space(space_id.as_deref()))?;
+        Ok(())
+    }
+
+    /// Search messages across rooms.
+    pub fn search_messages(
+        &self,
+        term: String,
+    ) -> Result<Vec<supermessage_core::search::SearchResultDto>, FfiError> {
+        Ok(self.runtime.block_on(self.session.search_messages(&term))?)
+    }
+
+    /// Everything the info panel shows about a room.
+    pub fn room_info(
+        &self,
+        room_id: String,
+    ) -> Result<supermessage_core::room_info::RoomInfoDto, FfiError> {
+        Ok(self.runtime.block_on(self.session.room_info(&room_id))?)
     }
 
     /// Sign out and wipe the local stores.
@@ -185,4 +449,45 @@ fn install_tracing() {
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .try_init();
+}
+
+/// The focused timeline as of one moment.
+///
+/// Named fields rather than the core's bare tuple: a tuple crossing an FFI
+/// arrives in Swift as `.0`, `.1`, `.2`, and a host reading `snapshot.1` has
+/// no way to know it is a sequence number.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TimelineSnapshot {
+    pub room_id: String,
+    pub seq: u64,
+    pub items: Vec<supermessage_core::dto::TimelineItemDto>,
+}
+
+/// A file staged for sending, as the host sees it.
+///
+/// The core's `StagedAttachment` is already a plain record; this mirrors it so
+/// the FFI surface does not depend on the core deriving UniFFI traits for a
+/// type only this crate exposes.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct StagedFile {
+    /// What `attachment_send` takes. Single-use.
+    pub token: String,
+    pub filename: String,
+    pub size_bytes: u64,
+    pub mime: String,
+    pub width: Option<u64>,
+    pub height: Option<u64>,
+}
+
+impl From<supermessage_core::attachments::StagedAttachment> for StagedFile {
+    fn from(meta: supermessage_core::attachments::StagedAttachment) -> Self {
+        Self {
+            token: meta.token,
+            filename: meta.filename,
+            size_bytes: meta.size_bytes,
+            mime: meta.mime,
+            width: meta.width,
+            height: meta.height,
+        }
+    }
 }

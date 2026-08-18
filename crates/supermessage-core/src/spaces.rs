@@ -55,7 +55,7 @@ use super::error::{CoreError, CoreResult};
 pub const MAX_SPACE_DEPTH: usize = 8;
 
 /// One space, as the rail renders it — joined, or merely invited.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceSummary {
     pub id: String,
