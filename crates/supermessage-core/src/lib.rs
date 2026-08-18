@@ -31,6 +31,7 @@ uniffi::setup_scaffolding!();
 
 pub mod attachments;
 pub mod auth;
+pub mod custom_events;
 pub mod dto;
 pub mod error;
 pub mod event;
