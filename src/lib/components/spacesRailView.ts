@@ -30,7 +30,6 @@
 // (design §6). Nothing here touches the DOM, Svelte, a store or the clock.
 
 import type { SpaceSummary } from "$lib/ipc";
-import { parseRoomIdentity, roomInitial } from "./roomIdentity";
 
 /** One button in the rail — "All rooms", or a space. */
 export interface RailEntry {
@@ -52,7 +51,7 @@ export interface RailEntry {
    * The single character for the avatar's fallback circle: the parsed glyph
    * when the space name has one, otherwise the first letter of the parsed
    * name (never the raw first character of the whole name — see
-   * `roomIdentity.ts`'s `roomInitial`). `"All"` for the "All rooms" entry,
+   * `core::room_identity`'s `initial`). `"All"` for the "All rooms" entry,
    * which has no avatar to fall back *from*.
    */
   initial: string;
@@ -114,13 +113,13 @@ function roomCountPhrase(count: number): string | null {
  * `RoomList.svelte`'s `rowAriaLabel`: the most identifying fact first, and
  * no visual punctuation ("·") that a screen reader would read out literally.
  *
- * Both halves come from `parseRoomIdentity`, which bounds them (120 and 40
+ * Both halves come from `core::room_identity`, which bounds them (120 and 40
  * code points) — a space name is server-controlled text and nothing stops it
  * being megabytes long. That bound is why this label is safe to put in a
  * `title` attribute as well as an `aria-label`.
  */
 export function spaceEntryLabel(space: SpaceSummary): string {
-  const identity = parseRoomIdentity(space.name);
+  const identity = space.identity;
   const parts = [identity.name];
   if (identity.role !== null) parts.push(identity.role);
   // An invitation never counts rooms. `childCount` is 0 for one, and "No
@@ -151,7 +150,7 @@ export function railEntries(spaces: SpaceSummary[]): RailEntry[] {
     ...spaces.map((space) => ({
       spaceId: space.id,
       label: spaceEntryLabel(space),
-      initial: roomInitial(parseRoomIdentity(space.name)),
+      initial: space.identity.initial,
       pending: space.membership === "invited",
     })),
   ];

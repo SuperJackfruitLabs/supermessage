@@ -71,14 +71,11 @@
 
   import { onDestroy, onMount, tick } from "svelte";
   import { roomInfo } from "$lib/ipc";
-  import {
-    applyMention,
-    collectMentions,
-    findMentionQuery,
-    matchMentions,
-    mentionLabel,
-    type Mentionable,
-  } from "./mentions";
+  import { applyMention, findMentionQuery, matchMentions, mentionLabel } from "./mentions";
+  // `collectMentions` is the core's: it produces the `m.mentions` that goes on
+  // the wire, and an agent decides a message was addressed to it from that.
+  // The caret handling above it stays here, where the input model lives.
+  import { collectMentions, type Mentionable } from "$lib/ipc";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { DraftTracker } from "./draftTracker";
@@ -529,7 +526,7 @@
         // Resolved from the finished text rather than tracked as the reader
         // types: a mention that was typed and then deleted must not still be
         // reported, and one pasted in whole should count.
-        await timelineStore.send(sentRoomId, body, collectMentions(body, members));
+        await timelineStore.send(sentRoomId, body, await collectMentions(body, members));
       }
       if (roomId === sentRoomId) {
         value = "";

@@ -109,30 +109,7 @@ export function applyMention(
   return { text: next, caret: found.start + label.length };
 }
 
-/**
- * The user ids a finished message mentions, for `m.mentions`.
- *
- * Matched on the label the composer inserted, longest first: with members
- * called "Ana" and "Ana Lyra", a message addressed to the latter must not
- * report the former as mentioned too. Each member is reported at most once,
- * however many times they appear.
- */
-export function collectMentions(text: string, members: readonly Mentionable[]): string[] {
-  const byLength = [...members].sort(
-    (a, b) => mentionLabel(b).length - mentionLabel(a).length
-  );
-
-  const found: string[] = [];
-  let remaining = text;
-
-  for (const member of byLength) {
-    const needle = `@${mentionLabel(member)}`;
-    if (!remaining.includes(needle)) continue;
-    found.push(member.userId);
-    // Removed so a shorter name that is a prefix of this one cannot match the
-    // same characters again.
-    remaining = remaining.split(needle).join(" ");
-  }
-
-  return found;
-}
+// `collectMentions` moved to `core::mentions`: it produces the `m.mentions`
+// that goes on the wire, and an agent decides a message was addressed to it
+// from that field. Everything above is caret handling — input UX, which
+// differs per platform and stays here.

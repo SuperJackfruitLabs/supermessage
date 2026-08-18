@@ -6,9 +6,12 @@
 //! that fails at the homeserver, and offering nothing where an invitation is
 //! waiting hides the only action there is.
 //!
-//! The two strings travel with it. They name the room and explain an empty
-//! pane, and a client that worded them differently would be describing the
-//! same state in two voices.
+//! The **copy stays out**. `invitationPrompt` interpolates a room name into a
+//! sentence and `INVITATION_EMPTY_TIMELINE` explains an empty pane; both are
+//! user-visible wording a host renders inline, and a host cannot await
+//! mid-render for a format string. Two clients wording them differently is a
+//! design difference a person can see and fix, not a correctness bug — which
+//! is the line this whole migration is drawn on.
 
 use crate::dto::Membership;
 
@@ -40,24 +43,6 @@ pub fn room_affordance(membership: Membership) -> RoomAffordance {
 pub fn is_invitation(membership: Membership) -> bool {
     matches!(membership, Membership::Invited)
 }
-
-/// The line the room pane shows above Accept / Decline.
-///
-/// Names the room, because an operator with thirty-two agent invitations
-/// waiting is accepting them one at a time and the pane is the only thing
-/// saying which one this is.
-pub fn invitation_prompt(room_name: &str) -> String {
-    format!("You have been invited to {room_name}.")
-}
-
-/// What the timeline shows in place of history for an invitation.
-///
-/// An invited room has no readable history — membership is `invite`, so the
-/// homeserver sends state and nothing else — and the one event that does come
-/// through renders as "… created the room", which reads like a broken room
-/// rather than an unopened one. Saying so plainly is the whole fix; there is
-/// no history to go and fetch.
-pub const INVITATION_EMPTY_TIMELINE: &str = "Accept the invitation to see this room's messages.";
 
 #[cfg(test)]
 mod tests {
@@ -100,15 +85,5 @@ mod tests {
         ] {
             assert!(!is_invitation(membership), "for {membership:?}");
         }
-    }
-
-    #[test]
-    fn the_prompt_names_the_room() {
-        // The whole point: thirty-two invitations accepted one at a time, and
-        // this is the only line saying which one is on screen.
-        assert_eq!(
-            invitation_prompt("🧠 Buddhimaan"),
-            "You have been invited to 🧠 Buddhimaan."
-        );
     }
 }

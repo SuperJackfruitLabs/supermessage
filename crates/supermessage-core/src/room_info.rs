@@ -44,6 +44,12 @@ pub struct RoomMemberDto {
 pub struct RoomInfoDto {
     pub room_id: String,
     pub name: Option<String>,
+    /// The display name parsed into sigil / name / role.
+    ///
+    /// Resolved against the same fallback the panel used to apply by hand —
+    /// the trimmed name, or the room id when there is none — so the header and
+    /// the roster row cannot disagree about what a room is called.
+    pub identity: crate::room_identity::RoomIdentity,
     pub topic: Option<String>,
     pub canonical_alias: Option<String>,
     pub alt_aliases: Vec<String>,
@@ -93,6 +99,14 @@ pub fn project_room_info_parts(
     members: Vec<RoomMemberDto>,
 ) -> RoomInfoDto {
     RoomInfoDto {
+        // The same fallback the panel used to apply by hand: the trimmed
+        // name, or the room id when there is none.
+        identity: crate::room_identity::parse_room_identity(
+            name.as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .unwrap_or(room_id),
+        ),
         room_id: room_id.to_string(),
         name,
         topic,

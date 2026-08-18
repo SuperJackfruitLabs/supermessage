@@ -1,12 +1,8 @@
+// `collectMentions` moved to `core::mentions` — it produces what goes on the
+// wire. The caret handling below is input UX and stays here.
 import { describe, expect, it } from "vitest";
-import {
-  applyMention,
-  collectMentions,
-  findMentionQuery,
-  matchMentions,
-  mentionLabel,
-  type Mentionable,
-} from "./mentions";
+import { applyMention, findMentionQuery, matchMentions, mentionLabel } from "./mentions";
+import type { Mentionable } from "$lib/ipc";
 
 const ANA: Mentionable = { userId: "@ana:example.org", displayName: "Ana" };
 const LYRA: Mentionable = { userId: "@lyra:example.org", displayName: "Ana Lyra" };
@@ -86,26 +82,3 @@ describe("completing a mention", () => {
   });
 });
 
-describe("collecting mentions from a finished message", () => {
-  it("finds the members addressed", () => {
-    expect(collectMentions("@Ana take a look", MEMBERS)).toEqual([ANA.userId]);
-  });
-
-  it("prefers the longest name, so a prefix does not steal the match", () => {
-    // "@Ana Lyra" contains "@Ana". Reporting both would tell Ana she was
-    // addressed when she was not — a false highlight is worse than none.
-    expect(collectMentions("@Ana Lyra please retry", MEMBERS)).toEqual([LYRA.userId]);
-  });
-
-  it("reports a member once however often they appear", () => {
-    expect(collectMentions("@Ana @Ana @Ana", MEMBERS)).toEqual([ANA.userId]);
-  });
-
-  it("finds nobody in a message that mentions nobody", () => {
-    expect(collectMentions("just talking", MEMBERS)).toEqual([]);
-  });
-
-  it("does not mistake an email for a mention", () => {
-    expect(collectMentions("write to ana@example.org", MEMBERS)).toEqual([]);
-  });
-});

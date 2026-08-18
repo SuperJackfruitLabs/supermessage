@@ -971,7 +971,7 @@
    * routing across spaces matters later, that is a core change, not a
    * webview one. */
   function knownRoomIds(): readonly string[] {
-    return roomsStore.rooms.map((room) => room.id);
+    return roomsStore.rooms.map((row) => row.room.id);
   }
 </script>
 

@@ -28,29 +28,6 @@ import type { Membership } from "$lib/ipc";
  *   honest to offer, and inventing an affordance for a state nobody can act
  *   on is worse than a quiet pane.
  */
-export type RoomAffordance = "compose" | "respondToInvitation" | "nothing";
-
-export function roomAffordance(membership: Membership): RoomAffordance {
-  switch (membership) {
-    case "joined":
-      return "compose";
-    case "invited":
-      return "respondToInvitation";
-    // `left` is reachable in the window between leaving a room and the
-    // roster's next diff dropping it; `knocked` and `banned` are states the
-    // SDK can report and this client has no flow for.
-    case "left":
-    case "knocked":
-    case "banned":
-      return "nothing";
-  }
-}
-
-/** Whether a roster row should read as an invitation rather than a room. */
-export function isInvitation(membership: Membership): boolean {
-  return membership === "invited";
-}
-
 /**
  * The line the room pane shows above Accept / Decline.
  *

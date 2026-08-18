@@ -95,6 +95,13 @@ pub struct SpaceSummary {
     /// answers `UnknownSpace` for it, which is correct, because a subtree you
     /// have not joined is not a filter you can apply.
     pub membership: Membership,
+    /// The name parsed into the suite's `<glyph> <Name> — <Role>` convention.
+    ///
+    /// Carried for the same reason a room's is: the rail draws a sigil and a
+    /// label while rendering, and markup cannot await. A space is named by the
+    /// same convention as a room, so it is parsed by the same code rather than
+    /// by a second copy that would drift.
+    pub identity: crate::room_identity::RoomIdentity,
 }
 
 /// Whether an `m.space.child` event actually declares a child.
@@ -265,6 +272,7 @@ impl SpaceIndex {
             .iter()
             .map(|space| SpaceSummary {
                 id: space.id.to_string(),
+                identity: crate::room_identity::parse_room_identity(&space.name),
                 name: space.name.clone(),
                 avatar_url: space.avatar_url.clone(),
                 // Zero for an invitation, and not because counting is hard:

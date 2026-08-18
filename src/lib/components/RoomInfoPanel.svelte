@@ -44,7 +44,6 @@
   import { roomInfo, type RoomInfo } from "$lib/ipc";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
-  import { parseRoomIdentity, roomInitial } from "./roomIdentity";
   import { initial, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
 
   /**
@@ -192,7 +191,7 @@
   {:else if info}
     {@const currentRoomId = info.roomId}
     {@const avatar = avatarCache.get(currentRoomId)}
-    {@const identity = parseRoomIdentity(roomDisplayName(info))}
+    {@const identity = info.identity}
     <div class="flex flex-col items-center gap-2 border-b border-border px-4 py-5">
       {#if avatar}
         <img
@@ -207,7 +206,7 @@
           class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-avatar text-content"
           aria-hidden="true"
         >
-          {roomInitial(identity)}
+          {identity.initial}
         </span>
       {/if}
       <p class="selectable max-w-full text-center text-ui-lg break-words text-content">

@@ -43,10 +43,7 @@
 
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
-  import { parseRoomIdentity, relativeTime, roomInitial } from "./roomIdentity";
-  import { composeRoomPreview } from "./roomPreview";
-  import { isInvitation } from "./invitationView";
-  import { DECISION_BEARING_EVENT_TYPES } from "./roomPreview";
+  import { relativeTime } from "./roomIdentity";
 
   /**
    * `onSelect` fires after a row is chosen, whether or not that changed the
@@ -79,7 +76,9 @@
   }
 
   const sortedRooms = $derived(
-    [...roomsStore.rooms].sort((a, b) => (b.lastActivityMs ?? 0) - (a.lastActivityMs ?? 0)),
+    [...roomsStore.rooms].sort(
+      (a, b) => (b.room.lastActivityMs ?? 0) - (a.room.lastActivityMs ?? 0),
+    ),
   );
 
   // Recency threshold for spec §6.1's muted-vs-faint split on the "· 4m"
@@ -171,20 +170,28 @@
   {#if sortedRooms.length === 0}
     <p class="px-4 py-6 text-center text-ui text-content-muted">No rooms yet.</p>
   {:else}
-    {#each sortedRooms as room (room.id)}
+    {#each sortedRooms as row (row.room.id)}
+      <!--
+        The row arrives with its name already split, its preview already
+        composed and its affordance already chosen — the core decided all
+        three, so iOS and this app cannot disagree about any of them. Only
+        `time` is still derived here, because it reads a clock and has to
+        re-evaluate as `now` ticks.
+      -->
+      {@const room = row.room}
+      {@const identity = row.identity}
+      {@const preview = row.preview}
       {@const selected = room.id === roomsStore.selectedId}
       {@const avatar = avatarCache.get(room.id)}
-      {@const identity = parseRoomIdentity(room.name)}
       {@const time = relativeTime(room.lastActivityMs, now)}
       {@const recent = room.lastActivityMs !== null && now - room.lastActivityMs < RECENT_MS}
-      {@const preview = composeRoomPreview(room, DECISION_BEARING_EVENT_TYPES)}
       <!--
         Each of the two lines below the name asks its own question — see
         this component's doc comment on why there is no shared "show the
         rest of the row" flag any more.
       -->
       {@const showRoleTime = identity.role !== null || time !== null}
-      {@const invited = isInvitation(room.membership)}
+      {@const invited = row.affordance === "respondToInvitation"}
       <button
         type="button"
         onclick={() => chooseRoom(room.id)}
@@ -215,7 +222,7 @@
             class="flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
             aria-hidden="true"
           >
-            {roomInitial(identity)}
+            {identity.initial}
           </span>
         {/if}
         <!--

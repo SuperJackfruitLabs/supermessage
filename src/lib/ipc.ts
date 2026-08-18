@@ -167,6 +167,12 @@ export interface RoomMember {
  * unlike {@link RoomSummary}/{@link TimelineItem}.
  */
 export interface RoomInfo {
+  /**
+   * The name parsed into the suite's `<glyph> <Name> — <Role>` convention,
+   * by the same code a room's is — so a rail label, a panel header and a
+   * roster row cannot disagree about what something is called.
+   */
+  identity: RoomIdentity;
   roomId: string;
   name: string | null;
   topic: string | null;
@@ -374,6 +380,12 @@ export interface Reaction {
  * {@link roomAvatar}, keyed on this `id`.
  */
 export interface SpaceSummary {
+  /**
+   * The name parsed into the suite's `<glyph> <Name> — <Role>` convention,
+   * by the same code a room's is — so a rail label, a panel header and a
+   * roster row cannot disagree about what something is called.
+   */
+  identity: RoomIdentity;
   id: string;
   /**
    * The space's display name, **never empty**: the core falls back to the
@@ -738,6 +750,67 @@ export interface TimelineRow {
   replyPreview: string | null;
 }
 
+/** A room name split into the suite's `<glyph> <Name> — <Role>` convention. */
+export interface RoomIdentity {
+  /** The leading emoji or symbol, `null` when the name has none. */
+  glyph: string | null;
+  /** Never empty — a blank name becomes the literal "Unnamed room". */
+  name: string;
+  role: string | null;
+  /**
+   * The single character for an avatar's fallback slot. Derived from the
+   * *parsed* name, never the raw one.
+   */
+  initial: string;
+}
+
+/** A composed roster preview line. */
+export interface RoomPreview {
+  /** Ready to render. Never empty. */
+  text: string;
+  /**
+   * Whether this is the pending-decision line — the row's amber switch.
+   * `true` only ever means the operator owes someone an answer.
+   */
+  pending: boolean;
+}
+
+/** What the room pane may offer for a membership. */
+export type RoomAffordance = "compose" | "respondToInvitation" | "nothing";
+
+/**
+ * A room together with every decision the core made about it.
+ *
+ * The roster mirror of {@link TimelineRow}, and for the same reason: a row is
+ * drawn from a name already split, a preview already composed and an
+ * affordance already chosen, none of which markup can go and fetch.
+ */
+export interface RoomRow {
+  room: RoomSummary;
+  identity: RoomIdentity;
+  /** `null` when the row shows no preview line at all. */
+  preview: RoomPreview | null;
+  affordance: RoomAffordance;
+}
+
+/** A member a message can address, for {@link collectMentions}. */
+export interface Mentionable {
+  userId: string;
+  displayName: string | null;
+}
+
+/** What a parsed matrix.to or `matrix:` link addresses. */
+export type MatrixLinkTarget =
+  | { kind: "room"; roomId: string; eventId: string | null }
+  | { kind: "roomAlias"; alias: string; eventId: string | null }
+  | { kind: "user"; userId: string }
+  /**
+   * Recognisably a matrix link, but too malformed — or an address form the
+   * grammar does not define — to extract anything from. Distinct from `null`,
+   * which means "not a matrix link in the first place".
+   */
+  | { kind: "unknown" };
+
 const ROOMS_DIFF_EVENT = "sm://rooms/diff";
 const TIMELINE_DIFF_EVENT = "sm://timeline/diff";
 const CONNECTION_EVENT = "sm://connection";
@@ -807,8 +880,8 @@ export async function logout(): Promise<void> {
  * core returns this as a 2-element JSON array, not an object — destructure
  * positionally (`const [seq, rooms] = await roomsResync();`).
  */
-export async function roomsResync(): Promise<[number, RoomSummary[]]> {
-  return invoke<[number, RoomSummary[]]>("rooms_resync");
+export async function roomsResync(): Promise<[number, RoomRow[]]> {
+  return invoke<[number, RoomRow[]]>("rooms_resync");
 }
 
 /**
@@ -1261,8 +1334,31 @@ export function onStagedAttachment(handler: (staged: StagedAttachment) => void):
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
-export function onRoomsDiff(handler: (env: DiffEnvelope<RoomSummary>) => void): Promise<UnlistenFn> {
-  return listen<DiffEnvelope<RoomSummary>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));
+export function onRoomsDiff(handler: (env: DiffEnvelope<RoomRow>) => void): Promise<UnlistenFn> {
+  return listen<DiffEnvelope<RoomRow>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * Parses a matrix.to URL or a `matrix:` URI into what it addresses.
+ *
+ * `null` when the href is not a matrix link at all — the signal
+ * `messageLinks.ts` uses to fall back to the system browser unchanged.
+ */
+export async function parseMatrixLink(href: string): Promise<MatrixLinkTarget | null> {
+  return invoke<MatrixLinkTarget | null>("parse_matrix_link", { href });
+}
+
+/**
+ * The user ids a finished message mentions, for `m.mentions`.
+ *
+ * Matched on the label the composer inserted, longest first, so a member
+ * whose name is a prefix of another's is not reported alongside them.
+ */
+export async function collectMentions(
+  text: string,
+  members: readonly Mentionable[],
+): Promise<string[]> {
+  return invoke<string[]>("collect_mentions", { text, members });
 }
 
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */

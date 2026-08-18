@@ -17,11 +17,16 @@ import { createSpacesStore } from "./spaces.svelte";
 import type { CoreError, SpaceSummary } from "$lib/ipc";
 
 function space(id: string, name = id): SpaceSummary {
-  return { id, name, avatarUrl: null, childCount: 2, membership: "joined" };
+  return { id, name, identity: identityOf(name), avatarUrl: null, childCount: 2, membership: "joined" };
 }
 
 function invitedSpace(id: string, name = id): SpaceSummary {
-  return { id, name, avatarUrl: null, childCount: 0, membership: "invited" };
+  return { id, name, identity: identityOf(name), avatarUrl: null, childCount: 0, membership: "invited" };
+}
+
+/** These tests are about gap/resync sequencing, not naming. */
+function identityOf(name: string): SpaceSummary["identity"] {
+  return { glyph: null, name, role: null, initial: name.slice(0, 1).toUpperCase() || "?" };
 }
 
 function coreError(kind: CoreError["kind"]): CoreError {

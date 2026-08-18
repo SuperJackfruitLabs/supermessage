@@ -22,7 +22,6 @@
   import { spacesStore } from "$lib/stores/spaces.svelte";
   import { connectionStore } from "$lib/stores/connection.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
-  import { parseRoomIdentity, roomInitial } from "$lib/components/roomIdentity";
   import { railEntries } from "$lib/components/spacesRailView";
   import type { ConnectionState } from "$lib/ipc";
   import RoomList from "$lib/components/RoomList.svelte";
@@ -36,7 +35,6 @@
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
   import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
-  import { roomAffordance } from "$lib/components/invitationView";
   import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
 
@@ -192,7 +190,12 @@
    * fall back to `!id:server` the instant it did.
    */
   const selectedIdentity = $derived(
-    parseRoomIdentity(roomsStore.selectedRoomName ?? roomsStore.selectedId ?? ""),
+    roomsStore.selectedIdentity ?? {
+      glyph: null,
+      name: roomsStore.selectedRoomName ?? roomsStore.selectedId ?? "",
+      role: null,
+      initial: "?",
+    },
   );
 
   /**
@@ -775,7 +778,7 @@
                   class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
                   aria-hidden="true"
                 >
-                  {roomInitial(selectedIdentity)}
+                  {selectedIdentity.initial}
                 </span>
               {/if}
               <span class="min-w-0 truncate text-ui-lg text-content">{selectedIdentity.name}</span>
@@ -786,7 +789,7 @@
                   pairing it with `truncate` makes the truncation dead code
                   and lets a long role push the connection dot and `Info`
                   button out of the header. The role is bounded to 40
-                  characters by `parseRoomIdentity`, which caps the damage
+                  characters by `core::room_identity`, which caps the damage
                   but does not prevent it. The name is the more important
                   half of the identity, so the chip is the one given a hard
                   ceiling and told to give way first.
@@ -914,12 +917,12 @@
             nothing honest to offer, and a composer that fails at the
             homeserver takes a message and loses it.
           -->
-          {#if roomAffordance(roomsStore.selectedMembership ?? "joined") === "respondToInvitation"}
+          {#if (roomsStore.selectedAffordance ?? "compose") === "respondToInvitation"}
             <InvitationPanel
               roomId={roomsStore.selectedId}
               roomName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
             />
-          {:else if roomAffordance(roomsStore.selectedMembership ?? "joined") === "compose"}
+          {:else if (roomsStore.selectedAffordance ?? "compose") === "compose"}
             <Composer roomId={roomsStore.selectedId} />
           {/if}
         {:else}
@@ -1027,7 +1030,7 @@
 {#if spaceInvite !== null}
   <SpaceInvitePanel
     spaceId={spaceInvite.id}
-    spaceName={spaceInvite.name}
+    label={spaceInvite.identity.name}
     onClose={() => (spaceInviteId = null)}
   />
 {/if}
