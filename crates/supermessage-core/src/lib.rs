@@ -22,6 +22,7 @@ pub mod attachments;
 pub mod auth;
 pub mod dto;
 pub mod error;
+pub mod event;
 pub mod live;
 pub mod media;
 pub mod room_info;

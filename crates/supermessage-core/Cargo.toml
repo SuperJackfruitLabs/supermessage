@@ -9,19 +9,6 @@ license = "MIT"
 name = "supermessage_core"
 
 [dependencies]
-# `tauri` is still here, and should not be.
-#
-# The event sites in sync/rooms/timeline/live/attachments still hold an
-# `AppHandle` and call `.emit()`. Task 3 replaces them with `EventSink`, and
-# this dependency goes with them. Keeping the move and the abstraction as
-# separate commits keeps each one reviewable; carrying tauri for exactly one
-# commit is the price.
-tauri = { version = "2", features = [] }
-# Also temporary, and a bigger finding than the emit sites: `attachments.rs`
-# and `session.rs` open **native file pickers**. Picking a file is a host
-# concern — SwiftUI has its own picker and no notion of a Tauri dialog — so
-# Task 3 abstracts this behind a `FilePicker` trait next to `EventSink`.
-tauri-plugin-dialog = "2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -138,6 +138,8 @@
 //!    first subscription in [`FocusedTimeline::subscribe`] already relies
 //!    on.
 
+use crate::event::{CoreEvent, EventSink};
+
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -168,7 +170,6 @@ use matrix_sdk_ui::timeline::{
     TimelineItemContent, TimelineItemKind, TimelineReadReceiptTracking, VirtualTimelineItem,
 };
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 
@@ -1666,7 +1667,7 @@ impl FocusedTimeline {
         &self,
         client: &Client,
         room_id: &str,
-        app: AppHandle,
+        sink: Arc<dyn EventSink>,
     ) -> CoreResult<()> {
         // Waits for the previous room's task to be gone, not merely
         // cancelled, before the (slow) build below starts — so it cannot
@@ -1722,7 +1723,7 @@ impl FocusedTimeline {
         let (typing_guard, mut typing_rx) = room.subscribe_to_typing_notifications();
         let typing_room = room.clone();
         let typing_subject = room_id.to_string();
-        let typing_app = app.clone();
+        let typing_sink = Arc::clone(&sink);
         let typing_task = tokio::spawn(async move {
             // Keeps the client event handler registered for exactly as long
             // as this task runs; dropped (deregistering it) the instant the
@@ -1733,7 +1734,7 @@ impl FocusedTimeline {
                 match typing_rx.recv().await {
                     Ok(user_ids) => {
                         let users = resolve_typing_users(&typing_room, &user_ids).await;
-                        emit_typing(&typing_app, &typing_subject, users);
+                        emit_typing(&typing_sink, &typing_subject, users);
                     }
                     // A slow consumer missed some updates — the next `Ok`
                     // still carries the *current*, complete typing list (see
@@ -1777,7 +1778,7 @@ impl FocusedTimeline {
             let ops = vec![DiffOp::Reset {
                 values: project_initial(&initial, &own_user),
             }];
-            emit_ops(&app, &task_state, &mut seq, &subject, ops);
+            emit_ops(&sink, &task_state, &mut seq, &subject, ops);
 
             // Seed the room with real history.
             //
@@ -1831,7 +1832,7 @@ impl FocusedTimeline {
                         // nothing", never "three per subscription" — see
                         // `RecoveryBudget`.
                         budget.on_progress();
-                        emit_ops(&app, &task_state, &mut seq, &subject, ops);
+                        emit_ops(&sink, &task_state, &mut seq, &subject, ops);
                     }
                     BatchDecision::ReseedInstead(reason) => {
                         let attempt = budget.on_recovery(reason);
@@ -1965,7 +1966,7 @@ impl FocusedTimeline {
                         }
 
                         emit_ops(
-                            &app,
+                            &sink,
                             &task_state,
                             &mut seq,
                             &subject,
@@ -2370,7 +2371,7 @@ impl FocusedTimeline {
     /// it is returned. That is acceptable here only because the staged token
     /// it produces is *bound* to whatever room this returned, and the send
     /// that eventually redeems it takes the full guard.
-    pub(crate) fn focused_room_id(&self) -> Option<String> {
+    pub fn focused_room_id(&self) -> Option<String> {
         self.0
             .lock()
             .ok()?
@@ -2724,7 +2725,7 @@ fn verify_room_focus(requested: &str, focused: &str) -> CoreResult<()> {
 /// [`should_reseed`] without a second, separately-locked read of the same
 /// state.
 fn emit_ops(
-    app: &AppHandle,
+    sink: &Arc<dyn EventSink>,
     state: &Arc<Mutex<TimelineState>>,
     seq: &mut SeqCounter,
     subject: &str,
@@ -2788,9 +2789,7 @@ fn emit_ops(
         seq: seq_no,
         ops: wire_ops,
     };
-    if let Err(err) = app.emit(TIMELINE_DIFF_EVENT, &envelope) {
-        tracing::warn!(error = %err, "failed to emit {TIMELINE_DIFF_EVENT}");
-    }
+    sink.emit(CoreEvent::TimelineDiff(envelope));
 
     (before, after)
 }
@@ -2800,22 +2799,20 @@ fn emit_ops(
 /// still-arriving envelope for the room it just left, the same "check the
 /// subject" discipline [`DiffEnvelope`] uses on the timeline/room-list
 /// channels) plus who's typing there right now.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct TypingPayload {
+pub struct TypingPayload {
     room_id: String,
     users: Vec<TypingUserDto>,
 }
 
 /// Emits one [`TYPING_EVENT`] envelope for `room_id`.
-fn emit_typing(app: &AppHandle, room_id: &str, users: Vec<TypingUserDto>) {
+fn emit_typing(sink: &Arc<dyn EventSink>, room_id: &str, users: Vec<TypingUserDto>) {
     let payload = TypingPayload {
         room_id: room_id.to_string(),
         users,
     };
-    if let Err(err) = app.emit(TYPING_EVENT, &payload) {
-        tracing::warn!(error = %err, "failed to emit {TYPING_EVENT}");
-    }
+    sink.emit(CoreEvent::Typing(payload));
 }
 
 #[cfg(test)]

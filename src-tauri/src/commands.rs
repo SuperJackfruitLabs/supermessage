@@ -8,9 +8,11 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
+use crate::host::{TauriFilePicker, TauriSink};
 use supermessage_core::attachments::{self, StagedAttachment, StagedAttachments};
 use supermessage_core::dto::RoomSummary;
 use supermessage_core::error::CoreError;
+use supermessage_core::event::FilePicker;
 use supermessage_core::room_info::RoomInfoDto;
 use supermessage_core::search::SearchResultDto;
 use supermessage_core::session::Session;
@@ -29,7 +31,7 @@ pub async fn login(
     session: State<'_, Session>,
 ) -> Result<(), CoreError> {
     session
-        .login_and_start(&homeserver, &username, &password, app)
+        .login_and_start(&homeserver, &username, &password, Arc::new(TauriSink(app)))
         .await
 }
 
@@ -45,7 +47,7 @@ pub async fn restore_session(
     app: AppHandle,
     session: State<'_, Session>,
 ) -> Result<bool, CoreError> {
-    session.restore_and_start(app).await
+    session.restore_and_start(Arc::new(TauriSink(app))).await
 }
 
 /// Logs out, clearing the session, secrets and local stores. `Session::logout`
@@ -130,7 +132,9 @@ pub async fn timeline_subscribe(
     app: AppHandle,
     session: State<'_, Session>,
 ) -> Result<(), CoreError> {
-    session.subscribe_timeline(&room_id, app).await
+    session
+        .subscribe_timeline(&room_id, Arc::new(TauriSink(app)))
+        .await
 }
 
 /// Paginates `room_id`'s timeline backwards by up to `count` events. Returns
@@ -391,7 +395,12 @@ pub async fn media_download(
     app: tauri::AppHandle,
     session: State<'_, Session>,
 ) -> Result<Option<String>, CoreError> {
-    session.media_download(&app, &event_id).await
+    session
+        .media_download(
+            &(Arc::new(TauriFilePicker(app)) as Arc<dyn FilePicker>),
+            &event_id,
+        )
+        .await
 }
 
 #[tauri::command]
@@ -468,7 +477,14 @@ pub async fn attachment_stage(
     timeline: State<'_, Arc<FocusedTimeline>>,
     staged: State<'_, Arc<StagedAttachments>>,
 ) -> Result<Option<StagedAttachment>, CoreError> {
-    attachments::stage_from_picker(&app, &session, &timeline, &staged, &room_id).await
+    attachments::stage_from_picker(
+        &(Arc::new(TauriFilePicker(app)) as Arc<dyn FilePicker>),
+        &session,
+        &timeline,
+        &staged,
+        &room_id,
+    )
+    .await
 }
 
 /// Reads, uploads and sends the file `token` stands for, into `room_id`.

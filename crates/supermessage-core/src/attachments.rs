@@ -46,10 +46,9 @@ use mime::Mime;
 use rand::rngs::OsRng;
 use rand::TryRngCore as _;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_dialog::DialogExt as _;
 
 use super::error::{CoreError, CoreResult};
+use super::event::FilePicker;
 use super::session::Session;
 use super::timeline::FocusedTimeline;
 
@@ -511,7 +510,7 @@ pub(crate) fn format_bytes(bytes: u64) -> String {
 /// the main thread it deadlocks the event loop outright. Awaiting a oneshot
 /// costs nothing while the dialog is up.
 pub async fn stage_from_picker(
-    app: &AppHandle,
+    picker: &std::sync::Arc<dyn FilePicker>,
     session: &Session,
     focused: &FocusedTimeline,
     staged: &StagedAttachments,
@@ -520,23 +519,11 @@ pub async fn stage_from_picker(
     focused.verify_focus(room_id)?;
     let client = session.require_client().await?;
 
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog().file().pick_file(move |picked| {
-        // The receiver is only gone if this command was cancelled, in which
-        // case there is nobody left to tell.
-        let _ = tx.send(picked);
-    });
-
-    let Some(picked) = rx
-        .await
-        .map_err(|_| CoreError::Protocol("the file picker closed without answering".into()))?
-    else {
+    // Which file is the host's question to ask — a Tauri dialog on desktop, a
+    // document picker on iOS. Cancelling is an ordinary answer.
+    let Some(path) = picker.pick_file().await else {
         return Ok(None);
     };
-
-    let path = picked
-        .into_path()
-        .map_err(|e| CoreError::Protocol(format!("unusable file path: {e}")))?;
 
     stage_path(&client, staged, room_id, path).await.map(Some)
 }
@@ -547,7 +534,7 @@ pub async fn stage_from_picker(
 /// Nothing after the size check reads more than a header, and nothing here
 /// reads the file body at all — that happens in [`send_staged`]. A staged
 /// file is a path and a few dozen bytes of metadata.
-async fn stage_path(
+pub async fn stage_path(
     client: &Client,
     staged: &StagedAttachments,
     room_id: &str,
@@ -729,49 +716,6 @@ impl StagedAttachments {
 ///
 /// Failures are logged, not surfaced: there is no invocation to fail, and a
 /// dropped directory or an oversized file should not become a dialog the
-/// reader did not ask for. The absence of a staged strip is the feedback.
-pub fn on_files_dropped(app: &AppHandle, paths: Vec<PathBuf>) {
-    let Some(path) = paths.first().cloned() else {
-        return;
-    };
-    if paths.len() > 1 {
-        tracing::info!(
-            dropped = paths.len(),
-            "only the first dropped file is staged; multiple attachments are out of scope"
-        );
-    }
-
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let session = app.state::<Session>();
-        let focused = app.state::<std::sync::Arc<FocusedTimeline>>();
-        let staged = app.state::<std::sync::Arc<StagedAttachments>>();
-
-        let Some(room_id) = focused.focused_room_id() else {
-            tracing::info!("ignoring a dropped file: no room is focused");
-            return;
-        };
-
-        let client = match session.require_client().await {
-            Ok(client) => client,
-            Err(err) => {
-                tracing::warn!(error = %err, "ignoring a dropped file: no active session");
-                return;
-            }
-        };
-
-        match stage_path(&client, &staged, &room_id, path).await {
-            Ok(meta) => {
-                if let Err(err) = app.emit(STAGED_ATTACHMENT_EVENT, &meta) {
-                    tracing::error!(error = %err, "failed to emit a staged attachment");
-                }
-            }
-            Err(err) => {
-                tracing::warn!(error = %err, "could not stage a dropped file");
-            }
-        }
-    });
-}
 
 #[cfg(test)]
 mod tests {

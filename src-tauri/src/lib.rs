@@ -18,6 +18,7 @@ use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
 use supermessage_core::attachments;
 mod commands;
+mod host;
 
 use crate::commands::{
     attachment_discard, attachment_send, attachment_stage, connection_state, create_room,
@@ -166,7 +167,7 @@ pub fn run() {
         // the handler Tauri's own documented example uses.
         .on_window_event(|window, event| {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
-                attachments::on_files_dropped(window.app_handle(), paths.clone());
+                host::on_files_dropped(window.app_handle(), paths.clone());
             }
         })
         .setup(|app| {

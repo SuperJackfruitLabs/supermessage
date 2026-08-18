@@ -26,8 +26,6 @@ use matrix_sdk::{
     },
     Client,
 };
-use tauri::AppHandle;
-use tauri_plugin_dialog::DialogExt;
 use tokio::sync::{Mutex, RwLock};
 
 use super::attachments;
@@ -35,6 +33,7 @@ use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
 use super::dto::RoomSummary;
 use super::error::{CoreError, CoreResult};
+use super::event::{EventSink, FilePicker};
 use super::live;
 use super::media;
 use super::room_info::{self, RoomInfoDto};
@@ -220,11 +219,11 @@ impl Session {
         homeserver: &str,
         username: &str,
         password: &str,
-        app: AppHandle,
+        sink: Arc<dyn EventSink>,
     ) -> CoreResult<()> {
         let _lifecycle = self.lifecycle.lock().await;
         self.login(homeserver, username, password).await?;
-        self.start_or_roll_back(app).await
+        self.start_or_roll_back(sink).await
     }
 
     /// Starts the streams, and on failure leaves *nothing* installed rather
@@ -237,8 +236,8 @@ impl Session {
     /// persisted session in the keyring is deliberately left alone — the
     /// next `restore_and_start` then gets a clean full attempt instead of
     /// minting another device with a fresh login.
-    async fn start_or_roll_back(&self, app: AppHandle) -> CoreResult<()> {
-        if let Err(err) = self.start_streams(app).await {
+    async fn start_or_roll_back(&self, sink: Arc<dyn EventSink>) -> CoreResult<()> {
+        if let Err(err) = self.start_streams(sink).await {
             self.stop_room_list().await;
             self.stop_sync().await;
             *self.client.write().await = None;
@@ -264,7 +263,7 @@ impl Session {
     /// stream as duplicates — a room list frozen at login for the rest of
     /// the session. Guarding here rather than at the call site fixes that
     /// for every caller, present and future.
-    pub async fn restore_and_start(&self, app: AppHandle) -> CoreResult<bool> {
+    pub async fn restore_and_start(&self, sink: Arc<dyn EventSink>) -> CoreResult<bool> {
         let _lifecycle = self.lifecycle.lock().await;
         // Deliberately "already *running*", not merely "a client exists".
         // A client with no streams behind it is exactly the state a failed
@@ -278,7 +277,7 @@ impl Session {
         if !self.restore().await? {
             return Ok(false);
         }
-        self.start_or_roll_back(app).await?;
+        self.start_or_roll_back(sink).await?;
         Ok(true)
     }
 
@@ -296,10 +295,10 @@ impl Session {
     /// transition the banner would then read "Offline" indefinitely while
     /// sync was in fact running. Tearing the old one down first puts those
     /// two emissions back in the order they describe.
-    pub async fn start_sync(&self, app: AppHandle) -> CoreResult<()> {
+    pub async fn start_sync(&self, sink: Arc<dyn EventSink>) -> CoreResult<()> {
         let client = self.require_client().await?;
         self.stop_sync().await;
-        let handle = sync::start(&client, app).await?;
+        let handle = sync::start(&client, sink).await?;
         *self.sync.write().await = Some(handle);
         Ok(())
     }
@@ -347,12 +346,12 @@ impl Session {
     /// new stream's `seq: 1, 2, 3, ...` all look like duplicates and are
     /// discarded forever. Stopping first means at most one room-list task
     /// can ever be emitting.
-    pub async fn start_room_list(&self, app: AppHandle) -> CoreResult<()> {
+    pub async fn start_room_list(&self, sink: Arc<dyn EventSink>) -> CoreResult<()> {
         self.stop_room_list().await;
         let handle = {
             let sync = self.sync.read().await;
             let sync_handle = sync.as_ref().ok_or(CoreError::NotReady)?;
-            rooms::spawn_room_list(sync_handle, app).await?
+            rooms::spawn_room_list(sync_handle, sink).await?
         };
         *self.rooms.write().await = Some(handle);
         Ok(())
@@ -381,7 +380,7 @@ impl Session {
     ///
     /// Used by the `login`/`restore_session` commands, which would otherwise
     /// need this same start-then-rollback sequencing themselves.
-    pub async fn start_streams(&self, app: AppHandle) -> CoreResult<()> {
+    pub async fn start_streams(&self, sink: Arc<dyn EventSink>) -> CoreResult<()> {
         // Tear the previous session's streams down in dependency order (the
         // room list is projected from the sync service's `RoomListService`,
         // not the other way around) before building anything new.
@@ -390,8 +389,8 @@ impl Session {
         // what gets the *ordering between the two* right.
         self.stop_room_list().await;
         self.stop_sync().await;
-        self.start_sync(app.clone()).await?;
-        if let Err(err) = self.start_room_list(app.clone()).await {
+        self.start_sync(Arc::clone(&sink)).await?;
+        if let Err(err) = self.start_room_list(Arc::clone(&sink)).await {
             self.stop_sync().await;
             return Err(err);
         }
@@ -402,7 +401,7 @@ impl Session {
         // a session without a live view is a session that works, just without
         // watching an agent think.
         if let Ok(client) = self.require_client().await {
-            live::listen(&client, app);
+            live::listen(&client, sink);
         }
         Ok(())
     }
@@ -542,10 +541,14 @@ impl Session {
     /// so keeping it would pin a path nothing can ever use. The discard runs
     /// *after* the subscribe succeeds, so a failed room switch leaves the
     /// reader's staged file exactly where it was.
-    pub async fn subscribe_timeline(&self, room_id: &str, app: AppHandle) -> CoreResult<()> {
+    pub async fn subscribe_timeline(
+        &self,
+        room_id: &str,
+        sink: Arc<dyn EventSink>,
+    ) -> CoreResult<()> {
         let _lifecycle = self.lifecycle.lock().await;
         let client = self.require_client().await?;
-        self.focused.subscribe(&client, room_id, app).await?;
+        self.focused.subscribe(&client, room_id, sink).await?;
         self.staged.retain_room(room_id);
         Ok(())
     }
@@ -652,7 +655,7 @@ impl Session {
 
     pub async fn media_download(
         &self,
-        app: &AppHandle,
+        picker: &Arc<dyn FilePicker>,
         event_id: &str,
     ) -> CoreResult<Option<String>> {
         let client = self.require_client().await?;
@@ -669,26 +672,11 @@ impl Session {
         // failed fetch never leaves a zero-byte file behind.
         let bytes = media::message_media_file(&client, source).await?;
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        app.dialog()
-            .file()
-            .set_file_name(&filename)
-            .save_file(move |picked| {
-                // Gone only if this command was cancelled, in which case there
-                // is nobody left to tell.
-                let _ = tx.send(picked);
-            });
-
-        let Some(path) = rx
-            .await
-            .map_err(|_| CoreError::Protocol("the save dialog closed unexpectedly".into()))?
-        else {
+        // Where to put it is the host's question, not the core's: a save
+        // panel on macOS, an export sheet on iOS, a fixed path in a test.
+        let Some(path) = picker.save_file(&filename).await else {
             return Ok(None);
         };
-
-        let path = path
-            .into_path()
-            .map_err(|e| CoreError::Protocol(e.to_string()))?;
 
         tokio::fs::write(&path, &bytes)
             .await

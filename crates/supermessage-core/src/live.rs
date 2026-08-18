@@ -19,6 +19,10 @@
 //! including not at all. An increment would let one dropped or reordered
 //! message corrupt the text with nothing able to notice.
 
+use std::sync::Arc;
+
+use crate::event::{CoreEvent, EventSink};
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -26,7 +30,6 @@ use matrix_sdk::event_handler::{Ctx, EventHandlerHandle};
 use matrix_sdk::ruma::events::macros::EventContent;
 use matrix_sdk::Client;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
 
 /// One delta of a turn in progress, as AgentPod sends it.
 ///
@@ -222,14 +225,14 @@ impl ThoughtState {
 ///
 /// Registered against the client, so it dies with the session — a logout
 /// rebuilds the client and takes this with it.
-pub fn listen(client: &Client, app: AppHandle) -> EventHandlerHandle {
-    client.add_event_handler_context(app);
+pub fn listen(client: &Client, sink: Arc<dyn EventSink>) -> EventHandlerHandle {
+    client.add_event_handler_context(sink);
     client.add_event_handler_context(std::sync::Arc::new(LiveState::default()));
     client.add_event_handler_context(std::sync::Arc::new(ThoughtState::default()));
 
     client.add_event_handler(
         |ev: StreamDeltaToDeviceEvent,
-         app: Ctx<AppHandle>,
+         sink: Ctx<Arc<dyn EventSink>>,
          state: Ctx<std::sync::Arc<LiveState>>| async move {
             let content = ev.content;
             if !state.accept(
@@ -247,15 +250,13 @@ pub fn listen(client: &Client, app: AppHandle) -> EventHandlerHandle {
                 text: content.text,
                 done: content.done,
             };
-            if let Err(err) = app.emit(LIVE_EVENT, &payload) {
-                tracing::warn!(error = %err, "failed to emit {LIVE_EVENT}");
-            }
+            sink.emit(CoreEvent::Live(payload));
         },
     );
 
     client.add_event_handler(
         |ev: ThoughtDeltaToDeviceEvent,
-         app: Ctx<AppHandle>,
+         sink: Ctx<Arc<dyn EventSink>>,
          state: Ctx<std::sync::Arc<ThoughtState>>| async move {
             let content = ev.content;
             if !state.accept(
@@ -273,9 +274,7 @@ pub fn listen(client: &Client, app: AppHandle) -> EventHandlerHandle {
                 text: content.text,
                 done: content.done,
             };
-            if let Err(err) = app.emit(THOUGHT_EVENT, &payload) {
-                tracing::warn!(error = %err, "failed to emit {THOUGHT_EVENT}");
-            }
+            sink.emit(CoreEvent::Thought(payload));
         },
     );
 
@@ -291,7 +290,7 @@ pub fn listen(client: &Client, app: AppHandle) -> EventHandlerHandle {
     // next to the turn-end clear that bounds it. Volume makes that affordable:
     // tens of updates a turn, against hundreds of text deltas.
     client.add_event_handler(
-        |ev: ToolUpdateToDeviceEvent, app: Ctx<AppHandle>| async move {
+        |ev: ToolUpdateToDeviceEvent, sink: Ctx<Arc<dyn EventSink>>| async move {
             let content = ev.content;
             let payload = ToolPayload {
                 room_id: content.room_id,
@@ -302,9 +301,7 @@ pub fn listen(client: &Client, app: AppHandle) -> EventHandlerHandle {
                 status: content.status,
                 locations: content.locations,
             };
-            if let Err(err) = app.emit(TOOL_EVENT, &payload) {
-                tracing::warn!(error = %err, "failed to emit {TOOL_EVENT}");
-            }
+            sink.emit(CoreEvent::Tool(payload));
         },
     )
 }

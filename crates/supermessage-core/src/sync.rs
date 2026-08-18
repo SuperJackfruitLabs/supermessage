@@ -15,11 +15,12 @@
 
 use std::sync::Arc;
 
+use crate::event::{CoreEvent, EventSink};
+
 use matrix_sdk::Client;
 use matrix_sdk_ui::sync_service::{State, SyncService};
 use matrix_sdk_ui::RoomListService;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
 use super::error::{CoreError, CoreResult};
@@ -66,7 +67,7 @@ pub const CONNECTION_EVENT: &str = "sm://connection";
 
 /// What the webview is told about the connection, whether it was pushed on
 /// [`CONNECTION_EVENT`] or pulled by the `connection_state` command.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ConnectionPayload {
     pub state: &'static str,
     pub message: Option<String>,
@@ -135,7 +136,7 @@ impl Drop for SyncHandle {
 /// Builds a [`SyncService`] for `client`, starts it, and spawns a task that
 /// mirrors [`SyncService::state`] onto [`CONNECTION_EVENT`] for as long as
 /// the returned [`SyncHandle`] lives.
-pub async fn start(client: &Client, app: AppHandle) -> CoreResult<SyncHandle> {
+pub async fn start(client: &Client, sink: Arc<dyn EventSink>) -> CoreResult<SyncHandle> {
     let service = SyncService::builder(client.clone())
         // See `ROOM_LIST_TIMELINE_LIMIT`: the SDK default of 1 makes
         // ordinary syncs unload the focused timeline out from under its
@@ -155,12 +156,12 @@ pub async fn start(client: &Client, app: AppHandle) -> CoreResult<SyncHandle> {
     // subscription, so skipping this step would leave the UI reporting
     // whatever it started at, `offline`, until the next transition).
     let mut states = service.state();
-    emit_connection_state(&app, &states.get());
+    emit_connection_state(&sink, &states.get());
 
-    let watcher_app = app.clone();
+    let watcher_sink = Arc::clone(&sink);
     let watcher = tokio::spawn(async move {
         while let Some(state) = states.next().await {
-            emit_connection_state(&watcher_app, &state);
+            emit_connection_state(&watcher_sink, &state);
         }
     });
 
@@ -197,11 +198,11 @@ fn connection_payload(state: &State) -> ConnectionPayload {
     }
 }
 
-fn emit_connection_state(app: &AppHandle, state: &State) {
-    let payload = connection_payload(state);
-    if let Err(err) = app.emit(CONNECTION_EVENT, &payload) {
-        tracing::warn!(error = %err, "failed to emit {CONNECTION_EVENT}");
-    }
+fn emit_connection_state(sink: &Arc<dyn EventSink>, state: &State) {
+    // No `Result` to check any more: a sink that cannot deliver is the host's
+    // problem to notice, not something the core can do anything about. The
+    // desktop sink keeps the warning that used to live here.
+    sink.emit(CoreEvent::Connection(connection_payload(state)));
 }
 
 #[cfg(test)]

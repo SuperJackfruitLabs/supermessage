@@ -34,7 +34,6 @@ use matrix_sdk_ui::room_list_service::filters::{
 };
 use matrix_sdk_ui::room_list_service::RoomListItem;
 use matrix_sdk_ui::timeline::{LatestEventValue, Profile, RoomExt, TimelineDetails};
-use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -43,6 +42,7 @@ use super::dto::{
     SeqCounter,
 };
 use super::error::{CoreError, CoreResult};
+use super::event::{CoreEvent, EventSink};
 use super::sync::SyncHandle;
 use super::timeline::{latest_event_preview, MessagePreview};
 
@@ -812,7 +812,10 @@ impl Drop for RoomListHandle {
 /// block, and calling `entries_with_dynamic_adapters` from inside that
 /// block, ties the `RoomList`'s lifetime to the task's for as long as the
 /// task runs, so the borrow is always valid for the stream's entire life.
-pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<RoomListHandle> {
+pub async fn spawn_room_list(
+    handle: &SyncHandle,
+    sink: Arc<dyn EventSink>,
+) -> CoreResult<RoomListHandle> {
     let room_list = handle
         .room_list_service()
         .all_rooms()
@@ -847,11 +850,7 @@ pub async fn spawn_room_list(handle: &SyncHandle, app: AppHandle) -> CoreResult<
                 // is still polling it.
                 controller.set_filter(room_list_filter(selection));
             },
-            |envelope| {
-                if let Err(err) = app.emit(ROOMS_DIFF_EVENT, &envelope) {
-                    tracing::warn!(error = %err, "failed to emit {ROOMS_DIFF_EVENT}");
-                }
-            },
+            |envelope| sink.emit(CoreEvent::RoomsDiff(envelope)),
             &task_state,
         )
         .await;
