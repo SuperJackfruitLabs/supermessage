@@ -18,6 +18,17 @@
 //! `session` owns the client; `commands` is the seam where the webview's
 //! Tauri invocations reach it.
 
+// UniFFI's derives need the scaffolding to exist in the crate that *defines*
+// the types — `#[derive(uniffi::Record)]` expands to code referring to this
+// crate's `UniFfiTag`. Without it the derives do not compile at all, which is
+// what forces the choice: either the types are declared here, or they are
+// mirrored in the FFI crate.
+//
+// Declaring them here is the lesser cost, and consistent with `serde` already
+// living in this crate: both are binding formats rather than hosts. The
+// scaffolding emits a few `extern "C"` symbols the desktop build never calls.
+uniffi::setup_scaffolding!();
+
 pub mod attachments;
 pub mod auth;
 pub mod dto;

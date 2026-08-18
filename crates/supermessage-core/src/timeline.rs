@@ -321,7 +321,7 @@ pub fn project_item_parts(
         body: body.map(str::to_string),
         formatted_body: formatted_body.map(str::to_string),
         media,
-        custom_payload,
+        custom_payload: custom_payload.map(crate::dto::CustomPayload),
         timestamp_ms,
         is_own,
         send_state: send_state.map(str::to_string),

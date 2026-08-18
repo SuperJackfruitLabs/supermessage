@@ -730,8 +730,8 @@ async fn custom_message_like_event_projects_a_bounded_payload_and_fallback_body(
         .custom_payload
         .as_ref()
         .expect("a payload under the byte cap must be carried across IPC");
-    assert_eq!(payload["title"], "Deployed to staging");
-    assert_eq!(payload["schema_version"], 1);
+    assert_eq!(payload.0["title"], "Deployed to staging");
+    assert_eq!(payload.0["schema_version"], 1);
 }
 
 #[tokio::test]

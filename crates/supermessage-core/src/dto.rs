@@ -5,8 +5,10 @@
 //! `project_diff` is the exhaustive match that guarantees that boundary holds
 //! even as the SDK evolves.
 
+use crate::UniffiCustomTypeConverter;
 use eyeball_im::VectorDiff;
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 
 /// This account's relationship to a room.
@@ -22,7 +24,7 @@ use std::collections::HashSet;
 /// `Banned` are states the SDK can report, and a boolean would have to fold
 /// them into "joined", which is the kind of lie that costs a second bug
 /// later.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum Membership {
     Joined,
@@ -32,8 +34,41 @@ pub enum Membership {
     Banned,
 }
 
-/// A single room as summarized for the room list.
+/// Arbitrary JSON, crossing the FFI as text because that is what it is.
+///
+/// `TimelineItemDto::custom_payload` carries the body of an event type this
+/// core has never heard of — a dispatch card, an approval request, whatever a
+/// suite ships next. There is no static shape to describe, so UniFFI has no
+/// type for it, and inventing one would be a lie about a payload whose whole
+/// purpose is to be open-ended.
+///
+/// A newtype rather than `serde_json::Value` directly: UniFFI's custom-type
+/// conversion is a trait impl, and both the trait and `Value` are foreign, so
+/// the orphan rule forbids it. `#[serde(transparent)]` keeps the JSON the
+/// webview receives byte-identical — see the wire-format goldens.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct CustomPayload(pub JsonValue);
+
+uniffi::custom_type!(CustomPayload, String);
+
+impl UniffiCustomTypeConverter for CustomPayload {
+    type Builtin = String;
+
+    /// Text to payload. A host that sends back malformed JSON gets an error
+    /// rather than a silent empty object.
+    fn into_custom(value: String) -> uniffi::Result<Self> {
+        Ok(CustomPayload(serde_json::from_str(&value)?))
+    }
+
+    /// Payload to text, for the host to parse as it sees fit.
+    fn from_custom(obj: Self) -> String {
+        obj.0.to_string()
+    }
+}
+
+/// A single room as summarized for the room list.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomSummary {
     pub id: String,
@@ -101,7 +136,7 @@ pub struct RoomSummary {
 /// command (`core::commands::media_fetch`), keyed by the item's event id —
 /// never an mxc URI copied out of this struct, since nothing here carries
 /// one (see that command's doc comment for why).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaMetaDto {
     /// The file's display name — `MessageType::*::filename()`, which falls
@@ -137,7 +172,7 @@ pub struct MediaMetaDto {
 /// never an empty quote or a spinner: this pass never calls
 /// `Timeline::fetch_details_for_event`, so a `Pending`/`Unavailable` parent
 /// will not resolve itself on its own.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplyToDto {
     /// The parent event's id. Always present, even when the parent itself
@@ -178,7 +213,7 @@ pub struct ReplyToDto {
 /// One reaction key aggregated across senders on a message (see
 /// `core::timeline::project_reactions`), projected from the SDK's
 /// `ReactionsByKeyBySender`.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct ReactionDto {
     /// The reaction's key — an arbitrary sender-controlled string (usually,
@@ -204,7 +239,7 @@ pub struct ReactionDto {
 /// change kind, a state event's event type, or a custom event's event type.
 /// Both are `None` when the `kind` doesn't need them — see the table in
 /// `docs/matrix-events.md` for the full mapping.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineItemDto {
     pub id: String,
@@ -255,7 +290,7 @@ pub struct TimelineItemDto {
     /// room — the webview's custom-event registry
     /// (`$lib/components/customEvents.ts`) must render every value out of it
     /// as text only, never into `{@html}`, an `href`, an `src`, or a style.
-    pub custom_payload: Option<serde_json::Value>,
+    pub custom_payload: Option<CustomPayload>,
     pub timestamp_ms: Option<u64>,
     pub is_own: bool,
     pub send_state: Option<String>,
@@ -301,7 +336,7 @@ pub struct TimelineItemDto {
 ///
 /// The current user is never present: `subscribe_to_typing_notifications`
 /// filters it out before this project ever sees the id list.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct TypingUserDto {
     pub user_id: String,

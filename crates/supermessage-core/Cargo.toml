@@ -9,6 +9,7 @@ license = "MIT"
 name = "supermessage_core"
 
 [dependencies]
+uniffi = "0.28"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
