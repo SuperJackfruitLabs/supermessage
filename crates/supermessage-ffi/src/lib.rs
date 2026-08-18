@@ -78,6 +78,8 @@ impl Core {
     /// not look outside it.
     #[uniffi::constructor]
     pub fn new(data_dir: String) -> Arc<Self> {
+        install_tracing();
+
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -157,4 +159,30 @@ impl Core {
 pub struct RoomsSnapshot {
     pub seq: u64,
     pub rooms: Vec<supermessage_core::dto::RoomSummary>,
+}
+
+/// Makes the core's `tracing` output visible to the host, once.
+///
+/// Without this the core is **silent on iOS**: `tracing` with no subscriber
+/// discards everything, so every `warn!` the core emits — including the one
+/// `session::start_streams` logs when the room list fails to start, which it
+/// swallows and continues past — goes nowhere. A failure inside the core then
+/// looks identical to the core simply not doing anything.
+///
+/// stderr rather than oslog: the simulator surfaces it through
+/// `simctl launch --console`, and Xcode's console shows it on device. A
+/// dedicated oslog layer would be tidier and is not worth a dependency yet.
+///
+/// `try_init` because a host may construct more than one `Core` over a process
+/// lifetime, and a second attempt to install a global subscriber would panic.
+fn install_tracing() {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = EnvFilter::try_from_env("SUPERMESSAGE_LOG")
+        .unwrap_or_else(|_| EnvFilter::new("supermessage_core=debug,supermessage_ffi=debug,warn"));
+
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .try_init();
 }

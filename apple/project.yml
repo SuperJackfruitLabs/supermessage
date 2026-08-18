@@ -1,0 +1,47 @@
+# The throwaway probe app.
+#
+# Its only job is to answer one question before Task 8 commits twenty-eight
+# more commands to this boundary: does the UniFFI callback interface carry a
+# live timeline subscription, or does it fall over under a stream of events?
+#
+# It is deliberately ugly. If it starts acquiring styling, navigation or
+# opinions it has outlived its purpose — the real app gets its own spec.
+#
+# Bundle id is `dev.supermessage.native`, distinct from the Tauri build's
+# `dev.supermessage.app`, so both can sit on the simulator at once. That also
+# means a separate keychain entry: signing in here does not inherit the Tauri
+# app's session.
+name: Supermessage
+options:
+  bundleIdPrefix: dev.supermessage
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+targets:
+  Probe:
+    type: application
+    platform: iOS
+    sources:
+      - path: Probe
+      # The generated bindings. Both files — `setup_scaffolding!()` lives in
+      # the core crate as well as the FFI crate, so the DTOs and the `Core`
+      # object are declared in separate files and neither resolves alone.
+      - path: Generated/supermessage_ffi.swift
+      - path: Generated/supermessage_core.swift
+    dependencies:
+      - framework: Supermessage.xcframework
+        embed: false   # a static library: linked, never embedded
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.native
+        DEVELOPMENT_TEAM: 9DC6VWV9X4
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: SM Probe
+        SWIFT_VERSION: "5.0"
+        # xcodegen only writes an Info.plist when given INFOPLIST_KEY_* entries
+        # it recognises as a complete set; the simplest correct thing is to let
+        # Xcode synthesise one from the keys above.
+        GENERATE_INFOPLIST_FILE: YES
+        # The bindings are generated code; their warnings are not ours to fix.
+        SWIFT_SUPPRESS_WARNINGS: YES

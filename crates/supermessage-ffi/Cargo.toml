@@ -18,6 +18,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 async-trait = "0.1"
 thiserror = "2"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [build-dependencies]
 uniffi = { version = "0.28", features = ["build"] }
