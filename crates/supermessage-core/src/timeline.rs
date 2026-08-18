@@ -176,7 +176,7 @@ use tokio::task::JoinHandle;
 use super::dto::{
     apply_ops, collapse_reinsertions, op_name, op_values, ops_len_after, project_diff,
     DiffEnvelope, DiffOp, MediaMetaDto, ReactionDto, ReplyToDto, SeqCounter, TimelineItemDto,
-    TypingUserDto,
+    TimelineRow, TypingUserDto,
 };
 use super::error::{CoreError, CoreResult};
 
@@ -252,7 +252,7 @@ const RESEED_SETTLE: Duration = Duration::from_millis(500);
 /// The sequence number of the last diff folded into the materialized item
 /// list, and the resulting list itself — always mutually consistent (see
 /// `core::rooms::RoomListHandle`'s identical `RoomListSnapshot` for why).
-type TimelineState = (u64, Vec<TimelineItemDto>);
+type TimelineState = (u64, Vec<TimelineRow>);
 
 /// The streaming task's diff stream, boxed to erase `Timeline::subscribe`'s
 /// concrete (unnameable) return type.
@@ -284,7 +284,7 @@ type TimelineDiffStream = Pin<Box<dyn Stream<Item = Vec<VectorDiff<Arc<TimelineI
 /// starts back at seq 1 and is discarded as duplicates, so the wrong
 /// messages stay until the next room switch. Returning the subject lets the
 /// webview reject exactly that.
-pub type TimelineSnapshot = (String, u64, Vec<TimelineItemDto>);
+pub type TimelineSnapshot = (String, u64, Vec<TimelineRow>);
 
 /// Build a [`TimelineItemDto`] from already-extracted parts.
 ///
@@ -1496,11 +1496,13 @@ fn project_virtual_item(
 /// `Event`/`Virtual` and both are handled — but stays `Option` in the
 /// signature so a future item kind this format can't usefully represent can
 /// be dropped without changing callers.
-pub fn project_item(item: &TimelineItem, own_user: &UserId) -> Option<TimelineItemDto> {
-    Some(match item.kind() {
+pub fn project_item(item: &TimelineItem, own_user: &UserId) -> Option<TimelineRow> {
+    // The single point where an item acquires its render decision. Everything
+    // downstream carries the pair, so no host ever asks for one per row.
+    Some(TimelineRow::new(match item.kind() {
         TimelineItemKind::Event(event) => project_event_item(event, own_user),
         TimelineItemKind::Virtual(virtual_item) => project_virtual_item(item, virtual_item),
-    })
+    }))
 }
 
 /// Project a raw batch of SDK diffs into the wire ops for one envelope.
@@ -1511,7 +1513,7 @@ pub fn project_item(item: &TimelineItem, own_user: &UserId) -> Option<TimelineIt
 fn project_batch(
     batch: Vec<VectorDiff<Arc<TimelineItem>>>,
     own_user: &UserId,
-) -> Vec<DiffOp<TimelineItemDto>> {
+) -> Vec<DiffOp<TimelineRow>> {
     batch
         .into_iter()
         .map(|diff| {
@@ -1524,7 +1526,7 @@ fn project_batch(
 
 /// Project the initial `Vector` `Timeline::subscribe` returns into the
 /// values for a single seeding `Reset` op.
-fn project_initial(items: &Vector<Arc<TimelineItem>>, own_user: &UserId) -> Vec<TimelineItemDto> {
+fn project_initial(items: &Vector<Arc<TimelineItem>>, own_user: &UserId) -> Vec<TimelineRow> {
     items
         .iter()
         .filter_map(|item| project_item(item, own_user))
@@ -2483,7 +2485,7 @@ fn should_reseed(before: usize, after: usize, reseed_attempts: u32) -> bool {
 /// it is the SDK saying "here is the list now, wholesale", which is exactly
 /// and only what the unload produces. Keying on length would re-seed the room
 /// every time somebody deleted a message.
-fn reset_shrank(before: usize, after: usize, ops: &[DiffOp<TimelineItemDto>]) -> bool {
+fn reset_shrank(before: usize, after: usize, ops: &[DiffOp<TimelineRow>]) -> bool {
     after < before && ops.iter().any(|op| matches!(op, DiffOp::Reset { .. }))
 }
 
@@ -2497,7 +2499,7 @@ fn reset_shrank(before: usize, after: usize, ops: &[DiffOp<TimelineItemDto>]) ->
 fn should_backfill(
     before: usize,
     after: usize,
-    ops: &[DiffOp<TimelineItemDto>],
+    ops: &[DiffOp<TimelineRow>],
     backfill_attempts: u32,
 ) -> bool {
     reset_shrank(before, after, ops) && backfill_attempts < MAX_RESEED_ATTEMPTS
@@ -2620,7 +2622,7 @@ enum ReseedReason {
 #[derive(Debug, PartialEq)]
 enum BatchDecision {
     /// Fold and emit `ops` exactly as received; no re-seed needed.
-    Emit(Vec<DiffOp<TimelineItemDto>>),
+    Emit(Vec<DiffOp<TimelineRow>>),
     /// `ops` must not be folded or emitted at all: re-seed instead, and emit
     /// a single [`coalesced_reset`] once that finishes. The reason rides along
     /// because the two triggers are bounded by different counters — see
@@ -2647,7 +2649,7 @@ enum BatchDecision {
 /// batch, never rewrites one.
 fn decide_batch(
     before: usize,
-    ops: Vec<DiffOp<TimelineItemDto>>,
+    ops: Vec<DiffOp<TimelineRow>>,
     reseed_attempts: u32,
     backfill_attempts: u32,
 ) -> BatchDecision {
@@ -2677,7 +2679,7 @@ fn decide_batch(
 /// genuinely empty room still ends empty" hold at once: this function
 /// cannot produce more than one op, and an empty `fresh_items` produces a
 /// perfectly ordinary (if empty) `Reset`, not a special case.
-fn coalesced_reset(fresh_items: Vec<TimelineItemDto>) -> Vec<DiffOp<TimelineItemDto>> {
+fn coalesced_reset(fresh_items: Vec<TimelineRow>) -> Vec<DiffOp<TimelineRow>> {
     vec![DiffOp::Reset {
         values: fresh_items,
     }]
@@ -2729,7 +2731,7 @@ fn emit_ops(
     state: &Arc<Mutex<TimelineState>>,
     seq: &mut SeqCounter,
     subject: &str,
-    ops: Vec<DiffOp<TimelineItemDto>>,
+    ops: Vec<DiffOp<TimelineRow>>,
 ) -> (usize, usize) {
     let seq_no = seq.next_seq();
 
@@ -2741,7 +2743,7 @@ fn emit_ops(
     let sdk_ids: Vec<String> = ops
         .iter()
         .flat_map(op_values)
-        .map(|item| item.id.clone())
+        .map(|row| row.item.id.clone())
         .collect();
 
     let (before, after, wire_ops) = {
@@ -2753,7 +2755,7 @@ fn emit_ops(
         // this batch moved anything. Ids only, not a clone of the list: the
         // comparison needs identity, and cloning every item on every batch to
         // learn nothing more would be a real cost on a busy room.
-        let before_ids: Vec<String> = guard.1.iter().map(|item| item.id.clone()).collect();
+        let before_ids: Vec<String> = guard.1.iter().map(|row| row.item.id.clone()).collect();
 
         apply_ops(&mut guard.1, &ops);
         guard.0 = seq_no;
@@ -2761,7 +2763,8 @@ fn emit_ops(
         // A batch that put the list back exactly as it found it did not move a
         // row, and must not be replayed as though it did — see
         // `core::dto::collapse_reinsertions`.
-        let wire_ops = collapse_reinsertions(&before_ids, &guard.1, ops, |item| item.id.as_str());
+        let wire_ops =
+            collapse_reinsertions(&before_ids, &guard.1, ops, |row| row.item.id.as_str());
         (before, guard.1.len(), wire_ops)
     };
     let folded_len = after;
@@ -3711,7 +3714,13 @@ mod tests {
     /// A minimal `TimelineItemDto` for tests that only care about identity
     /// (via `id`), not any of the other ~15 fields `project_item_parts`
     /// takes.
-    fn minimal_dto(id: &str) -> TimelineItemDto {
+    /// A row, not a bare DTO: the timeline's ops carry rows now, and a helper
+    /// that returned the DTO alone would force every call site to wrap it.
+    fn minimal_dto(id: &str) -> TimelineRow {
+        TimelineRow::new(minimal_item(id))
+    }
+
+    fn minimal_item(id: &str) -> TimelineItemDto {
         project_item_parts(
             id,
             "message",

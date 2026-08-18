@@ -119,7 +119,14 @@ async fn projected_items(
     build: impl FnOnce(&RoomId, JoinedRoomBuilder) -> JoinedRoomBuilder,
 ) -> Vec<TimelineItemDto> {
     projected(build, |item, own_user| {
-        project_item(item, own_user).expect("project_item is total over TimelineItemKind")
+        // `.item`: the projection now hands back a row (DTO plus the render
+        // decision the core made for it). This file is about the DTO, and
+        // every assertion below is written against it, so the view is
+        // unwrapped here rather than threaded through a thousand lines of
+        // expectations that were never about it.
+        project_item(item, own_user)
+            .expect("project_item is total over TimelineItemKind")
+            .item
     })
     .await
 }
@@ -1065,6 +1072,7 @@ async fn projected_items_across_syncs(builds: Vec<SyncBuild>) -> Vec<TimelineIte
                 project_diff(diff, |item| {
                     project_item(&item, &own_user)
                         .expect("project_item is total over TimelineItemKind")
+                        .item
                 })
             })
             .collect();
@@ -1207,6 +1215,7 @@ async fn a_message_from_another_client_survives_this_client_having_sent_one_of_i
                         project_diff(diff, |item| {
                             project_item(&item, own_user)
                                 .expect("project_item is total over TimelineItemKind")
+                                .item
                         })
                     })
                     .collect();
@@ -1298,7 +1307,9 @@ async fn a_gappy_sync_clears_the_timeline_and_the_rebuild_arrives_separately() {
             .into_iter()
             .map(|diff| {
                 project_diff(diff, |item| {
-                    project_item(&item, &own_user).expect("project_item is total")
+                    project_item(&item, &own_user)
+                        .expect("project_item is total")
+                        .item
                 })
             })
             .collect();

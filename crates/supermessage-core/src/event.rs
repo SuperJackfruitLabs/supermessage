@@ -30,7 +30,7 @@
 use std::sync::Arc;
 
 use crate::attachments::StagedAttachment;
-use crate::dto::{DiffEnvelope, RoomSummary, TimelineItemDto};
+use crate::dto::{DiffEnvelope, RoomSummary, TimelineRow};
 use crate::live::{LivePayload, ToolPayload};
 use crate::sync::ConnectionPayload;
 use crate::timeline::TypingPayload;
@@ -48,7 +48,7 @@ pub enum CoreEvent {
     /// The room list moved. `sm://rooms/diff`.
     RoomsDiff(DiffEnvelope<RoomSummary>),
     /// The focused room's timeline moved. `sm://timeline/diff`.
-    TimelineDiff(DiffEnvelope<TimelineItemDto>),
+    TimelineDiff(DiffEnvelope<TimelineRow>),
     /// Who is typing in the focused room. `sm://typing`.
     Typing(TypingPayload),
     /// An agent's answer, as it is written. `sm://live`.

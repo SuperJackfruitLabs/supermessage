@@ -12,7 +12,7 @@
 //! build — and the tests at the foot of this file cover the direction the
 //! compiler cannot: that each variant carries its payload across intact.
 
-use supermessage_core::dto::{DiffEnvelope, DiffOp, RoomSummary, TimelineItemDto};
+use supermessage_core::dto::{DiffEnvelope, DiffOp, RoomSummary, TimelineRow};
 
 /// One change to the room list, as Swift and Kotlin see it.
 #[derive(Debug, Clone, uniffi::Enum)]
@@ -33,17 +33,17 @@ pub enum RoomDiffOp {
 /// One change to the focused timeline, as Swift and Kotlin see it.
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum TimelineDiffOp {
-    Append { values: Vec<TimelineItemDto> },
+    Append { values: Vec<TimelineRow> },
     Clear,
-    PushFront { value: TimelineItemDto },
-    PushBack { value: TimelineItemDto },
+    PushFront { value: TimelineRow },
+    PushBack { value: TimelineRow },
     PopFront,
     PopBack,
-    Insert { index: u32, value: TimelineItemDto },
-    Set { index: u32, value: TimelineItemDto },
+    Insert { index: u32, value: TimelineRow },
+    Set { index: u32, value: TimelineRow },
     Remove { index: u32 },
     Truncate { length: u32 },
-    Reset { values: Vec<TimelineItemDto> },
+    Reset { values: Vec<TimelineRow> },
 }
 
 /// A batch of room-list changes, carrying the sequence number its ordering
@@ -107,8 +107,8 @@ impl From<DiffOp<RoomSummary>> for RoomDiffOp {
     }
 }
 
-impl From<DiffOp<TimelineItemDto>> for TimelineDiffOp {
-    fn from(op: DiffOp<TimelineItemDto>) -> Self {
+impl From<DiffOp<TimelineRow>> for TimelineDiffOp {
+    fn from(op: DiffOp<TimelineRow>) -> Self {
         match op {
             DiffOp::Append { values } => Self::Append { values },
             DiffOp::Clear => Self::Clear,
@@ -144,8 +144,8 @@ impl From<DiffEnvelope<RoomSummary>> for RoomDiffEnvelope {
     }
 }
 
-impl From<DiffEnvelope<TimelineItemDto>> for TimelineDiffEnvelope {
-    fn from(envelope: DiffEnvelope<TimelineItemDto>) -> Self {
+impl From<DiffEnvelope<TimelineRow>> for TimelineDiffEnvelope {
+    fn from(envelope: DiffEnvelope<TimelineRow>) -> Self {
         Self {
             channel: envelope.channel,
             subject: envelope.subject,

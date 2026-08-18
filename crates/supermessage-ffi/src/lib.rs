@@ -460,7 +460,7 @@ fn install_tracing() {
 pub struct TimelineSnapshot {
     pub room_id: String,
     pub seq: u64,
-    pub items: Vec<supermessage_core::dto::TimelineItemDto>,
+    pub items: Vec<supermessage_core::dto::TimelineRow>,
 }
 
 /// A file staged for sending, as the host sees it.

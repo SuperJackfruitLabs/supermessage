@@ -657,6 +657,31 @@ impl SeqCounter {
     }
 }
 
+/// A timeline item together with the render decision the core made for it.
+///
+/// The view travels with the item rather than being asked for per row. A host
+/// calling `view_for` itself would pay an FFI round trip **per visible row per
+/// scroll frame** — the one cost profile a lazy list cannot absorb — and would
+/// re-parse the message's markdown on every re-render. Computing it once, where
+/// the item is built, means a message is parsed once in its lifetime.
+///
+/// `item` keeps its own shape rather than being flattened in, so consumers that
+/// want raw fields — search results, room previews — are unaffected.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineRow {
+    pub item: TimelineItemDto,
+    pub view: crate::item_view::ItemView,
+}
+
+impl TimelineRow {
+    /// Wrap an item, classifying it.
+    pub fn new(item: TimelineItemDto) -> Self {
+        let view = crate::item_view::view_for(&item);
+        Self { item, view }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1267,5 +1292,62 @@ mod wire_format_golden {
                 r#"{{"channel":"sm://rooms/diff","subject":"!r:example.org","seq":1,"ops":[{{"op":"pushBack","value":{ROOM_JSON}}}]}}"#
             )
         );
+    }
+
+    #[test]
+    fn a_timeline_row_carries_its_view_beside_its_item() {
+        // If this struct ever loses `view`, every host silently regains an FFI
+        // round trip per visible row per scroll frame.
+        let row = TimelineRow::new(a_text_item());
+        assert_eq!(row.item.id, "$e1");
+        assert!(
+            matches!(row.view, crate::item_view::ItemView::Bubble { .. }),
+            "an m.text item must classify as a bubble, got {:?}",
+            row.view
+        );
+    }
+
+    #[test]
+    fn a_row_nests_its_item_rather_than_flattening_it() {
+        // A host reads `row.item.id` and `row.view`. Flattening would be a
+        // silent breaking change to every consumer of the timeline channel.
+        let row = TimelineRow::new(a_text_item());
+        let json = serde_json::to_value(&row).unwrap();
+        assert!(json.get("item").is_some(), "no `item` key in {json}");
+        assert!(json.get("view").is_some(), "no `view` key in {json}");
+        assert_eq!(json["item"]["id"], "$e1");
+    }
+
+    #[test]
+    fn a_rows_view_carries_the_parsed_body_so_a_host_parses_nothing() {
+        let mut item = a_text_item();
+        item.body = Some("**bold**".into());
+        let row = TimelineRow::new(item);
+        let crate::item_view::ItemView::Bubble { blocks, .. } = &row.view else {
+            panic!("expected a bubble, got {:?}", row.view);
+        };
+        assert_eq!(blocks, &crate::rich::blocks_from_markdown("**bold**"));
+    }
+
+    fn a_text_item() -> TimelineItemDto {
+        TimelineItemDto {
+            id: "$e1".into(),
+            kind: "message".into(),
+            msgtype: Some("m.text".into()),
+            detail: None,
+            sender: Some("@a:x.org".into()),
+            sender_display_name: Some("A".into()),
+            body: Some("hello".into()),
+            formatted_body: None,
+            media: None,
+            custom_payload: None,
+            timestamp_ms: Some(1_700_000_000_000),
+            is_own: false,
+            send_state: None,
+            reply_to: None,
+            edited: false,
+            reactions: vec![],
+            read_by: vec![],
+        }
     }
 }
