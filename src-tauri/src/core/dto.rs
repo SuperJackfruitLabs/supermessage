@@ -1080,3 +1080,157 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod wire_format_golden {
+    //! The desktop app's wire format, frozen.
+    //!
+    //! Everything the core-decoupling work does — moving these types into
+    //! their own crate, deriving `uniffi::Record` on them, re-homing the
+    //! commands that emit them — must leave the bytes the webview receives
+    //! exactly as they are. These tests turn that promise into a check.
+    //!
+    //! Every literal below was transcribed from the serialiser's own output,
+    //! never hand-written: a hand-written literal tests what someone believed
+    //! the shape was, which is precisely the belief under suspicion.
+    //!
+    //! A failure here is not a test to update. It means the webview is about
+    //! to receive something it was not written to parse.
+
+    use super::*;
+
+    fn a_room() -> RoomSummary {
+        RoomSummary {
+            id: "!r:example.org".into(),
+            name: "Room".into(),
+            avatar_url: None,
+            unread: 0,
+            last_message: Some("hi".into()),
+            last_message_is_own: false,
+            last_message_names_sender: false,
+            last_event_type: None,
+            last_activity_ms: Some(1_700_000_000_000),
+            membership: Membership::Joined,
+        }
+    }
+
+    const ROOM_JSON: &str = r#"{"id":"!r:example.org","name":"Room","avatarUrl":null,"unread":0,"lastMessage":"hi","lastMessageIsOwn":false,"lastMessageNamesSender":false,"lastEventType":null,"lastActivityMs":1700000000000,"membership":"joined"}"#;
+
+    #[test]
+    fn membership_is_a_camel_case_string() {
+        assert_eq!(
+            serde_json::to_string(&Membership::Joined).unwrap(),
+            r#""joined""#
+        );
+    }
+
+    #[test]
+    fn a_room_summary_keeps_every_field_and_its_name() {
+        assert_eq!(serde_json::to_string(&a_room()).unwrap(), ROOM_JSON);
+    }
+
+    #[test]
+    fn a_timeline_item_keeps_every_field_and_its_name() {
+        // The widest type here, and the one the reading pane is built on:
+        // seventeen fields, most optional. `null` is part of the contract —
+        // nothing is skipped when absent, and the webview's TypeScript is
+        // written against fields that are always present.
+        let item = TimelineItemDto {
+            id: "$e1".into(),
+            kind: "message".into(),
+            msgtype: Some("m.text".into()),
+            detail: None,
+            sender: Some("@a:x.org".into()),
+            sender_display_name: Some("A".into()),
+            body: Some("hello".into()),
+            formatted_body: None,
+            media: None,
+            custom_payload: None,
+            timestamp_ms: Some(1_700_000_000_000),
+            is_own: false,
+            send_state: None,
+            reply_to: None,
+            edited: false,
+            reactions: vec![],
+            read_by: vec![],
+        };
+        assert_eq!(
+            serde_json::to_string(&item).unwrap(),
+            r#"{"id":"$e1","kind":"message","msgtype":"m.text","detail":null,"sender":"@a:x.org","senderDisplayName":"A","body":"hello","formattedBody":null,"media":null,"customPayload":null,"timestampMs":1700000000000,"isOwn":false,"sendState":null,"replyTo":null,"edited":false,"reactions":[],"readBy":[]}"#
+        );
+    }
+
+    #[test]
+    fn media_metadata_keeps_its_shape() {
+        let media = MediaMetaDto {
+            filename: "a.png".into(),
+            mimetype: Some("image/png".into()),
+            size: Some(12),
+            width: Some(3),
+            height: Some(4),
+        };
+        assert_eq!(
+            serde_json::to_string(&media).unwrap(),
+            r#"{"filename":"a.png","mimetype":"image/png","size":12,"width":3,"height":4}"#
+        );
+    }
+
+    #[test]
+    fn a_reply_reference_keeps_its_shape() {
+        let reply = ReplyToDto {
+            event_id: "$e".into(),
+            available: true,
+            sender: Some("@a:x.org".into()),
+            sender_display_name: Some("A".into()),
+            excerpt: Some("x".into()),
+            label: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&reply).unwrap(),
+            r#"{"eventId":"$e","available":true,"sender":"@a:x.org","senderDisplayName":"A","excerpt":"x","label":null}"#
+        );
+    }
+
+    #[test]
+    fn a_reaction_keeps_its_shape() {
+        let reaction = ReactionDto {
+            key: "+1".into(),
+            count: 2,
+            by_me: true,
+        };
+        assert_eq!(
+            serde_json::to_string(&reaction).unwrap(),
+            r#"{"key":"+1","count":2,"byMe":true}"#
+        );
+    }
+
+    #[test]
+    fn a_typing_user_keeps_its_shape() {
+        let typing = TypingUserDto {
+            user_id: "@a:x.org".into(),
+            display_name: Some("A".into()),
+        };
+        assert_eq!(
+            serde_json::to_string(&typing).unwrap(),
+            r#"{"userId":"@a:x.org","displayName":"A"}"#
+        );
+    }
+
+    #[test]
+    fn a_diff_envelope_tags_its_op_and_nests_the_value() {
+        // `DiffOp` is internally tagged with `op`, and the timeline's ordering
+        // logic reads `seq`. Both are load-bearing on the webview side.
+        let envelope = DiffEnvelope {
+            channel: "sm://rooms/diff".into(),
+            subject: "!r:example.org".into(),
+            seq: 1,
+            ops: vec![DiffOp::PushBack { value: a_room() }],
+        };
+        assert_eq!(
+            serde_json::to_string(&envelope).unwrap(),
+            format!(
+                r#"{{"channel":"sm://rooms/diff","subject":"!r:example.org","seq":1,"ops":[{{"op":"pushBack","value":{ROOM_JSON}}}]}}"#
+            )
+        );
+    }
+}
