@@ -172,8 +172,20 @@ impl<'a> Walker<'a> {
     /// `nested` distinguishes "stop at the next `End`" from "run to the end of
     /// the stream". Each `block_for` consumes its own children's `End`s, so
     /// the only `End` visible at this level is our own closer.
+    ///
+    /// **Inline content appears here, and handling it is not an edge case.** A
+    /// *tight* list — one with no blank line between items, which is how
+    /// everyone writes a list — has no paragraph wrapping each item, so an
+    /// item's code spans, emphasis and links arrive at block level. An earlier
+    /// version of this function understood only bare `Text` and silently
+    /// dropped the rest, which put "1. — writing a plain text file" on screen
+    /// where the agent had written "1. `write` — writing a plain text file".
+    /// It was found by looking at the running app, not by a test. Anything
+    /// inline is therefore accumulated into a pending paragraph and flushed
+    /// when a real block starts.
     fn blocks(&mut self, nested: bool) -> Vec<RichBlock> {
         let mut out = Vec::new();
+        let mut pending: Vec<RichInline> = Vec::new();
         while let Some(event) = self.peek() {
             match event {
                 Event::End(_) => {
@@ -182,34 +194,29 @@ impl<'a> Walker<'a> {
                         break;
                     }
                 }
+                Event::Start(tag) if is_inline_markdown_tag(&tag) => {
+                    self.pos += 1;
+                    self.inline_event(Event::Start(tag), &mut pending);
+                }
                 Event::Start(tag) => {
                     self.pos += 1;
+                    flush_inlines(&mut out, &mut pending);
                     if let Some(block) = self.block_for(tag) {
                         out.push(block);
                     }
                 }
                 Event::Rule => {
                     self.pos += 1;
+                    flush_inlines(&mut out, &mut pending);
                     out.push(RichBlock::ThematicBreak);
                 }
-                // Bare text at block level: a tight list item, or a fragment
-                // with no wrapping paragraph. Wrapping it is what stops the
-                // words vanishing.
-                Event::Text(text) => {
+                other => {
                     self.pos += 1;
-                    if !text.trim().is_empty() {
-                        out.push(RichBlock::Paragraph {
-                            inlines: vec![RichInline::Text {
-                                text: text.to_string(),
-                            }],
-                        });
-                    }
-                }
-                _ => {
-                    self.pos += 1;
+                    self.inline_event(other, &mut pending);
                 }
             }
         }
+        flush_inlines(&mut out, &mut pending);
         out
     }
 
@@ -390,36 +397,80 @@ impl<'a> Walker<'a> {
     fn inlines(&mut self) -> Vec<RichInline> {
         let mut out: Vec<RichInline> = Vec::new();
         while let Some(event) = self.next() {
-            match event {
-                Event::End(_) => break,
-                Event::Text(text) => push_text(&mut out, &text),
-                Event::Code(text) => out.push(RichInline::Code {
-                    text: text.to_string(),
-                }),
-                Event::SoftBreak => push_text(&mut out, " "),
-                Event::HardBreak => out.push(RichInline::Break),
-                // Tags go, words stay — see the module doc comment.
-                Event::Html(_) | Event::InlineHtml(_) => {}
-                Event::Start(Tag::Emphasis) => out.push(RichInline::Emphasis {
-                    inlines: self.inlines(),
-                }),
-                Event::Start(Tag::Strong) => out.push(RichInline::Strong {
-                    inlines: self.inlines(),
-                }),
-                Event::Start(Tag::Link { dest_url, .. }) => out.push(RichInline::Link {
-                    href: dest_url.to_string(),
-                    inlines: self.inlines(),
-                }),
-                // An inline container with no member here — strikethrough, an
-                // image, a footnote. Its own styling is lost; its text is not.
-                Event::Start(_) => {
-                    let inner = self.inlines();
-                    out.extend(inner);
-                }
-                _ => {}
+            if matches!(event, Event::End(_)) {
+                break;
             }
+            self.inline_event(event, &mut out);
         }
         out
+    }
+
+    /// Fold one inline event into `out`.
+    ///
+    /// Shared by [`Self::inlines`] and [`Self::blocks`] rather than written
+    /// twice: block level sees these same events whenever a tight list or a
+    /// bare fragment omits the wrapping paragraph, and two copies of this
+    /// match is exactly how a code span went missing the first time.
+    fn inline_event(&mut self, event: Event<'a>, out: &mut Vec<RichInline>) {
+        match event {
+            Event::Text(text) => push_text(out, &text),
+            Event::Code(text) => out.push(RichInline::Code {
+                text: text.to_string(),
+            }),
+            Event::SoftBreak => push_text(out, " "),
+            Event::HardBreak => out.push(RichInline::Break),
+            // Tags go, words stay — see the module doc comment.
+            Event::Html(_) | Event::InlineHtml(_) => {}
+            Event::Start(Tag::Emphasis) => out.push(RichInline::Emphasis {
+                inlines: self.inlines(),
+            }),
+            Event::Start(Tag::Strong) => out.push(RichInline::Strong {
+                inlines: self.inlines(),
+            }),
+            Event::Start(Tag::Link { dest_url, .. }) => out.push(RichInline::Link {
+                href: dest_url.to_string(),
+                inlines: self.inlines(),
+            }),
+            // An inline container with no member here — strikethrough, an
+            // image, a footnote. Its own styling is lost; its text is not.
+            Event::Start(_) => {
+                let inner = self.inlines();
+                out.extend(inner);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Whether a markdown tag carries inline meaning rather than starting a block.
+///
+/// Named apart from the HTML walker's `is_inline_tag`, which answers the same
+/// question about an element name — two vocabularies, one idea.
+fn is_inline_markdown_tag(tag: &Tag) -> bool {
+    matches!(
+        tag,
+        Tag::Emphasis
+            | Tag::Strong
+            | Tag::Strikethrough
+            | Tag::Link { .. }
+            | Tag::Image { .. }
+            | Tag::Superscript
+            | Tag::Subscript
+    )
+}
+
+/// Close off an inline run collected at block level into a paragraph.
+fn flush_inlines(out: &mut Vec<RichBlock>, pending: &mut Vec<RichInline>) {
+    if pending.is_empty() {
+        return;
+    }
+    let inlines = std::mem::take(pending);
+    let blank = inlines.iter().all(|inline| match inline {
+        RichInline::Text { text } => text.trim().is_empty(),
+        _ => false,
+    });
+    if !blank {
+        out.push(RichBlock::Paragraph { inlines });
     }
 }
 
@@ -972,6 +1023,61 @@ mod tests {
         assert!(
             rendered.contains("the actual sentence"),
             "text was dropped along with the nesting: {rendered}"
+        );
+    }
+
+    #[test]
+    fn a_tight_list_item_keeps_its_inline_formatting() {
+        // Found on screen, not in a test: an agent's numbered list rendered as
+        // "1. — writing a plain text file to", with the leading `write` code
+        // span simply gone. In a *tight* list pulldown-cmark emits an item's
+        // inlines directly, with no wrapping paragraph, so they arrive at
+        // block level — where a walker that only understood `Text` dropped
+        // every code span, every emphasis, and the words inside them.
+        let blocks = blocks_from_markdown("- `write` \u{2014} makes a file\n- **bold** start");
+        let RichBlock::List { items, .. } = &blocks[0] else {
+            panic!("expected a list, got {blocks:?}");
+        };
+        assert_eq!(items.len(), 2);
+
+        let RichBlock::Paragraph { inlines } = &items[0].blocks[0] else {
+            panic!("expected a paragraph, got {:?}", items[0].blocks);
+        };
+        assert_eq!(
+            inlines[0],
+            RichInline::Code {
+                text: "write".into()
+            }
+        );
+        assert_eq!(inlines[1], text(" \u{2014} makes a file"));
+
+        let RichBlock::Paragraph { inlines } = &items[1].blocks[0] else {
+            panic!("expected a paragraph in the second item");
+        };
+        assert_eq!(
+            inlines[0],
+            RichInline::Strong {
+                inlines: vec![text("bold")]
+            }
+        );
+        assert_eq!(inlines[1], text(" start"));
+    }
+
+    #[test]
+    fn a_tight_list_item_keeps_a_link_whole() {
+        let blocks = blocks_from_markdown("- see [docs](https://e.org/x) now");
+        let RichBlock::List { items, .. } = &blocks[0] else {
+            panic!("expected a list");
+        };
+        let RichBlock::Paragraph { inlines } = &items[0].blocks[0] else {
+            panic!("expected a paragraph");
+        };
+        assert_eq!(
+            inlines[1],
+            RichInline::Link {
+                href: "https://e.org/x".into(),
+                inlines: vec![text("docs")]
+            }
         );
     }
 
