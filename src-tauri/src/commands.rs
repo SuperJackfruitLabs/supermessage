@@ -10,7 +10,7 @@ use tauri::{AppHandle, State};
 
 use crate::host::{TauriFilePicker, TauriSink};
 use supermessage_core::attachments::{self, StagedAttachment, StagedAttachments};
-use supermessage_core::dto::RoomSummary;
+use supermessage_core::dto::RoomRow;
 use supermessage_core::error::CoreError;
 use supermessage_core::event::FilePicker;
 use supermessage_core::room_info::RoomInfoDto;
@@ -73,9 +73,7 @@ pub async fn connection_state(session: State<'_, Session>) -> Result<ConnectionP
 /// folded in, and the resulting list — for the webview to reset its store
 /// against after it detects a gap.
 #[tauri::command]
-pub async fn rooms_resync(
-    session: State<'_, Session>,
-) -> Result<(u64, Vec<RoomSummary>), CoreError> {
+pub async fn rooms_resync(session: State<'_, Session>) -> Result<(u64, Vec<RoomRow>), CoreError> {
     session.rooms_snapshot().await
 }
 
@@ -546,4 +544,24 @@ pub async fn attachment_discard(
 #[tauri::command]
 pub fn rich_blocks_from_markdown(source: String) -> Vec<supermessage_core::rich::RichBlock> {
     supermessage_core::rich::blocks_from_markdown(&source)
+}
+
+/// Parse a matrix.to URL or a `matrix:` URI into what it addresses.
+///
+/// `None` when the href is not a matrix link at all — the signal
+/// `messageLinks.ts` uses to fall back to the system browser unchanged.
+#[tauri::command]
+pub fn parse_matrix_link(
+    href: String,
+) -> Option<supermessage_core::matrix_links::MatrixLinkTarget> {
+    supermessage_core::matrix_links::parse_matrix_link(&href)
+}
+
+/// The user ids a finished message mentions, for `m.mentions`.
+#[tauri::command]
+pub fn collect_mentions(
+    text: String,
+    members: Vec<supermessage_core::mentions::Mentionable>,
+) -> Vec<String> {
+    supermessage_core::mentions::collect_mentions(&text, &members)
 }

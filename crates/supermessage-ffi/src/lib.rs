@@ -422,7 +422,7 @@ impl Core {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct RoomsSnapshot {
     pub seq: u64,
-    pub rooms: Vec<supermessage_core::dto::RoomSummary>,
+    pub rooms: Vec<supermessage_core::dto::RoomRow>,
 }
 
 /// Makes the core's `tracing` output visible to the host, once.
@@ -502,4 +502,25 @@ impl From<supermessage_core::attachments::StagedAttachment> for StagedFile {
 #[uniffi::export]
 pub fn rich_blocks_from_markdown(source: String) -> Vec<supermessage_core::rich::RichBlock> {
     supermessage_core::rich::blocks_from_markdown(&source)
+}
+
+/// Parse a matrix.to URL or a `matrix:` URI into what it addresses.
+///
+/// A free function for the same reason as `rich_blocks_from_markdown`: it
+/// touches no session state, and making it a `Core` method would imply it
+/// needed a signed-in client.
+#[uniffi::export]
+pub fn parse_matrix_link(
+    href: String,
+) -> Option<supermessage_core::matrix_links::MatrixLinkTarget> {
+    supermessage_core::matrix_links::parse_matrix_link(&href)
+}
+
+/// The user ids a finished message mentions, for `m.mentions`.
+#[uniffi::export]
+pub fn collect_mentions(
+    text: String,
+    members: Vec<supermessage_core::mentions::Mentionable>,
+) -> Vec<String> {
+    supermessage_core::mentions::collect_mentions(&text, &members)
 }

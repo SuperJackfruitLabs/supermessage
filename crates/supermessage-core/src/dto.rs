@@ -667,6 +667,39 @@ impl SeqCounter {
     }
 }
 
+/// A room together with every decision the core made about it.
+///
+/// The same shape, and the same reason, as [`TimelineRow`]: a host draws a
+/// roster row from a name already split into sigil/name/role, a preview line
+/// already composed, and an affordance already chosen — none of which it can
+/// go and fetch mid-render.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomRow {
+    pub room: RoomSummary,
+    /// The name parsed into the suite's `<glyph> <Name> — <Role>` convention.
+    pub identity: crate::room_identity::RoomIdentity,
+    /// The preview line, or `None` when the row shows none. There is no
+    /// placeholder: a row with nothing to say says nothing.
+    pub preview: Option<crate::room_preview::RoomPreview>,
+    /// What the room pane may offer for this membership.
+    pub affordance: crate::invitation::RoomAffordance,
+}
+
+impl RoomRow {
+    pub fn new(room: RoomSummary) -> Self {
+        let identity = crate::room_identity::parse_room_identity(&room.name);
+        let preview = crate::room_preview::room_preview(&room);
+        let affordance = crate::invitation::room_affordance(room.membership);
+        Self {
+            room,
+            identity,
+            preview,
+            affordance,
+        }
+    }
+}
+
 /// A timeline item together with the render decision the core made for it.
 ///
 /// The view travels with the item rather than being asked for per row. A host
@@ -1351,6 +1384,59 @@ mod wire_format_golden {
                 r#"{{"channel":"sm://rooms/diff","subject":"!r:example.org","seq":1,"ops":[{{"op":"pushBack","value":{ROOM_JSON}}}]}}"#
             )
         );
+    }
+
+    fn a_room_summary(name: &str) -> RoomSummary {
+        RoomSummary {
+            id: "!r:example.org".into(),
+            name: name.into(),
+            avatar_url: None,
+            unread: 0,
+            last_message: Some("hello".into()),
+            last_message_is_own: false,
+            last_message_names_sender: false,
+            last_event_type: None,
+            last_activity_ms: Some(1_700_000_000_000),
+            membership: Membership::Joined,
+        }
+    }
+
+    #[test]
+    fn a_room_row_splits_its_name_and_composes_its_preview() {
+        let row = RoomRow::new(a_room_summary("🧠 Buddhimaan — Squad Lead"));
+        assert_eq!(row.identity.glyph.as_deref(), Some("🧠"));
+        assert_eq!(row.identity.name, "Buddhimaan");
+        assert_eq!(row.identity.role.as_deref(), Some("Squad Lead"));
+        assert_eq!(row.preview.expect("a preview").text, "hello");
+        assert_eq!(row.affordance, crate::invitation::RoomAffordance::Compose);
+    }
+
+    #[test]
+    fn an_invited_room_row_offers_a_response_rather_than_a_composer() {
+        let mut summary = a_room_summary("research");
+        summary.membership = Membership::Invited;
+        assert_eq!(
+            RoomRow::new(summary).affordance,
+            crate::invitation::RoomAffordance::RespondToInvitation
+        );
+    }
+
+    #[test]
+    fn a_room_row_omits_a_preview_it_has_nothing_to_show_for() {
+        // No placeholder line: a row with nothing to say says nothing.
+        let mut summary = a_room_summary("research");
+        summary.last_message = None;
+        assert_eq!(RoomRow::new(summary).preview, None);
+    }
+
+    #[test]
+    fn a_room_row_nests_its_summary_rather_than_flattening_it() {
+        let row = RoomRow::new(a_room_summary("research"));
+        let json = serde_json::to_value(&row).unwrap();
+        assert!(json.get("room").is_some(), "no `room` key in {json}");
+        assert_eq!(json["room"]["id"], "!r:example.org");
+        assert!(json.get("identity").is_some());
+        assert!(json.get("affordance").is_some());
     }
 
     #[test]

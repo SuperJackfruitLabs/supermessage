@@ -31,7 +31,7 @@ use tokio::sync::{Mutex, RwLock};
 use super::attachments;
 use super::auth::password::PasswordAuth;
 use super::auth::AuthProvider;
-use super::dto::RoomSummary;
+use super::dto::RoomRow;
 use super::error::{CoreError, CoreResult};
 use super::event::{EventSink, FilePicker};
 use super::live;
@@ -413,7 +413,7 @@ impl Session {
     ///
     /// Fails with [`CoreError::NotReady`] when room-list streaming hasn't
     /// been started yet (i.e. before [`Self::start_room_list`] has run).
-    pub async fn rooms_snapshot(&self) -> CoreResult<(u64, Vec<RoomSummary>)> {
+    pub async fn rooms_snapshot(&self) -> CoreResult<(u64, Vec<RoomRow>)> {
         let rooms = self.rooms.read().await;
         let handle = rooms.as_ref().ok_or(CoreError::NotReady)?;
         handle.snapshot()

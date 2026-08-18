@@ -38,8 +38,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::dto::{
-    apply_ops, op_name, op_values, project_diff, DiffEnvelope, DiffOp, Membership, RoomSummary,
-    SeqCounter,
+    apply_ops, op_name, op_values, project_diff, DiffEnvelope, DiffOp, Membership, RoomRow,
+    RoomSummary, SeqCounter,
 };
 use super::error::{CoreError, CoreResult};
 use super::event::{CoreEvent, EventSink};
@@ -62,7 +62,7 @@ const ROOM_LIST_PAGE_SIZE: usize = 200;
 /// The sequence number of the last diff folded into `rooms`, and the
 /// resulting materialized list — always mutually consistent with each other
 /// (see [`RoomListHandle::snapshot`]).
-type RoomListSnapshot = (u64, Vec<RoomSummary>);
+type RoomListSnapshot = (u64, Vec<RoomRow>);
 
 /// Build a [`RoomSummary`] from already-extracted parts.
 ///
@@ -462,7 +462,7 @@ pub fn project_room(item: &RoomListItem, preview: Option<MessagePreview>) -> Roo
 /// is how the batch's values are reached at all without writing that second
 /// match. `RoomListItem` is a handful of `Arc`s, so cloning the batch to do
 /// it is cheap.
-async fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomSummary>> {
+async fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomRow>> {
     let mut previews: HashMap<OwnedRoomId, Option<MessagePreview>> = HashMap::new();
     for op in batch
         .iter()
@@ -485,7 +485,10 @@ async fn project_batch(batch: Vec<VectorDiff<RoomListItem>>) -> Vec<DiffOp<RoomS
                 // occurrence must get the same preview as the first, not a
                 // blank one.
                 let preview = previews.get(item.room_id()).cloned().flatten();
-                project_room(&item, preview)
+                // Wrapped here, the single point where a room acquires the
+                // decisions a host draws it with — the roster mirror of
+                // `project_item`.
+                RoomRow::new(project_room(&item, preview))
             })
         })
         .collect()
@@ -630,9 +633,9 @@ async fn drive_room_list<Batch, S, Project, Projected, Apply, Emit>(
 ) where
     S: Stream<Item = Batch>,
     Project: FnMut(Batch) -> Projected,
-    Projected: Future<Output = Vec<DiffOp<RoomSummary>>>,
+    Projected: Future<Output = Vec<DiffOp<RoomRow>>>,
     Apply: FnMut(&SpaceSelection),
-    Emit: FnMut(DiffEnvelope<RoomSummary>),
+    Emit: FnMut(DiffEnvelope<RoomRow>),
 {
     pin_mut!(stream);
     // Created once, here, for the life of the stream. Nothing in this
@@ -992,7 +995,13 @@ mod tests {
         assert_eq!(summary.last_event_type, None);
     }
 
-    fn room(id: &str) -> RoomSummary {
+    /// A row, not a bare summary: the roster's ops carry rows now, and a
+    /// helper returning the summary alone would force every call site to wrap.
+    fn room(id: &str) -> RoomRow {
+        RoomRow::new(room_summary(id))
+    }
+
+    fn room_summary(id: &str) -> RoomSummary {
         project_room_parts(id, None, None, 0, None, None, Membership::Joined)
     }
 
@@ -1259,11 +1268,11 @@ mod tests {
 
     /// A batch of already-projected ops — what `project_batch` would have
     /// returned — so the driver can be exercised without a `RoomListItem`.
-    fn push(id: &str) -> Vec<DiffOp<RoomSummary>> {
+    fn push(id: &str) -> Vec<DiffOp<RoomRow>> {
         vec![DiffOp::PushBack { value: room(id) }]
     }
 
-    fn reset(ids: &[&str]) -> Vec<DiffOp<RoomSummary>> {
+    fn reset(ids: &[&str]) -> Vec<DiffOp<RoomRow>> {
         vec![DiffOp::Reset {
             values: ids.iter().map(|id| room(id)).collect(),
         }]
@@ -1288,7 +1297,7 @@ mod tests {
         drive_room_list(
             stream_of(batches_rx),
             selections_rx,
-            |ops: Vec<DiffOp<RoomSummary>>| async move { ops },
+            |ops: Vec<DiffOp<RoomRow>>| async move { ops },
             |_| {},
             |envelope| sink.lock().unwrap().push(envelope),
             &state,
@@ -1344,7 +1353,7 @@ mod tests {
         drive_room_list(
             stream_of(batches_rx),
             selections_rx,
-            |ops: Vec<DiffOp<RoomSummary>>| async move { ops },
+            |ops: Vec<DiffOp<RoomRow>>| async move { ops },
             move |selection| {
                 seen.lock().unwrap().push(selection.clone());
                 // Stands in for the SDK's own reaction to `set_filter`: the
@@ -1420,7 +1429,7 @@ mod tests {
         drive_room_list(
             stream_of(batches_rx),
             selections_rx,
-            |ops: Vec<DiffOp<RoomSummary>>| async move { ops },
+            |ops: Vec<DiffOp<RoomRow>>| async move { ops },
             |_| panic!("no selection can arrive on a closed channel"),
             |envelope| sink.lock().unwrap().push(envelope),
             &state,

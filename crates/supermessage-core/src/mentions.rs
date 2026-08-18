@@ -15,7 +15,10 @@
 //! handling stays in TypeScript.
 
 /// A member a message can address.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+// Deserialize as well as Serialize: unlike every other DTO here, this one
+// travels *into* the core — the composer knows the room's members and hands
+// them over with the text to match against.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct Mentionable {
     pub user_id: String,

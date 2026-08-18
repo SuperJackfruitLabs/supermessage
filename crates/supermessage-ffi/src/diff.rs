@@ -12,22 +12,22 @@
 //! build — and the tests at the foot of this file cover the direction the
 //! compiler cannot: that each variant carries its payload across intact.
 
-use supermessage_core::dto::{DiffEnvelope, DiffOp, RoomSummary, TimelineRow};
+use supermessage_core::dto::{DiffEnvelope, DiffOp, RoomRow, TimelineRow};
 
 /// One change to the room list, as Swift and Kotlin see it.
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum RoomDiffOp {
-    Append { values: Vec<RoomSummary> },
+    Append { values: Vec<RoomRow> },
     Clear,
-    PushFront { value: RoomSummary },
-    PushBack { value: RoomSummary },
+    PushFront { value: RoomRow },
+    PushBack { value: RoomRow },
     PopFront,
     PopBack,
-    Insert { index: u32, value: RoomSummary },
-    Set { index: u32, value: RoomSummary },
+    Insert { index: u32, value: RoomRow },
+    Set { index: u32, value: RoomRow },
     Remove { index: u32 },
     Truncate { length: u32 },
-    Reset { values: Vec<RoomSummary> },
+    Reset { values: Vec<RoomRow> },
 }
 
 /// One change to the focused timeline, as Swift and Kotlin see it.
@@ -79,8 +79,8 @@ fn index(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-impl From<DiffOp<RoomSummary>> for RoomDiffOp {
-    fn from(op: DiffOp<RoomSummary>) -> Self {
+impl From<DiffOp<RoomRow>> for RoomDiffOp {
+    fn from(op: DiffOp<RoomRow>) -> Self {
         // Exhaustive on purpose: no wildcard arm, so a new variant in the core
         // breaks this build rather than vanishing from every mobile client.
         match op {
@@ -133,8 +133,8 @@ impl From<DiffOp<TimelineRow>> for TimelineDiffOp {
     }
 }
 
-impl From<DiffEnvelope<RoomSummary>> for RoomDiffEnvelope {
-    fn from(envelope: DiffEnvelope<RoomSummary>) -> Self {
+impl From<DiffEnvelope<RoomRow>> for RoomDiffEnvelope {
+    fn from(envelope: DiffEnvelope<RoomRow>) -> Self {
         Self {
             channel: envelope.channel,
             subject: envelope.subject,
@@ -160,8 +160,11 @@ mod tests {
     use super::*;
     use supermessage_core::dto::Membership;
 
-    fn a_room() -> RoomSummary {
-        RoomSummary {
+    fn a_room() -> RoomRow {
+        // Built through the constructor rather than as a literal: the row's
+        // derived halves are the core's to compute, and a literal here would
+        // let this file disagree with what the roster actually carries.
+        RoomRow::new(supermessage_core::dto::RoomSummary {
             id: "!r:example.org".into(),
             name: "Room".into(),
             avatar_url: None,
@@ -172,7 +175,7 @@ mod tests {
             last_event_type: None,
             last_activity_ms: Some(1_700_000_000_000),
             membership: Membership::Joined,
-        }
+        })
     }
 
     #[test]
@@ -188,12 +191,12 @@ mod tests {
         match op {
             RoomDiffOp::Insert { index, value } => {
                 assert_eq!(index, 3);
-                assert_eq!(value.id, "!r:example.org");
-                assert_eq!(value.name, "Room");
-                assert_eq!(value.unread, 3);
-                assert_eq!(value.last_message.as_deref(), Some("hi"));
-                assert_eq!(value.last_activity_ms, Some(1_700_000_000_000));
-                assert_eq!(value.membership, Membership::Joined);
+                assert_eq!(value.room.id, "!r:example.org");
+                assert_eq!(value.room.name, "Room");
+                assert_eq!(value.room.unread, 3);
+                assert_eq!(value.room.last_message.as_deref(), Some("hi"));
+                assert_eq!(value.room.last_activity_ms, Some(1_700_000_000_000));
+                assert_eq!(value.room.membership, Membership::Joined);
             }
             other => panic!("wrong variant: {other:?}"),
         }
@@ -223,7 +226,7 @@ mod tests {
         // Not a tautology: it is the only place that checks `Clear` did not
         // quietly become `Reset { values: vec![] }`, which would look right in
         // a diff and be wrong on screen.
-        let cases: Vec<(DiffOp<RoomSummary>, &str)> = vec![
+        let cases: Vec<(DiffOp<RoomRow>, &str)> = vec![
             (DiffOp::Clear, "Clear"),
             (DiffOp::PopFront, "PopFront"),
             (DiffOp::PopBack, "PopBack"),

@@ -30,7 +30,7 @@
 use std::sync::Arc;
 
 use crate::attachments::StagedAttachment;
-use crate::dto::{DiffEnvelope, RoomSummary, TimelineRow};
+use crate::dto::{DiffEnvelope, RoomRow, TimelineRow};
 use crate::live::{LivePayload, ToolPayload};
 use crate::sync::ConnectionPayload;
 use crate::timeline::TypingPayload;
@@ -46,7 +46,7 @@ pub enum CoreEvent {
     /// Sync came up, went away, or failed. `sm://connection`.
     Connection(ConnectionPayload),
     /// The room list moved. `sm://rooms/diff`.
-    RoomsDiff(DiffEnvelope<RoomSummary>),
+    RoomsDiff(DiffEnvelope<RoomRow>),
     /// The focused room's timeline moved. `sm://timeline/diff`.
     TimelineDiff(DiffEnvelope<TimelineRow>),
     /// Who is typing in the focused room. `sm://typing`.

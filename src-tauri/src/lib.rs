@@ -20,12 +20,12 @@ mod commands;
 mod host;
 
 use crate::commands::{
-    attachment_discard, attachment_send, attachment_stage, connection_state, create_room,
-    invite_user, join_room, join_room_by_alias, leave_room, log_from_webview, login, logout,
-    mark_room_read, media_download, media_fetch, member_avatar, restore_session,
-    rich_blocks_from_markdown, room_avatar, room_info, rooms_resync, search_messages, send_message,
-    send_reply, set_typing, space_select, spaces_list, timeline_paginate_back, timeline_resync,
-    timeline_subscribe, toggle_reaction,
+    attachment_discard, attachment_send, attachment_stage, collect_mentions, connection_state,
+    create_room, invite_user, join_room, join_room_by_alias, leave_room, log_from_webview, login,
+    logout, mark_room_read, media_download, media_fetch, member_avatar, parse_matrix_link,
+    restore_session, rich_blocks_from_markdown, room_avatar, room_info, rooms_resync,
+    search_messages, send_message, send_reply, set_typing, space_select, spaces_list,
+    timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -223,6 +223,8 @@ pub fn run() {
             timeline_paginate_back,
             timeline_resync,
             rich_blocks_from_markdown,
+            parse_matrix_link,
+            collect_mentions,
             send_message,
             send_reply,
             toggle_reaction,
