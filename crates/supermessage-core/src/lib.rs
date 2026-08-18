@@ -39,6 +39,7 @@ pub mod item_view;
 pub mod live;
 pub mod media;
 pub mod rich;
+pub mod room_identity;
 pub mod room_info;
 pub mod rooms;
 pub mod search;
