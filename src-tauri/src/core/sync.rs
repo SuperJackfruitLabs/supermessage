@@ -47,6 +47,19 @@ use super::error::{CoreError, CoreResult};
 /// that does slip through unloads to roughly what the reader already had.
 const ROOM_LIST_TIMELINE_LIMIT: u32 = 32;
 
+/// The one thing about that number that is not a matter of taste.
+///
+/// At 1 — the SDK's own default — a room receiving two events between syncs
+/// comes back `limited` with a fresh gap, and the event cache answers a
+/// limited sync by unloading every chunk but the last. The focused timeline
+/// then empties out from under its subscription and has to re-seed, which the
+/// reader sees. Tuning the number up or down is fine; going back to the
+/// default is a regression, and this fails the build rather than the room.
+const _: () = assert!(
+    ROOM_LIST_TIMELINE_LIMIT > 1,
+    "a limit of 1 makes routine syncs unload the timeline"
+);
+
 /// Tauri event channel carrying connection health for the webview's
 /// connection indicator.
 pub const CONNECTION_EVENT: &str = "sm://connection";
@@ -194,26 +207,6 @@ fn emit_connection_state(app: &AppHandle, state: &State) {
 #[cfg(test)]
 mod tests {
     use matrix_sdk_ui::sync_service::State;
-
-    #[test]
-    fn the_room_list_asks_for_more_than_one_event_per_room() {
-        // The SDK's own default is 1 (`matrix-sdk-ui`'s
-        // `room_list_service::DEFAULT_LIST_TIMELINE_LIMIT`). At that value a
-        // room receiving two events between syncs comes back `limited` with a
-        // fresh gap, and the event cache answers a limited sync by unloading
-        // every chunk but the last (`matrix-sdk`'s
-        // `event_cache::caches::room::state`, `shrink_to_last_chunk`). The
-        // focused timeline then finds itself emptied out from under its
-        // subscription and has to re-seed — which is visible, because a
-        // re-seed replaces the whole list.
-        //
-        // So the invariant is not the exact number, which is a bandwidth
-        // trade to be tuned; it is that we never run on the default.
-        assert!(
-            super::ROOM_LIST_TIMELINE_LIMIT > 1,
-            "a limit of 1 makes routine syncs unload the timeline"
-        );
-    }
 
     #[test]
     fn maps_sdk_state_to_the_ui_vocabulary() {

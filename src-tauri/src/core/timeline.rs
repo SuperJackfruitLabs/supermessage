@@ -1919,12 +1919,8 @@ impl FocusedTimeline {
                         // until this loop is done.
                         let mut pages_spent = 0_u32;
                         let mut reached_start = false;
-                        while restore_more_history(
-                            before,
-                            fresh.len(),
-                            pages_spent,
-                            reached_start,
-                        ) {
+                        while restore_more_history(before, fresh.len(), pages_spent, reached_start)
+                        {
                             match paginator.paginate_backwards(INITIAL_PAGE_SIZE).await {
                                 Ok(hit_start) => reached_start = hit_start,
                                 Err(err) => {
@@ -3937,8 +3933,7 @@ mod tests {
         ));
     }
 
-    #[test
-]
+    #[test]
     fn on_recovery_reports_the_attempt_number_it_just_spent() {
         // The number the log line prints, so "attempt=3 max_attempts=3" means
         // what a reader of the log thinks it means.
