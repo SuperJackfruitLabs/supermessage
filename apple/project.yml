@@ -1,47 +1,106 @@
-# The throwaway probe app.
+# The native iOS app.
 #
-# Its only job is to answer one question before Task 8 commits twenty-eight
-# more commands to this boundary: does the UniFFI callback interface carry a
-# live timeline subscription, or does it fall over under a stream of events?
+# Three targets, and the reason for each:
 #
-# It is deliberately ugly. If it starts acquiring styling, navigation or
-# opinions it has outlived its purpose — the real app gets its own spec.
+#   SupermessageFFI  the generated bindings and the xcframework. **Swift 5**,
+#                    because UniFFI 0.28's output is not `Sendable`-clean and a
+#                    Swift 6 build of it is a wall of diagnostics that are not
+#                    ours to fix. Quarantining it here is what lets everything
+#                    else compile under strict concurrency, which is how the
+#                    app's central invariant — nothing blocking on the main
+#                    actor, no store mutated off it — becomes a compile error
+#                    rather than a comment.
 #
-# Bundle id is `dev.supermessage.native`, distinct from the Tauri build's
-# `dev.supermessage.app`, so both can sit on the simulator at once. That also
-# means a separate keychain entry: signing in here does not inherit the Tauri
-# app's session.
+#   SupermessageKit  the boundary and the stores. Imports no SwiftUI. That is
+#                    enforcement rather than taste: it is what stops view code
+#                    leaking into the state layer, and what keeps the layer
+#                    testable on its own.
+#
+#   Supermessage     the views.
+#
+# Regenerate with `xcodegen generate` from this directory after editing.
 name: Supermessage
 options:
   bundleIdPrefix: dev.supermessage
   deploymentTarget:
-    iOS: "17.0"
+    # 18.0, not 17: `onScrollGeometryChange` and `ScrollPosition` landed in 18
+    # and both go directly at the hardest problem in this app — anchoring the
+    # timeline during back-pagination. Xcode 16.4 / the iOS 18.5 SDK is the
+    # ceiling on this machine either way.
+    iOS: "18.0"
   createIntermediateGroups: true
 
+settings:
+  base:
+    DEVELOPMENT_TEAM: 9DC6VWV9X4
+    SWIFT_VERSION: "6.0"
+    # Every target, not just the app: a framework and a test bundle are both
+    # code-signed on iOS and both refuse to sign without one.
+    GENERATE_INFOPLIST_FILE: YES
+
 targets:
-  Probe:
-    type: application
+  SupermessageFFI:
+    type: framework
     platform: iOS
     sources:
-      - path: Probe
-      # The generated bindings. Both files — `setup_scaffolding!()` lives in
-      # the core crate as well as the FFI crate, so the DTOs and the `Core`
-      # object are declared in separate files and neither resolves alone.
+      # Both files. `setup_scaffolding!()` runs in the core crate as well as
+      # the FFI crate, so the DTOs and the `Core` object are declared in
+      # separate files and neither resolves alone.
       - path: Generated/supermessage_ffi.swift
       - path: Generated/supermessage_core.swift
     dependencies:
       - framework: Supermessage.xcframework
-        embed: false   # a static library: linked, never embedded
+        embed: false # a static library: linked, never embedded
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.native
-        DEVELOPMENT_TEAM: 9DC6VWV9X4
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: SM Probe
+        PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.ffi
         SWIFT_VERSION: "5.0"
-        # xcodegen only writes an Info.plist when given INFOPLIST_KEY_* entries
-        # it recognises as a complete set; the simplest correct thing is to let
-        # Xcode synthesise one from the keys above.
-        GENERATE_INFOPLIST_FILE: YES
-        # The bindings are generated code; their warnings are not ours to fix.
+        # Generated code; its warnings are not ours to fix.
         SWIFT_SUPPRESS_WARNINGS: YES
+
+  SupermessageKit:
+    type: framework
+    platform: iOS
+    sources: [SupermessageKit]
+    dependencies:
+      - target: SupermessageFFI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.kit
+        SWIFT_STRICT_CONCURRENCY: complete
+
+  Supermessage:
+    type: application
+    platform: iOS
+    sources: [Supermessage]
+    dependencies:
+      - target: SupermessageKit
+      - target: SupermessageFFI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.ios
+        SWIFT_STRICT_CONCURRENCY: complete
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: supermessage
+
+  SupermessageKitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [SupermessageKitTests]
+    dependencies:
+      - target: SupermessageKit
+      - target: SupermessageFFI
+
+schemes:
+  SupermessageKit:
+    build:
+      targets:
+        SupermessageKit: all
+        SupermessageKitTests: [test]
+    test:
+      targets: [SupermessageKitTests]
+  Supermessage:
+    build:
+      targets:
+        Supermessage: all
+    run: {}
