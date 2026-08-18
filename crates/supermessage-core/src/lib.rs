@@ -34,6 +34,7 @@ pub mod auth;
 pub mod dto;
 pub mod error;
 pub mod event;
+pub mod item_view;
 pub mod live;
 pub mod media;
 pub mod rich;
