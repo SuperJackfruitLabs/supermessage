@@ -89,12 +89,12 @@ use matrix_sdk_ui::timeline::{
 };
 use serde::{Deserialize, Serialize};
 
-use supermessage_lib::core::dto::{apply_ops, project_diff, TimelineItemDto};
-use supermessage_lib::core::timeline::{
+use supermessage_core::dto::{apply_ops, project_diff, TimelineItemDto};
+use supermessage_core::timeline::{
     latest_event_preview, project_item, timeline_event_filter, MessagePreview,
     CUSTOM_PAYLOAD_MAX_BYTES, PREVIEW_MAX_CHARS,
 };
-use supermessage_lib::core::tls::install_ring_provider;
+use supermessage_core::tls::install_ring_provider;
 
 /// A hand-rolled custom message-like event content, standing in for a real
 /// (not-yet-designed — see `docs/matrix-events.md` §G) Kaambaan schema, so

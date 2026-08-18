@@ -1,25 +1,28 @@
 [package]
-name = "supermessage"
+name = "supermessage-core"
 version = "0.0.8"
-description = "Cross-platform, agent-aware Matrix chat client"
-authors = ["supermessage contributors"]
-license = "MIT"
+description = "Matrix client logic, with no opinion about how it is displayed"
 edition = "2021"
+license = "MIT"
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "supermessage_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
+name = "supermessage_core"
 
 [dependencies]
-supermessage-core = { path = "../crates/supermessage-core" }
+# `tauri` is still here, and should not be.
+#
+# The event sites in sync/rooms/timeline/live/attachments still hold an
+# `AppHandle` and call `.emit()`. Task 3 replaces them with `EventSink`, and
+# this dependency goes with them. Keeping the move and the abstraction as
+# separate commits keeps each one reviewable; carrying tauri for exactly one
+# commit is the price.
 tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
+# Also temporary, and a bigger finding than the emit sites: `attachments.rs`
+# and `session.rs` open **native file pickers**. Picking a file is a host
+# concern — SwiftUI has its own picker and no notion of a Tauri dialog — so
+# Task 3 abstracts this behind a `FilePicker` trait next to `EventSink`.
+tauri-plugin-dialog = "2"
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -66,7 +69,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # dependency of its own (it registers picked/dropped paths with the fs
 # scope); that is a crate in the tree, not a capability, and no `fs:*`
 # permission is granted either.
-tauri-plugin-dialog = "2"
 
 # Image dimensions from the file *header* (core::attachments::image_dimensions).
 # MIT, zero dependencies, pure header parsing — deliberately not the `image`
@@ -108,7 +110,6 @@ mime = "0.3"
 # look at the screen, and this is the answer to that; but it executes arbitrary
 # JS in the webview and opens a socket, so it is compiled in only when somebody
 # asks for it by name (`--features mcp`), never in CI and never in a release.
-tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 
 # Desktop only. Tauri forwards the default feature set to mobile builds, so on
 # iOS this crate was compiled too and its build script fails outright ("failed
@@ -117,53 +118,9 @@ tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 # driver for it to drive on a phone anyway. The `wdio` feature still exists on
 # every target; on mobile it simply activates nothing, and `lib.rs` gates the
 # registration on `desktop` to match.
-[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-tauri-plugin-wdio-webdriver = { version = "1", optional = true }
-
-# iOS keeps credentials in the Data Protection keychain, not the macOS one.
-# `keyring`'s default `v1` feature turns on `apple-native-keyring-store/keychain`,
-# which is `target_os = "macos"` only, and that crate refuses to build for iOS
-# without `protected` ("The `protected` feature is required on iOS"). keyring
-# does not re-export the flag, so it is enabled on the shared crate directly —
-# cargo features are additive, so this reaches the copy keyring already depends
-# on. Target-gated, so desktop builds are untouched.
-[target.'cfg(target_os = "ios")'.dependencies]
-apple-native-keyring-store = { version = "1", features = ["protected"] }
-# `set_default_store` lives here; `keyring` itself does not re-export it.
-keyring-core = "1"
 
 [dev-dependencies]
-supermessage-core = { path = "../crates/supermessage-core" }
-# `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
-# no_retry_test_client_with_server, MatrixMockServer), wiremock to script the
-# homeserver's HTTP responses in auth tests.
 matrix-sdk = { version = "0.18", features = ["testing"] }
 wiremock = "0.6"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-# `event_factory` builds real SDK events (EventFactory), fed through a
-# MatrixMockServer-backed sync into a genuine matrix_sdk_ui::Timeline —
-# see tests/timeline_projection.rs's module doc comment for why this, not
-# hand-written DTOs, is what that file exists to exercise.
 matrix-sdk-test = "0.18"
-
-[lints.rust]
-# `ruma`'s `EventContent` derive expands to `#[cfg(ruma_unstable_exhaustive_types)]`
-# in the *consuming* crate, so rustc's check-cfg — which only knows the cfgs this
-# crate declares — flags it as an unknown condition name. It is a real cfg owned
-# by ruma, not a typo, so the fix is to declare it expected rather than to silence
-# the lint.
-#
-# Deliberately `check-cfg` and not `#[allow(unexpected_cfgs)]`: the allow would
-# switch the lint off for the whole item and hide a genuine typo'd cfg alongside
-# this legitimate one. This names the single condition we accept and keeps the
-# lint live for everything else.
-#
-# Only CI caught this: locally `unexpected_cfgs` is a warning, and CI sets
-# `RUSTFLAGS: -D warnings`, which is the point of setting it.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ruma_unstable_exhaustive_types)'] }
-
-[features]
-# On by default in a debug build; a release build never compiles it in.
-default = ["wdio"]
-wdio = ["dep:tauri-plugin-wdio-webdriver"]
-mcp = ["dep:tauri-plugin-mcp-bridge"]

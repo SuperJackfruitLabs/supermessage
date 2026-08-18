@@ -46,7 +46,7 @@ pub enum CoreError {
     /// (`core::attachments::format_bytes`) because homeserver limits are
     /// powers of two and a decimal "52.4 MB" against a "50 MB" limit reads
     /// as a contradiction.
-    #[error("that file is {}, but this homeserver accepts at most {}", crate::core::attachments::format_bytes(*bytes), crate::core::attachments::format_bytes(*limit))]
+    #[error("that file is {}, but this homeserver accepts at most {}", crate::attachments::format_bytes(*bytes), crate::attachments::format_bytes(*limit))]
     AttachmentTooLarge { bytes: u64, limit: u64 },
     /// A staging token named no staged file: it was already sent (they are
     /// single use), discarded, swept by the staging timeout, or dropped

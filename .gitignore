@@ -20,3 +20,4 @@ docs/positioning.md
 # The driven UI test writes its row report here on every run — evidence for the
 # run you just did, not something to keep.
 e2e/last-run.json
+/target

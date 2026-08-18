@@ -969,7 +969,7 @@ fn load_or_create_passphrase(store: &dyn SecretStore) -> CoreResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::secrets::MemoryStore;
+    use crate::secrets::MemoryStore;
 
     #[tokio::test]
     async fn require_client_reports_not_ready_before_login() {

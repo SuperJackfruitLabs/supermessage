@@ -980,7 +980,7 @@ pub const PREVIEW_MAX_CHARS: usize = 100;
 /// The three room-list preview facts `RoomSummary` carries, resolved
 /// together so they cannot disagree: there is never an `is_own` or an
 /// `event_type` without preview text to attach them to (see
-/// [`crate::core::rooms::project_room_parts`], which destructures this into
+/// [`crate::rooms::project_room_parts`], which destructures this into
 /// the wire fields).
 #[derive(Debug, Clone, PartialEq)]
 pub struct MessagePreview {

@@ -1,3 +1,13 @@
+// `timeline::FocusedTimeline::subscribe`'s spawned task nests
+// `Timeline::subscribe`'s stream type (itself wrapping `TimelineWithDropHandle`
+// around an `eyeball_im` subscriber stream) inside a `pin_mut!`'d `while let`
+// loop inside an `async move` block passed to `tokio::spawn` — deep enough
+// that computing its layout overflows rustc's default query recursion limit.
+//
+// It travelled here with the code that needs it: the limit belongs to the
+// crate holding the timeline, not to whichever host happens to embed it.
+#![recursion_limit = "256"]
+
 //! The Rust core.
 //!
 //! Architecture rule (docs/tech-stack.md): the Matrix client lives entirely
@@ -10,7 +20,6 @@
 
 pub mod attachments;
 pub mod auth;
-pub mod commands;
 pub mod dto;
 pub mod error;
 pub mod live;

@@ -8,15 +8,15 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
-use super::attachments::{self, StagedAttachment, StagedAttachments};
-use super::dto::RoomSummary;
-use super::error::CoreError;
-use super::room_info::RoomInfoDto;
-use super::search::SearchResultDto;
-use super::session::Session;
-use super::spaces::SpaceSummary;
-use super::sync::ConnectionPayload;
-use super::timeline::{FocusedTimeline, TimelineSnapshot};
+use supermessage_core::attachments::{self, StagedAttachment, StagedAttachments};
+use supermessage_core::dto::RoomSummary;
+use supermessage_core::error::CoreError;
+use supermessage_core::room_info::RoomInfoDto;
+use supermessage_core::search::SearchResultDto;
+use supermessage_core::session::Session;
+use supermessage_core::spaces::SpaceSummary;
+use supermessage_core::sync::ConnectionPayload;
+use supermessage_core::timeline::{FocusedTimeline, TimelineSnapshot};
 
 /// Logs in with a username and password, then starts sync and room-list
 /// streaming so the webview has state to render as soon as login succeeds.

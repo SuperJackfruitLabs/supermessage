@@ -10,8 +10,8 @@ use matrix_sdk::store::RoomLoadSettings;
 use matrix_sdk::Client;
 
 use super::AuthProvider;
-use crate::core::error::{CoreError, CoreResult};
-use crate::core::secrets::{SecretStore, KEY_SESSION, KEY_STORE_PASSPHRASE};
+use crate::error::{CoreError, CoreResult};
+use crate::secrets::{SecretStore, KEY_SESSION, KEY_STORE_PASSPHRASE};
 
 /// Logs in and restores sessions using `m.login.password`.
 pub struct PasswordAuth;
@@ -92,8 +92,8 @@ fn map_login_error(err: matrix_sdk::Error) -> CoreError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::secrets::MemoryStore;
-    use crate::core::tls;
+    use crate::secrets::MemoryStore;
+    use crate::tls;
     use matrix_sdk::test_utils::logged_in_client_with_server;
 
     #[tokio::test]
@@ -106,10 +106,7 @@ mod tests {
         let auth = PasswordAuth;
 
         auth.persist(&client, &store).await.unwrap();
-        assert!(store
-            .get(crate::core::secrets::KEY_SESSION)
-            .unwrap()
-            .is_some());
+        assert!(store.get(crate::secrets::KEY_SESSION).unwrap().is_some());
 
         // A second, still-logged-out client against the same homeserver: this
         // is what makes the test genuine. Restoring onto it must actually

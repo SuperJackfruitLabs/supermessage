@@ -241,7 +241,7 @@ pub struct TimelineItemDto {
     /// whose `content` isn't a JSON object.
     ///
     /// `None` also when the serialized `content` exceeds
-    /// [`crate::core::timeline::CUSTOM_PAYLOAD_MAX_BYTES`] — the whole
+    /// [`crate::timeline::CUSTOM_PAYLOAD_MAX_BYTES`] — the whole
     /// payload is dropped rather than truncated into a JSON fragment that
     /// would fail to parse on the webview side; see
     /// `core::timeline::bound_custom_payload`'s doc comment for why. `body`

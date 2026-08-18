@@ -38,11 +38,10 @@ use super::error::{CoreError, CoreResult};
 // Data Protection store below is necessary but not sufficient. Going straight
 // to `keyring_core` uses the store we registered; the two `Entry` types carry
 // the same methods, so the code below is identical either way.
-#[cfg(target_os = "ios")]
-use keyring_core::{Entry as KeyEntry, Error as KeyError};
 #[cfg(not(target_os = "ios"))]
 use keyring::{Entry as KeyEntry, Error as KeyError};
-
+#[cfg(target_os = "ios")]
+use keyring_core::{Entry as KeyEntry, Error as KeyError};
 
 /// Key under which the serialized Matrix session (access + refresh tokens)
 /// is stored.
@@ -77,7 +76,6 @@ pub trait SecretStore: Send + Sync {
 pub struct KeyringStore;
 
 const SERVICE_NAME: &str = "dev.supermessage.app";
-
 
 /// Installs the credential store iOS needs, once.
 ///
