@@ -409,6 +409,27 @@ xcodebuild -create-xcframework \
 Run: `./scripts/build-xcframework.sh`
 Expected: `apple/Supermessage.xcframework` exists and `apple/Generated/supermessage.swift` is non-empty.
 
+- [ ] **Found while doing this — read before debugging your own run**
+
+Three things bit, none of them obvious from the plan as written:
+
+1. **The iOS keychain dependency was in the wrong crate.** `apple-native-keyring-store`
+   with `protected` was declared in `src-tauri/Cargo.toml`, which worked only
+   because src-tauri was the sole builder of the core. The FFI crate builds it
+   without src-tauri in the graph, so the feature vanished and iOS failed with
+   the same "The `protected` feature is required on iOS" it started with. It
+   belongs in `supermessage-core`, next to `secrets.rs`, which is what calls
+   keyring.
+
+2. **`cargo build -p` builds every target in the package**, including the
+   `uniffi-bindgen` binary — and a CLI binary cannot link for iOS. Use `--lib`.
+   The generator is a host tool and is built for the host separately.
+
+3. **Cargo's default iOS deployment target is 10.0.** The C dependencies
+   (sqlite3, aws-lc) compile against the installed SDK, so linking them against
+   10.0 produces pages of "built for newer iOS version" warnings and then
+   fails. Export `IPHONEOS_DEPLOYMENT_TARGET=17.0`.
+
 - [ ] **Step 3: Commit the bindings**
 
 Generated Swift is checked in deliberately — Xcode builds stay hermetic, and a moved boundary shows up in review.

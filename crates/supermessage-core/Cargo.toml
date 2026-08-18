@@ -112,3 +112,20 @@ matrix-sdk = { version = "0.18", features = ["testing"] }
 wiremock = "0.6"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 matrix-sdk-test = "0.18"
+
+# Belongs here, not in a host: `secrets.rs` is what calls keyring, and every
+# host that builds this crate for iOS needs the same thing. It lived in
+# `src-tauri` until the FFI crate built the core without src-tauri in the
+# graph and the feature simply vanished — the iOS build failed with the same
+# "The `protected` feature is required on iOS" it started with.
+# iOS keeps credentials in the Data Protection keychain, not the macOS one.
+# `keyring`'s default `v1` feature turns on `apple-native-keyring-store/keychain`,
+# which is `target_os = "macos"` only, and that crate refuses to build for iOS
+# without `protected` ("The `protected` feature is required on iOS"). keyring
+# does not re-export the flag, so it is enabled on the shared crate directly —
+# cargo features are additive, so this reaches the copy keyring already depends
+# on. Target-gated, so desktop builds are untouched.
+[target.'cfg(target_os = "ios")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["protected"] }
+# `set_default_store` lives here; `keyring` itself does not re-export it.
+keyring-core = "1"

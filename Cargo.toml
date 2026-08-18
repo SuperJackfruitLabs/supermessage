@@ -16,3 +16,25 @@ debug = "line-tables-only"
 
 [profile.test]
 debug = "line-tables-only"
+
+# Dependencies get no debug info at all.
+#
+# We never step through matrix-sdk, aws-lc or ring — when they appear in a
+# backtrace it is as a frame to read past on the way to our own code, and a
+# symbol name is enough for that. They are also the overwhelming bulk of what
+# gets compiled here: our two crates are ~14k lines against a dependency tree
+# in the millions.
+#
+# Kept separate from the `debug` settings above so the trade is legible: our
+# code keeps line tables, theirs keeps nothing.
+[profile.dev.package."*"]
+debug = false
+
+[profile.test.package."*"]
+debug = false
+
+# iOS builds are release builds, and ship nothing that needs symbols. The
+# XCFramework is linked into an app whose crashes are symbolicated from its own
+# dSYM, not from Rust's.
+[profile.release]
+debug = false

@@ -120,17 +120,6 @@ tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 
-# iOS keeps credentials in the Data Protection keychain, not the macOS one.
-# `keyring`'s default `v1` feature turns on `apple-native-keyring-store/keychain`,
-# which is `target_os = "macos"` only, and that crate refuses to build for iOS
-# without `protected` ("The `protected` feature is required on iOS"). keyring
-# does not re-export the flag, so it is enabled on the shared crate directly —
-# cargo features are additive, so this reaches the copy keyring already depends
-# on. Target-gated, so desktop builds are untouched.
-[target.'cfg(target_os = "ios")'.dependencies]
-apple-native-keyring-store = { version = "1", features = ["protected"] }
-# `set_default_store` lives here; `keyring` itself does not re-export it.
-keyring-core = "1"
 
 [dev-dependencies]
 supermessage-core = { path = "../crates/supermessage-core" }

@@ -1,0 +1,7 @@
+module supermessage_coreFFI {
+    header "supermessage_coreFFI.h"
+    export *
+}module supermessage_ffiFFI {
+    header "supermessage_ffiFFI.h"
+    export *
+}
