@@ -81,6 +81,13 @@ pub enum ItemView {
     /// three states but never makes that decision itself.
     CustomEvent {
         view: CustomEventView,
+        /// The Matrix event type as the card's header should show it —
+        /// truncated from the left, never from the right, and never rendered
+        /// with a right-to-left base direction. See [`display_event_type`]:
+        /// this string is sender-controlled, and the obvious CSS approach
+        /// hands the bidi algorithm a hostile string and lets a crafted type
+        /// reorder itself on screen.
+        event_type: String,
     },
     None,
 }
@@ -398,6 +405,7 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         },
 
         "customMessage" => ItemView::CustomEvent {
+            event_type: display_event_type(item.detail.as_deref()),
             view: resolve_custom_event(
                 default_registry(),
                 item.detail.as_deref(),
@@ -882,6 +890,7 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::CustomEvent {
+                event_type: "org.kaambaan.card.v1".into(),
                 view: CustomEventView::Placeholder {
                     text: "Custom event (org.kaambaan.card.v1)".into()
                 }
@@ -897,6 +906,7 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::CustomEvent {
+                event_type: "org.kaambaan.card.v1".into(),
                 view: CustomEventView::FallbackBody {
                     text: "New card: Ship it".into()
                 }
@@ -914,6 +924,7 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::CustomEvent {
+                event_type: crate::custom_events::DEMO_NOTE_EVENT_TYPE.into(),
                 view: CustomEventView::Rendered {
                     fields: vec![crate::custom_events::CustomEventField {
                         label: "Note".into(),

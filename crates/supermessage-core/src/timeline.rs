@@ -1309,6 +1309,7 @@ fn project_reactions(entries: &[(String, Vec<String>)], own_user_id: &str) -> Ve
     entries
         .iter()
         .map(|(key, senders)| ReactionDto {
+            display_key: crate::item_view::display_reaction_key(key),
             key: key.clone(),
             count: senders.len() as u32,
             by_me: senders.iter().any(|sender| sender == own_user_id),
@@ -4783,6 +4784,7 @@ mod tests {
     fn project_item_parts_carries_reactions_through_untouched() {
         let reactions = vec![ReactionDto {
             key: "👍".to_string(),
+            display_key: "👍".to_string(),
             count: 2,
             by_me: true,
         }];

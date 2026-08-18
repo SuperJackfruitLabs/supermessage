@@ -221,6 +221,16 @@ pub struct ReactionDto {
     /// rendered length and guard it against overflow the same as any other
     /// free-text field from a sender.
     pub key: String,
+    /// The same key, bounded for rendering.
+    ///
+    /// Separate from [`Self::key`] because they are different things that
+    /// happen to usually look alike: `key` is wire data, compared
+    /// byte-for-byte against what other clients sent, and truncating it would
+    /// break that comparison. This is the display form, and it exists here
+    /// rather than in a host because a key is arbitrary sender-controlled
+    /// text and bounding it is the same overflow guard every other free-text
+    /// field from a sender gets.
+    pub display_key: String,
     /// How many distinct senders have reacted with this key.
     pub count: u32,
     /// Whether the current user is among those senders — what the
@@ -672,13 +682,50 @@ impl SeqCounter {
 pub struct TimelineRow {
     pub item: TimelineItemDto,
     pub view: crate::item_view::ItemView,
+    /// Who to attribute this item to: display name, then the raw sender id,
+    /// then a generic placeholder. Never empty.
+    pub sender_name: String,
+    /// The verb phrase for a membership change — "joined the room" — and
+    /// `None` for every other kind.
+    ///
+    /// Carried separately from [`Self::view`] even though the view's `System`
+    /// text already embeds it, because a *grouped* run of membership changes
+    /// composes one sentence out of many names and a single verb ("Alice, Bob
+    /// and 3 others joined the room"). A host doing that needs the verb by
+    /// itself, and re-deriving it from a rendered sentence is parsing your own
+    /// output.
+    pub membership_verb: Option<String>,
+    /// The quoted parent, when this item is a reply.
+    pub reply_quote: Option<crate::item_view::ReplyQuoteView>,
+    /// Whether this item can be replied to or reacted to — false while it is
+    /// still a local echo with no real event id.
+    pub can_reply_or_react: bool,
 }
 
 impl TimelineRow {
-    /// Wrap an item, classifying it.
+    /// Wrap an item with every decision a host would otherwise have to make
+    /// about it.
+    ///
+    /// The set of fields here is not decoration. Each one was a synchronous
+    /// helper the desktop called from inside its markup, and a host cannot
+    /// `await` mid-render — so anything a renderer needs *while drawing* has
+    /// to arrive with the item rather than be fetchable. That is the whole
+    /// reason this is a row and not a bare DTO.
     pub fn new(item: TimelineItemDto) -> Self {
         let view = crate::item_view::view_for(&item);
-        Self { item, view }
+        let sender_name = crate::item_view::attributed_name(&item);
+        let membership_verb = (item.kind == "membership")
+            .then(|| crate::item_view::membership_verb(item.detail.as_deref()));
+        let reply_quote = crate::item_view::reply_quote_view(item.reply_to.as_ref());
+        let can_reply_or_react = crate::item_view::can_reply_or_react(&item);
+        Self {
+            item,
+            view,
+            sender_name,
+            membership_verb,
+            reply_quote,
+            can_reply_or_react,
+        }
     }
 }
 
@@ -1255,12 +1302,13 @@ mod wire_format_golden {
     fn a_reaction_keeps_its_shape() {
         let reaction = ReactionDto {
             key: "+1".into(),
+            display_key: "+1".into(),
             count: 2,
             by_me: true,
         };
         assert_eq!(
             serde_json::to_string(&reaction).unwrap(),
-            r#"{"key":"+1","count":2,"byMe":true}"#
+            r#"{"key":"+1","displayKey":"+1","count":2,"byMe":true}"#
         );
     }
 
@@ -1316,6 +1364,68 @@ mod wire_format_golden {
         assert!(json.get("item").is_some(), "no `item` key in {json}");
         assert!(json.get("view").is_some(), "no `view` key in {json}");
         assert_eq!(json["item"]["id"], "$e1");
+    }
+
+    #[test]
+    fn a_row_names_its_sender_so_a_host_never_resolves_attribution_itself() {
+        let mut item = a_text_item();
+        item.sender_display_name = Some("Alice".into());
+        assert_eq!(TimelineRow::new(item.clone()).sender_name, "Alice");
+
+        item.sender_display_name = None;
+        assert_eq!(TimelineRow::new(item.clone()).sender_name, "@a:x.org");
+
+        item.sender = None;
+        assert_eq!(TimelineRow::new(item).sender_name, "Someone");
+    }
+
+    #[test]
+    fn only_a_membership_row_carries_a_verb() {
+        // The verb is carried apart from the rendered sentence because a
+        // grouped run composes one sentence from many names and a single
+        // verb. Anything else must not offer one to compose with.
+        assert_eq!(TimelineRow::new(a_text_item()).membership_verb, None);
+
+        let mut membership = a_text_item();
+        membership.kind = "membership".into();
+        membership.detail = Some("joined".into());
+        assert_eq!(
+            TimelineRow::new(membership).membership_verb.as_deref(),
+            Some("joined the room")
+        );
+    }
+
+    #[test]
+    fn a_row_carries_its_reply_quote_only_when_it_is_a_reply() {
+        assert_eq!(TimelineRow::new(a_text_item()).reply_quote, None);
+
+        let mut reply = a_text_item();
+        reply.reply_to = Some(ReplyToDto {
+            event_id: "$parent".into(),
+            available: true,
+            sender: Some("@b:x.org".into()),
+            sender_display_name: Some("Bob".into()),
+            excerpt: Some("the original".into()),
+            label: None,
+        });
+        assert_eq!(
+            TimelineRow::new(reply).reply_quote,
+            Some(crate::item_view::ReplyQuoteView::Available {
+                sender: "Bob".into(),
+                excerpt: Some("the original".into()),
+                label: None,
+            })
+        );
+    }
+
+    #[test]
+    fn a_row_says_whether_it_can_be_replied_to_yet() {
+        // A local echo has no real event id, so a reply or reaction against it
+        // would fail at the homeserver.
+        let mut echo = a_text_item();
+        echo.send_state = Some("notSentYet".into());
+        assert!(!TimelineRow::new(echo).can_reply_or_react);
+        assert!(TimelineRow::new(a_text_item()).can_reply_or_react);
     }
 
     #[test]
