@@ -123,7 +123,10 @@ pub fn run() {
     //
     // Debug builds only, and not merely by convention: this is a remote-control
     // surface on the running app, and a shipped binary must not carry one.
-    #[cfg(all(debug_assertions, feature = "wdio"))]
+    // `desktop` as well as the feature: the dependency is scoped to desktop
+    // targets (see Cargo.toml), so on mobile the feature can be on while the
+    // crate is absent, and this line would not compile.
+    #[cfg(all(desktop, debug_assertions, feature = "wdio"))]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     // The MCP bridge — same reasoning as the line above, one notch stricter.

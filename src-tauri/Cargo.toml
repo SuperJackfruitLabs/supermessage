@@ -101,7 +101,6 @@ mime = "0.3"
 # only — see `lib.rs`, where it is registered behind `debug_assertions`. It is
 # how this app's UI can be tested at all without a human at the keyboard, which
 # matters for a bug whose only symptom is what the rendered rows look like.
-tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 # Lets a coding assistant *see* this app: screenshots, DOM and CSS, console
 # logs, IPC traffic. Optional and NOT in `default`, unlike `wdio` — three
 # rendering faults in one day got past every test here because nothing could
@@ -109,6 +108,28 @@ tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 # JS in the webview and opens a socket, so it is compiled in only when somebody
 # asks for it by name (`--features mcp`), never in CI and never in a release.
 tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
+
+# Desktop only. Tauri forwards the default feature set to mobile builds, so on
+# iOS this crate was compiled too and its build script fails outright ("failed
+# to run custom build command for tauri-plugin-wdio-webdriver") — which stopped
+# the iOS build before anything of ours was reached. There is no WKWebView
+# driver for it to drive on a phone anyway. The `wdio` feature still exists on
+# every target; on mobile it simply activates nothing, and `lib.rs` gates the
+# registration on `desktop` to match.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+
+# iOS keeps credentials in the Data Protection keychain, not the macOS one.
+# `keyring`'s default `v1` feature turns on `apple-native-keyring-store/keychain`,
+# which is `target_os = "macos"` only, and that crate refuses to build for iOS
+# without `protected` ("The `protected` feature is required on iOS"). keyring
+# does not re-export the flag, so it is enabled on the shared crate directly —
+# cargo features are additive, so this reaches the copy keyring already depends
+# on. Target-gated, so desktop builds are untouched.
+[target.'cfg(target_os = "ios")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["protected"] }
+# `set_default_store` lives here; `keyring` itself does not re-export it.
+keyring-core = "1"
 
 [dev-dependencies]
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,

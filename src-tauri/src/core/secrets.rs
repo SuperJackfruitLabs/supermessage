@@ -27,6 +27,23 @@ use rand::TryRngCore;
 
 use super::error::{CoreError, CoreResult};
 
+// iOS talks to `keyring_core` directly; every other platform goes through
+// `keyring`'s v1 shim.
+//
+// The shim is not merely unhelpful on iOS, it is a wall: `Entry::new` opens
+// with `if SET_CREDENTIAL_STORE_RESULT.is_err() { return Err(NoDefaultStore) }`
+// (`keyring-4.1.6/src/v1.rs`), and that one-time initializer refuses iOS
+// outright — "must be macOS, Windows, or a non-iOS, non-Android *nix variant".
+// So on iOS it fails *before* consulting any store, and registering the
+// Data Protection store below is necessary but not sufficient. Going straight
+// to `keyring_core` uses the store we registered; the two `Entry` types carry
+// the same methods, so the code below is identical either way.
+#[cfg(target_os = "ios")]
+use keyring_core::{Entry as KeyEntry, Error as KeyError};
+#[cfg(not(target_os = "ios"))]
+use keyring::{Entry as KeyEntry, Error as KeyError};
+
+
 /// Key under which the serialized Matrix session (access + refresh tokens)
 /// is stored.
 pub const KEY_SESSION: &str = "matrix_session";
@@ -61,32 +78,71 @@ pub struct KeyringStore;
 
 const SERVICE_NAME: &str = "dev.supermessage.app";
 
+
+/// Installs the credential store iOS needs, once.
+///
+/// Every other platform gets one for free: `keyring`'s `v1` shim picks the
+/// Keychain, Credential Manager or Secret Service and registers it. That shim
+/// explicitly excludes iOS and Android (`keyring-4.1.6/src/v1.rs`), returning
+/// "must be macOS, Windows, or a non-iOS, non-Android *nix variant" — so on
+/// iOS nothing is registered and the first credential call fails with "No
+/// default store has been set, so cannot search or create entries". Which is
+/// exactly what sign-in did on the simulator.
+///
+/// iOS keeps credentials in the Data Protection keychain rather than the
+/// macOS one, so the store is `protected` rather than `keychain`. Items in it
+/// can be unreadable while the device is locked, which is a state this app
+/// should expect rather than treat as corruption.
+#[cfg(target_os = "ios")]
+static IOS_STORE: std::sync::LazyLock<Result<(), String>> = std::sync::LazyLock::new(|| {
+    let store = apple_native_keyring_store::protected::Store::new().map_err(|e| e.to_string())?;
+    keyring_core::set_default_store(store);
+    Ok(())
+});
+
+/// Called before every credential access. A no-op everywhere but iOS.
+#[cfg(target_os = "ios")]
+fn ensure_store() -> CoreResult<()> {
+    IOS_STORE
+        .as_ref()
+        .map(|_| ())
+        .map_err(|e| CoreError::Store(e.clone()))
+}
+
+#[cfg(not(target_os = "ios"))]
+fn ensure_store() -> CoreResult<()> {
+    Ok(())
+}
+
 #[cfg(not(target_os = "android"))]
 impl SecretStore for KeyringStore {
     fn get(&self, key: &str) -> CoreResult<Option<String>> {
+        ensure_store()?;
         let entry =
-            keyring::Entry::new(SERVICE_NAME, key).map_err(|e| CoreError::Store(e.to_string()))?;
+            KeyEntry::new(SERVICE_NAME, key).map_err(|e| CoreError::Store(e.to_string()))?;
         match entry.get_password() {
             Ok(password) => Ok(Some(password)),
-            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(KeyError::NoEntry) => Ok(None),
             Err(e) => Err(CoreError::Store(e.to_string())),
         }
     }
 
     fn set(&self, key: &str, value: &str) -> CoreResult<()> {
+        ensure_store()?;
         let entry =
-            keyring::Entry::new(SERVICE_NAME, key).map_err(|e| CoreError::Store(e.to_string()))?;
+            KeyEntry::new(SERVICE_NAME, key).map_err(|e| CoreError::Store(e.to_string()))?;
         entry
             .set_password(value)
             .map_err(|e| CoreError::Store(e.to_string()))
     }
 
     fn delete(&self, key: &str) -> CoreResult<()> {
+        ensure_store()?;
         let entry =
-            keyring::Entry::new(SERVICE_NAME, key).map_err(|e| CoreError::Store(e.to_string()))?;
+            KeyEntry::new(SERVICE_NAME, key).map_err(|e| CoreError::Store(e.to_string()))?;
         match entry.delete_credential() {
             Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(KeyError::NoEntry) => Ok(()),
             Err(e) => Err(CoreError::Store(e.to_string())),
         }
     }
