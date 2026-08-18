@@ -1901,6 +1901,73 @@ impl FocusedTimeline {
                             }
                         }
 
+                        // Give the reader back the depth they had.
+                        //
+                        // The single `paginate_backwards` above restores one
+                        // page, and for a long time that was all this did —
+                        // so a reader who had scrolled back through hundreds
+                        // of events watched the room collapse to its newest
+                        // thirty and had to scroll it all back, every time a
+                        // limited sync unloaded the chunks. Nothing they did
+                        // caused it and nothing they could do prevented it.
+                        //
+                        // `before` is how deep the list was when it emptied,
+                        // so that is what we aim at. See
+                        // [`restore_more_history`] for the three ways this
+                        // stops; all of them are bounded, because the reset
+                        // below is coalesced and nothing reaches the webview
+                        // until this loop is done.
+                        let mut pages_spent = 0_u32;
+                        let mut reached_start = false;
+                        while restore_more_history(
+                            before,
+                            fresh.len(),
+                            pages_spent,
+                            reached_start,
+                        ) {
+                            match paginator.paginate_backwards(INITIAL_PAGE_SIZE).await {
+                                Ok(hit_start) => reached_start = hit_start,
+                                Err(err) => {
+                                    // Same posture as the re-seed's own
+                                    // pagination failure above: converge on
+                                    // whatever we do have rather than leave
+                                    // the reader with nothing.
+                                    tracing::warn!(
+                                        error = %err,
+                                        subject = %subject,
+                                        pages_spent,
+                                        "restoring scrollback failed; showing the depth reached so far"
+                                    );
+                                    break;
+                                }
+                            }
+                            pages_spent += 1;
+
+                            // The pagination's events arrive as diffs on the
+                            // stream we just subscribed, not as a return
+                            // value, so they have to be folded in here to be
+                            // part of the coalesced reset.
+                            while let Ok(Some(batch)) =
+                                tokio::time::timeout(RESEED_SETTLE, fresh_stream.next()).await
+                            {
+                                apply_ops(&mut fresh, &project_batch(batch, &own_user));
+                                if fresh.len() >= before {
+                                    break;
+                                }
+                            }
+                        }
+
+                        if pages_spent > 0 {
+                            tracing::debug!(
+                                subject = %subject,
+                                before,
+                                restored = fresh.len(),
+                                pages_spent,
+                                reached_start,
+                                "restored scrollback before showing the re-seed"
+                            );
+                        }
+
                         emit_ops(
                             &app,
                             &task_state,
@@ -2499,6 +2566,43 @@ impl RecoveryBudget {
         *counter += 1;
         *counter
     }
+}
+
+/// How many extra pages a re-seed may fetch trying to restore the reader's
+/// scrollback before it gives up and shows what it has.
+///
+/// The reader is waiting behind this: a re-seed is coalesced into a single
+/// reset, so nothing appears until the restore finishes. Every page is a
+/// round trip, so this is a ceiling on how long "recovering" can look like
+/// "frozen". At [`INITIAL_PAGE_SIZE`] per page it covers a little under 400
+/// events, which is far more scrollback than a reader accumulates in the
+/// minute or so between limited syncs.
+const MAX_RESTORE_PAGES: u32 = 12;
+
+/// Whether a re-seed should fetch another page before showing what it has.
+///
+/// A re-seed rebuilds the timeline from scratch, and used to rebuild it from
+/// exactly one page — so a reader who had paginated a long way back watched
+/// the room collapse to its newest events and had to scroll it all back. The
+/// list emptied "from under its subscription" through no action of theirs, so
+/// the restore aims at `before`: the depth the list held when it emptied.
+///
+/// Three ways to stop, and the order matters:
+///
+///  - `reached_start` — `paginate_backwards` says there is no more history.
+///    Authoritative, and it outranks the target: a room whose events are gone
+///    can never reach `before`, and would otherwise burn every page.
+///  - `restored >= before` — the reader has their depth back. More would be
+///    work they never asked for.
+///  - `pages_spent >= MAX_RESTORE_PAGES` — see that constant. A room being
+///    appended to faster than we paginate must not loop forever.
+fn restore_more_history(
+    before: usize,
+    restored: usize,
+    pages_spent: u32,
+    reached_start: bool,
+) -> bool {
+    !reached_start && restored < before && pages_spent < MAX_RESTORE_PAGES
 }
 
 /// What the streaming task should do with one incoming diff batch —
@@ -3794,6 +3898,47 @@ mod tests {
     }
 
     #[test]
+    fn a_reseed_refetches_the_depth_the_reader_had() {
+        // The bug this exists to kill: recovery re-seeded from one page, so a
+        // reader who had paginated back through hundreds of events watched the
+        // room collapse to the newest 30 and had to scroll it all back.
+        // `before` is how deep the list was when it emptied; the re-seed keeps
+        // paginating until it has at least that much again.
+        assert!(super::restore_more_history(400, 30, 1, false));
+        assert!(super::restore_more_history(400, 390, 11, false));
+
+        // Once it has, showing it is the right move — more would be work the
+        // reader did not ask for.
+        assert!(!super::restore_more_history(400, 400, 3, false));
+        assert!(!super::restore_more_history(400, 431, 3, false));
+    }
+
+    #[test]
+    fn a_reseed_stops_at_the_start_of_the_room() {
+        // A short room can never reach `before` if the events that made up
+        // that length are gone (redacted, or a shrink that also dropped them).
+        // `paginate_backwards` reporting the start is the authoritative "there
+        // is nothing more", and it outranks the length target — without this
+        // the loop would spend every page it has on a room with no history.
+        assert!(!super::restore_more_history(400, 12, 1, true));
+    }
+
+    #[test]
+    fn a_reseed_is_bounded_even_when_it_cannot_catch_up() {
+        // The reader is waiting on this: the whole re-seed is coalesced into
+        // one reset, so every page spent here is a page they spend looking at
+        // a stale list. A room being appended to faster than we paginate would
+        // otherwise never satisfy the target.
+        assert!(!super::restore_more_history(
+            10_000,
+            30,
+            super::MAX_RESTORE_PAGES,
+            false
+        ));
+    }
+
+    #[test
+]
     fn on_recovery_reports_the_attempt_number_it_just_spent() {
         // The number the log line prints, so "attempt=3 max_attempts=3" means
         // what a reader of the log thinks it means.

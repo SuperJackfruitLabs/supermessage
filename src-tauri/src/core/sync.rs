@@ -24,6 +24,29 @@ use tokio::task::JoinHandle;
 
 use super::error::{CoreError, CoreResult};
 
+/// How many timeline events the room-list sliding sync asks for per room.
+///
+/// The SDK defaults this to **1** (`matrix-sdk-ui`'s
+/// `room_list_service::DEFAULT_LIST_TIMELINE_LIMIT`), and that default is
+/// actively hostile to a timeline anyone is reading. A sync that returns more
+/// events than the limit is flagged `limited` and carries a fresh gap token,
+/// and `matrix-sdk`'s event cache answers exactly that case by unloading every
+/// chunk but the last one (`event_cache::caches::room::state`,
+/// `shrink_to_last_chunk`) — deliberately, so a client cannot render across a
+/// gap it has not back-filled. The focused timeline then sees its items
+/// vanish, re-seeds, and the reader watches the room empty and refill.
+///
+/// At 1, *two messages between syncs* is enough to trigger it. Live logs
+/// showed it firing about once a minute on a quiet room.
+///
+/// The number is a trade, not a truth: every room in the roster carries this
+/// many events on every sync, so raising it costs bandwidth and sync latency
+/// across the whole list. 32 is chosen to comfortably exceed the traffic a
+/// single room sees between syncs while staying close to `INITIAL_PAGE_SIZE`
+/// (30) — the depth a freshly seeded timeline holds anyway, so a limited sync
+/// that does slip through unloads to roughly what the reader already had.
+const ROOM_LIST_TIMELINE_LIMIT: u32 = 32;
+
 /// Tauri event channel carrying connection health for the webview's
 /// connection indicator.
 pub const CONNECTION_EVENT: &str = "sm://connection";
@@ -101,6 +124,10 @@ impl Drop for SyncHandle {
 /// the returned [`SyncHandle`] lives.
 pub async fn start(client: &Client, app: AppHandle) -> CoreResult<SyncHandle> {
     let service = SyncService::builder(client.clone())
+        // See `ROOM_LIST_TIMELINE_LIMIT`: the SDK default of 1 makes
+        // ordinary syncs unload the focused timeline out from under its
+        // subscription.
+        .with_room_list_timeline_limit(ROOM_LIST_TIMELINE_LIMIT)
         .build()
         .await
         .map_err(|e| CoreError::Network(e.to_string()))?;
@@ -167,6 +194,26 @@ fn emit_connection_state(app: &AppHandle, state: &State) {
 #[cfg(test)]
 mod tests {
     use matrix_sdk_ui::sync_service::State;
+
+    #[test]
+    fn the_room_list_asks_for_more_than_one_event_per_room() {
+        // The SDK's own default is 1 (`matrix-sdk-ui`'s
+        // `room_list_service::DEFAULT_LIST_TIMELINE_LIMIT`). At that value a
+        // room receiving two events between syncs comes back `limited` with a
+        // fresh gap, and the event cache answers a limited sync by unloading
+        // every chunk but the last (`matrix-sdk`'s
+        // `event_cache::caches::room::state`, `shrink_to_last_chunk`). The
+        // focused timeline then finds itself emptied out from under its
+        // subscription and has to re-seed — which is visible, because a
+        // re-seed replaces the whole list.
+        //
+        // So the invariant is not the exact number, which is a bandwidth
+        // trade to be tuned; it is that we never run on the default.
+        assert!(
+            super::ROOM_LIST_TIMELINE_LIMIT > 1,
+            "a limit of 1 makes routine syncs unload the timeline"
+        );
+    }
 
     #[test]
     fn maps_sdk_state_to_the_ui_vocabulary() {
