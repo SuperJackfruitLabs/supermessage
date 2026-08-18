@@ -399,6 +399,22 @@ fileprivate class UniffiHandleMap<T> {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
+    typealias FfiType = UInt16
+    typealias SwiftType = UInt16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -506,11 +522,63 @@ fileprivate struct FfiConverterString: FfiConverter {
 public protocol CoreProtocol : AnyObject {
     
     /**
+     * Throw a staged file away without sending it.
+     */
+    func attachmentDiscard(token: String) 
+    
+    /**
+     * Upload and send the staged file `token` names.
+     *
+     * **Consumes the token**, so a replay cannot re-send the file. `room_id`
+     * is checked against both the focused room and the room the token was
+     * staged for — the first catches a stale send, the second a token kept
+     * across a room switch.
+     */
+    func attachmentSend(roomId: String, token: String) throws 
+    
+    /**
+     * Stage a file the host has already chosen.
+     *
+     * The desktop command opens the picker from Rust; this takes a path
+     * instead, because on iOS the document picker is a SwiftUI presentation
+     * and the core has no business summoning it. The host picks, then stages.
+     */
+    func attachmentStagePath(roomId: String, path: String) throws  -> StagedFile
+    
+    /**
      * Where the connection currently stands, without waiting for the next
      * transition. A host that has just launched needs this to render
      * something truthful before any event arrives.
      */
     func connectionState()  -> ConnectionState
+    
+    /**
+     * Create a room and return its id.
+     *
+     * `is_direct` marks it as a one-to-one conversation, which changes how
+     * clients name and group it rather than anything about the room itself.
+     */
+    func createRoom(name: String, invite: [String], isDirect: Bool) throws  -> String
+    
+    /**
+     * Invite someone to a room.
+     */
+    func inviteUser(roomId: String, userId: String) throws 
+    
+    /**
+     * Accept an invitation, or join a room already known by id.
+     */
+    func joinRoom(roomId: String) throws 
+    
+    /**
+     * Join by alias (`#room:server`) or id, returning the id joined.
+     */
+    func joinRoomByAlias(aliasOrId: String) throws  -> String
+    
+    /**
+     * Leave a room. It disappears from the roster on the next diff.
+     */
+    func leaveRoom(roomId: String) throws 
     
     /**
      * Sign in and start syncing, reporting progress through `sink`.
@@ -526,6 +594,28 @@ public protocol CoreProtocol : AnyObject {
     func logout() throws 
     
     /**
+     * Mark the room read up to its latest event.
+     */
+    func markRoomRead(roomId: String) throws 
+    
+    /**
+     * An event's media as a `data:` URI, fetched and decrypted.
+     *
+     * There is deliberately no `media_download` here, unlike the desktop
+     * host. That command exists to open a *save panel* and write the bytes to
+     * a path the person chooses — a desktop gesture. On iOS the host fetches
+     * with this and hands the result to a share sheet, which is the platform's
+     * own answer to the same question and needs no file picker crossing the
+     * FFI.
+     */
+    func mediaFetch(eventId: String) throws  -> String?
+    
+    /**
+     * A member's avatar as a `data:` URI, given its `mxc:` URI.
+     */
+    func memberAvatar(mxcUri: String) throws  -> String?
+    
+    /**
      * Pick up a session stored from a previous run.
      *
      * `false` means there was nothing stored — an ordinary outcome on first
@@ -535,14 +625,97 @@ public protocol CoreProtocol : AnyObject {
     func restoreSession(sink: EventSink) throws  -> Bool
     
     /**
+     * A room's avatar as a `data:` URI, if it has one.
+     */
+    func roomAvatar(roomId: String) throws  -> String?
+    
+    /**
+     * Everything the info panel shows about a room.
+     */
+    func roomInfo(roomId: String) throws  -> RoomInfoDto
+    
+    /**
      * Every room this account is in, with the sequence number the snapshot
      * was taken at.
+     *
+     * The desktop host calls this `rooms_resync`, which is the one place the
+     * two vocabularies differ. The desktop name describes when it is called —
+     * after a reload, to catch up; this one describes what it returns. A host
+     * that has been backgrounded and lost diffs calls it for the same reason
+     * either way.
      *
      * The `seq` matters: room-list diffs arriving afterwards carry increasing
      * sequence numbers, and a host that applies one older than its snapshot
      * would move rows that have already moved.
      */
     func roomsSnapshot() throws  -> RoomsSnapshot
+    
+    /**
+     * Search messages across rooms.
+     */
+    func searchMessages(term: String) throws  -> [SearchResultDto]
+    
+    /**
+     * Send a plain-text message to the focused room.
+     *
+     * `room_id` is checked against whichever room is actually focused before
+     * anything is sent — the fix for a wrong-recipient race, and the reason
+     * every write here takes a room id it could otherwise infer.
+     *
+     * `mentions` are user ids to notify; empty is the ordinary case.
+     */
+    func sendMessage(roomId: String, body: String, mentions: [String]) throws 
+    
+    /**
+     * Reply to `in_reply_to`, an event id in the focused room.
+     */
+    func sendReply(roomId: String, body: String, inReplyTo: String) throws 
+    
+    /**
+     * Tell the room whether this account is typing.
+     */
+    func setTyping(roomId: String, typing: Bool) throws 
+    
+    /**
+     * Filter the room list to a space, or `None` to clear the filter.
+     *
+     * The filter lives in the core, not the host: the next room-list diff
+     * reflects it, so both hosts see the same rooms for the same selection.
+     */
+    func spaceSelect(spaceId: String?) throws 
+    
+    /**
+     * The spaces this account is in, for the roster's rail.
+     */
+    func spacesList() throws  -> [SpaceSummary]
+    
+    /**
+     * Load older messages. `true` means the start of the room was reached and
+     * there is nothing more to ask for.
+     */
+    func timelinePaginateBack(roomId: String, count: UInt16) throws  -> Bool
+    
+    /**
+     * The focused timeline as of now: its room, the sequence number, and the
+     * items. A host that has just subscribed uses this rather than waiting
+     * for a diff that may not come until something changes.
+     */
+    func timelineResync() throws  -> TimelineSnapshot
+    
+    /**
+     * Focus a room and start streaming its timeline.
+     *
+     * Diffs arrive on the sink as `TimelineDiff`, carrying the `seq` their
+     * ordering depends on. Only one room is focused at a time — subscribing
+     * to a second replaces the first, which is what makes `room_id`
+     * verification meaningful on every write below.
+     */
+    func timelineSubscribe(roomId: String, sink: EventSink) throws 
+    
+    /**
+     * Add or remove a reaction. Returns whether the reaction is now present.
+     */
+    func toggleReaction(roomId: String, eventId: String, key: String) throws  -> Bool
     
 }
 
@@ -619,6 +792,48 @@ public convenience init(dataDir: String) {
 
     
     /**
+     * Throw a staged file away without sending it.
+     */
+open func attachmentDiscard(token: String) {try! rustCall() {
+    uniffi_supermessage_ffi_fn_method_core_attachment_discard(self.uniffiClonePointer(),
+        FfiConverterString.lower(token),$0
+    )
+}
+}
+    
+    /**
+     * Upload and send the staged file `token` names.
+     *
+     * **Consumes the token**, so a replay cannot re-send the file. `room_id`
+     * is checked against both the focused room and the room the token was
+     * staged for — the first catches a stale send, the second a token kept
+     * across a room switch.
+     */
+open func attachmentSend(roomId: String, token: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_attachment_send(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(token),$0
+    )
+}
+}
+    
+    /**
+     * Stage a file the host has already chosen.
+     *
+     * The desktop command opens the picker from Rust; this takes a path
+     * instead, because on iOS the document picker is a SwiftUI presentation
+     * and the core has no business summoning it. The host picks, then stages.
+     */
+open func attachmentStagePath(roomId: String, path: String)throws  -> StagedFile {
+    return try  FfiConverterTypeStagedFile.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_attachment_stage_path(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(path),$0
+    )
+})
+}
+    
+    /**
      * Where the connection currently stands, without waiting for the next
      * transition. A host that has just launched needs this to render
      * something truthful before any event arrives.
@@ -628,6 +843,64 @@ open func connectionState() -> ConnectionState {
     uniffi_supermessage_ffi_fn_method_core_connection_state(self.uniffiClonePointer(),$0
     )
 })
+}
+    
+    /**
+     * Create a room and return its id.
+     *
+     * `is_direct` marks it as a one-to-one conversation, which changes how
+     * clients name and group it rather than anything about the room itself.
+     */
+open func createRoom(name: String, invite: [String], isDirect: Bool)throws  -> String {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_create_room(self.uniffiClonePointer(),
+        FfiConverterString.lower(name),
+        FfiConverterSequenceString.lower(invite),
+        FfiConverterBool.lower(isDirect),$0
+    )
+})
+}
+    
+    /**
+     * Invite someone to a room.
+     */
+open func inviteUser(roomId: String, userId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_invite_user(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(userId),$0
+    )
+}
+}
+    
+    /**
+     * Accept an invitation, or join a room already known by id.
+     */
+open func joinRoom(roomId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_join_room(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+}
+}
+    
+    /**
+     * Join by alias (`#room:server`) or id, returning the id joined.
+     */
+open func joinRoomByAlias(aliasOrId: String)throws  -> String {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_join_room_by_alias(self.uniffiClonePointer(),
+        FfiConverterString.lower(aliasOrId),$0
+    )
+})
+}
+    
+    /**
+     * Leave a room. It disappears from the roster on the next diff.
+     */
+open func leaveRoom(roomId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_leave_room(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+}
 }
     
     /**
@@ -656,6 +929,45 @@ open func logout()throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) 
 }
     
     /**
+     * Mark the room read up to its latest event.
+     */
+open func markRoomRead(roomId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_mark_room_read(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+}
+}
+    
+    /**
+     * An event's media as a `data:` URI, fetched and decrypted.
+     *
+     * There is deliberately no `media_download` here, unlike the desktop
+     * host. That command exists to open a *save panel* and write the bytes to
+     * a path the person chooses — a desktop gesture. On iOS the host fetches
+     * with this and hands the result to a share sheet, which is the platform's
+     * own answer to the same question and needs no file picker crossing the
+     * FFI.
+     */
+open func mediaFetch(eventId: String)throws  -> String? {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_media_fetch(self.uniffiClonePointer(),
+        FfiConverterString.lower(eventId),$0
+    )
+})
+}
+    
+    /**
+     * A member's avatar as a `data:` URI, given its `mxc:` URI.
+     */
+open func memberAvatar(mxcUri: String)throws  -> String? {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_member_avatar(self.uniffiClonePointer(),
+        FfiConverterString.lower(mxcUri),$0
+    )
+})
+}
+    
+    /**
      * Pick up a session stored from a previous run.
      *
      * `false` means there was nothing stored — an ordinary outcome on first
@@ -671,8 +983,36 @@ open func restoreSession(sink: EventSink)throws  -> Bool {
 }
     
     /**
+     * A room's avatar as a `data:` URI, if it has one.
+     */
+open func roomAvatar(roomId: String)throws  -> String? {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_room_avatar(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+    
+    /**
+     * Everything the info panel shows about a room.
+     */
+open func roomInfo(roomId: String)throws  -> RoomInfoDto {
+    return try  FfiConverterTypeRoomInfoDto_lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_room_info(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+    
+    /**
      * Every room this account is in, with the sequence number the snapshot
      * was taken at.
+     *
+     * The desktop host calls this `rooms_resync`, which is the one place the
+     * two vocabularies differ. The desktop name describes when it is called —
+     * after a reload, to catch up; this one describes what it returns. A host
+     * that has been backgrounded and lost diffs calls it for the same reason
+     * either way.
      *
      * The `seq` matters: room-list diffs arriving afterwards carry increasing
      * sequence numbers, and a host that applies one older than its snapshot
@@ -681,6 +1021,135 @@ open func restoreSession(sink: EventSink)throws  -> Bool {
 open func roomsSnapshot()throws  -> RoomsSnapshot {
     return try  FfiConverterTypeRoomsSnapshot.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_rooms_snapshot(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Search messages across rooms.
+     */
+open func searchMessages(term: String)throws  -> [SearchResultDto] {
+    return try  FfiConverterSequenceTypeSearchResultDto.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_search_messages(self.uniffiClonePointer(),
+        FfiConverterString.lower(term),$0
+    )
+})
+}
+    
+    /**
+     * Send a plain-text message to the focused room.
+     *
+     * `room_id` is checked against whichever room is actually focused before
+     * anything is sent — the fix for a wrong-recipient race, and the reason
+     * every write here takes a room id it could otherwise infer.
+     *
+     * `mentions` are user ids to notify; empty is the ordinary case.
+     */
+open func sendMessage(roomId: String, body: String, mentions: [String])throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_message(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(body),
+        FfiConverterSequenceString.lower(mentions),$0
+    )
+}
+}
+    
+    /**
+     * Reply to `in_reply_to`, an event id in the focused room.
+     */
+open func sendReply(roomId: String, body: String, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_reply(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(body),
+        FfiConverterString.lower(inReplyTo),$0
+    )
+}
+}
+    
+    /**
+     * Tell the room whether this account is typing.
+     */
+open func setTyping(roomId: String, typing: Bool)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_set_typing(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterBool.lower(typing),$0
+    )
+}
+}
+    
+    /**
+     * Filter the room list to a space, or `None` to clear the filter.
+     *
+     * The filter lives in the core, not the host: the next room-list diff
+     * reflects it, so both hosts see the same rooms for the same selection.
+     */
+open func spaceSelect(spaceId: String?)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_space_select(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(spaceId),$0
+    )
+}
+}
+    
+    /**
+     * The spaces this account is in, for the roster's rail.
+     */
+open func spacesList()throws  -> [SpaceSummary] {
+    return try  FfiConverterSequenceTypeSpaceSummary.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_spaces_list(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Load older messages. `true` means the start of the room was reached and
+     * there is nothing more to ask for.
+     */
+open func timelinePaginateBack(roomId: String, count: UInt16)throws  -> Bool {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_timeline_paginate_back(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterUInt16.lower(count),$0
+    )
+})
+}
+    
+    /**
+     * The focused timeline as of now: its room, the sequence number, and the
+     * items. A host that has just subscribed uses this rather than waiting
+     * for a diff that may not come until something changes.
+     */
+open func timelineResync()throws  -> TimelineSnapshot {
+    return try  FfiConverterTypeTimelineSnapshot.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_timeline_resync(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Focus a room and start streaming its timeline.
+     *
+     * Diffs arrive on the sink as `TimelineDiff`, carrying the `seq` their
+     * ordering depends on. Only one room is focused at a time — subscribing
+     * to a second replaces the first, which is what makes `room_id`
+     * verification meaningful on every write below.
+     */
+open func timelineSubscribe(roomId: String, sink: EventSink)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_timeline_subscribe(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterCallbackInterfaceEventSink.lower(sink),$0
+    )
+}
+}
+    
+    /**
+     * Add or remove a reaction. Returns whether the reaction is now present.
+     */
+open func toggleReaction(roomId: String, eventId: String, key: String)throws  -> Bool {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_toggle_reaction(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),
+        FfiConverterString.lower(key),$0
     )
 })
 }
@@ -993,6 +1462,117 @@ public func FfiConverterTypeRoomsSnapshot_lower(_ value: RoomsSnapshot) -> RustB
 
 
 /**
+ * A file staged for sending, as the host sees it.
+ *
+ * The core's `StagedAttachment` is already a plain record; this mirrors it so
+ * the FFI surface does not depend on the core deriving UniFFI traits for a
+ * type only this crate exposes.
+ */
+public struct StagedFile {
+    /**
+     * What `attachment_send` takes. Single-use.
+     */
+    public var token: String
+    public var filename: String
+    public var sizeBytes: UInt64
+    public var mime: String
+    public var width: UInt64?
+    public var height: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What `attachment_send` takes. Single-use.
+         */token: String, filename: String, sizeBytes: UInt64, mime: String, width: UInt64?, height: UInt64?) {
+        self.token = token
+        self.filename = filename
+        self.sizeBytes = sizeBytes
+        self.mime = mime
+        self.width = width
+        self.height = height
+    }
+}
+
+
+
+extension StagedFile: Equatable, Hashable {
+    public static func ==(lhs: StagedFile, rhs: StagedFile) -> Bool {
+        if lhs.token != rhs.token {
+            return false
+        }
+        if lhs.filename != rhs.filename {
+            return false
+        }
+        if lhs.sizeBytes != rhs.sizeBytes {
+            return false
+        }
+        if lhs.mime != rhs.mime {
+            return false
+        }
+        if lhs.width != rhs.width {
+            return false
+        }
+        if lhs.height != rhs.height {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(token)
+        hasher.combine(filename)
+        hasher.combine(sizeBytes)
+        hasher.combine(mime)
+        hasher.combine(width)
+        hasher.combine(height)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStagedFile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StagedFile {
+        return
+            try StagedFile(
+                token: FfiConverterString.read(from: &buf), 
+                filename: FfiConverterString.read(from: &buf), 
+                sizeBytes: FfiConverterUInt64.read(from: &buf), 
+                mime: FfiConverterString.read(from: &buf), 
+                width: FfiConverterOptionUInt64.read(from: &buf), 
+                height: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: StagedFile, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.token, into: &buf)
+        FfiConverterString.write(value.filename, into: &buf)
+        FfiConverterUInt64.write(value.sizeBytes, into: &buf)
+        FfiConverterString.write(value.mime, into: &buf)
+        FfiConverterOptionUInt64.write(value.width, into: &buf)
+        FfiConverterOptionUInt64.write(value.height, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStagedFile_lift(_ buf: RustBuffer) throws -> StagedFile {
+    return try FfiConverterTypeStagedFile.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStagedFile_lower(_ value: StagedFile) -> RustBuffer {
+    return FfiConverterTypeStagedFile.lower(value)
+}
+
+
+/**
  * A batch of timeline changes, carrying the sequence number its ordering
  * depends on.
  */
@@ -1075,6 +1655,87 @@ public func FfiConverterTypeTimelineDiffEnvelope_lift(_ buf: RustBuffer) throws 
 #endif
 public func FfiConverterTypeTimelineDiffEnvelope_lower(_ value: TimelineDiffEnvelope) -> RustBuffer {
     return FfiConverterTypeTimelineDiffEnvelope.lower(value)
+}
+
+
+/**
+ * The focused timeline as of one moment.
+ *
+ * Named fields rather than the core's bare tuple: a tuple crossing an FFI
+ * arrives in Swift as `.0`, `.1`, `.2`, and a host reading `snapshot.1` has
+ * no way to know it is a sequence number.
+ */
+public struct TimelineSnapshot {
+    public var roomId: String
+    public var seq: UInt64
+    public var items: [TimelineItemDto]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(roomId: String, seq: UInt64, items: [TimelineItemDto]) {
+        self.roomId = roomId
+        self.seq = seq
+        self.items = items
+    }
+}
+
+
+
+extension TimelineSnapshot: Equatable, Hashable {
+    public static func ==(lhs: TimelineSnapshot, rhs: TimelineSnapshot) -> Bool {
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.seq != rhs.seq {
+            return false
+        }
+        if lhs.items != rhs.items {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(roomId)
+        hasher.combine(seq)
+        hasher.combine(items)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTimelineSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TimelineSnapshot {
+        return
+            try TimelineSnapshot(
+                roomId: FfiConverterString.read(from: &buf), 
+                seq: FfiConverterUInt64.read(from: &buf), 
+                items: FfiConverterSequenceTypeTimelineItemDto.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TimelineSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterUInt64.write(value.seq, into: &buf)
+        FfiConverterSequenceTypeTimelineItemDto.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTimelineSnapshot_lift(_ buf: RustBuffer) throws -> TimelineSnapshot {
+    return try FfiConverterTypeTimelineSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTimelineSnapshot_lower(_ value: TimelineSnapshot) -> RustBuffer {
+    return FfiConverterTypeTimelineSnapshot.lower(value)
 }
 
 
@@ -1823,6 +2484,30 @@ extension FfiConverterCallbackInterfaceEventSink : FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -1947,6 +2632,56 @@ fileprivate struct FfiConverterSequenceTypeRoomSummary: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSearchResultDto: FfiConverterRustBuffer {
+    typealias SwiftType = [SearchResultDto]
+
+    public static func write(_ value: [SearchResultDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSearchResultDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SearchResultDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SearchResultDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSearchResultDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSpaceSummary: FfiConverterRustBuffer {
+    typealias SwiftType = [SpaceSummary]
+
+    public static func write(_ value: [SpaceSummary], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSpaceSummary.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SpaceSummary] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SpaceSummary]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSpaceSummary.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTimelineItemDto: FfiConverterRustBuffer {
     typealias SwiftType = [TimelineItemDto]
 
@@ -1973,6 +2708,12 @@ fileprivate struct FfiConverterSequenceTypeTimelineItemDto: FfiConverterRustBuff
 
 
 
+
+
+
+
+
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -1988,7 +2729,31 @@ private var initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 20052) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_connection_state() != 49777) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_create_room() != 28480) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_invite_user() != 43593) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_join_room() != 59168) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_join_room_by_alias() != 49294) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_leave_room() != 44268) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_login() != 19818) {
@@ -1997,10 +2762,55 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_logout() != 3026) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_mark_room_read() != 2656) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_media_fetch() != 27382) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_member_avatar() != 39314) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_restore_session() != 6863) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_rooms_snapshot() != 49218) {
+    if (uniffi_supermessage_ffi_checksum_method_core_room_avatar() != 58138) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_room_info() != 28126) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_rooms_snapshot() != 11805) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_search_messages() != 34880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_set_typing() != 5775) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_space_select() != 41829) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_spaces_list() != 33636) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_timeline_paginate_back() != 54481) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_timeline_resync() != 55880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_timeline_subscribe() != 191) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_toggle_reaction() != 6594) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_constructor_core_new() != 5076) {

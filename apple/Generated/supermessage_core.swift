@@ -944,6 +944,246 @@ public func FfiConverterTypeReplyToDto_lower(_ value: ReplyToDto) -> RustBuffer 
 
 
 /**
+ * A room's descriptive metadata plus its joined member list, for the
+ * room-info panel.
+ */
+public struct RoomInfoDto {
+    public var roomId: String
+    public var name: String?
+    public var topic: String?
+    public var canonicalAlias: String?
+    public var altAliases: [String]
+    /**
+     * The room's active (joined + invited) member count
+     * (`Room::active_members_count`) — a cheap, always-current figure read
+     * straight from room state, independent of how many entries
+     * [`Self::members`] actually managed to list. May exceed
+     * `members.len()` when the room has pending invites, since `members`
+     * is joined-only; that's expected, not a mismatch to reconcile.
+     */
+    public var activeMemberCount: UInt64
+    /**
+     * The room's joined members. See [`resolve_joined_members`]'s doc
+     * comment for why this can require a live fetch rather than always
+     * being served from the local cache.
+     */
+    public var members: [RoomMemberDto]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(roomId: String, name: String?, topic: String?, canonicalAlias: String?, altAliases: [String], 
+        /**
+         * The room's active (joined + invited) member count
+         * (`Room::active_members_count`) — a cheap, always-current figure read
+         * straight from room state, independent of how many entries
+         * [`Self::members`] actually managed to list. May exceed
+         * `members.len()` when the room has pending invites, since `members`
+         * is joined-only; that's expected, not a mismatch to reconcile.
+         */activeMemberCount: UInt64, 
+        /**
+         * The room's joined members. See [`resolve_joined_members`]'s doc
+         * comment for why this can require a live fetch rather than always
+         * being served from the local cache.
+         */members: [RoomMemberDto]) {
+        self.roomId = roomId
+        self.name = name
+        self.topic = topic
+        self.canonicalAlias = canonicalAlias
+        self.altAliases = altAliases
+        self.activeMemberCount = activeMemberCount
+        self.members = members
+    }
+}
+
+
+
+extension RoomInfoDto: Equatable, Hashable {
+    public static func ==(lhs: RoomInfoDto, rhs: RoomInfoDto) -> Bool {
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.topic != rhs.topic {
+            return false
+        }
+        if lhs.canonicalAlias != rhs.canonicalAlias {
+            return false
+        }
+        if lhs.altAliases != rhs.altAliases {
+            return false
+        }
+        if lhs.activeMemberCount != rhs.activeMemberCount {
+            return false
+        }
+        if lhs.members != rhs.members {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(roomId)
+        hasher.combine(name)
+        hasher.combine(topic)
+        hasher.combine(canonicalAlias)
+        hasher.combine(altAliases)
+        hasher.combine(activeMemberCount)
+        hasher.combine(members)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomInfoDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomInfoDto {
+        return
+            try RoomInfoDto(
+                roomId: FfiConverterString.read(from: &buf), 
+                name: FfiConverterOptionString.read(from: &buf), 
+                topic: FfiConverterOptionString.read(from: &buf), 
+                canonicalAlias: FfiConverterOptionString.read(from: &buf), 
+                altAliases: FfiConverterSequenceString.read(from: &buf), 
+                activeMemberCount: FfiConverterUInt64.read(from: &buf), 
+                members: FfiConverterSequenceTypeRoomMemberDto.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RoomInfoDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterOptionString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.topic, into: &buf)
+        FfiConverterOptionString.write(value.canonicalAlias, into: &buf)
+        FfiConverterSequenceString.write(value.altAliases, into: &buf)
+        FfiConverterUInt64.write(value.activeMemberCount, into: &buf)
+        FfiConverterSequenceTypeRoomMemberDto.write(value.members, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomInfoDto_lift(_ buf: RustBuffer) throws -> RoomInfoDto {
+    return try FfiConverterTypeRoomInfoDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomInfoDto_lower(_ value: RoomInfoDto) -> RustBuffer {
+    return FfiConverterTypeRoomInfoDto.lower(value)
+}
+
+
+/**
+ * One joined member of a room, as shown in the room-info panel's member
+ * list.
+ */
+public struct RoomMemberDto {
+    public var userId: String
+    /**
+     * The member's own `m.room.member` display name, when set. `None`
+     * means the webview falls back to `user_id`, the same convention every
+     * other sender-name field in this codebase already uses (see
+     * `Timeline.svelte`'s `item.senderDisplayName ?? item.sender`).
+     */
+    public var displayName: String?
+    /**
+     * The member's avatar as a raw `mxc://` URI — never fetched bytes. The
+     * webview resolves this through the same authenticated-media path a
+     * room's own avatar already uses (`core::media::avatar_thumbnail`, via
+     * the new `member_avatar` command), not a second fetch path — see that
+     * command's doc comment in `core::commands`.
+     */
+    public var avatarUrl: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(userId: String, 
+        /**
+         * The member's own `m.room.member` display name, when set. `None`
+         * means the webview falls back to `user_id`, the same convention every
+         * other sender-name field in this codebase already uses (see
+         * `Timeline.svelte`'s `item.senderDisplayName ?? item.sender`).
+         */displayName: String?, 
+        /**
+         * The member's avatar as a raw `mxc://` URI — never fetched bytes. The
+         * webview resolves this through the same authenticated-media path a
+         * room's own avatar already uses (`core::media::avatar_thumbnail`, via
+         * the new `member_avatar` command), not a second fetch path — see that
+         * command's doc comment in `core::commands`.
+         */avatarUrl: String?) {
+        self.userId = userId
+        self.displayName = displayName
+        self.avatarUrl = avatarUrl
+    }
+}
+
+
+
+extension RoomMemberDto: Equatable, Hashable {
+    public static func ==(lhs: RoomMemberDto, rhs: RoomMemberDto) -> Bool {
+        if lhs.userId != rhs.userId {
+            return false
+        }
+        if lhs.displayName != rhs.displayName {
+            return false
+        }
+        if lhs.avatarUrl != rhs.avatarUrl {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(userId)
+        hasher.combine(displayName)
+        hasher.combine(avatarUrl)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomMemberDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomMemberDto {
+        return
+            try RoomMemberDto(
+                userId: FfiConverterString.read(from: &buf), 
+                displayName: FfiConverterOptionString.read(from: &buf), 
+                avatarUrl: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RoomMemberDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterOptionString.write(value.displayName, into: &buf)
+        FfiConverterOptionString.write(value.avatarUrl, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomMemberDto_lift(_ buf: RustBuffer) throws -> RoomMemberDto {
+    return try FfiConverterTypeRoomMemberDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomMemberDto_lower(_ value: RoomMemberDto) -> RustBuffer {
+    return FfiConverterTypeRoomMemberDto.lower(value)
+}
+
+
+/**
  * A single room as summarized for the room list.
  */
 public struct RoomSummary {
@@ -1179,6 +1419,282 @@ public func FfiConverterTypeRoomSummary_lift(_ buf: RustBuffer) throws -> RoomSu
 #endif
 public func FfiConverterTypeRoomSummary_lower(_ value: RoomSummary) -> RustBuffer {
     return FfiConverterTypeRoomSummary.lower(value)
+}
+
+
+/**
+ * One hit, as the webview shows it.
+ */
+public struct SearchResultDto {
+    public var eventId: String
+    public var roomId: String
+    public var sender: String
+    /**
+     * The message text. Never HTML — a search result is a fragment of
+     * evidence, and rendering a sender's markup inside a list of them is a
+     * sanitiser question with nothing to gain.
+     */
+    public var body: String
+    public var timestampMs: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(eventId: String, roomId: String, sender: String, 
+        /**
+         * The message text. Never HTML — a search result is a fragment of
+         * evidence, and rendering a sender's markup inside a list of them is a
+         * sanitiser question with nothing to gain.
+         */body: String, timestampMs: UInt64?) {
+        self.eventId = eventId
+        self.roomId = roomId
+        self.sender = sender
+        self.body = body
+        self.timestampMs = timestampMs
+    }
+}
+
+
+
+extension SearchResultDto: Equatable, Hashable {
+    public static func ==(lhs: SearchResultDto, rhs: SearchResultDto) -> Bool {
+        if lhs.eventId != rhs.eventId {
+            return false
+        }
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.sender != rhs.sender {
+            return false
+        }
+        if lhs.body != rhs.body {
+            return false
+        }
+        if lhs.timestampMs != rhs.timestampMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(eventId)
+        hasher.combine(roomId)
+        hasher.combine(sender)
+        hasher.combine(body)
+        hasher.combine(timestampMs)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchResultDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchResultDto {
+        return
+            try SearchResultDto(
+                eventId: FfiConverterString.read(from: &buf), 
+                roomId: FfiConverterString.read(from: &buf), 
+                sender: FfiConverterString.read(from: &buf), 
+                body: FfiConverterString.read(from: &buf), 
+                timestampMs: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchResultDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.eventId, into: &buf)
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterString.write(value.sender, into: &buf)
+        FfiConverterString.write(value.body, into: &buf)
+        FfiConverterOptionUInt64.write(value.timestampMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchResultDto_lift(_ buf: RustBuffer) throws -> SearchResultDto {
+    return try FfiConverterTypeSearchResultDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchResultDto_lower(_ value: SearchResultDto) -> RustBuffer {
+    return FfiConverterTypeSearchResultDto.lower(value)
+}
+
+
+/**
+ * One space, as the rail renders it — joined, or merely invited.
+ */
+public struct SpaceSummary {
+    public var id: String
+    /**
+     * The space's display name, falling back to its room id — the same
+     * convention `core::rooms::project_room_parts` uses, so the rail never
+     * has to render an empty label.
+     */
+    public var name: String
+    /**
+     * The space's own `m.room.avatar` as a raw `mxc://` URI, never fetched
+     * bytes — resolved through the existing `room_avatar` command like every
+     * other avatar in this app.
+     *
+     * No hero / two-person fallback, unlike
+     * `core::rooms::resolve_room_avatar_mxc`: those rules exist to infer a
+     * *conversation's* picture from the person on the other side of it, and
+     * a space is not a conversation. A space with no avatar falls back to
+     * its parsed initial in the rail (design §6).
+     */
+    public var avatarUrl: String?
+    /**
+     * How many rooms the reader will see when they select this space: the
+     * size of [`SpaceGraph::flatten`]'s result, which is the very same list
+     * that becomes the roster filter's identifier clause.
+     *
+     * Counts what the roster would show — joined rooms **and pending
+     * invitations**, both of which it lists — and excludes subspaces and
+     * rooms we have no membership of at all (§5). `m.space.child` can name
+     * rooms we have never been offered, and counting those would advertise
+     * "12" and then reveal four. The count and the filter come from one
+     * function so they cannot drift.
+     */
+    public var childCount: UInt64
+    /**
+     * This account's relationship to the space: `joined` for a space in the
+     * rail's ordinary sense, `invited` for one being offered.
+     *
+     * An invitation is a rail entry rather than a roster row (design §4, and
+     * the reason `core::rooms::roster_admits` hides *every* space): a space
+     * is not a conversation, so it has no business in a list of
+     * conversations even for the seconds before it is accepted. It carries
+     * `child_count: 0` and has no entry in the graph — [`Self::rooms_in`]
+     * answers `UnknownSpace` for it, which is correct, because a subtree you
+     * have not joined is not a filter you can apply.
+     */
+    public var membership: Membership
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, 
+        /**
+         * The space's display name, falling back to its room id — the same
+         * convention `core::rooms::project_room_parts` uses, so the rail never
+         * has to render an empty label.
+         */name: String, 
+        /**
+         * The space's own `m.room.avatar` as a raw `mxc://` URI, never fetched
+         * bytes — resolved through the existing `room_avatar` command like every
+         * other avatar in this app.
+         *
+         * No hero / two-person fallback, unlike
+         * `core::rooms::resolve_room_avatar_mxc`: those rules exist to infer a
+         * *conversation's* picture from the person on the other side of it, and
+         * a space is not a conversation. A space with no avatar falls back to
+         * its parsed initial in the rail (design §6).
+         */avatarUrl: String?, 
+        /**
+         * How many rooms the reader will see when they select this space: the
+         * size of [`SpaceGraph::flatten`]'s result, which is the very same list
+         * that becomes the roster filter's identifier clause.
+         *
+         * Counts what the roster would show — joined rooms **and pending
+         * invitations**, both of which it lists — and excludes subspaces and
+         * rooms we have no membership of at all (§5). `m.space.child` can name
+         * rooms we have never been offered, and counting those would advertise
+         * "12" and then reveal four. The count and the filter come from one
+         * function so they cannot drift.
+         */childCount: UInt64, 
+        /**
+         * This account's relationship to the space: `joined` for a space in the
+         * rail's ordinary sense, `invited` for one being offered.
+         *
+         * An invitation is a rail entry rather than a roster row (design §4, and
+         * the reason `core::rooms::roster_admits` hides *every* space): a space
+         * is not a conversation, so it has no business in a list of
+         * conversations even for the seconds before it is accepted. It carries
+         * `child_count: 0` and has no entry in the graph — [`Self::rooms_in`]
+         * answers `UnknownSpace` for it, which is correct, because a subtree you
+         * have not joined is not a filter you can apply.
+         */membership: Membership) {
+        self.id = id
+        self.name = name
+        self.avatarUrl = avatarUrl
+        self.childCount = childCount
+        self.membership = membership
+    }
+}
+
+
+
+extension SpaceSummary: Equatable, Hashable {
+    public static func ==(lhs: SpaceSummary, rhs: SpaceSummary) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.avatarUrl != rhs.avatarUrl {
+            return false
+        }
+        if lhs.childCount != rhs.childCount {
+            return false
+        }
+        if lhs.membership != rhs.membership {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+        hasher.combine(avatarUrl)
+        hasher.combine(childCount)
+        hasher.combine(membership)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpaceSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpaceSummary {
+        return
+            try SpaceSummary(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                avatarUrl: FfiConverterOptionString.read(from: &buf), 
+                childCount: FfiConverterUInt64.read(from: &buf), 
+                membership: FfiConverterTypeMembership.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SpaceSummary, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.avatarUrl, into: &buf)
+        FfiConverterUInt64.write(value.childCount, into: &buf)
+        FfiConverterTypeMembership.write(value.membership, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpaceSummary_lift(_ buf: RustBuffer) throws -> SpaceSummary {
+    return try FfiConverterTypeSpaceSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpaceSummary_lower(_ value: SpaceSummary) -> RustBuffer {
+    return FfiConverterTypeSpaceSummary.lower(value)
 }
 
 
@@ -1901,6 +2417,31 @@ fileprivate struct FfiConverterSequenceTypeReactionDto: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeReactionDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRoomMemberDto: FfiConverterRustBuffer {
+    typealias SwiftType = [RoomMemberDto]
+
+    public static func write(_ value: [RoomMemberDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRoomMemberDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RoomMemberDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RoomMemberDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRoomMemberDto.read(from: &buf))
         }
         return seq
     }

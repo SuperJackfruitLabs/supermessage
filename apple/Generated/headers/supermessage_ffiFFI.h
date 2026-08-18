@@ -281,9 +281,49 @@ void uniffi_supermessage_ffi_fn_free_core(void*_Nonnull ptr, RustCallStatus *_No
 void*_Nonnull uniffi_supermessage_ffi_fn_constructor_core_new(RustBuffer data_dir, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_DISCARD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_DISCARD
+void uniffi_supermessage_ffi_fn_method_core_attachment_discard(void*_Nonnull ptr, RustBuffer token, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_SEND
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_SEND
+void uniffi_supermessage_ffi_fn_method_core_attachment_send(void*_Nonnull ptr, RustBuffer room_id, RustBuffer token, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_STAGE_PATH
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_STAGE_PATH
+RustBuffer uniffi_supermessage_ffi_fn_method_core_attachment_stage_path(void*_Nonnull ptr, RustBuffer room_id, RustBuffer path, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_CONNECTION_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_CONNECTION_STATE
 RustBuffer uniffi_supermessage_ffi_fn_method_core_connection_state(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_CREATE_ROOM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_CREATE_ROOM
+RustBuffer uniffi_supermessage_ffi_fn_method_core_create_room(void*_Nonnull ptr, RustBuffer name, RustBuffer invite, int8_t is_direct, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_INVITE_USER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_INVITE_USER
+void uniffi_supermessage_ffi_fn_method_core_invite_user(void*_Nonnull ptr, RustBuffer room_id, RustBuffer user_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_JOIN_ROOM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_JOIN_ROOM
+void uniffi_supermessage_ffi_fn_method_core_join_room(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_JOIN_ROOM_BY_ALIAS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_JOIN_ROOM_BY_ALIAS
+RustBuffer uniffi_supermessage_ffi_fn_method_core_join_room_by_alias(void*_Nonnull ptr, RustBuffer alias_or_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_LEAVE_ROOM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_LEAVE_ROOM
+void uniffi_supermessage_ffi_fn_method_core_leave_room(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_LOGIN
@@ -296,14 +336,89 @@ void uniffi_supermessage_ffi_fn_method_core_login(void*_Nonnull ptr, RustBuffer 
 void uniffi_supermessage_ffi_fn_method_core_logout(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MARK_ROOM_READ
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MARK_ROOM_READ
+void uniffi_supermessage_ffi_fn_method_core_mark_room_read(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEDIA_FETCH
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEDIA_FETCH
+RustBuffer uniffi_supermessage_ffi_fn_method_core_media_fetch(void*_Nonnull ptr, RustBuffer event_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEMBER_AVATAR
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEMBER_AVATAR
+RustBuffer uniffi_supermessage_ffi_fn_method_core_member_avatar(void*_Nonnull ptr, RustBuffer mxc_uri, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RESTORE_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RESTORE_SESSION
 int8_t uniffi_supermessage_ffi_fn_method_core_restore_session(void*_Nonnull ptr, uint64_t sink, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_AVATAR
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_AVATAR
+RustBuffer uniffi_supermessage_ffi_fn_method_core_room_avatar(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_INFO
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_INFO
+RustBuffer uniffi_supermessage_ffi_fn_method_core_room_info(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOMS_SNAPSHOT
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOMS_SNAPSHOT
 RustBuffer uniffi_supermessage_ffi_fn_method_core_rooms_snapshot(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEARCH_MESSAGES
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEARCH_MESSAGES
+RustBuffer uniffi_supermessage_ffi_fn_method_core_search_messages(void*_Nonnull ptr, RustBuffer term, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
+void uniffi_supermessage_ffi_fn_method_core_send_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer body, RustBuffer mentions, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_REPLY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_REPLY
+void uniffi_supermessage_ffi_fn_method_core_send_reply(void*_Nonnull ptr, RustBuffer room_id, RustBuffer body, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_TYPING
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_TYPING
+void uniffi_supermessage_ffi_fn_method_core_set_typing(void*_Nonnull ptr, RustBuffer room_id, int8_t typing, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SPACE_SELECT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SPACE_SELECT
+void uniffi_supermessage_ffi_fn_method_core_space_select(void*_Nonnull ptr, RustBuffer space_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SPACES_LIST
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SPACES_LIST
+RustBuffer uniffi_supermessage_ffi_fn_method_core_spaces_list(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TIMELINE_PAGINATE_BACK
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TIMELINE_PAGINATE_BACK
+int8_t uniffi_supermessage_ffi_fn_method_core_timeline_paginate_back(void*_Nonnull ptr, RustBuffer room_id, uint16_t count, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TIMELINE_RESYNC
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TIMELINE_RESYNC
+RustBuffer uniffi_supermessage_ffi_fn_method_core_timeline_resync(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TIMELINE_SUBSCRIBE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TIMELINE_SUBSCRIBE
+void uniffi_supermessage_ffi_fn_method_core_timeline_subscribe(void*_Nonnull ptr, RustBuffer room_id, uint64_t sink, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TOGGLE_REACTION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TOGGLE_REACTION
+int8_t uniffi_supermessage_ffi_fn_method_core_toggle_reaction(void*_Nonnull ptr, RustBuffer room_id, RustBuffer event_id, RustBuffer key, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_EVENTSINK
@@ -591,9 +706,57 @@ void ffi_supermessage_ffi_rust_future_free_void(uint64_t handle
 void ffi_supermessage_ffi_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_DISCARD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_DISCARD
+uint16_t uniffi_supermessage_ffi_checksum_method_core_attachment_discard(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_SEND
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_SEND
+uint16_t uniffi_supermessage_ffi_checksum_method_core_attachment_send(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_STAGE_PATH
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_STAGE_PATH
+uint16_t uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_CONNECTION_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_CONNECTION_STATE
 uint16_t uniffi_supermessage_ffi_checksum_method_core_connection_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_CREATE_ROOM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_CREATE_ROOM
+uint16_t uniffi_supermessage_ffi_checksum_method_core_create_room(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_INVITE_USER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_INVITE_USER
+uint16_t uniffi_supermessage_ffi_checksum_method_core_invite_user(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_JOIN_ROOM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_JOIN_ROOM
+uint16_t uniffi_supermessage_ffi_checksum_method_core_join_room(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_JOIN_ROOM_BY_ALIAS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_JOIN_ROOM_BY_ALIAS
+uint16_t uniffi_supermessage_ffi_checksum_method_core_join_room_by_alias(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_LEAVE_ROOM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_LEAVE_ROOM
+uint16_t uniffi_supermessage_ffi_checksum_method_core_leave_room(void
     
 );
 #endif
@@ -609,15 +772,105 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_logout(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MARK_ROOM_READ
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MARK_ROOM_READ
+uint16_t uniffi_supermessage_ffi_checksum_method_core_mark_room_read(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MEDIA_FETCH
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MEDIA_FETCH
+uint16_t uniffi_supermessage_ffi_checksum_method_core_media_fetch(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MEMBER_AVATAR
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MEMBER_AVATAR
+uint16_t uniffi_supermessage_ffi_checksum_method_core_member_avatar(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_RESTORE_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_RESTORE_SESSION
 uint16_t uniffi_supermessage_ffi_checksum_method_core_restore_session(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_AVATAR
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_AVATAR
+uint16_t uniffi_supermessage_ffi_checksum_method_core_room_avatar(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_INFO
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_INFO
+uint16_t uniffi_supermessage_ffi_checksum_method_core_room_info(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOMS_SNAPSHOT
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOMS_SNAPSHOT
 uint16_t uniffi_supermessage_ffi_checksum_method_core_rooms_snapshot(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEARCH_MESSAGES
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEARCH_MESSAGES
+uint16_t uniffi_supermessage_ffi_checksum_method_core_search_messages(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_MESSAGE
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_message(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_REPLY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_REPLY
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_reply(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SET_TYPING
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SET_TYPING
+uint16_t uniffi_supermessage_ffi_checksum_method_core_set_typing(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SPACE_SELECT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SPACE_SELECT
+uint16_t uniffi_supermessage_ffi_checksum_method_core_space_select(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SPACES_LIST
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SPACES_LIST
+uint16_t uniffi_supermessage_ffi_checksum_method_core_spaces_list(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TIMELINE_PAGINATE_BACK
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TIMELINE_PAGINATE_BACK
+uint16_t uniffi_supermessage_ffi_checksum_method_core_timeline_paginate_back(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TIMELINE_RESYNC
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TIMELINE_RESYNC
+uint16_t uniffi_supermessage_ffi_checksum_method_core_timeline_resync(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TIMELINE_SUBSCRIBE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TIMELINE_SUBSCRIBE
+uint16_t uniffi_supermessage_ffi_checksum_method_core_timeline_subscribe(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TOGGLE_REACTION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TOGGLE_REACTION
+uint16_t uniffi_supermessage_ffi_checksum_method_core_toggle_reaction(void
     
 );
 #endif
