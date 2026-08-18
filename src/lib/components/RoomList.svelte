@@ -46,7 +46,7 @@
   import { parseRoomIdentity, relativeTime, roomInitial } from "./roomIdentity";
   import { composeRoomPreview } from "./roomPreview";
   import { isInvitation } from "./invitationView";
-  import { DECISION_BEARING_EVENT_TYPES } from "./customEvents";
+  import { DECISION_BEARING_EVENT_TYPES } from "./roomPreview";
 
   /**
    * `onSelect` fires after a row is chosen, whether or not that changed the

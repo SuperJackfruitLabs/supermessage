@@ -349,6 +349,12 @@ export interface Reaction {
    * overflow like any other free-text field from a sender.
    */
   key: string;
+  /**
+   * The same key, bounded for rendering by the core. Use this on screen and
+   * {@link Reaction.key} on the wire — they usually look alike, but `key` is
+   * compared byte-for-byte against what other clients sent.
+   */
+  displayKey: string;
   /** How many distinct senders have reacted with this key. */
   count: number;
   /** Whether the current user is among those senders. */
@@ -598,6 +604,140 @@ export interface StagedAttachment {
   height?: number;
 }
 
+/**
+ * One inline-level element of a message body, as `core::rich` parsed it.
+ *
+ * Mirrors `RichInline` tag-for-tag. The webview never parses markdown or HTML
+ * itself: the rule that raw HTML is dropped rather than escaped is made once,
+ * in Rust, so iOS and Android cannot disagree with this app about it.
+ */
+export type RichInline =
+  | { inline: "text"; text: string }
+  | { inline: "emphasis"; inlines: RichInline[] }
+  | { inline: "strong"; inlines: RichInline[] }
+  | { inline: "code"; text: string }
+  | { inline: "link"; href: string; inlines: RichInline[] }
+  | { inline: "break" };
+
+/** One cell of a rendered table. */
+export interface RichTableCell {
+  inlines: RichInline[];
+}
+
+/** Mirrors `RichBlock` tag-for-tag. Nesting is capped at 16 by the core. */
+export type RichBlock =
+  | { block: "paragraph"; inlines: RichInline[] }
+  | { block: "heading"; level: number; inlines: RichInline[] }
+  | { block: "codeBlock"; language: string | null; text: string }
+  | { block: "blockQuote"; blocks: RichBlock[] }
+  | {
+      block: "list";
+      ordered: boolean;
+      start: number;
+      items: { blocks: RichBlock[] }[];
+    }
+  | { block: "thematicBreak" }
+  | { block: "table"; header: RichTableCell[]; rows: { cells: RichTableCell[] }[] };
+
+/** One labelled row on a custom-event card. Both halves are display text. */
+export interface CustomEventField {
+  label: string;
+  value: string;
+}
+
+/**
+ * One answer the reader can give. `id` is an identifier, never rendered — it
+ * is sent verbatim, so it is deliberately not truncated by the core.
+ */
+export interface CustomEventDecisionOption {
+  label: string;
+  id: string;
+}
+
+/** A pending decision. The only thing in this app that may be amber. */
+export interface CustomEventDecision {
+  prompt: string;
+  options: CustomEventDecisionOption[];
+}
+
+/**
+ * The custom-event fallback chain's outcome, decided by
+ * `core::custom_events::resolve_custom_event`. This app renders its three
+ * states; it never makes the decision itself.
+ */
+export type CustomEventView =
+  | {
+      status: "rendered";
+      fields: CustomEventField[];
+      newerVersion: boolean;
+      decision: CustomEventDecision | null;
+    }
+  | { status: "fallbackBody"; text: string }
+  | { status: "placeholder"; text: string };
+
+/** The quoted parent of a reply, resolved by the core. */
+export type ReplyQuoteView =
+  | { state: "unavailable" }
+  | {
+      state: "available";
+      sender: string;
+      excerpt: string | null;
+      label: string | null;
+    };
+
+/**
+ * The render decision for one item, made by `core::item_view::view_for`.
+ *
+ * `dateDivider` has no variant: it renders real content (a formatted date),
+ * which this vocabulary does not cover, and the component handles it before
+ * reading a view.
+ */
+export type ItemView =
+  | { render: "bubble"; muted: boolean; blocks: RichBlock[] }
+  | { render: "emote" }
+  | { render: "system"; text: string }
+  | { render: "unreadMarker" }
+  | { render: "placeholder"; text: string }
+  | { render: "image"; alt: string; width: number | null; height: number | null }
+  | {
+      render: "mediaFile";
+      label: "File" | "Audio" | "Video";
+      filename: string;
+      size: number | null;
+      mimetype: string | null;
+    }
+  | { render: "customEvent"; view: CustomEventView; eventType: string }
+  | { render: "none" };
+
+/**
+ * A timeline item together with every decision the core made about it.
+ *
+ * The set of fields beyond `item` is not decoration. Each was a synchronous
+ * helper this app called from inside its markup, and markup cannot `await` —
+ * so anything needed *while drawing* has to arrive with the item rather than
+ * be fetchable. That is why the timeline channel carries rows and not DTOs.
+ */
+export interface TimelineRow {
+  item: TimelineItem;
+  view: ItemView;
+  /** Display name, then the raw sender id, then a placeholder. Never empty. */
+  senderName: string;
+  /**
+   * The verb phrase for a membership change, `null` otherwise. Carried apart
+   * from the rendered system sentence because a grouped run composes one
+   * sentence from many names and a single verb.
+   */
+  membershipVerb: string | null;
+  replyQuote: ReplyQuoteView | null;
+  /** False while the item is still a local echo with no real event id. */
+  canReplyOrReact: boolean;
+  /**
+   * A short preview of this item's body, for the composer's "Replying to …"
+   * row when someone replies to it. `null` when there is nothing to show.
+   */
+  replyPreview: string | null;
+}
+
 const ROOMS_DIFF_EVENT = "sm://rooms/diff";
 const TIMELINE_DIFF_EVENT = "sm://timeline/diff";
 const CONNECTION_EVENT = "sm://connection";
@@ -751,8 +891,8 @@ export async function timelinePaginateBack(roomId: string, count: number): Promi
  * messages under the new room's header, permanently. See
  * `core::timeline::TimelineSnapshot` for the full sequence.
  */
-export async function timelineResync(): Promise<[string, number, TimelineItem[]]> {
-  return invoke<[string, number, TimelineItem[]]>("timeline_resync");
+export async function timelineResync(): Promise<[string, number, TimelineRow[]]> {
+  return invoke<[string, number, TimelineRow[]]>("timeline_resync");
 }
 
 /**
@@ -1126,8 +1266,20 @@ export function onRoomsDiff(handler: (env: DiffEnvelope<RoomSummary>) => void): 
 }
 
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */
-export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineItem>) => void): Promise<UnlistenFn> {
-  return listen<DiffEnvelope<TimelineItem>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
+export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void): Promise<UnlistenFn> {
+  return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * Parses a live turn's partial markdown into blocks.
+ *
+ * A landed message arrives with its blocks already on its {@link TimelineRow};
+ * this is for a turn still being written on `sm://live`, which has no timeline
+ * item yet. Same parser on the Rust side, so a turn does not change appearance
+ * the instant it lands.
+ */
+export async function richBlocksFromMarkdown(source: string): Promise<RichBlock[]> {
+  return invoke<RichBlock[]>("rich_blocks_from_markdown", { source });
 }
 
 /**

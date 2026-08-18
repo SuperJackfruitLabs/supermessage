@@ -20,12 +20,29 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTimelineStore } from "./timeline.svelte";
 import type { DiffEnvelope } from "./diff";
-import type { TimelineItem } from "$lib/ipc";
+import type { TimelineItem, TimelineRow } from "$lib/ipc";
 
 const ROOM_A = "!a:example.org";
 const ROOM_B = "!b:example.org";
 
-function item(id: string): TimelineItem {
+/**
+ * A row, as the core now delivers them. The store tracks whole rows, so a
+ * fixture that produced a bare DTO would be testing a shape the channel no
+ * longer carries.
+ */
+function item(id: string): TimelineRow {
+  return {
+    item: dto(id),
+    view: { render: "bubble", muted: false, blocks: [] },
+    senderName: "@someone:example.org",
+    membershipVerb: null,
+    replyQuote: null,
+    canReplyOrReact: true,
+    replyPreview: null,
+  };
+}
+
+function dto(id: string): TimelineItem {
   return {
     id,
     kind: "message",
@@ -50,22 +67,22 @@ function item(id: string): TimelineItem {
 function env(
   subject: string,
   seq: number,
-  ops: DiffEnvelope<TimelineItem>["ops"],
-): DiffEnvelope<TimelineItem> {
+  ops: DiffEnvelope<TimelineRow>["ops"],
+): DiffEnvelope<TimelineRow> {
   return { channel: "timeline", subject, seq, ops };
 }
 
 /** Fake `sm://timeline/diff` channel; captures the handler synchronously. */
 function makeChannel() {
-  let handler: ((env: DiffEnvelope<TimelineItem>) => void) | null = null;
+  let handler: ((env: DiffEnvelope<TimelineRow>) => void) | null = null;
   return {
-    onTimelineDiff: (onEnvelope: (env: DiffEnvelope<TimelineItem>) => void) => {
+    onTimelineDiff: (onEnvelope: (env: DiffEnvelope<TimelineRow>) => void) => {
       handler = onEnvelope;
       return Promise.resolve(() => {
         handler = null;
       });
     },
-    emit: (envelope: DiffEnvelope<TimelineItem>) => handler?.(envelope),
+    emit: (envelope: DiffEnvelope<TimelineRow>) => handler?.(envelope),
   };
 }
 
@@ -100,7 +117,7 @@ describe("timelineStore: switching rooms while the previous room is still stream
     // still-installed handle, at room A's high seq. That is exactly what
     // this fake returns.
     const timelineResync = vi.fn(
-      async () => [ROOM_A, 12, [item("a1"), item("a2")]] as [string, number, TimelineItem[]],
+      async () => [ROOM_A, 12, [item("a1"), item("a2")]] as [string, number, TimelineRow[]],
     );
 
     const store = createTimelineStore({
@@ -119,7 +136,7 @@ describe("timelineStore: switching rooms while the previous room is still stream
     await store.subscribeTo(ROOM_A);
     channel.emit(env(ROOM_A, 1, [{ op: "reset", values: [item("a1")] }]));
     channel.emit(env(ROOM_A, 2, [{ op: "pushBack", value: item("a2") }]));
-    expect(store.items.map((i) => i.id)).toEqual(["a1", "a2"]);
+    expect(store.items.map((row) => row.item.id)).toEqual(["a1", "a2"]);
 
     // The user clicks room B. The subscribe command is now in flight.
     const switching = store.subscribeTo(ROOM_B);
@@ -144,7 +161,7 @@ describe("timelineStore: switching rooms while the previous room is still stream
     // here, permanently — B's seq 1 and 2 were below the expected sequence
     // the stale resync had left behind, so both were discarded as
     // duplicates.
-    expect(store.items.map((i) => i.id)).toEqual(["b1", "b2"]);
+    expect(store.items.map((row) => row.item.id)).toEqual(["b1", "b2"]);
   });
 
   it("discards a resync snapshot that resolves for the room we just left", async () => {
@@ -155,7 +172,7 @@ describe("timelineStore: switching rooms while the previous room is still stream
       if (roomId === ROOM_B) await subscribeB.promise;
     });
 
-    const resyncResult = makeDeferred<[string, number, TimelineItem[]]>();
+    const resyncResult = makeDeferred<[string, number, TimelineRow[]]>();
     const timelineResync = vi.fn(() => resyncResult.promise);
 
     const store = createTimelineStore({
@@ -188,7 +205,7 @@ describe("timelineStore: switching rooms while the previous room is still stream
     subscribeB.resolve();
     await switching;
     channel.emit(env(ROOM_B, 1, [{ op: "reset", values: [item("b1")] }]));
-    expect(store.items.map((i) => i.id)).toEqual(["b1"]);
+    expect(store.items.map((row) => row.item.id)).toEqual(["b1"]);
   });
 });
 

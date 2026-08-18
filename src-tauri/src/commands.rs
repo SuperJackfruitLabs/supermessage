@@ -537,3 +537,13 @@ pub async fn attachment_discard(
     staged.discard(&token);
     Ok(())
 }
+
+/// Parse a live turn's partial markdown into blocks.
+///
+/// A landed message gets its blocks from `TimelineRow`, but a turn still
+/// arriving has no timeline item yet — it is a `LivePayload` on `sm://live`.
+/// Same parser, so a turn does not change appearance the instant it lands.
+#[tauri::command]
+pub fn rich_blocks_from_markdown(source: String) -> Vec<supermessage_core::rich::RichBlock> {
+    supermessage_core::rich::blocks_from_markdown(&source)
+}

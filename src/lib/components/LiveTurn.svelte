@@ -39,7 +39,8 @@
   import { liveStore } from "$lib/stores/live.svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { createPacer } from "./pacer";
-  import AgentProse from "./AgentProse.svelte";
+  import { richBlocksFromMarkdown, type RichBlock } from "$lib/ipc";
+  import RichText from "./RichText.svelte";
 
   let { roomId, senderName }: { roomId: string | null; senderName: string | null } = $props();
 
@@ -100,6 +101,52 @@
   });
 
   /**
+   * How often the revealed text is re-parsed into blocks, in milliseconds.
+   *
+   * The one genuinely awkward consequence of moving markdown into the core.
+   * `AgentProse` tokenised in-process and could afford to run on every one of
+   * the pacer's ~60 frames a second; parsing now costs an IPC round trip, and
+   * sixty of those a second for a string that grows by a character each time
+   * is not a trade worth making.
+   *
+   * So the reveal stays at 60fps and the *parse* runs at ~16, which is the
+   * right way round: what this component exists to protect is the seam when
+   * the turn lands — an answer that arrives as `**bold**` and settles into
+   * bold — and that is preserved exactly, because the landed message goes
+   * through the same parser. What is lost is per-character smoothness in the
+   * reveal, which the pacer was already deliberately lagging anyway.
+   *
+   * Rendering a parsed prefix plus an unparsed tail would keep both, and was
+   * rejected: the boundary falls mid-block, so a tail continuing a paragraph
+   * would render after the closing `</p>` and drop to its own line — a visible
+   * flicker at exactly the moment this component exists to keep steady.
+   */
+  const PARSE_INTERVAL_MS = 60;
+
+  let blocks = $state<RichBlock[]>([]);
+
+  $effect(() => {
+    const source = visible;
+    if (source === "") {
+      blocks = [];
+      return;
+    }
+    // A generation counter, because responses can resolve out of order: a
+    // parse of a longer string issued later could land before an earlier one
+    // and be overwritten by it, so the text would appear to go backwards.
+    let live = true;
+    const timer = setTimeout(() => {
+      void richBlocksFromMarkdown(source).then((parsed) => {
+        if (live) blocks = parsed;
+      });
+    }, PARSE_INTERVAL_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  });
+
+  /**
    * How long the panel takes to open and close.
    *
    * It used to do neither — it appeared at whatever height its first delta
@@ -132,8 +179,12 @@
     const items = timelineStore.items;
     for (let i = items.length - 1; i >= 0; i--) {
       const item = items[i]!;
-      if (item.kind === "message" && !item.isOwn && item.senderDisplayName !== null) {
-        return item.senderDisplayName;
+      if (
+        item.item.kind === "message" &&
+        !item.item.isOwn &&
+        item.item.senderDisplayName !== null
+      ) {
+        return item.item.senderDisplayName;
       }
     }
     return senderName;
@@ -215,16 +266,18 @@
         moment the reader is watching most closely.
       -->
       <!--
-        The same renderer the landed message uses (`AgentProse`), for the same
-        reason this component copies the sender line and the measure: what is
-        on screen now is about to *become* that message, and an answer that
-        arrives as `**bold**` and settles into bold is the seam this whole
-        component exists to close. `parseIncompleteMarkdown` is what makes it
-        safe to do mid-word — a half-typed `**bo` stays text until its closing
-        marker lands, rather than flickering into emphasis and back.
+        The same renderer the landed message uses (`RichText`, over blocks the
+        core parsed), for the same reason this component copies the sender line
+        and the measure: what is on screen now is about to *become* that
+        message, and an answer that arrives as `**bold**` and settles into bold
+        is the seam this whole component exists to close.
+
+        Mid-word markers are safe without special handling — CommonMark leaves
+        an unclosed `**bo` as literal text until its closing marker lands, so a
+        half-typed emphasis cannot flicker on and back off.
       -->
-      <div class="max-w-[68ch] font-serif text-body text-content">
-        <AgentProse content={visible} /><!--
+      <div class="message-html max-w-[68ch] font-serif text-body text-content">
+        <RichText {blocks} /><!--
           The caret: one honest signal that this is still arriving. A static
           label can go stale — the text can stop moving while the label still
           says "writing" — but a caret sitting immediately after the last

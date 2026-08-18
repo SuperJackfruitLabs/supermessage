@@ -57,6 +57,21 @@
  * room's name, unread count or activity time, none of which belong in a
  * decision about *what was said*.
  */
+/**
+ * Event types whose arrival means the operator owes someone an answer.
+ *
+ * **Empty, and it must stay empty** until a schema actually carries a
+ * decision — an entry here puts amber on a room row, and amber means a
+ * pending decision and nothing else.
+ *
+ * It lived next to the custom-event registry, which is now
+ * `core::custom_events`. This copy is temporary: `roomPreview` follows the
+ * registry into the core, and this constant goes with it. It is here rather
+ * than fetched because `RoomList.svelte` needs it while rendering, and markup
+ * cannot await.
+ */
+export const DECISION_BEARING_EVENT_TYPES: ReadonlySet<string> = new Set<string>();
+
 export interface RoomPreviewFacts {
   lastMessage: string | null;
   lastMessageIsOwn: boolean;

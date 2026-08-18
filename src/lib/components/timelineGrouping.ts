@@ -79,12 +79,26 @@
 // the render-decision vocabulary so a future `viewFor` change can't
 // silently change which messages collapse into a run.
 
-import { attributedName, membershipVerb } from "./timelineItemView";
-import type { TimelineItem } from "$lib/ipc";
+import type { ItemView, TimelineItem, TimelineRow } from "$lib/ipc";
 
 /** One row `Timeline.svelte` iterates, in place of the raw item array. */
 export type TimelineDisplayRow =
-  | { type: "item"; key: string; item: TimelineItem; continuesRun: boolean }
+  | {
+      type: "item";
+      key: string;
+      item: TimelineItem;
+      /** The core's render decision for `item`, carried through unchanged. */
+      view: ItemView;
+      /** Whether this item can be replied to or reacted to yet. */
+      canReplyOrReact: boolean;
+      /** The core's resolved reply quote, or `null` when this is not a reply. */
+      replyQuote: TimelineRow["replyQuote"];
+      /** Who to attribute this item to, resolved by the core. */
+      senderName: string;
+      /** What the composer shows when someone replies to this item. */
+      replyPreview: string | null;
+      continuesRun: boolean;
+    }
   | { type: "membershipGroup"; key: string; items: TimelineItem[]; text: string };
 
 /**
@@ -150,9 +164,14 @@ function joinNames(names: string[]): string {
  * exactly one reads exactly like the ungrouped `timelineItemView.ts`
  * membership line ("Alice joined the room"), never "Alice and 0 others".
  */
-function groupText(items: TimelineItem[]): string {
-  const verb = membershipVerb(items[0]!.detail);
-  const names = items.map(attributedName);
+function groupText(rows: TimelineRow[]): string {
+  // Both halves come from the core. The verb is carried on the row apart from
+  // the rendered "Alice joined the room" sentence precisely so a *run* can be
+  // composed from many names and one verb without parsing that sentence back
+  // apart; the names come from `senderName`, which resolves display name ->
+  // sender id -> placeholder the same way every other attribution does.
+  const verb = rows[0]!.membershipVerb ?? "updated their membership";
+  const names = rows.map((row) => row.senderName);
   if (names.length <= MAX_NAMED) {
     return `${joinNames(names)} ${verb}`;
   }
@@ -267,33 +286,34 @@ export function shouldShift(previous: readonly string[], next: readonly string[]
   return false;
 }
 
-export function groupTimelineItems(items: readonly TimelineItem[]): TimelineDisplayRow[] {
+export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisplayRow[] {
   const rows: TimelineDisplayRow[] = [];
-  let run: TimelineItem[] = [];
+  let run: TimelineRow[] = [];
 
   function flushRun(): void {
     if (run.length === 0) return;
     rows.push({
       type: "membershipGroup",
-      key: `group:${run[0]!.id}`,
-      items: run,
+      key: `group:${run[0]!.item.id}`,
+      items: run.map((row) => row.item),
       text: groupText(run),
     });
     run = [];
   }
 
-  for (const item of items) {
+  for (const row of source) {
+    const item = row.item;
     const continuesMembershipRun =
-      item.kind === "membership" && (run.length === 0 || run[0]!.detail === item.detail);
+      item.kind === "membership" && (run.length === 0 || run[0]!.item.detail === item.detail);
     if (continuesMembershipRun) {
-      run.push(item);
+      run.push(row);
       continue;
     }
     flushRun();
     if (item.kind === "membership") {
       // A membership item with a different verb than the run just flushed:
       // starts a fresh run of its own rather than passing through.
-      run.push(item);
+      run.push(row);
     } else {
       // `rows.at(-1)` here is the previous *display* row, including a
       // membership group `flushRun()` may have just pushed above — see the
@@ -302,6 +322,11 @@ export function groupTimelineItems(items: readonly TimelineItem[]): TimelineDisp
         type: "item",
         key: rowKey(item),
         item,
+        view: row.view,
+        canReplyOrReact: row.canReplyOrReact,
+        replyQuote: row.replyQuote,
+        senderName: row.senderName,
+        replyPreview: row.replyPreview,
         continuesRun: continuesSenderRun(rows.at(-1), item),
       });
     }

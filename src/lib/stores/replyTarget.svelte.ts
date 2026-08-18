@@ -33,8 +33,18 @@
 // for the identical precedent), so the per-room scoping logic stays
 // unit-testable without mounting anything — see `replyTarget.test.ts`.
 
-import type { TimelineItem } from "$lib/ipc";
-import { replyPreviewExcerpt } from "$lib/components/timelineItemView";
+/**
+ * The parts of a timeline row a reply target is built from.
+ *
+ * Structural rather than `TimelineRow` itself, so both the raw row and the
+ * display row `timelineGrouping` derives from it satisfy this without either
+ * having to be converted at the call site.
+ */
+export interface ReplySource {
+  item: { id: string };
+  senderName: string;
+  replyPreview: string | null;
+}
 
 /** The message a reply is being composed against. */
 export interface PendingReply {
@@ -92,12 +102,18 @@ export function createReplyTargetStore() {
       targets = next;
     },
 
-    /** Builds the {@link PendingReply} `startReply` stores for a given timeline item. */
-    fromItem(item: TimelineItem): PendingReply {
+    /**
+     * Builds the {@link PendingReply} `startReply` stores for a given row.
+     *
+     * Every field comes off the row rather than being derived here: the
+     * attribution chain and the preview's bounding are the core's, so the
+     * composer shows exactly what the timeline showed and iOS shows the same.
+     */
+    fromItem(row: ReplySource): PendingReply {
       return {
-        eventId: item.id,
-        sender: item.senderDisplayName ?? item.sender ?? "Someone",
-        excerpt: replyPreviewExcerpt(item.body),
+        eventId: row.item.id,
+        sender: row.senderName,
+        excerpt: row.replyPreview,
       };
     },
   };

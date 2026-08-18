@@ -92,8 +92,13 @@ pub enum ItemView {
     None,
 }
 
+/// The human-facing kind name for a non-image attachment.
+///
+/// **Deliberately not `rename_all`d.** Every other enum here serialises
+/// camelCase because a host switches on the tag; this one is *printed*. A
+/// row reading "file · 2.1 MB" instead of "File · 2.1 MB" is the kind of
+/// defect that survives review because it looks like a style choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
-#[serde(rename_all = "camelCase")]
 pub enum MediaFileLabel {
     File,
     Audio,
@@ -296,11 +301,34 @@ fn truncate_end(value: &str, max: usize) -> String {
     format!("{head}…")
 }
 
-/// The parsed body of a message, from whichever of the two paths it has.
+/// The parsed body of a message.
+///
+/// **Your own messages are never parsed.** *You type, they write* (console
+/// spec §6.3): an own message is a command, and rendering markdown in it would
+/// mean a stray asterisk silently changing what you appear to have said. The
+/// client also sends it as plain `m.text`, so this is what every other client
+/// in the room sees too — rendering it one way here and another way everywhere
+/// else would be the worse lie.
+///
+/// It still comes back as blocks rather than as a raw string, so a host has
+/// one thing to draw and cannot forget the rule. The single verbatim paragraph
+/// keeps its newlines; a host renders own messages pre-wrapped.
 fn blocks_for(item: &TimelineItemDto) -> Vec<RichBlock> {
+    let body = item.body.as_deref().unwrap_or("");
+    if item.is_own {
+        return if body.is_empty() {
+            Vec::new()
+        } else {
+            vec![RichBlock::Paragraph {
+                inlines: vec![crate::rich::RichInline::Text {
+                    text: body.to_string(),
+                }],
+            }]
+        };
+    }
     match item.formatted_body.as_deref() {
         Some(html) => blocks_from_sanitised_html(html),
-        None => blocks_from_markdown(item.body.as_deref().unwrap_or("")),
+        None => blocks_from_markdown(body),
     }
 }
 
@@ -551,6 +579,63 @@ mod tests {
     }
 
     #[test]
+    fn your_own_message_is_never_parsed_as_markdown() {
+        // "You type, they write." An own message is a command; rendering
+        // markdown in it would let a stray asterisk change what you appear to
+        // have said, and every other client in the room shows the plain text.
+        let mut it = item("message");
+        it.msgtype = Some("m.text".into());
+        it.is_own = true;
+        it.body = Some("ship **now** and _not_ later".into());
+
+        let ItemView::Bubble { blocks, .. } = view_for(&it) else {
+            panic!("expected a bubble");
+        };
+        assert_eq!(
+            blocks,
+            vec![RichBlock::Paragraph {
+                inlines: vec![crate::rich::RichInline::Text {
+                    text: "ship **now** and _not_ later".into()
+                }]
+            }],
+            "an own message was parsed"
+        );
+    }
+
+    #[test]
+    fn an_own_message_keeps_its_newlines_for_a_host_to_pre_wrap() {
+        let mut it = item("message");
+        it.msgtype = Some("m.text".into());
+        it.is_own = true;
+        it.body = Some("one\ntwo".into());
+        let ItemView::Bubble { blocks, .. } = view_for(&it) else {
+            panic!("expected a bubble");
+        };
+        let RichBlock::Paragraph { inlines } = &blocks[0] else {
+            panic!("expected a paragraph");
+        };
+        assert_eq!(
+            inlines[0],
+            crate::rich::RichInline::Text {
+                text: "one\ntwo".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_peer_message_is_still_parsed() {
+        // The other side of the rule: agents write markdown, and it must not
+        // land as literal asterisks.
+        let mut it = item("message");
+        it.msgtype = Some("m.text".into());
+        it.body = Some("ship **now**".into());
+        let ItemView::Bubble { blocks, .. } = view_for(&it) else {
+            panic!("expected a bubble");
+        };
+        assert_eq!(blocks, crate::rich::blocks_from_markdown("ship **now**"));
+    }
+
+    #[test]
     fn renders_m_emote_as_its_own_kind_distinct_from_a_bubble() {
         let mut it = item("message");
         it.msgtype = Some("m.emote".into());
@@ -655,6 +740,24 @@ mod tests {
             ItemView::Placeholder {
                 text: "Unsupported message (m.location)".into()
             }
+        );
+    }
+
+    #[test]
+    fn a_media_labels_wire_form_is_the_text_that_gets_printed() {
+        // This field is display text, not a tag. camelCasing it — which every
+        // other enum in this module does — would put "file" on screen.
+        assert_eq!(
+            serde_json::to_string(&MediaFileLabel::File).unwrap(),
+            r#""File""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MediaFileLabel::Audio).unwrap(),
+            r#""Audio""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MediaFileLabel::Video).unwrap(),
+            r#""Video""#
         );
     }
 

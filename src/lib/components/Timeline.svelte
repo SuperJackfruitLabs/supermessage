@@ -294,21 +294,18 @@
   import { QUICK_REACTIONS } from "./emojiPicker";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { roomsStore } from "$lib/stores/rooms.svelte";
-  import {
-    canReplyOrReact,
-    displayEventType,
-    displayReactionKey,
-    replyQuoteView,
-    viewFor,
-  } from "./timelineItemView";
+
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
   import { shouldRepin } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
-  import AgentProse from "./AgentProse.svelte";
+  import RichText from "./RichText.svelte";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
-  import type { TimelineItem } from "$lib/ipc";
+  import type { ReplyQuoteView, TimelineItem } from "$lib/ipc";
+
+  /** The `item` arm of a display row — everything but a membership group. */
+  type ItemRow = Extract<TimelineDisplayRow, { type: "item" }>;
 
   /**
    * The room this pane shows — needed only to scope `replyTargetStore`'s
@@ -502,8 +499,11 @@
     const items = timelineStore.items;
     for (let i = items.length - 1; i >= 0; i -= 1) {
       const candidate = items[i]!;
-      if (candidate.isOwn && (candidate.kind === "message" || candidate.kind === "customMessage")) {
-        return candidate.id;
+      if (
+        candidate.item.isOwn &&
+        (candidate.item.kind === "message" || candidate.item.kind === "customMessage")
+      ) {
+        return candidate.item.id;
       }
     }
     return null;
@@ -579,7 +579,7 @@
    */
   $effect(() => {
     const items = timelineStore.items;
-    const lastId = items.length > 0 ? items[items.length - 1]!.id : null;
+    const lastId = items.length > 0 ? items[items.length - 1]!.item.id : null;
     if (lastId === previousLastId) return;
 
     const isFirstLoadForRoom = previousLastId === null;
@@ -644,7 +644,7 @@
    */
   $effect(() => {
     const items = timelineStore.items;
-    const lastItemId = items.length > 0 ? items[items.length - 1]!.id : null;
+    const lastItemId = items.length > 0 ? items[items.length - 1]!.item.id : null;
     if (
       !shouldMarkRead({
         followBottom,
@@ -878,8 +878,8 @@
    * allowed to follow the reader across a room switch the way a stale
    * composer draft once did.
    */
-  function startReply(item: TimelineItem): void {
-    replyTargetStore.set(roomId, replyTargetStore.fromItem(item));
+  function startReply(row: ItemRow): void {
+    replyTargetStore.set(roomId, replyTargetStore.fromItem(row));
   }
 
   /**
@@ -975,8 +975,7 @@
   }
 </script>
 
-{#snippet replyQuote(item: TimelineItem)}
-  {@const quote = replyQuoteView(item.replyTo)}
+{#snippet replyQuote(quote: ReplyQuoteView | null, isOwn: boolean)}
   {#if quote}
     <!--
       A 2px rail rather than a filled inset, matching the composer's
@@ -988,7 +987,7 @@
       `accent-content` pair would have been near-invisible on both.
     -->
     <div class="mb-1.5 border-l-2 border-border pl-2 text-content-muted">
-      {#if quote.available}
+      {#if quote.state === "available"}
         <!--
           `truncate` alone here (no `break-words`): `truncate` is
           `white-space: nowrap` + `text-overflow: ellipsis` + `overflow:
@@ -1031,7 +1030,7 @@
                token-pair calculator gives for `faint` on `surface` (4.92)
                do not describe this ground at all. -->
           <p
-            class="mt-0.5 font-mono text-meta break-words {item.isOwn
+            class="mt-0.5 font-mono text-meta break-words {isOwn
               ? 'text-content-muted'
               : 'text-content-faint'}"
           >
@@ -1040,7 +1039,7 @@
         {/if}
       {:else}
         <p
-          class="font-mono text-meta break-words {item.isOwn
+          class="font-mono text-meta break-words {isOwn
             ? 'text-content-muted'
             : 'text-content-faint'}"
         >
@@ -1051,7 +1050,7 @@
   {/if}
 {/snippet}
 
-{#snippet reactionsRow(item: TimelineItem, alignEnd: boolean = item.isOwn)}
+{#snippet reactionsRow(item: TimelineItem, interactive: boolean, alignEnd: boolean = item.isOwn)}
   <!--
     `alignEnd` defaults to `item.isOwn` — an own bubble's affordances hang
     off its right edge — but it is a *parameter*, not a read of `isOwn`,
@@ -1076,7 +1075,6 @@
   {#if item.reactions.length > 0}
     <div class="mt-1.5 flex flex-wrap gap-1 {alignEnd ? 'justify-end' : ''}">
       {#each item.reactions as reaction (reaction.key)}
-        {@const interactive = canReplyOrReact(item)}
         {@const chipClass = reaction.byMe
           ? "reaction-chip-mine border-accent font-medium text-accent"
           : "border-border bg-surface-sunken text-content-muted hover:border-border-strong hover:text-content"}
@@ -1124,19 +1122,21 @@
           disabled={!interactive}
           onclick={() => handleToggleReaction(item.id, reaction.key)}
           aria-pressed={reaction.byMe}
-          aria-label={`${displayReactionKey(reaction.key)}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
+          aria-label={`${reaction.displayKey}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
           class="rounded-full border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
         >
-          {displayReactionKey(reaction.key)} {reaction.count}
+          {reaction.displayKey} {reaction.count}
         </button>
       {/each}
     </div>
   {/if}
 {/snippet}
 
-{#snippet messageActions(item: TimelineItem, alignEnd: boolean = item.isOwn)}
+{#snippet messageActions(row: ItemRow, alignEnd: boolean = row.item.isOwn)}
+  {@const item = row.item}
+  {@const interactive = row.canReplyOrReact}
   <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter. -->
-  {#if canReplyOrReact(item)}
+  {#if interactive}
     <!--
       Chrome, not content — no `.selectable` here (see this file's
       top-of-script comment on user-select discipline), and rendered
@@ -1187,7 +1187,7 @@
     >
       <button
         type="button"
-        onclick={() => startReply(item)}
+        onclick={() => startReply(row)}
         class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
       >
         Reply
@@ -1278,7 +1278,9 @@
   </div>
 {/snippet}
 
-{#snippet messageBlock(item: TimelineItem, continuesRun: boolean, content: Snippet)}
+{#snippet messageBlock(row: ItemRow, content: Snippet)}
+  {@const item = row.item}
+  {@const continuesRun = row.continuesRun}
   <!--
     The single wrapper every message-shaped render kind
     (`bubble`/`image`/`mediaFile`) shares — see this file's top-of-script
@@ -1396,7 +1398,7 @@
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
-        {@render replyQuote(item)}
+        {@render replyQuote(row.replyQuote, item.isOwn)}
         {@render content()}
         {@render seenMarker(item)}
         {#if item.isOwn}
@@ -1435,8 +1437,8 @@
         {/if}
       </div>
     </div>
-    {@render reactionsRow(item)}
-    {@render messageActions(item)}
+    {@render reactionsRow(item, row.canReplyOrReact)}
+    {@render messageActions(row)}
   </div>
 {/snippet}
 
@@ -1602,88 +1604,64 @@
                 </span>
               </div>
             {:else}
-              {@const view = viewFor(item)}
+              {@const view = row.view}
               {#if view.render === "bubble"}
                 {#snippet bubbleContent()}
-                  {#if item.formattedBody}
-                    <!--
-                      `{@html}` — safe only because of the guarantees this
-                      file's top-of-script doc comment spells out in full
-                      (core-side sanitisation + hardening, never redone here).
-                      Do not copy this pattern onto any other field.
+                  <!--
+                    One renderer for both bodies now. `core::rich` parses the
+                    sanitised `formatted_body` a human's client sent *and* the
+                    raw markdown an agent wrote into the same block tree, so
+                    this branch no longer chooses between an `{@html}` and a
+                    markdown tokeniser — the choice, and the guarantees that
+                    made each one safe, moved to Rust where iOS and Android
+                    inherit them.
 
-                      `onclick`/`onauxclick` here are delegated link handling,
-                      not a control of their own — `handleMessageBodyClick`/
-                      `handleMessageBodyAuxClick` only act when the click
-                      bubbled up from a nested `<a href>`, and an `<a>`'s own
-                      native keyboard activation (Enter/Space) already
-                      dispatches a bubbling `click` the same way a primary
-                      mouse click does, so there is no extra keyboard handler
-                      this div itself needs to add. `onauxclick` specifically
-                      exists for the middle-click case `onclick` alone cannot
-                      see — see `messageLinks.ts`'s doc comment.
+                    What is gone with it: the `{@html}` that was safe only
+                    because of a chain of core-side guarantees, and the
+                    three-paragraph comment that had to explain why. There is
+                    no escape hatch left on this path to guard.
 
-                      No face or size class here on purpose: the enclosing
-                      message block already sets serif `--text-body` (peer) or
-                      sans `--text-body-own` (own), and `.message-html`'s own
-                      rules read through `currentColor` and `em` so they suit
-                      either.
-                    -->
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div
-                      class="message-html selectable {view.muted && !item.isOwn
-                        ? 'text-content-muted'
-                        : ''}"
-                      onclick={(e: MouseEvent) =>
-                        handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
-                      onauxclick={(e: MouseEvent) =>
-                        handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
-                    >
-                      {@html item.formattedBody}
-                    </div>
-                  {:else if item.isOwn}
+                    `onclick`/`onauxclick` are delegated link handling, not
+                    controls of their own — they act only when the click
+                    bubbled up from a nested `<a href>`. An `<a>`'s native
+                    keyboard activation already dispatches a bubbling `click`,
+                    so this element needs no keyboard handler of its own.
+                    `onauxclick` covers the middle-click case `onclick` cannot
+                    see; see `messageLinks.ts`.
+                  -->
+                  {#if item.isOwn}
                     <!--
                       What the operator typed, exactly as typed. *You type,
                       they write* (spec §6.3): an own message is a command, and
                       rendering markdown in it would mean a stray asterisk
                       silently changing what you appear to have said. The
                       client also sends it as plain `m.text`, so this is what
-                      every other client in the room sees too — rendering it
-                      one way here and another way everywhere else would be the
-                      worse lie.
+                      every other client in the room sees too.
+
+                      The core enforces that — `blocks_for` returns an own
+                      message verbatim as a single paragraph rather than
+                      parsing it — so this branch differs only in styling, and
+                      a host cannot forget the rule by rendering the same
+                      blocks the peer branch does.
                     -->
-                    <p
-                      class="selectable whitespace-pre-wrap break-words {view.muted && !item.isOwn
-                        ? 'text-content-muted'
-                        : ''}"
-                    >
-                      {item.body}
-                    </p>
+                    <div class="selectable whitespace-pre-wrap break-words">
+                      <RichText blocks={view.blocks} />
+                    </div>
                   {:else}
-                    <!--
-                      An agent's message with no `formattedBody` — which is all
-                      of them, since the hub sends plain `m.text`. Markdown is
-                      what agents actually write, and it used to land as
-                      literal `**` and `---` in the middle of the prose. See
-                      `AgentProse.svelte` for why this renders to components
-                      rather than through `{@html}`, given that `item.body` has
-                      been through none of the sanitising `formattedBody` has.
-                    -->
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
-                      class="selectable break-words {view.muted ? 'text-content-muted' : ''}"
+                      class="message-html selectable {view.muted ? 'text-content-muted' : ''}"
                       onclick={(e: MouseEvent) =>
                         handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
                       onauxclick={(e: MouseEvent) =>
                         handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
                     >
-                      <AgentProse content={item.body ?? ""} />
+                      <RichText blocks={view.blocks} />
                     </div>
                   {/if}
                 {/snippet}
-                {@render messageBlock(item, continuesRun, bubbleContent)}
+                {@render messageBlock(row, bubbleContent)}
               {:else if view.render === "emote"}
                 <!--
                   Centred, serif *italic* — the one italic that survives in
@@ -1749,7 +1727,7 @@
                     ></div>
                   {/if}
                 {/snippet}
-                {@render messageBlock(item, continuesRun, imageContent)}
+                {@render messageBlock(row, imageContent)}
               {:else if view.render === "mediaFile"}
                 <!--
                   `m.file`/`m.audio`/`m.video`: an informative row (filename,
@@ -1805,7 +1783,7 @@
                     </p>
                   {/if}
                 {/snippet}
-                {@render messageBlock(item, continuesRun, mediaFileContent)}
+                {@render messageBlock(row, mediaFileContent)}
               {:else if view.render === "customEvent"}
                 <!--
                   The dispatch card (spec §7) — a `kind: "customMessage"`
@@ -1866,7 +1844,7 @@
                           class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
                         >
                           <span class="min-w-0 flex-1 text-label uppercase break-words">
-                            {displayEventType(item.detail)}
+                            {view.eventType}
                           </span>
                           <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
                         </div>
@@ -2030,8 +2008,8 @@
                         `seenMarker`. Left the default and these rows would
                         hang off the right edge of a left-anchored card.
                       -->
-                      {@render reactionsRow(item, false)}
-                      {@render messageActions(item, false)}
+                      {@render reactionsRow(item, row.canReplyOrReact, false)}
+                      {@render messageActions(row, false)}
                       {@render seenMarker(item, false)}
                     </div>
                   </div>

@@ -491,3 +491,15 @@ impl From<supermessage_core::attachments::StagedAttachment> for StagedFile {
         }
     }
 }
+
+/// Parse a live turn's partial markdown into blocks.
+///
+/// A free function rather than a `Core` method: it touches no session state,
+/// and making it one would imply it needed a signed-in client. A landed
+/// message already carries its blocks on `TimelineRow`; this is for a turn
+/// still arriving on the live channel, so the two render through the same
+/// parser and a turn does not change appearance the instant it lands.
+#[uniffi::export]
+pub fn rich_blocks_from_markdown(source: String) -> Vec<supermessage_core::rich::RichBlock> {
+    supermessage_core::rich::blocks_from_markdown(&source)
+}

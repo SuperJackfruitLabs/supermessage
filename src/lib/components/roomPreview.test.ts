@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { composeRoomPreview, type RoomPreviewFacts } from "./roomPreview";
-import { DECISION_BEARING_EVENT_TYPES } from "./customEvents";
+import { DECISION_BEARING_EVENT_TYPES } from "./roomPreview";
 
 /** A room with an ordinary peer message, overridden per case. Every field is
  * named explicitly in the overrides that matter, so a case reads as the row

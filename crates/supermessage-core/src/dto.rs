@@ -700,6 +700,15 @@ pub struct TimelineRow {
     /// Whether this item can be replied to or reacted to — false while it is
     /// still a local echo with no real event id.
     pub can_reply_or_react: bool,
+    /// A short preview of this item's own body, for the composer's
+    /// "Replying to …" row when someone replies *to* it. `None` when there is
+    /// nothing to preview — a media message with no caption, say.
+    ///
+    /// A snapshot, not a binding: the composer keeps whatever it was handed
+    /// when the reply was started, so a parent that is later redacted or
+    /// scrolls out of the materialised timeline does not make the preview
+    /// change or vanish underneath the person writing.
+    pub reply_preview: Option<String>,
 }
 
 impl TimelineRow {
@@ -718,6 +727,7 @@ impl TimelineRow {
             .then(|| crate::item_view::membership_verb(item.detail.as_deref()));
         let reply_quote = crate::item_view::reply_quote_view(item.reply_to.as_ref());
         let can_reply_or_react = crate::item_view::can_reply_or_react(&item);
+        let reply_preview = crate::item_view::reply_preview_excerpt(item.body.as_deref());
         Self {
             item,
             view,
@@ -725,6 +735,7 @@ impl TimelineRow {
             membership_verb,
             reply_quote,
             can_reply_or_react,
+            reply_preview,
         }
     }
 }
@@ -1416,6 +1427,20 @@ mod wire_format_golden {
                 label: None,
             })
         );
+    }
+
+    #[test]
+    fn a_row_previews_its_own_body_for_whoever_replies_to_it() {
+        let mut item = a_text_item();
+        item.body = Some("  the original message  ".into());
+        assert_eq!(
+            TimelineRow::new(item).reply_preview.as_deref(),
+            Some("the original message")
+        );
+
+        let mut empty = a_text_item();
+        empty.body = None;
+        assert_eq!(TimelineRow::new(empty).reply_preview, None);
     }
 
     #[test]
