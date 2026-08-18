@@ -24,6 +24,42 @@ use tokio::task::JoinHandle;
 
 use super::error::{CoreError, CoreResult};
 
+/// How many timeline events the room-list sliding sync asks for per room.
+///
+/// The SDK defaults this to **1** (`matrix-sdk-ui`'s
+/// `room_list_service::DEFAULT_LIST_TIMELINE_LIMIT`), and that default is
+/// actively hostile to a timeline anyone is reading. A sync that returns more
+/// events than the limit is flagged `limited` and carries a fresh gap token,
+/// and `matrix-sdk`'s event cache answers exactly that case by unloading every
+/// chunk but the last one (`event_cache::caches::room::state`,
+/// `shrink_to_last_chunk`) — deliberately, so a client cannot render across a
+/// gap it has not back-filled. The focused timeline then sees its items
+/// vanish, re-seeds, and the reader watches the room empty and refill.
+///
+/// At 1, *two messages between syncs* is enough to trigger it. Live logs
+/// showed it firing about once a minute on a quiet room.
+///
+/// The number is a trade, not a truth: every room in the roster carries this
+/// many events on every sync, so raising it costs bandwidth and sync latency
+/// across the whole list. 32 is chosen to comfortably exceed the traffic a
+/// single room sees between syncs while staying close to `INITIAL_PAGE_SIZE`
+/// (30) — the depth a freshly seeded timeline holds anyway, so a limited sync
+/// that does slip through unloads to roughly what the reader already had.
+const ROOM_LIST_TIMELINE_LIMIT: u32 = 32;
+
+/// The one thing about that number that is not a matter of taste.
+///
+/// At 1 — the SDK's own default — a room receiving two events between syncs
+/// comes back `limited` with a fresh gap, and the event cache answers a
+/// limited sync by unloading every chunk but the last. The focused timeline
+/// then empties out from under its subscription and has to re-seed, which the
+/// reader sees. Tuning the number up or down is fine; going back to the
+/// default is a regression, and this fails the build rather than the room.
+const _: () = assert!(
+    ROOM_LIST_TIMELINE_LIMIT > 1,
+    "a limit of 1 makes routine syncs unload the timeline"
+);
+
 /// Tauri event channel carrying connection health for the webview's
 /// connection indicator.
 pub const CONNECTION_EVENT: &str = "sm://connection";
@@ -101,6 +137,10 @@ impl Drop for SyncHandle {
 /// the returned [`SyncHandle`] lives.
 pub async fn start(client: &Client, app: AppHandle) -> CoreResult<SyncHandle> {
     let service = SyncService::builder(client.clone())
+        // See `ROOM_LIST_TIMELINE_LIMIT`: the SDK default of 1 makes
+        // ordinary syncs unload the focused timeline out from under its
+        // subscription.
+        .with_room_list_timeline_limit(ROOM_LIST_TIMELINE_LIMIT)
         .build()
         .await
         .map_err(|e| CoreError::Network(e.to_string()))?;

@@ -75,6 +75,24 @@ const DEFAULT_PAGE_SIZE = 30;
 export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
   let items = $state<TimelineItem[]>([]);
 
+  /**
+   * Whether the focused room has delivered a batch yet — **not** whether it
+   * has anything in it.
+   *
+   * The pane could not tell those apart, so it rendered "Nothing here yet."
+   * for the gap between them: measured on 2026-08-17, that message appeared
+   * 10ms into a room switch, over a room holding 1937px of history, and was
+   * gone by 66ms. An empty list is the honest state of a room nobody has
+   * answered for yet; it just isn't an empty *room*. See
+   * `components/timelinePane.ts` for what the pane does with the distinction.
+   *
+   * Set by the first accepted publish — `accepts` already rejects the
+   * outgoing room's still-in-flight envelopes, so those cannot answer for the
+   * incoming one. Cleared in `subscribeTo`, *after* the reset that publishes
+   * the empty list, since that publish would otherwise set it straight back.
+   */
+  let loaded = $state(false);
+
   // The room this store currently shows — the only `subject` it will accept
   // data for. Deliberately not `$state`: nothing renders it, and it must be
   // readable synchronously from `accepts` below the instant `subscribeTo`
@@ -89,6 +107,7 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
     },
     onUpdate: (next) => {
       items = next;
+      loaded = true;
     },
     accepts: (subject) => subject === focusedId,
   });
@@ -104,6 +123,10 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
   async function subscribeTo(roomId: string): Promise<void> {
     focusedId = roomId;
     gapSync.resetForNewSubscription();
+    // After the reset, never before: `resetForNewSubscription` publishes the
+    // empty list on its way out, and that publish runs `onUpdate` — which
+    // would set this straight back to true for a room that has said nothing.
+    loaded = false;
     // Same ordering requirement as `gapSync.resetForNewSubscription()` above
     // and for the identical reason (see this module's doc comment): the
     // core only ever streams typing state for the *focused* room (mirroring
@@ -196,6 +219,13 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
   return {
     get items(): TimelineItem[] {
       return items;
+    },
+    /**
+     * Whether the focused room has answered yet. See the field's doc comment
+     * for why an empty `items` is not the same thing as an empty room.
+     */
+    get loaded(): boolean {
+      return loaded;
     },
     subscribeTo,
     paginateBack,

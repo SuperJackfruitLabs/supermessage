@@ -34,12 +34,85 @@
   // see the conversation it belongs to and always reach the composer, however
   // much an agent writes.
 
+  import { slide } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import { liveStore } from "$lib/stores/live.svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
+  import { createPacer } from "./pacer";
+  import AgentProse from "./AgentProse.svelte";
 
   let { roomId, senderName }: { roomId: string | null; senderName: string | null } = $props();
 
+  /** What the hub has told us so far. Cumulative — each delta is the whole answer. */
   const text = $derived(liveStore.get(roomId));
+
+  /**
+   * ## Why the text on screen is not the text we were told
+   *
+   * The wire is chunky on purpose. The hub holds a delta until it has at least
+   * 24 characters *and* reaches a sentence boundary, or until 1.5s has passed
+   * — because every delta is a to-device message to every one of the reader's
+   * devices, and one per token would be indefensible. The consequence is that
+   * this box can sit perfectly still for a second and a half and then gain a
+   * whole paragraph, which is the opposite of watching somebody write.
+   *
+   * So the pacer stays deliberately behind and spends the debt down at a
+   * steady rate. Nothing about the wire changes; the smoothing is entirely
+   * local, which is also why it costs no bandwidth to have. See `pacer.ts` for
+   * the rate, the catch-up cap, and why a late duplicate can never un-write
+   * text that is already on screen.
+   *
+   * It also happens to fix the panel's height: the box grew in the same jumps
+   * the text did (measured at 0 → 69 → 347px), and a steadily growing string
+   * gives a steadily growing box for free.
+   */
+  const pacer = createPacer();
+  let visible = $state("");
+
+  // A fresh turn — or a different room — starts from nothing. Without this the
+  // next agent's answer would be revealed from wherever the last one stopped.
+  $effect(() => {
+    void roomId;
+    pacer.reset();
+    visible = "";
+  });
+
+  $effect(() => {
+    if (text !== null) pacer.receive(text);
+  });
+
+  /**
+   * The reveal loop. Runs only while a turn is live, and stops the moment the
+   * answer lands in the room and this component unmounts.
+   */
+  $effect(() => {
+    if (text === null) return;
+    let frame = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      pacer.advance(now - last);
+      last = now;
+      visible = pacer.visible;
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  });
+
+  /**
+   * How long the panel takes to open and close.
+   *
+   * It used to do neither — it appeared at whatever height its first delta
+   * needed and vanished the same way, taking up to 33vh out of the timeline in
+   * one step. Sliding is what turns that into the pane making room.
+   *
+   * Zero under `prefers-reduced-motion`: the panel is already in the right
+   * place at either end, and the animation is only about how it gets there.
+   */
+  const slideMs =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? 0
+      : 170;
 
   /**
    * The name the arriving message will carry, taken from the last thing this
@@ -79,8 +152,11 @@
   let wasAtBottom = true;
 
   $effect.pre(() => {
-    // Read `text` so this runs before every delta's layout, not just the first.
-    void text;
+    // Read `visible` — what is actually laid out — so this runs before every
+    // revealed frame, not only when a delta arrives. Since the pacer reveals
+    // on nearly every frame, this is now the difference between following the
+    // writing and following the wire.
+    void visible;
     const el = box;
     if (!el) return;
     // 48px of slack: a reader a line or two off the bottom is still following,
@@ -96,7 +172,7 @@
    * under them. So this follows only what was already being followed.
    */
   $effect(() => {
-    void text;
+    void visible;
     const el = box;
     if (el && wasAtBottom) el.scrollTop = el.scrollHeight;
   });
@@ -110,6 +186,7 @@
   -->
   <div
     bind:this={box}
+    transition:slide={{ duration: slideMs, easing: cubicOut }}
     class="live-turn max-h-[33vh] shrink-0 overflow-y-auto bg-surface px-4 pt-4 pb-3 lg:px-8"
     role="status"
     aria-live="polite"
@@ -137,8 +214,17 @@
         when the real message lands, which reads as a flicker at exactly the
         moment the reader is watching most closely.
       -->
-      <p class="max-w-[68ch] font-serif text-body whitespace-pre-wrap text-content">
-        {text}<!--
+      <!--
+        The same renderer the landed message uses (`AgentProse`), for the same
+        reason this component copies the sender line and the measure: what is
+        on screen now is about to *become* that message, and an answer that
+        arrives as `**bold**` and settles into bold is the seam this whole
+        component exists to close. `parseIncompleteMarkdown` is what makes it
+        safe to do mid-word — a half-typed `**bo` stays text until its closing
+        marker lands, rather than flickering into emphasis and back.
+      -->
+      <div class="max-w-[68ch] font-serif text-body text-content">
+        <AgentProse content={visible} /><!--
           The caret: one honest signal that this is still arriving. A static
           label can go stale — the text can stop moving while the label still
           says "writing" — but a caret sitting immediately after the last
@@ -150,7 +236,7 @@
           class="ml-0.5 inline-block h-[1em] w-[0.45em] translate-y-[0.1em] animate-pulse bg-content-muted align-baseline"
           aria-hidden="true"
         ></span>
-      </p>
+      </div>
     </div>
   </div>
 {/if}

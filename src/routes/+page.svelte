@@ -30,6 +30,7 @@
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
   import LiveTurn from "$lib/components/LiveTurn.svelte";
+  import LiveActivity from "$lib/components/LiveActivity.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
@@ -899,6 +900,12 @@
             roomId={roomsStore.selectedId}
             senderName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
           />
+          <!--
+            What it is *doing*, under what it is saying. One line, never a log:
+            the durable record of a turn's work lands in the room as a card when
+            the turn ends, and this only answers "right now".
+          -->
+          <LiveActivity roomId={roomsStore.selectedId} />
           <TypingIndicator />
           <!--
             The composer is for rooms this account is *in*. An invitation gets

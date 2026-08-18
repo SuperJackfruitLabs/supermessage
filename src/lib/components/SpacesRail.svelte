@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { animateList } from "./animateList";
   // The spaces rail (spaces-rail design §6): a vertical strip left of the
   // roster, scoping it to one space. "All rooms" at the top, always, then
   // one entry per joined space.
@@ -67,7 +68,13 @@
 </script>
 
 {#if entries.length > 0}
+  <!--
+    Spaces come and go rarely, but when they do it is because the reader just
+    accepted or declined an invitation — the one moment they are looking
+    straight at this rail. A row sliding in is the acknowledgement.
+  -->
   <nav
+    use:animateList
     aria-label="Spaces"
     class="flex w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border bg-surface-sunken py-2"
   >

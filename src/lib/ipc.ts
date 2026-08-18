@@ -608,6 +608,8 @@ const TYPING_EVENT = "sm://typing";
  * a room, and the real message follows when the turn ends.
  */
 const LIVE_EVENT = "sm://live";
+const THOUGHT_EVENT = "sm://thought";
+const TOOL_EVENT = "sm://tool";
 /**
  * A file dropped on the window and staged by the **Rust** drag-drop handler
  * (`core::attachments::on_files_dropped`). See {@link onStagedAttachment} —
@@ -1164,6 +1166,42 @@ export interface LivePayload {
 /** Subscribes to live turn text on {@link LIVE_EVENT}. */
 export function onLive(handler: (payload: LivePayload) => void): Promise<UnlistenFn> {
   return listen<LivePayload>(LIVE_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * Subscribes to an agent's reasoning.
+ *
+ * The same payload as {@link onLive}, on its own channel, because the shape is
+ * reused and the meaning is not: this is what the agent is thinking, and it
+ * never reaches a room on either side of the bridge. Watchable while it
+ * happens, then gone.
+ */
+export function onThought(handler: (payload: LivePayload) => void): Promise<UnlistenFn> {
+  return listen<LivePayload>(THOUGHT_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * One tool call's state, mirroring `core::live::ToolPayload`.
+ *
+ * Unlike the two text channels this one is **not** de-duplicated in the core —
+ * see `live.rs`'s handler for why — so `seq` is here to be compared, per
+ * `toolCallId`, by whatever consumes it.
+ */
+export interface ToolPayload {
+  roomId: string;
+  seq: number;
+  toolCallId: string;
+  title: string;
+  /** ACP's tool kind, or null. Opaque display text; never switch on it. */
+  kind: string | null;
+  /** `pending` | `in_progress` | `completed` | `failed`, or something newer. */
+  status: string;
+  locations: string[];
+}
+
+/** Subscribes to tool-call state on {@link TOOL_EVENT}. */
+export function onTool(handler: (payload: ToolPayload) => void): Promise<UnlistenFn> {
+  return listen<ToolPayload>(TOOL_EVENT, (event) => handler(event.payload));
 }
 
 /** Subscribes to typing-state updates on {@link TYPING_EVENT}. */

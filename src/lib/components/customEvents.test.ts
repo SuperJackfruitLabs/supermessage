@@ -7,13 +7,17 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  DEMO_NOTE_EVENT_TYPE,
+  PERMISSION_REQUEST_EVENT_TYPE,
+  TURN_ACTIVITY_EVENT_TYPE,
   createCustomEventRegistry,
   customEventRegistry,
   demoNoteRenderer,
-  DEMO_NOTE_EVENT_TYPE,
+  permissionRequestRenderer,
   registerCustomEventRenderer,
   resolveCustomEvent,
   safeStringField,
+  turnActivityRenderer,
   type CustomEventRegistry,
   type CustomEventRenderer,
 } from "./customEvents";
@@ -502,5 +506,138 @@ describe("safeStringField", () => {
   it("truncates to maxChars with an ellipsis", () => {
     const value = safeStringField({ title: "x".repeat(50) }, "title", 10);
     expect(value).toBe(`${"x".repeat(10)}…`);
+  });
+});
+
+// AgentPod's two real event types — the first renderers here that are not a
+// demonstration, and the first anywhere to set a `decision`.
+describe("turnActivityRenderer", () => {
+  function render(content: unknown) {
+    const registry = createCustomEventRegistry([turnActivityRenderer]);
+    return resolveCustomEvent(registry, TURN_ACTIVITY_EVENT_TYPE, content, "fallback");
+  }
+
+  const turn = (over: Record<string, unknown> = {}) => ({
+    schema_version: 1,
+    session_id: "sess_1",
+    tools: [
+      { id: "c1", title: "Read src/main.ts", kind: "read", status: "completed", locations: [] },
+      { id: "c2", title: "Run tests", kind: "execute", status: "failed", locations: [] },
+    ],
+    counts: { total: 2, failed: 1, omitted: 0 },
+    ...over,
+  });
+
+  it("leads with what happened, then lists it", () => {
+    const view = render(turn());
+    expect(view.status).toBe("rendered");
+    if (view.status !== "rendered") return;
+    expect(view.fields[0]).toEqual({ label: "Did", value: "2 things, 1 failed" });
+    expect(view.fields[1]).toEqual({ label: "completed", value: "Read src/main.ts" });
+    expect(view.fields[2]).toEqual({ label: "failed", value: "Run tests" });
+    expect(view.decision).toBeNull();
+  });
+
+  it("says one thing in the singular, and stays quiet about no failures", () => {
+    const view = render(
+      turn({ tools: [{ id: "c1", title: "Read a file", status: "completed" }], counts: { total: 1, failed: 0, omitted: 0 } }),
+    );
+    if (view.status !== "rendered") throw new Error("expected rendered");
+    expect(view.fields[0]).toEqual({ label: "Did", value: "1 thing" });
+  });
+
+  it("admits what it left out", () => {
+    const view = render(turn({ counts: { total: 25, failed: 0, omitted: 5 } }));
+    if (view.status !== "rendered") throw new Error("expected rendered");
+    expect(view.fields.at(-1)).toEqual({ label: "and", value: "5 more not listed" });
+  });
+
+  it("renders a payload from a newer schema, and says it is newer", () => {
+    // Additive minor versions must still render — see this module's doc comment.
+    const view = render({ ...turn(), schema_version: 2, some_new_field: "ignored" });
+    if (view.status !== "rendered") throw new Error("expected rendered");
+    expect(view.newerVersion).toBe(true);
+    expect(view.fields[0]!.value).toBe("2 things, 1 failed");
+  });
+
+  it("degrades rather than coercing a hostile payload", () => {
+    // Objects where strings and numbers belong. Nothing may be stringified into
+    // the DOM, and nothing may throw the timeline down with it.
+    const view = render({
+      counts: { total: { toString: "nope" }, failed: [], omitted: null },
+      tools: [{ title: { evil: true }, status: 42 }, "not an object", null],
+    });
+    // Nothing readable survived, so the fallback body is what shows.
+    expect(view.status).toBe("fallbackBody");
+  });
+
+  it("falls back when there is nothing to show", () => {
+    expect(render({ tools: [], counts: {} }).status).toBe("fallbackBody");
+    expect(render(null).status).toBe("fallbackBody");
+  });
+});
+
+describe("permissionRequestRenderer", () => {
+  function render(content: unknown) {
+    const registry = createCustomEventRegistry([permissionRequestRenderer]);
+    return resolveCustomEvent(registry, PERMISSION_REQUEST_EVENT_TYPE, content, "fallback");
+  }
+
+  const request = (over: Record<string, unknown> = {}) => ({
+    schema_version: 1,
+    session_id: "sess_1",
+    request_seq: 41,
+    title: "Write src/main.ts",
+    options: [
+      { option_id: "allow_once", name: "Allow once" },
+      { option_id: "reject", name: "Reject" },
+    ],
+    ...over,
+  });
+
+  it("asks the question and offers the answers", () => {
+    const view = render(request());
+    if (view.status !== "rendered") throw new Error("expected rendered");
+    expect(view.fields[0]).toEqual({ label: "Wants to", value: "Write src/main.ts" });
+    expect(view.decision?.prompt).toBe("Allow Write src/main.ts?");
+    expect(view.decision?.options).toEqual([
+      { id: "Allow once", label: "Allow once" },
+      { id: "Reject", label: "Reject" },
+    ]);
+  });
+
+  it("carries the option's NAME as its id, because the id is what gets sent", () => {
+    // `onDecide` receives `id` verbatim and sends it as an ordinary message.
+    // The room is a shared human record: `Allow once` belongs in it,
+    // `allow_once` does not. The hub's matcher accepts either.
+    const view = render(request());
+    if (view.status !== "rendered") throw new Error("expected rendered");
+    expect(view.decision!.options.map((o) => o.id)).toEqual(["Allow once", "Reject"]);
+  });
+
+  it("describes a request it cannot offer answers to, rather than vanishing", () => {
+    const view = render(request({ options: [] }));
+    if (view.status !== "rendered") throw new Error("expected rendered");
+    expect(view.fields[0]!.value).toBe("Write src/main.ts");
+    expect(view.decision).toBeNull();
+  });
+
+  it("drops an option with no name, which nothing could label", () => {
+    const view = render(request({ options: [{ option_id: "a" }, { option_id: "b", name: "Reject" }] }));
+    if (view.status !== "rendered") throw new Error("expected rendered");
+    expect(view.decision!.options).toEqual([{ id: "Reject", label: "Reject" }]);
+  });
+
+  it("renders no more than four buttons, whatever it is sent", () => {
+    // `DECISION_MAX_OPTIONS`. The hub caps at four too, so this is the second
+    // line of defence rather than the first.
+    const many = Array.from({ length: 7 }, (_, i) => ({ option_id: `o${i}`, name: `Option ${i}` }));
+    const view = render(request({ options: many }));
+    if (view.status !== "rendered") throw new Error("expected rendered");
+    expect(view.decision!.options).toHaveLength(4);
+  });
+
+  it("falls back when there is no question", () => {
+    expect(render({ options: [] }).status).toBe("fallbackBody");
   });
 });

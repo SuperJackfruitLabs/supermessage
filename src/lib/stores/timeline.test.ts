@@ -272,3 +272,106 @@ describe("timelineStore: sendReply", () => {
     expect(sendReply).toHaveBeenCalledWith(ROOM_A, "hello", "$parent:example.org");
   });
 });
+
+// `loaded` — whether this room has answered yet, as distinct from whether it
+// has anything in it.
+//
+// The pane had no way to tell those apart and rendered "Nothing here yet."
+// for the gap between the two, over rooms with a full history. Measured on
+// 2026-08-17: the message appeared 10ms into a room switch and was gone by
+// 66ms. See `timelinePane.ts`.
+describe("timelineStore: knowing whether a room has answered", () => {
+  it("has not heard from a room it has only just subscribed to", async () => {
+    const channel = makeChannel();
+    const store = createTimelineStore({
+      onTimelineDiff: channel.onTimelineDiff,
+      timelineResync: vi.fn(),
+      timelineSubscribe: vi.fn().mockResolvedValue(undefined),
+      timelinePaginateBack: vi.fn(),
+      sendMessage: vi.fn(),
+      sendReply: vi.fn(),
+      toggleReaction: vi.fn(),
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
+    });
+
+    expect(store.loaded).toBe(false);
+    await store.subscribeTo(ROOM_A);
+    expect(store.loaded).toBe(false);
+  });
+
+  it("has heard from a room the moment its first batch lands, even an empty one", async () => {
+    const channel = makeChannel();
+    const store = createTimelineStore({
+      onTimelineDiff: channel.onTimelineDiff,
+      timelineResync: vi.fn(),
+      timelineSubscribe: vi.fn().mockResolvedValue(undefined),
+      timelinePaginateBack: vi.fn(),
+      sendMessage: vi.fn(),
+      sendReply: vi.fn(),
+      toggleReaction: vi.fn(),
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
+    });
+
+    await store.subscribeTo(ROOM_A);
+    // The core opens every subscription with a `Reset`, which for a genuinely
+    // empty room carries nothing. That is still an answer, and the pane is
+    // entitled to say the room is empty on the strength of it.
+    channel.emit(env(ROOM_A, 1, [{ op: "reset", values: [] }]));
+
+    expect(store.loaded).toBe(true);
+    expect(store.items).toEqual([]);
+  });
+
+  it("forgets it has heard anything when the reader switches rooms", async () => {
+    const channel = makeChannel();
+    const store = createTimelineStore({
+      onTimelineDiff: channel.onTimelineDiff,
+      timelineResync: vi.fn(),
+      timelineSubscribe: vi.fn().mockResolvedValue(undefined),
+      timelinePaginateBack: vi.fn(),
+      sendMessage: vi.fn(),
+      sendReply: vi.fn(),
+      toggleReaction: vi.fn(),
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
+    });
+
+    await store.subscribeTo(ROOM_A);
+    channel.emit(env(ROOM_A, 1, [{ op: "reset", values: [item("$a")] }]));
+    expect(store.loaded).toBe(true);
+
+    // The whole point: without this the next room inherits room A's answer and
+    // the pane would render *its* emptiness as fact.
+    await store.subscribeTo(ROOM_B);
+    expect(store.loaded).toBe(false);
+    expect(store.items).toEqual([]);
+  });
+
+  it("is not fooled by the outgoing room still streaming", async () => {
+    const channel = makeChannel();
+    const store = createTimelineStore({
+      onTimelineDiff: channel.onTimelineDiff,
+      timelineResync: vi.fn(),
+      timelineSubscribe: vi.fn().mockResolvedValue(undefined),
+      timelinePaginateBack: vi.fn(),
+      sendMessage: vi.fn(),
+      sendReply: vi.fn(),
+      toggleReaction: vi.fn(),
+      setTyping: vi.fn(),
+      markRoomRead: vi.fn(),
+    });
+
+    await store.subscribeTo(ROOM_A);
+    channel.emit(env(ROOM_A, 1, [{ op: "reset", values: [item("$a")] }]));
+    await store.subscribeTo(ROOM_B);
+
+    // Room A's subscription is still alive in the core for a moment. Its
+    // envelopes are already rejected as somebody else's data (see the top of
+    // this file); they must not count as room B answering either.
+    channel.emit(env(ROOM_A, 2, [{ op: "pushBack", value: item("$a2") }]));
+
+    expect(store.loaded).toBe(false);
+  });
+});

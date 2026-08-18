@@ -284,8 +284,10 @@
   //      gone" unreachable — layer 1 only covers the click paths this file
   //      knows about today.
 
-  import { tick, type Snippet } from "svelte";
+  import { onDestroy, tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
+  import { recallCache, rememberCache } from "./timelineCache";
+  import type { CacheSnapshot } from "virtua";
   import { mediaDownload } from "$lib/ipc";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
@@ -301,6 +303,8 @@
   } from "./timelineItemView";
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
   import { shouldRepin } from "./timelineFollow";
+  import { LOADING_AFTER_MS, paneState } from "./timelinePane";
+  import AgentProse from "./AgentProse.svelte";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -336,7 +340,71 @@
 
   const mediaCache = createMediaCache();
 
+  /**
+   * How much off-screen content `VList` keeps rendered, in pixels.
+   *
+   * virtua's default is 200px, tuned for lists whose rows are cheap and
+   * uniform. Ours are neither: a row can be a one-line log entry or a
+   * multi-paragraph markdown answer with a dispatch card above it, and each
+   * one has to be measured before the list knows its height. Flung with a
+   * trackpad, the viewport outruns that measurement and the reader sees the
+   * gap it leaves — the "messages disappear while scrolling" report.
+   *
+   * virtua names this exact trade in the prop's own docs: "Lower value will
+   * give better performance but you can increase to avoid showing blank items
+   * in fast scrolling."
+   *
+   * This is a tuning number, not an invariant, which is why no test pins it.
+   * Roughly three viewport-heights of runway at this app's typical row size —
+   * enough to cover a fast fling, while still virtualizing a long room.
+   */
+  const BUFFER_SIZE = 600;
+
   let vlist: VListHandle | undefined = $state();
+
+  /*
+   * Hand this room's row measurements to `timelineCache` on the way out.
+   *
+   * `+page.svelte` remounts this component per room (`{#key
+   * roomsStore.selectedId}`), so "destroyed" here means "the reader went
+   * somewhere else" — the exact moment worth remembering, and the last one at
+   * which `vlist` can still be asked. Without it, coming back re-measures
+   * every row from an estimate and the list settles visibly under the reader.
+   *
+   * The row count goes with it because a snapshot is only valid at the length
+   * it was taken at; `recallCache` is what enforces that, and its module
+   * comment says why.
+   */
+  /**
+   * The remembered measurements to mount `VList` with, resolved once.
+   *
+   * `VList` reads `cache` on mount and ignores it afterwards, so this must
+   * answer for the render that mounts it — which is the first one where rows
+   * exist, since the list lives behind `pane === "rows"`. Memoized rather than
+   * derived because it is a question with one correct moment to ask: later
+   * renders have a different row count (messages arrive) and would answer
+   * `undefined`, and a prop flipping to `undefined` after mount would be noise
+   * at best.
+   *
+   * Returning `undefined` is the ordinary case, not a failure — see
+   * `recallCache` for when a snapshot is declined.
+   */
+  let mountCache: { resolved: boolean; value: CacheSnapshot | undefined } = {
+    resolved: false,
+    value: undefined,
+  };
+
+  function cacheForMount(rowCount: number): CacheSnapshot | undefined {
+    if (!mountCache.resolved) {
+      mountCache = { resolved: true, value: recallCache(roomId, rowCount) };
+    }
+    return mountCache.value;
+  }
+
+  onDestroy(() => {
+    if (vlist === undefined) return;
+    rememberCache(roomId, vlist.getCache(), displayRows.length);
+  });
   let paginating = $state(false);
   let reachedStart = $state(false);
   // `$state`, not a plain variable: the read-tracking effect further down
@@ -380,6 +448,45 @@
   });
 
   let displayRows = $derived(view.rows);
+
+  /**
+   * Whether the wait for this room has outlasted a flinch.
+   *
+   * A boolean rather than a live millisecond count on purpose: `paneState`
+   * only ever compares against one threshold, and a timer that re-renders the
+   * pane sixty times a second to answer a yes/no question is the wrong shape.
+   * The timeout is cleared whenever the room answers, so a switch that lands
+   * promptly never schedules a second render at all.
+   */
+  let waitedLongEnough = $state(false);
+
+  $effect(() => {
+    // Keyed on the room, not on `loaded`: the threshold now gates the *empty*
+    // verdict as well as the loading one, so the clock has to keep running
+    // after the room answers. This pane is remounted per room
+    // (`{#key roomsStore.selectedId}` in `+page.svelte`), so in practice the
+    // timer is armed once and cleared on the way out.
+    void roomId;
+    waitedLongEnough = false;
+    const timer = setTimeout(() => {
+      waitedLongEnough = true;
+    }, LOADING_AFTER_MS);
+    return () => clearTimeout(timer);
+  });
+
+  /**
+   * What this pane is showing: the room, an honest "nothing here", a quiet
+   * wait, or an admission that the wait is long. See `timelinePane.ts` — the
+   * distinction it draws is between a room with nothing in it and a room that
+   * has not answered yet, which this pane could not previously make.
+   */
+  let pane = $derived(
+    paneState({
+      loaded: timelineStore.loaded,
+      rowCount: displayRows.length,
+      waitingMs: waitedLongEnough ? LOADING_AFTER_MS : 0,
+    }),
+  );
 
   /**
    * The id of the last own item in `timelineStore.items` whose `kind` this
@@ -634,8 +741,15 @@
     const scroller = box.firstElementChild as HTMLElement | null;
     if (!scroller) return;
 
-    let previous = { viewport: 0, content: 0 };
     const measure = () => ({ viewport: scroller.clientHeight, content: scroller.scrollHeight });
+
+    // Land at the tail rather than travelling to it. The list opens at the
+    // newest message, so the first-load scroll has nowhere to go — where
+    // before it started at offset 0 and jumped ~9300px once the rows measured.
+    // Seeding `previous` from the same measurement keeps that pin from also
+    // reading as the first growth.
+    scroller.scrollTop = scroller.scrollHeight;
+    let previous = measure();
 
     const react = () => {
       const next = measure();
@@ -814,7 +928,19 @@
    * evidence in the console instead of a silent click.
    */
   function onDecide(itemId: string, optionId: string): void {
-    console.warn("dispatch decision has no outbound event type yet", { itemId, optionId });
+    // `optionId` is the option's *name* — see `permissionRequestRenderer`,
+    // which puts the name in `CustomEventDecisionOption.id` precisely because
+    // this is what gets sent and the room is a shared human record. The hub's
+    // `matchPermissionAnswer` accepts the number, the name or the id, so this
+    // resolves through the path a reader typing "Allow once" already uses.
+    //
+    // An ordinary message, not a custom event: the answer needs no new
+    // vocabulary, and sending it as text means the transcript afterwards reads
+    // as a person deciding rather than as a machine exchange. It also keeps
+    // this the same send path Element would use.
+    void timelineStore.send(roomId, optionId).catch((err: unknown) => {
+      console.error("failed to send a decision", { itemId, optionId, err });
+    });
   }
 
   /**
@@ -1333,12 +1459,22 @@
     </div>
   {/if}
 
-  {#if timelineStore.items.length === 0}
-    <!-- `bg-surface-sunken` here too, so the pane's ground is the field
-         whether or not there is anything on the sheet — see the scroller
-         below. -->
+  {#if pane !== "rows"}
+    <!--
+      `bg-surface-sunken` here too, so the pane's ground is the field whether
+      or not there is anything on the sheet — see the scroller below.
+
+      Three states share this box on purpose, and it is the same box each
+      time: switching between them changes only the words, never the ground,
+      so a room arriving is one fade rather than a sequence of layouts. See
+      `timelinePane.ts` for why `settling` says nothing at all.
+    -->
     <div class="flex h-full items-center justify-center bg-surface-sunken">
-      <p class="text-ui text-content-muted">Nothing here yet.</p>
+      {#if pane === "empty"}
+        <p class="fade-in text-ui text-content-muted">Nothing here yet.</p>
+      {:else if pane === "loading"}
+        <p class="fade-in text-ui text-content-faint">Loading conversation…</p>
+      {/if}
     </div>
   {:else}
     <!--
@@ -1350,12 +1486,14 @@
       This wrapper contains exactly one thing, and `h-full` keeps the list's
       `height: 100%` resolving against the same box it did before.
     -->
-    <div bind:this={scrollBox} class="h-full">
+    <div bind:this={scrollBox} class="fade-in h-full">
     <VList
       bind:this={vlist}
       data={displayRows}
       getKey={(row: TimelineDisplayRow) => row.key}
       shift={view.shift}
+      bufferSize={BUFFER_SIZE}
+      cache={cacheForMount(displayRows.length)}
       onscroll={handleScroll}
       class="bg-surface-sunken"
     >
@@ -1504,7 +1642,17 @@
                     >
                       {@html item.formattedBody}
                     </div>
-                  {:else}
+                  {:else if item.isOwn}
+                    <!--
+                      What the operator typed, exactly as typed. *You type,
+                      they write* (spec §6.3): an own message is a command, and
+                      rendering markdown in it would mean a stray asterisk
+                      silently changing what you appear to have said. The
+                      client also sends it as plain `m.text`, so this is what
+                      every other client in the room sees too — rendering it
+                      one way here and another way everywhere else would be the
+                      worse lie.
+                    -->
                     <p
                       class="selectable whitespace-pre-wrap break-words {view.muted && !item.isOwn
                         ? 'text-content-muted'
@@ -1512,6 +1660,27 @@
                     >
                       {item.body}
                     </p>
+                  {:else}
+                    <!--
+                      An agent's message with no `formattedBody` — which is all
+                      of them, since the hub sends plain `m.text`. Markdown is
+                      what agents actually write, and it used to land as
+                      literal `**` and `---` in the middle of the prose. See
+                      `AgentProse.svelte` for why this renders to components
+                      rather than through `{@html}`, given that `item.body` has
+                      been through none of the sanitising `formattedBody` has.
+                    -->
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                      class="selectable break-words {view.muted ? 'text-content-muted' : ''}"
+                      onclick={(e: MouseEvent) =>
+                        handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
+                      onauxclick={(e: MouseEvent) =>
+                        handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
+                    >
+                      <AgentProse content={item.body ?? ""} />
+                    </div>
                   {/if}
                 {/snippet}
                 {@render messageBlock(item, continuesRun, bubbleContent)}
@@ -1683,7 +1852,7 @@
                     a card is exactly as wide as a peer message.
                   -->
                   <div class="flex justify-start pt-8">
-                    <div class="group min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
+                    <div class="group relative min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
                       <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
                         <!--
                           Header: the event type left, the timestamp right, a
@@ -1906,6 +2075,45 @@
 </div>
 
 <style>
+  /*
+   * Arriving, rather than appearing.
+   *
+   * A room switch was measured at four visual states in 145ms: the empty-state
+   * message, then bare scroller, then thirteen rows mounted but every one
+   * `visibility: hidden` because virtua had not measured them, then the
+   * settled room. The middle two are unavoidable — virtua has to mount a row
+   * before it can measure it — but they do not have to be *watched*. Fading
+   * the list in over that window covers the mount, the measurement, and the
+   * scroll landing at the tail, so what a reader sees is one room resolving
+   * instead of four states arguing.
+   *
+   * On the list as a whole, deliberately, and never on individual rows: virtua
+   * mounts and unmounts rows continuously as you scroll, so a per-row fade
+   * would shimmer down the page for the entire length of a conversation. The
+   * one moment worth covering is the one where a whole room appears at once.
+   *
+   * `prefers-reduced-motion` drops it to nothing rather than shortening it.
+   * The fade is decoration over a state that is already correct.
+   */
+  .fade-in {
+    animation: fade-in 140ms ease-out both;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in {
+      animation: none;
+    }
+  }
+
   /*
    * The dispatch card's frame (spec §7) — the timeline's only bordered
    * object, and the only place `--color-signal` (amber) appears anywhere in
