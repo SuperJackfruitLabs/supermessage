@@ -341,6 +341,215 @@ pub fn resolve_custom_event(
     }
 }
 
+// ---------------------------------------------------------------------------
+// The shipped renderers.
+// ---------------------------------------------------------------------------
+
+/// The demo renderer, shipped to prove the extension path end to end.
+///
+/// **Not** a Kaambaan schema — those are co-designed with that team, never
+/// invented here. `dev.supermessage.demo.*` is a namespace this app owns for
+/// exactly this purpose, so it can never collide with, or be mistaken for, a
+/// genuine card, run or permission request.
+///
+/// Reads exactly one field: the minimum needed to demonstrate a renderer that
+/// only touches named fields at a fixed depth and tolerates a payload with
+/// extra unrecognised fields without any special-casing.
+pub const DEMO_NOTE_EVENT_TYPE: &str = "dev.supermessage.demo.note.v1";
+
+pub struct DemoNoteRenderer;
+
+impl CustomEventRenderer for DemoNoteRenderer {
+    fn event_type(&self) -> &str {
+        DEMO_NOTE_EVENT_TYPE
+    }
+    fn max_known_schema_version(&self) -> f64 {
+        1.0
+    }
+    fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+        match safe_string_field(content, "title", FIELD_VALUE_MAX_CHARS) {
+            Some(title) => CustomEventRenderResult {
+                fields: vec![CustomEventField {
+                    label: "Note".into(),
+                    value: title,
+                }],
+                decision: None,
+            },
+            None => CustomEventRenderResult::default(),
+        }
+    }
+}
+
+/// What an agent did during one turn — AgentPod's `dev.agentpod.turn.v1`.
+///
+/// The first renderer here for a real event type rather than a demonstration.
+/// It reads a bounded summary and nothing else: the wire carries at most
+/// twenty tool records and a set of counts, and a card is a summary surface,
+/// not a log viewer. Tool *output* never crosses the bridge at all.
+///
+/// Two of the fields it wants are a number and an array, which
+/// [`safe_string_field`] cannot express, so it reads those itself with the
+/// same discipline: check the shape, take the value, never coerce, never
+/// recurse.
+pub const TURN_ACTIVITY_EVENT_TYPE: &str = "dev.agentpod.turn.v1";
+
+pub struct TurnActivityRenderer;
+
+impl CustomEventRenderer for TurnActivityRenderer {
+    fn event_type(&self) -> &str {
+        TURN_ACTIVITY_EVENT_TYPE
+    }
+    fn max_known_schema_version(&self) -> f64 {
+        1.0
+    }
+    fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+        let Some(object) = content.as_object() else {
+            return CustomEventRenderResult::default();
+        };
+        let null = Value::Null;
+        let counts = object.get("counts").unwrap_or(&null);
+        let total = safe_number_field(counts, "total");
+        let failed = safe_number_field(counts, "failed").unwrap_or(0.0);
+        let omitted = safe_number_field(counts, "omitted").unwrap_or(0.0);
+
+        let empty: Vec<Value> = Vec::new();
+        let tools = object
+            .get("tools")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty);
+
+        let mut fields = Vec::new();
+        // The headline first: a reader scanning a conversation wants "it did
+        // seven things and one failed" before it wants to know which seven.
+        if let Some(total) = total {
+            let total = total as i64;
+            let noun = if total == 1 { "thing" } else { "things" };
+            let failed_note = if failed > 0.0 {
+                format!(", {} failed", failed as i64)
+            } else {
+                String::new()
+            };
+            fields.push(CustomEventField {
+                label: "Did".into(),
+                value: format!("{total} {noun}{failed_note}"),
+            });
+        }
+
+        for entry in tools {
+            // The field cap truncates anyway; stopping here keeps the headline
+            // row from being the one that gets dropped.
+            if fields.len() >= FIELD_MAX_COUNT - 1 {
+                break;
+            }
+            let Some(title) = safe_string_field(entry, "title", FIELD_VALUE_MAX_CHARS) else {
+                continue;
+            };
+            // The status is the label, so the card reads as a list of what
+            // happened rather than a list of identical rows.
+            let status = safe_string_field(entry, "status", FIELD_LABEL_MAX_CHARS);
+            fields.push(CustomEventField {
+                label: status.unwrap_or_else(|| "did".to_string()),
+                value: title,
+            });
+        }
+
+        if omitted > 0.0 {
+            fields.push(CustomEventField {
+                label: "and".into(),
+                value: format!("{} more not listed", omitted as i64),
+            });
+        }
+        CustomEventRenderResult {
+            fields,
+            decision: None,
+        }
+    }
+}
+
+/// A permission request a reader can answer — AgentPod's
+/// `dev.agentpod.permission.v1`, and the first renderer anywhere to set a
+/// decision.
+///
+/// **The option's `id` carries its NAME, not its `option_id`.** That reads
+/// backwards until you see what `id` is for: it is handed back verbatim and
+/// sent, and the room transcript is a shared human record. The hub's own
+/// prose prints option names alongside the numbers "because '1' alone would
+/// make the transcript unreadable afterwards" — and a button that leaves
+/// `allow_once` in the room is the same mistake in a different alphabet. The
+/// hub's matcher accepts the number, the name or the id, so any of the three
+/// would work; the name is the one a person reading the room later
+/// understands.
+///
+/// The event is sent *beside* an ordinary prose message carrying the same
+/// question, so a client that never renders this — Element, or this one
+/// before the renderer existed — is exactly as able to answer as it was.
+pub const PERMISSION_REQUEST_EVENT_TYPE: &str = "dev.agentpod.permission.v1";
+
+pub struct PermissionRequestRenderer;
+
+impl CustomEventRenderer for PermissionRequestRenderer {
+    fn event_type(&self) -> &str {
+        PERMISSION_REQUEST_EVENT_TYPE
+    }
+    fn max_known_schema_version(&self) -> f64 {
+        1.0
+    }
+    fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+        let Some(title) = safe_string_field(content, "title", FIELD_VALUE_MAX_CHARS) else {
+            return CustomEventRenderResult::default();
+        };
+
+        let mut options = Vec::new();
+        if let Some(raw) = content.get("options").and_then(Value::as_array) {
+            for entry in raw {
+                // An option with no name is one nothing could label, and
+                // nothing could be answered with.
+                let Some(name) = safe_string_field(entry, "name", FIELD_LABEL_MAX_CHARS) else {
+                    continue;
+                };
+                options.push(CustomEventDecisionOption {
+                    id: name.clone(),
+                    label: name,
+                });
+            }
+        }
+
+        let fields = vec![CustomEventField {
+            label: "Wants to".into(),
+            value: title.clone(),
+        }];
+        if options.is_empty() {
+            // Nothing to decide. `bound_decision` would reject an empty list
+            // anyway; the card falls back to describing the request.
+            return CustomEventRenderResult {
+                fields,
+                decision: None,
+            };
+        }
+        CustomEventRenderResult {
+            fields,
+            decision: Some(CustomEventDecision {
+                prompt: format!("Allow {title}?"),
+                options,
+            }),
+        }
+    }
+}
+
+/// The registry hosts render through in production.
+///
+/// Built once. Register a real renderer here once Kaambaan's schemas land.
+pub fn default_registry() -> &'static CustomEventRegistry {
+    static REGISTRY: std::sync::OnceLock<CustomEventRegistry> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut registry = CustomEventRegistry::new();
+        registry.register(Box::new(DemoNoteRenderer));
+        registry.register(Box::new(TurnActivityRenderer));
+        registry.register(Box::new(PermissionRequestRenderer));
+        registry
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -980,5 +1189,316 @@ mod tests {
         let kept = read.trim_end_matches('…');
         assert_eq!(kept.chars().count(), 10);
         assert!(kept.chars().all(|c| c == '🎉'));
+    }
+
+    // ---- the shipped renderers ------------------------------------------
+
+    fn render_with(renderer: Box<dyn CustomEventRenderer>, content: Value) -> CustomEventView {
+        let event_type = renderer.event_type().to_string();
+        let registry = registry_with(vec![renderer]);
+        resolve_custom_event(
+            &registry,
+            Some(&event_type),
+            Some(&content),
+            Some("fallback"),
+        )
+    }
+
+    fn rendered_fields(view: &CustomEventView) -> &[CustomEventField] {
+        match view {
+            CustomEventView::Rendered { fields, .. } => fields,
+            other => panic!("expected a rendered view, got {other:?}"),
+        }
+    }
+
+    // -- demo note --
+
+    #[test]
+    fn the_demo_renderer_reads_its_one_field_and_sets_no_decision() {
+        let view = render_with(
+            Box::new(DemoNoteRenderer),
+            json!({ "title": "Deployed to staging" }),
+        );
+        assert_eq!(
+            view,
+            CustomEventView::Rendered {
+                fields: vec![CustomEventField {
+                    label: "Note".into(),
+                    value: "Deployed to staging".into()
+                }],
+                newer_version: false,
+                decision: None,
+            },
+            "the shipped demo renderer must stay decision-free"
+        );
+    }
+
+    #[test]
+    fn the_demo_renderer_tolerates_a_newer_schema_with_extra_fields() {
+        // Additive minor versions must still render — a renderer that only
+        // reads what it was written against gets that for free.
+        let view = render_with(
+            Box::new(DemoNoteRenderer),
+            json!({ "title": "Note", "schema_version": 2, "some_new_field": "ignored" }),
+        );
+        let CustomEventView::Rendered {
+            fields,
+            newer_version,
+            ..
+        } = &view
+        else {
+            panic!("expected a rendered view");
+        };
+        assert!(newer_version);
+        assert_eq!(fields[0].value, "Note");
+    }
+
+    // -- turn activity --
+
+    fn a_turn() -> Value {
+        json!({
+            "schema_version": 1,
+            "session_id": "sess_1",
+            "tools": [
+                { "id": "c1", "title": "Read src/main.ts", "kind": "read", "status": "completed", "locations": [] },
+                { "id": "c2", "title": "Run tests", "kind": "execute", "status": "failed", "locations": [] }
+            ],
+            "counts": { "total": 2, "failed": 1, "omitted": 0 }
+        })
+    }
+
+    #[test]
+    fn a_turn_leads_with_what_happened_then_lists_it() {
+        let view = render_with(Box::new(TurnActivityRenderer), a_turn());
+        let fields = rendered_fields(&view);
+        assert_eq!(
+            fields[0],
+            CustomEventField {
+                label: "Did".into(),
+                value: "2 things, 1 failed".into()
+            }
+        );
+        assert_eq!(
+            fields[1],
+            CustomEventField {
+                label: "completed".into(),
+                value: "Read src/main.ts".into()
+            }
+        );
+        assert_eq!(
+            fields[2],
+            CustomEventField {
+                label: "failed".into(),
+                value: "Run tests".into()
+            }
+        );
+        assert!(matches!(
+            view,
+            CustomEventView::Rendered { decision: None, .. }
+        ));
+    }
+
+    #[test]
+    fn a_turn_says_one_thing_in_the_singular_and_stays_quiet_about_no_failures() {
+        let mut turn = a_turn();
+        turn["tools"] = json!([{ "id": "c1", "title": "Read a file", "status": "completed" }]);
+        turn["counts"] = json!({ "total": 1, "failed": 0, "omitted": 0 });
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        assert_eq!(
+            rendered_fields(&view)[0],
+            CustomEventField {
+                label: "Did".into(),
+                value: "1 thing".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_turn_admits_what_it_left_out() {
+        let mut turn = a_turn();
+        turn["counts"] = json!({ "total": 25, "failed": 0, "omitted": 5 });
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        assert_eq!(
+            rendered_fields(&view).last().expect("a last field"),
+            &CustomEventField {
+                label: "and".into(),
+                value: "5 more not listed".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_turn_degrades_rather_than_coercing_a_hostile_payload() {
+        // Objects where strings and numbers belong. Nothing may be stringified
+        // into a card, and nothing readable survives, so the body shows.
+        let view = render_with(
+            Box::new(TurnActivityRenderer),
+            json!({
+                "counts": { "total": { "toString": "nope" }, "failed": [], "omitted": null },
+                "tools": [{ "title": { "evil": true }, "status": 42 }, "not an object", null]
+            }),
+        );
+        assert_eq!(
+            view,
+            CustomEventView::FallbackBody {
+                text: "fallback".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_turn_falls_back_when_there_is_nothing_to_show() {
+        assert_eq!(
+            render_with(
+                Box::new(TurnActivityRenderer),
+                json!({ "tools": [], "counts": {} })
+            ),
+            CustomEventView::FallbackBody {
+                text: "fallback".into()
+            }
+        );
+        assert_eq!(
+            render_with(Box::new(TurnActivityRenderer), json!(null)),
+            CustomEventView::FallbackBody {
+                text: "fallback".into()
+            }
+        );
+    }
+
+    // -- permission request --
+
+    fn a_request() -> Value {
+        json!({
+            "schema_version": 1,
+            "session_id": "sess_1",
+            "request_seq": 41,
+            "title": "Write src/main.ts",
+            "options": [
+                { "option_id": "allow_once", "name": "Allow once" },
+                { "option_id": "reject", "name": "Reject" }
+            ]
+        })
+    }
+
+    #[test]
+    fn a_permission_request_asks_the_question_and_offers_the_answers() {
+        let view = render_with(Box::new(PermissionRequestRenderer), a_request());
+        let CustomEventView::Rendered {
+            fields, decision, ..
+        } = &view
+        else {
+            panic!("expected a rendered view, got {view:?}");
+        };
+        assert_eq!(
+            fields[0],
+            CustomEventField {
+                label: "Wants to".into(),
+                value: "Write src/main.ts".into()
+            }
+        );
+        let decision = decision.as_ref().expect("a decision");
+        assert_eq!(decision.prompt, "Allow Write src/main.ts?");
+        assert_eq!(
+            decision.options,
+            vec![
+                option("Allow once", "Allow once"),
+                option("Reject", "Reject")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_permission_option_carries_its_name_as_its_id_because_the_id_is_what_gets_sent() {
+        // The id is sent verbatim as an ordinary message, and the room is a
+        // shared human record: "Allow once" belongs in it, "allow_once" does
+        // not. The hub's matcher accepts either.
+        let view = render_with(Box::new(PermissionRequestRenderer), a_request());
+        let CustomEventView::Rendered { decision, .. } = &view else {
+            panic!("expected a rendered view");
+        };
+        let ids: Vec<&str> = decision
+            .as_ref()
+            .expect("a decision")
+            .options
+            .iter()
+            .map(|o| o.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["Allow once", "Reject"]);
+    }
+
+    #[test]
+    fn a_permission_request_with_no_answers_describes_itself_rather_than_vanishing() {
+        let mut request = a_request();
+        request["options"] = json!([]);
+        let view = render_with(Box::new(PermissionRequestRenderer), request);
+        let CustomEventView::Rendered {
+            fields, decision, ..
+        } = &view
+        else {
+            panic!("expected a rendered view, got {view:?}");
+        };
+        assert_eq!(fields[0].value, "Write src/main.ts");
+        assert_eq!(*decision, None);
+    }
+
+    #[test]
+    fn a_permission_option_with_no_name_is_dropped() {
+        let mut request = a_request();
+        request["options"] = json!([{ "option_id": "a" }, { "option_id": "b", "name": "Reject" }]);
+        let view = render_with(Box::new(PermissionRequestRenderer), request);
+        let CustomEventView::Rendered { decision, .. } = &view else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(
+            decision.as_ref().expect("a decision").options,
+            vec![option("Reject", "Reject")]
+        );
+    }
+
+    #[test]
+    fn a_permission_request_renders_no_more_than_four_buttons() {
+        // The hub caps at four too, so this is the second line of defence.
+        let many: Vec<Value> = (0..7)
+            .map(|i| json!({ "option_id": format!("o{i}"), "name": format!("Option {i}") }))
+            .collect();
+        let mut request = a_request();
+        request["options"] = json!(many);
+        let view = render_with(Box::new(PermissionRequestRenderer), request);
+        let CustomEventView::Rendered { decision, .. } = &view else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(
+            decision.as_ref().expect("a decision").options.len(),
+            DECISION_MAX_OPTIONS
+        );
+    }
+
+    #[test]
+    fn a_permission_request_falls_back_when_there_is_no_question() {
+        assert_eq!(
+            render_with(
+                Box::new(PermissionRequestRenderer),
+                json!({ "options": [] })
+            ),
+            CustomEventView::FallbackBody {
+                text: "fallback".into()
+            }
+        );
+    }
+
+    #[test]
+    fn the_default_registry_carries_all_three_shipped_renderers() {
+        let registry = default_registry();
+        for event_type in [
+            DEMO_NOTE_EVENT_TYPE,
+            TURN_ACTIVITY_EVENT_TYPE,
+            PERMISSION_REQUEST_EVENT_TYPE,
+        ] {
+            assert!(
+                registry.get(event_type).is_some(),
+                "{event_type} is not registered"
+            );
+        }
+        assert_eq!(registry.len(), 3);
     }
 }

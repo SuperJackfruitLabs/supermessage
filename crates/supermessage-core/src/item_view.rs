@@ -20,6 +20,7 @@
 //! that state events are suppressed unless they change something the reader
 //! must know about.
 
+use crate::custom_events::{default_registry, resolve_custom_event, CustomEventView};
 use crate::dto::{ReplyToDto, TimelineItemDto};
 use crate::rich::{blocks_from_markdown, blocks_from_sanitised_html, RichBlock};
 
@@ -74,6 +75,12 @@ pub enum ItemView {
         filename: String,
         size: Option<u64>,
         mimetype: Option<String>,
+    },
+    /// A suite event — a Kaambaan card or run, a permission request, station
+    /// status. `view` is the whole fallback-chain decision: a host renders its
+    /// three states but never makes that decision itself.
+    CustomEvent {
+        view: CustomEventView,
     },
     None,
 }
@@ -390,14 +397,12 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
             text: "Encrypted message — this device has no key for it".to_string(),
         },
 
-        // TASK 6: becomes ItemView::CustomEvent once the registry lands. The
-        // placeholder text below is deliberately the same wording the
-        // registry's own generic fallback uses, so the interim state is not
-        // visibly worse than the end state.
-        "customMessage" => ItemView::Placeholder {
-            text: format!(
-                "Custom event ({})",
-                display_event_type(item.detail.as_deref())
+        "customMessage" => ItemView::CustomEvent {
+            view: resolve_custom_event(
+                default_registry(),
+                item.detail.as_deref(),
+                item.custom_payload.as_ref().map(|payload| &payload.0),
+                item.body.as_deref(),
             ),
         },
 
@@ -866,19 +871,57 @@ mod tests {
         );
     }
 
+    // These three confirm that `view_for` wires detail/custom_payload/body
+    // into the registry rather than deciding anything itself. The chain's own
+    // behaviour is covered exhaustively in `custom_events`.
+
     #[test]
-    fn a_custom_message_is_a_named_placeholder_until_the_registry_lands() {
-        // TASK 6: this becomes ItemView::CustomEvent, and the three cases
-        // customEvents.test.ts covers — an unregistered type, an unregistered
-        // type with a plain-text body, and the shipped demo renderer — arrive
-        // with it. Recorded as a test rather than left absent so the gap is
-        // visible in the suite instead of only in a plan document.
+    fn a_custom_message_dispatches_to_the_registry_never_a_bare_placeholder() {
         let mut it = item("customMessage");
         it.detail = Some("org.kaambaan.card.v1".into());
         assert_eq!(
             view_for(&it),
-            ItemView::Placeholder {
-                text: "Custom event (org.kaambaan.card.v1)".into()
+            ItemView::CustomEvent {
+                view: CustomEventView::Placeholder {
+                    text: "Custom event (org.kaambaan.card.v1)".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn a_custom_message_falls_back_to_its_plain_text_body() {
+        let mut it = item("customMessage");
+        it.detail = Some("org.kaambaan.card.v1".into());
+        it.body = Some("New card: Ship it".into());
+        assert_eq!(
+            view_for(&it),
+            ItemView::CustomEvent {
+                view: CustomEventView::FallbackBody {
+                    text: "New card: Ship it".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn a_custom_message_renders_through_the_shipped_demo_renderer() {
+        let mut it = item("customMessage");
+        it.detail = Some(crate::custom_events::DEMO_NOTE_EVENT_TYPE.into());
+        it.custom_payload = Some(crate::dto::CustomPayload(
+            serde_json::json!({ "title": "Deployed to staging" }),
+        ));
+        assert_eq!(
+            view_for(&it),
+            ItemView::CustomEvent {
+                view: CustomEventView::Rendered {
+                    fields: vec![crate::custom_events::CustomEventField {
+                        label: "Note".into(),
+                        value: "Deployed to staging".into(),
+                    }],
+                    newer_version: false,
+                    decision: None,
+                }
             }
         );
     }
