@@ -6571,6 +6571,7 @@ dependencies = [
  "matrix-sdk-test",
  "matrix-sdk-ui",
  "mime",
+ "percent-encoding",
  "pulldown-cmark",
  "rand 0.9.5",
  "rustls",
@@ -6581,6 +6582,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uniffi",
+ "url",
  "wiremock",
 ]
 

@@ -37,6 +37,7 @@ pub mod error;
 pub mod event;
 pub mod item_view;
 pub mod live;
+pub mod matrix_links;
 pub mod media;
 pub mod rich;
 pub mod room_identity;

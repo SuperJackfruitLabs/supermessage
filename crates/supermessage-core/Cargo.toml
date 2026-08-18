@@ -98,6 +98,12 @@ mime = "0.3"
 # untrusted text, and the whole point of core::rich is that there is exactly
 # one.
 pulldown-cmark = { version = "0.13", default-features = false }
+
+# matrix.to / `matrix:` parsing (core::matrix_links). Both already resolve
+# transitively through matrix-sdk's own URL handling; listed directly because
+# this module calls them by name. MIT/Apache-2.0.
+url = "2"
+percent-encoding = "2"
 # The embedded WebDriver server the WDIO Tauri service drives on macOS, where
 # `tauri-driver` does not work at all (no WKWebView driver exists). Debug builds
 # only — see `lib.rs`, where it is registered behind `debug_assertions`. It is
