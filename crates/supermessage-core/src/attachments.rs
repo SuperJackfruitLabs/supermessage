@@ -689,34 +689,6 @@ impl StagedAttachments {
     }
 }
 
-/// Stages a file dropped on the window and announces it on
-/// [`STAGED_ATTACHMENT_EVENT`].
-///
-/// This is the Rust-side drag-drop handler §3 requires. It runs from
-/// `lib.rs`'s `on_window_event`, resolves the room itself from
-/// `FocusedTimeline` (a drop names no room — it lands on whatever the reader
-/// is looking at), and emits the same payload [`stage_from_picker`] returns.
-///
-/// **A caveat worth stating rather than hiding.** Tauri's own drag-drop
-/// handling cannot be split: `disable_drag_drop_handler()` turns the OS
-/// handler off entirely, so Rust would stop seeing drops too. With it on,
-/// Tauri also emits its built-in `tauri://drag-drop` — carrying the raw
-/// paths — to the webview, and there is no hook to suppress just that. What
-/// this module guarantees is that *the core's own IPC surface* never carries
-/// a path: no command returns one, no `sm://` event contains one, and
-/// nothing the webview can invoke will read a path it supplies. The frontend
-/// must not listen for `tauri://drag-drop`; it listens for
-/// [`STAGED_ATTACHMENT_EVENT`], which is the whole reason this handler
-/// exists.
-///
-/// Only the first file is staged. Multiple files in one send are explicitly
-/// out of scope (§1) and the composer shows a single strip, so a
-/// three-file drop stages one file and logs the rest — visible in the review
-/// step §2 requires, rather than three unrecallable sends.
-///
-/// Failures are logged, not surfaced: there is no invocation to fail, and a
-/// dropped directory or an oversized file should not become a dialog the
-
 #[cfg(test)]
 mod tests {
     use super::*;

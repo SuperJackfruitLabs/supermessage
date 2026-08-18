@@ -16,7 +16,6 @@
 use serde::Serialize;
 use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
-use supermessage_core::attachments;
 mod commands;
 mod host;
 

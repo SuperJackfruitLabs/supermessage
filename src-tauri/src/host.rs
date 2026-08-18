@@ -96,6 +96,22 @@ impl FilePicker for TauriFilePicker {
 /// The core's contribution is `stage_path`, which knows nothing about any of
 /// that.
 ///
+/// **A caveat worth stating rather than hiding.** Tauri's own drag-drop
+/// handling cannot be split: `disable_drag_drop_handler()` turns the OS
+/// handler off entirely, so Rust would stop seeing drops too. With it on,
+/// Tauri also emits its built-in `tauri://drag-drop` — carrying the raw
+/// paths — to the webview, and there is no hook to suppress just that. What
+/// the core guarantees is that *its own IPC surface* never carries a path
+/// (`attachments`, §3): no command returns one, no `sm://` event contains
+/// one, and nothing the webview can invoke will read a path it supplies. The
+/// frontend must not listen for `tauri://drag-drop`; it listens for
+/// `STAGED_ATTACHMENT_EVENT`, which is the whole reason this handler exists.
+///
+/// Only the first file is staged. Multiple files in one send are explicitly
+/// out of scope, and the composer shows a single strip, so a three-file drop
+/// stages one file and logs the rest — visible in review, rather than three
+/// unrecallable sends.
+///
 /// Failures are logged, not surfaced: there is no invocation to fail, and a
 /// dropped directory or an oversized file should not become a dialog the
 /// reader did not ask for. The absence of a staged strip is the feedback.
