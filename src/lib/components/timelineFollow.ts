@@ -85,3 +85,34 @@ export function shouldRepin(
   if (!followBottom) return false;
   return next.viewport < previous.viewport || next.content > previous.content;
 }
+
+/**
+ * Whether this is the moment to land the list on its newest row.
+ *
+ * A room opens at the newest message, and the pin that achieves it runs on
+ * mount — before the rows exist. The scroller is empty then, so setting
+ * `scrollTop` does nothing, and the real content arrives afterwards as diffs.
+ *
+ * {@link shouldRepin} deliberately ignores that first observation: measured
+ * against a pane that was `{0, 0}`, *any* arrival looks like growth, and
+ * treating it as growth would yank a reader who deliberately opened part-way
+ * up. That guard is right for growth and wrong for arrival — and when a room's
+ * whole history lands in a single diff batch (the ordinary case: one `reset`
+ * then one `insert` of everything), the single growth it swallows is the only
+ * one there was. The list stays at offset 0, showing the oldest message
+ * loaded, which is the opposite of where a reader wants to be.
+ *
+ * So arrival is named separately from growth. It fires once, for the
+ * transition from an empty scroller to one with content, and never again —
+ * after that the list is settled and {@link shouldRepin} owns the tail.
+ */
+export function shouldSettleAtBottom(
+  previous: PaneMetrics,
+  next: PaneMetrics,
+  settled: boolean,
+): boolean {
+  if (settled) return false;
+  // "Empty" is about content, not the viewport: a pane can have its height
+  // before it has a single row, which is exactly the state mount leaves behind.
+  return previous.content === 0 && next.content > 0;
+}
