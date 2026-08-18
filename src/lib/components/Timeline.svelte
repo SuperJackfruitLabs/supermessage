@@ -284,8 +284,10 @@
   //      gone" unreachable — layer 1 only covers the click paths this file
   //      knows about today.
 
-  import { tick, type Snippet } from "svelte";
+  import { onDestroy, tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
+  import { recallCache, rememberCache } from "./timelineCache";
+  import type { CacheSnapshot } from "virtua";
   import { mediaDownload } from "$lib/ipc";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
@@ -338,7 +340,71 @@
 
   const mediaCache = createMediaCache();
 
+  /**
+   * How much off-screen content `VList` keeps rendered, in pixels.
+   *
+   * virtua's default is 200px, tuned for lists whose rows are cheap and
+   * uniform. Ours are neither: a row can be a one-line log entry or a
+   * multi-paragraph markdown answer with a dispatch card above it, and each
+   * one has to be measured before the list knows its height. Flung with a
+   * trackpad, the viewport outruns that measurement and the reader sees the
+   * gap it leaves — the "messages disappear while scrolling" report.
+   *
+   * virtua names this exact trade in the prop's own docs: "Lower value will
+   * give better performance but you can increase to avoid showing blank items
+   * in fast scrolling."
+   *
+   * This is a tuning number, not an invariant, which is why no test pins it.
+   * Roughly three viewport-heights of runway at this app's typical row size —
+   * enough to cover a fast fling, while still virtualizing a long room.
+   */
+  const BUFFER_SIZE = 600;
+
   let vlist: VListHandle | undefined = $state();
+
+  /*
+   * Hand this room's row measurements to `timelineCache` on the way out.
+   *
+   * `+page.svelte` remounts this component per room (`{#key
+   * roomsStore.selectedId}`), so "destroyed" here means "the reader went
+   * somewhere else" — the exact moment worth remembering, and the last one at
+   * which `vlist` can still be asked. Without it, coming back re-measures
+   * every row from an estimate and the list settles visibly under the reader.
+   *
+   * The row count goes with it because a snapshot is only valid at the length
+   * it was taken at; `recallCache` is what enforces that, and its module
+   * comment says why.
+   */
+  /**
+   * The remembered measurements to mount `VList` with, resolved once.
+   *
+   * `VList` reads `cache` on mount and ignores it afterwards, so this must
+   * answer for the render that mounts it — which is the first one where rows
+   * exist, since the list lives behind `pane === "rows"`. Memoized rather than
+   * derived because it is a question with one correct moment to ask: later
+   * renders have a different row count (messages arrive) and would answer
+   * `undefined`, and a prop flipping to `undefined` after mount would be noise
+   * at best.
+   *
+   * Returning `undefined` is the ordinary case, not a failure — see
+   * `recallCache` for when a snapshot is declined.
+   */
+  let mountCache: { resolved: boolean; value: CacheSnapshot | undefined } = {
+    resolved: false,
+    value: undefined,
+  };
+
+  function cacheForMount(rowCount: number): CacheSnapshot | undefined {
+    if (!mountCache.resolved) {
+      mountCache = { resolved: true, value: recallCache(roomId, rowCount) };
+    }
+    return mountCache.value;
+  }
+
+  onDestroy(() => {
+    if (vlist === undefined) return;
+    rememberCache(roomId, vlist.getCache(), displayRows.length);
+  });
   let paginating = $state(false);
   let reachedStart = $state(false);
   // `$state`, not a plain variable: the read-tracking effect further down
@@ -1426,6 +1492,8 @@
       data={displayRows}
       getKey={(row: TimelineDisplayRow) => row.key}
       shift={view.shift}
+      bufferSize={BUFFER_SIZE}
+      cache={cacheForMount(displayRows.length)}
       onscroll={handleScroll}
       class="bg-surface-sunken"
     >
@@ -1784,7 +1852,7 @@
                     a card is exactly as wide as a peer message.
                   -->
                   <div class="flex justify-start pt-8">
-                    <div class="group min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
+                    <div class="group relative min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
                       <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
                         <!--
                           Header: the event type left, the timestamp right, a
