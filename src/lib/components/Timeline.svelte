@@ -287,6 +287,7 @@
   import { onDestroy, tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import { recallCache, rememberCache } from "./timelineCache";
+  import Shimmer from "./ai/Shimmer.svelte";
   import type { CacheSnapshot } from "virtua";
   import { mediaDownload } from "$lib/ipc";
   import { timelineStore } from "$lib/stores/timeline.svelte";
@@ -1473,7 +1474,16 @@
       {#if pane === "empty"}
         <p class="fade-in text-ui text-content-muted">Nothing here yet.</p>
       {:else if pane === "loading"}
-        <p class="fade-in text-ui text-content-faint">Loading conversation…</p>
+        <!--
+          A sweep rather than a static line: this appears only when the pane
+          has been waiting past `LOADING_AFTER_MS`, so by the time a reader
+          sees it they are already wondering whether anything is happening.
+          Motion answers that; a still label does not. See `ai/Shimmer.svelte`.
+        -->
+        <Shimmer
+          class="fade-in text-ui"
+          contentLength={21}>Loading conversation…</Shimmer
+        >
       {/if}
     </div>
   {:else}
