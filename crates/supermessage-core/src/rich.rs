@@ -40,6 +40,7 @@
 //! megabytes, which a desktop app that must start instantly cannot spend and
 //! a phone should not carry.
 
+use matrix_sdk::ruma::html::{ElementData, Html, NodeData, NodeRef};
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag};
 
 /// How deeply containers may nest before the parser stops descending.
@@ -440,6 +441,333 @@ fn push_text(out: &mut Vec<RichInline>, text: &str) {
     }
 }
 
+/// Walk an **already sanitised** formatted body into the same block tree
+/// markdown produces.
+///
+/// The input has been through `harden_formatted_body` — ruma's Compat
+/// sanitiser, then this project's own second pass over it. This function is
+/// therefore **not** a security boundary and must not be mistaken for one: it
+/// translates, it does not sanitise. Anything handed to it unsanitised is a
+/// bug at the call site, not something to defend against here.
+///
+/// Uses the parser matrix-sdk already brings in (`ruma-html` over `html5ever`),
+/// so this adds no dependency and cannot disagree with the sanitiser about
+/// what the document contains.
+pub fn blocks_from_sanitised_html(html: &str) -> Vec<RichBlock> {
+    let parsed = Html::parse(html);
+    DomWalker { depth: 0 }.blocks(parsed.children())
+}
+
+struct DomWalker {
+    depth: usize,
+}
+
+/// Elements that carry inline meaning. Everything else at block level is
+/// treated as transparent — `html`, `body` and `div` wrap content without
+/// changing it, and swallowing their children would delete the message.
+fn is_inline_tag(name: &str) -> bool {
+    matches!(
+        name,
+        "em" | "i"
+            | "strong"
+            | "b"
+            | "code"
+            | "a"
+            | "br"
+            | "span"
+            | "font"
+            | "u"
+            | "s"
+            | "del"
+            | "ins"
+            | "sup"
+            | "sub"
+            | "small"
+            | "mark"
+    )
+}
+
+fn is_block_tag(name: &str) -> bool {
+    matches!(
+        name,
+        "p" | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "hr"
+            | "pre"
+            | "blockquote"
+            | "ul"
+            | "ol"
+            | "table"
+    )
+}
+
+fn attr(element: &ElementData, name: &str) -> Option<String> {
+    element
+        .attrs
+        .borrow()
+        .iter()
+        .find(|a| a.name.local.as_ref() == name)
+        .map(|a| a.value.to_string())
+}
+
+fn tag_name(element: &ElementData) -> String {
+    element.name.local.as_ref().to_ascii_lowercase()
+}
+
+/// Every word beneath a node, tags discarded.
+///
+/// Bounded even though the sanitiser already caps element depth: this is the
+/// one function here that recurses without consulting `DomWalker::depth`, and
+/// it would be reached with an unbounded tree the day someone calls the
+/// public entry point with input that never went through the sanitiser.
+fn text_content(node: &NodeRef, depth: usize) -> String {
+    let mut out = String::new();
+    collect_text(node, depth, &mut out);
+    out
+}
+
+fn collect_text(node: &NodeRef, depth: usize, out: &mut String) {
+    if depth == 0 {
+        return;
+    }
+    for child in node.children() {
+        match child.data() {
+            NodeData::Text(text) => out.push_str(&text.borrow()),
+            NodeData::Element(_) => collect_text(&child, depth - 1, out),
+            _ => {}
+        }
+    }
+}
+
+fn flush_paragraph(out: &mut Vec<RichBlock>, pending: &mut Vec<RichInline>) {
+    if pending.is_empty() {
+        return;
+    }
+    let inlines = std::mem::take(pending);
+    let empty = inlines.iter().all(|i| match i {
+        RichInline::Text { text } => text.trim().is_empty(),
+        _ => false,
+    });
+    if !empty {
+        out.push(RichBlock::Paragraph { inlines });
+    }
+}
+
+impl DomWalker {
+    fn blocks(&mut self, nodes: impl Iterator<Item = NodeRef>) -> Vec<RichBlock> {
+        let mut out = Vec::new();
+        let mut pending: Vec<RichInline> = Vec::new();
+        for node in nodes {
+            match node.data() {
+                NodeData::Text(text) => push_text(&mut pending, &text.borrow()),
+                NodeData::Element(element) => {
+                    let name = tag_name(element);
+                    if is_block_tag(&name) {
+                        flush_paragraph(&mut out, &mut pending);
+                        if let Some(block) = self.block_for(&node, element, &name) {
+                            out.push(block);
+                        }
+                    } else if is_inline_tag(&name) {
+                        self.inline_node(&node, &mut pending);
+                    } else {
+                        // A wrapper with no meaning of its own.
+                        flush_paragraph(&mut out, &mut pending);
+                        let inner = self.blocks(node.children());
+                        out.extend(inner);
+                    }
+                }
+                _ => {}
+            }
+        }
+        flush_paragraph(&mut out, &mut pending);
+        out
+    }
+
+    fn block_for(
+        &mut self,
+        node: &NodeRef,
+        element: &ElementData,
+        name: &str,
+    ) -> Option<RichBlock> {
+        match name {
+            "p" => {
+                let inlines = self.inlines(node.children());
+                (!inlines.is_empty()).then_some(RichBlock::Paragraph { inlines })
+            }
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                let level = name[1..].parse::<u8>().unwrap_or(1);
+                Some(RichBlock::Heading {
+                    level,
+                    inlines: self.inlines(node.children()),
+                })
+            }
+            "hr" => Some(RichBlock::ThematicBreak),
+            "pre" => Some(self.code_block(node)),
+            "blockquote" => self.nested(node, |walker| RichBlock::BlockQuote {
+                blocks: walker.blocks(node.children()),
+            }),
+            "ul" | "ol" => {
+                let ordered = name == "ol";
+                let start = if ordered {
+                    attr(element, "start")
+                        .and_then(|v| v.trim().parse::<u32>().ok())
+                        .unwrap_or(1)
+                } else {
+                    1
+                };
+                self.nested(node, |walker| {
+                    let mut items = Vec::new();
+                    for child in node.children() {
+                        if let NodeData::Element(el) = child.data() {
+                            if tag_name(el) == "li" {
+                                items.push(RichListItem {
+                                    blocks: walker.blocks(child.children()),
+                                });
+                            }
+                        }
+                    }
+                    RichBlock::List {
+                        ordered,
+                        start,
+                        items,
+                    }
+                })
+            }
+            "table" => {
+                let mut header = Vec::new();
+                let mut rows = Vec::new();
+                self.walk_rows(node, &mut header, &mut rows);
+                Some(RichBlock::Table { header, rows })
+            }
+            _ => None,
+        }
+    }
+
+    /// Collect every `tr` beneath a table, wherever `thead`/`tbody` put it.
+    ///
+    /// The first row made of `th` cells is the header; everything else is a
+    /// row. Keying on the cell tag rather than on `thead` is what makes a
+    /// table written without a `thead` — which is most of them — still render
+    /// with its header.
+    fn walk_rows(
+        &mut self,
+        node: &NodeRef,
+        header: &mut Vec<RichTableCell>,
+        rows: &mut Vec<RichTableRow>,
+    ) {
+        for child in node.children() {
+            let NodeData::Element(element) = child.data() else {
+                continue;
+            };
+            match tag_name(element).as_str() {
+                "thead" | "tbody" | "tfoot" => self.walk_rows(&child, header, rows),
+                "tr" => {
+                    let mut cells = Vec::new();
+                    let mut all_header = true;
+                    for cell in child.children() {
+                        if let NodeData::Element(el) = cell.data() {
+                            match tag_name(el).as_str() {
+                                "th" => cells.push(RichTableCell {
+                                    inlines: self.inlines(cell.children()),
+                                }),
+                                "td" => {
+                                    all_header = false;
+                                    cells.push(RichTableCell {
+                                        inlines: self.inlines(cell.children()),
+                                    });
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    if all_header && !cells.is_empty() && header.is_empty() {
+                        *header = cells;
+                    } else if !cells.is_empty() {
+                        rows.push(RichTableRow { cells });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn code_block(&mut self, node: &NodeRef) -> RichBlock {
+        let mut language = None;
+        for child in node.children() {
+            if let NodeData::Element(element) = child.data() {
+                if tag_name(element) == "code" {
+                    language = attr(element, "class").and_then(|classes| {
+                        classes
+                            .split_whitespace()
+                            .find_map(|c| c.strip_prefix("language-").map(str::to_string))
+                    });
+                }
+            }
+        }
+        RichBlock::CodeBlock {
+            language,
+            text: text_content(node, MAX_RICH_DEPTH),
+        }
+    }
+
+    /// Descend one container level, or flatten if that would breach the cap.
+    fn nested<F>(&mut self, node: &NodeRef, build: F) -> Option<RichBlock>
+    where
+        F: FnOnce(&mut Self) -> RichBlock,
+    {
+        if self.depth + 1 > MAX_RICH_DEPTH {
+            let text = text_content(node, MAX_RICH_DEPTH);
+            return (!text.trim().is_empty()).then_some(RichBlock::Paragraph {
+                inlines: vec![RichInline::Text { text }],
+            });
+        }
+        self.depth += 1;
+        let block = build(self);
+        self.depth -= 1;
+        Some(block)
+    }
+
+    fn inlines(&mut self, nodes: impl Iterator<Item = NodeRef>) -> Vec<RichInline> {
+        let mut out = Vec::new();
+        for node in nodes {
+            self.inline_node(&node, &mut out);
+        }
+        out
+    }
+
+    fn inline_node(&mut self, node: &NodeRef, out: &mut Vec<RichInline>) {
+        match node.data() {
+            NodeData::Text(text) => push_text(out, &text.borrow()),
+            NodeData::Element(element) => match tag_name(element).as_str() {
+                "em" | "i" => out.push(RichInline::Emphasis {
+                    inlines: self.inlines(node.children()),
+                }),
+                "strong" | "b" => out.push(RichInline::Strong {
+                    inlines: self.inlines(node.children()),
+                }),
+                "code" => out.push(RichInline::Code {
+                    text: text_content(node, MAX_RICH_DEPTH),
+                }),
+                "br" => out.push(RichInline::Break),
+                "a" => out.push(RichInline::Link {
+                    href: attr(element, "href").unwrap_or_default(),
+                    inlines: self.inlines(node.children()),
+                }),
+                // No inline of its own: its styling is lost, its words are not.
+                _ => {
+                    let inner = self.inlines(node.children());
+                    out.extend(inner);
+                }
+            },
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -693,5 +1021,123 @@ mod tests {
     fn empty_input_produces_no_blocks_rather_than_an_empty_paragraph() {
         assert_eq!(blocks_from_markdown(""), vec![]);
         assert_eq!(blocks_from_markdown("   \n\n  "), vec![]);
+    }
+
+    #[test]
+    fn a_formatted_paragraph_becomes_a_paragraph_block() {
+        let blocks = blocks_from_sanitised_html("<p>hello</p>");
+        assert_eq!(
+            blocks,
+            vec![RichBlock::Paragraph {
+                inlines: vec![text("hello")]
+            }]
+        );
+    }
+
+    #[test]
+    fn strong_and_em_map_to_the_same_inlines_markdown_produces() {
+        // The whole point of one vocabulary: a human on Element and an agent
+        // writing markdown must produce the same tree for the same emphasis,
+        // or a host ends up with two styling paths that drift apart.
+        let from_html = blocks_from_sanitised_html("<p><em>a</em><strong>b</strong></p>");
+        let from_md = blocks_from_markdown("*a***b**");
+        assert_eq!(from_html, from_md);
+    }
+
+    #[test]
+    fn a_pre_code_block_carries_its_language_from_the_class_attribute() {
+        let blocks = blocks_from_sanitised_html(
+            r#"<pre><code class="language-rust">fn x() {}</code></pre>"#,
+        );
+        assert_eq!(
+            blocks,
+            vec![RichBlock::CodeBlock {
+                language: Some("rust".into()),
+                text: "fn x() {}".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn bare_text_with_no_wrapping_element_still_produces_a_paragraph() {
+        // Matrix formatted bodies are frequently a bare fragment, not a
+        // document. Dropping unwrapped text would silently delete the message.
+        let blocks = blocks_from_sanitised_html("just text");
+        assert_eq!(
+            blocks,
+            vec![RichBlock::Paragraph {
+                inlines: vec![text("just text")]
+            }]
+        );
+    }
+
+    #[test]
+    fn an_anchor_keeps_href_and_text_apart() {
+        let blocks = blocks_from_sanitised_html(r#"<p><a href="https://e.org/">go</a></p>"#);
+        let RichBlock::Paragraph { inlines } = &blocks[0] else {
+            panic!("expected a paragraph, got {blocks:?}");
+        };
+        assert_eq!(
+            inlines[0],
+            RichInline::Link {
+                href: "https://e.org/".into(),
+                inlines: vec![text("go")]
+            }
+        );
+    }
+
+    #[test]
+    fn html_nesting_past_the_cap_flattens_the_same_way_markdown_does() {
+        let html = "<blockquote>".repeat(MAX_RICH_DEPTH + 10)
+            + "deep"
+            + "</blockquote>".repeat(MAX_RICH_DEPTH + 10).as_str();
+        let blocks = blocks_from_sanitised_html(&html);
+        assert!(!blocks.is_empty(), "everything was dropped");
+        assert!(
+            depth_of(&blocks) <= MAX_RICH_DEPTH,
+            "nested to {} past a cap of {MAX_RICH_DEPTH}",
+            depth_of(&blocks)
+        );
+    }
+
+    #[test]
+    fn an_element_outside_the_vocabulary_contributes_its_text_and_nothing_else() {
+        // The sanitiser already removed the dangerous elements. What survives
+        // and has no block of its own — a <span>, a <font> — must not vanish
+        // and take the words inside it along.
+        let blocks = blocks_from_sanitised_html("<p><span>kept</span></p>");
+        assert_eq!(
+            blocks,
+            vec![RichBlock::Paragraph {
+                inlines: vec![text("kept")]
+            }]
+        );
+    }
+
+    #[test]
+    fn a_formatted_list_carries_its_start_and_ordering() {
+        let blocks = blocks_from_sanitised_html(r#"<ol start="3"><li>a</li><li>b</li></ol>"#);
+        let RichBlock::List {
+            ordered,
+            start,
+            items,
+        } = &blocks[0]
+        else {
+            panic!("expected a list, got {blocks:?}");
+        };
+        assert!(ordered);
+        assert_eq!(*start, 3);
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn a_formatted_heading_carries_its_level() {
+        assert_eq!(
+            blocks_from_sanitised_html("<h4>four</h4>"),
+            vec![RichBlock::Heading {
+                level: 4,
+                inlines: vec![text("four")]
+            }]
+        );
     }
 }
