@@ -232,6 +232,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-compat"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1ba85bc55464dcbf728b56d97e119d673f4cf9062be330a9a26f3acf504a590"
+dependencies = [
+ "futures-core",
+ "futures-io",
+ "once_cell",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "async-compression"
 version = "0.4.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6463,6 +6476,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "supermessage-ffi"
+version = "0.0.8"
+dependencies = [
+ "async-trait",
+ "supermessage-core",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "uniffi",
+]
+
+[[package]]
 name = "swift-rs"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7596,6 +7621,7 @@ dependencies = [
  "anyhow",
  "cargo_metadata 0.15.4",
  "uniffi_bindgen",
+ "uniffi_build",
  "uniffi_core",
  "uniffi_macros",
 ]
@@ -7624,6 +7650,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "uniffi_build"
+version = "0.28.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c7cf32576e08104b7dc2a6a5d815f37616e66c6866c2a639fe16e6d2286b75b"
+dependencies = [
+ "anyhow",
+ "camino",
+ "uniffi_bindgen",
+]
+
+[[package]]
 name = "uniffi_checksum_derive"
 version = "0.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7640,6 +7677,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc7687007d2546c454d8ae609b105daceb88175477dac280707ad6d95bcd6f1f"
 dependencies = [
  "anyhow",
+ "async-compat",
  "bytes",
  "log",
  "once_cell",

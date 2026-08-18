@@ -2802,8 +2802,8 @@ fn emit_ops(
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TypingPayload {
-    room_id: String,
-    users: Vec<TypingUserDto>,
+    pub room_id: String,
+    pub users: Vec<TypingUserDto>,
 }
 
 /// Emits one [`TYPING_EVENT`] envelope for `room_id`.

@@ -1,3 +1,18 @@
 [workspace]
-members = ["crates/supermessage-core", "src-tauri"]
+members = ["crates/supermessage-core", "crates/supermessage-ffi", "src-tauri"]
 resolver = "2"
+
+# Debug info dominates this workspace's build output: matrix-sdk, aws-lc and
+# ring are enormous, and the FFI crate links them three times over (lib,
+# staticlib, cdylib). Full debug info took `target/` past 30GB and filled a
+# 228GB disk three times in one session.
+#
+# `line-tables-only` keeps what a backtrace actually needs — file and line —
+# and drops the type and variable information a step debugger would want. If
+# you need to step through Rust in a debugger, override it locally rather than
+# putting it back for everyone.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
