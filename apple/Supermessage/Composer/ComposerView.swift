@@ -37,7 +37,7 @@ struct ComposerView: View {
             }
             if let failure {
                 Text(failure)
-                    .font(Theme.meta)
+                    .metaFace()
                     .foregroundStyle(Theme.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
@@ -161,7 +161,7 @@ private struct ReplyStrip: View {
             Rectangle().fill(Theme.accent).frame(width: 2, height: 28)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Replying to \(pending.sender)")
-                    .font(Theme.meta)
+                    .metaFace()
                     .textCase(.uppercase)
                 if let excerpt = pending.excerpt {
                     Text(excerpt).font(.footnote).lineLimit(1).foregroundStyle(.secondary)
@@ -187,7 +187,7 @@ private struct AttachmentChip: View {
             Image(systemName: "paperclip")
             Text(staged.filename).font(.footnote).lineLimit(1)
             Text(ByteCountFormatter.string(fromByteCount: Int64(staged.sizeBytes), countStyle: .file))
-                .font(Theme.meta)
+                .metaFace()
                 .foregroundStyle(.secondary)
             Spacer()
             Button(action: discard) { Image(systemName: "xmark") }

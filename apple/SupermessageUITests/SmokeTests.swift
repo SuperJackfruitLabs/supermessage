@@ -16,24 +16,23 @@ final class SmokeTests: XCTestCase {
     /// way back has to leave the roster able to select the same room again —
     /// and "set it to the value it already had" is a change SwiftUI can miss.
     func testARoomCanBeOpenedTwice() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launched()
 
-        let room = app.staticTexts["ganesha"]
+        let room = app.staticTexts["Ganesha"]
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no joined room in the roster")
 
         room.tap()
         XCTAssertTrue(
-            app.navigationBars["ganesha"].waitForExistence(timeout: 20),
+            app.navigationBars["Ganesha"].waitForExistence(timeout: 20),
             "the room did not open the first time")
 
-        app.navigationBars["ganesha"].buttons.firstMatch.tap()
+        app.navigationBars["Ganesha"].buttons.firstMatch.tap()
         XCTAssertTrue(
             room.waitForExistence(timeout: 20), "going back did not return to the roster")
 
         room.tap()
         XCTAssertTrue(
-            app.navigationBars["ganesha"].waitForExistence(timeout: 20),
+            app.navigationBars["Ganesha"].waitForExistence(timeout: 20),
             "the room would not open a second time")
     }
 
@@ -44,14 +43,13 @@ final class SmokeTests: XCTestCase {
     /// rendered but could not be tapped, and nothing anywhere started a reply,
     /// even though the core had both and the desktop used them.
     func testAMessageCanBeRepliedTo() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launched()
 
-        let room = app.staticTexts["ganesha"]
+        let room = app.staticTexts["Ganesha"]
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no joined room in the roster")
         room.tap()
         XCTAssertTrue(
-            app.navigationBars["ganesha"].waitForExistence(timeout: 20), "the room did not open")
+            app.navigationBars["Ganesha"].waitForExistence(timeout: 20), "the room did not open")
 
         // Any message the agent has sent. `firstMatch` on a cell rather than a
         // known string: the room's contents change, and a test pinned to one
@@ -82,9 +80,34 @@ final class SmokeTests: XCTestCase {
         attach(XCUIScreen.main.screenshot(), named: "ios-reply")
     }
 
+    /// The roster in each of its three arrangements.
+    ///
+    /// Not an assertion about pixels — it opens each view and leaves a picture
+    /// behind, because a roster is judged by looking at it and this is the only
+    /// way to look at one on a device.
+    func testTheRosterInEachArrangement() throws {
+        let app = launched()
+
+        XCTAssertTrue(
+            app.staticTexts["Ganesha"].waitForExistence(timeout: 30), "no roster appeared")
+
+        for arrangement in ["Recent", "Waiting", "Machine"] {
+            let button = app.buttons[arrangement]
+            XCTAssertTrue(
+                button.waitForExistence(timeout: 10), "no \(arrangement) arrangement to choose")
+            button.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            attach(XCUIScreen.main.screenshot(), named: "roster-\(arrangement.lowercased())")
+        }
+
+        // And the sheet that decides which of them the app opens on.
+        app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'options'")).firstMatch.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(XCUIScreen.main.screenshot(), named: "roster-settings")
+    }
+
     func testOpensARoomAndRendersItsTimeline() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launched()
 
         // The roster. A restored session goes straight here; a signed-out one
         // shows the login form instead, which is a different test's problem.
@@ -93,13 +116,13 @@ final class SmokeTests: XCTestCase {
 
         // A joined room rather than an invitation: an invitation has no
         // timeline to render, which is the point of the affordance.
-        let room = app.staticTexts["ganesha"]
+        let room = app.staticTexts["Ganesha"]
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no joined room in the roster")
         room.tap()
 
         // The timeline. Its title is the room's parsed name.
         XCTAssertTrue(
-            app.navigationBars["ganesha"].waitForExistence(timeout: 20),
+            app.navigationBars["Ganesha"].waitForExistence(timeout: 20),
             "the room did not open")
 
         // Send something, which is the other half of a chat client working.
@@ -151,5 +174,23 @@ final class SmokeTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// Launch with the roster in a known state.
+    ///
+    /// The arrangement is remembered in `UserDefaults`, so without this a run
+    /// inherits whatever the *previous* run last tapped — and a test that
+    /// passes or fails depending on the order of earlier tests is not a test.
+    /// `UserDefaults` reads `-key value` pairs straight off the command line,
+    /// so no test-only code has to exist in the app for this.
+    func launched(roster: String = "recent") -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "-roster.view", roster,
+            "-roster.showsInvitations", "NO",
+            "-roster.showsState", "YES",
+        ]
+        app.launch()
+        return app
     }
 }

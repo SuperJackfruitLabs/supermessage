@@ -19,8 +19,8 @@ struct LiveTurnView: View {
         if live.isLive {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Text(writerName).font(Theme.meta).textCase(.uppercase)
-                    Text("writing…").font(Theme.meta).foregroundStyle(.secondary)
+                    Text(writerName).metaFace().textCase(.uppercase)
+                    Text("writing…").metaFace().foregroundStyle(.secondary)
                 }
 
                 if let thought = live.thought {
@@ -29,15 +29,15 @@ struct LiveTurnView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } label: {
-                        Text("Reasoning").font(Theme.meta).foregroundStyle(.secondary)
+                        Text("Reasoning").metaFace().foregroundStyle(.secondary)
                     }
                 }
 
                 ForEach(live.tools) { tool in
                     HStack(spacing: 6) {
                         Image(systemName: "gearshape").imageScale(.small)
-                        Text(tool.title).font(Theme.meta).lineLimit(1)
-                        Text(tool.status).font(Theme.meta).foregroundStyle(.tertiary)
+                        Text(tool.title).metaFace().lineLimit(1)
+                        Text(tool.status).metaFace().foregroundStyle(.tertiary)
                     }
                     .foregroundStyle(.secondary)
                 }

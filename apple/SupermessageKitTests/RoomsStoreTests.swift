@@ -13,7 +13,7 @@ struct RoomsStoreTests {
             room: RoomSummary(
                 id: id, name: name, avatarUrl: nil, unread: 0, lastMessage: nil,
                 lastMessageIsOwn: false, lastMessageNamesSender: false, lastEventType: nil,
-                lastActivityMs: nil, membership: membership),
+                lastActivityMs: nil, runtime: nil, membership: membership),
             identity: RoomIdentity(glyph: nil, name: name, role: nil, initial: "X"),
             preview: nil,
             affordance: membership == .joined ? .compose : .respondToInvitation)

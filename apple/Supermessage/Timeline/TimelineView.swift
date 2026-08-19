@@ -38,7 +38,7 @@ struct TimelineView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let line = session.typing.line {
                     Text(line)
-                        .font(Theme.meta)
+                        .metaFace()
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)

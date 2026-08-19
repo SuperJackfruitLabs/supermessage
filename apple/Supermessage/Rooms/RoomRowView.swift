@@ -10,31 +10,57 @@ import SwiftUI
 struct RoomRowView: View {
     let row: RoomRow
     let avatarURI: String?
+    /// What the roster may say this agent is doing.
+    let state: AgentState
+    /// Coarsened by `RelativeTime`, empty when the room has never spoken.
+    let when: String
+    /// Whether to draw the state dot at all — a reader can turn it off.
+    var showsState: Bool = true
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             avatar
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(row.identity.name)
-                        .font(Theme.name)
+                        .nameFace()
                         .lineLimit(1)
-                    if let role = row.identity.role {
-                        Text(role)
-                            .font(Theme.meta)
-                            .textCase(.uppercase)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 4)
                     if row.affordance == .respondToInvitation {
                         Text("Invitation")
-                            .font(Theme.meta)
+                            .metaFace()
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
                             .overlay(Capsule().stroke(Theme.accent, lineWidth: 1))
                     }
+                    Spacer(minLength: 4)
+                    if !when.isEmpty {
+                        Text(when).metaFace().foregroundStyle(.tertiary)
+                    }
+                    if row.room.unread > 0 {
+                        UnreadBadge(count: row.room.unread)
+                    }
                 }
+
+                // State, harness and host on one quiet line. Everything here is
+                // metadata *about* the room; the preview below is the room
+                // itself speaking, and the two should not compete.
+                if let meta = metaLine {
+                    HStack(spacing: 5) {
+                        if showsState {
+                            Circle()
+                                .fill(dotColour)
+                                .strokeBorder(
+                                    state == .quiet ? Color.secondary.opacity(0.5) : .clear,
+                                    lineWidth: 1)
+                                .frame(width: 7, height: 7)
+                        }
+                        Text(meta)
+                            .metaFace()
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                }
+
                 if let preview = row.preview {
                     Text(preview.text)
                         .font(.subheadline)
@@ -48,6 +74,37 @@ struct RoomRowView: View {
         }
         .padding(.vertical, 6)
         .contentShape(.rect)
+    }
+
+    /// State and runtime, joined only where both exist.
+    ///
+    /// `nil` collapses the line entirely rather than drawing an empty row —
+    /// the same posture as the preview, which says nothing when there is
+    /// nothing to say.
+    private var metaLine: String? {
+        var parts: [String] = []
+        if showsState { parts.append(state.word) }
+        if let runtime = row.room.runtime {
+            parts.append(runtime.harness)
+            // The host is the section header in the machine view, so repeating
+            // it on every row there would be saying it twice.
+            if !hidesHost { parts.append(runtime.host) }
+        } else if let role = row.identity.role {
+            parts.append(role)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Set by the machine view, whose section header already names the host.
+    var hidesHost: Bool = false
+
+    private var dotColour: Color {
+        switch state {
+        case .needsYou: return Theme.signal
+        case .active: return Theme.ok
+        case .idle: return Color.secondary.opacity(0.55)
+        case .quiet: return .clear
+        }
     }
 
     /// The avatar, or the initial the core derived from the *parsed* name.
@@ -75,5 +132,23 @@ struct RoomRowView: View {
             let ui = UIImage(data: data)
         else { return nil }
         return Image(uiImage: ui)
+    }
+}
+
+/// How many messages a room has that the reader has not seen.
+///
+/// Never amber. An unread count is not something owed — it is something
+/// waiting, and the console spec reserves amber for the former.
+private struct UnreadBadge: View {
+    let count: UInt64
+
+    var body: some View {
+        Text(count > 99 ? "99+" : "\(count)")
+            .metaFace()
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 19, minHeight: 19)
+            .background(Theme.accent, in: Capsule())
+            .accessibilityLabel("\(count) unread")
     }
 }

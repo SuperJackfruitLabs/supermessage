@@ -234,9 +234,9 @@ struct ConnectionBar: View {
     var body: some View {
         if connection.isWorthShowing {
             HStack(spacing: 6) {
-                Text(label).font(Theme.meta)
+                Text(label).metaFace()
                 if let message = connection.message {
-                    Text(message).font(Theme.meta).foregroundStyle(.secondary)
+                    Text(message).metaFace().foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity)

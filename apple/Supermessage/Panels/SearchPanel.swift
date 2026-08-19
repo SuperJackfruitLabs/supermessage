@@ -29,7 +29,7 @@ struct SearchPanel: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(roomLabel(result.roomId))
-                                    .font(Theme.meta)
+                                    .metaFace()
                                     .textCase(.uppercase)
                                     .foregroundStyle(.secondary)
                                 Text(result.body).font(.callout).lineLimit(2)

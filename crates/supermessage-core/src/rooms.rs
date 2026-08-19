@@ -82,6 +82,7 @@ pub fn project_room_parts(
     preview: Option<MessagePreview>,
     last_activity_ms: Option<u64>,
     membership: Membership,
+    topic: Option<&str>,
 ) -> RoomSummary {
     let (last_message, last_message_is_own, last_message_names_sender, last_event_type) =
         match preview {
@@ -103,6 +104,9 @@ pub fn project_room_parts(
         last_message_names_sender,
         last_event_type,
         last_activity_ms,
+        runtime: topic
+            .and_then(crate::display_name::parse_runtime)
+            .map(|(harness, host)| crate::dto::RuntimeDto { harness, host }),
         membership,
     }
 }
@@ -432,6 +436,9 @@ pub fn project_room(item: &RoomListItem, preview: Option<MessagePreview>) -> Roo
     let last_activity_ms = item
         .latest_event_timestamp()
         .map(|ts| i64::from(ts.get()) as u64);
+    // Cheap: cached room state, not a round trip. `RoomListItem` derefs to the
+    // same `Room` every other synchronous field here comes from.
+    let topic = item.topic();
 
     project_room_parts(
         &id,
@@ -441,6 +448,7 @@ pub fn project_room(item: &RoomListItem, preview: Option<MessagePreview>) -> Roo
         preview,
         last_activity_ms,
         project_membership(item.state()),
+        topic.as_deref(),
     )
 }
 
@@ -884,6 +892,7 @@ mod tests {
             None,
             None,
             Membership::Joined,
+            None,
         );
         assert_eq!(summary.name, "!abc:example.org");
         assert_eq!(summary.id, "!abc:example.org");
@@ -899,6 +908,7 @@ mod tests {
             None,
             None,
             Membership::Joined,
+            None,
         );
         assert_eq!(summary.name, "Ops");
         assert_eq!(summary.unread, 3);
@@ -919,6 +929,7 @@ mod tests {
             }),
             Some(1_700_000_000_000),
             Membership::Joined,
+            None,
         );
         assert_eq!(summary.avatar_url.as_deref(), Some("mxc://example.org/abc"));
         assert_eq!(summary.last_message.as_deref(), Some("hello"));
@@ -940,6 +951,7 @@ mod tests {
             }),
             None,
             Membership::Joined,
+            None,
         );
         assert_eq!(summary.last_message.as_deref(), Some("Approval needed"));
         assert!(summary.last_message_is_own);
@@ -968,6 +980,7 @@ mod tests {
             }),
             None,
             Membership::Joined,
+            None,
         );
         assert!(summary.last_message_is_own);
         assert!(summary.last_message_names_sender);
@@ -988,6 +1001,7 @@ mod tests {
             None,
             None,
             Membership::Joined,
+            None,
         );
         assert_eq!(summary.last_message, None);
         assert!(!summary.last_message_is_own);
@@ -1002,7 +1016,7 @@ mod tests {
     }
 
     fn room_summary(id: &str) -> RoomSummary {
-        project_room_parts(id, None, None, 0, None, None, Membership::Joined)
+        project_room_parts(id, None, None, 0, None, None, Membership::Joined, None)
     }
 
     #[test]

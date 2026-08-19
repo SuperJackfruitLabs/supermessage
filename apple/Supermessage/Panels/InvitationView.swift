@@ -22,7 +22,7 @@ struct InvitationView: View {
                 .multilineTextAlignment(.center)
 
             if let failure {
-                Text(failure).font(Theme.meta).foregroundStyle(Theme.danger)
+                Text(failure).metaFace().foregroundStyle(Theme.danger)
             }
 
             HStack(spacing: 12) {

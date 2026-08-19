@@ -2122,6 +2122,16 @@ public struct RoomSummary {
     public var lastEventType: String?
     public var lastActivityMs: UInt64?
     /**
+     * Which harness this room's agent runs, and on which machine — both in
+     * display form, read from the room topic by
+     * `display_name::parse_runtime`.
+     *
+     * `None` for a room that is not an agent's, which is a **normal
+     * outcome**: a roster grouped by machine files those under nothing
+     * rather than guessing. Same posture as the room-name parse.
+     */
+    public var runtime: RuntimeDto?
+    /**
      * This account's relationship to the room — see [`Membership`]. The
      * roster row and the timeline both branch on it: an invitation is not a
      * conversation yet, and offering a composer for a room you have not
@@ -2180,6 +2190,15 @@ public struct RoomSummary {
          * `core::rooms::room_preview`).
          */lastEventType: String?, lastActivityMs: UInt64?, 
         /**
+         * Which harness this room's agent runs, and on which machine — both in
+         * display form, read from the room topic by
+         * `display_name::parse_runtime`.
+         *
+         * `None` for a room that is not an agent's, which is a **normal
+         * outcome**: a roster grouped by machine files those under nothing
+         * rather than guessing. Same posture as the room-name parse.
+         */runtime: RuntimeDto?, 
+        /**
          * This account's relationship to the room — see [`Membership`]. The
          * roster row and the timeline both branch on it: an invitation is not a
          * conversation yet, and offering a composer for a room you have not
@@ -2194,6 +2213,7 @@ public struct RoomSummary {
         self.lastMessageNamesSender = lastMessageNamesSender
         self.lastEventType = lastEventType
         self.lastActivityMs = lastActivityMs
+        self.runtime = runtime
         self.membership = membership
     }
 }
@@ -2229,6 +2249,9 @@ extension RoomSummary: Equatable, Hashable {
         if lhs.lastActivityMs != rhs.lastActivityMs {
             return false
         }
+        if lhs.runtime != rhs.runtime {
+            return false
+        }
         if lhs.membership != rhs.membership {
             return false
         }
@@ -2245,6 +2268,7 @@ extension RoomSummary: Equatable, Hashable {
         hasher.combine(lastMessageNamesSender)
         hasher.combine(lastEventType)
         hasher.combine(lastActivityMs)
+        hasher.combine(runtime)
         hasher.combine(membership)
     }
 }
@@ -2266,6 +2290,7 @@ public struct FfiConverterTypeRoomSummary: FfiConverterRustBuffer {
                 lastMessageNamesSender: FfiConverterBool.read(from: &buf), 
                 lastEventType: FfiConverterOptionString.read(from: &buf), 
                 lastActivityMs: FfiConverterOptionUInt64.read(from: &buf), 
+                runtime: FfiConverterOptionTypeRuntimeDto.read(from: &buf), 
                 membership: FfiConverterTypeMembership.read(from: &buf)
         )
     }
@@ -2280,6 +2305,7 @@ public struct FfiConverterTypeRoomSummary: FfiConverterRustBuffer {
         FfiConverterBool.write(value.lastMessageNamesSender, into: &buf)
         FfiConverterOptionString.write(value.lastEventType, into: &buf)
         FfiConverterOptionUInt64.write(value.lastActivityMs, into: &buf)
+        FfiConverterOptionTypeRuntimeDto.write(value.runtime, into: &buf)
         FfiConverterTypeMembership.write(value.membership, into: &buf)
     }
 }
@@ -2297,6 +2323,87 @@ public func FfiConverterTypeRoomSummary_lift(_ buf: RustBuffer) throws -> RoomSu
 #endif
 public func FfiConverterTypeRoomSummary_lower(_ value: RoomSummary) -> RustBuffer {
     return FfiConverterTypeRoomSummary.lower(value)
+}
+
+
+/**
+ * The harness and machine behind an agent's room, ready to render.
+ */
+public struct RuntimeDto {
+    /**
+     * `OpenClaw`, `Claude Code` — as the harness's own project spells it.
+     */
+    public var harness: String
+    /**
+     * `Ashram`, `Rakesh's MacBook Pro` — no `.local`, no kebab.
+     */
+    public var host: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `OpenClaw`, `Claude Code` — as the harness's own project spells it.
+         */harness: String, 
+        /**
+         * `Ashram`, `Rakesh's MacBook Pro` — no `.local`, no kebab.
+         */host: String) {
+        self.harness = harness
+        self.host = host
+    }
+}
+
+
+
+extension RuntimeDto: Equatable, Hashable {
+    public static func ==(lhs: RuntimeDto, rhs: RuntimeDto) -> Bool {
+        if lhs.harness != rhs.harness {
+            return false
+        }
+        if lhs.host != rhs.host {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(harness)
+        hasher.combine(host)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRuntimeDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RuntimeDto {
+        return
+            try RuntimeDto(
+                harness: FfiConverterString.read(from: &buf), 
+                host: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RuntimeDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.harness, into: &buf)
+        FfiConverterString.write(value.host, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRuntimeDto_lift(_ buf: RustBuffer) throws -> RuntimeDto {
+    return try FfiConverterTypeRuntimeDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRuntimeDto_lower(_ value: RuntimeDto) -> RustBuffer {
+    return FfiConverterTypeRuntimeDto.lower(value)
 }
 
 
@@ -4420,6 +4527,30 @@ fileprivate struct FfiConverterOptionTypeRoomPreview: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeRoomPreview.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeRuntimeDto: FfiConverterRustBuffer {
+    typealias SwiftType = RuntimeDto?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRuntimeDto.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRuntimeDto.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

@@ -46,6 +46,22 @@ const KNOWN_WORDS: &[(&str, &str)] = &[
 /// twelve-character hex string, they check whether it is *the* one.
 const ID_PREFIX_CHARS: usize = 6;
 
+/// The harnesses this fleet runs, as AgentPod's own registry lists them
+/// (`apps/node-agent/cmd/agentpod-node/registry.go`).
+///
+/// [`parse_runtime`] requires the first half to be one of these, and that
+/// requirement is the whole guard: "notes on deployment" has the shape of a
+/// runtime and is a sentence. Better to file an unknown harness under nothing
+/// than to file real rooms under half a sentence.
+const KNOWN_HARNESSES: &[&str] = &[
+    "hermes",
+    "openclaw",
+    "claude-code",
+    "codex",
+    "opencode",
+    "pi",
+];
+
 /// Whether a token is an opaque identifier rather than a name.
 ///
 /// Long, all hex, no separators — the shape AgentPod gives a provisioned
@@ -229,6 +245,45 @@ pub fn sender_label(raw: &str) -> String {
     }
 }
 
+/// The harness and host a room's agent runs on, read from the room topic.
+///
+/// AgentPod's bridge writes a topic like `openclaw on ashram — openclaw:ganesha`
+/// — the runtime, then an em dash, then the internal address. Only the part
+/// before the dash is a runtime, and only when it has the shape.
+///
+/// `None` is a **normal outcome**, not a failure: a room a person made has a
+/// topic about the room, and a roster grouped by machine simply files it under
+/// nothing. Same posture as `parse_room_identity`, for the same reason.
+///
+/// Accepts `on` or `@` between the two halves, because the bridge has written
+/// both and a display rule should not be the thing that breaks when it changes.
+pub fn parse_runtime(topic: &str) -> Option<(String, String)> {
+    let head = topic.split('\u{2014}').next().unwrap_or(topic).trim();
+    if head.is_empty() {
+        return None;
+    }
+
+    let (harness, host) = head
+        .split_once(" on ")
+        .or_else(|| head.split_once(" @ "))?;
+    let harness = harness.trim();
+    let host = host.trim();
+    if harness.is_empty() || host.is_empty() {
+        return None;
+    }
+    // A runtime is two tokens, and the first names a harness we run. Both
+    // checks earn their place: the space test rejects long prose, and the
+    // registry test rejects short prose — "notes on deployment" passes the
+    // first and fails the second.
+    if harness.contains(' ') || host.contains(' ') {
+        return None;
+    }
+    if !KNOWN_HARNESSES.contains(&harness.to_lowercase().as_str()) {
+        return None;
+    }
+    Some((humanise(harness), host_label(host)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,6 +422,28 @@ mod tests {
         assert_eq!(sender_label("Rakesh"), "Rakesh");
         assert_eq!(sender_label("Ada (she/her)"), "Ada (she/her)");
         assert_eq!(sender_label("@rakesh:id.agentpod.dev"), "@rakesh:id.agentpod.dev");
+    }
+
+    #[test]
+    fn a_bridged_topic_says_which_machine_an_agent_runs_on() {
+        assert_eq!(
+            parse_runtime("openclaw on ashram \u{2014} openclaw:ganesha"),
+            Some(("OpenClaw".into(), "Ashram".into()))
+        );
+        assert_eq!(
+            parse_runtime("claude-code @ Rakeshs-MacBook-Pro.local"),
+            Some(("Claude Code".into(), "Rakesh's MacBook Pro".into()))
+        );
+    }
+
+    #[test]
+    fn a_topic_someone_wrote_is_not_a_runtime() {
+        // The failure that would matter: a roster grouped by machine filing
+        // real rooms under half a sentence.
+        assert_eq!(parse_runtime("Notes on deployment"), None);
+        assert_eq!(parse_runtime("Where we plan the release"), None);
+        assert_eq!(parse_runtime(""), None);
+        assert_eq!(parse_runtime("\u{2014} openclaw:ganesha"), None);
     }
 
     #[test]

@@ -34,7 +34,7 @@ struct NewRoomPanel: View {
                 }
 
                 if let failure {
-                    Text(failure).font(Theme.meta).foregroundStyle(Theme.danger)
+                    Text(failure).metaFace().foregroundStyle(Theme.danger)
                 }
             }
             .navigationTitle("New conversation")

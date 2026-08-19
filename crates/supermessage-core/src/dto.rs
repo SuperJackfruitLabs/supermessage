@@ -119,11 +119,29 @@ pub struct RoomSummary {
     /// `core::rooms::room_preview`).
     pub last_event_type: Option<String>,
     pub last_activity_ms: Option<u64>,
+    /// Which harness this room's agent runs, and on which machine — both in
+    /// display form, read from the room topic by
+    /// `display_name::parse_runtime`.
+    ///
+    /// `None` for a room that is not an agent's, which is a **normal
+    /// outcome**: a roster grouped by machine files those under nothing
+    /// rather than guessing. Same posture as the room-name parse.
+    pub runtime: Option<RuntimeDto>,
     /// This account's relationship to the room — see [`Membership`]. The
     /// roster row and the timeline both branch on it: an invitation is not a
     /// conversation yet, and offering a composer for a room you have not
     /// joined would fail at the homeserver.
     pub membership: Membership,
+}
+
+/// The harness and machine behind an agent's room, ready to render.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeDto {
+    /// `OpenClaw`, `Claude Code` — as the harness's own project spells it.
+    pub harness: String,
+    /// `Ashram`, `Rakesh's MacBook Pro` — no `.local`, no kebab.
+    pub host: String,
 }
 
 /// Media metadata projected from an `m.image`/`m.file`/`m.audio`/`m.video`
@@ -1282,11 +1300,12 @@ mod wire_format_golden {
             last_message_names_sender: false,
             last_event_type: None,
             last_activity_ms: Some(1_700_000_000_000),
+            runtime: None,
             membership: Membership::Joined,
         }
     }
 
-    const ROOM_JSON: &str = r#"{"id":"!r:example.org","name":"Room","avatarUrl":null,"unread":0,"lastMessage":"hi","lastMessageIsOwn":false,"lastMessageNamesSender":false,"lastEventType":null,"lastActivityMs":1700000000000,"membership":"joined"}"#;
+    const ROOM_JSON: &str = r#"{"id":"!r:example.org","name":"Room","avatarUrl":null,"unread":0,"lastMessage":"hi","lastMessageIsOwn":false,"lastMessageNamesSender":false,"lastEventType":null,"lastActivityMs":1700000000000,"runtime":null,"membership":"joined"}"#;
 
     #[test]
     fn membership_is_a_camel_case_string() {
@@ -1419,6 +1438,7 @@ mod wire_format_golden {
             last_message_names_sender: false,
             last_event_type: None,
             last_activity_ms: Some(1_700_000_000_000),
+            runtime: None,
             membership: Membership::Joined,
         }
     }

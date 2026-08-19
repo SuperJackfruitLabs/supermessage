@@ -135,6 +135,14 @@ export interface RoomSummary {
   lastEventType: string | null;
   lastActivityMs: number | null;
   /**
+   * Which harness this room's agent runs and on which machine, both ready to
+   * render — read from the room topic by the core.
+   *
+   * `null` for a room that is not an agent's, which is a normal outcome: a
+   * roster grouped by machine files those under nothing rather than guessing.
+   */
+  runtime: { harness: string; host: string } | null;
+  /**
    * Whether this account has joined the room or has merely been invited to
    * it — see {@link Membership}.
    *

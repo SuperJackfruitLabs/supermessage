@@ -12,29 +12,27 @@ import XCTest
 @MainActor
 final class IPadTests: XCTestCase {
     func testTheRosterIsOnScreenWithoutHuntingForAToggle() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launched()
 
         // No tap on a sidebar toggle anywhere in this test, and that is the
         // assertion. `NavigationSplitView` defaults to `.automatic`, which on
         // an iPad in portrait hides the sidebar — the app opened on an empty
         // detail pane with the roster behind a control nobody had reason to
         // look for.
-        let room = app.staticTexts["ganesha"]
+        let room = app.staticTexts["Ganesha"]
         XCTAssertTrue(
             room.waitForExistence(timeout: 30),
             "the roster was not visible at launch — the sidebar started collapsed")
     }
 
     func testAnOpenRoomHasNoUnsupportedEventsInIt() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launched()
 
-        let room = app.staticTexts["ganesha"]
+        let room = app.staticTexts["Ganesha"]
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no joined room in the roster")
         room.tap()
         XCTAssertTrue(
-            app.navigationBars["ganesha"].waitForExistence(timeout: 20),
+            app.navigationBars["Ganesha"].waitForExistence(timeout: 20),
             "the room did not open")
 
         // Long enough for a screen of history to render. The fault this
@@ -57,17 +55,16 @@ final class IPadTests: XCTestCase {
     }
 
     func testTheInfoPanelDescribesTheRoomThatIsOpen() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launched()
 
-        let room = app.staticTexts["ganesha"]
+        let room = app.staticTexts["Ganesha"]
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no joined room in the roster")
         room.tap()
         XCTAssertTrue(
-            app.navigationBars["ganesha"].waitForExistence(timeout: 20),
+            app.navigationBars["Ganesha"].waitForExistence(timeout: 20),
             "the room did not open")
 
-        let info = app.navigationBars["ganesha"].buttons["Info"]
+        let info = app.navigationBars["Ganesha"].buttons["Info"]
         XCTAssertTrue(info.waitForExistence(timeout: 10), "no info button in the toolbar")
         // Existence is not reach. A toolbar button can be in the tree and
         // unreachable — something laid over the bar swallowing its touches —
@@ -123,5 +120,23 @@ final class IPadTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// Launch with the roster in a known state.
+    ///
+    /// The arrangement is remembered in `UserDefaults`, so without this a run
+    /// inherits whatever the *previous* run last tapped — and a test that
+    /// passes or fails depending on the order of earlier tests is not a test.
+    /// `UserDefaults` reads `-key value` pairs straight off the command line,
+    /// so no test-only code has to exist in the app for this.
+    func launched(roster: String = "recent") -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "-roster.view", roster,
+            "-roster.showsInvitations", "NO",
+            "-roster.showsState", "YES",
+        ]
+        app.launch()
+        return app
     }
 }

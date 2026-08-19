@@ -23,7 +23,7 @@ struct CustomEventCard: View {
             // A type nothing here can render, but which carried a plain-text
             // body as Matrix convention asks. Show what it said.
             VStack(alignment: .leading, spacing: 4) {
-                Text(senderName).font(Theme.name)
+                Text(senderName).nameFace()
                 Text(text).font(Theme.body)
             }
             .padding(.vertical, 6)
@@ -33,7 +33,7 @@ struct CustomEventCard: View {
             // object — it gets the same quiet centred line every other
             // unrenderable item gets.
             Text(text)
-                .font(Theme.meta)
+                .metaFace()
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 6)
@@ -49,20 +49,20 @@ struct CustomEventCard: View {
                 // The left-truncated display form the core produced. Never
                 // built here: the obvious CSS-style approach hands the bidi
                 // algorithm a sender-controlled string.
-                Text(eventType).font(Theme.meta).foregroundStyle(.tertiary)
+                Text(eventType).metaFace().foregroundStyle(.tertiary)
                 Spacer()
                 if newerVersion {
                     // Rendered best-effort against a newer minor schema. Said
                     // quietly rather than hidden, so a reader knows there may
                     // be more to this event than is shown.
-                    Text("newer version").font(Theme.meta).foregroundStyle(.tertiary)
+                    Text("newer version").metaFace().foregroundStyle(.tertiary)
                 }
             }
 
             ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(field.label)
-                        .font(Theme.meta)
+                        .metaFace()
                         .textCase(.uppercase)
                         .foregroundStyle(.secondary)
                         .frame(width: 84, alignment: .leading)

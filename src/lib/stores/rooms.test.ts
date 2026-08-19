@@ -40,6 +40,7 @@ function summary(id: string, membership: Membership): RoomSummary {
     lastMessageNamesSender: false,
     lastEventType: null,
     lastActivityMs: null,
+  runtime: null,
     membership,
   };
 }

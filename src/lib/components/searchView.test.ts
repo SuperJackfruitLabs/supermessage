@@ -23,6 +23,7 @@ function summary(id: string, name: string): RoomSummary {
     lastMessageNamesSender: false,
     lastEventType: null,
     lastActivityMs: null,
+  runtime: null,
     membership: "joined",
   };
 }

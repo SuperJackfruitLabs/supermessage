@@ -30,7 +30,7 @@ struct RoomInfoPanel: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(info.identity.name).font(.headline)
                                     if let role = info.identity.role {
-                                        Text(role).font(Theme.meta).foregroundStyle(.secondary)
+                                        Text(role).metaFace().foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -45,7 +45,7 @@ struct RoomInfoPanel: View {
                                     Text(member.displayName ?? member.userId)
                                     if member.displayName != nil {
                                         Text(member.userId)
-                                            .font(Theme.meta)
+                                            .metaFace()
                                             .foregroundStyle(.secondary)
                                     }
                                 }

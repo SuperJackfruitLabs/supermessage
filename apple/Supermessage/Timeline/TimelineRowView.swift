@@ -72,7 +72,7 @@ struct TimelineRowView: View {
             HStack(spacing: 10) {
                 VStack { Divider() }
                 Text(Self.day(item.timestampMs))
-                    .font(Theme.meta)
+                    .metaFace()
                     .textCase(.uppercase)
                     .foregroundStyle(.secondary)
                     .fixedSize()
@@ -119,9 +119,9 @@ private struct MessageBlock: View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
             if !isOwn && !continuesRun {
                 HStack(spacing: 6) {
-                    Text(row.senderName).font(Theme.name)
+                    Text(row.senderName).nameFace()
                     if let timestamp = row.item.timestampMs {
-                        Text(Self.time(timestamp)).font(Theme.meta).foregroundStyle(.tertiary)
+                        Text(Self.time(timestamp)).metaFace().foregroundStyle(.tertiary)
                     }
                 }
             }
@@ -169,11 +169,11 @@ private struct ReplyQuote: View {
                 // the one shape to handle — and it renders as a sentence rather
                 // than an empty quote or a spinner that will never resolve.
                 Text("Original message unavailable")
-                    .font(Theme.meta)
+                    .metaFace()
                     .foregroundStyle(.tertiary)
             case let .available(sender, excerpt, label):
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(sender).font(Theme.meta).textCase(.uppercase)
+                    Text(sender).metaFace().textCase(.uppercase)
                     if let excerpt {
                         Text(excerpt).font(.footnote).lineLimit(2)
                     } else if let label {
@@ -220,7 +220,7 @@ private struct ReactionRow: View {
             // wire data compared byte-for-byte against what other clients
             // sent, and this one is bounded for display.
             Text(reaction.displayKey)
-            Text("\(reaction.count)").font(Theme.meta)
+            Text("\(reaction.count)").metaFace()
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
@@ -237,7 +237,7 @@ private struct SystemLine: View {
 
     var body: some View {
         Text(text)
-            .font(Theme.meta)
+            .metaFace()
             .foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 6)
@@ -267,7 +267,7 @@ private struct ImageRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(row.senderName).font(Theme.name)
+            Text(row.senderName).nameFace()
             Group {
                 if let image {
                     Image(uiImage: image)
@@ -315,7 +315,7 @@ private struct MediaFileRow: View {
             Image(systemName: icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(filename).font(.subheadline).lineLimit(1)
-                Text(caption).font(Theme.meta).foregroundStyle(.secondary)
+                Text(caption).metaFace().foregroundStyle(.secondary)
             }
         }
         .padding(10)
