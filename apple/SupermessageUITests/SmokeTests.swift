@@ -9,6 +9,35 @@ import XCTest
 /// catch anything.
 @MainActor
 final class SmokeTests: XCTestCase {
+    /// Open a room, go back, open it again.
+    ///
+    /// The second tap is the whole test. A collapsed `NavigationSplitView`
+    /// navigates *by selection*, so anything that clears the selection on the
+    /// way back has to leave the roster able to select the same room again —
+    /// and "set it to the value it already had" is a change SwiftUI can miss.
+    func testARoomCanBeOpenedTwice() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let room = app.staticTexts["ganesha"]
+        XCTAssertTrue(room.waitForExistence(timeout: 30), "no joined room in the roster")
+
+        room.tap()
+        XCTAssertTrue(
+            app.navigationBars["ganesha"].waitForExistence(timeout: 20),
+            "the room did not open the first time")
+
+        app.navigationBars["ganesha"].buttons.firstMatch.tap()
+        XCTAssertTrue(
+            room.waitForExistence(timeout: 20), "going back did not return to the roster")
+
+        room.tap()
+        XCTAssertTrue(
+            app.navigationBars["ganesha"].waitForExistence(timeout: 20),
+            "the room would not open a second time")
+    }
+
+
     func testOpensARoomAndRendersItsTimeline() throws {
         let app = XCUIApplication()
         app.launch()

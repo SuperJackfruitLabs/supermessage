@@ -56,11 +56,46 @@ struct SignedInView: View {
     @State private var showsSearch = false
     @State private var showsNewRoom = false
 
-    private var isWide: Bool { sizeClass == .regular }
+    /// The window's width, measured rather than inferred.
+    @State private var width: CGFloat = 0
+
+    /// Whether the info panel fits *beside* the conversation.
+    ///
+    /// `sizeClass == .regular` was the first answer and it is wrong on the
+    /// device that exposed it. An iPad is a regular width class in both
+    /// orientations, but three columns — roster, a readable timeline, and the
+    /// panel — only fit in landscape. In portrait at 834 points the inspector
+    /// was laid out at x=850.5: present in the accessibility tree, off the
+    /// side of the screen, invisible.
+    ///
+    /// This took a while to see because it is orientation-dependent, so the
+    /// same build passed and failed depending on how the simulator happened to
+    /// be turned. Measuring is the only honest answer to "is there room".
+    private var isWide: Bool { sizeClass == .regular && width >= Self.threeColumnWidth }
+
+    /// Roster, a readable timeline, and a panel, none of them squeezed to
+    /// uselessness. An iPad clears this in landscape and not in portrait,
+    /// which matches where the panel actually fits.
+    static let threeColumnWidth: CGFloat = 1_000
 
     var body: some View {
+        // Measured here, at the split view, because this is the only place that
+        // knows the window's width — a column reports its own.
+        GeometryReader { geometry in
+            splitView
+                .onAppear { width = geometry.size.width }
+                .onChange(of: geometry.size.width) { _, next in
+                    width = next
+                    // Rotating to portrait with the panel open would leave it
+                    // laid out where it no longer fits.
+                    if showsInfo, next < Self.threeColumnWidth { columns = .all }
+                }
+        }
+    }
+
+    private var splitView: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            RoomListView(session: session)
+            RoomListView(session: session, clearsSelectionOnPop: !isWide)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     ConnectionBar(connection: session.connection)
                 }
@@ -80,7 +115,19 @@ struct SignedInView: View {
         // read about a named room — so nothing would report the mismatch any
         // more. Closing it is the fix; a panel about a room you are no longer
         // in has nothing to say.
-        .onChange(of: session.rooms.selectedId) { _, _ in showsInfo = false }
+        .onChange(of: session.rooms.selectedId) { _, id in
+            showsInfo = false
+            // Opening a room gets out of its way.
+            //
+            // Pinning the sidebar to `.all` is what stops the app launching on
+            // an empty pane, but on a narrow iPad `.all` is an *overlay*: the
+            // roster sits on top of the conversation, dimming it and taking
+            // its taps — the room's own toolbar buttons stopped responding.
+            // Once a room is chosen there is nothing left to choose, so the
+            // roster steps aside. Where three columns fit it stays, because
+            // there it sits beside the room rather than over it.
+            if id != nil, !isWide { columns = .detailOnly }
+        }
 
         .sheet(isPresented: $showsSearch) {
             SearchPanel(session: session, onOpen: { session.rooms.select($0) }) {
@@ -126,7 +173,18 @@ struct SignedInView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showsInfo = true } label: { Image(systemName: "info.circle") }
+                Button {
+                    // Both in one update, deliberately. Collapsing the sidebar
+                    // in a *reaction* to `showsInfo` is a race: the inspector
+                    // can begin laying out before the column is free, and then
+                    // it goes where there is no room — off the side of the
+                    // screen at x=850.5, which is exactly the fault this was
+                    // meant to fix. One state change, one layout.
+                    if isWide { columns = .detailOnly }
+                    showsInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                }
             }
         }
         // On an iPad the panel comes in from the trailing edge, beside the
@@ -148,9 +206,11 @@ struct SignedInView: View {
             RoomInfoPanel(session: session, roomId: roomId) { showsInfo = false }
                 .presentationDetents([.medium, .large])
         }
+        // Only the restore. Opening is done by the button above, in the same
+        // update that presents the panel.
         .onChange(of: showsInfo) { _, open in
-            guard isWide else { return }
-            columns = open ? .detailOnly : .all
+            guard isWide, !open else { return }
+            columns = .all
         }
     }
 
@@ -160,19 +220,7 @@ struct SignedInView: View {
                 ComposerView(session: session, roomId: roomId)
             }
             .task(id: roomId) { await session.open(roomId: roomId) }
-            // Coming back to the roster on a phone leaves nothing selected.
-            //
-            // A collapsed `NavigationSplitView` is a push stack whose
-            // selection drives the navigation, so the row stays highlighted
-            // after you pop back — a tap that never let go. On an iPad the
-            // highlight is true and stays: the roster sits *beside* the
-            // conversation and says which room the pane is showing.
-            //
-            // Not done by withholding the selection from the list, which was
-            // the first attempt: the binding is what performs the push, so a
-            // roster that reports nothing selected is a roster you cannot open
-            // a room from.
-            .onDisappear { if !isWide { session.rooms.deselect() } }
+
     }
 }
 

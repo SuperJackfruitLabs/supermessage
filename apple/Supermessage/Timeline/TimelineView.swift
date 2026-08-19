@@ -126,6 +126,13 @@ struct TimelineView: View {
             .onChange(of: session.live.tools.count) { _, _ in followLiveTurn(proxy) }
             .onChange(of: timeline.roomId) { _, _ in
                 // A different room is a different reading position.
+                //
+                // `anchorId` above all: `.scrollPosition(id:)` restores the row
+                // it names, and carrying the *previous* room's anchor into a
+                // new one asks the list to scroll to a row it does not
+                // contain. That is why opening any room landed somewhere in
+                // the middle of its timeline instead of at the newest message.
+                anchorId = nil
                 hasSettled = false
                 previousCount = 0
                 distanceFromBottom = 0
