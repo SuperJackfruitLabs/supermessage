@@ -164,11 +164,20 @@ final class SmokeTests: XCTestCase {
         attach(XCUIScreen.main.screenshot(), named: "timeline-newest")
 
         let list = app.collectionViews.firstMatch
-        for shot in 1...3 {
+        for shot in 1...5 {
             list.swipeDown(velocity: .fast)
             list.swipeDown(velocity: .fast)
             Thread.sleep(forTimeInterval: 2)
             attach(XCUIScreen.main.screenshot(), named: "timeline-back-\(shot)")
+            // Cell frames, so an unexplained gap can be attributed to a row
+            // rather than guessed at.
+            let frames = app.cells.allElementsBoundByIndex
+                .map { "\(Int($0.frame.minY))..\(Int($0.frame.maxY)) h=\(Int($0.frame.height))" }
+                .joined(separator: "\n")
+            let note = XCTAttachment(string: frames)
+            note.name = "cells-\(shot)"
+            note.lifetime = .keepAlways
+            add(note)
         }
     }
 

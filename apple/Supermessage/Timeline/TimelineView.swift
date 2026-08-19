@@ -53,8 +53,11 @@ struct TimelineView: View {
                             .overlay(Circle().stroke(.secondary.opacity(0.25), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 12)
+                    // Clear of the conversation rather than on top of it: at
+                    // twelve points it sat over a reaction chip, which is a
+                    // control covering another control.
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 20)
                     .transition(.scale.combined(with: .opacity))
                     .accessibilityLabel("Jump to newest")
                 }

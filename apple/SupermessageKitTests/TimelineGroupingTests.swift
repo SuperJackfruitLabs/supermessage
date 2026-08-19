@@ -173,3 +173,42 @@ struct MembershipRunTests {
         }
     }
 }
+
+/// Rows the core said to draw nothing for.
+@MainActor
+struct SilentRowTests {
+    static func silent(_ id: String) -> TimelineRow {
+        let item = TimelineItemDto(
+            id: id, eventId: id, kind: "state", msgtype: nil, detail: nil, sender: "@a:x",
+            senderDisplayName: nil, body: nil, formattedBody: nil, media: nil,
+            customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil, replyTo: nil,
+            edited: false, reactions: [], readBy: [])
+        return TimelineRow(
+            item: item, view: .none, senderName: "a", senderShort: "a", membershipVerb: nil,
+            replyQuote: nil, canReplyOrReact: false, replyPreview: nil)
+    }
+
+    @Test("a row that draws nothing gets no row")
+    func silentRowsAreDropped() {
+        // A cell with no content does not reliably collapse to no height —
+        // one appeared as roughly three hundred points of blank in the middle
+        // of two different rooms. Deliberately silent means absent.
+        let out = TimelineGrouping.collapseMembershipRuns([
+            TimelineGroupingTests.row(id: "m", sender: "@a:x", at: 1),
+            Self.silent("s"),
+            TimelineGroupingTests.row(id: "n", sender: "@a:x", at: 2),
+        ])
+        #expect(out.count == 2)
+        #expect(out.map(\.id) == ["m", "n"])
+    }
+
+    @Test("a silent row does not break a membership run either")
+    func silentRowsDoNotSplitRuns() {
+        let out = TimelineGrouping.collapseMembershipRuns([
+            MembershipRunTests.membership("1", "Ganesha", "joined the room"),
+            Self.silent("s"),
+            MembershipRunTests.membership("2", "Krishna", "joined the room"),
+        ])
+        #expect(out.count == 1, "an invisible row split a run that a reader sees as one")
+    }
+}

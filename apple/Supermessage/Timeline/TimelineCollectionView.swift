@@ -90,7 +90,7 @@ struct TimelineCollectionView: UIViewRepresentable {
         // so the head of the content is what sits at the bottom of the screen:
         // without this the last line of a conversation rests flush against the
         // composer and reads as cut off.
-        view.contentInset.top = 12
+        view.contentInset.top = 16
 
         context.coordinator.attach(to: view)
         // Posted by the jump-to-newest button, which lives in the SwiftUI view

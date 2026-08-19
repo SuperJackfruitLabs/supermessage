@@ -72,6 +72,16 @@ public enum TimelineGrouping {
         var out: [DisplayRow] = []
         var run: [TimelineRow] = []
 
+        // `ItemView.none` is the core saying "draw nothing". A row for it is
+        // still a row: a cell with no content does not reliably collapse to no
+        // height, and one turned up on screen as roughly three hundred points
+        // of blank in the middle of two different rooms. Deliberately silent
+        // should mean *absent*, not empty.
+        let rows = rows.filter { row in
+            if case .none = row.view { return false }
+            return true
+        }
+
         func flush() {
             guard let first = run.first else { return }
             out.append(
