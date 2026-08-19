@@ -4,18 +4,31 @@ import SupermessageFFI
 
 /// Room avatars, fetched once and kept.
 ///
-/// **`NSCache`, not a dictionary.** The desktop keeps these in an unbounded
-/// map, which is fine for a session on a workstation and is not fine on a
-/// phone: an account with hundreds of rooms would hold every avatar it ever
-/// scrolled past. A count limit plus eviction under memory pressure is what
-/// the platform already offers, and it costs nothing to use.
+/// **A dictionary, bounded by hand — not an `NSCache`.** An `NSCache` was the
+/// obvious choice and was wrong for one decisive reason: `@Observable` cannot
+/// see through a reference type mutated behind its back, so an avatar landing
+/// in the cache invalidated nothing and no row redrew. It presented exactly as
+/// reported — no pictures on the first scroll, pictures on the second, gone
+/// again after visiting a room — because the only thing that ever showed them
+/// was some *other* change forcing a redraw.
+///
+/// The bound still matters: the desktop keeps these in an unbounded map, which
+/// is fine on a workstation and is not fine on a phone, where an account with
+/// hundreds of rooms would hold every avatar it ever scrolled past. So the
+/// eviction `NSCache` would have done is done here instead, in terms
+/// observation can follow.
 ///
 /// The value is a `data:` URI the core produced, so nothing here fetches from
 /// the network or decodes an image itself.
 @MainActor
 @Observable
 public final class AvatarCache {
-    private let cache = NSCache<NSString, NSString>()
+    /// Observable, which is the whole point — see this type's doc comment.
+    private var cache: [String: String] = [:]
+    /// Insertion order, oldest first, for eviction. A plain array because the
+    /// bound is a couple of hundred entries and the roster is walked far more
+    /// often than it is evicted from.
+    private var order: [String] = []
     /// Rooms the core has said have no avatar at all.
     ///
     /// Permanent, unlike the cache: an absence cannot be evicted into a
@@ -26,13 +39,15 @@ public final class AvatarCache {
     private var fetching: Set<String> = []
     private let client: CoreClient
 
+    private let countLimit: Int
+
     public init(client: CoreClient, countLimit: Int = 200) {
         self.client = client
-        cache.countLimit = countLimit
+        self.countLimit = countLimit
     }
 
     public func uri(for roomId: String) -> String? {
-        cache.object(forKey: roomId as NSString) as String?
+        cache[roomId]
     }
 
     /// Whether this room's avatar is worth asking the core for.
@@ -48,8 +63,16 @@ public final class AvatarCache {
     }
 
     func remember(_ uri: String, for roomId: String) {
-        cache.setObject(uri as NSString, forKey: roomId as NSString)
+        if cache[roomId] == nil { order.append(roomId) }
+        cache[roomId] = uri
         fetching.remove(roomId)
+
+        // Oldest first. Deliberately *not* least-recently-used: an LRU needs a
+        // touch on every read, and a read here happens for every visible row
+        // on every redraw.
+        while order.count > countLimit {
+            cache.removeValue(forKey: order.removeFirst())
+        }
     }
 
     func rememberAbsent(_ roomId: String) {
@@ -74,7 +97,8 @@ public final class AvatarCache {
     }
 
     public func clear() {
-        cache.removeAllObjects()
+        cache.removeAll()
+        order.removeAll()
         withoutAvatar.removeAll()
         fetching.removeAll()
     }

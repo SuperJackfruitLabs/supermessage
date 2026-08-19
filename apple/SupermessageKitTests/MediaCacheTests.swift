@@ -1,4 +1,6 @@
+import Observation
 import Testing
+import UIKit
 
 @testable import SupermessageKit
 
@@ -30,6 +32,26 @@ struct MediaCacheTests {
         media.markFailed("$e:x")
         #expect(media.image(for: "$e:x") == nil)
         #expect(media.hasFailed("$e:x"))
+    }
+
+    @Test("an arriving picture tells the view to redraw")
+    func arrivalIsObservable() {
+        // The same fault the avatars had, and it would have shown the same
+        // way: an `NSCache` is a reference type mutated behind `@Observable`'s
+        // back, so bytes landing invalidate nothing and the row keeps its
+        // placeholder until some unrelated change forces a redraw.
+        let media = cache()
+        final class Flag: @unchecked Sendable { var fired = false }
+        let redrew = Flag()
+
+        withObservationTracking {
+            _ = media.image(for: "$e:x")
+        } onChange: {
+            redrew.fired = true
+        }
+
+        media.remember(UIImage(), for: "$e:x")
+        #expect(redrew.fired, "a picture arrived and no view was told")
     }
 
     @Test("a decoder's refusal is remembered")

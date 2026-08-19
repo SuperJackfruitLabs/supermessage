@@ -24,11 +24,15 @@ public final class MediaCache {
     /// free — doing it in the view's body would decode the same image on every
     /// pass a scrolling list makes over the row.
     ///
-    /// `NSCache` for the same reason `AvatarCache` uses one, and more so:
-    /// these are message-sized images, not avatar circles, so an unbounded map
-    /// would hold every picture the reader ever scrolled past. A total cost
-    /// limit rather than a count limit, because what matters here is bytes.
-    private let cache = NSCache<NSString, UIImage>()
+    /// A dictionary bounded by hand, for the reason `AvatarCache`'s doc
+    /// comment gives at length: `@Observable` cannot see through an `NSCache`,
+    /// so a picture landing in one invalidates nothing and the row keeps its
+    /// placeholder. Bounded by **bytes** rather than count, because these are
+    /// message-sized images and one of them can be worth a hundred avatars.
+    private var cache: [String: UIImage] = [:]
+    private var order: [String] = []
+    private var bytesHeld = 0
+    private var cost: [String: Int] = [:]
     /// Events that resolved to nothing renderable. Permanent, unlike the
     /// cache: an absence cannot be evicted into a presence.
     private var failed: Set<String> = []
@@ -38,16 +42,18 @@ public final class MediaCache {
 
     private let client: CoreClient
 
+    private let byteLimit: Int
+
     public init(client: CoreClient, byteLimit: Int = 64 * 1024 * 1024) {
         self.client = client
-        cache.totalCostLimit = byteLimit
+        self.byteLimit = byteLimit
     }
 
     /// The decoded image, starting a fetch the first time an event is seen.
     /// `nil` both before the fetch resolves and once it has resolved with
     /// nothing renderable — ask `hasFailed` to tell those apart.
     public func image(for eventId: String) -> UIImage? {
-        if let held = cache.object(forKey: eventId as NSString) { return held }
+        if let held = cache[eventId] { return held }
         // Not held, and worth asking for: `failed` is the permanent absence
         // and `fetching` is the one already in flight. Anything else — a first
         // sighting, or an image the cache has since evicted — is fetched.
@@ -73,9 +79,37 @@ public final class MediaCache {
     /// produced that the image decoder then refused. The last line of the
     /// never-show-a-broken-image guarantee.
     public func markFailed(_ eventId: String) {
-        cache.removeObject(forKey: eventId as NSString)
+        evict(eventId)
         failed.insert(eventId)
         fetching.remove(eventId)
+    }
+
+    /// Hold a decoded image, evicting oldest-first to stay under the limit.
+    func remember(_ image: UIImage, for eventId: String) {
+        // The decoded backing store is what actually occupies memory, not the
+        // encoded bytes the core sent.
+        let bytes = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        if cache[eventId] == nil { order.append(eventId) }
+        evictCost(eventId)
+        cache[eventId] = image
+        cost[eventId] = bytes
+        bytesHeld += bytes
+
+        // Never evict the image just stored — a single picture larger than the
+        // whole limit would otherwise be fetched and dropped forever.
+        while bytesHeld > byteLimit, order.count > 1 {
+            evict(order[0])
+        }
+    }
+
+    private func evict(_ eventId: String) {
+        evictCost(eventId)
+        cache.removeValue(forKey: eventId)
+        order.removeAll { $0 == eventId }
+    }
+
+    private func evictCost(_ eventId: String) {
+        bytesHeld -= cost.removeValue(forKey: eventId) ?? 0
     }
 
     private func load(_ eventId: String) async {
@@ -89,11 +123,7 @@ public final class MediaCache {
             failed.insert(eventId)
             return
         }
-        // Cost in bytes, so the limit means what it says. A `UIImage` from
-        // `Data` keeps its decoded backing store, which is what actually
-        // occupies memory here.
-        let bytes = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
-        cache.setObject(image, forKey: eventId as NSString, cost: bytes)
+        remember(image, for: eventId)
     }
 
     /// A `data:` URI to pixels, off the main actor.

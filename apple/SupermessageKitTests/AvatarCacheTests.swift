@@ -1,3 +1,4 @@
+import Observation
 import Testing
 
 @testable import SupermessageKit
@@ -49,6 +50,31 @@ struct AvatarCacheTests {
 
         #expect(avatars.uri(for: "!a:x") == nil, "the count limit did not evict; test is inert")
         #expect(avatars.shouldFetch("!a:x"), "an avatar that is gone must be fetchable again")
+    }
+
+    @Test("an arriving avatar tells the view to redraw")
+    func arrivalIsObservable() {
+        // Reported: no pictures on the first scroll, pictures on the second,
+        // gone again after visiting a room.
+        //
+        // The storage was an `NSCache`, and `@Observable` cannot see through a
+        // reference type mutated behind its back. Bytes landed and nothing
+        // invalidated, so a row only picked them up when something *else*
+        // forced a redraw — which is exactly what scrolling does.
+        let avatars = cache()
+        // A box rather than a captured `var`: `onChange` is `@Sendable`, and
+        // the compiler is right to refuse a mutable capture across it.
+        final class Flag: @unchecked Sendable { var fired = false }
+        let redrew = Flag()
+
+        withObservationTracking {
+            _ = avatars.uri(for: "!a:x")
+        } onChange: {
+            redrew.fired = true
+        }
+
+        avatars.remember("data:image/png;base64,AAAA", for: "!a:x")
+        #expect(redrew.fired, "an avatar arrived and no view was told")
     }
 
     @Test("one fetch at a time for the same room")
