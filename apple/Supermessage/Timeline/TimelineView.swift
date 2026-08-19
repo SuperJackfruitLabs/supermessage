@@ -25,180 +25,26 @@ struct TimelineView: View {
     let session: Session
     let timeline: TimelineStore
 
-    @State private var anchorId: String?
-    @State private var distanceFromBottom: CGFloat = 0
-    @State private var previousCount = 0
-    @State private var hasSettled = false
-
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if timeline.isPaginating {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    ForEach(Array(timeline.items.enumerated()), id: \.element.item.id) { index, row in
-                        TimelineRowView(
-                            row: row,
-                            continuesRun: TimelineGrouping.continuesRun(
-                                row, after: index > 0 ? timeline.items[index - 1] : nil))
-                            .id(row.item.id)
-                            // The reading column: every row lays out inside
-                            // one centred measure, so a phone and an iPad
-                            // detail pane read the same way.
-                            //
-                            // The horizontal inset is not decoration. Prose
-                            // set flush to a screen edge is hard to read and
-                            // looks like a layout fault — and on a phone the
-                            // edge is also where the hand is.
-                            .padding(.horizontal, 16)
-                            .frame(maxWidth: 712, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                    LiveTurnView(live: session.live, writerName: writerName)
+        // Everything that used to be here — the ScrollView, the LazyVStack,
+        // the scroll-position binding, the ScrollViewReader and the geometry
+        // observer — is now `TimelineCollectionView`, whose doc comment
+        // explains why. What is left is what was never the problem: marking
+        // the room read, and the typing line.
+        TimelineCollectionView(session: session, timeline: timeline)
+            .task(id: timeline.roomId) {
+                await timeline.markRead()
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let line = session.typing.line {
+                    Text(line)
+                        .font(Theme.meta)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
-                        .frame(maxWidth: 712, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    // Room under the newest message.
-                    //
-                    // Without it the last line of a conversation sits flush
-                    // against the composer and is clipped by it — the message
-                    // reads as cut off mid-sentence, which is what a reader
-                    // reported. A safe-area inset reserves space for the
-                    // composer but leaves nothing between it and the prose.
-                    Color.clear.frame(height: 12)
-                }
-                .scrollTargetLayout()
-            }
-            .defaultScrollAnchor(.bottom)
-            .scrollPosition(id: $anchorId, anchor: .top)
-            .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
-                ScrollMetrics(
-                    // How far the reader has scrolled back into history.
-                    fromTop: geometry.contentOffset.y,
-                    // Total content minus what is above the fold and what is
-                    // visible.
-                    fromBottom: geometry.contentSize.height - geometry.contentOffset.y
-                        - geometry.containerSize.height)
-            } action: { _, metrics in
-                distanceFromBottom = metrics.fromBottom
-                // Near the top and there is more: fetch it, a screen ahead of
-                // the reader so the rows land before they are looked at.
-                if TimelineFollow.wantsOlderHistory(
-                    distanceFromTop: metrics.fromTop,
-                    canPaginate: timeline.canPaginate,
-                    isPaginating: timeline.isPaginating,
-                    hasSettled: hasSettled)
-                {
-                    Task { await timeline.paginateBack() }
+                        .padding(.vertical, 6)
+                        .background(.bar)
                 }
             }
-            .onChange(of: timeline.items.count) { previous, next in
-                defer { previousCount = next }
-
-                if TimelineFollow.shouldSettleAtBottom(
-                    previous: previous, next: next, settled: hasSettled)
-                {
-                    hasSettled = true
-                    scrollToBottom(proxy)
-                    return
-                }
-                if TimelineFollow.shouldRepin(
-                    distanceFromBottom: distanceFromBottom, grew: next > previous)
-                {
-                    scrollToBottom(proxy)
-                }
-            }
-            // Streaming. The live turn grows a few characters at a time, and
-            // the reading position has to grow with it or an agent's answer
-            // writes itself off the bottom of the screen.
-            //
-            // **Unanimated, deliberately.** Animating a scroll per token is
-            // what makes a stream look jittery: every arrival starts a new
-            // 0.18s ease that the next arrival interrupts, so the text
-            // stutters instead of growing. Moving the offset without an
-            // animation reads as the text simply being longer, which is what
-            // is actually happening.
-            .onChange(of: session.live.answer) { _, _ in followLiveTurn(proxy) }
-            .onChange(of: session.live.thought) { _, _ in followLiveTurn(proxy) }
-            .onChange(of: session.live.tools.count) { _, _ in followLiveTurn(proxy) }
-            .onChange(of: timeline.roomId) { _, _ in
-                // A different room is a different reading position.
-                //
-                // `anchorId` above all: `.scrollPosition(id:)` restores the row
-                // it names, and carrying the *previous* room's anchor into a
-                // new one asks the list to scroll to a row it does not
-                // contain. That is why opening any room landed somewhere in
-                // the middle of its timeline instead of at the newest message.
-                anchorId = nil
-                hasSettled = false
-                previousCount = 0
-                distanceFromBottom = 0
-            }
-        }
-        .task(id: timeline.roomId) {
-            await timeline.markRead()
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let line = session.typing.line {
-                Text(line)
-                    .font(Theme.meta)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(.bar)
-            }
-        }
     }
-
-    /// Who the live turn belongs to.
-    ///
-    /// The last peer message's sender, falling back to the room's own name for
-    /// the one case a timeline cannot answer: an agent's very first message in
-    /// a room nobody has spoken in yet.
-    private var writerName: String {
-        timeline.items.last { !$0.item.isOwn }?.senderName
-            ?? session.rooms.selectedName ?? "Agent"
-    }
-
-    /// Keep the newest content in view while a turn streams in.
-    ///
-    /// Only for a reader who was already at the bottom — someone reading back
-    /// through history is not asking to be dragged forward by an agent that
-    /// started talking.
-    private func followLiveTurn(_ proxy: ScrollViewProxy) {
-        guard TimelineFollow.shouldRepin(distanceFromBottom: distanceFromBottom, grew: true),
-            let last = timeline.items.last?.item.id
-        else { return }
-        proxy.scrollTo(last, anchor: .bottom)
-    }
-
-    /// Move to the newest message, gently.
-    ///
-    /// Animated, unlike `followLiveTurn`: this fires on a discrete event — a
-    /// message arriving, or one being sent — where the movement is the point.
-    /// A message that appears with the list already moved reads as a jump; the
-    /// timeline making room for it reads as an arrival.
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        guard let last = timeline.items.last?.item.id else { return }
-        withAnimation(.easeOut(duration: 0.28)) {
-            proxy.scrollTo(last, anchor: .bottom)
-        }
-    }
-}
-
-/// What one scroll observation tells the timeline.
-///
-/// Both distances come off the same `ScrollGeometry`, and reading them
-/// together in one `onScrollGeometryChange` keeps the two decisions they drive
-/// — fetch older history, stay pinned to the newest message — measured against
-/// the same instant rather than two nearby ones.
-private struct ScrollMetrics: Equatable {
-    /// Points scrolled back into history. Zero is the oldest loaded row.
-    var fromTop: CGFloat
-    /// Points below the fold. Zero is the newest message.
-    var fromBottom: CGFloat
 }

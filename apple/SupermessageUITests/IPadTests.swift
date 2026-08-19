@@ -53,8 +53,7 @@ final class IPadTests: XCTestCase {
             "the timeline is showing an unsupported-event placeholder: "
                 + apology.allElementsBoundByIndex.map { $0.label }.joined(separator: ", "))
 
-        try? XCUIScreen.main.screenshot().pngRepresentation
-            .write(to: URL(fileURLWithPath: "/tmp/ipad-room.png"))
+        attach(XCUIScreen.main.screenshot(), named: "ipad-room")
     }
 
     func testTheInfoPanelDescribesTheRoomThatIsOpen() throws {
@@ -85,8 +84,7 @@ final class IPadTests: XCTestCase {
         // *throws*, so a screenshot written at the end of the test is exactly
         // the one that never appears when it would be most useful.
         Thread.sleep(forTimeInterval: 4)
-        try? XCUIScreen.main.screenshot().pngRepresentation
-            .write(to: URL(fileURLWithPath: "/tmp/ipad-info.png"))
+        attach(XCUIScreen.main.screenshot(), named: "ipad-info")
 
         // Section headers are uppercased by `List`, hence the case-insensitive
         // match — asserting on "Members" exactly passed nothing and failed
@@ -112,5 +110,18 @@ final class IPadTests: XCTestCase {
         XCTAssertTrue(
             app.windows.firstMatch.frame.contains(frame),
             "the info panel is laid out off screen: \(frame)")
+    }
+
+    /// Screenshots travel in the result bundle, not through `/tmp`.
+    ///
+    /// On the simulator `/tmp` is the host's and a file written there is
+    /// readable straight away. On a real phone it is inside the app's sandbox,
+    /// so the same line silently produced nothing. An attachment works on both
+    /// and survives the run either way.
+    private func attach(_ screenshot: XCUIScreenshot, named name: String) {
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

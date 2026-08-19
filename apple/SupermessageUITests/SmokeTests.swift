@@ -73,8 +73,7 @@ final class SmokeTests: XCTestCase {
         if send.waitForExistence(timeout: 5) {
             send.tap()
             Thread.sleep(forTimeInterval: 6)
-            try? XCUIScreen.main.screenshot().pngRepresentation
-                .write(to: URL(fileURLWithPath: "/tmp/ios-after-send.png"))
+            attach(XCUIScreen.main.screenshot(), named: "ios-after-send")
             // The composer clears only when the core accepted the send, so an
             // empty field is the signal — and the honest one to assert on.
             //
@@ -94,7 +93,19 @@ final class SmokeTests: XCTestCase {
         // one. Written to a fixed path rather than attached to the result
         // bundle so it survives the bundle failing to save.
         Thread.sleep(forTimeInterval: 2)
-        let shot = XCUIScreen.main.screenshot()
-        try? shot.pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/ios-timeline.png"))
+        attach(XCUIScreen.main.screenshot(), named: "ios-timeline")
+    }
+
+    /// Screenshots travel in the result bundle, not through `/tmp`.
+    ///
+    /// On the simulator `/tmp` is the host's and a file written there is
+    /// readable straight away. On a real phone it is inside the app's sandbox,
+    /// so the same line silently produced nothing. An attachment works on both
+    /// and survives the run either way.
+    private func attach(_ screenshot: XCUIScreenshot, named name: String) {
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }
