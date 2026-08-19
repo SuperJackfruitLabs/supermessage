@@ -17,6 +17,39 @@ public enum TimelineFollow {
     /// reads as the list fighting them.
     public static let bottomThreshold: CGFloat = 64
 
+    /// How close to the top starts fetching older messages, in points.
+    ///
+    /// A threshold rather than "the reader reached the very top", so the rows
+    /// land before they are looked at. The desktop settled on 200 and this
+    /// matches it deliberately: two clients disagreeing about when history
+    /// loads is two different apps.
+    public static let topThreshold: CGFloat = 200
+
+    /// Whether to ask the core for older messages.
+    ///
+    /// The view used to gate this on the topmost visible row being *exactly*
+    /// the first row in the list, which is a knife edge a scroll almost never
+    /// lands on — so a room with months of history would never load any of
+    /// it. Distance is the honest measure, and it is the one the desktop
+    /// already used.
+    public static func wantsOlderHistory(
+        distanceFromTop: CGFloat, canPaginate: Bool, isPaginating: Bool, hasSettled: Bool
+    ) -> Bool {
+        // `isPaginating` is not belt-and-braces: scroll geometry fires many
+        // times a second, and without it a single flick queues a dozen
+        // overlapping round trips against one timeline.
+        //
+        // `hasSettled` is what stops a room from walking itself to its own
+        // beginning the moment it opens. Until the view has landed at the
+        // newest message, the content is still arriving and the scroll offset
+        // is near zero for reasons that have nothing to do with a reader
+        // wanting history — so every prepended page re-triggers the next one
+        // and the room opens at its oldest message instead of its newest.
+        // History is fetched because a reader moved toward it, never because
+        // the list has not finished arriving.
+        canPaginate && !isPaginating && hasSettled && distanceFromTop < topThreshold
+    }
+
     /// Whether a growth should scroll to the new bottom.
     ///
     /// Only when the reader was already at the bottom. Dragging someone who

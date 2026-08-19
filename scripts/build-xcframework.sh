@@ -52,23 +52,31 @@ done
 # Generate from the built library rather than from source: `--library` reads the
 # metadata the macros actually emitted, so the Swift cannot describe a surface
 # the binary does not have.
+# Built in a staging directory and swapped in at the end, rather than deleting
+# the checked-in bindings first. Deleting up front means any failure in here —
+# a compile error, a full disk — leaves the tree with no bindings at all, and
+# what should have been a failed build becomes "restore them from git".
 echo "==> generating Swift bindings"
-rm -rf "$GENERATED"
-mkdir -p "$GENERATED"
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
 cargo run -q -p supermessage-ffi --bin uniffi-bindgen -- generate \
     --library "target/aarch64-apple-ios/$PROFILE_DIR/$LIB" \
     --language swift \
-    --out-dir "$GENERATED"
+    --out-dir "$STAGE"
 
 # UniFFI emits `<name>FFI.modulemap`; an XCFramework wants it called
 # `module.modulemap` inside the headers directory it is given.
 echo "==> assembling headers"
+mkdir -p "$STAGE/headers"
+mv "$STAGE"/*.h "$STAGE/headers/" 2>/dev/null || true
+cat "$STAGE"/*.modulemap > "$STAGE/headers/module.modulemap" 2>/dev/null || true
+rm -f "$STAGE"/*.modulemap
+
+# Everything generated cleanly, so it is safe to replace what is on disk.
+rm -rf "$GENERATED"
+mv "$STAGE" "$GENERATED"
+trap - EXIT
 HEADERS="$GENERATED/headers"
-rm -rf "$HEADERS"
-mkdir -p "$HEADERS"
-mv "$GENERATED"/*.h "$HEADERS/" 2>/dev/null || true
-cat "$GENERATED"/*.modulemap > "$HEADERS/module.modulemap" 2>/dev/null || true
-rm -f "$GENERATED"/*.modulemap
 
 echo "==> packaging the xcframework"
 rm -rf "$OUT"

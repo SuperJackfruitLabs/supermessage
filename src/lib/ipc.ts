@@ -699,16 +699,18 @@ export type ReplyQuoteView =
 
 /**
  * The render decision for one item, made by `core::item_view::view_for`.
- *
- * `dateDivider` has no variant: it renders real content (a formatted date),
- * which this vocabulary does not cover, and the component handles it before
- * reading a view.
  */
 export type ItemView =
   | { render: "bubble"; muted: boolean; blocks: RichBlock[] }
   | { render: "emote" }
   | { render: "system"; text: string }
   | { render: "unreadMarker" }
+  /**
+   * The line between one day and the next. Carries no text: the date is
+   * formatted by the host from the item's own `timestampMs`, because that
+   * reads a clock and a locale and both belong where the rendering is.
+   */
+  | { render: "dateDivider" }
   | { render: "placeholder"; text: string }
   | { render: "image"; alt: string; width: number | null; height: number | null }
   | {

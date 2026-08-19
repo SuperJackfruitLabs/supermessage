@@ -51,9 +51,8 @@
   // "falls through the template" case. `core::item_view` classifies each
   // item into a render decision (bubble / emote / system line / placeholder
   // / nothing); this component only switches on that decision, it never
-  // inspects the wire `kind` itself beyond `dateDivider`, which renders real
-  // content the classifier's vocabulary doesn't cover, and `membershipGroup`
-  // rows, which `groupTimelineItems` already reduced to display text. See
+  // inspects the wire `kind` itself, except for `membershipGroup` rows,
+  // which `groupTimelineItems` already reduced to display text. See
   // that module's doc comment for why suppression happens here and not in
   // the core.
   //
@@ -1581,7 +1580,8 @@
           {:else}
             {@const item = row.item}
             {@const continuesRun = row.continuesRun}
-            {#if item.kind === "dateDivider"}
+            {@const view = row.view}
+            {#if view.render === "dateDivider"}
               <!--
                 A hairline with the date sitting *on* it, not a pill (spec
                 §6.3): the rule runs the full width behind an absolutely
@@ -1598,9 +1598,7 @@
                   {formatDate(item.timestampMs)}
                 </span>
               </div>
-            {:else}
-              {@const view = row.view}
-              {#if view.render === "bubble"}
+            {:else if view.render === "bubble"}
                 {#snippet bubbleContent()}
                   <!--
                     One renderer for both bodies now. `core::rich` parses the
@@ -2036,7 +2034,6 @@
                   system line, deliberately: see `logLine`.
                 -->
                 {@render logLine(view.text)}
-              {/if}
               <!-- view.render === "none": deliberately silent, see `core::item_view`. -->
             {/if}
           {/if}

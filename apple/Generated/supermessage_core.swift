@@ -3343,10 +3343,6 @@ extension CustomEventView: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
  * The render decision for one item.
- *
- * `dateDivider` has no variant here: it renders real content (a formatted
- * date) rather than a decision this vocabulary covers, and the host handles
- * it before asking.
  */
 
 public enum ItemView {
@@ -3392,6 +3388,20 @@ public enum ItemView {
      */
     case mediaFile(label: MediaFileLabel, filename: String, size: UInt64?, mimetype: String?
     )
+    /**
+     * The line between one day and the next.
+     *
+     * It carries no text: the date is formatted by the host from the item's
+     * own `timestamp_ms`, because formatting reads a clock and a locale and
+     * both belong where the rendering is.
+     *
+     * **This used to have no variant**, and this function carried a note
+     * telling every caller to special-case the kind before asking. The
+     * desktop did. iOS did not, and put "Unsupported event (dateDivider)" in
+     * the middle of a conversation — a contract in a comment is one a second
+     * host will eventually miss. As a variant, ignoring it fails to compile.
+     */
+    case dateDivider
     /**
      * A suite event — a Kaambaan card or run, a permission request, station
      * status. `view` is the whole fallback-chain decision: a host renders its
@@ -3440,10 +3450,12 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         case 7: return .mediaFile(label: try FfiConverterTypeMediaFileLabel.read(from: &buf), filename: try FfiConverterString.read(from: &buf), size: try FfiConverterOptionUInt64.read(from: &buf), mimetype: try FfiConverterOptionString.read(from: &buf)
         )
         
-        case 8: return .customEvent(view: try FfiConverterTypeCustomEventView.read(from: &buf), eventType: try FfiConverterString.read(from: &buf)
+        case 8: return .dateDivider
+        
+        case 9: return .customEvent(view: try FfiConverterTypeCustomEventView.read(from: &buf), eventType: try FfiConverterString.read(from: &buf)
         )
         
-        case 9: return .none
+        case 10: return .none
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -3492,14 +3504,18 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             FfiConverterOptionString.write(mimetype, into: &buf)
             
         
-        case let .customEvent(view,eventType):
+        case .dateDivider:
             writeInt(&buf, Int32(8))
+        
+        
+        case let .customEvent(view,eventType):
+            writeInt(&buf, Int32(9))
             FfiConverterTypeCustomEventView.write(view, into: &buf)
             FfiConverterString.write(eventType, into: &buf)
             
         
         case .none:
-            writeInt(&buf, Int32(9))
+            writeInt(&buf, Int32(10))
         
         }
     }

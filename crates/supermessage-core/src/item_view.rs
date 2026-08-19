@@ -25,10 +25,6 @@ use crate::dto::{ReplyToDto, TimelineItemDto};
 use crate::rich::{blocks_from_markdown, blocks_from_sanitised_html, RichBlock};
 
 /// The render decision for one item.
-///
-/// `dateDivider` has no variant here: it renders real content (a formatted
-/// date) rather than a decision this vocabulary covers, and the host handles
-/// it before asking.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase", tag = "render")]
 pub enum ItemView {
@@ -76,6 +72,18 @@ pub enum ItemView {
         size: Option<u64>,
         mimetype: Option<String>,
     },
+    /// The line between one day and the next.
+    ///
+    /// It carries no text: the date is formatted by the host from the item's
+    /// own `timestamp_ms`, because formatting reads a clock and a locale and
+    /// both belong where the rendering is.
+    ///
+    /// **This used to have no variant**, and this function carried a note
+    /// telling every caller to special-case the kind before asking. The
+    /// desktop did. iOS did not, and put "Unsupported event (dateDivider)" in
+    /// the middle of a conversation — a contract in a comment is one a second
+    /// host will eventually miss. As a variant, ignoring it fails to compile.
+    DateDivider,
     /// A suite event — a Kaambaan card or run, a permission request, station
     /// status. `view` is the whole fallback-chain decision: a host renders its
     /// three states but never makes that decision itself.
@@ -400,8 +408,6 @@ fn state_view(item: &TimelineItemDto) -> ItemView {
 }
 
 /// The render decision for `item`.
-///
-/// Callers special-case `dateDivider` before reaching here.
 pub fn view_for(item: &TimelineItemDto) -> ItemView {
     match item.kind.as_str() {
         "message" => message_view(item),
@@ -466,6 +472,8 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         },
 
         "readMarker" => ItemView::UnreadMarker,
+
+        "dateDivider" => ItemView::DateDivider,
 
         // The boundary the SDK inserts once back-pagination reaches the
         // genuine start of a room's history — at most once, and always first.
@@ -914,6 +922,26 @@ mod tests {
                 text: "Unsupported event (m.some.custom)".into()
             }
         );
+    }
+
+    #[test]
+    fn a_date_divider_is_its_own_decision_not_an_unsupported_event() {
+        // Found on an iPad: "Unsupported event (dateDivider)" in the middle of
+        // a conversation.
+        //
+        // This function used to carry the TypeScript's note that callers must
+        // special-case `dateDivider` before reaching here. Timeline.svelte
+        // does. iOS did not — and a comment telling every future host to
+        // remember something is a contract in the wrong place. It has a
+        // variant now, so a host that ignores it fails to compile instead of
+        // printing an apology at the reader.
+        //
+        // The core does not format the date: that reads a clock and a locale,
+        // and belongs where the rendering is. The timestamp is already on the
+        // item.
+        let mut it = item("dateDivider");
+        it.timestamp_ms = Some(1_700_000_000_000);
+        assert_eq!(view_for(&it), ItemView::DateDivider);
     }
 
     #[test]

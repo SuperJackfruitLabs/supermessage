@@ -701,37 +701,26 @@ impl Session {
     /// alt aliases, room id and joined member list — for the room-info
     /// panel.
     ///
-    /// **Room-scoped and focus-checked**, following the same pattern every
-    /// timeline command in `core::commands` already takes for the reason
-    /// `core::timeline::verify_room_focus`'s doc comment gives: a command
-    /// that silently resolved against "whatever room is current" could act
-    /// on the wrong room after a switch the caller lost a race against. Here
-    /// that would mean showing one room's topic/members under another
-    /// room's header — a real, if less damaging, wrong-recipient bug, so
-    /// this takes the same guard rather than being the one command in this
-    /// codebase that doesn't.
+    /// **Not focus-checked**, unlike the timeline commands in
+    /// `core::commands`. That guard exists because a *write* that resolved
+    /// against "whatever room is current" could send to the wrong room after
+    /// a switch the caller lost a race against. This is a read, and it names
+    /// the room it wants: `get_room` answers about that room or about no
+    /// room, so there is no room it could act on by mistake.
     ///
-    /// The check reads the focused room id out of
-    /// [`FocusedTimeline::snapshot`] rather than a purpose-built accessor:
-    /// `core::timeline` is intentionally not touched by this change (see
-    /// this codebase's session-scoped edit rules at the time this was
-    /// written), and `snapshot` is the only existing `pub` method on
-    /// `FocusedTimeline` that reveals the focused room id without also
-    /// performing a live send/paginate against it. The trade-off, noted
-    /// rather than hidden: `snapshot` clones the whole materialized item
-    /// list to get there, which this call then discards unused. That cost is
-    /// paid once per explicit "open the room-info panel" action, not on
-    /// every keystroke or every timeline diff, so it was judged acceptable
-    /// rather than justifying a new `core::timeline` accessor mid-edit of a
-    /// file another change was actively working in.
+    /// It used to take the guard anyway, on the argument that a stale panel
+    /// would show one room's members under another room's header. That is a
+    /// host-side bug about which room the panel *asks* about, and refusing
+    /// the answer does not fix it — it converts it into "Couldn't load".
+    /// Which is what shipped: an iPad showed `NotReady` for a room that was
+    /// open on screen, and `RoomChanged` after a switch with the panel up.
+    /// The panel keeping up with the room is the host's job, and the host
+    /// now does it.
     ///
-    /// Fails with [`CoreError::NotReady`] when no room is focused at all, or
-    /// [`CoreError::RoomChanged`] when `room_id` isn't the one that is.
+    /// Fails with [`CoreError::Protocol`] when `room_id` does not parse or
+    /// names a room this account is not in.
     pub async fn room_info(&self, room_id: &str) -> CoreResult<RoomInfoDto> {
         let client = self.require_client().await?;
-        // Check-only: `snapshot()` would clone the whole materialised item
-        // list just to read one room id.
-        self.focused.verify_focus(room_id)?;
 
         let parsed_room_id =
             RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
@@ -1101,6 +1090,73 @@ mod tests {
         assert!(
             !session.is_active().await,
             "logout must leave the session inactive, so the next restore actually restores"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn room_info_does_not_depend_on_which_room_is_on_screen() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // Reported from an iPad: opening the room-info panel showed
+        // "Couldn't load — NotReady", and after switching rooms with it open,
+        // "RoomChanged(requested: ..., focused: ...)".
+        //
+        // Both were the same fault. `room_info` asked `verify_focus` whether
+        // the room being *asked about* is the room being *looked at*, but
+        // `build_room_info` never touches the focused timeline — it reads
+        // members, topic and aliases off the `Room` that `get_room` returns.
+        // The check bought nothing and coupled a read-only query to the
+        // timeline's state, so any disagreement between the panel and the
+        // detail pane became a failure to load.
+        //
+        // The room below is not synced, so a *correct* implementation cannot
+        // answer — but it must fail because the room is unknown, having got
+        // as far as looking it up, rather than because nothing is focused.
+        tls::install_ring_provider();
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/_matrix/client/versions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "versions": ["r0.6.0"],
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/_matrix/client/r0/login"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "abc123",
+                "device_id": "GHTYAJCE",
+                "user_id": "@alice:localhost",
+            })))
+            .mount(&server)
+            .await;
+
+        let data_dir =
+            std::env::temp_dir().join(format!("sm-roominfo-focus-{}", rand::random::<u64>()));
+        let session = Session::new(data_dir.clone(), Box::new(MemoryStore::default()));
+        session
+            .login(&server.uri(), "alice", "hunter2")
+            .await
+            .unwrap();
+
+        // Nothing has ever been focused: no room is open, which is precisely
+        // the state the iPad panel hit.
+        let err = session
+            .room_info("!nowhere:localhost")
+            .await
+            .expect_err("an unsynced room cannot be described");
+
+        assert!(
+            !matches!(err, CoreError::NotReady),
+            "room_info refused on focus rather than looking the room up: {err:?}"
+        );
+        assert!(
+            !matches!(err, CoreError::RoomChanged { .. }),
+            "room_info still compares the asked-about room to the focused one: {err:?}"
         );
 
         let _ = std::fs::remove_dir_all(&data_dir);

@@ -79,9 +79,29 @@ public final class TimelineStore {
         guard let roomId, !isPaginating, canPaginate else { return false }
         isPaginating = true
         defer { isPaginating = false }
-        let more = (try? await client.timelinePaginateBack(roomId: roomId, count: count)) ?? false
-        canPaginate = more
-        return more
+
+        // **`paginate_backwards` returns whether it hit the *start* of the
+        // timeline**, not whether more remains — the SDK documents it as
+        // "Returns whether we hit the start of the timeline". Read the wrong
+        // way round, the first successful page in any room with real history
+        // (which does not reach the start) switched pagination off for good,
+        // and nothing older than the opening screen would ever load.
+        //
+        // A failed call defaults to `false`: a network error is not evidence
+        // that a room has no more history, and treating it as such would make
+        // one dropped request permanent.
+        let reachedStart =
+            (try? await client.timelinePaginateBack(roomId: roomId, count: count)) ?? false
+        applyPaginationResult(reachedStart: reachedStart)
+        return canPaginate
+    }
+
+    /// Record what a pagination round trip reported.
+    ///
+    /// Separate from the call so the state transition can be tested without a
+    /// homeserver — the inversion above was invisible until this had a name.
+    func applyPaginationResult(reachedStart: Bool) {
+        canPaginate = !reachedStart
     }
 
     public func markRead() async {

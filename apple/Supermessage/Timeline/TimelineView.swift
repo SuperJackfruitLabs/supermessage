@@ -66,16 +66,24 @@ struct TimelineView: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollPosition(id: $anchorId, anchor: .top)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                // Distance from the bottom, in points: total content minus
-                // what is above the fold and what is visible.
-                geometry.contentSize.height - geometry.contentOffset.y
-                    - geometry.containerSize.height
-            } action: { _, distance in
-                distanceFromBottom = distance
-                // Near the top and there is more: fetch it. The threshold is
-                // a screen, so the rows land before the reader reaches them.
-                if geometry(distance) {
+            .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
+                ScrollMetrics(
+                    // How far the reader has scrolled back into history.
+                    fromTop: geometry.contentOffset.y,
+                    // Total content minus what is above the fold and what is
+                    // visible.
+                    fromBottom: geometry.contentSize.height - geometry.contentOffset.y
+                        - geometry.containerSize.height)
+            } action: { _, metrics in
+                distanceFromBottom = metrics.fromBottom
+                // Near the top and there is more: fetch it, a screen ahead of
+                // the reader so the rows land before they are looked at.
+                if TimelineFollow.wantsOlderHistory(
+                    distanceFromTop: metrics.fromTop,
+                    canPaginate: timeline.canPaginate,
+                    isPaginating: timeline.isPaginating,
+                    hasSettled: hasSettled)
+                {
                     Task { await timeline.paginateBack() }
                 }
             }
@@ -128,19 +136,23 @@ struct TimelineView: View {
             ?? session.rooms.selectedName ?? "Agent"
     }
 
-    /// Whether the reader is close enough to the top to want more history.
-    private func geometry(_ distanceFromBottom: CGFloat) -> Bool {
-        // Expressed against the *bottom* distance because that is what the
-        // geometry reader gives; a large value means a long way up.
-        timeline.canPaginate && !timeline.isPaginating
-            && distanceFromBottom > 0
-            && anchorId == timeline.items.first?.item.id
-    }
-
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         guard let last = timeline.items.last?.item.id else { return }
         withAnimation(.easeOut(duration: 0.18)) {
             proxy.scrollTo(last, anchor: .bottom)
         }
     }
+}
+
+/// What one scroll observation tells the timeline.
+///
+/// Both distances come off the same `ScrollGeometry`, and reading them
+/// together in one `onScrollGeometryChange` keeps the two decisions they drive
+/// — fetch older history, stay pinned to the newest message — measured against
+/// the same instant rather than two nearby ones.
+private struct ScrollMetrics: Equatable {
+    /// Points scrolled back into history. Zero is the oldest loaded row.
+    var fromTop: CGFloat
+    /// Points below the fold. Zero is the newest message.
+    var fromBottom: CGFloat
 }

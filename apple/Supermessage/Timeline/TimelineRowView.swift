@@ -15,6 +15,18 @@ struct TimelineRowView: View {
 
     private var item: TimelineItemDto { row.item }
 
+    /// The day a divider names — "Today" and "Yesterday" where those apply,
+    /// because a date is harder to place than a word.
+    static func day(_ ms: UInt64?) -> String {
+        guard let ms else { return "" }
+        let date = Date(timeIntervalSince1970: Double(ms) / 1000)
+        let formatter = DateFormatter()
+        formatter.doesRelativeDateFormatting = true
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+
     var body: some View {
         switch row.view {
         case let .bubble(muted, blocks):
@@ -31,6 +43,21 @@ struct TimelineRowView: View {
 
         case let .system(text):
             SystemLine(text: text)
+
+        case .dateDivider:
+            // A hairline with the date on it. Formatted here rather than in
+            // the core because it reads a clock and a locale — the core sends
+            // the timestamp, which is all it can honestly know.
+            HStack(spacing: 10) {
+                VStack { Divider() }
+                Text(Self.day(item.timestampMs))
+                    .font(Theme.meta)
+                    .textCase(.uppercase)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                VStack { Divider() }
+            }
+            .padding(.vertical, 10)
 
         case .unreadMarker:
             // No label. The divider says it, and a caption repeated at every

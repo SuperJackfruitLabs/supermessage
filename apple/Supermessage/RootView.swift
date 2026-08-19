@@ -44,6 +44,14 @@ struct SignedInView: View {
     let session: Session
 
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// The sidebar starts visible.
+    ///
+    /// `NavigationSplitView` defaults to `.automatic`, which on an iPad in
+    /// portrait hides the sidebar — so the app opened on an empty detail pane
+    /// with the roster behind a toggle nobody had reason to look for. On
+    /// iPhone this is ignored, because a collapsed split view is a stack and
+    /// the roster is the stack's root.
+    @State private var columns: NavigationSplitViewVisibility = .all
     @State private var showsInfo = false
     @State private var showsSearch = false
     @State private var showsNewRoom = false
@@ -51,7 +59,7 @@ struct SignedInView: View {
     private var isWide: Bool { sizeClass == .regular }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             RoomListView(session: session)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     ConnectionBar(connection: session.connection)
@@ -65,6 +73,15 @@ struct SignedInView: View {
         } detail: {
             detail
         }
+        // The info panel describes one room, and it is presented from state
+        // that outlives a room switch: leave it up while the detail pane moves
+        // on and it asks about the room the reader just left, under the new
+        // room's header. The core no longer refuses that question — it is a
+        // read about a named room — so nothing would report the mismatch any
+        // more. Closing it is the fix; a panel about a room you are no longer
+        // in has nothing to say.
+        .onChange(of: session.rooms.selectedId) { _, _ in showsInfo = false }
+
         .sheet(isPresented: $showsSearch) {
             SearchPanel(session: session, onOpen: { session.rooms.select($0) }) {
                 showsSearch = false
@@ -112,13 +129,24 @@ struct SignedInView: View {
                 Button { showsInfo = true } label: { Image(systemName: "info.circle") }
             }
         }
-        // On iPad the panel slides in beside the timeline rather than over it,
-        // because there is room and covering a conversation to read its member
-        // list is a phone compromise, not a design.
-        .inspector(isPresented: Binding(get: { isWide && showsInfo }, set: { showsInfo = $0 })) {
-            RoomInfoPanel(session: session, roomId: roomId) { showsInfo = false }
-        }
-        .sheet(isPresented: Binding(get: { !isWide && showsInfo }, set: { showsInfo = $0 })) {
+        // A sheet on every size, deliberately — **not** an `.inspector`.
+        //
+        // The inspector was the design (read a room's members beside the
+        // conversation rather than on top of it) and it does not currently
+        // work here. On an iPad in portrait with the sidebar pinned open, the
+        // panel is laid out past the right edge of the window: measured at
+        // x=850.5 on an 834-point screen, present in the accessibility tree,
+        // invisible to the reader. Sidebar plus a readable timeline already
+        // spend the width, and there is no third column left to take.
+        //
+        // Gating it on measured width was tried and did not hold, so rather
+        // than ship a panel that is sometimes invisible, this is a sheet
+        // everywhere. `roomId` is the detail pane's own parameter, so it
+        // always describes the room on screen. Restoring the inspector for
+        // genuinely wide windows is worth doing — as a change with a test
+        // that asserts the panel has area on screen, which is the assertion
+        // that caught this in the first place.
+        .sheet(isPresented: $showsInfo) {
             RoomInfoPanel(session: session, roomId: roomId) { showsInfo = false }
                 .presentationDetents([.medium, .large])
         }
