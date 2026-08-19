@@ -134,6 +134,91 @@ public final class Session {
         try? await client.setTyping(roomId: roomId, typing: typing)
     }
 
+    /// Foreground and background.
+    ///
+    /// **The one thing iOS needs that desktop never did.** A suspended app
+    /// loses its sockets, and the `sm://` channels only speak when something
+    /// *changes* — so a store that came back to a quiet account would sit
+    /// empty until the next message, which in these rooms can be hours. This
+    /// is exactly what `seed()` was written for, after a webview reload left
+    /// the desktop roster empty with a perfectly healthy core behind it.
+    public func scenePhaseChanged(to active: Bool) async {
+        guard phase == .signedIn else { return }
+        if active {
+            await rooms.seed()
+            await timeline.seed()
+            await spaces.refresh()
+        } else if let roomId = timeline.roomId {
+            // Leaving a typing notice on when the app goes away tells the room
+            // someone is writing who is not even looking at it.
+            await setTyping(false, in: roomId)
+        }
+    }
+
+    /// The commands the panels drive.
+    ///
+    /// Each returns a message on refusal rather than throwing, because a panel
+    /// shows the failure inline rather than propagating it — the reader is in
+    /// the middle of something and an alert would take the room away.
+
+    public func joinRoom(_ roomId: String) async -> String? {
+        await refusal { try await client.joinRoom(roomId: roomId) }
+    }
+
+    public func leaveRoom(_ roomId: String) async -> String? {
+        await refusal { try await client.leaveRoom(roomId: roomId) }
+    }
+
+    public func roomInfo(_ roomId: String) async throws -> RoomInfoDto {
+        try await client.roomInfo(roomId: roomId)
+    }
+
+    public func search(_ term: String) async -> [SearchResultDto] {
+        (try? await client.searchMessages(term: term)) ?? []
+    }
+
+    public enum Outcome {
+        case success(String)
+        case failure(String)
+    }
+
+    public func createRoom(name: String, invite: [String]) async -> Outcome {
+        do {
+            let roomId = try await client.createRoom(
+                name: name, invite: invite, isDirect: !invite.isEmpty)
+            await load()
+            return .success(roomId)
+        } catch let error as FfiError {
+            return .failure(ErrorPresenter.message(for: error))
+        } catch {
+            return .failure("Couldn't create that room.")
+        }
+    }
+
+    public func joinByAlias(_ aliasOrId: String) async -> Outcome {
+        do {
+            let roomId = try await client.joinRoomByAlias(aliasOrId: aliasOrId)
+            await load()
+            return .success(roomId)
+        } catch let error as FfiError {
+            return .failure(ErrorPresenter.message(for: error))
+        } catch {
+            return .failure("Couldn't join that room.")
+        }
+    }
+
+    private func refusal(_ body: () async throws -> Void) async -> String? {
+        do {
+            try await body()
+            await load()
+            return nil
+        } catch let error as FfiError {
+            return ErrorPresenter.message(for: error)
+        } catch {
+            return "That didn't work."
+        }
+    }
+
     /// Open a room: the timeline subscribes, and the transient stores are
     /// re-pointed so nothing from the last room survives the switch.
     public func open(roomId: String) async {

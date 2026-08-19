@@ -1,3 +1,4 @@
+import SupermessageFFI
 import SupermessageKit
 import SwiftUI
 
@@ -9,6 +10,7 @@ import SwiftUI
 /// who is already signed in.
 struct RootView: View {
     @State private var session = Session()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -25,17 +27,28 @@ struct RootView: View {
             guard session.phase == .starting else { return }
             await session.start()
         }
+        .onChange(of: scenePhase) { _, phase in
+            Task { await session.scenePhaseChanged(to: phase == .active) }
+        }
     }
 }
 
 /// Everything behind a session.
 ///
 /// One `NavigationSplitView` serves both size classes — it collapses to a push
-/// stack on iPhone by itself, so there is no branch here on width. On iPad the
-/// sidebar will hold the spaces rail beside the list; on iPhone the spaces are
-/// a strip inside the list, which is what `SpacePillStrip` is.
+/// stack on iPhone by itself, so there is no branch on width here. On iPad the
+/// sidebar keeps the room list beside the timeline and room info slides in as
+/// an `.inspector` rather than covering it; on iPhone that same panel is a
+/// sheet, which is what the environment's size class decides below.
 struct SignedInView: View {
     let session: Session
+
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var showsInfo = false
+    @State private var showsSearch = false
+    @State private var showsNewRoom = false
+
+    private var isWide: Bool { sizeClass == .regular }
 
     var body: some View {
         NavigationSplitView {
@@ -44,26 +57,79 @@ struct SignedInView: View {
                     ConnectionBar(connection: session.connection)
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Sign out") { Task { await session.signOut() } }
-                            .font(.footnote)
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { showsSearch = true } label: { Image(systemName: "magnifyingglass") }
+                        Button { showsNewRoom = true } label: { Image(systemName: "square.and.pencil") }
                     }
                 }
         } detail: {
-            if let roomId = session.rooms.selectedId, let name = session.rooms.selectedName {
-                TimelineView(session: session, timeline: session.timeline)
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        ComposerView(session: session, roomId: roomId)
-                    }
-                    .navigationTitle(name)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .task(id: roomId) { await session.open(roomId: roomId) }
-            } else {
-                ContentUnavailableView(
-                    "No room open", systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Choose a room to read it."))
+            detail
+        }
+        .sheet(isPresented: $showsSearch) {
+            SearchPanel(session: session, onOpen: { session.rooms.select($0) }) {
+                showsSearch = false
             }
         }
+        .sheet(isPresented: $showsNewRoom) {
+            NewRoomPanel(session: session, onOpen: { session.rooms.select($0) }) {
+                showsNewRoom = false
+            }
+        }
+    }
+
+    @ViewBuilder private var detail: some View {
+        if let roomId = session.rooms.selectedId, let row = session.rooms.selectedRow {
+            room(roomId: roomId, row: row)
+        } else if let roomId = session.rooms.selectedId, let name = session.rooms.selectedName {
+            // The room left the roster — a space switch — but the reader is
+            // still in it. Keep showing it rather than blanking the pane.
+            timeline(roomId: roomId, name: name)
+        } else {
+            ContentUnavailableView(
+                "No room open", systemImage: "bubble.left.and.bubble.right",
+                description: Text("Choose a room to read it."))
+        }
+    }
+
+    @ViewBuilder private func room(roomId: String, row: RoomRow) -> some View {
+        Group {
+            if row.affordance == .respondToInvitation {
+                // An invited room has no readable history, so there is nothing
+                // to page through and no composer to offer.
+                InvitationEmptyTimeline()
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        InvitationView(
+                            session: session, roomId: roomId, roomName: row.identity.name)
+                    }
+            } else {
+                timeline(roomId: roomId, name: row.identity.name)
+            }
+        }
+        .navigationTitle(row.identity.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showsInfo = true } label: { Image(systemName: "info.circle") }
+            }
+        }
+        // On iPad the panel slides in beside the timeline rather than over it,
+        // because there is room and covering a conversation to read its member
+        // list is a phone compromise, not a design.
+        .inspector(isPresented: Binding(get: { isWide && showsInfo }, set: { showsInfo = $0 })) {
+            RoomInfoPanel(session: session, roomId: roomId) { showsInfo = false }
+        }
+        .sheet(isPresented: Binding(get: { !isWide && showsInfo }, set: { showsInfo = $0 })) {
+            RoomInfoPanel(session: session, roomId: roomId) { showsInfo = false }
+                .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func timeline(roomId: String, name: String) -> some View {
+        TimelineView(session: session, timeline: session.timeline)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ComposerView(session: session, roomId: roomId)
+            }
+            .task(id: roomId) { await session.open(roomId: roomId) }
     }
 }
 
@@ -82,9 +148,9 @@ struct ConnectionBar: View {
                     Text(message).font(Theme.meta).foregroundStyle(.secondary)
                 }
             }
+            .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
-            .padding(.horizontal, 10)
-            .background(.thinMaterial, in: Capsule())
+            .background(.bar)
         }
     }
 
