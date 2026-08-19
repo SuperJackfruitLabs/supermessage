@@ -148,6 +148,43 @@ surrogates for astral-plane emoji; the script repairs them before printing.
 This harness is what caught the "opening a room shows one message" bug — it
 is worth reaching for before trusting a UI claim made from code reading alone.
 
+## The iOS app
+
+Native SwiftUI, not a webview. `apple/` holds three targets and `project.yml`
+generates the Xcode project — regenerate after adding a file:
+
+```bash
+cd apple && xcodegen generate && cd ..
+xcodebuild test -project apple/Supermessage.xcodeproj -scheme SupermessageKit -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+xcodebuild test -project apple/Supermessage.xcodeproj -scheme Supermessage    -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+```
+
+- `SupermessageFFI` — the generated bindings, **Swift 5**. UniFFI 0.28's
+  output is not `Sendable`-clean; quarantining it is what lets everything else
+  compile under strict concurrency.
+- `SupermessageKit` — the boundary and the stores. **Imports no SwiftUI**, so
+  the state layer stays testable and view code cannot leak into it.
+- `Supermessage` — the views.
+
+Three rules that are not style preferences:
+
+1. **The app parses nothing.** No markdown, no HTML, no `matrix.to`, no
+   room-name splitting. Those arrive already decided on `TimelineRow` and
+   `RoomRow` as `RichBlock`, `ItemView`, `MatrixLinkTarget` and `RoomIdentity`.
+   Re-deriving any of them here is how iOS and the desktop start disagreeing.
+2. **Events are delivered in order, by one consumer.** `EventPump` yields into
+   a single `AsyncStream` and `Session` drains it with one `for await`. A task
+   per event does not preserve order, and out-of-order diffs corrupt the
+   reader's view in a way that looks like a rendering bug.
+3. **No `Core` call on a cooperative thread.** `CoreClient` puts every one on
+   a `DispatchQueue`, because they all block and the cooperative pool assumes
+   tasks yield. `Task.detached` looks right and is not.
+
+Amber (`Theme.signal`) means a pending decision and nothing else. Only
+`DecisionCard` may use it.
+
+Design: `docs/superpowers/specs/2026-08-18-native-ios-app-design.md`.
+
 ## Testing strategy
 
 `cargo test` covers the Rust core (571 tests) and `pnpm test` the frontend

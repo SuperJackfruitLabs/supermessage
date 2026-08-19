@@ -89,6 +89,11 @@ What survives unchanged, and still binds: hard requirement #2 ("UI must feel
 native — not a web page in a shell"), the permissive-licence bar, and E2EE.
 The native app satisfies #2 by construction rather than by budget.
 
+**The native client now exists** rather than being planned: three targets
+under `apple/`, signed in against `id.agentpod.dev`, rendering agent prose,
+custom-event cards and live turns, and sending. The Tauri iOS target
+(`src-tauri/gen/apple`) is deleted.
+
 Design: `docs/superpowers/specs/2026-08-18-native-ios-app-design.md`.
 
 ## Known risks & mitigations
