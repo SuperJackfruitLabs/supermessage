@@ -64,6 +64,14 @@ struct TimelineCollectionView: UIViewRepresentable {
         var configuration = UICollectionLayoutListConfiguration(appearance: .plain)
         configuration.showsSeparators = false
         configuration.backgroundColor = .clear
+        // Swipe to reply, the gesture an iOS reader already has in their
+        // hands. It has to come from the list configuration: `.swipeActions`
+        // in SwiftUI only does anything inside a `List`, so applied to a cell's
+        // hosted content it was silently inert.
+        configuration.leadingSwipeActionsConfigurationProvider = {
+            [weak coordinator = context.coordinator] indexPath in
+            coordinator?.swipeToReply(at: indexPath)
+        }
 
         let view = UICollectionView(
             frame: .zero,
@@ -133,7 +141,13 @@ struct TimelineCollectionView: UIViewRepresentable {
                 case let .row(id):
                     guard let found = self.rowsById[id] else { return }
                     cell.contentConfiguration = UIHostingConfiguration {
-                        TimelineRowView(row: found.row, continuesRun: found.continuesRun)
+                        TimelineRowView(
+                            row: found.row,
+                            continuesRun: found.continuesRun,
+                            media: self.session.media,
+                            onReply: { self.startReply(found.row) },
+                            onReact: { key in self.react(found.row, key) }
+                        )
                             // Turn the row back the right way up. Applied to
                             // the content rather than to `cell.contentView`,
                             // because `UIHostingConfiguration` replaces that
@@ -217,6 +231,86 @@ struct TimelineCollectionView: UIViewRepresentable {
             if !carried.isEmpty { snapshot.reconfigureItems(carried) }
 
             dataSource.apply(snapshot, animatingDifferences: false)
+        }
+
+        /// Start a reply to `row`, for the composer to pick up.
+        ///
+        /// The room comes from the timeline store rather than being captured:
+        /// a cell can outlive a room switch, and a reply filed against the
+        /// room the reader has left is a message sent to the wrong place.
+        fileprivate func startReply(_ row: TimelineRow) {
+            guard let roomId = timeline.roomId else { return }
+            session.replies.start(row, in: roomId)
+        }
+
+        fileprivate func react(_ row: TimelineRow, _ key: String) {
+            guard let roomId = timeline.roomId else { return }
+            Task { await session.toggleReaction(row.item.eventId, key: key, in: roomId) }
+        }
+
+        /// Long press a message to act on it.
+        ///
+        /// Built here rather than with SwiftUI's `.contextMenu` on the cell's
+        /// content: the collection view's own gestures win, and the menu never
+        /// appeared. This is the list's own mechanism, so it also gets the
+        /// lift-and-preview a reader expects.
+        nonisolated func collectionView(
+            _ collectionView: UICollectionView,
+            contextMenuConfigurationForItemAt indexPath: IndexPath,
+            point: CGPoint
+        ) -> UIContextMenuConfiguration? {
+            MainActor.assumeIsolated {
+                guard let row = row(at: indexPath) else { return nil }
+                return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) {
+                    [weak self] _ in
+                    guard let self else { return nil }
+                    var actions: [UIMenuElement] = []
+
+                    // Nothing is offered against a message the server has not
+                    // acknowledged: a reply or a reaction addresses an event
+                    // and there is no event yet. The core decides that — see
+                    // `can_reply_or_react`.
+                    if row.canReplyOrReact {
+                        actions.append(
+                            UIMenu(
+                                title: "", options: .displayInline,
+                                children: quickReactions.map { emoji in
+                                    UIAction(title: emoji) { _ in self.react(row, emoji) }
+                                }))
+                        actions.append(
+                            UIAction(
+                                title: "Reply",
+                                image: UIImage(systemName: "arrowshape.turn.up.left")
+                            ) { _ in self.startReply(row) })
+                    }
+                    if let body = row.item.body, !body.isEmpty {
+                        actions.append(
+                            UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) {
+                                _ in UIPasteboard.general.string = body
+                            })
+                    }
+                    return actions.isEmpty ? nil : UIMenu(children: actions)
+                }
+            }
+        }
+
+        func swipeToReply(at indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+            guard let row = row(at: indexPath), row.canReplyOrReact else { return nil }
+            let reply = UIContextualAction(style: .normal, title: "Reply") {
+                [weak self] _, _, done in
+                self?.startReply(row)
+                done(true)
+            }
+            reply.image = UIImage(systemName: "arrowshape.turn.up.left")
+            reply.backgroundColor = .tintColor
+            return UISwipeActionsConfiguration(actions: [reply])
+        }
+
+        private func row(at indexPath: IndexPath) -> TimelineRow? {
+            guard case let .row(id)? = dataSource?.itemIdentifier(for: indexPath) else {
+                return nil
+            }
+            return rowsById[id]?.row
         }
 
         nonisolated func scrollViewDidScroll(_ scrollView: UIScrollView) {

@@ -38,6 +38,44 @@ final class SmokeTests: XCTestCase {
     }
 
 
+    /// Long press a message and act on it.
+    ///
+    /// The affordances the app shipped without for its first weeks: reactions
+    /// rendered but could not be tapped, and nothing anywhere started a reply,
+    /// even though the core had both and the desktop used them.
+    func testAMessageCanBeRepliedTo() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let room = app.staticTexts["ganesha"]
+        XCTAssertTrue(room.waitForExistence(timeout: 30), "no joined room in the roster")
+        room.tap()
+        XCTAssertTrue(
+            app.navigationBars["ganesha"].waitForExistence(timeout: 20), "the room did not open")
+
+        // Any message the agent has sent. `firstMatch` on a cell rather than a
+        // known string: the room's contents change, and a test pinned to one
+        // sentence is a test that fails for the wrong reason.
+        let message = app.cells.firstMatch
+        XCTAssertTrue(message.waitForExistence(timeout: 20), "no message to act on")
+        message.press(forDuration: 1.0)
+
+        let reply = app.buttons["Reply"]
+        XCTAssertTrue(
+            reply.waitForExistence(timeout: 10), "long pressing a message offered no actions")
+        reply.tap()
+
+        // The composer says who it is answering. That strip is the whole
+        // visible result of starting a reply.
+        let replying = app.staticTexts.containing(
+            NSPredicate(format: "label BEGINSWITH[c] 'Replying to'"))
+        XCTAssertTrue(
+            replying.firstMatch.waitForExistence(timeout: 10),
+            "the composer never showed what it was replying to")
+
+        attach(XCUIScreen.main.screenshot(), named: "ios-reply")
+    }
+
     func testOpensARoomAndRendersItsTimeline() throws {
         let app = XCUIApplication()
         app.launch()

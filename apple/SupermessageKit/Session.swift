@@ -33,6 +33,7 @@ public final class Session {
     public let rooms: RoomsStore
     public let spaces: SpacesStore
     public let avatars: AvatarCache
+    public let media: MediaCache
     public let timeline: TimelineStore
     public let live = LiveStore()
     public let typing = TypingStore()
@@ -49,6 +50,7 @@ public final class Session {
         rooms = RoomsStore(client: client)
         spaces = SpacesStore(client: client)
         avatars = AvatarCache(client: client)
+        media = MediaCache(client: client)
         timeline = TimelineStore(client: client, sink: pump)
         staged = StagedAttachment(client: client)
     }
@@ -167,6 +169,18 @@ public final class Session {
 
     public func leaveRoom(_ roomId: String) async -> String? {
         await refusal { try await client.leaveRoom(roomId: roomId) }
+    }
+
+    /// Add or remove one of this account's reactions.
+    ///
+    /// Takes the **event** id: a reaction is an `m.annotation` pointing at an
+    /// event, and a message the server has not acknowledged has none. The
+    /// affordance is hidden in that state (`canReplyOrReact`), so `nil` here
+    /// means something raced, and doing nothing is the honest answer rather
+    /// than sending against an id the homeserver never issued.
+    public func toggleReaction(_ eventId: String?, key: String, in roomId: String) async {
+        guard let eventId else { return }
+        _ = try? await client.toggleReaction(roomId: roomId, eventId: eventId, key: key)
     }
 
     public func roomInfo(_ roomId: String) async throws -> RoomInfoDto {

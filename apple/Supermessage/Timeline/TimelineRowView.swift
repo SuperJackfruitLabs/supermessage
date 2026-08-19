@@ -8,10 +8,20 @@ import SwiftUI
 /// of a Matrix event — whether an `m.room.name` change is a visible row,
 /// whether an undecryptable event says something specific. This view never
 /// makes that call; it draws the answer.
+/// The six an agent room actually uses, in the order a hand reaches for them.
+/// Matches the desktop's `QUICK_REACTIONS` deliberately: two clients offering
+/// different quick reactions is two different apps.
+let quickReactions = ["👍", "❤️", "😂", "🎉", "😮", "🙏"]
+
 struct TimelineRowView: View {
     let row: TimelineRow
     /// Whether the row above already carries this sender's header.
     var continuesRun: Bool = false
+    let media: MediaCache
+    /// Start a reply to this row. `nil` in contexts with no composer.
+    var onReply: (() -> Void)?
+    /// Add or remove one of this account's reactions.
+    var onReact: ((String) -> Void)?
 
     private var item: TimelineItemDto { row.item }
 
@@ -30,7 +40,10 @@ struct TimelineRowView: View {
     var body: some View {
         switch row.view {
         case let .bubble(muted, blocks):
-            MessageBlock(row: row, muted: muted, blocks: blocks, continuesRun: continuesRun)
+            MessageBlock(
+                row: row, muted: muted, blocks: blocks, continuesRun: continuesRun,
+                onReact: onReact
+            )
 
         case .emote:
             // Centred serif italic: an emote is prose *about* its sender
@@ -70,7 +83,7 @@ struct TimelineRowView: View {
             SystemLine(text: text)
 
         case let .image(alt, width, height):
-            ImageRow(row: row, alt: alt, width: width, height: height)
+            ImageRow(row: row, alt: alt, width: width, height: height, media: media)
 
         case let .mediaFile(label, filename, size, _):
             MediaFileRow(label: label, filename: filename, size: size)
@@ -90,6 +103,7 @@ private struct MessageBlock: View {
     let muted: Bool
     let blocks: [RichBlock]
     let continuesRun: Bool
+    var onReact: ((String) -> Void)?
 
     private var isOwn: Bool { row.item.isOwn }
 
@@ -118,7 +132,7 @@ private struct MessageBlock: View {
                 .background(isOwn ? Theme.accent.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 12))
 
             if !row.item.reactions.isEmpty {
-                ReactionRow(reactions: row.item.reactions)
+                ReactionRow(reactions: row.item.reactions, onReact: onReact)
             }
         }
         .frame(maxWidth: .infinity, alignment: isOwn ? .trailing : .leading)
@@ -169,25 +183,44 @@ private struct ReplyQuote: View {
 
 private struct ReactionRow: View {
     let reactions: [ReactionDto]
+    var onReact: ((String) -> Void)?
 
     var body: some View {
         HStack(spacing: 6) {
             ForEach(reactions, id: \.key) { reaction in
-                HStack(spacing: 3) {
-                    // `displayKey`, never `key`: they usually look alike, but
-                    // `key` is wire data compared byte-for-byte against what
-                    // other clients sent, and this one is bounded for display.
-                    Text(reaction.displayKey)
-                    Text("\(reaction.count)").font(Theme.meta)
+                Button { onReact?(reaction.key) } label: {
+                    chip(reaction)
                 }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .overlay(
-                    Capsule().stroke(
-                        reaction.byMe ? Theme.accent : Color.secondary.opacity(0.4),
-                        lineWidth: reaction.byMe ? 1.5 : 1))
+                .buttonStyle(.plain)
+                .disabled(onReact == nil)
+                // `key`, not `displayKey`: the wire value is what the
+                // homeserver matches against what everyone else sent, and
+                // `displayKey` is bounded for showing. Reacting with the
+                // display form would land a *different* reaction beside the
+                // one the reader meant to join.
+                .accessibilityLabel(
+                    "\(reaction.displayKey), \(reaction.count)"
+                        + (reaction.byMe ? ", including yours" : ""))
+                .accessibilityAddTraits(reaction.byMe ? [.isSelected] : [])
             }
         }
+    }
+
+    @ViewBuilder private func chip(_ reaction: ReactionDto) -> some View {
+        HStack(spacing: 3) {
+            // `displayKey`, never `key`: they usually look alike, but `key` is
+            // wire data compared byte-for-byte against what other clients
+            // sent, and this one is bounded for display.
+            Text(reaction.displayKey)
+            Text("\(reaction.count)").font(Theme.meta)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .contentShape(Capsule())
+        .overlay(
+            Capsule().stroke(
+                reaction.byMe ? Theme.accent : Color.secondary.opacity(0.4),
+                lineWidth: reaction.byMe ? 1.5 : 1))
     }
 }
 
@@ -208,19 +241,52 @@ private struct ImageRow: View {
     let alt: String
     let width: UInt64?
     let height: UInt64?
+    let media: MediaCache
+
+    /// The picture, once it arrives. `nil` while loading *and* when there is
+    /// nothing to show — `media.hasFailed` is what separates those.
+    private var image: UIImage? {
+        guard let eventId = row.item.eventId else { return nil }
+        return media.image(for: eventId)
+    }
+
+    private var failed: Bool {
+        // A local echo has no event to fetch against, which is not a failure —
+        // it is a picture that has not landed on the server yet.
+        guard let eventId = row.item.eventId else { return false }
+        return media.hasFailed(eventId)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(row.senderName).font(Theme.name)
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.quaternary)
-                // The box is reserved from the sender's reported dimensions
-                // *before* any bytes are asked for, so the lazy stack does not
-                // reflow when they land.
-                .aspectRatio(aspect, contentMode: .fit)
-                .frame(maxWidth: 320)
-                .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
-                .accessibilityLabel(alt)
+            Group {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.quaternary)
+                        // The box is reserved from the sender's reported
+                        // dimensions *before* any bytes are asked for, so the
+                        // list does not reflow when they land.
+                        .aspectRatio(aspect, contentMode: .fit)
+                        .overlay {
+                            // Never a broken-image glyph. A picture that is
+                            // still arriving and one that cannot be shown are
+                            // different states and read differently.
+                            if failed {
+                                Image(systemName: "photo").foregroundStyle(.secondary)
+                            } else {
+                                ProgressView()
+                            }
+                        }
+                }
+            }
+            .frame(maxWidth: 320)
+            .accessibilityLabel(alt)
         }
         .padding(.vertical, 6)
     }
