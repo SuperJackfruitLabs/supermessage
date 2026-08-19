@@ -55,6 +55,9 @@ import UIKit
 struct TimelineCollectionView: UIViewRepresentable {
     let session: Session
     let timeline: TimelineStore
+    /// Raised while the reader is away from the newest message, so the view
+    /// above can offer a way back. Written from scroll callbacks.
+    @Binding var isAwayFromNewest: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(session: session, timeline: timeline)
@@ -90,11 +93,34 @@ struct TimelineCollectionView: UIViewRepresentable {
         view.contentInset.top = 12
 
         context.coordinator.attach(to: view)
+        // Posted by the jump-to-newest button, which lives in the SwiftUI view
+        // above and has no other way to reach this scroll view.
+        NotificationCenter.default.addObserver(
+            forName: .scrollTimelineToNewest, object: nil, queue: .main
+        ) { [weak view] _ in
+            guard let view else { return }
+            MainActor.assumeIsolated { Self.scrollToNewest(view) }
+        }
         return view
     }
 
     func updateUIView(_ view: UICollectionView, context: Context) {
+        context.coordinator.onDistanceChanged = { away in
+            // Guarded: SwiftUI forbids mutating state during an update, and
+            // the scroll callbacks that drive this can land inside one.
+            if isAwayFromNewest != away {
+                DispatchQueue.main.async { isAwayFromNewest = away }
+            }
+        }
         context.coordinator.apply(rows: timeline.items, isPaginating: timeline.isPaginating)
+    }
+
+    /// Bring the newest message back into view.
+    ///
+    /// Trivial in an inverted list: the newest message is the origin, so this
+    /// is a scroll to zero rather than a search for the last row.
+    static func scrollToNewest(_ view: UICollectionView) {
+        view.setContentOffset(CGPoint(x: 0, y: -view.contentInset.top), animated: true)
     }
 
     /// What the list holds. Not only rows: the pagination spinner and the live
@@ -107,6 +133,9 @@ struct TimelineCollectionView: UIViewRepresentable {
         /// rejoin the list at the moment it was confirmed. See
         /// `TimelineItemDto`'s field docs.
         case row(String)
+        /// A collapsed run of membership changes, keyed on the first item in
+        /// the run so a run that is still growing keeps the same identity.
+        case membershipRun(String)
         /// The agent's in-progress turn, pinned to the newest end.
         case liveTurn
         /// Shown at the oldest end while a page of history is in flight.
@@ -124,10 +153,16 @@ struct TimelineCollectionView: UIViewRepresentable {
         /// cell, because a cell knows only itself and grouping is a question
         /// about neighbours.
         private var rowsById: [String: (row: TimelineRow, continuesRun: Bool)] = [:]
+        /// The sentence for each collapsed membership run, by its id.
+        private var runsById: [String: String] = [:]
         /// Whether one agent does all the talking, so the runtime suffix can
         /// come off every attribution in the room.
         private var singleSpeaker = true
         private var writerName = "Agent"
+        /// Told when the reader moves away from, or back to, the newest
+        /// message. Exact in an inverted list, where the bottom is the origin.
+        var onDistanceChanged: ((Bool) -> Void)?
+        private var wasAway = false
 
         init(session: Session, timeline: TimelineStore) {
             self.session = session
@@ -165,6 +200,17 @@ struct TimelineCollectionView: UIViewRepresentable {
                             // measure so a phone and an iPad detail pane read
                             // the same way, and prose never set flush to an
                             // edge.
+                            .padding(.horizontal, 16)
+                            .frame(maxWidth: 712, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .margins(.all, 0)
+
+                case let .membershipRun(id):
+                    guard let text = self.runsById[id] else { return }
+                    cell.contentConfiguration = UIHostingConfiguration {
+                        SystemLine(text: text)
+                            .scaleEffect(x: 1, y: -1)
                             .padding(.horizontal, 16)
                             .frame(maxWidth: 712, alignment: .leading)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -209,16 +255,27 @@ struct TimelineCollectionView: UIViewRepresentable {
             writerName = rows.last { !$0.item.isOwn }?.senderName
                 ?? session.rooms.selectedName ?? "Agent"
 
+            // Collapse membership churn first, so `continuesRun` compares a
+            // row against the row *displayed* before it rather than against a
+            // membership line that is no longer drawn on its own.
+            let display = TimelineGrouping.collapseMembershipRuns(rows)
+
             var byId: [String: (row: TimelineRow, continuesRun: Bool)] = [:]
+            var runs: [String: String] = [:]
             byId.reserveCapacity(rows.count)
-            for (index, row) in rows.enumerated() {
-                // `continuesRun` asks about the row before this one in reading
-                // order — a fact about the conversation, unaffected by the
-                // inversion, which is a fact about the scroll.
-                let previous = index > 0 ? rows[index - 1] : nil
-                byId[row.item.id] = (row, TimelineGrouping.continuesRun(row, after: previous))
+            var previous: TimelineRow?
+            for entry in display {
+                switch entry {
+                case let .row(row):
+                    byId[row.item.id] = (row, TimelineGrouping.continuesRun(row, after: previous))
+                    previous = row
+                case let .membershipRun(id, text, _):
+                    runs[id] = text
+                    previous = nil
+                }
             }
             rowsById = byId
+            runsById = runs
             singleSpeaker = TimelineGrouping.hasSingleSpeaker(rows)
 
             var snapshot = NSDiffableDataSourceSnapshot<Int, Entry>()
@@ -226,7 +283,13 @@ struct TimelineCollectionView: UIViewRepresentable {
             // Newest first, because the view is inverted. Index 0 is what the
             // reader sees at the bottom of the screen.
             if session.live.isLive { snapshot.appendItems([.liveTurn]) }
-            snapshot.appendItems(rows.reversed().map { .row($0.item.id) })
+            snapshot.appendItems(
+                display.reversed().map { entry in
+                    switch entry {
+                    case let .row(row): return Entry.row(row.item.id)
+                    case let .membershipRun(id, _, _): return Entry.membershipRun(id)
+                    }
+                })
             if isPaginating { snapshot.appendItems([.paginating]) }
 
             // Reconfigure rather than reload: an identity that survived should
@@ -346,6 +409,16 @@ struct TimelineCollectionView: UIViewRepresentable {
 
         nonisolated func scrollViewDidScroll(_ scrollView: UIScrollView) {
             MainActor.assumeIsolated {
+                // **Being at the newest message is exactly `contentOffset.y <= 0`.**
+                // That exactness is the whole argument for the inversion: in a
+                // natural-order list this is a comparison of three numbers with
+                // a tolerance to tune.
+                let away = scrollView.contentOffset.y > scrollView.bounds.height / 2
+                if away != wasAway {
+                    wasAway = away
+                    onDistanceChanged?(away)
+                }
+
                 // Distance from the oldest loaded message. In an inverted view
                 // that is measured from the far end of the content.
                 let distanceFromTop =
@@ -367,4 +440,11 @@ struct TimelineCollectionView: UIViewRepresentable {
             }
         }
     }
+}
+
+extension Notification.Name {
+    /// Raised by the jump-to-newest button. A notification rather than a
+    /// binding because the button is SwiftUI and the scroll view is UIKit, and
+    /// a one-shot command is not state either of them owns.
+    static let scrollTimelineToNewest = Notification.Name("dev.supermessage.scrollTimelineToNewest")
 }

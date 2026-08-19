@@ -100,3 +100,76 @@ struct TimelineGroupingTests {
             ]))
     }
 }
+
+/// Collapsing membership churn, ported from the desktop.
+@MainActor
+struct MembershipRunTests {
+    static func membership(_ id: String, _ sender: String, _ verb: String) -> TimelineRow {
+        var row = TimelineGroupingTests.row(id: id, sender: sender, at: 1, system: true)
+        let item = TimelineItemDto(
+            id: id, eventId: id, kind: "membership", msgtype: nil, detail: verb,
+            sender: sender, senderDisplayName: sender, body: nil, formattedBody: nil,
+            media: nil, customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil,
+            replyTo: nil, edited: false, reactions: [], readBy: [])
+        row = TimelineRow(
+            item: item, view: .system(text: "\(sender) \(verb)"), senderName: sender,
+            senderShort: sender, membershipVerb: verb, replyQuote: nil,
+            canReplyOrReact: false, replyPreview: nil)
+        return row
+    }
+
+    @Test("a run of the same change becomes one sentence")
+    func collapsesARun() {
+        // Ten identical "updated their membership" lines is what this replaces.
+        let rows = [
+            Self.membership("1", "Ganesha", "joined the room"),
+            Self.membership("2", "Krishna", "joined the room"),
+            Self.membership("3", "Annapurna", "joined the room"),
+            Self.membership("4", "Surya", "joined the room"),
+        ]
+        let out = TimelineGrouping.collapseMembershipRuns(rows)
+        #expect(out.count == 1)
+        guard case let .membershipRun(_, text, _) = out[0] else {
+            Issue.record("expected a run")
+            return
+        }
+        #expect(text == "Ganesha, Krishna and 2 others joined the room")
+    }
+
+    @Test("a run of one reads exactly like an ungrouped line")
+    func singleReadsNormally() {
+        // Never "Ganesha and 0 others".
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.membership("1", "Ganesha", "joined the room")
+        ])
+        guard case let .membershipRun(_, text, _) = out[0] else {
+            Issue.record("expected a run")
+            return
+        }
+        #expect(text == "Ganesha joined the room")
+    }
+
+    @Test("different verbs stay different sentences")
+    func differentVerbsSplit() {
+        // One sentence covering both would be true of neither.
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.membership("1", "Ganesha", "joined the room"),
+            Self.membership("2", "Krishna", "left the room"),
+        ])
+        #expect(out.count == 2)
+    }
+
+    @Test("messages pass through untouched and break a run")
+    func messagesInterrupt() {
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.membership("1", "Ganesha", "joined the room"),
+            TimelineGroupingTests.row(id: "m", sender: "@a:x", at: 2),
+            Self.membership("2", "Krishna", "joined the room"),
+        ])
+        #expect(out.count == 3)
+        guard case .row = out[1] else {
+            Issue.record("a message became part of a run")
+            return
+        }
+    }
+}

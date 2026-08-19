@@ -25,16 +25,41 @@ struct TimelineView: View {
     let session: Session
     let timeline: TimelineStore
 
+    @State private var isAwayFromNewest = false
+
     var body: some View {
         // Everything that used to be here — the ScrollView, the LazyVStack,
         // the scroll-position binding, the ScrollViewReader and the geometry
         // observer — is now `TimelineCollectionView`, whose doc comment
         // explains why. What is left is what was never the problem: marking
         // the room read, and the typing line.
-        TimelineCollectionView(session: session, timeline: timeline)
+        TimelineCollectionView(
+            session: session, timeline: timeline, isAwayFromNewest: $isAwayFromNewest)
             .task(id: timeline.roomId) {
                 await timeline.markRead()
             }
+            .overlay(alignment: .bottomTrailing) {
+                // A way back, and only when there is somewhere to go back
+                // from. Scrolling through history with no route home is the
+                // thing that makes a long room feel like a trap.
+                if isAwayFromNewest {
+                    Button {
+                        NotificationCenter.default.post(name: .scrollTimelineToNewest, object: nil)
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 36, height: 36)
+                            .background(.regularMaterial, in: Circle())
+                            .overlay(Circle().stroke(.secondary.opacity(0.25), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 12)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("Jump to newest")
+                }
+            }
+            .animation(.snappy(duration: 0.2), value: isAwayFromNewest)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let line = session.typing.line {
                     Text(line)

@@ -51,16 +51,25 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(
             app.navigationBars["Ganesha"].waitForExistence(timeout: 20), "the room did not open")
 
-        // Any message the agent has sent. `firstMatch` on a cell rather than a
-        // known string: the room's contents change, and a test pinned to one
-        // sentence is a test that fails for the wrong reason.
-        let message = app.cells.firstMatch
-        XCTAssertTrue(message.waitForExistence(timeout: 20), "no message to act on")
-        message.press(forDuration: 1.0)
-
+        // Not "the first cell": a timeline row is not always a message. Date
+        // dividers, collapsed membership runs and the live turn are rows too,
+        // and they correctly offer nothing — so this looks for a row that does
+        // rather than assuming the one on top will.
         let reply = app.buttons["Reply"]
-        XCTAssertTrue(
-            reply.waitForExistence(timeout: 10), "long pressing a message offered no actions")
+        var opened = false
+        for index in 0..<min(app.cells.count, 6) {
+            let cell = app.cells.element(boundBy: index)
+            guard cell.exists else { continue }
+            cell.press(forDuration: 1.0)
+            if reply.waitForExistence(timeout: 3) {
+                opened = true
+                break
+            }
+            // Close whatever did appear before trying the next row.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(opened, "no row in the timeline offered a reply action")
 
         // The menu itself, while it is up. A context menu is as much a piece
         // of design as the timeline behind it, and this is the only way to

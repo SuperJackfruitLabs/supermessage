@@ -51,4 +51,84 @@ public enum TimelineGrouping {
         }
         return true
     }
+
+    /// How many people a grouped membership line names before it counts.
+    ///
+    /// Matches the desktop's `MAX_NAMED`. Two is enough to recognise a run and
+    /// short enough that the sentence stays one line.
+    static let maxNamed = 2
+
+    /// Collapse consecutive membership changes that share a verb.
+    ///
+    /// Ported from the desktop's `groupTimelineItems`, which iOS never had —
+    /// so a room drew every single one, ten identical "updated their
+    /// membership" lines deep in Ganesha's history.
+    ///
+    /// Runs break on a **different verb**, so "three joined" and "one left"
+    /// stay two sentences rather than becoming one that is true of neither.
+    /// A run of exactly one reads exactly like the ungrouped line the core
+    /// already composes, never "Alice and 0 others".
+    public static func collapseMembershipRuns(_ rows: [TimelineRow]) -> [DisplayRow] {
+        var out: [DisplayRow] = []
+        var run: [TimelineRow] = []
+
+        func flush() {
+            guard let first = run.first else { return }
+            out.append(
+                .membershipRun(id: "group:\(first.item.id)", text: text(for: run), rows: run))
+            run = []
+        }
+
+        for row in rows {
+            guard row.item.kind == "membership" else {
+                flush()
+                out.append(.row(row))
+                continue
+            }
+            if let first = run.first, first.item.detail != row.item.detail {
+                flush()
+            }
+            run.append(row)
+        }
+        flush()
+        return out
+    }
+
+    /// The sentence for one run.
+    ///
+    /// Both halves come from the core: the verb is carried on the row *apart*
+    /// from the rendered sentence precisely so a run can be composed from many
+    /// names and one verb without parsing that sentence back apart.
+    static func text(for run: [TimelineRow]) -> String {
+        let verb = run.first?.membershipVerb ?? "updated their membership"
+        let names = run.map(\.senderShort)
+        if names.count <= maxNamed {
+            return "\(joined(names)) \(verb)"
+        }
+        let named = names.prefix(maxNamed).joined(separator: ", ")
+        let remaining = names.count - maxNamed
+        return "\(named) and \(remaining) \(remaining == 1 ? "other" : "others") \(verb)"
+    }
+
+    private static func joined(_ names: [String]) -> String {
+        switch names.count {
+        case 0: return "Someone"
+        case 1: return names[0]
+        default: return "\(names.dropLast().joined(separator: ", ")) and \(names.last!)"
+        }
+    }
+}
+
+/// A row as the timeline draws it: one item, or a collapsed run of membership
+/// changes that would otherwise be a wall of near-identical lines.
+public enum DisplayRow: Identifiable, Sendable {
+    case row(TimelineRow)
+    case membershipRun(id: String, text: String, rows: [TimelineRow])
+
+    public var id: String {
+        switch self {
+        case let .row(row): return row.item.id
+        case let .membershipRun(id, _, _): return id
+        }
+    }
 }

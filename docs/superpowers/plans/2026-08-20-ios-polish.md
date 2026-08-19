@@ -35,17 +35,17 @@ do not call them.
 
 ## B · The timeline
 
-- [ ] **B1.** Membership runs are not grouped. The desktop's
+- [x] **B1.** Membership runs are not grouped. The desktop's
       `groupTimelineItems` collapses them into "Alice, Bob and 3 others joined
       the room"; iOS draws every one — ten consecutive lines in Ganesha's
       history. Port it.
-- [ ] **B2.** **No send state on own messages.** `sendState` is on every item
+- [x] **B2.** **No send state on own messages.** `sendState` is on every item
       and nothing draws it: sending, sent and *failed* look identical. The one
       place a chat app must not be ambiguous.
-- [ ] **B3.** No timestamps on own messages. The peer header carries one; your
+- [x] **B3.** No timestamps on own messages. The peer header carries one; your
       side carries nothing, so three identical messages are indistinguishable.
 - [ ] **B4.** Read receipts unused. `readBy` is on the DTO and nothing reads it.
-- [ ] **B5.** No jump-to-latest and no new-message badge. Nearly free in an
+- [x] **B5.** No jump-to-latest and no new-message badge. Nearly free in an
       inverted list, where being at the bottom is exactly `contentOffset.y <= 0`.
 - [ ] **B6.** Turn cards are headed `dev.agentpod.turn.v1` — a Matrix event type
       shown to a reader.

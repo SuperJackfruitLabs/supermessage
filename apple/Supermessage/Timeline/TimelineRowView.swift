@@ -125,6 +125,7 @@ private struct MessageBlock: View {
     var onReact: ((String) -> Void)?
 
     private var isOwn: Bool { row.item.isOwn }
+    private var sendState: SendState { SendState(row.item.sendState) }
 
     var body: some View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
@@ -149,6 +150,28 @@ private struct MessageBlock: View {
                 .foregroundStyle(muted && !isOwn ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                 .padding(isOwn ? 10 : 0)
                 .background(isOwn ? Theme.accent.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 12))
+
+            // Your own side of the conversation, which carried no time and no
+            // send state at all — three identical messages were
+            // indistinguishable, and a message that never left the phone
+            // looked exactly like one that landed.
+            if isOwn {
+                HStack(spacing: 5) {
+                    if let label = sendState.label {
+                        if sendState == .failed {
+                            Image(systemName: "exclamationmark.circle")
+                        }
+                        Text(label)
+                    }
+                    if let timestamp = row.item.timestampMs {
+                        Text(Self.time(timestamp))
+                    }
+                }
+                .metaFace()
+                // Failure is the one state that may speak up. Everything else
+                // here is a quiet timestamp.
+                .foregroundStyle(sendState == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.tertiary))
+            }
 
             if !row.item.reactions.isEmpty {
                 ReactionRow(reactions: row.item.reactions, onReact: onReact)
@@ -243,7 +266,9 @@ private struct ReactionRow: View {
     }
 }
 
-private struct SystemLine: View {
+/// A quiet line about the room rather than in it — a membership change, a
+/// placeholder, a collapsed run.
+struct SystemLine: View {
     let text: String
 
     var body: some View {
