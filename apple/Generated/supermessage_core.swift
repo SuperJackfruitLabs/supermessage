@@ -1615,7 +1615,18 @@ public struct RoomInfoDto {
      * the roster row cannot disagree about what a room is called.
      */
     public var identity: RoomIdentity
+    /**
+     * The topic **as a person wrote it**, or `None`.
+     *
+     * `None` also when the topic was the bridge's runtime line rather than
+     * prose — everything worth saying from that line is in [`Self::runtime`],
+     * in structured form, and showing both would say it twice.
+     */
     public var topic: String?
+    /**
+     * The harness and machine this room's agent runs on, read from the topic.
+     */
+    public var runtime: RuntimeDto?
     public var canonicalAlias: String?
     public var altAliases: [String]
     /**
@@ -1643,7 +1654,17 @@ public struct RoomInfoDto {
          * Resolved against the same fallback the panel used to apply by hand —
          * the trimmed name, or the room id when there is none — so the header and
          * the roster row cannot disagree about what a room is called.
-         */identity: RoomIdentity, topic: String?, canonicalAlias: String?, altAliases: [String], 
+         */identity: RoomIdentity, 
+        /**
+         * The topic **as a person wrote it**, or `None`.
+         *
+         * `None` also when the topic was the bridge's runtime line rather than
+         * prose — everything worth saying from that line is in [`Self::runtime`],
+         * in structured form, and showing both would say it twice.
+         */topic: String?, 
+        /**
+         * The harness and machine this room's agent runs on, read from the topic.
+         */runtime: RuntimeDto?, canonicalAlias: String?, altAliases: [String], 
         /**
          * The room's active (joined + invited) member count
          * (`Room::active_members_count`) — a cheap, always-current figure read
@@ -1661,6 +1682,7 @@ public struct RoomInfoDto {
         self.name = name
         self.identity = identity
         self.topic = topic
+        self.runtime = runtime
         self.canonicalAlias = canonicalAlias
         self.altAliases = altAliases
         self.activeMemberCount = activeMemberCount
@@ -1684,6 +1706,9 @@ extension RoomInfoDto: Equatable, Hashable {
         if lhs.topic != rhs.topic {
             return false
         }
+        if lhs.runtime != rhs.runtime {
+            return false
+        }
         if lhs.canonicalAlias != rhs.canonicalAlias {
             return false
         }
@@ -1704,6 +1729,7 @@ extension RoomInfoDto: Equatable, Hashable {
         hasher.combine(name)
         hasher.combine(identity)
         hasher.combine(topic)
+        hasher.combine(runtime)
         hasher.combine(canonicalAlias)
         hasher.combine(altAliases)
         hasher.combine(activeMemberCount)
@@ -1723,6 +1749,7 @@ public struct FfiConverterTypeRoomInfoDto: FfiConverterRustBuffer {
                 name: FfiConverterOptionString.read(from: &buf), 
                 identity: FfiConverterTypeRoomIdentity.read(from: &buf), 
                 topic: FfiConverterOptionString.read(from: &buf), 
+                runtime: FfiConverterOptionTypeRuntimeDto.read(from: &buf), 
                 canonicalAlias: FfiConverterOptionString.read(from: &buf), 
                 altAliases: FfiConverterSequenceString.read(from: &buf), 
                 activeMemberCount: FfiConverterUInt64.read(from: &buf), 
@@ -1735,6 +1762,7 @@ public struct FfiConverterTypeRoomInfoDto: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.name, into: &buf)
         FfiConverterTypeRoomIdentity.write(value.identity, into: &buf)
         FfiConverterOptionString.write(value.topic, into: &buf)
+        FfiConverterOptionTypeRuntimeDto.write(value.runtime, into: &buf)
         FfiConverterOptionString.write(value.canonicalAlias, into: &buf)
         FfiConverterSequenceString.write(value.altAliases, into: &buf)
         FfiConverterUInt64.write(value.activeMemberCount, into: &buf)
@@ -3141,6 +3169,16 @@ public struct TimelineRow {
      */
     public var senderName: String
     /**
+     * The same attribution **without** the bridge's `(harness on host)`
+     * suffix, when there is one — otherwise identical to `sender_name`.
+     *
+     * A room where one agent speaks repeats that suffix under every message
+     * and it never changes there; a room where several do needs it. Carried
+     * rather than derived so a host chooses between two given strings instead
+     * of taking a composed one back apart.
+     */
+    public var senderShort: String
+    /**
      * The verb phrase for a membership change — "joined the room" — and
      * `None` for every other kind.
      *
@@ -3181,6 +3219,15 @@ public struct TimelineRow {
          * then a generic placeholder. Never empty.
          */senderName: String, 
         /**
+         * The same attribution **without** the bridge's `(harness on host)`
+         * suffix, when there is one — otherwise identical to `sender_name`.
+         *
+         * A room where one agent speaks repeats that suffix under every message
+         * and it never changes there; a room where several do needs it. Carried
+         * rather than derived so a host chooses between two given strings instead
+         * of taking a composed one back apart.
+         */senderShort: String, 
+        /**
          * The verb phrase for a membership change — "joined the room" — and
          * `None` for every other kind.
          *
@@ -3211,6 +3258,7 @@ public struct TimelineRow {
         self.item = item
         self.view = view
         self.senderName = senderName
+        self.senderShort = senderShort
         self.membershipVerb = membershipVerb
         self.replyQuote = replyQuote
         self.canReplyOrReact = canReplyOrReact
@@ -3229,6 +3277,9 @@ extension TimelineRow: Equatable, Hashable {
             return false
         }
         if lhs.senderName != rhs.senderName {
+            return false
+        }
+        if lhs.senderShort != rhs.senderShort {
             return false
         }
         if lhs.membershipVerb != rhs.membershipVerb {
@@ -3250,6 +3301,7 @@ extension TimelineRow: Equatable, Hashable {
         hasher.combine(item)
         hasher.combine(view)
         hasher.combine(senderName)
+        hasher.combine(senderShort)
         hasher.combine(membershipVerb)
         hasher.combine(replyQuote)
         hasher.combine(canReplyOrReact)
@@ -3268,6 +3320,7 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
                 item: FfiConverterTypeTimelineItemDto.read(from: &buf), 
                 view: FfiConverterTypeItemView.read(from: &buf), 
                 senderName: FfiConverterString.read(from: &buf), 
+                senderShort: FfiConverterString.read(from: &buf), 
                 membershipVerb: FfiConverterOptionString.read(from: &buf), 
                 replyQuote: FfiConverterOptionTypeReplyQuoteView.read(from: &buf), 
                 canReplyOrReact: FfiConverterBool.read(from: &buf), 
@@ -3279,6 +3332,7 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
         FfiConverterTypeTimelineItemDto.write(value.item, into: &buf)
         FfiConverterTypeItemView.write(value.view, into: &buf)
         FfiConverterString.write(value.senderName, into: &buf)
+        FfiConverterString.write(value.senderShort, into: &buf)
         FfiConverterOptionString.write(value.membershipVerb, into: &buf)
         FfiConverterOptionTypeReplyQuoteView.write(value.replyQuote, into: &buf)
         FfiConverterBool.write(value.canReplyOrReact, into: &buf)

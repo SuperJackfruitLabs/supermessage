@@ -183,7 +183,16 @@ export interface RoomInfo {
   identity: RoomIdentity;
   roomId: string;
   name: string | null;
+  /**
+   * The topic **as a person wrote it**, or `null`.
+   *
+   * `null` also when the topic was the bridge's runtime line rather than
+   * prose — everything worth saying from that line is in {@link runtime}, in
+   * structured form, and showing both would say it twice.
+   */
   topic: string | null;
+  /** The harness and machine this room's agent runs on, read from the topic. */
+  runtime: { harness: string; host: string } | null;
   canonicalAlias: string | null;
   altAliases: string[];
   /** The room's active (joined + invited) member count — may exceed
@@ -762,6 +771,16 @@ export interface TimelineRow {
   view: ItemView;
   /** Display name, then the raw sender id, then a placeholder. Never empty. */
   senderName: string;
+  /**
+   * The same attribution **without** the bridge's `(harness on host)` suffix,
+   * when there is one — otherwise identical to {@link senderName}.
+   *
+   * A room where one agent speaks repeats that suffix under every message and
+   * it never changes there; a room where several do needs it. Carried rather
+   * than derived so a host chooses between two given strings instead of taking
+   * a composed one back apart.
+   */
+  senderShort: string;
   /**
    * The verb phrase for a membership change, `null` otherwise. Carried apart
    * from the rendered system sentence because a grouped run composes one

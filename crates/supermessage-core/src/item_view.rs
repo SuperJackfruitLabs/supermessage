@@ -159,11 +159,28 @@ pub enum ReplyQuoteView {
 /// The name to attribute a line to: display name, then the raw sender id,
 /// then a generic placeholder. Never empty.
 pub fn attributed_name(item: &TimelineItemDto) -> String {
-    item.sender_display_name
-        .as_deref()
-        .map(crate::display_name::sender_label)
-        .or_else(|| item.sender.clone())
-        .unwrap_or_else(|| "Someone".to_string())
+    attributed_parts(item).0
+}
+
+/// Who to attribute an item to, in both forms: the full attribution and the
+/// same thing without the bridge's `(harness on host)` suffix.
+///
+/// **Both are derived from the raw display name in one pass**, which is the
+/// only way it works: `sender_parts` recognises the bridge's `name (harness @
+/// host)` shape, and running it over an already-composed `Name (Harness on
+/// Host)` finds no `@` and hands the whole string back. That is not a
+/// hypothetical — it is how this was written the first time, and the timeline
+/// silently kept the suffix it was supposed to drop.
+pub fn attributed_parts(item: &TimelineItemDto) -> (String, String) {
+    let Some(raw) = item.sender_display_name.as_deref() else {
+        let fallback = item.sender.clone().unwrap_or_else(|| "Someone".to_string());
+        return (fallback.clone(), fallback);
+    };
+    let (head, runtime) = crate::display_name::sender_parts(raw);
+    match runtime {
+        Some(runtime) => (format!("{head} ({runtime})"), head),
+        None => (head.clone(), head),
+    }
 }
 
 /// The verb phrase for a membership item's `detail`.

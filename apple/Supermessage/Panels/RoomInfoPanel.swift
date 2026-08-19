@@ -34,6 +34,14 @@ struct RoomInfoPanel: View {
                                     }
                                 }
                             }
+                            // The runtime, when this room is an agent's — the
+                            // thing you open this panel to find. The core has
+                            // already read it out of the topic and suppressed
+                            // the raw line, so there is nothing to decide here.
+                            if let runtime = info.runtime {
+                                LabeledContent("Harness", value: runtime.harness)
+                                LabeledContent("Machine", value: runtime.host)
+                            }
                             if let topic = info.topic, !topic.isEmpty {
                                 Text(topic).font(.callout)
                             }
@@ -44,9 +52,16 @@ struct RoomInfoPanel: View {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(member.displayName ?? member.userId)
                                     if member.displayName != nil {
+                                        // One line, truncated in the middle:
+                                        // an agent id is `@agent_<host>_<harness>-<name>:<server>`
+                                        // and both ends carry meaning, so
+                                        // trimming the tail would throw away
+                                        // the server and keep the padding.
                                         Text(member.userId)
                                             .metaFace()
                                             .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
                                     }
                                 }
                             }

@@ -56,6 +56,7 @@ function row(dto: TimelineItem): TimelineRow {
     item: dto,
     view: { render: "none" },
     senderName: dto.senderDisplayName ?? dto.sender ?? "Someone",
+    senderShort: dto.senderDisplayName ?? dto.sender ?? "Someone",
     membershipVerb:
       dto.kind === "membership"
         ? (FIXTURE_VERBS[dto.detail ?? ""] ?? "updated their membership")

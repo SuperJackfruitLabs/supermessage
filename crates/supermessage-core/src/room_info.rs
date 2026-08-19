@@ -50,7 +50,14 @@ pub struct RoomInfoDto {
     /// the trimmed name, or the room id when there is none — so the header and
     /// the roster row cannot disagree about what a room is called.
     pub identity: crate::room_identity::RoomIdentity,
+    /// The topic **as a person wrote it**, or `None`.
+    ///
+    /// `None` also when the topic was the bridge's runtime line rather than
+    /// prose — everything worth saying from that line is in [`Self::runtime`],
+    /// in structured form, and showing both would say it twice.
     pub topic: Option<String>,
+    /// The harness and machine this room's agent runs on, read from the topic.
+    pub runtime: Option<crate::dto::RuntimeDto>,
     pub canonical_alias: Option<String>,
     pub alt_aliases: Vec<String>,
     /// The room's active (joined + invited) member count
@@ -80,7 +87,11 @@ fn project_member_parts(
 ) -> RoomMemberDto {
     RoomMemberDto {
         user_id: user_id.to_string(),
-        display_name,
+        // The same rule the timeline's attribution uses. Without it the same
+        // agent was named two ways three centimetres apart on one screen.
+        display_name: display_name
+            .as_deref()
+            .map(crate::display_name::sender_label),
         avatar_url,
     }
 }
@@ -98,6 +109,14 @@ pub fn project_room_info_parts(
     active_member_count: u64,
     members: Vec<RoomMemberDto>,
 ) -> RoomInfoDto {
+    // The bridge writes the runtime into the topic. Read as a runtime it is
+    // worth showing; read as prose it is an internal address sitting on the
+    // panel's most prominent line.
+    let runtime = topic
+        .as_deref()
+        .and_then(crate::display_name::parse_runtime)
+        .map(|(harness, host)| crate::dto::RuntimeDto { harness, host });
+
     RoomInfoDto {
         // The same fallback the panel used to apply by hand: the trimmed
         // name, or the room id when there is none.
@@ -109,7 +128,8 @@ pub fn project_room_info_parts(
         ),
         room_id: room_id.to_string(),
         name,
-        topic,
+        topic: if runtime.is_some() { None } else { topic },
+        runtime,
         canonical_alias,
         alt_aliases,
         active_member_count,
@@ -216,6 +236,66 @@ mod tests {
             display_name.map(str::to_string),
             avatar_url.map(str::to_string),
         )
+    }
+
+    #[test]
+    fn a_member_is_named_the_way_the_timeline_names_them() {
+        // The same agent was called `Ganesha (OpenClaw on Ashram)` in the
+        // timeline and `ganesha (openclaw @ ashram)` three centimetres away in
+        // this panel, because only one of them went through the rules.
+        let member = project_member_parts(
+            "@agent_ashram_openclaw-ganesha:id.agentpod.dev",
+            Some("ganesha (openclaw @ ashram)".into()),
+            None,
+        );
+        assert_eq!(member.display_name.as_deref(), Some("Ganesha (OpenClaw on Ashram)"));
+    }
+
+    #[test]
+    fn a_person_keeps_the_display_name_they_set() {
+        let member = project_member_parts("@rakesh:id.agentpod.dev", Some("rakesh 💕".into()), None);
+        assert_eq!(member.display_name.as_deref(), Some("rakesh 💕"));
+    }
+
+    #[test]
+    fn a_bridge_topic_becomes_a_runtime_rather_than_a_line_of_prose() {
+        // `openclaw on ashram — openclaw:ganesha` was rendered verbatim on the
+        // panel's most prominent line. The half after the dash is an internal
+        // address; the half before it is worth saying properly.
+        let info = project_room_info_parts(
+            "!r:example.org",
+            Some("ganesha".into()),
+            Some("openclaw on ashram \u{2014} openclaw:ganesha".into()),
+            None,
+            vec![],
+            2,
+            vec![],
+        );
+        assert_eq!(
+            info.runtime,
+            Some(crate::dto::RuntimeDto {
+                harness: "OpenClaw".into(),
+                host: "Ashram".into()
+            })
+        );
+        // And the raw line is gone rather than shown twice: everything it said
+        // that a reader wants is now in `runtime`.
+        assert_eq!(info.topic, None);
+    }
+
+    #[test]
+    fn a_topic_someone_wrote_survives_untouched() {
+        let info = project_room_info_parts(
+            "!r:example.org",
+            Some("Release".into()),
+            Some("Where we plan the release".into()),
+            None,
+            vec![],
+            4,
+            vec![],
+        );
+        assert_eq!(info.runtime, None);
+        assert_eq!(info.topic.as_deref(), Some("Where we plan the release"));
     }
 
     #[test]

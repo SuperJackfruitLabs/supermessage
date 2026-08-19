@@ -25,6 +25,10 @@ struct TimelineRowView: View {
     let row: TimelineRow
     /// Whether the row above already carries this sender's header.
     var continuesRun: Bool = false
+    /// Who to name, already chosen: the full attribution in a room where
+    /// several agents speak, the bare name where one does. Chosen by the list,
+    /// which can see every row; a single row cannot.
+    var attribution: String = ""
     let media: MediaCache
     /// Start a reply to this row. `nil` in contexts with no composer.
     var onReply: (() -> Void)?
@@ -32,6 +36,10 @@ struct TimelineRowView: View {
     var onReact: ((String) -> Void)?
 
     private var item: TimelineItemDto { row.item }
+
+    /// The attribution the list chose, falling back to the full one so a row
+    /// built without an opinion still names its sender.
+    private var named: String { attribution.isEmpty ? row.senderName : attribution }
 
     /// The day a divider names — "Today" and "Yesterday" where those apply,
     /// because a date is harder to place than a word.
@@ -49,14 +57,14 @@ struct TimelineRowView: View {
         switch row.view {
         case let .bubble(muted, blocks):
             MessageBlock(
-                row: row, muted: muted, blocks: blocks, continuesRun: continuesRun,
-                onReact: onReact
+                row: row, named: named, muted: muted, blocks: blocks,
+                continuesRun: continuesRun, onReact: onReact
             )
 
         case .emote:
             // Centred serif italic: an emote is prose *about* its sender
             // rather than something they said.
-            Text("\(row.senderName) \(item.body ?? "")")
+            Text("\(named) \(item.body ?? "")")
                 .font(Theme.body.italic())
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -91,13 +99,14 @@ struct TimelineRowView: View {
             SystemLine(text: text)
 
         case let .image(alt, width, height):
-            ImageRow(row: row, alt: alt, width: width, height: height, media: media)
+            ImageRow(
+                row: row, named: named, alt: alt, width: width, height: height, media: media)
 
         case let .mediaFile(label, filename, size, _):
             MediaFileRow(label: label, filename: filename, size: size)
 
         case let .customEvent(view, eventType):
-            CustomEventCard(view: view, eventType: eventType, senderName: row.senderName)
+            CustomEventCard(view: view, eventType: eventType, senderName: named)
 
         case .none:
             EmptyView()
@@ -108,6 +117,8 @@ struct TimelineRowView: View {
 /// A message, peer or own.
 private struct MessageBlock: View {
     let row: TimelineRow
+    /// Chosen by the list — see `TimelineRowView.attribution`.
+    let named: String
     let muted: Bool
     let blocks: [RichBlock]
     let continuesRun: Bool
@@ -119,7 +130,7 @@ private struct MessageBlock: View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
             if !isOwn && !continuesRun {
                 HStack(spacing: 6) {
-                    Text(row.senderName).nameFace()
+                    Text(named).nameFace()
                     if let timestamp = row.item.timestampMs {
                         Text(Self.time(timestamp)).metaFace().foregroundStyle(.tertiary)
                     }
@@ -246,6 +257,8 @@ private struct SystemLine: View {
 
 private struct ImageRow: View {
     let row: TimelineRow
+    /// Chosen by the list — see `TimelineRowView.attribution`.
+    let named: String
     let alt: String
     let width: UInt64?
     let height: UInt64?
@@ -267,7 +280,7 @@ private struct ImageRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(row.senderName).nameFace()
+            Text(named).nameFace()
             Group {
                 if let image {
                     Image(uiImage: image)

@@ -757,6 +757,14 @@ pub struct TimelineRow {
     /// Who to attribute this item to: display name, then the raw sender id,
     /// then a generic placeholder. Never empty.
     pub sender_name: String,
+    /// The same attribution **without** the bridge's `(harness on host)`
+    /// suffix, when there is one — otherwise identical to `sender_name`.
+    ///
+    /// A room where one agent speaks repeats that suffix under every message
+    /// and it never changes there; a room where several do needs it. Carried
+    /// rather than derived so a host chooses between two given strings instead
+    /// of taking a composed one back apart.
+    pub sender_short: String,
     /// The verb phrase for a membership change — "joined the room" — and
     /// `None` for every other kind.
     ///
@@ -794,7 +802,7 @@ impl TimelineRow {
     /// reason this is a row and not a bare DTO.
     pub fn new(item: TimelineItemDto) -> Self {
         let view = crate::item_view::view_for(&item);
-        let sender_name = crate::item_view::attributed_name(&item);
+        let (sender_name, sender_short) = crate::item_view::attributed_parts(&item);
         let membership_verb = (item.kind == "membership")
             .then(|| crate::item_view::membership_verb(item.detail.as_deref()));
         let reply_quote = crate::item_view::reply_quote_view(item.reply_to.as_ref());
@@ -804,6 +812,7 @@ impl TimelineRow {
             item,
             view,
             sender_name,
+            sender_short,
             membership_verb,
             reply_quote,
             can_reply_or_react,
@@ -1571,6 +1580,19 @@ mod wire_format_golden {
         let mut empty = a_text_item();
         empty.body = None;
         assert_eq!(TimelineRow::new(empty).reply_preview, None);
+    }
+
+    #[test]
+    fn a_row_carries_the_attribution_with_and_without_the_runtime() {
+        // The path that actually had the bug. Deriving the short form from the
+        // *composed* `sender_name` finds no `@` and hands the whole string
+        // back, so a room with one speaker kept repeating the suffix — and a
+        // test that only exercised `attributed_parts` passed throughout.
+        let mut item = a_text_item();
+        item.sender_display_name = Some("ganesha (openclaw @ ashram)".into());
+        let row = TimelineRow::new(item);
+        assert_eq!(row.sender_name, "Ganesha (OpenClaw on Ashram)");
+        assert_eq!(row.sender_short, "Ganesha");
     }
 
     #[test]

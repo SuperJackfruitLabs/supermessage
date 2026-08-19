@@ -16,20 +16,20 @@ looked at.
 
 ---
 
-## A · Naming, said differently on every surface
+## A · Naming, said differently on every surface — **done**
 
 The rules exist in `core::display_name` and are tested. These are surfaces that
 do not call them.
 
-- [ ] **A1.** Room info renders the room topic raw: `openclaw on ashram —
+- [x] **A1.** Room info renders the room topic raw: `openclaw on ashram —
       openclaw:ganesha`. An internal address, on the panel's most prominent
       line. Route through `parse_runtime`.
-- [ ] **A2.** Room info member names are raw: `ganesha (openclaw @ ashram)`.
+- [x] **A2.** Room info member names are raw: `ganesha (openclaw @ ashram)`.
       Route through `sender_label`, as the timeline already does.
-- [ ] **A3.** Room info shows full member ids
+- [x] **A3.** Room info shows full member ids
       (`@agent_ashram_openclaw-ganesha:id.agentpod.dev`), wrapping two lines.
       Truncate in the middle so both ends survive, or hide behind a disclosure.
-- [ ] **A4.** The timeline repeats `(OpenClaw on Ashram)` on every turn. Inside
+- [x] **A4.** The timeline repeats `(OpenClaw on Ashram)` on every turn. Inside
       a room it never changes. Drop it when the room has one agent; keep it
       where more than one speaks.
 

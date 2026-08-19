@@ -17,7 +17,7 @@ struct TimelineGroupingTests {
         return TimelineRow(
             item: item,
             view: system ? .system(text: "something happened") : .bubble(muted: false, blocks: []),
-            senderName: sender, membershipVerb: nil, replyQuote: nil, canReplyOrReact: true,
+            senderName: sender, senderShort: sender, membershipVerb: nil, replyQuote: nil, canReplyOrReact: true,
             replyPreview: nil)
     }
 
@@ -67,5 +67,36 @@ struct TimelineGroupingTests {
         let peer = Self.row(id: "$1", sender: "@a:x", at: 1_000)
         let own = Self.row(id: "$2", sender: "@a:x", at: 2_000, isOwn: true)
         #expect(!TimelineGrouping.continuesRun(own, after: peer))
+    }
+
+    @Test("a room where one agent speaks does not repeat its runtime")
+    func singleSpeaker() {
+        // The suffix is the same words under every message there, and the
+        // header already says the name.
+        #expect(
+            TimelineGrouping.hasSingleSpeaker([
+                Self.row(id: "1", sender: "@a:x", at: 1),
+                Self.row(id: "2", sender: "@a:x", at: 2),
+            ]))
+    }
+
+    @Test("a room where several speak keeps it")
+    func severalSpeakers() {
+        #expect(
+            !TimelineGrouping.hasSingleSpeaker([
+                Self.row(id: "1", sender: "@a:x", at: 1),
+                Self.row(id: "2", sender: "@b:x", at: 2),
+            ]))
+    }
+
+    @Test("your own messages do not make a room multi-voiced")
+    func ownMessagesDoNotCount() {
+        // Own messages are attributed by position, not by name, so they say
+        // nothing about how many agents are talking.
+        #expect(
+            TimelineGrouping.hasSingleSpeaker([
+                Self.row(id: "1", sender: "@a:x", at: 1),
+                Self.row(id: "2", sender: "@me:x", at: 2, isOwn: true),
+            ]))
     }
 }

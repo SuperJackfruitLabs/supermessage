@@ -224,24 +224,42 @@ pub fn room_name_label(raw: &str) -> String {
 /// and reads like a config line. The parenthetical is the only part touched —
 /// everything a person set stays as they set it.
 pub fn sender_label(raw: &str) -> String {
+    let (head, runtime) = sender_parts(raw);
+    match runtime {
+        Some(runtime) => format!("{head} ({runtime})"),
+        None => head,
+    }
+}
+
+/// A sender's name and, separately, the runtime its bridge appended.
+///
+/// Carried apart rather than composed and re-split, for the reason
+/// `timelineGrouping.ts` gives about membership verbs: a caller that needs
+/// half of a rendered string should be handed that half, not left to parse
+/// the sentence back apart.
+///
+/// The runtime is worth saying in a roster, where rooms differ, and in a room
+/// where more than one agent speaks. In a room with a single speaker it is the
+/// same words under every message.
+pub fn sender_parts(raw: &str) -> (String, Option<String>) {
     let trimmed = raw.trim();
     let Some(open) = trimmed.rfind(" (") else {
-        return room_name_label(trimmed);
+        return (room_name_label(trimmed), None);
     };
     if !trimmed.ends_with(')') {
-        return room_name_label(trimmed);
+        return (room_name_label(trimmed), None);
     }
     let inner = &trimmed[open + 2..trimmed.len() - 1];
     let Some((harness, host)) = inner.split_once(" @ ") else {
-        return room_name_label(trimmed);
+        return (room_name_label(trimmed), None);
     };
 
     let head = room_name_label(trimmed[..open].trim());
     let runtime = runtime_label(harness.trim(), host.trim());
     if runtime.is_empty() {
-        head
+        (head, None)
     } else {
-        format!("{head} ({runtime})")
+        (head, Some(runtime))
     }
 }
 
@@ -413,6 +431,17 @@ mod tests {
             sender_label("cleaner-cody (claude-code @ Rakeshs-MacBook-Pro.local)"),
             "Cleaner Cody (Claude Code on Rakesh's MacBook Pro)"
         );
+    }
+
+    #[test]
+    fn a_senders_name_and_its_runtime_come_apart() {
+        // So a room with one speaker can drop the runtime — the same words
+        // under every message — without parsing the composed string back apart.
+        assert_eq!(
+            sender_parts("ganesha (openclaw @ ashram)"),
+            ("Ganesha".to_string(), Some("OpenClaw on Ashram".to_string()))
+        );
+        assert_eq!(sender_parts("Rakesh"), ("Rakesh".to_string(), None));
     }
 
     #[test]

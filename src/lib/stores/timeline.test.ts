@@ -35,6 +35,7 @@ function item(id: string): TimelineRow {
     item: dto(id),
     view: { render: "bubble", muted: false, blocks: [] },
     senderName: "@someone:example.org",
+    senderShort: "@someone:example.org",
     membershipVerb: null,
     replyQuote: null,
     canReplyOrReact: true,

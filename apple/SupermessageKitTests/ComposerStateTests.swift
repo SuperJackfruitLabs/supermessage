@@ -45,7 +45,7 @@ struct ReplyTargetTests {
             customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil, replyTo: nil,
             edited: false, reactions: [], readBy: [])
         return TimelineRow(
-            item: item, view: .bubble(muted: false, blocks: []), senderName: sender,
+            item: item, view: .bubble(muted: false, blocks: []), senderName: sender, senderShort: sender,
             membershipVerb: nil, replyQuote: nil, canReplyOrReact: true, replyPreview: preview)
     }
 

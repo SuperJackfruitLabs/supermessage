@@ -124,6 +124,9 @@ struct TimelineCollectionView: UIViewRepresentable {
         /// cell, because a cell knows only itself and grouping is a question
         /// about neighbours.
         private var rowsById: [String: (row: TimelineRow, continuesRun: Bool)] = [:]
+        /// Whether one agent does all the talking, so the runtime suffix can
+        /// come off every attribution in the room.
+        private var singleSpeaker = true
         private var writerName = "Agent"
 
         init(session: Session, timeline: TimelineStore) {
@@ -144,6 +147,8 @@ struct TimelineCollectionView: UIViewRepresentable {
                         TimelineRowView(
                             row: found.row,
                             continuesRun: found.continuesRun,
+                            attribution: self.singleSpeaker
+                                ? found.row.senderShort : found.row.senderName,
                             media: self.session.media,
                             onReply: { self.startReply(found.row) },
                             onReact: { key in self.react(found.row, key) }
@@ -214,6 +219,7 @@ struct TimelineCollectionView: UIViewRepresentable {
                 byId[row.item.id] = (row, TimelineGrouping.continuesRun(row, after: previous))
             }
             rowsById = byId
+            singleSpeaker = TimelineGrouping.hasSingleSpeaker(rows)
 
             var snapshot = NSDiffableDataSourceSnapshot<Int, Entry>()
             snapshot.appendSections([0])

@@ -32,4 +32,23 @@ public enum TimelineGrouping {
         if case .bubble = row.view { return true }
         return false
     }
+
+    /// Whether one agent does all the talking here.
+    ///
+    /// A room with a single speaker repeats `(OpenClaw on Ashram)` under every
+    /// message, where it never changes; a room with several needs it to tell
+    /// them apart. Counts *peers* — your own messages are attributed by
+    /// position rather than by name, so they say nothing about this.
+    ///
+    /// Stops at two: the answer cannot change after that, and this runs over
+    /// every row on every update.
+    public static func hasSingleSpeaker(_ rows: [TimelineRow]) -> Bool {
+        var seen = Set<String>()
+        for row in rows where !row.item.isOwn {
+            guard let sender = row.item.sender else { continue }
+            seen.insert(sender)
+            if seen.count > 1 { return false }
+        }
+        return true
+    }
 }
