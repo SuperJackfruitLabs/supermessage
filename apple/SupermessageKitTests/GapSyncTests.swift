@@ -5,6 +5,17 @@ import Testing
 
 /// Ported from `src/lib/stores/gapSync.test.ts`. Each of the three hazards
 /// below cost a real incident on the desktop app; the comments say which.
+/// Let a resumed continuation run through to its `onUpdate`.
+///
+/// A resumption is not synchronous with `resume`, so a handful of hops are
+/// needed before the effect is observable. Named rather than repeated as bare
+/// `Task.yield()` pairs, so a reader can see it is a deliberate settle and not
+/// a magic number someone tuned until the suite went green.
+@MainActor
+private func settle() async {
+    for _ in 0..<10 { await Task.yield() }
+}
+
 @MainActor
 struct GapSyncTests {
     /// A resync whose completion the test controls, so the in-flight window
@@ -23,6 +34,21 @@ struct GapSyncTests {
         func resync() async -> Snapshot<Int> {
             callCount += 1
             return await withCheckedContinuation { self.continuation = $0 }
+        }
+
+        /// Wait until `resync()` has actually suspended on its continuation.
+        ///
+        /// Replaces a bare `await Task.yield()`, which was a guess about how
+        /// many hops the runtime needed and lost that guess intermittently —
+        /// `resolve` would fire before the continuation existed and simply do
+        /// nothing. Polling the call count is the same wait made honest: the
+        /// counter is bumped immediately before the continuation is stored, on
+        /// the same actor, so seeing it means the continuation is there.
+        func waitUntilCalled(_ count: Int = 1) async {
+            for _ in 0..<1_000 {
+                if callCount >= count { return }
+                await Task.yield()
+            }
         }
 
         func resolve(subject: String = "s", seq: UInt64, items: [Int]) {
@@ -56,14 +82,13 @@ struct GapSyncTests {
 
         sync.handle(subject: "s", seq: 1, ops: [.append([1])])
         sync.handle(subject: "s", seq: 5, ops: [.append([5])])  // gap -> resync
-        await Task.yield()
+        await gate.waitUntilCalled()
         sync.handle(subject: "s", seq: 6, ops: [.append([6])])  // ignored, in flight
 
         #expect(published == [[1]], "an envelope was applied during the resync")
 
         gate.resolve(seq: 6, items: [1, 2, 3])
-        await Task.yield()
-        await Task.yield()
+        await settle()
 
         #expect(published.last == [1, 2, 3])
         // The next live envelope is seq + 1 and must resume normally.
@@ -77,7 +102,7 @@ struct GapSyncTests {
         let sync = GapSync<Int>(resync: { await gate.resync() }, onUpdate: { _ in })
 
         sync.handle(subject: "s", seq: 5, ops: [.append([5])])
-        await Task.yield()
+        await gate.waitUntilCalled()
         sync.handle(subject: "s", seq: 9, ops: [.append([9])])
         await Task.yield()
 
@@ -93,14 +118,13 @@ struct GapSyncTests {
         let sync = GapSync<Int>(resync: { await gate.resync() }, onUpdate: { published.append($0) })
 
         sync.handle(subject: "s", seq: 5, ops: [.append([5])])  // gap -> resync
-        await Task.yield()
+        await gate.waitUntilCalled()
 
         sync.resetForNewSubscription()
         #expect(published.last == [], "a reset must publish an empty list immediately")
 
         gate.resolve(seq: 9, items: [7, 8, 9])
-        await Task.yield()
-        await Task.yield()
+        await settle()
 
         #expect(published.last == [], "a stale resync landed and clobbered the new context")
     }
@@ -112,18 +136,16 @@ struct GapSyncTests {
         let sync = GapSync<Int>(resync: { await gate.resync() }, onUpdate: { published.append($0) })
 
         sync.handle(subject: "s", seq: 5, ops: [.append([5])])
-        await Task.yield()
+        await gate.waitUntilCalled()
         sync.resetForNewSubscription()
         gate.resolve(seq: 9, items: [7])
-        await Task.yield()
-        await Task.yield()
+        await settle()
 
         // The stale one has cleared; the new context must be able to recover.
         sync.handle(subject: "s", seq: 4, ops: [.append([4])])
-        await Task.yield()
+        await gate.waitUntilCalled(2)
         gate.resolve(seq: 4, items: [1, 2])
-        await Task.yield()
-        await Task.yield()
+        await settle()
 
         #expect(published.last == [1, 2])
     }
@@ -162,10 +184,9 @@ struct GapSyncTests {
             onUpdate: { published.append($0) })
 
         sync.handle(subject: "!b:x.org", seq: 5, ops: [.append([5])])  // gap -> resync
-        await Task.yield()
+        await gate.waitUntilCalled()
         gate.resolve(subject: "!a:x.org", seq: 12, items: [98, 99])
-        await Task.yield()
-        await Task.yield()
+        await settle()
 
         #expect(published.isEmpty, "another room's snapshot was installed")
     }
@@ -180,10 +201,9 @@ struct GapSyncTests {
         let sync = GapSync<Int>(resync: { await gate.resync() }, onUpdate: { published.append($0) })
 
         Task { await sync.seed() }
-        await Task.yield()
+        await gate.waitUntilCalled()
         gate.resolve(seq: 3, items: [1, 2, 3])
-        await Task.yield()
-        await Task.yield()
+        await settle()
 
         #expect(published.last == [1, 2, 3])
     }
