@@ -129,26 +129,28 @@ struct SignedInView: View {
                 Button { showsInfo = true } label: { Image(systemName: "info.circle") }
             }
         }
-        // A sheet on every size, deliberately — **not** an `.inspector`.
+        // On an iPad the panel comes in from the trailing edge, beside the
+        // conversation rather than over it. On a phone there is no room beside
+        // anything, so it is a sheet.
         //
-        // The inspector was the design (read a room's members beside the
-        // conversation rather than on top of it) and it does not currently
-        // work here. On an iPad in portrait with the sidebar pinned open, the
-        // panel is laid out past the right edge of the window: measured at
-        // x=850.5 on an 834-point screen, present in the accessibility tree,
-        // invisible to the reader. Sidebar plus a readable timeline already
-        // spend the width, and there is no third column left to take.
-        //
-        // Gating it on measured width was tried and did not hold, so rather
-        // than ship a panel that is sometimes invisible, this is a sheet
-        // everywhere. `roomId` is the detail pane's own parameter, so it
-        // always describes the room on screen. Restoring the inspector for
-        // genuinely wide windows is worth doing — as a change with a test
-        // that asserts the panel has area on screen, which is the assertion
-        // that caught this in the first place.
-        .sheet(isPresented: $showsInfo) {
+        // **The sidebar has to give up its column for this to work.** An
+        // inspector takes a third column, and an iPad in portrait at 834
+        // points has already spent its width on a pinned sidebar and a
+        // readable timeline. Opening one anyway laid the panel out at x=850.5
+        // — in the accessibility tree, off the side of the screen, invisible.
+        // Collapsing the sidebar while the panel is open is what makes the
+        // room, and it restores when the panel closes.
+        .inspector(isPresented: Binding(get: { isWide && showsInfo }, set: { showsInfo = $0 })) {
+            RoomInfoPanel(session: session, roomId: roomId) { showsInfo = false }
+                .inspectorColumnWidth(min: 280, ideal: 340, max: 420)
+        }
+        .sheet(isPresented: Binding(get: { !isWide && showsInfo }, set: { showsInfo = $0 })) {
             RoomInfoPanel(session: session, roomId: roomId) { showsInfo = false }
                 .presentationDetents([.medium, .large])
+        }
+        .onChange(of: showsInfo) { _, open in
+            guard isWide else { return }
+            columns = open ? .detailOnly : .all
         }
     }
 

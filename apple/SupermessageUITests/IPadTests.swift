@@ -68,40 +68,49 @@ final class IPadTests: XCTestCase {
             app.navigationBars["ganesha"].waitForExistence(timeout: 20),
             "the room did not open")
 
-        // Tapped by coordinate: `tap()` on this toolbar item makes XCUITest
-        // try `AXScrollToVisible` first, which a navigation bar refuses, and
-        // the tap fails before the panel ever opens. The element is on screen
-        // and hittable — it is the scroll action that cannot complete.
         let info = app.navigationBars["ganesha"].buttons["Info"]
         XCTAssertTrue(info.waitForExistence(timeout: 10), "no info button in the toolbar")
-        info.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // Existence is not reach. A toolbar button can be in the tree and
+        // unreachable — something laid over the bar swallowing its touches —
+        // and then the rest of this test fails somewhere misleading.
+        XCTAssertTrue(info.isHittable, "the info button is on screen but not hittable")
 
-        // The panel used to fail here with "Couldn't load — NotReady", because
-        // the core refused to describe a room unless it was the focused one —
-        // a guard meant for writes, applied to a read that names its own room.
+        // Tapped at an absolute window coordinate. `tap()` on this element
+        // makes XCUITest attempt `AXScrollToVisible` first, which a navigation
+        // bar refuses, and the call fails before the panel ever opens.
+        let centre = CGVector(dx: info.frame.midX, dy: info.frame.midY)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(centre).tap()
+
+        // Taken before the assertions, not after: a failing element query
+        // *throws*, so a screenshot written at the end of the test is exactly
+        // the one that never appears when it would be most useful.
+        Thread.sleep(forTimeInterval: 4)
+        try? XCUIScreen.main.screenshot().pngRepresentation
+            .write(to: URL(fileURLWithPath: "/tmp/ipad-info.png"))
+
+        // Section headers are uppercased by `List`, hence the case-insensitive
+        // match — asserting on "Members" exactly passed nothing and failed
+        // everything for a while.
         let members = app.staticTexts.containing(
             NSPredicate(format: "label BEGINSWITH[c] 'Members'"))
         XCTAssertTrue(
             members.firstMatch.waitForExistence(timeout: 20),
             "the info panel never loaded the member list")
+        XCTAssertFalse(
+            app.staticTexts["Couldn't load"].exists,
+            "the info panel refused to describe the room that is open")
 
-        // Existence is not enough, and asserting only on it hid a real fault:
-        // the panel was in the accessibility tree, its member list loaded,
-        // and none of it was on screen — the inspector had resolved to zero
-        // width. A test that passes while the reader sees nothing is worse
-        // than no test.
+        // Existence is not visibility, and asserting only on existence hid a
+        // real fault: the panel was in the accessibility tree with its member
+        // list loaded, laid out at x=850.5 on an 834-point screen — entirely
+        // off the side of the window. A test that passes while the reader sees
+        // nothing is worse than no test.
         let frame = members.firstMatch.frame
         XCTAssertTrue(
             frame.width > 1 && frame.height > 1,
             "the member list is in the tree but has no area on screen: \(frame)")
         XCTAssertTrue(
-            app.windows.firstMatch.frame.contains(frame.origin),
+            app.windows.firstMatch.frame.contains(frame),
             "the info panel is laid out off screen: \(frame)")
-        XCTAssertFalse(
-            app.staticTexts["Couldn't load"].exists,
-            "the info panel refused to describe the room that is open")
-
-        try? XCUIScreen.main.screenshot().pngRepresentation
-            .write(to: URL(fileURLWithPath: "/tmp/ipad-info.png"))
     }
 }
