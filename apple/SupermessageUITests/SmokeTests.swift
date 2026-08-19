@@ -139,6 +139,30 @@ final class SmokeTests: XCTestCase {
         attach(XCUIScreen.main.screenshot(), named: "panel-room-info")
     }
 
+    /// The timeline, at the bottom and further back.
+    ///
+    /// The interesting parts of a conversation with an agent are not at the
+    /// bottom: turn cards, membership churn and the start of the room only
+    /// appear once you scroll, and they are what a reading surface is judged on.
+    func testTheTimelineFrontAndBack() throws {
+        let app = launched()
+        XCTAssertTrue(
+            app.staticTexts["Ganesha"].waitForExistence(timeout: 30), "no roster appeared")
+        app.staticTexts["Ganesha"].tap()
+        XCTAssertTrue(
+            app.navigationBars["Ganesha"].waitForExistence(timeout: 20), "the room did not open")
+        Thread.sleep(forTimeInterval: 3)
+        attach(XCUIScreen.main.screenshot(), named: "timeline-newest")
+
+        let list = app.collectionViews.firstMatch
+        for shot in 1...3 {
+            list.swipeDown(velocity: .fast)
+            list.swipeDown(velocity: .fast)
+            Thread.sleep(forTimeInterval: 2)
+            attach(XCUIScreen.main.screenshot(), named: "timeline-back-\(shot)")
+        }
+    }
+
     /// Pull a sheet down off the screen.
     private func dismissSheet(_ app: XCUIApplication) {
         let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
