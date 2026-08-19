@@ -363,11 +363,13 @@ public actor CoreClient {
         return dir.path
     }
 
-    /// Run one blocking call off the main thread.
+    /// Run one blocking call on the dedicated queue.
     ///
-    /// `Task.detached` rather than a plain `Task`: a plain one inherits the
-    /// caller's actor, which for anything called from a view is the main one —
-    /// exactly what this must not do.
+    /// CORRECTED DURING EXECUTION — see the commit for Task 2. `Task.detached`
+    /// was the original prescription and it is wrong: a detached task still
+    /// runs on Swift's *cooperative* pool, which is sized to the core count
+    /// and assumes tasks yield rather than block. Every `Core` method blocks,
+    /// so concurrent calls occupy the pool and hang unrelated work.
     private func run<T: Sendable>(_ body: @escaping @Sendable (Core) throws -> T) async throws -> T {
         let core = self.core
         return try await Task.detached { try body(core) }.value

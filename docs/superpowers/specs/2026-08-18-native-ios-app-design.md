@@ -339,11 +339,22 @@ Three files carry the risk.
 
 ### 5.1 `CoreClient.swift`
 
-An `actor` owning the `Core` object. Each of the 29 FFI methods becomes an
-`async` wrapper that performs the call inside `Task.detached`. **Every `Core`
-method blocks the calling thread** — it is a synchronous Rust function that
-`block_on`s the tokio runtime — so this is the only thing standing between the
-app and a frozen main thread. Nothing above this file holds a `Core` reference.
+An `actor` owning the `Core` object. Each FFI method becomes an `async`
+wrapper that performs the call on a dedicated `DispatchQueue` and returns
+through a continuation. **Every `Core` method blocks the calling thread** — it
+is a synchronous Rust function that `block_on`s the tokio runtime — so this is
+the only thing standing between the app and a frozen one. Nothing above this
+file holds a `Core` reference.
+
+**Corrected 19 Aug 2026, during Task 2.** This section originally said
+`Task.detached`, which is wrong in a way that only shows up under load: a
+detached task still runs on Swift's *cooperative* pool, which is sized to the
+core count and built on the assumption that tasks yield rather than block.
+Concurrent blocking calls therefore occupy the whole pool and hang work with
+no interest in the network — a hang, not a stall. A `DispatchQueue` is a real
+thread pool that expects to be blocked. Being an actor is what serialises
+access to the object; the queue is what keeps the blocking off every thread
+that matters.
 
 ### 5.2 `EventPump.swift`
 
