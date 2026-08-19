@@ -459,10 +459,16 @@ fn pending_rank(membership: Membership) -> u8 {
 /// roster's own `roomIdentity` path (design §6), which needs *something* to
 /// parse.
 fn space_display_name(item: &RoomListItem, room: &Room) -> String {
-    item.cached_display_name()
+    // Humanised like a room's, so a space named after a provisioned runtime
+    // reads as `9247e5…` in a filter pill rather than twelve hex characters,
+    // and one named after a host reads as a host. A thin adapter over
+    // `display_name::room_name_label`, which carries the rule and its tests.
+    let raw = item
+        .cached_display_name()
         .map(|name| name.to_string())
         .or_else(|| room.name())
-        .unwrap_or_else(|| room.room_id().to_string())
+        .unwrap_or_else(|| room.room_id().to_string());
+    crate::display_name::room_name_label(&raw)
 }
 
 #[cfg(test)]

@@ -160,12 +160,17 @@ pub fn parse_room_identity(raw_name: &str) -> RoomIdentity {
         None => name_half,
     };
 
+    // Humanised before bounding, so the cap counts characters a reader will
+    // actually see. `room_name_label` leaves anything a person wrote exactly
+    // as written — see `display_name::looks_machine_written` for where that
+    // line is drawn and why `id.agentpod.dev Admin Room` must not be touched.
     let name = if without_glyph.is_empty() {
         UNNAMED_ROOM.to_string()
     } else {
-        bound(without_glyph, MAX_NAME_CHARS)
+        bound(&crate::display_name::room_name_label(without_glyph), MAX_NAME_CHARS)
     };
-    let role = (!role_half.is_empty()).then(|| bound(role_half, MAX_ROLE_CHARS));
+    let role = (!role_half.is_empty())
+        .then(|| bound(&crate::display_name::room_name_label(role_half), MAX_ROLE_CHARS));
 
     finish(glyph.map(str::to_string), name, role)
 }
@@ -209,12 +214,15 @@ mod tests {
     }
 
     #[test]
-    fn leaves_a_hyphenated_name_alone() {
-        // Without requiring whitespace before the dash, this would split into
-        // a bogus name/role pair.
+    fn a_hyphen_is_not_a_name_role_separator() {
+        // The load-bearing half is the `None` role: without requiring
+        // whitespace before the dash, this would split into a bogus name/role
+        // pair. The hyphen becoming a space is `display_name::room_name_label`
+        // doing its job on a machine-written name, and is asserted here so the
+        // two rules are visibly composed rather than accidentally agreeing.
         assert_eq!(
             parsed("aether-dispatches"),
-            (None, "aether-dispatches".to_string(), None)
+            (None, "Aether Dispatches".to_string(), None)
         );
     }
 

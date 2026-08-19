@@ -160,7 +160,8 @@ pub enum ReplyQuoteView {
 /// then a generic placeholder. Never empty.
 pub fn attributed_name(item: &TimelineItemDto) -> String {
     item.sender_display_name
-        .clone()
+        .as_deref()
+        .map(crate::display_name::sender_label)
         .or_else(|| item.sender.clone())
         .unwrap_or_else(|| "Someone".to_string())
 }
