@@ -21,6 +21,29 @@ public enum DiffOp<T> {
     case reset([T])
 }
 
+/// Every item an op carries, in order — empty for the ops that only move or
+/// drop items.
+///
+/// Mirrors `core::dto::op_values`, and exists for the same reason: a caller
+/// that needs to look at what a batch *contains* should not have to write a
+/// second exhaustive match over `DiffOp` and risk disagreeing with `applyOps`
+/// about what an op means.
+public func opValues<T>(_ op: DiffOp<T>) -> [T] {
+    switch op {
+    case let .append(values): return values
+    case .clear: return []
+    case let .pushFront(value): return [value]
+    case let .pushBack(value): return [value]
+    case .popFront: return []
+    case .popBack: return []
+    case let .insert(_, value): return [value]
+    case let .set(_, value): return [value]
+    case .remove: return []
+    case .truncate: return []
+    case let .reset(values): return values
+    }
+}
+
 /// Apply a batch of ops, returning a new array. Never mutates its input.
 ///
 /// **This must agree with `core::dto::apply_ops` operation for operation**,

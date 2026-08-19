@@ -278,6 +278,16 @@ public final class Session {
             rooms.handle(envelope)
         case let .timelineDiff(envelope):
             timeline.handle(envelope)
+            // A message from someone is better evidence that they stopped
+            // typing than the server-side timeout on the notice — see
+            // `TypingStore.messagesArrived`. Own messages are excluded: this
+            // reader's own send says nothing about who else is writing.
+            let spoke = envelope.ops
+                .map(\.generic)
+                .flatMap(opValues)
+                .filter { !$0.item.isOwn }
+                .map(\.senderName)
+            if !spoke.isEmpty { typing.messagesArrived(from: spoke) }
         case let .typing(roomId, users):
             typing.handle(roomId: roomId, users: users)
         case let .live(roomId, seq, text, done):

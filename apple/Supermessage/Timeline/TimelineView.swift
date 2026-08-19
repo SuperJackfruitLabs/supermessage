@@ -61,6 +61,14 @@ struct TimelineView: View {
                         .padding(.horizontal, 16)
                         .frame(maxWidth: 712, alignment: .leading)
                         .frame(maxWidth: .infinity, alignment: .center)
+                    // Room under the newest message.
+                    //
+                    // Without it the last line of a conversation sits flush
+                    // against the composer and is clipped by it — the message
+                    // reads as cut off mid-sentence, which is what a reader
+                    // reported. A safe-area inset reserves space for the
+                    // composer but leaves nothing between it and the prose.
+                    Color.clear.frame(height: 12)
                 }
                 .scrollTargetLayout()
             }

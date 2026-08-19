@@ -20,6 +20,22 @@ public final class TypingStore {
         names = users
     }
 
+    /// Someone spoke, so they are no longer about to.
+    ///
+    /// Matrix typing notices expire on a server-side timeout, and a sender
+    /// that never explicitly retracts one leaves the line up for as long as
+    /// that timeout runs — which is why "ganesha is typing…" sat on screen
+    /// long after ganesha's message had arrived. The client does not have to
+    /// wait for the timeout: the message is better evidence than the notice.
+    ///
+    /// Deliberately not latching. An agent that sends one message and starts
+    /// writing the next is typing again, and the next notice must be able to
+    /// bring the line back.
+    public func messagesArrived(from senders: [String]) {
+        guard !names.isEmpty else { return }
+        names.removeAll { senders.contains($0) }
+    }
+
     public func focus(_ roomId: String?) {
         self.roomId = roomId
         names = []
