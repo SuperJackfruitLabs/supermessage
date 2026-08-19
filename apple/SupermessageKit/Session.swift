@@ -34,6 +34,8 @@ public final class Session {
     public let spaces: SpacesStore
     public let avatars: AvatarCache
     public let timeline: TimelineStore
+    public let live = LiveStore()
+    public let typing = TypingStore()
 
     private let client: CoreClient
     private let pump = EventPump()
@@ -89,6 +91,14 @@ public final class Session {
         }
     }
 
+    /// Open a room: the timeline subscribes, and the transient stores are
+    /// re-pointed so nothing from the last room survives the switch.
+    public func open(roomId: String) async {
+        live.focus(roomId)
+        typing.focus(roomId)
+        await timeline.subscribeTo(roomId)
+    }
+
     /// Ask for the state the channels will not volunteer.
     ///
     /// The diff channels only speak when something *changes*, so a store built
@@ -107,6 +117,8 @@ public final class Session {
         drainTask = nil
         rooms.clear()
         timeline.clear()
+        live.clear()
+        typing.focus(nil)
         spaces.clear()
         avatars.clear()
         phase = .signedOut
@@ -135,10 +147,19 @@ public final class Session {
             rooms.handle(envelope)
         case let .timelineDiff(envelope):
             timeline.handle(envelope)
-        case .typing, .live, .thought, .tool, .attachmentStaged:
-            // Wired to their stores as each lands. Listed explicitly rather
-            // than swept into a `default` so the compiler keeps naming what is
-            // still outstanding.
+        case let .typing(roomId, users):
+            typing.handle(roomId: roomId, users: users)
+        case let .live(roomId, seq, text, done):
+            live.handleLive(roomId: roomId, seq: seq, text: text, done: done)
+        case let .thought(roomId, seq, text, done):
+            live.handleThought(roomId: roomId, seq: seq, text: text, done: done)
+        case let .tool(roomId, seq, toolCallId, title, status):
+            live.handleTool(
+                roomId: roomId, seq: seq, toolCallId: toolCallId, title: title, status: status)
+        case .attachmentStaged:
+            // Handled by the composer, which owns the staged strip. Listed
+            // rather than swept into a `default` so a new variant on the
+            // boundary still breaks this build.
             break
         }
     }

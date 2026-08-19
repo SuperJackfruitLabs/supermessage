@@ -10,13 +10,15 @@ import SwiftUI
 /// makes that call; it draws the answer.
 struct TimelineRowView: View {
     let row: TimelineRow
+    /// Whether the row above already carries this sender's header.
+    var continuesRun: Bool = false
 
     private var item: TimelineItemDto { row.item }
 
     var body: some View {
         switch row.view {
         case let .bubble(muted, blocks):
-            MessageBlock(row: row, muted: muted, blocks: blocks)
+            MessageBlock(row: row, muted: muted, blocks: blocks, continuesRun: continuesRun)
 
         case .emote:
             // Centred serif italic: an emote is prose *about* its sender
@@ -60,12 +62,13 @@ private struct MessageBlock: View {
     let row: TimelineRow
     let muted: Bool
     let blocks: [RichBlock]
+    let continuesRun: Bool
 
     private var isOwn: Bool { row.item.isOwn }
 
     var body: some View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
-            if !isOwn {
+            if !isOwn && !continuesRun {
                 HStack(spacing: 6) {
                     Text(row.senderName).font(Theme.name)
                     if let timestamp = row.item.timestampMs {
@@ -92,7 +95,10 @@ private struct MessageBlock: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: isOwn ? .trailing : .leading)
-        .padding(.vertical, 6)
+        // A continued row sits closer to the one above it: the gap is what
+        // says "same turn" once the header is gone.
+        .padding(.top, continuesRun ? 2 : 8)
+        .padding(.bottom, 2)
     }
 
     static func time(_ ms: UInt64) -> String {

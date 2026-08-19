@@ -39,8 +39,11 @@ struct TimelineView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                     }
-                    ForEach(timeline.items, id: \.item.id) { row in
-                        TimelineRowView(row: row)
+                    ForEach(Array(timeline.items.enumerated()), id: \.element.item.id) { index, row in
+                        TimelineRowView(
+                            row: row,
+                            continuesRun: TimelineGrouping.continuesRun(
+                                row, after: index > 0 ? timeline.items[index - 1] : nil))
                             .id(row.item.id)
                             // The reading column: every row lays out inside
                             // one centred measure, so a phone and an iPad
@@ -54,6 +57,10 @@ struct TimelineView: View {
                             .frame(maxWidth: 712, alignment: .leading)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
+                    LiveTurnView(live: session.live, writerName: writerName)
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: 712, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .scrollTargetLayout()
             }
@@ -98,6 +105,27 @@ struct TimelineView: View {
         .task(id: timeline.roomId) {
             await timeline.markRead()
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let line = session.typing.line {
+                Text(line)
+                    .font(Theme.meta)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(.bar)
+            }
+        }
+    }
+
+    /// Who the live turn belongs to.
+    ///
+    /// The last peer message's sender, falling back to the room's own name for
+    /// the one case a timeline cannot answer: an agent's very first message in
+    /// a room nobody has spoken in yet.
+    private var writerName: String {
+        timeline.items.last { !$0.item.isOwn }?.senderName
+            ?? session.rooms.selectedName ?? "Agent"
     }
 
     /// Whether the reader is close enough to the top to want more history.

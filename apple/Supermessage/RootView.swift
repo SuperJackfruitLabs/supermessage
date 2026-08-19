@@ -54,7 +54,7 @@ struct SignedInView: View {
                 TimelineView(session: session, timeline: session.timeline)
                     .navigationTitle(name)
                     .navigationBarTitleDisplayMode(.inline)
-                    .task(id: roomId) { await session.timeline.subscribeTo(roomId) }
+                    .task(id: roomId) { await session.open(roomId: roomId) }
             } else {
                 ContentUnavailableView(
                     "No room open", systemImage: "bubble.left.and.bubble.right",
