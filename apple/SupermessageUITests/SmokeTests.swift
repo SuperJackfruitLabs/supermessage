@@ -29,6 +29,35 @@ final class SmokeTests: XCTestCase {
             app.navigationBars["ganesha"].waitForExistence(timeout: 20),
             "the room did not open")
 
+        // Send something, which is the other half of a chat client working.
+        // It goes to the live homeserver, which is what this account is for.
+        // `TextField(axis: .vertical)` surfaces as a text field, not a text
+        // view — checked rather than assumed after the first guess missed.
+        let composer = app.textFields.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10), "no composer")
+        composer.tap()
+        composer.typeText("Hello from the native iOS app.")
+
+        let send = app.buttons["arrow.up.circle.fill"]
+        if send.waitForExistence(timeout: 5) {
+            send.tap()
+            Thread.sleep(forTimeInterval: 6)
+            try? XCUIScreen.main.screenshot().pngRepresentation
+                .write(to: URL(fileURLWithPath: "/tmp/ios-after-send.png"))
+            // The composer clears only when the core accepted the send, so an
+            // empty field is the signal — and the honest one to assert on.
+            //
+            // Looking for the sent text in the timeline was the first attempt
+            // and it is unreliable for a reason worth recording: a LazyVStack
+            // realises only the rows on screen, and in a live room the agent's
+            // reply arrives within seconds and pushes the sent message above
+            // the fold. The test then fails while the app is working, which is
+            // the worst kind of test.
+            XCTAssertEqual(
+                composer.value as? String, "Message…",
+                "the composer did not clear, so the send was refused")
+        }
+
         // Leave a picture behind. A reading surface is judged by looking at
         // it, and this is the only place in the suite that can hand a person
         // one. Written to a fixed path rather than attached to the result

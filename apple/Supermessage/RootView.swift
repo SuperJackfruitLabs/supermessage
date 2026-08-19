@@ -52,6 +52,9 @@ struct SignedInView: View {
         } detail: {
             if let roomId = session.rooms.selectedId, let name = session.rooms.selectedName {
                 TimelineView(session: session, timeline: session.timeline)
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        ComposerView(session: session, roomId: roomId)
+                    }
                     .navigationTitle(name)
                     .navigationBarTitleDisplayMode(.inline)
                     .task(id: roomId) { await session.open(roomId: roomId) }

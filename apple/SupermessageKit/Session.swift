@@ -36,6 +36,9 @@ public final class Session {
     public let timeline: TimelineStore
     public let live = LiveStore()
     public let typing = TypingStore()
+    public let drafts = DraftStore()
+    public let replies = ReplyTarget()
+    public let staged: StagedAttachment
 
     private let client: CoreClient
     private let pump = EventPump()
@@ -47,6 +50,7 @@ public final class Session {
         spaces = SpacesStore(client: client)
         avatars = AvatarCache(client: client)
         timeline = TimelineStore(client: client, sink: pump)
+        staged = StagedAttachment(client: client)
     }
 
     public convenience init() {
@@ -91,6 +95,45 @@ public final class Session {
         }
     }
 
+    /// Send what is in the composer: the text, the attachment, or both.
+    ///
+    /// Returns a message when the core refuses, or `nil`. Mentions are the
+    /// core's — `collectMentions` produces the `m.mentions` an agent reads to
+    /// decide a message in a room full of agents was addressed to it, and this
+    /// app must not have a second opinion about that.
+    public func send(text: String, in roomId: String) async -> String? {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if staged.file != nil, let failure = await staged.send(in: roomId) {
+            return failure
+        }
+        guard !body.isEmpty else { return nil }
+
+        do {
+            if let reply = replies.pending(for: roomId) {
+                try await client.sendReply(roomId: roomId, body: body, inReplyTo: reply.eventId)
+                replies.cancel(roomId)
+            } else {
+                let mentions = SupermessageFFI.collectMentions(text: body, members: [])
+                try await client.sendMessage(roomId: roomId, body: body, mentions: mentions)
+            }
+            await setTyping(false, in: roomId)
+            return nil
+        } catch let error as FfiError {
+            return ErrorPresenter.message(for: error)
+        } catch {
+            return "Couldn't send that."
+        }
+    }
+
+    /// Tell the room whether this account is typing.
+    ///
+    /// Failures are swallowed: a typing notice nobody saw is not worth an
+    /// alert, and the composer is the last place to interrupt someone.
+    public func setTyping(_ typing: Bool, in roomId: String) async {
+        try? await client.setTyping(roomId: roomId, typing: typing)
+    }
+
     /// Open a room: the timeline subscribes, and the transient stores are
     /// re-pointed so nothing from the last room survives the switch.
     public func open(roomId: String) async {
@@ -119,6 +162,9 @@ public final class Session {
         timeline.clear()
         live.clear()
         typing.focus(nil)
+        drafts.clearAll()
+        replies.clearAll()
+        await staged.discard()
         spaces.clear()
         avatars.clear()
         phase = .signedOut
