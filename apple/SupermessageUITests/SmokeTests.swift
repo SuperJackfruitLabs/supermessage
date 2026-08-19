@@ -106,6 +106,47 @@ final class SmokeTests: XCTestCase {
         attach(XCUIScreen.main.screenshot(), named: "roster-settings")
     }
 
+    /// Every panel, photographed.
+    ///
+    /// Assertion-light on purpose: this exists so the screens can be *looked
+    /// at*, which is how a reading surface is judged, and several of them are
+    /// only reachable through a toolbar.
+    ///
+    /// Sheets are dismissed by swiping rather than by tapping Done, because
+    /// `.searchable` replaces the toolbar's Done with its own Cancel and a
+    /// tour that assumes one button is a tour that stops at the first screen.
+    func testEveryPanel() throws {
+        let app = launched()
+        XCTAssertTrue(
+            app.staticTexts["Ganesha"].waitForExistence(timeout: 30), "no roster appeared")
+
+        app.buttons["square.and.pencil"].tap()
+        Thread.sleep(forTimeInterval: 2)
+        attach(XCUIScreen.main.screenshot(), named: "panel-new-room")
+        dismissSheet(app)
+
+        app.staticTexts["Ganesha"].tap()
+        XCTAssertTrue(
+            app.navigationBars["Ganesha"].waitForExistence(timeout: 20), "the room did not open")
+        Thread.sleep(forTimeInterval: 2)
+        attach(XCUIScreen.main.screenshot(), named: "panel-room-toolbar")
+
+        let info = app.navigationBars["Ganesha"].buttons["Info"]
+        XCTAssertTrue(info.waitForExistence(timeout: 10), "no info button")
+        let centre = CGVector(dx: info.frame.midX, dy: info.frame.midY)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(centre).tap()
+        Thread.sleep(forTimeInterval: 4)
+        attach(XCUIScreen.main.screenshot(), named: "panel-room-info")
+    }
+
+    /// Pull a sheet down off the screen.
+    private func dismissSheet(_ app: XCUIApplication) {
+        let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+        let bottom = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+        top.press(forDuration: 0.05, thenDragTo: bottom)
+        Thread.sleep(forTimeInterval: 1.5)
+    }
+
     func testOpensARoomAndRendersItsTimeline() throws {
         let app = launched()
 
