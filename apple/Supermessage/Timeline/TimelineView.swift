@@ -111,6 +111,19 @@ struct TimelineView: View {
                     scrollToBottom(proxy)
                 }
             }
+            // Streaming. The live turn grows a few characters at a time, and
+            // the reading position has to grow with it or an agent's answer
+            // writes itself off the bottom of the screen.
+            //
+            // **Unanimated, deliberately.** Animating a scroll per token is
+            // what makes a stream look jittery: every arrival starts a new
+            // 0.18s ease that the next arrival interrupts, so the text
+            // stutters instead of growing. Moving the offset without an
+            // animation reads as the text simply being longer, which is what
+            // is actually happening.
+            .onChange(of: session.live.answer) { _, _ in followLiveTurn(proxy) }
+            .onChange(of: session.live.thought) { _, _ in followLiveTurn(proxy) }
+            .onChange(of: session.live.tools.count) { _, _ in followLiveTurn(proxy) }
             .onChange(of: timeline.roomId) { _, _ in
                 // A different room is a different reading position.
                 hasSettled = false
@@ -144,9 +157,27 @@ struct TimelineView: View {
             ?? session.rooms.selectedName ?? "Agent"
     }
 
+    /// Keep the newest content in view while a turn streams in.
+    ///
+    /// Only for a reader who was already at the bottom — someone reading back
+    /// through history is not asking to be dragged forward by an agent that
+    /// started talking.
+    private func followLiveTurn(_ proxy: ScrollViewProxy) {
+        guard TimelineFollow.shouldRepin(distanceFromBottom: distanceFromBottom, grew: true),
+            let last = timeline.items.last?.item.id
+        else { return }
+        proxy.scrollTo(last, anchor: .bottom)
+    }
+
+    /// Move to the newest message, gently.
+    ///
+    /// Animated, unlike `followLiveTurn`: this fires on a discrete event — a
+    /// message arriving, or one being sent — where the movement is the point.
+    /// A message that appears with the list already moved reads as a jump; the
+    /// timeline making room for it reads as an arrival.
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         guard let last = timeline.items.last?.item.id else { return }
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(.easeOut(duration: 0.28)) {
             proxy.scrollTo(last, anchor: .bottom)
         }
     }

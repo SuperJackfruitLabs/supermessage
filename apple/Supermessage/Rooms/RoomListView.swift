@@ -10,6 +10,8 @@ import SwiftUI
 struct RoomListView: View {
     let session: Session
 
+
+
     private var sorted: [RoomRow] {
         session.rooms.rooms.sorted {
             ($0.room.lastActivityMs ?? 0) > ($1.room.lastActivityMs ?? 0)
@@ -23,7 +25,6 @@ struct RoomListView: View {
                     RoomRowView(
                         row: row,
                         avatarURI: session.avatars.uri(for: row.room.id),
-                        isSelected: session.rooms.selectedId == row.room.id
                     )
                     .tag(row.room.id)
                     .task { await session.avatars.load(row.room.id) }

@@ -10,7 +10,6 @@ import SwiftUI
 struct RoomRowView: View {
     let row: RoomRow
     let avatarURI: String?
-    let isSelected: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {

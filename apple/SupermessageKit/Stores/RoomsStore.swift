@@ -56,6 +56,17 @@ public final class RoomsStore {
         onSelect(roomId)
     }
 
+    /// Close whatever room is open, leaving the roster alone.
+    ///
+    /// For a phone coming back from a conversation: there, the roster is the
+    /// previous screen rather than a column beside the room, so nothing is
+    /// selected once you have returned to it. Distinct from `clear`, which
+    /// empties the roster too and belongs to signing out.
+    public func deselect() {
+        selectedId = nil
+        selectedNameFallback = nil
+    }
+
     public func row(for roomId: String) -> RoomRow? {
         rooms.first { $0.room.id == roomId }
     }

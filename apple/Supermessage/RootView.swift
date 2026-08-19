@@ -160,6 +160,19 @@ struct SignedInView: View {
                 ComposerView(session: session, roomId: roomId)
             }
             .task(id: roomId) { await session.open(roomId: roomId) }
+            // Coming back to the roster on a phone leaves nothing selected.
+            //
+            // A collapsed `NavigationSplitView` is a push stack whose
+            // selection drives the navigation, so the row stays highlighted
+            // after you pop back — a tap that never let go. On an iPad the
+            // highlight is true and stays: the roster sits *beside* the
+            // conversation and says which room the pane is showing.
+            //
+            // Not done by withholding the selection from the list, which was
+            // the first attempt: the binding is what performs the push, so a
+            // roster that reports nothing selected is a roster you cannot open
+            // a room from.
+            .onDisappear { if !isWide { session.rooms.deselect() } }
     }
 }
 
