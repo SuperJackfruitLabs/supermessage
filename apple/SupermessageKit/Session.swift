@@ -33,6 +33,7 @@ public final class Session {
     public let rooms: RoomsStore
     public let spaces: SpacesStore
     public let avatars: AvatarCache
+    public let timeline: TimelineStore
 
     private let client: CoreClient
     private let pump = EventPump()
@@ -43,6 +44,7 @@ public final class Session {
         rooms = RoomsStore(client: client)
         spaces = SpacesStore(client: client)
         avatars = AvatarCache(client: client)
+        timeline = TimelineStore(client: client, sink: pump)
     }
 
     public convenience init() {
@@ -104,6 +106,7 @@ public final class Session {
         drainTask?.cancel()
         drainTask = nil
         rooms.clear()
+        timeline.clear()
         spaces.clear()
         avatars.clear()
         phase = .signedOut
@@ -130,7 +133,9 @@ public final class Session {
             connection.apply(state)
         case let .roomsDiff(envelope):
             rooms.handle(envelope)
-        case .timelineDiff, .typing, .live, .thought, .tool, .attachmentStaged:
+        case let .timelineDiff(envelope):
+            timeline.handle(envelope)
+        case .typing, .live, .thought, .tool, .attachmentStaged:
             // Wired to their stores as each lands. Listed explicitly rather
             // than swept into a `default` so the compiler keeps naming what is
             // still outstanding.

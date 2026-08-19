@@ -50,9 +50,11 @@ struct SignedInView: View {
                     }
                 }
         } detail: {
-            if let name = session.rooms.selectedName {
-                // The timeline lands here in the next task.
-                Text(name).font(.system(.title2, design: .serif))
+            if let roomId = session.rooms.selectedId, let name = session.rooms.selectedName {
+                TimelineView(session: session, timeline: session.timeline)
+                    .navigationTitle(name)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .task(id: roomId) { await session.timeline.subscribeTo(roomId) }
             } else {
                 ContentUnavailableView(
                     "No room open", systemImage: "bubble.left.and.bubble.right",
