@@ -261,8 +261,28 @@ struct TimelineCollectionView: UIViewRepresentable {
         ) -> UIContextMenuConfiguration? {
             MainActor.assumeIsolated {
                 guard let row = row(at: indexPath) else { return nil }
-                return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) {
-                    [weak self] _ in
+                return UIContextMenuConfiguration(
+                    identifier: nil,
+                    // **A preview of our own, not the cell's.** The default
+                    // lifts a snapshot of the cell, and every cell here
+                    // carries the list's inversion — the lift came up as a
+                    // one-pixel-wide sliver. Rendering the row again, the
+                    // right way up, is what a reader should see held above the
+                    // conversation.
+                    previewProvider: { [weak self] in
+                        guard let self else { return nil }
+                        let host = UIHostingController(
+                            rootView: TimelineRowView(
+                                row: row, continuesRun: false, media: self.session.media
+                            )
+                            .padding(.horizontal, 16)
+                            .frame(maxWidth: 360, alignment: .leading))
+                        host.view.backgroundColor = .clear
+                        host.preferredContentSize = host.sizeThatFits(
+                            in: CGSize(width: 360, height: CGFloat.greatestFiniteMagnitude))
+                        return host
+                    }
+                ) { [weak self] _ in
                     guard let self else { return nil }
                     var actions: [UIMenuElement] = []
 
@@ -271,12 +291,17 @@ struct TimelineCollectionView: UIViewRepresentable {
                     // and there is no event yet. The core decides that — see
                     // `can_reply_or_react`.
                     if row.canReplyOrReact {
-                        actions.append(
-                            UIMenu(
-                                title: "", options: .displayInline,
-                                children: quickReactions.map { emoji in
-                                    UIAction(title: emoji) { _ in self.react(row, emoji) }
-                                }))
+                        // One horizontal strip, the shape Messages uses — not
+                        // six full-width rows, which is what an inline menu
+                        // gives by default and which read as a list of
+                        // commands that happened to be emoji.
+                        let reactions = UIMenu(
+                            title: "", options: .displayInline,
+                            children: quickReactions.map { emoji in
+                                UIAction(title: emoji) { _ in self.react(row, emoji) }
+                            })
+                        reactions.preferredElementSize = .small
+                        actions.append(reactions)
                         actions.append(
                             UIAction(
                                 title: "Reply",

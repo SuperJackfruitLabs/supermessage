@@ -63,6 +63,12 @@ final class SmokeTests: XCTestCase {
         let reply = app.buttons["Reply"]
         XCTAssertTrue(
             reply.waitForExistence(timeout: 10), "long pressing a message offered no actions")
+
+        // The menu itself, while it is up. A context menu is as much a piece
+        // of design as the timeline behind it, and this is the only way to
+        // look at one on a device.
+        attach(XCUIScreen.main.screenshot(), named: "ios-message-actions")
+
         reply.tap()
 
         // The composer says who it is answering. That strip is the whole

@@ -34,7 +34,16 @@ export interface Emoji {
  * these are the ones a reader reaches for without thinking, and putting them
  * behind a picker would make the common case slower to serve the rare one.
  */
-export const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "🙏"] as const;
+/**
+ * Approval, refusal, attention, thanks — the working vocabulary of a room
+ * whose other occupants are agents, and what these rooms observably use. The
+ * previous six were the generic social set: 🎉 and 🙏 went unused here while
+ * ✅ and 👀 were being picked out of the full picker every time.
+ *
+ * Kept identical to iOS's `quickReactions`. Two clients offering different
+ * quick reactions is two different apps.
+ */
+export const QUICK_REACTIONS = ["✅", "👍", "❌", "👀"] as const;
 
 export const EMOJI: readonly Emoji[] = [
   // Approval, refusal, attention — the working vocabulary of an agent room.

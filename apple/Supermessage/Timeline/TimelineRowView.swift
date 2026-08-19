@@ -8,10 +8,18 @@ import SwiftUI
 /// of a Matrix event — whether an `m.room.name` change is a visible row,
 /// whether an undecryptable event says something specific. This view never
 /// makes that call; it draws the answer.
-/// The six an agent room actually uses, in the order a hand reaches for them.
-/// Matches the desktop's `QUICK_REACTIONS` deliberately: two clients offering
+/// Approval, refusal, attention, thanks — the working vocabulary of a room
+/// whose other occupants are agents, and what these rooms are observably
+/// using: ✅ and 👀 appear all over them, 🎉 and 🙏 do not.
+///
+/// **Four, not six.** Partly because these are the ones reached for, and
+/// partly because iOS lays a `.small` menu group out four to a row: six meant
+/// four in a strip and then two stranded on full-width rows of their own,
+/// which read as a mistake because it was one.
+///
+/// Matches the desktop's `QUICK_REACTIONS` deliberately — two clients offering
 /// different quick reactions is two different apps.
-let quickReactions = ["👍", "❤️", "😂", "🎉", "😮", "🙏"]
+let quickReactions = ["✅", "👍", "❌", "👀"]
 
 struct TimelineRowView: View {
     let row: TimelineRow
