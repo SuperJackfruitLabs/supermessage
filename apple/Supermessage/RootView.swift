@@ -159,6 +159,7 @@ struct ConnectionBar: View {
         case .live: return "live"
         case .connecting: return "connecting"
         case .offline: return "offline"
+        case .error: return "reconnecting…"
         case let .unknown(raw): return raw
         }
     }

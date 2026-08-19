@@ -44,33 +44,60 @@ struct ComposerView: View {
                     .padding(.top, 4)
             }
 
-            HStack(alignment: .bottom, spacing: 10) {
+            // The shape iOS readers already know: a `+` outside on the left,
+            // and the field and its send button together inside one capsule.
+            // Getting this wrong is the kind of thing that makes an app feel
+            // foreign even when every pixel of the content is right.
+            HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     PhotosPicker("Photo", selection: $photo, matching: .images)
                     Button("File") { showsFileImporter = true }
                 } label: {
-                    Image(systemName: "plus.circle").imageScale(.large)
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .medium))
+                        .frame(width: 32, height: 32)
+                        .foregroundStyle(.secondary)
                 }
 
-                TextField("Message…", text: $text, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.plain)
-                    .focused($focused)
-                    .onChange(of: text) { _, next in
-                        session.drafts.set(next, for: roomId)
-                        Task { await session.setTyping(!next.isEmpty, in: roomId) }
+                HStack(alignment: .bottom, spacing: 6) {
+                    TextField("Message", text: $text, axis: .vertical)
+                        .lineLimit(1...6)
+                        .textFieldStyle(.plain)
+                        .focused($focused)
+                        .padding(.leading, 12)
+                        .padding(.vertical, 7)
+                        .onChange(of: text) { _, next in
+                            session.drafts.set(next, for: roomId)
+                            Task { await session.setTyping(!next.isEmpty, in: roomId) }
+                        }
+
+                    // Inside the capsule, and only once there is something to
+                    // send — Messages hides it rather than dimming it, which
+                    // keeps the empty field looking like an invitation rather
+                    // than a disabled control.
+                    if canSend {
+                        Button {
+                            Task { await send() }
+                        } label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 27))
+                                .foregroundStyle(.white, Theme.accent)
+                        }
+                        .disabled(sending)
+                        .padding(.trailing, 3)
+                        .padding(.bottom, 2)
+                        .transition(.scale.combined(with: .opacity))
                     }
-
-                Button {
-                    Task { await send() }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill").imageScale(.large)
                 }
-                .disabled(sending || !canSend)
-                .tint(Theme.accent)
+                .padding(.trailing, canSend ? 0 : 12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                        .stroke(.secondary.opacity(0.35), lineWidth: 1)
+                )
+                .animation(.snappy(duration: 0.18), value: canSend)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
         }
         .background(.bar)
         .task(id: roomId) { text = session.drafts.draft(for: roomId) }

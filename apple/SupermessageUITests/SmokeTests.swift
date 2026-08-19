@@ -38,6 +38,8 @@ final class SmokeTests: XCTestCase {
         composer.tap()
         composer.typeText("Hello from the native iOS app.")
 
+        // The send button only exists once there is something to send —
+        // Messages hides it rather than dimming it.
         let send = app.buttons["arrow.up.circle.fill"]
         if send.waitForExistence(timeout: 5) {
             send.tap()
@@ -54,7 +56,7 @@ final class SmokeTests: XCTestCase {
             // the fold. The test then fails while the app is working, which is
             // the worst kind of test.
             XCTAssertEqual(
-                composer.value as? String, "Message…",
+                composer.value as? String, "Message",
                 "the composer did not clear, so the send was refused")
         }
 

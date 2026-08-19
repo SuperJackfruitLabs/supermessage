@@ -18,6 +18,10 @@ public final class ConnectionStore {
         case live
         case connecting
         case offline
+        /// Sync failed. The core carries the reason in `message`, and it now
+        /// retries on a backoff rather than staying broken — this state is
+        /// what the reader sees while that is happening.
+        case error
         /// Something the core started saying that this build has not been
         /// taught. Rendered as connecting, because that is the honest reading
         /// of "we do not know yet".
@@ -31,6 +35,10 @@ public final class ConnectionStore {
         case "live": state = .live
         case "connecting": state = .connecting
         case "offline": state = .offline
+        // The core emits this on a sync failure and it was missing here, so
+        // it fell through to `.unknown("error")` and the bar showed the bare
+        // word "error" with no explanation beside it.
+        case "error": state = .error
         default: state = .unknown(raw.state)
         }
         message = raw.message

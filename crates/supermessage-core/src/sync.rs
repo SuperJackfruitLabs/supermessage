@@ -18,6 +18,8 @@ use std::sync::Arc;
 use crate::event::{CoreEvent, EventSink};
 
 use matrix_sdk::Client;
+use std::time::Duration;
+
 use matrix_sdk_ui::sync_service::{State, SyncService};
 use matrix_sdk_ui::RoomListService;
 use serde::Serialize;
@@ -159,13 +161,72 @@ pub async fn start(client: &Client, sink: Arc<dyn EventSink>) -> CoreResult<Sync
     emit_connection_state(&sink, &states.get());
 
     let watcher_sink = Arc::clone(&sink);
+    let watcher_service = Arc::clone(&service);
     let watcher = tokio::spawn(async move {
+        // Attempts since the last time sync was healthy. Reset on `Running`,
+        // so a flaky connection does not inherit yesterday's backoff.
+        let mut attempt: u32 = 0;
+
         while let Some(state) = states.next().await {
             emit_connection_state(&watcher_sink, &state);
+
+            if matches!(state, State::Running) {
+                attempt = 0;
+                continue;
+            }
+
+            // **`SyncService` does not restart itself.** On an error it stops,
+            // and without this the network coming back changes nothing: no
+            // further state is emitted, the UI keeps whatever error it was
+            // last told, and the app quietly stops syncing. That was the bug —
+            // "error sending request for url" frozen on screen long after the
+            // wifi returned.
+            if should_reconnect(&state) {
+                let delay = reconnect_delay(attempt);
+                attempt = attempt.saturating_add(1);
+                tracing::info!(
+                    ?delay,
+                    attempt,
+                    "sync service errored; restarting after a backoff"
+                );
+                tokio::time::sleep(delay).await;
+                watcher_service.start().await;
+            }
         }
     });
 
     Ok(SyncHandle { service, watcher })
+}
+
+/// The longest this will ever wait before trying to reconnect.
+///
+/// A cap is what makes the difference between "recovers when you pick the
+/// phone up" and "recovers eventually, maybe": uncapped exponential backoff
+/// means a device left overnight comes back to an app that will not try again
+/// for hours.
+const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);
+
+/// How long to wait before asking a failed sync service to start again.
+///
+/// Doubling from one second, capped. The first delay is deliberately short —
+/// a blip that lasts a second should cost about a second, and a long first
+/// wait is exactly why an app feels broken after the wifi is already back.
+fn reconnect_delay(attempt: u32) -> Duration {
+    // `saturating_mul` rather than a shift: the attempt counter is only reset
+    // by a successful reconnect, so a device offline for a long time really
+    // does reach large numbers, and shifting by more than the width of the
+    // type is a panic rather than a large answer.
+    let seconds = 1u64.saturating_mul(1u64 << attempt.min(6));
+    Duration::from_secs(seconds).min(MAX_RECONNECT_DELAY)
+}
+
+/// Whether this state is one to recover from.
+///
+/// **Only `Error`.** `Idle` and `Terminated` are what a *deliberate* stop
+/// looks like, and racing to restart those would fight `stop_sync` on logout
+/// and reconnect a session the reader just signed out of.
+fn should_reconnect(state: &State) -> bool {
+    matches!(state, State::Error(_))
 }
 
 /// Maps an SDK sync state onto the UI's connection vocabulary.
@@ -203,6 +264,64 @@ fn emit_connection_state(sink: &Arc<dyn EventSink>, state: &State) {
     // problem to notice, not something the core can do anything about. The
     // desktop sink keeps the warning that used to live here.
     sink.emit(CoreEvent::Connection(connection_payload(state)));
+}
+
+#[cfg(test)]
+mod reconnect_tests {
+    use super::*;
+
+    #[test]
+    fn the_first_retry_is_soon_enough_to_feel_immediate() {
+        // A network blip that lasts a second should cost about a second. A
+        // long first delay is why an app feels broken after the wifi comes
+        // back — the connection is fine and the app is still sulking.
+        assert!(reconnect_delay(0) <= Duration::from_secs(2));
+    }
+
+    #[test]
+    fn retries_back_off_rather_than_hammering_a_dead_homeserver() {
+        let first = reconnect_delay(0);
+        let third = reconnect_delay(2);
+        let sixth = reconnect_delay(5);
+        assert!(third > first, "no growth between attempt 1 and 3");
+        assert!(sixth > third, "no growth between attempt 3 and 6");
+    }
+
+    #[test]
+    fn the_backoff_is_capped_so_recovery_stays_possible() {
+        // Uncapped exponential backoff means a phone left overnight comes back
+        // to an app that will not retry for hours. The cap is what makes the
+        // difference between "recovers when you look at it" and "recovers
+        // eventually, maybe".
+        let long = reconnect_delay(100);
+        assert!(long <= MAX_RECONNECT_DELAY, "backoff grew past its cap");
+        assert!(
+            long >= Duration::from_secs(10),
+            "the cap is uselessly small"
+        );
+    }
+
+    #[test]
+    fn a_very_large_attempt_count_does_not_overflow() {
+        // The counter is only reset by a successful reconnect, so a device
+        // offline for a long time really does reach large numbers. Shifting
+        // by it must not panic.
+        let _ = reconnect_delay(u32::MAX);
+    }
+
+    #[test]
+    fn only_an_error_state_asks_for_a_restart() {
+        // Idle and Terminated are what a *deliberate* stop looks like. Racing
+        // to restart those would fight `Session::stop_sync` on logout and
+        // reconnect a session the reader just signed out of.
+        assert!(should_reconnect(&State::Error(Arc::new(
+            matrix_sdk_ui::sync_service::Error::Supervisor
+        ))));
+        assert!(!should_reconnect(&State::Running));
+        assert!(!should_reconnect(&State::Idle));
+        assert!(!should_reconnect(&State::Terminated));
+        assert!(!should_reconnect(&State::Offline));
+    }
 }
 
 #[cfg(test)]
