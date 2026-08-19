@@ -30,6 +30,9 @@ public final class Session {
     public private(set) var failure: String?
 
     public let connection = ConnectionStore()
+    public let rooms: RoomsStore
+    public let spaces: SpacesStore
+    public let avatars: AvatarCache
 
     private let client: CoreClient
     private let pump = EventPump()
@@ -37,6 +40,9 @@ public final class Session {
 
     public init(client: CoreClient) {
         self.client = client
+        rooms = RoomsStore(client: client)
+        spaces = SpacesStore(client: client)
+        avatars = AvatarCache(client: client)
     }
 
     public convenience init() {
@@ -52,7 +58,10 @@ public final class Session {
         do {
             let restored = try await client.restoreSession(sink: pump)
             phase = restored ? .signedIn : .signedOut
-            if restored { beginDraining() }
+            if restored {
+                beginDraining()
+                await load()
+            }
             return restored
         } catch {
             // A failure to *restore* is not a failure to sign in: there may
@@ -70,6 +79,7 @@ public final class Session {
                 homeserver: homeserver, username: username, password: password, sink: pump)
             phase = .signedIn
             beginDraining()
+            await load()
         } catch let error as FfiError {
             failure = ErrorPresenter.message(for: error)
         } catch {
@@ -77,11 +87,25 @@ public final class Session {
         }
     }
 
+    /// Ask for the state the channels will not volunteer.
+    ///
+    /// The diff channels only speak when something *changes*, so a store built
+    /// after the core has already emitted its opening state would sit empty
+    /// until the next message — minutes, in a quiet account. Seeding is how it
+    /// asks. See `GapSync.seed()`.
+    private func load() async {
+        await rooms.seed()
+        await spaces.refresh()
+    }
+
     public func signOut() async {
         try? await client.logout()
         pump.finish()
         drainTask?.cancel()
         drainTask = nil
+        rooms.clear()
+        spaces.clear()
+        avatars.clear()
         phase = .signedOut
     }
 
@@ -104,7 +128,9 @@ public final class Session {
         switch event {
         case let .connection(state):
             connection.apply(state)
-        case .roomsDiff, .timelineDiff, .typing, .live, .thought, .tool, .attachmentStaged:
+        case let .roomsDiff(envelope):
+            rooms.handle(envelope)
+        case .timelineDiff, .typing, .live, .thought, .tool, .attachmentStaged:
             // Wired to their stores as each lands. Listed explicitly rather
             // than swept into a `default` so the compiler keeps naming what is
             // still outstanding.

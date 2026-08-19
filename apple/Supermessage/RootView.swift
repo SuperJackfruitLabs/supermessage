@@ -28,20 +28,37 @@ struct RootView: View {
     }
 }
 
-/// Everything behind a session. The room list and timeline land here next.
+/// Everything behind a session.
+///
+/// One `NavigationSplitView` serves both size classes — it collapses to a push
+/// stack on iPhone by itself, so there is no branch here on width. On iPad the
+/// sidebar will hold the spaces rail beside the list; on iPhone the spaces are
+/// a strip inside the list, which is what `SpacePillStrip` is.
 struct SignedInView: View {
     let session: Session
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Signed in")
-                .font(.system(.title2, design: .serif))
-            ConnectionBar(connection: session.connection)
-            Button("Sign out") {
-                Task { await session.signOut() }
+        NavigationSplitView {
+            RoomListView(session: session)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    ConnectionBar(connection: session.connection)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Sign out") { Task { await session.signOut() } }
+                            .font(.footnote)
+                    }
+                }
+        } detail: {
+            if let name = session.rooms.selectedName {
+                // The timeline lands here in the next task.
+                Text(name).font(.system(.title2, design: .serif))
+            } else {
+                ContentUnavailableView(
+                    "No room open", systemImage: "bubble.left.and.bubble.right",
+                    description: Text("Choose a room to read it."))
             }
         }
-        .padding()
     }
 }
 
