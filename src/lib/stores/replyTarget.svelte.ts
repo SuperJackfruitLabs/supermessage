@@ -41,7 +41,10 @@
  * having to be converted at the call site.
  */
 export interface ReplySource {
-  item: { id: string };
+  // `eventId` rather than `id`: a reply addresses an event, and this
+  // structural type is deliberately the *narrowest* thing `fromItem` needs,
+  // so it names the field it actually reads.
+  item: { eventId: string | null };
   senderName: string;
   replyPreview: string | null;
 }
@@ -111,7 +114,13 @@ export function createReplyTargetStore() {
      */
     fromItem(row: ReplySource): PendingReply {
       return {
-        eventId: row.item.id,
+        // The *event* id. `item.id` is identity — stable across the
+        // local-echo-to-confirmed transition, and therefore not something the
+        // homeserver has ever heard of. A reply is only offered once the
+        // event exists (`canReplyOrReact`), so this is non-null by the time
+        // anyone gets here; `""` would be a reply to nothing, which the
+        // homeserver rejects rather than misdirects.
+        eventId: row.item.eventId ?? "",
         sender: row.senderName,
         excerpt: row.replyPreview,
       };

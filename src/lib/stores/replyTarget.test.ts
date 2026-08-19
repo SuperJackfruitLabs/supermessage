@@ -115,7 +115,8 @@ describe("replyTargetStore: fromItem", () => {
 
   function item(overrides: Partial<TimelineItem> = {}): TimelineItem {
     return {
-      id: "$e1:example.org",
+      id: "unique-1",
+      eventId: "$e1:example.org",
       kind: "message",
       msgtype: "m.text",
       detail: null,
@@ -136,6 +137,19 @@ describe("replyTargetStore: fromItem", () => {
     };
   }
 
+  it("addresses the event, not the row's identity", () => {
+    // A reply is `m.in_reply_to`, which takes an event id. `item.id` is the
+    // SDK's stable identity — it holds still across the local-echo-to-
+    // confirmed transition precisely *because* it is not the event id, so
+    // sending it would address an event the homeserver has never heard of.
+    //
+    // The two were the same field until identity was split out, which is why
+    // reading the wrong one was invisible.
+    const store = createReplyTargetStore();
+    const target = store.fromItem(row({ id: "unique-9", eventId: "$real:example.org" }));
+    expect(target.eventId).toBe("$real:example.org");
+  });
+
   it("shows the name the core resolved, not a chain of its own", () => {
     const store = createReplyTargetStore();
     expect(store.fromItem(row()).sender).toBe("Alice");
@@ -145,7 +159,7 @@ describe("replyTargetStore: fromItem", () => {
 
   it("carries the event id through as the reply target", () => {
     const store = createReplyTargetStore();
-    expect(store.fromItem(row({ id: "$xyz:example.org" })).eventId).toBe("$xyz:example.org");
+    expect(store.fromItem(row({ eventId: "$xyz:example.org" })).eventId).toBe("$xyz:example.org");
   });
 
   it("shows the preview the core bounded, not the raw body", () => {

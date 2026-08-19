@@ -216,10 +216,13 @@ pub fn reply_quote_view(reply_to: Option<&ReplyToDto>) -> Option<ReplyQuoteView>
 /// one once the server has echoed the item back — which is exactly when
 /// `send_state` stops being `notSentYet`/`sendingFailed`.
 pub fn can_reply_or_react(item: &TimelineItemDto) -> bool {
-    !matches!(
-        item.send_state.as_deref(),
-        Some("notSentYet") | Some("sendingFailed")
-    )
+    // An event id, not a send state. A reply addresses an event; a message
+    // the server has not echoed back has no event to address, and that is
+    // the whole rule. It used to be inferred from `send_state` because
+    // `event_id` did not exist as a field — stating a rule in terms of one
+    // of its symptoms, which then missed every case that symptom did not
+    // cover (an item with no send state and no event id read as replyable).
+    item.event_id.is_some()
 }
 
 /// Cap on the composer's reply-preview text, in `char`s.
@@ -499,6 +502,7 @@ mod tests {
     fn item(kind: &str) -> TimelineItemDto {
         TimelineItemDto {
             id: format!("id-{kind}"),
+            event_id: Some(format!("$event-{kind}:example.org")),
             kind: kind.to_string(),
             msgtype: None,
             detail: None,
@@ -925,6 +929,41 @@ mod tests {
     }
 
     #[test]
+    fn without_an_event_id_there_is_nothing_to_reply_to_whatever_the_send_state() {
+        // The case the old rule got wrong, and the reason this is expressed
+        // as an address rather than a symptom: `send_state` is `None` for
+        // anything that did not originate as a local send, so an item with no
+        // event id and no send state fell through the old `notSentYet |
+        // sendingFailed` check and read as replyable — against nothing.
+        let mut it = item("message");
+        it.event_id = None;
+        it.send_state = None;
+        assert!(
+            !can_reply_or_react(&it),
+            "a message with no event id has nothing for a reply to address"
+        );
+    }
+
+    #[test]
+    fn identity_and_the_event_id_are_different_questions() {
+        // `id` answers "which row is this" and must hold still across the
+        // local-echo-to-confirmed transition; `event_id` answers "which event
+        // does this address" and exists only once the server has said so.
+        // They used to be one field, so a message changed identity at exactly
+        // the moment it was confirmed — a delete-and-insert where the SDK was
+        // saying update.
+        let mut confirmed = item("message");
+        confirmed.id = "unique-7".into();
+        confirmed.event_id = Some("$real:example.org".into());
+        assert_ne!(
+            confirmed.id,
+            confirmed.event_id.clone().unwrap(),
+            "identity must not be the event id"
+        );
+        assert!(can_reply_or_react(&confirmed));
+    }
+
+    #[test]
     fn a_date_divider_is_its_own_decision_not_an_unsupported_event() {
         // Found on an iPad: "Unsupported event (dateDivider)" in the middle of
         // a conversation.
@@ -1165,7 +1204,10 @@ mod tests {
 
     #[test]
     fn cannot_reply_to_a_message_still_only_a_local_echo() {
+        // The send state is set to describe the situation honestly; it is not
+        // what the rule reads. The absence of an event id is.
         let mut it = item("message");
+        it.event_id = None;
         it.send_state = Some("notSentYet".into());
         assert!(!can_reply_or_react(&it));
     }
@@ -1173,6 +1215,7 @@ mod tests {
     #[test]
     fn cannot_reply_to_a_message_whose_send_failed() {
         let mut it = item("message");
+        it.event_id = None;
         it.send_state = Some("sendingFailed".into());
         assert!(!can_reply_or_react(&it));
     }

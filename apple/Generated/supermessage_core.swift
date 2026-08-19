@@ -2614,7 +2614,32 @@ public func FfiConverterTypeSpaceSummary_lower(_ value: SpaceSummary) -> RustBuf
  * `docs/matrix-events.md` for the full mapping.
  */
 public struct TimelineItemDto {
+    /**
+     * **Identity, not an address.** The SDK's `TimelineItem::unique_id()`.
+     *
+     * Stable across the local-echo-to-confirmed transition, which is the
+     * whole reason it is not the event id: `matrix_sdk_ui` preserves an
+     * item's `internal_id` when it updates a send state
+     * (`algorithms.rs::with_inner_kind`) and recycles it when an item is
+     * removed and re-added (`state_transaction.rs`), so a list keyed on this
+     * sees an update where one keyed on the event id sees a delete and an
+     * insert. Keying rows on the event id made every message change identity
+     * at the instant it was confirmed — a row that vanished and returned,
+     * and a scroll anchor pointing at an id that no longer existed.
+     *
+     * Never send this to the homeserver. Use [`Self::event_id`].
+     */
     public var id: String
+    /**
+     * **The address**, once there is one to address.
+     *
+     * `None` while the message is a local echo the server has not echoed
+     * back, `Some` afterwards. This is what reply, react and redact take,
+     * and its absence is exactly why a message that has not landed yet
+     * cannot be replied to — see `item_view::can_reply_or_react`, which used
+     * to infer that from the send state because this field did not exist.
+     */
+    public var eventId: String?
     public var kind: String
     public var msgtype: String?
     public var detail: String?
@@ -2713,7 +2738,31 @@ public struct TimelineItemDto {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, kind: String, msgtype: String?, detail: String?, sender: String?, senderDisplayName: String?, body: String?, 
+    public init(
+        /**
+         * **Identity, not an address.** The SDK's `TimelineItem::unique_id()`.
+         *
+         * Stable across the local-echo-to-confirmed transition, which is the
+         * whole reason it is not the event id: `matrix_sdk_ui` preserves an
+         * item's `internal_id` when it updates a send state
+         * (`algorithms.rs::with_inner_kind`) and recycles it when an item is
+         * removed and re-added (`state_transaction.rs`), so a list keyed on this
+         * sees an update where one keyed on the event id sees a delete and an
+         * insert. Keying rows on the event id made every message change identity
+         * at the instant it was confirmed — a row that vanished and returned,
+         * and a scroll anchor pointing at an id that no longer existed.
+         *
+         * Never send this to the homeserver. Use [`Self::event_id`].
+         */id: String, 
+        /**
+         * **The address**, once there is one to address.
+         *
+         * `None` while the message is a local echo the server has not echoed
+         * back, `Some` afterwards. This is what reply, react and redact take,
+         * and its absence is exactly why a message that has not landed yet
+         * cannot be replied to — see `item_view::can_reply_or_react`, which used
+         * to infer that from the send state because this field did not exist.
+         */eventId: String?, kind: String, msgtype: String?, detail: String?, sender: String?, senderDisplayName: String?, body: String?, 
         /**
          * The message's HTML formatted body, present only when the SDK reports
          * `format: "org.matrix.custom.html"` (see
@@ -2794,6 +2843,7 @@ public struct TimelineItemDto {
          * never a per-message avatar stack.
          */readBy: [String]) {
         self.id = id
+        self.eventId = eventId
         self.kind = kind
         self.msgtype = msgtype
         self.detail = detail
@@ -2818,6 +2868,9 @@ public struct TimelineItemDto {
 extension TimelineItemDto: Equatable, Hashable {
     public static func ==(lhs: TimelineItemDto, rhs: TimelineItemDto) -> Bool {
         if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.eventId != rhs.eventId {
             return false
         }
         if lhs.kind != rhs.kind {
@@ -2873,6 +2926,7 @@ extension TimelineItemDto: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+        hasher.combine(eventId)
         hasher.combine(kind)
         hasher.combine(msgtype)
         hasher.combine(detail)
@@ -2901,6 +2955,7 @@ public struct FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer {
         return
             try TimelineItemDto(
                 id: FfiConverterString.read(from: &buf), 
+                eventId: FfiConverterOptionString.read(from: &buf), 
                 kind: FfiConverterString.read(from: &buf), 
                 msgtype: FfiConverterOptionString.read(from: &buf), 
                 detail: FfiConverterOptionString.read(from: &buf), 
@@ -2922,6 +2977,7 @@ public struct FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer {
 
     public static func write(_ value: TimelineItemDto, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.eventId, into: &buf)
         FfiConverterString.write(value.kind, into: &buf)
         FfiConverterOptionString.write(value.msgtype, into: &buf)
         FfiConverterOptionString.write(value.detail, into: &buf)

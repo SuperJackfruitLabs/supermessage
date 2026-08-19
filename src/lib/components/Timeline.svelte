@@ -803,8 +803,10 @@
    * A cancelled dialog resolves to null and says nothing: the reader knows
    * they cancelled, and announcing it would be noise.
    */
-  async function saveMedia(eventId: string, filename: string): Promise<void> {
-    if (savingMedia !== null) return;
+  async function saveMedia(eventId: string | null, filename: string): Promise<void> {
+    // Same reasoning as `handleToggleReaction`: media is fetched by event id,
+    // and a local echo has none.
+    if (eventId === null || savingMedia !== null) return;
     savingMedia = eventId;
     saveNote = null;
     try {
@@ -853,7 +855,13 @@
    * comment for why the local echo arriving back through the diff stream is
    * what actually updates the chip, not this function.
    */
-  async function handleToggleReaction(eventId: string, key: string): Promise<void> {
+  async function handleToggleReaction(eventId: string | null, key: string): Promise<void> {
+    // `null` while the message is still a local echo. A reaction addresses an
+    // event, and there is no event yet — the affordance is already hidden in
+    // that state (`canReplyOrReact`), so reaching here means something raced,
+    // and doing nothing is the correct answer rather than sending a reaction
+    // against an id the homeserver has never heard of.
+    if (eventId === null) return;
     try {
       // Same reasoning as `requestOlderMessages`'s `roomId` argument: stable
       // for this component's lifetime, passed explicitly so a stale toggle
@@ -1114,7 +1122,7 @@
         <button
           type="button"
           disabled={!interactive}
-          onclick={() => handleToggleReaction(item.id, reaction.key)}
+          onclick={() => handleToggleReaction(item.eventId, reaction.key)}
           aria-pressed={reaction.byMe}
           aria-label={`${reaction.displayKey}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
           class="rounded-full border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
@@ -1189,7 +1197,7 @@
       {#each QUICK_REACTIONS as emoji (emoji)}
         <button
           type="button"
-          onclick={() => handleToggleReaction(item.id, emoji)}
+          onclick={() => handleToggleReaction(item.eventId, emoji)}
           aria-label={`React with ${emoji}`}
           class="rounded px-1 py-0.5 text-ui transition-colors hover:bg-surface-sunken"
         >
@@ -1676,8 +1684,14 @@
                   </p>
                 </div>
               {:else if view.render === "image"}
-                {@const src = mediaCache.get(item.id)}
-                {@const failed = mediaCache.hasFailed(item.id)}
+                <!--
+                  Keyed by the *event* id, not the row's identity: the media
+                  repository is addressed by event, and a local echo has no
+                  event to address. `""` never resolves, which is the honest
+                  answer for an image whose event does not exist yet.
+                -->
+                {@const src = mediaCache.get(item.eventId ?? "")}
+                {@const failed = mediaCache.hasFailed(item.eventId ?? "")}
                 {#snippet imageContent()}
                   {#if failed}
                     <!-- Never a broken-image icon: any failure — nothing
@@ -1708,7 +1722,7 @@
                       alt={view.alt}
                       class="block rounded-md object-cover"
                       style={imageBoxStyle(view.width, view.height)}
-                      onerror={() => mediaCache.markFailed(item.id)}
+                      onerror={() => mediaCache.markFailed(item.eventId ?? "")}
                     />
                   {:else}
                     <!-- Still fetching: reserves the identical box the
@@ -1759,14 +1773,14 @@
                     </span>
                     <button
                       type="button"
-                      onclick={() => void saveMedia(item.id, view.filename)}
-                      disabled={savingMedia === item.id}
+                      onclick={() => void saveMedia(item.eventId, view.filename)}
+                      disabled={savingMedia === item.eventId}
                       class="ml-auto shrink-0 rounded px-2 py-1 text-ui text-content-muted transition-colors hover:bg-surface-sunken hover:text-content disabled:opacity-50"
                     >
-                      {savingMedia === item.id ? "Saving…" : "Save"}
+                      {savingMedia === item.eventId ? "Saving…" : "Save"}
                     </button>
                   </div>
-                  {#if saveNote?.eventId === item.id}
+                  {#if saveNote?.eventId === item.eventId}
                     <p
                       class="mt-1 font-mono text-meta {saveNote.failed
                         ? 'text-destructive'

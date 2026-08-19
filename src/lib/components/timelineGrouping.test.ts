@@ -24,6 +24,7 @@ const FIXTURE_VERBS: Record<string, string> = {
 
 function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind" | "id">): TimelineRow {
   const dto: TimelineItem = {
+    eventId: null,
     msgtype: null,
     detail: null,
     sender: "@someone:example.org",

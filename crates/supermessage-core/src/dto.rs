@@ -252,7 +252,28 @@ pub struct ReactionDto {
 #[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineItemDto {
+    /// **Identity, not an address.** The SDK's `TimelineItem::unique_id()`.
+    ///
+    /// Stable across the local-echo-to-confirmed transition, which is the
+    /// whole reason it is not the event id: `matrix_sdk_ui` preserves an
+    /// item's `internal_id` when it updates a send state
+    /// (`algorithms.rs::with_inner_kind`) and recycles it when an item is
+    /// removed and re-added (`state_transaction.rs`), so a list keyed on this
+    /// sees an update where one keyed on the event id sees a delete and an
+    /// insert. Keying rows on the event id made every message change identity
+    /// at the instant it was confirmed — a row that vanished and returned,
+    /// and a scroll anchor pointing at an id that no longer existed.
+    ///
+    /// Never send this to the homeserver. Use [`Self::event_id`].
     pub id: String,
+    /// **The address**, once there is one to address.
+    ///
+    /// `None` while the message is a local echo the server has not echoed
+    /// back, `Some` afterwards. This is what reply, react and redact take,
+    /// and its absence is exactly why a message that has not landed yet
+    /// cannot be replied to — see `item_view::can_reply_or_react`, which used
+    /// to infer that from the send state because this field did not exist.
+    pub event_id: Option<String>,
     pub kind: String,
     pub msgtype: Option<String>,
     pub detail: Option<String>,
@@ -1283,11 +1304,12 @@ mod wire_format_golden {
     #[test]
     fn a_timeline_item_keeps_every_field_and_its_name() {
         // The widest type here, and the one the reading pane is built on:
-        // seventeen fields, most optional. `null` is part of the contract —
+        // eighteen fields, most optional. `null` is part of the contract —
         // nothing is skipped when absent, and the webview's TypeScript is
         // written against fields that are always present.
         let item = TimelineItemDto {
-            id: "$e1".into(),
+            id: "unique-1".into(),
+            event_id: Some("$e1".into()),
             kind: "message".into(),
             msgtype: Some("m.text".into()),
             detail: None,
@@ -1307,7 +1329,7 @@ mod wire_format_golden {
         };
         assert_eq!(
             serde_json::to_string(&item).unwrap(),
-            r#"{"id":"$e1","kind":"message","msgtype":"m.text","detail":null,"sender":"@a:x.org","senderDisplayName":"A","body":"hello","formattedBody":null,"media":null,"customPayload":null,"timestampMs":1700000000000,"isOwn":false,"sendState":null,"replyTo":null,"edited":false,"reactions":[],"readBy":[]}"#
+            r#"{"id":"unique-1","eventId":"$e1","kind":"message","msgtype":"m.text","detail":null,"sender":"@a:x.org","senderDisplayName":"A","body":"hello","formattedBody":null,"media":null,"customPayload":null,"timestampMs":1700000000000,"isOwn":false,"sendState":null,"replyTo":null,"edited":false,"reactions":[],"readBy":[]}"#
         );
     }
 
@@ -1444,7 +1466,8 @@ mod wire_format_golden {
         // If this struct ever loses `view`, every host silently regains an FFI
         // round trip per visible row per scroll frame.
         let row = TimelineRow::new(a_text_item());
-        assert_eq!(row.item.id, "$e1");
+        assert_eq!(row.item.id, "unique-1");
+        assert_eq!(row.item.event_id.as_deref(), Some("$e1"));
         assert!(
             matches!(row.view, crate::item_view::ItemView::Bubble { .. }),
             "an m.text item must classify as a bubble, got {:?}",
@@ -1460,7 +1483,8 @@ mod wire_format_golden {
         let json = serde_json::to_value(&row).unwrap();
         assert!(json.get("item").is_some(), "no `item` key in {json}");
         assert!(json.get("view").is_some(), "no `view` key in {json}");
-        assert_eq!(json["item"]["id"], "$e1");
+        assert_eq!(json["item"]["id"], "unique-1");
+        assert_eq!(json["item"]["eventId"], "$e1");
     }
 
     #[test]
@@ -1531,9 +1555,14 @@ mod wire_format_golden {
 
     #[test]
     fn a_row_says_whether_it_can_be_replied_to_yet() {
-        // A local echo has no real event id, so a reply or reaction against it
-        // would fail at the homeserver.
+        // A local echo has no event id, so a reply or reaction against it has
+        // nothing to address and would fail at the homeserver.
+        //
+        // This used to be expressed by setting a send state, because that was
+        // the only evidence available. The absence of an event id is the
+        // thing itself.
         let mut echo = a_text_item();
+        echo.event_id = None;
         echo.send_state = Some("notSentYet".into());
         assert!(!TimelineRow::new(echo).can_reply_or_react);
         assert!(TimelineRow::new(a_text_item()).can_reply_or_react);
@@ -1552,7 +1581,8 @@ mod wire_format_golden {
 
     fn a_text_item() -> TimelineItemDto {
         TimelineItemDto {
-            id: "$e1".into(),
+            id: "unique-1".into(),
+            event_id: Some("$e1".into()),
             kind: "message".into(),
             msgtype: Some("m.text".into()),
             detail: None,

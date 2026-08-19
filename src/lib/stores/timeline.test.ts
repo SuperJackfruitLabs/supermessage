@@ -45,6 +45,7 @@ function item(id: string): TimelineRow {
 function dto(id: string): TimelineItem {
   return {
     id,
+    eventId: id,
     kind: "message",
     msgtype: "m.text",
     detail: null,

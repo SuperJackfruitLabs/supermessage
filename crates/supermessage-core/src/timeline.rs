@@ -294,6 +294,7 @@ pub type TimelineSnapshot = (String, u64, Vec<TimelineRow>);
 #[allow(clippy::too_many_arguments)]
 pub fn project_item_parts(
     id: &str,
+    event_id: Option<&str>,
     kind: &str,
     msgtype: Option<&str>,
     detail: Option<&str>,
@@ -313,6 +314,7 @@ pub fn project_item_parts(
 ) -> TimelineItemDto {
     TimelineItemDto {
         id: id.to_string(),
+        event_id: event_id.map(str::to_string),
         kind: kind.to_string(),
         msgtype: msgtype.map(str::to_string),
         detail: detail.map(str::to_string),
@@ -778,12 +780,15 @@ fn send_state_name(state: &EventSendState) -> &'static str {
     }
 }
 
-/// The stable id used for an event item: its event id once the server has
-/// echoed it back, or its transaction id while still a local echo.
-fn event_item_id(event: &EventTimelineItem) -> String {
+/// The event this item addresses, or `None` while it is still a local echo.
+///
+/// **Not** the item's identity — that is `TimelineItem::unique_id()`, which
+/// holds still across this transition. See [`crate::dto::TimelineItemDto`]'s
+/// field docs for why the two were separated.
+fn event_item_event_id(event: &EventTimelineItem) -> Option<String> {
     match event.identifier() {
-        TimelineEventItemId::TransactionId(txn) => txn.to_string(),
-        TimelineEventItemId::EventId(id) => id.to_string(),
+        TimelineEventItemId::TransactionId(_) => None,
+        TimelineEventItemId::EventId(id) => Some(id.to_string()),
     }
 }
 
@@ -1402,8 +1407,13 @@ async fn resolve_typing_users(room: &Room, user_ids: &[OwnedUserId]) -> Vec<Typi
 }
 
 /// Project an SDK event item into the wire [`TimelineItemDto`].
-fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineItemDto {
-    let id = event_item_id(event);
+fn project_event_item(
+    item: &TimelineItem,
+    event: &EventTimelineItem,
+    own_user: &UserId,
+) -> TimelineItemDto {
+    let id = item.unique_id().0.clone();
+    let event_id = event_item_event_id(event);
     let (kind, msgtype, detail) = classify_content(event.content());
     let sender = event.sender().to_string();
     let sender_display_name = match event.sender_profile() {
@@ -1434,6 +1444,7 @@ fn project_event_item(event: &EventTimelineItem, own_user: &UserId) -> TimelineI
 
     project_item_parts(
         &id,
+        event_id.as_deref(),
         kind,
         msgtype.as_deref(),
         detail.as_deref(),
@@ -1468,6 +1479,8 @@ fn project_virtual_item(
     };
     project_item_parts(
         id,
+        // A divider or a marker is not an event and addresses none.
+        None,
         kind,
         None,
         None,
@@ -1501,7 +1514,7 @@ pub fn project_item(item: &TimelineItem, own_user: &UserId) -> Option<TimelineRo
     // The single point where an item acquires its render decision. Everything
     // downstream carries the pair, so no host ever asks for one per row.
     Some(TimelineRow::new(match item.kind() {
-        TimelineItemKind::Event(event) => project_event_item(event, own_user),
+        TimelineItemKind::Event(event) => project_event_item(item, event, own_user),
         TimelineItemKind::Virtual(virtual_item) => project_virtual_item(item, virtual_item),
     }))
 }
@@ -2846,6 +2859,7 @@ mod tests {
     fn projects_a_text_message_with_ownership() {
         let dto = project_item_parts(
             "$e1",
+            Some("$e1"),
             "message",
             Some("m.text"),
             None,
@@ -2881,6 +2895,7 @@ mod tests {
     fn virtual_items_are_projected_with_their_own_kind() {
         let dto = project_item_parts(
             "vd1",
+            None,
             "dateDivider",
             None,
             None,
@@ -2914,6 +2929,7 @@ mod tests {
     fn state_events_project_to_the_state_kind_with_the_event_type_as_detail() {
         let dto = project_item_parts(
             "$e2",
+            Some("$e2"),
             "state",
             None,
             Some("m.room.name"),
@@ -2940,6 +2956,7 @@ mod tests {
     fn notice_messages_carry_their_msgtype() {
         let dto = project_item_parts(
             "$e3",
+            Some("$e3"),
             "message",
             Some("m.notice"),
             None,
@@ -2968,6 +2985,7 @@ mod tests {
         // `harden_formatted_body`, tested below.
         let dto = project_item_parts(
             "$e4",
+            Some("$e4"),
             "message",
             Some("m.text"),
             None,
@@ -3724,6 +3742,7 @@ mod tests {
     fn minimal_item(id: &str) -> TimelineItemDto {
         project_item_parts(
             id,
+            Some(id),
             "message",
             Some("m.text"),
             None,
@@ -4760,6 +4779,7 @@ mod tests {
     fn project_item_parts_carries_an_edited_flag_through_untouched() {
         let dto = project_item_parts(
             "$e5",
+            Some("$e5"),
             "message",
             Some("m.text"),
             None,
@@ -4790,6 +4810,7 @@ mod tests {
         }];
         let dto = project_item_parts(
             "$e6",
+            Some("$e6"),
             "message",
             Some("m.text"),
             None,
@@ -4822,6 +4843,7 @@ mod tests {
         );
         let dto = project_item_parts(
             "$e7",
+            Some("$e7"),
             "message",
             Some("m.text"),
             None,

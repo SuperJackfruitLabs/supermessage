@@ -9,7 +9,8 @@ struct TimelineGroupingTests {
         id: String, sender: String, at ms: UInt64, isOwn: Bool = false, system: Bool = false
     ) -> TimelineRow {
         let item = TimelineItemDto(
-            id: id, kind: system ? "state" : "message", msgtype: system ? nil : "m.text",
+            id: id, eventId: id, kind: system ? "state" : "message",
+            msgtype: system ? nil : "m.text",
             detail: nil, sender: sender, senderDisplayName: nil, body: "hi", formattedBody: nil,
             media: nil, customPayload: nil, timestampMs: ms, isOwn: isOwn, sendState: nil,
             replyTo: nil, edited: false, reactions: [], readBy: [])

@@ -35,15 +35,34 @@ struct DraftStoreTests {
 
 @MainActor
 struct ReplyTargetTests {
-    static func row(id: String, sender: String, preview: String?) -> TimelineRow {
+    static func row(
+        id: String, eventId: String? = nil, sender: String, preview: String?
+    ) -> TimelineRow {
         let item = TimelineItemDto(
-            id: id, kind: "message", msgtype: "m.text", detail: nil, sender: "@a:x",
+            id: id, eventId: eventId ?? id, kind: "message", msgtype: "m.text", detail: nil,
+            sender: "@a:x",
             senderDisplayName: sender, body: "body", formattedBody: nil, media: nil,
             customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil, replyTo: nil,
             edited: false, reactions: [], readBy: [])
         return TimelineRow(
             item: item, view: .bubble(muted: false, blocks: []), senderName: sender,
             membershipVerb: nil, replyQuote: nil, canReplyOrReact: true, replyPreview: preview)
+    }
+
+    @Test("a reply addresses the event, not the row's identity")
+    func addressesTheEvent() {
+        // `m.in_reply_to` takes an event id. `item.id` is the SDK's stable
+        // identity, which holds still across the local-echo-to-confirmed
+        // transition precisely *because* it is not the event id — so sending
+        // it would address an event the homeserver has never heard of.
+        //
+        // They were one field until identity was split out, which is why
+        // reading the wrong one was invisible.
+        let target = ReplyTarget()
+        target.start(
+            Self.row(id: "unique-9", eventId: "$real:x", sender: "Ganesha", preview: nil),
+            in: "!a:x")
+        #expect(target.pending(for: "!a:x")?.eventId == "$real:x")
     }
 
     @Test("a reply target takes its name and preview from the row, not from the body")

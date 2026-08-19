@@ -198,7 +198,25 @@ export interface RoomInfo {
  * mapping.
  */
 export interface TimelineItem {
+  /**
+   * **Identity, not an address.** The SDK's `TimelineItem::unique_id()`.
+   *
+   * Stable across the local-echo-to-confirmed transition, which is why it is
+   * not the event id: keying a list on the event id made every message change
+   * identity at the instant it was confirmed, so a row that should have
+   * updated was deleted and re-inserted instead. Key rows on this; never send
+   * it to the homeserver.
+   */
   id: string;
+  /**
+   * **The address**, once there is one. `null` while the message is a local
+   * echo the server has not echoed back.
+   *
+   * What reply, react, redact and media fetches take. Its absence is exactly
+   * why a message that has not landed cannot be replied to — see
+   * `canReplyOrReact`.
+   */
+  eventId: string | null;
   kind: string;
   msgtype: string | null;
   detail: string | null;

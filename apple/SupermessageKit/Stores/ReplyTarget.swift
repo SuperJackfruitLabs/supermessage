@@ -32,8 +32,14 @@ public final class ReplyTarget {
     /// attribution chain and the excerpt's bounding are the core's, so the
     /// composer shows exactly what the timeline showed.
     public func start(_ row: TimelineRow, in roomId: String) {
+        // The *event* id, not `item.id`. Identity is stable across the
+        // local-echo-to-confirmed transition and is therefore not something
+        // the homeserver has ever heard of. A reply is only offered once the
+        // event exists (`canReplyOrReact` reads exactly this field), so the
+        // fallback is unreachable rather than a silent default.
+        guard let eventId = row.item.eventId else { return }
         targets[roomId] = Pending(
-            eventId: row.item.id, sender: row.senderName, excerpt: row.replyPreview)
+            eventId: eventId, sender: row.senderName, excerpt: row.replyPreview)
     }
 
     public func cancel(_ roomId: String) {
