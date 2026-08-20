@@ -198,6 +198,19 @@ why it is drawn rather than traced.
 Design: `docs/superpowers/specs/2026-08-18-native-ios-app-design.md`.
 The AgentPod event contract this client consumes: `docs/agentpod-events.md`.
 
+## The Android app
+
+Not built. `docs/superpowers/specs/2026-08-20-android-app-design.md` specs it,
+and `scripts/build-android-libs.sh` builds the four ABIs and generates the
+Kotlin — the same `#[uniffi::export]` definitions that produce the Swift, so
+no new Rust is needed. The script has never been run: this machine has no NDK.
+
+Two things there that are easy to get wrong and expensive to find later. Play
+requires 16 KB page support, which needs *both* halves — ring as the active
+provider (`core::tls`, done) and `-Wl,-z,max-page-size=16384` at link time (in
+the script). And `gen/android/` is the Tauri webview path, which is closer to
+working and is deliberately **not** the plan; the spec says why.
+
 ## Testing strategy
 
 `cargo test` covers the Rust core (621 tests) and `pnpm test` the frontend
