@@ -3,15 +3,18 @@ package dev.supermessage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffold
+import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
+import androidx.compose.material3.adaptive.layout.PaneAdaptedValue
+import androidx.compose.material3.adaptive.layout.PaneScaffoldDirective
+import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
@@ -26,36 +29,84 @@ import androidx.compose.ui.unit.dp
  * The width is measured here, at the top, because this is the only place that
  * knows the window's width — a pane reports its own.
  */
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun RootScaffold(modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        // Captured into a local before Row: BoxWithConstraintsScope and
-        // RowScope are both @LayoutScopeMarker-guarded, so `maxWidth` is not
-        // reachable by implicit receiver from inside the Row lambda below —
-        // only an explicit local (or receiver) crosses that boundary.
+        // Captured into a local before the nested pane lambdas: their
+        // receiver is ThreePaneScaffoldPaneScope, which shadows the implicit
+        // BoxWithConstraintsScope receiver that `maxWidth` lives on — only an
+        // explicit local (or receiver) crosses that boundary.
         val shellWidth = maxWidth
         val panes = paneCountFor(shellWidth)
-        Row(Modifier.fillMaxSize()) {
-            // The roster is on screen at launch in every configuration. On a
-            // phone it is the stack's root; on a tablet it sits beside the
-            // timeline. It is never behind a toggle.
-            Pane("pane-roster", "Roster", RosterWidth, shellWidth)
-            if (panes >= 2) Pane("pane-timeline", "Timeline", null, shellWidth)
-            if (panes >= 3) Pane("pane-info", "Room info", InfoWidth, shellWidth)
+        val navigator = rememberListDetailPaneScaffoldNavigator<Nothing>(
+            scaffoldDirective = directiveFor(panes),
+        )
+
+        // Rule 2: when the shell narrows past three panes, an open info pane
+        // must go away rather than be laid out where it no longer fits. This
+        // placeholder never calls navigateTo(Extra, ...), so it is currently
+        // defensive rather than load-bearing — but it is what keeps a future
+        // "open info" navigation from stranding the pane the way iOS did.
+        LaunchedEffect(panes) {
+            if (panes < 3 && navigator.currentDestination?.pane == ListDetailPaneScaffoldRole.Extra) {
+                navigator.navigateBack()
+            }
         }
+
+        // Gating extraPane below reads navigator.scaffoldValue, not `panes`
+        // directly. ListDetailPaneScaffold in 1.2.0 composes whatever slot
+        // lambda it is given even when that pane's PaneAdaptedValue is
+        // Hidden — it lands in the tree at a degenerate zero-size bounds,
+        // not omitted (confirmed by running the suite with extraPane passed
+        // unconditionally: pane-info existed at 411dp and 840dp, failing the
+        // existence contract Task 6 fixed). So the lambda must still be
+        // withheld, exactly as the rule requires — but withheld based on
+        // scaffoldValue, which is *derived from* `directive`, not from
+        // `panes` a second time. That is what makes the Step 5 mutation
+        // below observable: mutate the directive and this gate moves too.
+        val extraIsShown = navigator.scaffoldValue[ListDetailPaneScaffoldRole.Extra] != PaneAdaptedValue.Hidden
+
+        ListDetailPaneScaffold(
+            directive = navigator.scaffoldDirective,
+            value = navigator.scaffoldValue,
+            listPane = { Pane("pane-roster", "Roster", shellWidth) },
+            detailPane = { Pane("pane-timeline", "Timeline", shellWidth) },
+            extraPane = if (extraIsShown) {
+                { Pane("pane-info", "Room info", shellWidth) }
+            } else null,
+        )
     }
 }
 
-private val RosterWidth: Dp = 320.dp
-private val InfoWidth: Dp = 320.dp
+/**
+ * The directive is built from our measured pane count, never from
+ * calculatePaneScaffoldDirective(currentWindowAdaptiveInfo()).
+ *
+ * That default ties pane count to the real window's WindowSizeClass, not to
+ * the width this shell was actually given — the same substitution that put
+ * iOS's info panel off the side of an iPad at 834 points. Verified, not
+ * assumed: swapping it in here (Step 5's mutation) breaks
+ * aTabletInLandscapeShowsAllThreeOnScreen on the reference device, because
+ * calculatePaneScaffoldDirective's Expanded bucket (840dp and up, unbounded)
+ * always resolves to 2 partitions on this adaptive version — never 3 — so a
+ * forced-1200dp shell loses its third pane even though there is room. The
+ * failure lands on a different one of Task 6's three tests than the 840dp
+ * case this comment used to cite, and it undercounts rather than the
+ * overcounts the iPad postmortem describes, but the mechanism is the same
+ * substitution: window size class in place of measured width. See
+ * task-7-report.md for the verification trail and PaneLayout.kt for the
+ * rule this directive is required to defer to.
+ */
+private fun directiveFor(panes: Int) = PaneScaffoldDirective.Default.copy(
+    maxHorizontalPartitions = panes,
+)
 
 @Composable
-private fun RowScope.Pane(tag: String, label: String, fixed: Dp?, shellWidth: Dp) {
-    val sizing = if (fixed != null) Modifier.width(fixed) else Modifier.weight(1f)
+private fun Pane(tag: String, label: String, shellWidth: Dp) {
     Column(
         Modifier
-            .then(sizing)
-            .fillMaxHeight()
+            .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
             .padding(16.dp)
             .testTag(tag)

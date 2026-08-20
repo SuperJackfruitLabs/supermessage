@@ -2,6 +2,10 @@ package dev.supermessage
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
@@ -107,5 +111,21 @@ class RootScaffoldTest {
         assertWithinShell("pane-roster")
         assertWithinShell("pane-timeline")
         assertWithinShell("pane-info")
+    }
+
+    @Test
+    fun narrowingCollapsesAnOpenInfoPane() {
+        var width by mutableStateOf(1200.dp)
+        compose.setContent {
+            Box(Modifier.size(width, 800.dp)) { RootScaffold() }
+        }
+        compose.onNodeWithTag("pane-info").assertIsDisplayed()
+
+        // The rotation. iOS left the inspector laid out at x=850.5 on a screen
+        // 834 points wide: present in the tree, off the side of the screen.
+        width = 840.dp
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("pane-info").assertDoesNotExist()
     }
 }
