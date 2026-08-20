@@ -183,6 +183,11 @@ public final class Session {
         _ = try? await client.toggleReaction(roomId: roomId, eventId: eventId, key: key)
     }
 
+    /// Who invited this account to `roomId`, or `nil`.
+    public func inviter(of roomId: String) async -> String? {
+        (try? await client.roomInviter(roomId: roomId)) ?? nil
+    }
+
     /// Who this app is signed in as, and where.
     public func account() async -> AccountDto? {
         try? await client.account()

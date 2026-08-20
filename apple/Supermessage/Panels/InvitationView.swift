@@ -12,14 +12,24 @@ struct InvitationView: View {
     let roomId: String
     let roomName: String
 
+    @State private var inviter: String?
     @State private var busy = false
     @State private var failure: String?
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("You have been invited to \(roomName).")
-                .font(Theme.body)
-                .multilineTextAlignment(.center)
+            VStack(spacing: 3) {
+                Text("You have been invited to \(roomName).")
+                    .font(Theme.body)
+                    .multilineTextAlignment(.center)
+                // By whom — the thing you would want before accepting, and
+                // the one thing this screen did not say.
+                if let inviter {
+                    Text("from \(inviter)")
+                        .metaFace()
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             if let failure {
                 Text(failure).metaFace().foregroundStyle(Theme.danger)
@@ -37,6 +47,13 @@ struct InvitationView: View {
         .padding(20)
         .frame(maxWidth: .infinity)
         .background(.bar)
+        .task(id: roomId) { await loadInviter() }
+    }
+
+    /// Asked once, for the one invitation on screen — see
+    /// `Session::room_inviter` for why this is not carried on every roster row.
+    private func loadInviter() async {
+        inviter = await session.inviter(of: roomId)
     }
 
     private func respond(accept: Bool) async {

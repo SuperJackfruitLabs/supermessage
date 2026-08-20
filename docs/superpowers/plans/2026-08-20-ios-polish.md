@@ -62,7 +62,7 @@ do not call them.
 
 - [x] **C1.** Says nothing about the runtime — harness, host, last seen, room id
       are what you open this panel to find.
-- [ ] **C2.** "Leave room" sits below the fold at the medium detent: the only
+- [x] **C2.** "Leave room" sits below the fold at the medium detent: the only
       destructive action is the one you have to hunt for.
 - [ ] **C3.** No mute, no notification setting, no pin. Mute is the one people
       reach for first.
@@ -114,7 +114,7 @@ do not call them.
 
 ## G · Roster
 
-- [ ] **G1.** Space pills run wide for long names; only the hex ids are
+- [x] **G1.** Space pills run wide for long names; only the hex ids are
       shortened. Truncate in the middle so `Rakesh's MacBook Pro` keeps both
       ends.
 - [ ] **G2.** Only the selected pill shows how many rooms it holds. All of them
@@ -122,7 +122,7 @@ do not call them.
 
 ## H · Invitation
 
-- [ ] **H1.** Does not say who invited you — the thing you want before
+- [x] **H1.** Does not say who invited you — the thing you want before
       accepting.
 
 ## I · Consistency across hosts

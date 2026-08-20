@@ -747,6 +747,37 @@ impl Session {
         })
     }
 
+    /// Who invited this account to `room_id`, named the way everything else
+    /// names people.
+    ///
+    /// Asked per room, on demand, rather than carried on every roster row:
+    /// `Room::inviter` is an async lookup and the roster projects
+    /// synchronously over every room on every diff. Only one invitation is
+    /// ever on screen, so the one that is can afford to ask.
+    ///
+    /// `None` is a normal outcome — a room that is not an invitation, or one
+    /// whose inviter the homeserver has not told us about yet.
+    pub async fn room_inviter(&self, room_id: &str) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        let parsed = RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let Some(room) = client.get_room(&parsed) else {
+            return Ok(None);
+        };
+        // `invite_details` errors for a room that is not an invitation, which
+        // is a normal thing to ask about and not worth reporting as a failure.
+        let Ok(invite) = room.invite_details().await else {
+            return Ok(None);
+        };
+        // The display name when the homeserver has told us one, the user id
+        // otherwise — a name we cannot resolve is still better than silence.
+        let raw = invite
+            .inviter
+            .as_ref()
+            .and_then(|member| member.display_name().map(str::to_string))
+            .unwrap_or_else(|| invite.inviter_id.to_string());
+        Ok(Some(crate::display_name::sender_label(&raw)))
+    }
+
     /// Accepts an invitation to `room_id`.
     ///
     /// Issue #1: every bridged agent room arrives as an invitation, and

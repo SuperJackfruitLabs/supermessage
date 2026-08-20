@@ -38,7 +38,15 @@ struct SpacePillStrip: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Text(label).lineLimit(1)
+                // Truncated in the *middle*, and capped. A host reads as
+                // `Rakesh's MacBook Pro` and a provisioned runtime as
+                // `9247e5…`; trimming the tail would keep the padding and
+                // throw away the half that distinguishes one from another.
+                Text(label)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 130)
+                    .fixedSize(horizontal: true, vertical: false)
                 if isInvitation {
                     // An invitation is not a filter — the account cannot see
                     // into a space it has not joined, so a count would be

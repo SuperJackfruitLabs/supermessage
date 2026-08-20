@@ -371,6 +371,11 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_room_avatar(void*_Nonnull ptr,
 RustBuffer uniffi_supermessage_ffi_fn_method_core_room_info(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_INVITER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_INVITER
+RustBuffer uniffi_supermessage_ffi_fn_method_core_room_inviter(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOMS_SNAPSHOT
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOMS_SNAPSHOT
 RustBuffer uniffi_supermessage_ffi_fn_method_core_rooms_snapshot(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -849,6 +854,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_room_avatar(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_INFO
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_INFO
 uint16_t uniffi_supermessage_ffi_checksum_method_core_room_info(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_INVITER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_INVITER
+uint16_t uniffi_supermessage_ffi_checksum_method_core_room_inviter(void
     
 );
 #endif

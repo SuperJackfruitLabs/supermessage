@@ -640,6 +640,11 @@ public protocol CoreProtocol : AnyObject {
     func roomInfo(roomId: String) throws  -> RoomInfoDto
     
     /**
+     * Who invited this account to a room, or `None`.
+     */
+    func roomInviter(roomId: String) throws  -> String?
+    
+    /**
      * Every room this account is in, with the sequence number the snapshot
      * was taken at.
      *
@@ -1014,6 +1019,17 @@ open func roomAvatar(roomId: String)throws  -> String? {
 open func roomInfo(roomId: String)throws  -> RoomInfoDto {
     return try  FfiConverterTypeRoomInfoDto_lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_room_info(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+    
+    /**
+     * Who invited this account to a room, or `None`.
+     */
+open func roomInviter(roomId: String)throws  -> String? {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_room_inviter(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),$0
     )
 })
@@ -2928,6 +2944,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_room_info() != 28126) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_room_inviter() != 48573) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_rooms_snapshot() != 11805) {

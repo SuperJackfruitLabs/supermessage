@@ -411,6 +411,11 @@ impl Core {
         Ok(self.runtime.block_on(self.session.room_info(&room_id))?)
     }
 
+    /// Who invited this account to a room, or `None`.
+    pub fn room_inviter(&self, room_id: String) -> Result<Option<String>, FfiError> {
+        Ok(self.runtime.block_on(self.session.room_inviter(&room_id))?)
+    }
+
     /// Who this app is signed in as, and where.
     pub fn account(&self) -> Result<supermessage_core::dto::AccountDto, FfiError> {
         Ok(self.runtime.block_on(self.session.account())?)

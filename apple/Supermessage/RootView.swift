@@ -217,7 +217,11 @@ struct SignedInView: View {
         }
         .sheet(isPresented: Binding(get: { !isWide && showsInfo }, set: { showsInfo = $0 })) {
             RoomInfoPanel(session: session, roomId: roomId) { showsInfo = false }
-                .presentationDetents([.medium, .large])
+                // Large by default. At the medium detent "Leave room" sat
+                // below the fold, so the one destructive action in the app was
+                // the one a reader had to go looking for — and a reader who
+                // does not know it is there cannot know to drag.
+                .presentationDetents([.large, .medium])
         }
         // Only the restore. Opening is done by the button above, in the same
         // update that presents the panel.

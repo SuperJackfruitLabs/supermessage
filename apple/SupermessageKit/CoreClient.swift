@@ -140,6 +140,10 @@ public actor CoreClient {
         try await run { try $0.inviteUser(roomId: roomId, userId: userId) }
     }
 
+    public func roomInviter(roomId: String) async throws -> String? {
+        try await run { try $0.roomInviter(roomId: roomId) }
+    }
+
     public func account() async throws -> AccountDto {
         try await run { try $0.account() }
     }
