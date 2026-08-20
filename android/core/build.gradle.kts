@@ -22,6 +22,10 @@ android {
     // auto-discovers src/main/kotlin (this repo's AGP 9.3.1). The old
     // AndroidSourceSet.kotlin.srcDir()/directories accessors throw a
     // ClassCastException against this AGP's library source set type.
+    //
+    // Same story for src/androidTest/kotlin below: the androidTest source
+    // set's kotlin.srcDir() throws the identical ClassCastException, and AGP
+    // 9 auto-discovers that directory too, so no wiring is added for it either.
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -33,6 +37,16 @@ dependencies {
     // The @aar classifier is mandatory. The plain JAR resolves and compiles,
     // then fails at run time because it carries no Android native support.
     api("${libs.jna.get()}@aar")
+
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.junit)
+    // The brief's two androidTestImplementation lines resolve without
+    // androidx.test:runner on the classpath (androidx.test.ext:junit 1.2.1
+    // no longer pulls it in transitively), and the instrumentation process
+    // crashes with ClassNotFoundException on
+    // androidx.test.runner.AndroidJUnitRunner — the class named by
+    // testInstrumentationRunner above — without it. Added explicitly.
+    androidTestImplementation(libs.androidx.test.runner)
 }
 
 // A fresh clone has the generated Kotlin and no libraries behind it, because
