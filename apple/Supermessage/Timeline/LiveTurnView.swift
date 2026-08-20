@@ -21,6 +21,8 @@ struct LiveTurnView: View {
     let writerName: String
 
     @State private var showsThought = false
+    /// Paces the answer onto the screen — see `StreamingText`.
+    @State private var stream = StreamingText()
 
     var body: some View {
         if live.isLive {
@@ -55,20 +57,34 @@ struct LiveTurnView: View {
                     ToolRow(tool: tool)
                 }
 
-                if let answer = live.answer {
+                if !stream.text.isEmpty {
                     // Plain text, not blocks. Parsing every frame would cost a
                     // round trip per keystroke of the agent's; the landed
                     // message renders through the same parser moments later,
                     // and `whitespace` preservation is what keeps the shape
                     // steady across that hand-off.
-                    (Text(answer) + Text(" ▍").foregroundStyle(.secondary))
-                        .font(Theme.body)
+                    //
+                    // Paced by `StreamingText` rather than drawn straight from
+                    // the delta: what arrives in bursts should not appear in
+                    // bursts. See that type for why.
+                    StreamingTextView(text: stream.text, revealed: stream.revealed)
                 }
             }
             .padding(.vertical, 8)
             // A finished turn steps back: it is a record beside the
             // conversation rather than something happening in it.
             .opacity(live.finished ? 0.85 : 1)
+            .onChange(of: live.answer) { _, next in
+                guard let next else {
+                    // The turn ended: drain whatever is still queued rather
+                    // than animating into an empty card.
+                    stream.finish()
+                    stream.clear()
+                    return
+                }
+                stream.accept(next)
+            }
+            .task(id: writerName) { stream.clear() }
         }
     }
 }

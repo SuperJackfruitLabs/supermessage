@@ -3880,6 +3880,17 @@ public struct TypingUserDto {
      * sender.
      */
     public var displayName: String?
+    /**
+     * What to call this person on screen — the same rules the timeline names
+     * a sender by (`display_name::sender_parts`), so one agent is not
+     * `super-chotu (hermes @ guild)` on the typing line and `Super Chotu`
+     * three centimetres above it.
+     *
+     * The short form, without the runtime: the line is a sentence about
+     * someone, and "super-chotu (hermes @ guild) is typing…" is an address
+     * with a verb attached.
+     */
+    public var label: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -3893,9 +3904,20 @@ public struct TypingUserDto {
          * uses. Server-controlled, arbitrary text otherwise — the webview must
          * cap its rendered length the same as any other free-text field from a
          * sender.
-         */displayName: String?) {
+         */displayName: String?, 
+        /**
+         * What to call this person on screen — the same rules the timeline names
+         * a sender by (`display_name::sender_parts`), so one agent is not
+         * `super-chotu (hermes @ guild)` on the typing line and `Super Chotu`
+         * three centimetres above it.
+         *
+         * The short form, without the runtime: the line is a sentence about
+         * someone, and "super-chotu (hermes @ guild) is typing…" is an address
+         * with a verb attached.
+         */label: String) {
         self.userId = userId
         self.displayName = displayName
+        self.label = label
     }
 }
 
@@ -3909,12 +3931,16 @@ extension TypingUserDto: Equatable, Hashable {
         if lhs.displayName != rhs.displayName {
             return false
         }
+        if lhs.label != rhs.label {
+            return false
+        }
         return true
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(userId)
         hasher.combine(displayName)
+        hasher.combine(label)
     }
 }
 
@@ -3927,13 +3953,15 @@ public struct FfiConverterTypeTypingUserDto: FfiConverterRustBuffer {
         return
             try TypingUserDto(
                 userId: FfiConverterString.read(from: &buf), 
-                displayName: FfiConverterOptionString.read(from: &buf)
+                displayName: FfiConverterOptionString.read(from: &buf), 
+                label: FfiConverterString.read(from: &buf)
         )
     }
 
     public static func write(_ value: TypingUserDto, into buf: inout [UInt8]) {
         FfiConverterString.write(value.userId, into: &buf)
         FfiConverterOptionString.write(value.displayName, into: &buf)
+        FfiConverterString.write(value.label, into: &buf)
     }
 }
 

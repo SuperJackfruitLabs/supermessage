@@ -431,6 +431,15 @@ pub struct TypingUserDto {
     /// cap its rendered length the same as any other free-text field from a
     /// sender.
     pub display_name: Option<String>,
+    /// What to call this person on screen — the same rules the timeline names
+    /// a sender by (`display_name::sender_parts`), so one agent is not
+    /// `super-chotu (hermes @ guild)` on the typing line and `Super Chotu`
+    /// three centimetres above it.
+    ///
+    /// The short form, without the runtime: the line is a sentence about
+    /// someone, and "super-chotu (hermes @ guild) is typing…" is an address
+    /// with a verb attached.
+    pub label: String,
 }
 
 /// The wire projection of an `eyeball_im::VectorDiff<T>`.
@@ -1447,10 +1456,11 @@ mod wire_format_golden {
         let typing = TypingUserDto {
             user_id: "@a:x.org".into(),
             display_name: Some("A".into()),
+            label: "A".into(),
         };
         assert_eq!(
             serde_json::to_string(&typing).unwrap(),
-            r#"{"userId":"@a:x.org","displayName":"A"}"#
+            r#"{"userId":"@a:x.org","displayName":"A","label":"A"}"#
         );
     }
 

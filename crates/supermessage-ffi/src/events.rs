@@ -34,7 +34,15 @@ pub enum FfiEvent {
     },
     Typing {
         room_id: String,
-        users: Vec<String>,
+        /// The whole record, **including the user id**.
+        ///
+        /// It used to be flattened to a bare display name here, on the
+        /// grounds that a host should not show an id. That is still true and
+        /// no host shows one — but it left the host with no stable identity
+        /// to match a typing notice against, so "X is typing…" could not be
+        /// cleared by X's message arriving. It sat there until the
+        /// server-side timeout expired.
+        users: Vec<supermessage_core::dto::TypingUserDto>,
     },
     Live {
         room_id: String,
@@ -91,14 +99,7 @@ impl CoreSink for HostSink {
             CoreEvent::TimelineDiff(e) => FfiEvent::TimelineDiff { envelope: e.into() },
             CoreEvent::Typing(p) => FfiEvent::Typing {
                 room_id: p.room_id,
-                // Only the display name reaches the host: the desktop app
-                // renders exactly that, and a user id here would invite a
-                // client to show one.
-                users: p
-                    .users
-                    .into_iter()
-                    .map(|u| u.display_name.unwrap_or(u.user_id))
-                    .collect(),
+                users: p.users,
             },
             CoreEvent::Live(p) => FfiEvent::Live {
                 room_id: p.room_id,

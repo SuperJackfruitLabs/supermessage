@@ -1375,9 +1375,17 @@ fn read_by(event: &EventTimelineItem, own_user: &UserId) -> Vec<String> {
 fn project_typing_users(entries: &[(String, Option<String>)]) -> Vec<TypingUserDto> {
     entries
         .iter()
-        .map(|(user_id, display_name)| TypingUserDto {
-            user_id: user_id.clone(),
-            display_name: display_name.clone(),
+        .map(|(user_id, display_name)| {
+            // The raw name when there is one, the user id when there is not
+            // — then through the same naming rules as everything else.
+            let raw = display_name
+                .clone()
+                .unwrap_or_else(|| crate::display_name::user_label(user_id));
+            TypingUserDto {
+                user_id: user_id.clone(),
+                display_name: display_name.clone(),
+                label: crate::display_name::sender_parts(&raw).0,
+            }
         })
         .collect()
 }
@@ -5108,6 +5116,23 @@ mod tests {
         assert_eq!(users[0].display_name.as_deref(), Some("Alice"));
         assert_eq!(users[1].user_id, "@bob:x.org");
         assert!(users[1].display_name.is_none());
+    }
+
+    #[test]
+    fn a_typing_agent_is_named_the_way_the_timeline_names_them() {
+        // Reported: the line read `super-chotu (hermes @ guild) is typing…`
+        // while the header three centimetres above it said `Super Chotu`.
+        let users = project_typing_users(&[(
+            "@super-chotu:x.org".to_string(),
+            Some("super-chotu (hermes @ guild)".to_string()),
+        )]);
+        assert_eq!(users[0].label, "Super Chotu");
+    }
+
+    #[test]
+    fn a_typing_user_with_no_cached_profile_is_still_named() {
+        let users = project_typing_users(&[("@cleaner-cody:x.org".to_string(), None)]);
+        assert_eq!(users[0].label, "Cleaner Cody");
     }
 
     #[test]

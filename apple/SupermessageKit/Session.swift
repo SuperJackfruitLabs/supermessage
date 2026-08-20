@@ -403,11 +403,15 @@ public final class Session {
             // typing than the server-side timeout on the notice — see
             // `TypingStore.messagesArrived`. Own messages are excluded: this
             // reader's own send says nothing about who else is writing.
+            // **Ids, not names.** `senderName` is the composed attribution
+            // — "Super Chotu (Hermes on Guild)" — and the typing store holds
+            // whatever the profile said. Matching those two strings is how
+            // the indicator got stuck for minutes after the reply landed.
             let spoke = envelope.ops
                 .map(\.generic)
                 .flatMap(opValues)
                 .filter { !$0.item.isOwn }
-                .map(\.senderName)
+                .compactMap(\.item.sender)
             if !spoke.isEmpty { typing.messagesArrived(from: spoke) }
         case let .typing(roomId, users):
             typing.handle(roomId: roomId, users: users)

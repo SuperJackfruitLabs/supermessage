@@ -4,6 +4,13 @@ import Testing
 import SupermessageFFI
 
 struct EventPumpTests {
+    /// A typing record. The pump does not care what is inside one — these
+    /// tests are about ordering and delivery — so the label carries the
+    /// marker each case asserts on.
+    func typist(_ label: String) -> TypingUserDto {
+        TypingUserDto(userId: "@\(label):x.org", displayName: label, label: label)
+    }
+
     /// The one the probe never ran.
     ///
     /// `DiffEnvelope` carries a `seq`, and the timeline's recovery logic is
@@ -21,14 +28,14 @@ struct EventPumpTests {
         // here is a tokio worker or a matrix-sdk event handler.
         Task.detached {
             for seq in 0..<count {
-                pump.onEvent(event: .typing(roomId: "!r:x.org", users: ["\(seq)"]))
+                pump.onEvent(event: .typing(roomId: "!r:x.org", users: [typist("\(seq)")]))
             }
             pump.finish()
         }
 
         var seen: [Int] = []
         for await event in pump.events {
-            if case let .typing(_, users) = event, let first = users.first, let n = Int(first) {
+            if case let .typing(_, users) = event, let first = users.first, let n = Int(first.label) {
                 seen.append(n)
             }
         }
@@ -53,12 +60,12 @@ struct EventPumpTests {
         // tell from a lost one — recoverable, but only by a resync nobody
         // asked for.
         let pump = EventPump()
-        pump.onEvent(event: .typing(roomId: "!r:x.org", users: ["early"]))
+        pump.onEvent(event: .typing(roomId: "!r:x.org", users: [typist("early")]))
         pump.finish()
 
         var seen: [String] = []
         for await event in pump.events {
-            if case let .typing(_, users) = event { seen.append(contentsOf: users) }
+            if case let .typing(_, users) = event { seen.append(contentsOf: users.map(\.label)) }
         }
         #expect(seen == ["early"])
     }

@@ -2078,7 +2078,17 @@ public enum FfiEvent {
     )
     case timelineDiff(envelope: TimelineDiffEnvelope
     )
-    case typing(roomId: String, users: [String]
+    case typing(roomId: String, 
+        /**
+         * The whole record, **including the user id**.
+         *
+         * It used to be flattened to a bare display name here, on the
+         * grounds that a host should not show an id. That is still true and
+         * no host shows one — but it left the host with no stable identity
+         * to match a typing notice against, so "X is typing…" could not be
+         * cleared by X's message arriving. It sat there until the
+         * server-side timeout expired.
+         */users: [TypingUserDto]
     )
     case live(roomId: String, seq: UInt64, text: String, done: Bool
     )
@@ -2121,7 +2131,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case 3: return .timelineDiff(envelope: try FfiConverterTypeTimelineDiffEnvelope.read(from: &buf)
         )
         
-        case 4: return .typing(roomId: try FfiConverterString.read(from: &buf), users: try FfiConverterSequenceString.read(from: &buf)
+        case 4: return .typing(roomId: try FfiConverterString.read(from: &buf), users: try FfiConverterSequenceTypeTypingUserDto.read(from: &buf)
         )
         
         case 5: return .live(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), text: try FfiConverterString.read(from: &buf), done: try FfiConverterBool.read(from: &buf)
@@ -2162,7 +2172,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case let .typing(roomId,users):
             writeInt(&buf, Int32(4))
             FfiConverterString.write(roomId, into: &buf)
-            FfiConverterSequenceString.write(users, into: &buf)
+            FfiConverterSequenceTypeTypingUserDto.write(users, into: &buf)
             
         
         case let .live(roomId,seq,text,done):
@@ -2996,6 +3006,33 @@ fileprivate struct FfiConverterSequenceTypeTimelineRow: FfiConverterRustBuffer {
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer {
+    typealias SwiftType = [TypingUserDto]
+
+    public static func write(_ value: [TypingUserDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTypingUserDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TypingUserDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TypingUserDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTypingUserDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+
 
 
 

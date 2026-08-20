@@ -601,6 +601,12 @@ export interface TypingUser {
    * `$lib/components/typingView.ts`).
    */
   displayName: string | null;
+  /**
+   * What to call this person on screen — the same naming rules the timeline
+   * uses for a sender, so one agent is not `super-chotu (hermes @ guild)` on
+   * the typing line and `Super Chotu` three centimetres above it.
+   */
+  label: string;
 }
 
 /**
