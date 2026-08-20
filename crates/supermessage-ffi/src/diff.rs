@@ -174,6 +174,7 @@ mod tests {
             last_message_names_sender: false,
             last_event_type: None,
             last_activity_ms: Some(1_700_000_000_000),
+            runtime: None,
             membership: Membership::Joined,
         })
     }

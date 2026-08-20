@@ -73,7 +73,7 @@ fn looks_like_opaque_id(token: &str) -> bool {
 
 /// Split on the separators a machine name uses, dropping empties.
 fn words(raw: &str) -> Vec<&str> {
-    raw.split(|c: char| c == '-' || c == '_' || c == '.' || c == ' ')
+    raw.split(['-', '_', '.', ' '])
         .filter(|part| !part.is_empty())
         .collect()
 }

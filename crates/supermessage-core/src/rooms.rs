@@ -74,6 +74,7 @@ type RoomListSnapshot = (u64, Vec<RoomRow>);
 /// `Option` is what makes "`lastMessageIsOwn` is `false` and
 /// `lastEventType` is `null` whenever there is no preview" a property of the
 /// type rather than a rule every caller has to remember.
+#[allow(clippy::too_many_arguments)]
 pub fn project_room_parts(
     id: &str,
     name: Option<String>,
