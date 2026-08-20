@@ -1,6 +1,6 @@
 [package]
 name = "supermessage-ffi"
-version = "0.0.8"
+version = "0.0.9"
 description = "UniFFI bindings over supermessage-core, for Swift and Kotlin hosts"
 edition = "2021"
 publish = false

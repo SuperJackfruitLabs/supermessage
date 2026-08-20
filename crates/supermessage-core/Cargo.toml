@@ -1,6 +1,6 @@
 [package]
 name = "supermessage-core"
-version = "0.0.8"
+version = "0.0.9"
 description = "Matrix client logic, with no opinion about how it is displayed"
 edition = "2021"
 publish = false
