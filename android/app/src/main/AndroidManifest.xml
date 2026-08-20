@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Theme.Material3.DayNight.NoActionBar lives in com.google.android.material,
+      not a declared dependency here, so AAPT fails to resolve it. The framework
+      fallback below is light-only: a cold start under system dark mode shows a
+      white window until Compose paints its first frame. The SDK has no
+      dependency-free DayNight.NoActionBar sibling; reaching day/night without
+      the flash needs a custom styles.xml. Placeholder — Task 6 owns real
+      theming and should revisit.
+    -->
     <application
         android:label="Supermessage"
         android:supportsRtl="true"
