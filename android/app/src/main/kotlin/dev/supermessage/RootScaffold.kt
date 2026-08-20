@@ -45,9 +45,15 @@ fun RootScaffold(modifier: Modifier = Modifier) {
 
         // Rule 2: when the shell narrows past three panes, an open info pane
         // must go away rather than be laid out where it no longer fits. This
-        // placeholder never calls navigateTo(Extra, ...), so it is currently
-        // defensive rather than load-bearing — but it is what keeps a future
-        // "open info" navigation from stranding the pane the way iOS did.
+        // placeholder never calls navigateTo(Extra, ...), so currentDestination
+        // can never be Extra and this effect can never fire — verified by
+        // deleting it and re-running paneCountFollowsAWidthChangeDuringComposition,
+        // which still passed (that test's pane-count logic is driven by
+        // scaffoldValue, not by navigation state; see its own comment). No
+        // test exercises this block today, and none can until something
+        // calls navigateTo(Extra, ...). It stays because when that arrives,
+        // its absence would be the exact iOS fault: an opened pane stranded
+        // by a narrowing it was never told about.
         LaunchedEffect(panes) {
             if (panes < 3 && navigator.currentDestination?.pane == ListDetailPaneScaffoldRole.Extra) {
                 navigator.navigateBack()

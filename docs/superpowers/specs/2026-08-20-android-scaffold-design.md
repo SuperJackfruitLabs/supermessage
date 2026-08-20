@@ -131,10 +131,16 @@ Its **directive is overridden**, and §4.1 is why.
 
 ### 4.1 Why not the default directive
 
-`calculatePaneScaffoldDirective` derives pane count from
-`WindowWidthSizeClass`, whose `Expanded` bucket begins at **840dp**.
+The principle is: never let a window size class stand in for a measured
+width. That principle predates Android and does not depend on which way any
+particular library's default happens to be wrong today — a size class is a
+coarse, device-classification signal, and a pane count is a layout decision
+that needs the actual number of dp available to this composition, not the
+bucket some other component decided the window belongs to.
 
-iOS has already paid for that number. From `RootView.swift`:
+The reason the principle exists is iOS, and that history stays exactly
+because it is not what Android's library does — it is why we measure instead
+of trusting either platform's classification. From `RootView.swift`:
 
 > `sizeClass == .regular` was the first answer and it is wrong on the device
 > that exposed it. An iPad is a regular width class in both orientations, but
@@ -142,12 +148,33 @@ iOS has already paid for that number. From `RootView.swift`:
 > was laid out at x=850.5: present in the accessibility tree, off the side of
 > the screen, invisible.
 
-834 is inside the band the default directive would call Expanded. Accepting the
-default reproduces a bug we already have the postmortem for, on a device class
-where it only appears in one orientation — which is why it took a while to see
-the first time.
+That was `UIUserInterfaceSizeClass`, not `calculatePaneScaffoldDirective`, and
+the two are not the same fault. **On `androidx.compose.material3.adaptive`
+1.2.0 — the version pinned in `gradle/libs.versions.toml`, because 1.3.0
+requires `minCompileSdk=37` — `calculatePaneScaffoldDirective(currentWindowAdaptiveInfo())`
+does not overcount.** Decompiling the pinned jar
+(`adaptive-layout-android-1.2.0.aar`, `PaneScaffoldDirectiveKt.class`) shows
+its `Expanded` branch is hardcoded to `maxHorizontalPartitions = 2`
+(`iconst_2`), and the no-arg `currentWindowAdaptiveInfo()` classifies width
+through a 3-bucket set (Compact/Medium/Expanded, floors 0/600/840dp) with no
+upper bound on Expanded — so the branch that yields three partitions is
+unreachable through that entrypoint at *any* width, iPad-scale or larger.
+This was found by mutation, not by reading the library's docs: Task 7 swapped
+the custom directive for `calculatePaneScaffoldDirective(currentWindowAdaptiveInfo())`
+and re-ran the pane geometry suite expecting the 840dp test to fail the way
+this section originally predicted. It didn't — it stayed green. The 1200dp
+test failed instead: a shell measured wide enough for three panes lost its
+third one, because the default directive answers from the real window's
+(capped) size class, not from the width this shell was actually given. The
+default's fault on this pinned version is an **undercount**, not the iPad's
+overcount — same substitution, opposite direction. See `task-7-report.md` for
+the full decompilation and test trail, and note for whoever next touches this
+version pin: an upgrade past 1.2.0 could change this mechanism again in
+either direction, which is exactly why the directive stays overridden rather
+than reasoned about from whichever behavior happens to be current.
 
-So the shell measures, with `BoxWithConstraints`, and:
+Overriding it removes the guesswork regardless of which way the default is
+wrong this month. So the shell measures, with `BoxWithConstraints`, and:
 
 ```
 maxWidth >= 1000.dp   three panes: roster | timeline | info

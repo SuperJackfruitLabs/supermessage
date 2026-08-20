@@ -101,7 +101,16 @@ class RootScaffoldTest {
         shellOfWidth(840)
         assertWithinShell("pane-roster")
         assertWithinShell("pane-timeline")
-        // The regression: at 840dp the default directive would place three.
+        // Two is correct here regardless of which directive is in force: on
+        // adaptive 1.2.0, calculatePaneScaffoldDirective(currentWindowAdaptiveInfo())
+        // also gives two at 840dp — its Expanded bucket is hardcoded to two
+        // partitions and never reaches three through that entrypoint at any
+        // width. The default directive's real fault on this version is an
+        // undercount at wider shells, not an overcount here; see
+        // aTabletInLandscapeShowsAllThreeOnScreen below and RootScaffold.kt's
+        // directiveFor() for where that actually bites. This assertion still
+        // matters because it pins paneCountFor's own rule (two below 1000dp),
+        // independent of what the default directive would have said.
         compose.onNodeWithTag("pane-info").assertDoesNotExist()
     }
 
@@ -113,16 +122,38 @@ class RootScaffoldTest {
         assertWithinShell("pane-info")
     }
 
+    /**
+     * Pane count follows a width change made *during* a composition's life,
+     * not just at first composition.
+     *
+     * The name this test carried before named a mechanism it never tested:
+     * it reads as proof that rotating with the info pane open collapses it
+     * (§4.2 rule 2's stranding fault), but pane-info's visibility here is
+     * driven entirely by scaffoldValue[Extra], which is derived from
+     * directiveFor(panes) — i.e. from paneCountFor(shellWidth) — every
+     * recomposition. Nothing in this app calls navigateTo(Extra, ...), so
+     * RootScaffold's currentDestination can never be Extra, and its
+     * LaunchedEffect/navigateBack() never runs. Confirmed by deleting that
+     * LaunchedEffect entirely and re-running this test: it still passed.
+     *
+     * What it does earn its keep for: it is the only one of these four tests
+     * that changes width mid-composition rather than only at first
+     * composition, so it would catch a stale-`remember`/directive-not-
+     * recomputing bug in the paneCountFor -> directiveFor -> scaffoldValue
+     * pipeline. It does not, and cannot yet, regression-test rule 2's real
+     * mechanism — an *opened* info pane surviving a narrowing after a user
+     * action put it there — because there is no way to open the info pane
+     * independently of width in this placeholder. That gap stays open until
+     * real navigateTo(Extra, ...) exists to open it.
+     */
     @Test
-    fun narrowingCollapsesAnOpenInfoPane() {
+    fun paneCountFollowsAWidthChangeDuringComposition() {
         var width by mutableStateOf(1200.dp)
         compose.setContent {
             Box(Modifier.size(width, 800.dp)) { RootScaffold() }
         }
         compose.onNodeWithTag("pane-info").assertIsDisplayed()
 
-        // The rotation. iOS left the inspector laid out at x=850.5 on a screen
-        // 834 points wide: present in the tree, off the side of the screen.
         width = 840.dp
         compose.waitForIdle()
 
