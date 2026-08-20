@@ -406,9 +406,10 @@ pub fn log_from_webview(level: String, message: String) {
 #[tauri::command]
 pub async fn search_messages(
     term: String,
+    room_id: Option<String>,
     session: State<'_, Session>,
 ) -> Result<Vec<SearchResultDto>, CoreError> {
-    session.search_messages(&term).await
+    session.search_messages(&term, room_id.as_deref()).await
 }
 
 #[tauri::command]

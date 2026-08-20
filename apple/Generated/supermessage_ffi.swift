@@ -672,9 +672,10 @@ public protocol CoreProtocol : AnyObject {
     func roomsSnapshot() throws  -> RoomsSnapshot
     
     /**
-     * Search messages across rooms.
+     * Search messages — in one room when `room_id` is given, across every
+     * room this account can see otherwise.
      */
-    func searchMessages(term: String) throws  -> [SearchResultDto]
+    func searchMessages(term: String, roomId: String?) throws  -> [SearchResultDto]
     
     /**
      * Send a plain-text message to the focused room.
@@ -1104,12 +1105,14 @@ open func roomsSnapshot()throws  -> RoomsSnapshot {
 }
     
     /**
-     * Search messages across rooms.
+     * Search messages — in one room when `room_id` is given, across every
+     * room this account can see otherwise.
      */
-open func searchMessages(term: String)throws  -> [SearchResultDto] {
+open func searchMessages(term: String, roomId: String?)throws  -> [SearchResultDto] {
     return try  FfiConverterSequenceTypeSearchResultDto.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_search_messages(self.uniffiClonePointer(),
-        FfiConverterString.lower(term),$0
+        FfiConverterString.lower(term),
+        FfiConverterOptionString.lower(roomId),$0
     )
 })
 }
@@ -3049,7 +3052,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_rooms_snapshot() != 11805) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_search_messages() != 34880) {
+    if (uniffi_supermessage_ffi_checksum_method_core_search_messages() != 28627) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384) {

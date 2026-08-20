@@ -43,13 +43,11 @@ struct RoomListView: View {
     var body: some View {
         List(selection: selectionBinding) {
             Section {
-                picker
-                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-                    .listRowSeparator(.hidden)
+                EmptyView()
             } header: {
                 // Inside the scroll content on purpose — see SpacePillStrip.
                 if !session.spaces.spaces.isEmpty {
-                    SpacePillStrip(spaces: session.spaces)
+                    SpacePillStrip(spaces: session.spaces, allCount: session.rooms.rooms.count)
                         .textCase(nil)
                         .listRowInsets(EdgeInsets())
                 }
@@ -78,6 +76,9 @@ struct RoomListView: View {
             }
         }
         .listStyle(.plain)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { arrangementMenu }
+        }
         .navigationTitle(session.spaces.selectedName ?? "All rooms")
         .navigationBarTitleDisplayMode(.inline)
         // A roster that says "2m" forever is lying by the time you look again.
@@ -116,40 +117,39 @@ struct RoomListView: View {
         }
     }
 
-    /// A room the reader has asked about, wrapping the id so `sheet(item:)` has
-/// something `Identifiable` without a retroactive conformance on `String`.
-private struct RoomInfoRequest: Identifiable {
-    let id: String
-}
-
-/// The arrangement switcher, plus a way into the rest.
-    private var picker: some View {
-        HStack(spacing: 8) {
+/// The arrangement switcher, in the toolbar with search and compose.
+    ///
+    /// It used to be a segmented control pinned inside the list, which meant
+    /// the roster carried a second permanent bar of chrome above it, and the
+    /// one control that is *not* about the list's contents was the one
+    /// sitting in them. A menu also has room to name each arrangement
+    /// properly, which three segments never did.
+    private var arrangementMenu: some View {
+        Menu {
             Picker("Arrangement", selection: $storedView) {
                 ForEach(RosterView.allCases, id: \.rawValue) { option in
                     Text(option.title).tag(option.rawValue)
                 }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.inline)
 
-            Button { showsSettings = true } label: {
-                // Admits to what is being withheld. Hidden must never mean
-                // gone: a roster that silently drops a room you were invited
-                // to is a roster that lost it.
-                if hiddenInvitations > 0 {
-                    Label("\(hiddenInvitations)", systemImage: "envelope")
-                        .labelStyle(.titleAndIcon)
-                        .metaFace()
-                } else {
-                    Image(systemName: "line.3.horizontal.decrease")
-                }
+            Divider()
+
+            Button("Roster options") { showsSettings = true }
+        } label: {
+            // Admits to what is being withheld. Hidden must never mean gone:
+            // a roster that silently drops a room you were invited to is a
+            // roster that lost it.
+            if hiddenInvitations > 0 {
+                Label("\(hiddenInvitations)", systemImage: "envelope")
+                    .labelStyle(.titleAndIcon)
+            } else {
+                Image(systemName: "line.3.horizontal.decrease.circle")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.accent)
-            .accessibilityLabel(
-                hiddenInvitations > 0
-                    ? "Roster options, \(hiddenInvitations) invitations hidden" : "Roster options")
         }
+        .accessibilityLabel(
+            hiddenInvitations > 0
+                ? "Roster options, \(hiddenInvitations) invitations hidden" : "Roster options")
     }
 
     /// Selection, in both directions.
@@ -257,4 +257,10 @@ private struct RosterSettings: View {
         case .machine: return "grouped by the machine it runs on"
         }
     }
+}
+
+/// A room the reader has asked about, wrapping the id so `sheet(item:)` has
+/// something `Identifiable` without a retroactive conformance on `String`.
+private struct RoomInfoRequest: Identifiable {
+    let id: String
 }

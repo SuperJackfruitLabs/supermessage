@@ -261,8 +261,10 @@ public final class Session {
         try await client.roomInfo(roomId: roomId)
     }
 
-    public func search(_ term: String) async -> [SearchResultDto] {
-        (try? await client.searchMessages(term: term)) ?? []
+    /// Search for `term`, in `roomId` when one is given and across every room
+    /// this account can see otherwise.
+    public func search(_ term: String, in roomId: String? = nil) async -> [SearchResultDto] {
+        (try? await client.searchMessages(term: term, roomId: roomId)) ?? []
     }
 
     public enum Outcome {

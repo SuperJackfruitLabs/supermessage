@@ -10,16 +10,25 @@ import SwiftUI
 /// navigation title, so scope stays legible once the strip has gone.
 struct SpacePillStrip: View {
     let spaces: SpacesStore
+    /// How many rooms "All" holds. Not the store's business: the roster is
+    /// what "All" means, and only the roster knows how long it is.
+    let allCount: Int
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                pill(label: "All", isSelected: spaces.selectedId == nil, isInvitation: false) {
+                pill(
+                    label: "All", count: allCount, isSelected: spaces.selectedId == nil,
+                    isInvitation: false
+                ) {
                     Task { await spaces.select(nil) }
                 }
                 ForEach(spaces.spaces, id: \.id) { space in
                     pill(
                         label: space.identity.name,
+                        // An invitation has no count to show — see the pill
+                        // itself for why one would be invented.
+                        count: spaces.isInvitation(space) ? nil : Int(space.childCount),
                         isSelected: spaces.selectedId == space.id,
                         isInvitation: spaces.isInvitation(space)
                     ) {
@@ -34,7 +43,8 @@ struct SpacePillStrip: View {
     }
 
     private func pill(
-        label: String, isSelected: Bool, isInvitation: Bool, action: @escaping () -> Void
+        label: String, count: Int?, isSelected: Bool, isInvitation: Bool,
+        action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
@@ -47,6 +57,15 @@ struct SpacePillStrip: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: 130)
                     .fixedSize(horizontal: true, vertical: false)
+                // On every pill, not only the selected one. A filter that
+                // says how much it holds can be chosen without being tried;
+                // one that does not has to be tapped to find out, and an
+                // empty space looks the same as a full one until then.
+                if let count {
+                    Text("\(count)")
+                        .monospacedDigit()
+                        .foregroundStyle(isSelected ? Theme.accent : .secondary)
+                }
                 if isInvitation {
                     // An invitation is not a filter — the account cannot see
                     // into a space it has not joined, so a count would be

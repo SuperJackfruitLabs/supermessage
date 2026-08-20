@@ -22,7 +22,7 @@ use matrix_sdk::ruma::api::client::search::search_events::v3::{
 };
 use matrix_sdk::ruma::events::AnyTimelineEvent;
 use matrix_sdk::ruma::serde::Raw;
-use matrix_sdk::ruma::UInt;
+use matrix_sdk::ruma::{RoomId, UInt};
 use matrix_sdk::Client;
 use serde::Serialize;
 
@@ -105,8 +105,34 @@ pub fn project_results(results: &ResultRoomEvents) -> Vec<SearchResultDto> {
     projected
 }
 
-/// Searches every room this account can see for `term`.
-pub async fn search_messages(client: &Client, term: &str) -> CoreResult<Vec<SearchResultDto>> {
+/// The search criteria for `term`, optionally narrowed to one room.
+///
+/// Split out from [`search_messages`] so the shape of the request is
+/// testable without a homeserver: everything that decides *what is asked
+/// for* lives here, and `search_messages` is the round trip.
+///
+/// A room id that does not parse narrows the search to nothing rather than
+/// silently widening it to every room. Returning results from every room the
+/// account can see, when the reader asked about one room, is the failure mode
+/// worth avoiding — it looks like the scope was ignored, and on a console
+/// that is how a message gets read in the wrong context.
+fn search_criteria(term: &str, room_id: Option<&str>) -> Option<Criteria> {
+    let mut criteria = Criteria::new(term.to_string());
+    criteria.filter.limit = Some(UInt::from(SEARCH_LIMIT));
+    if let Some(room_id) = room_id {
+        let parsed = RoomId::parse(room_id).ok()?;
+        criteria.filter.rooms = Some(vec![parsed]);
+    }
+    Some(criteria)
+}
+
+/// Searches for `term`, in one room when `room_id` is given and in every room
+/// this account can see otherwise.
+pub async fn search_messages(
+    client: &Client,
+    term: &str,
+    room_id: Option<&str>,
+) -> CoreResult<Vec<SearchResultDto>> {
     let trimmed = term.trim();
     if trimmed.is_empty() {
         // Not an error, and not a request either: an empty search term asks
@@ -114,8 +140,9 @@ pub async fn search_messages(client: &Client, term: &str) -> CoreResult<Vec<Sear
         return Ok(Vec::new());
     }
 
-    let mut criteria = Criteria::new(trimmed.to_string());
-    criteria.filter.limit = Some(UInt::from(SEARCH_LIMIT));
+    let Some(criteria) = search_criteria(trimmed, room_id) else {
+        return Err(CoreError::Protocol("unknown room".into()));
+    };
 
     let mut categories = Categories::new();
     categories.room_events = Some(criteria);
@@ -218,5 +245,35 @@ mod tests {
             rows.iter().map(|r| r.event_id.as_str()).collect::<Vec<_>>(),
             ["$new", "$old", "$undated"]
         );
+    }
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::search_criteria;
+
+    #[test]
+    fn a_search_with_no_scope_asks_about_every_room() {
+        let criteria = search_criteria("deploy", None).expect("criteria");
+        assert!(
+            criteria.filter.rooms.is_none(),
+            "a room filter was set for a search nobody scoped"
+        );
+    }
+
+    #[test]
+    fn a_scoped_search_asks_about_that_room_only() {
+        let criteria = search_criteria("deploy", Some("!abc:x.org")).expect("criteria");
+        let rooms = criteria.filter.rooms.expect("a room filter");
+        assert_eq!(rooms.len(), 1);
+        assert_eq!(rooms[0].as_str(), "!abc:x.org");
+    }
+
+    #[test]
+    fn a_room_id_that_does_not_parse_narrows_to_nothing_rather_than_widening() {
+        // The tempting failure is to drop the filter and search everything.
+        // A reader who asked about one room and got hits from every room has
+        // been shown messages in the wrong context without being told.
+        assert!(search_criteria("deploy", Some("not-a-room")).is_none());
     }
 }

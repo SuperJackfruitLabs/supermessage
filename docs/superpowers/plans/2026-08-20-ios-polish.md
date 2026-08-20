@@ -77,8 +77,8 @@ do not call them.
 - [x] **D2.** No searching state between submit and results.
 - [x] **D3.** No "no matches for …" state.
 - [x] **D4.** Results carry no date.
-- [ ] **D5.** Results carry no room avatar, so a hit is hard to place.
-- [ ] **D6.** No scope — no way to search within one room.
+- [x] **D5.** Results carry no room avatar, so a hit is hard to place.
+- [x] **D6.** No scope — no way to search within one room.
 
 ## E · New conversation
 
@@ -103,12 +103,12 @@ do not call them.
       console that acts on your behalf.
 - [x] **F4.** Sign-in does not remember the homeserver between attempts, so a
       typo costs the whole field.
-- [ ] **F5.** The roster's arrangement filter sits *inside the list* rather than
+- [x] **F5.** The roster's arrangement filter sits *inside the list* rather than
       in the toolbar, inconsistent with search and compose.
-- [ ] **F6.** The room header shows only the name. On a console, whether the
+- [x] **F6.** The room header shows only the name. On a console, whether the
       agent is alive belongs at the top of the screen — and a two-line header
       could retire the ⓘ button.
-- [ ] **F7.** The search sheet's Done vanishes once the field has focus:
+- [x] **F7.** The search sheet's Done vanishes once the field has focus:
       `.searchable` replaces it with its own Cancel. Two dismissals for one
       sheet, depending where you tapped.
 
@@ -117,7 +117,7 @@ do not call them.
 - [x] **G1.** Space pills run wide for long names; only the hex ids are
       shortened. Truncate in the middle so `Rakesh's MacBook Pro` keeps both
       ends.
-- [ ] **G2.** Only the selected pill shows how many rooms it holds. All of them
+- [x] **G2.** Only the selected pill shows how many rooms it holds. All of them
       could.
 
 ## H · Invitation

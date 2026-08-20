@@ -55,6 +55,9 @@ struct SignedInView: View {
     @State private var showsInfo = false
     @State private var showsAccount = false
     @State private var showsSearch = false
+    /// The clock the header's state word is measured against. Refreshed when
+    /// the room changes, which is when the reader is looking at it.
+    @State private var now = Date()
     @State private var showsNewRoom = false
 
     /// The window's width, measured rather than inferred.
@@ -126,6 +129,7 @@ struct SignedInView: View {
         // more. Closing it is the fix; a panel about a room you are no longer
         // in has nothing to say.
         .onChange(of: session.rooms.selectedId) { _, id in
+            now = Date()
             showsInfo = false
             // Opening a room gets out of its way.
             //
@@ -143,7 +147,17 @@ struct SignedInView: View {
             AccountPanel(session: session) { showsAccount = false }
         }
         .sheet(isPresented: $showsSearch) {
-            SearchPanel(session: session, onOpen: { session.rooms.select($0) }) {
+            // Scoped to the open room when there is one. A reader who opens
+            // search from inside a conversation is usually asking about that
+            // conversation, and the segmented control is there for when they
+            // are not.
+            SearchPanel(
+                session: session,
+                scope: session.rooms.selectedRow.map {
+                    SearchPanel.Scope(roomId: $0.room.id, name: $0.identity.name)
+                },
+                onOpen: { session.rooms.select($0) }
+            ) {
                 showsSearch = false
             }
         }
@@ -152,6 +166,18 @@ struct SignedInView: View {
                 showsNewRoom = false
             }
         }
+    }
+
+    /// Open the room-info panel.
+    ///
+    /// Both state changes in one update, deliberately. Collapsing the sidebar
+    /// in a *reaction* to `showsInfo` is a race: the inspector can begin
+    /// laying out before the column is free, and then it goes where there is
+    /// no room — off the side of the screen at x=850.5, which is exactly the
+    /// fault this was meant to fix. One state change, one layout.
+    private func openInfo() {
+        if isWide { columns = .detailOnly }
+        showsInfo = true
     }
 
     @ViewBuilder private var detail: some View {
@@ -182,22 +208,25 @@ struct SignedInView: View {
                 timeline(roomId: roomId, name: row.identity.name)
             }
         }
+        // The name is still the back button's title, but what is *drawn* at
+        // the top is the two-line header below.
         .navigationTitle(row.identity.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    // Both in one update, deliberately. Collapsing the sidebar
-                    // in a *reaction* to `showsInfo` is a race: the inspector
-                    // can begin laying out before the column is free, and then
-                    // it goes where there is no room — off the side of the
-                    // screen at x=850.5, which is exactly the fault this was
-                    // meant to fix. One state change, one layout.
-                    if isWide { columns = .detailOnly }
-                    showsInfo = true
-                } label: {
-                    Image(systemName: "info.circle")
+            ToolbarItem(placement: .principal) {
+                // On a console, whether the agent is alive belongs at the top
+                // of the screen — a header that says only the name answers
+                // the one question the reader already knew the answer to. And
+                // once the header is a control, the ⓘ button beside it was a
+                // second door to the same room.
+                Button(action: openInfo) {
+                    RoomHeader(
+                        name: row.identity.name,
+                        role: row.identity.role,
+                        state: RosterArrangement.state(for: row, now: now))
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(row.identity.name), about this room")
             }
         }
         // On an iPad the panel comes in from the trailing edge, beside the
@@ -269,6 +298,54 @@ struct ConnectionBar: View {
         case .offline: return "offline"
         case .error: return "reconnecting…"
         case let .unknown(raw): return raw
+        }
+    }
+}
+
+/// What a room says about itself at the top of the screen.
+///
+/// Two lines: what it is called, and what it is doing. The second line is the
+/// reason this exists — on a console, "is it alive" is the question a reader
+/// has on opening a room, and answering it meant opening a panel.
+private struct RoomHeader: View {
+    let name: String
+    let role: String?
+    let state: AgentState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(name)
+                .font(.headline)
+                .lineLimit(1)
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(dotColour)
+                    .frame(width: 5, height: 5)
+                Text(subtitle)
+                    .metaFace()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: 260)
+    }
+
+    /// The role, when the room has one, and the state word either way — the
+    /// role says what this agent is for, the state says whether it is there.
+    private var subtitle: String {
+        guard let role, !role.isEmpty else { return state.word }
+        return "\(role) · \(state.word)"
+    }
+
+    /// The same vocabulary the roster's dot uses, so one room does not have
+    /// two colours for one condition. Quiet draws nothing rather than a grey
+    /// dot: absence is not a state worth a mark of its own.
+    private var dotColour: Color {
+        switch state {
+        case .needsYou: return Theme.signal
+        case .active: return Theme.accent
+        case .idle: return Color.secondary.opacity(0.55)
+        case .quiet: return .clear
         }
     }
 }

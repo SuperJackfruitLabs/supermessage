@@ -1250,7 +1250,8 @@ export interface SearchResult {
 }
 
 /**
- * Searches every room this account can see, newest first.
+ * Searches for `term`, newest first — in `roomId` when one is given, and in
+ * every room this account can see otherwise.
  *
  * Server-side (`POST /_matrix/client/v3/search`), which rests on these rooms
  * being unencrypted — an encrypted room simply will not appear in results.
@@ -1259,8 +1260,11 @@ export interface SearchResult {
  * An empty term resolves to an empty list without asking the homeserver, since
  * it would otherwise ask for the whole of history.
  */
-export async function searchMessages(term: string): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>("search_messages", { term });
+export async function searchMessages(
+  term: string,
+  roomId?: string,
+): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>("search_messages", { term, roomId: roomId ?? null });
 }
 
 /**

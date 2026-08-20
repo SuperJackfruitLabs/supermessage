@@ -100,17 +100,27 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["Ganesha"].waitForExistence(timeout: 30), "no roster appeared")
 
+        // The arrangement switcher lives in the toolbar now, beside search and
+        // compose, so each arrangement is two taps: open the menu, choose.
+        let options = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'options'"))
+            .firstMatch
         for arrangement in ["Recent", "Waiting", "Machine"] {
-            let button = app.buttons[arrangement]
             XCTAssertTrue(
-                button.waitForExistence(timeout: 10), "no \(arrangement) arrangement to choose")
-            button.tap()
+                options.waitForExistence(timeout: 10), "no roster options button in the toolbar")
+            options.tap()
+            let choice = app.buttons[arrangement]
+            XCTAssertTrue(
+                choice.waitForExistence(timeout: 10), "no \(arrangement) arrangement to choose")
+            choice.tap()
             Thread.sleep(forTimeInterval: 1.5)
             attach(XCUIScreen.main.screenshot(), named: "roster-\(arrangement.lowercased())")
         }
 
         // And the sheet that decides which of them the app opens on.
-        app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'options'")).firstMatch.tap()
+        options.tap()
+        let sheet = app.buttons["Roster options"]
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10), "no way into the roster options sheet")
+        sheet.tap()
         Thread.sleep(forTimeInterval: 1.5)
         attach(XCUIScreen.main.screenshot(), named: "roster-settings")
     }

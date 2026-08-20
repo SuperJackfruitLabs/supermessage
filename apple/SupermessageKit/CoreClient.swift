@@ -242,7 +242,7 @@ public actor CoreClient {
 
     // MARK: - Search
 
-    public func searchMessages(term: String) async throws -> [SearchResultDto] {
-        try await run { try $0.searchMessages(term: term) }
+    public func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {
+        try await run { try $0.searchMessages(term: term, roomId: roomId) }
     }
 }

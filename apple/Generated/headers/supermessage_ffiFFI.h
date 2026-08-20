@@ -393,7 +393,7 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_rooms_snapshot(void*_Nonnull p
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEARCH_MESSAGES
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEARCH_MESSAGES
-RustBuffer uniffi_supermessage_ffi_fn_method_core_search_messages(void*_Nonnull ptr, RustBuffer term, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_supermessage_ffi_fn_method_core_search_messages(void*_Nonnull ptr, RustBuffer term, RustBuffer room_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE

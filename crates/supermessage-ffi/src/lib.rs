@@ -438,12 +438,16 @@ impl Core {
         Ok(())
     }
 
-    /// Search messages across rooms.
+    /// Search messages — in one room when `room_id` is given, across every
+    /// room this account can see otherwise.
     pub fn search_messages(
         &self,
         term: String,
+        room_id: Option<String>,
     ) -> Result<Vec<supermessage_core::search::SearchResultDto>, FfiError> {
-        Ok(self.runtime.block_on(self.session.search_messages(&term))?)
+        Ok(self
+            .runtime
+            .block_on(self.session.search_messages(&term, room_id.as_deref()))?)
     }
 
     /// Everything the info panel shows about a room.
