@@ -40,7 +40,7 @@ import {
   timelineResync as defaultTimelineResync,
   timelineSubscribe as defaultTimelineSubscribe,
   toggleReaction as defaultToggleReaction,
-  type TimelineItem,
+  type TimelineRow,
 } from "$lib/ipc";
 import { startGapSync } from "./gapSync";
 import { typingStore } from "./typing.svelte";
@@ -73,7 +73,7 @@ const defaultDeps: TimelineStoreDeps = {
 const DEFAULT_PAGE_SIZE = 30;
 
 export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
-  let items = $state<TimelineItem[]>([]);
+  let items = $state<TimelineRow[]>([]);
 
   /**
    * Whether the focused room has delivered a batch yet — **not** whether it
@@ -99,7 +99,7 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
   // sets it, before any await.
   let focusedId: string | null = null;
 
-  const gapSync = startGapSync<TimelineItem>({
+  const gapSync = startGapSync<TimelineRow>({
     subscribe: (onEnvelope) => deps.onTimelineDiff(onEnvelope),
     resync: async () => {
       const [subject, seq, snapshotItems] = await deps.timelineResync();
@@ -217,7 +217,7 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
   }
 
   return {
-    get items(): TimelineItem[] {
+    get items(): TimelineRow[] {
       return items;
     },
     /**

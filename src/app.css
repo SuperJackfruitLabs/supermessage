@@ -263,3 +263,25 @@
     outline-offset: 2px;
   }
 }
+
+/*
+ * Touch: never let a focused field be smaller than 16px.
+ *
+ * iOS zooms the whole page in when a field it is focusing has a font smaller
+ * than 16px — it assumes the text is too small to type into and "helps". The
+ * page never zooms back out on blur, so one tap on the composer leaves the
+ * whole app magnified, the layout wider than the screen, and the keyboard's
+ * geometry wrong. It reads as a rendering bug; it is a typography rule.
+ *
+ * `--text-ui` is 13px by design (spec §6.3) and stays 13px everywhere it is
+ * read. This raises only the fields a person types into, and only where the
+ * pointer is coarse, so the desktop console is untouched. 16px is also simply
+ * a better size to type at on a phone.
+ */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

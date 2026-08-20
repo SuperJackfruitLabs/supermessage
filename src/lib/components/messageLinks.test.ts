@@ -7,12 +7,34 @@
 // only implements the one method (`closest`) the module under test calls.
 
 import { describe, expect, it, vi } from "vitest";
+import type { MatrixLinkTarget } from "$lib/ipc";
 import {
   handleMessageBodyAuxClick,
   handleMessageBodyClick,
   type MessageBodyAuxClickEvent,
   type MessageBodyClickEvent,
 } from "./messageLinks";
+
+/**
+ * Stands in for the core's parse.
+ *
+ * The grammar itself is `core::matrix_links`' and is tested there — 32 cases
+ * of it. What these tests own is what the *handler* does with a result:
+ * prevent the default, route in-app, or fall back to the system browser. So
+ * this recognises just enough shape to drive those three paths.
+ */
+async function parse(href: string): Promise<MatrixLinkTarget | null> {
+  const viaTo = /^https:\/\/matrix\.to\/#\/(![^/?]+)/.exec(href);
+  if (viaTo) return { kind: "room", roomId: viaTo[1]!, eventId: null };
+  const viaUri = /^matrix:roomid\/([^/?]+)/.exec(href);
+  if (viaUri) return { kind: "room", roomId: `!${viaUri[1]!}`, eventId: null };
+  const user = /^matrix:u\/([^/?]+)/.exec(href);
+  if (user) return { kind: "user", userId: `@${user[1]!}` };
+  if (href.startsWith("https://matrix.to/") || href.startsWith("matrix:")) {
+    return { kind: "unknown" };
+  }
+  return null;
+}
 
 /** A fake DOM element exposing only `closest`, resolving to `anchor` (or nothing). */
 function elementWithClosestAnchor(anchor: { getAttribute(name: string): string | null } | null) {
@@ -51,38 +73,38 @@ function fakeAuxEvent(
 }
 
 describe("handleMessageBodyClick", () => {
-  it("ignores a click that landed on no anchor", () => {
+  it("ignores a click that landed on no anchor", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const { event, preventDefault } = fakeEvent(elementWithClosestAnchor(null));
 
-    handleMessageBodyClick(event, open);
+    await handleMessageBodyClick(event, open, undefined, undefined, parse);
 
     expect(preventDefault).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
   });
 
-  it("ignores a click whose target isn't a DOM-like element at all", () => {
+  it("ignores a click whose target isn't a DOM-like element at all", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const { event, preventDefault } = fakeEvent(null);
 
-    handleMessageBodyClick(event, open);
+    await handleMessageBodyClick(event, open, undefined, undefined, parse);
 
     expect(preventDefault).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
   });
 
-  it("prevents default and opens the link's href via the system opener, not navigation", () => {
+  it("prevents default and opens the link's href via the system opener, not navigation", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const anchor = fakeAnchor("https://example.org/path");
     const { event, preventDefault } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open);
+    await handleMessageBodyClick(event, open, undefined, undefined, parse);
 
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledExactlyOnceWith("https://example.org/path");
   });
 
-  it("still intercepts when the click landed on an element nested inside the anchor", () => {
+  it("still intercepts when the click landed on an element nested inside the anchor", async () => {
     // `closest` is what makes this work against real markup like
     // `<a href="..."><strong>text</strong></a>` — the fake just asserts the
     // module queries with the selector that finds it.
@@ -90,17 +112,17 @@ describe("handleMessageBodyClick", () => {
     const anchor = fakeAnchor("https://example.org");
     const { event } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open);
+    await handleMessageBodyClick(event, open, undefined, undefined, parse);
 
     expect(open).toHaveBeenCalledExactlyOnceWith("https://example.org");
   });
 
-  it("prevents default but does not call open when the anchor has no href value", () => {
+  it("prevents default but does not call open when the anchor has no href value", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const anchor = fakeAnchor(null);
     const { event, preventDefault } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open);
+    await handleMessageBodyClick(event, open, undefined, undefined, parse);
 
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(open).not.toHaveBeenCalled();
@@ -112,7 +134,7 @@ describe("handleMessageBodyClick", () => {
     const anchor = fakeAnchor("matrix:u/alice:example.org");
     const { event } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    expect(() => handleMessageBodyClick(event, open)).not.toThrow();
+    await expect(handleMessageBodyClick(event, open, undefined, undefined, parse)).resolves.toBeUndefined();
     // Let the rejected promise's `.catch` microtask run.
     await Promise.resolve();
     await Promise.resolve();
@@ -129,46 +151,46 @@ describe("handleMessageBodyAuxClick", () => {
   // module doc comment for the second, independent (Rust-side) layer this
   // backs up.
 
-  it("intercepts a middle-click (button 1) on a link exactly like a primary click", () => {
+  it("intercepts a middle-click (button 1) on a link exactly like a primary click", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const anchor = fakeAnchor("https://example.org/path");
     const { event, preventDefault } = fakeAuxEvent(elementWithClosestAnchor(anchor), 1);
 
-    handleMessageBodyAuxClick(event, open);
+    await handleMessageBodyAuxClick(event, open, undefined, undefined, parse);
 
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledExactlyOnceWith("https://example.org/path");
   });
 
-  it("ignores a non-middle auxiliary button (e.g. the right button)", () => {
+  it("ignores a non-middle auxiliary button (e.g. the right button)", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const anchor = fakeAnchor("https://example.org/path");
     const { event, preventDefault } = fakeAuxEvent(elementWithClosestAnchor(anchor), 2);
 
-    handleMessageBodyAuxClick(event, open);
+    await handleMessageBodyAuxClick(event, open, undefined, undefined, parse);
 
     expect(preventDefault).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
   });
 
-  it("ignores a middle-click that landed on no anchor", () => {
+  it("ignores a middle-click that landed on no anchor", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const { event, preventDefault } = fakeAuxEvent(elementWithClosestAnchor(null), 1);
 
-    handleMessageBodyAuxClick(event, open);
+    await handleMessageBodyAuxClick(event, open, undefined, undefined, parse);
 
     expect(preventDefault).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
   });
 
-  it("routes an in-app-routable room link the same way a primary click would", () => {
+  it("routes an in-app-routable room link the same way a primary click would", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const selectRoom = vi.fn();
     const knownRoomIds = vi.fn(() => ["!room:example.org"]);
     const anchor = fakeAnchor("https://matrix.to/#/!room:example.org");
     const { event, preventDefault } = fakeAuxEvent(elementWithClosestAnchor(anchor), 1);
 
-    handleMessageBodyAuxClick(event, open, selectRoom, knownRoomIds);
+    await handleMessageBodyAuxClick(event, open, selectRoom, knownRoomIds, parse);
 
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(selectRoom).toHaveBeenCalledExactlyOnceWith("!room:example.org");
@@ -177,86 +199,86 @@ describe("handleMessageBodyAuxClick", () => {
 });
 
 describe("handleMessageBodyClick: matrix.to/matrix: links", () => {
-  it("selects the room in-app instead of opening it, for a matrix.to room-id link the account is already in", () => {
+  it("selects the room in-app instead of opening it, for a matrix.to room-id link the account is already in", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const selectRoom = vi.fn();
     const knownRoomIds = vi.fn(() => ["!room:example.org", "!other:example.org"]);
     const anchor = fakeAnchor("https://matrix.to/#/!room:example.org");
     const { event, preventDefault } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+    await handleMessageBodyClick(event, open, selectRoom, knownRoomIds, parse);
 
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(selectRoom).toHaveBeenCalledExactlyOnceWith("!room:example.org");
     expect(open).not.toHaveBeenCalled();
   });
 
-  it("selects the room in-app for a matrix: roomid URI too", () => {
+  it("selects the room in-app for a matrix: roomid URI too", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const selectRoom = vi.fn();
     const knownRoomIds = vi.fn(() => ["!room:example.org"]);
     const anchor = fakeAnchor("matrix:roomid/room:example.org");
     const { event } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+    await handleMessageBodyClick(event, open, selectRoom, knownRoomIds, parse);
 
     expect(selectRoom).toHaveBeenCalledExactlyOnceWith("!room:example.org");
     expect(open).not.toHaveBeenCalled();
   });
 
-  it("falls back to the system browser for a room-id link the account is not in — there is no join flow", () => {
+  it("falls back to the system browser for a room-id link the account is not in — there is no join flow", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const selectRoom = vi.fn();
     const knownRoomIds = vi.fn(() => ["!other:example.org"]);
     const anchor = fakeAnchor("https://matrix.to/#/!unknown:example.org");
     const { event } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+    await handleMessageBodyClick(event, open, selectRoom, knownRoomIds, parse);
 
     expect(selectRoom).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledExactlyOnceWith("https://matrix.to/#/!unknown:example.org");
   });
 
-  it("falls back to the system browser for a room-alias link — no alias -> id resolution exists", () => {
+  it("falls back to the system browser for a room-alias link — no alias -> id resolution exists", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const selectRoom = vi.fn();
     const knownRoomIds = vi.fn(() => ["!room:example.org"]);
     const anchor = fakeAnchor("https://matrix.to/#/%23somewhere:example.org");
     const { event } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+    await handleMessageBodyClick(event, open, selectRoom, knownRoomIds, parse);
 
     expect(selectRoom).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledExactlyOnceWith("https://matrix.to/#/%23somewhere:example.org");
   });
 
-  it("falls back to the system browser for a user link — no profile surface exists", () => {
+  it("falls back to the system browser for a user link — no profile surface exists", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const selectRoom = vi.fn();
     const anchor = fakeAnchor("matrix:u/alice:example.org");
     const { event } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open, selectRoom);
+    await handleMessageBodyClick(event, open, selectRoom, undefined, parse);
 
     expect(selectRoom).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledExactlyOnceWith("matrix:u/alice:example.org");
   });
 
-  it("falls back to the system browser for a plain https:// link, never calling knownRoomIds at all", () => {
+  it("falls back to the system browser for a plain https:// link, never calling knownRoomIds at all", async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const selectRoom = vi.fn();
     const knownRoomIds = vi.fn(() => ["!room:example.org"]);
     const anchor = fakeAnchor("https://example.org/path");
     const { event } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+    await handleMessageBodyClick(event, open, selectRoom, knownRoomIds, parse);
 
     expect(selectRoom).not.toHaveBeenCalled();
     expect(knownRoomIds).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledExactlyOnceWith("https://example.org/path");
   });
 
-  it("without selectRoom/knownRoomIds supplied, still falls back to the browser for a room link (safe defaults)", () => {
+  it("without selectRoom/knownRoomIds supplied, still falls back to the browser for a room link (safe defaults)", async () => {
     // The production `onclick={handleMessageBodyClick}` binding (no extra
     // args) must never silently select a room using some default store —
     // see messageLinks.ts's top-of-module doc comment for why the defaults
@@ -265,7 +287,7 @@ describe("handleMessageBodyClick: matrix.to/matrix: links", () => {
     const anchor = fakeAnchor("https://matrix.to/#/!room:example.org");
     const { event } = fakeEvent(elementWithClosestAnchor(anchor));
 
-    expect(() => handleMessageBodyClick(event, open)).not.toThrow();
+    await expect(handleMessageBodyClick(event, open, undefined, undefined, parse)).resolves.toBeUndefined();
     expect(open).toHaveBeenCalledExactlyOnceWith("https://matrix.to/#/!room:example.org");
   });
 });

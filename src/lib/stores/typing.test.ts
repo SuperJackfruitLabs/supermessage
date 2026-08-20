@@ -13,7 +13,7 @@ const ROOM_A = "!a:example.org";
 const ROOM_B = "!b:example.org";
 
 function user(userId: string): TypingUser {
-  return { userId, displayName: null };
+  return { userId, displayName: null, label: userId };
 }
 
 /** Fake `sm://typing` channel; captures the handler synchronously. */

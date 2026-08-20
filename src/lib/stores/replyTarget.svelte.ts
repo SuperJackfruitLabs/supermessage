@@ -33,8 +33,21 @@
 // for the identical precedent), so the per-room scoping logic stays
 // unit-testable without mounting anything — see `replyTarget.test.ts`.
 
-import type { TimelineItem } from "$lib/ipc";
-import { replyPreviewExcerpt } from "$lib/components/timelineItemView";
+/**
+ * The parts of a timeline row a reply target is built from.
+ *
+ * Structural rather than `TimelineRow` itself, so both the raw row and the
+ * display row `timelineGrouping` derives from it satisfy this without either
+ * having to be converted at the call site.
+ */
+export interface ReplySource {
+  // `eventId` rather than `id`: a reply addresses an event, and this
+  // structural type is deliberately the *narrowest* thing `fromItem` needs,
+  // so it names the field it actually reads.
+  item: { eventId: string | null };
+  senderName: string;
+  replyPreview: string | null;
+}
 
 /** The message a reply is being composed against. */
 export interface PendingReply {
@@ -92,12 +105,24 @@ export function createReplyTargetStore() {
       targets = next;
     },
 
-    /** Builds the {@link PendingReply} `startReply` stores for a given timeline item. */
-    fromItem(item: TimelineItem): PendingReply {
+    /**
+     * Builds the {@link PendingReply} `startReply` stores for a given row.
+     *
+     * Every field comes off the row rather than being derived here: the
+     * attribution chain and the preview's bounding are the core's, so the
+     * composer shows exactly what the timeline showed and iOS shows the same.
+     */
+    fromItem(row: ReplySource): PendingReply {
       return {
-        eventId: item.id,
-        sender: item.senderDisplayName ?? item.sender ?? "Someone",
-        excerpt: replyPreviewExcerpt(item.body),
+        // The *event* id. `item.id` is identity — stable across the
+        // local-echo-to-confirmed transition, and therefore not something the
+        // homeserver has ever heard of. A reply is only offered once the
+        // event exists (`canReplyOrReact`), so this is non-null by the time
+        // anyone gets here; `""` would be a reply to nothing, which the
+        // homeserver rejects rather than misdirects.
+        eventId: row.item.eventId ?? "",
+        sender: row.senderName,
+        excerpt: row.replyPreview,
       };
     },
   };

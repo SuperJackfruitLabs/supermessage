@@ -11,9 +11,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRoomsStore } from "./rooms.svelte";
 import type { DiffEnvelope } from "./diff";
-import type { Membership, RoomSummary } from "$lib/ipc";
+import type { Membership, RoomRow, RoomSummary } from "$lib/ipc";
 
-function room(id: string, membership: Membership = "joined"): RoomSummary {
+/**
+ * A row, as the core delivers one. The store tracks whole rows now, so a
+ * fixture producing a bare summary would be testing a shape the channel no
+ * longer carries. The derived halves are filled with the cheapest thing that
+ * type-checks: this file is about gap/resync sequencing, and `core::dto`
+ * covers what a row derives.
+ */
+function room(id: string, membership: Membership = "joined"): RoomRow {
+  return {
+    room: summary(id, membership),
+    identity: { glyph: null, name: id, role: null, initial: id.slice(0, 1).toUpperCase() },
+    preview: null,
+    affordance: membership === "joined" ? "compose" : "nothing",
+  };
+}
+
+function summary(id: string, membership: Membership): RoomSummary {
   return {
     id,
     name: id,
@@ -24,25 +40,26 @@ function room(id: string, membership: Membership = "joined"): RoomSummary {
     lastMessageNamesSender: false,
     lastEventType: null,
     lastActivityMs: null,
+  runtime: null,
     membership,
   };
 }
 
-function env(seq: number, ops: DiffEnvelope<RoomSummary>["ops"]): DiffEnvelope<RoomSummary> {
+function env(seq: number, ops: DiffEnvelope<RoomRow>["ops"]): DiffEnvelope<RoomRow> {
   return { channel: "rooms", subject: "", seq, ops };
 }
 
 /** Fake `sm://rooms/diff` channel: `onRoomsDiff` captures the handler synchronously. */
 function makeChannel() {
-  let handler: ((env: DiffEnvelope<RoomSummary>) => void) | null = null;
+  let handler: ((env: DiffEnvelope<RoomRow>) => void) | null = null;
   return {
-    onRoomsDiff: (onEnvelope: (env: DiffEnvelope<RoomSummary>) => void) => {
+    onRoomsDiff: (onEnvelope: (env: DiffEnvelope<RoomRow>) => void) => {
       handler = onEnvelope;
       return Promise.resolve(() => {
         handler = null;
       });
     },
-    emit: (envelope: DiffEnvelope<RoomSummary>) => handler?.(envelope),
+    emit: (envelope: DiffEnvelope<RoomRow>) => handler?.(envelope),
   };
 }
 
@@ -69,7 +86,7 @@ function makeFakeSessionCommands(onArm: () => void) {
 
 function makeStore(
   channel: ReturnType<typeof makeChannel>,
-  roomsResync: () => Promise<[number, RoomSummary[]]> = vi.fn(),
+  roomsResync: () => Promise<[number, RoomRow[]]> = vi.fn(),
   invites: {
     joinRoom?: (roomId: string) => Promise<void>;
     leaveRoom?: (roomId: string) => Promise<void>;
@@ -100,7 +117,7 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
     // First session advances the tracker's expected sequence well past 1.
     channel.emit(env(1, [{ op: "reset", values: [room("!a:x"), room("!b:x")] }]));
     channel.emit(env(2, [{ op: "pushBack", value: room("!c:x") }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!a:x", "!b:x", "!c:x"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!a:x", "!b:x", "!c:x"]);
 
     await store.login("https://example.org", "alice", "hunter2");
 
@@ -109,11 +126,11 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
     // (a duplicate) and silently ignored, leaving the previous session's
     // rooms on screen.
     channel.emit(env(1, [{ op: "reset", values: [room("!fresh:y")] }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!fresh:y"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!fresh:y"]);
 
     // And the new session's stream continues to apply normally afterward.
     channel.emit(env(2, [{ op: "pushBack", value: room("!another:y") }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!fresh:y", "!another:y"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!fresh:y", "!another:y"]);
   });
 
   it("applies a fresh session's seq:1 envelope after restoreSession too", async () => {
@@ -122,12 +139,12 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
 
     channel.emit(env(1, [{ op: "reset", values: [room("!old:x")] }]));
     channel.emit(env(2, [{ op: "pushBack", value: room("!old2:x") }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!old:x", "!old2:x"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!old:x", "!old2:x"]);
 
     await store.restoreSession();
 
     channel.emit(env(1, [{ op: "reset", values: [room("!restored:y")] }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!restored:y"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!restored:y"]);
   });
 
   it("does not re-arm for a stream that isn't restarting when a login is followed by a mount-time restore", async () => {
@@ -144,13 +161,13 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
     // fresh stream starting at 1 is then discarded as duplicates forever.
     // The room list froze at login for the rest of the session.
     const channel = makeChannel();
-    const resync = vi.fn(async () => [4, [room("!stale:x")]] as [number, RoomSummary[]]);
+    const resync = vi.fn(async () => [4, [room("!stale:x")]] as [number, RoomRow[]]);
     const store = makeStore(channel, resync);
 
     await store.login("https://example.org", "alice", "hunter2");
     channel.emit(env(1, [{ op: "reset", values: [room("!a:x")] }]));
     channel.emit(env(2, [{ op: "pushBack", value: room("!b:x") }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!a:x", "!b:x"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!a:x", "!b:x"]);
 
     // `/` mounts and asks to restore the session that login just created.
     await expect(store.restoreSession()).resolves.toBe(true);
@@ -159,13 +176,13 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
     // Nothing was re-armed and no resync was provoked, because nothing
     // restarted: the login's stream is still the live one.
     expect(resync).not.toHaveBeenCalled();
-    expect(store.rooms.map((r) => r.id)).toEqual(["!a:x", "!b:x"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!a:x", "!b:x"]);
 
     // And it keeps applying, which is the property that was lost — before
     // the fix the tracker was expecting seq 1 here, read this as a gap, and
     // never recovered.
     channel.emit(env(3, [{ op: "pushBack", value: room("!c:x") }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!a:x", "!b:x", "!c:x"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!a:x", "!b:x", "!c:x"]);
   });
 
   it("restores again after a logout, since that session really is gone", async () => {
@@ -182,7 +199,7 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
     // the tracker armed for nobody.
     await expect(store.restoreSession()).resolves.toBe(true);
     channel.emit(env(1, [{ op: "reset", values: [room("!next:y")] }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!next:y"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!next:y"]);
   });
 
   it("clears local state on logout", async () => {
@@ -200,7 +217,7 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
 
     // And the tracker is re-armed for whatever session logs in next.
     channel.emit(env(1, [{ op: "reset", values: [room("!next:y")] }]));
-    expect(store.rooms.map((r) => r.id)).toEqual(["!next:y"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!next:y"]);
   });
 });
 
@@ -212,8 +229,9 @@ describe("roomsStore: re-arming the tracker on a new session", () => {
 // not: it looked the selected id up in `rooms` and, finding nothing, fell
 // back to the raw `!id:server`. This is the store-side half of the fix.
 describe("the selected room's name", () => {
-  function named(id: string, name: string): RoomSummary {
-    return { ...room(id), name };
+  function named(id: string, name: string): RoomRow {
+    const row = room(id);
+    return { ...row, room: { ...row.room, name } };
   }
 
   it("comes from the live roster entry, so a rename lands immediately", () => {
@@ -399,7 +417,7 @@ describe("seeding the roster after a restore", () => {
     await flush();
 
     expect(roomsResync).toHaveBeenCalled();
-    expect(store.rooms.map((r) => r.id)).toEqual(["!a:x", "!b:x"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!a:x", "!b:x"]);
   });
 
   it("picks up the live stream from where the snapshot left off", async () => {
@@ -416,7 +434,7 @@ describe("seeding the roster after a restore", () => {
 
     channel.emit(env(8, [{ op: "pushBack", value: room("!b:x") }]));
 
-    expect(store.rooms.map((r) => r.id)).toEqual(["!a:x", "!b:x"]);
+    expect(store.rooms.map((r) => r.room.id)).toEqual(["!a:x", "!b:x"]);
     expect(roomsResync).not.toHaveBeenCalled();
   });
 

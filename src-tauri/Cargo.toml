@@ -5,6 +5,12 @@ description = "Cross-platform, agent-aware Matrix chat client"
 authors = ["supermessage contributors"]
 license = "MIT"
 edition = "2021"
+# None of these three go to crates.io — this one is an application, and the two
+# crates it depends on by path are its own. Saying so is not bookkeeping: a
+# crate cargo-deny believes is publishable cannot have path dependencies at
+# all, so `allow-wildcard-paths` is ignored for it and the licence gate fails
+# on the workspace's own layout.
+publish = false
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -17,6 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+supermessage-core = { path = "../crates/supermessage-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
@@ -101,7 +108,6 @@ mime = "0.3"
 # only — see `lib.rs`, where it is registered behind `debug_assertions`. It is
 # how this app's UI can be tested at all without a human at the keyboard, which
 # matters for a bug whose only symptom is what the rendered rows look like.
-tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 # Lets a coding assistant *see* this app: screenshots, DOM and CSS, console
 # logs, IPC traffic. Optional and NOT in `default`, unlike `wdio` — three
 # rendering faults in one day got past every test here because nothing could
@@ -110,7 +116,19 @@ tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 # asks for it by name (`--features mcp`), never in CI and never in a release.
 tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 
+# Desktop only. Tauri forwards the default feature set to mobile builds, so on
+# iOS this crate was compiled too and its build script fails outright ("failed
+# to run custom build command for tauri-plugin-wdio-webdriver") — which stopped
+# the iOS build before anything of ours was reached. There is no WKWebView
+# driver for it to drive on a phone anyway. The `wdio` feature still exists on
+# every target; on mobile it simply activates nothing, and `lib.rs` gates the
+# registration on `desktop` to match.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+
+
 [dev-dependencies]
+supermessage-core = { path = "../crates/supermessage-core" }
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
 # no_retry_test_client_with_server, MatrixMockServer), wiremock to script the
 # homeserver's HTTP responses in auth tests.

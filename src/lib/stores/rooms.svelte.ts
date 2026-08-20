@@ -35,7 +35,9 @@ import {
   onRoomsDiff as defaultOnRoomsDiff,
   roomsResync as defaultRoomsResync,
   type Membership,
-  type RoomSummary,
+  type RoomAffordance,
+  type RoomIdentity,
+  type RoomRow,
 } from "$lib/ipc";
 import { startGapSync } from "./gapSync";
 import { timelineStore } from "./timeline.svelte";
@@ -69,7 +71,7 @@ const defaultDeps: RoomsStoreDeps = {
 };
 
 export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
-  let rooms = $state<RoomSummary[]>([]);
+  let rooms = $state<RoomRow[]>([]);
   let selectedId = $state<string | null>(null);
   /**
    * The selected room's name as of the moment it was chosen — the fallback
@@ -100,7 +102,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
   // before its first await.
   let sessionActive = false;
 
-  const gapSync = startGapSync<RoomSummary>({
+  const gapSync = startGapSync<RoomRow>({
     subscribe: (onEnvelope) => deps.onRoomsDiff(onEnvelope),
     // The room-list channel has a single subject (the core stamps every
     // envelope with `""`), so there is nothing to filter on and no
@@ -205,7 +207,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
    */
   function select(id: string): void {
     selectedId = id;
-    selectedName = rooms.find((room) => room.id === id)?.name ?? null;
+    selectedName = rooms.find((row) => row.room.id === id)?.room.name ?? null;
     timelineStore.subscribeTo(id).catch((err: unknown) => {
       console.error("failed to subscribe to timeline for room", id, err);
     });
@@ -253,7 +255,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
   }
 
   return {
-    get rooms(): RoomSummary[] {
+    get rooms(): RoomRow[] {
       return rooms;
     },
     get selectedId(): string | null {
@@ -270,7 +272,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
      */
     get selectedRoomName(): string | null {
       if (selectedId === null) return null;
-      return rooms.find((room) => room.id === selectedId)?.name ?? selectedName;
+      return rooms.find((row) => row.room.id === selectedId)?.room.name ?? selectedName;
     },
     /**
      * The selected room's membership, `null` when nothing is selected or the
@@ -280,9 +282,23 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
      * roster has stopped listing is one whose state nothing can vouch for,
      * and guessing `joined` would put a composer in front of it.
      */
+    /**
+     * What the open room's pane may offer — the core's decision, carried on
+     * the row, so the pane and the roster cannot disagree about whether a
+     * room is joinable.
+     */
+    /** The open room's parsed name, resolved by the core with the row. */
+    get selectedIdentity(): RoomIdentity | null {
+      if (selectedId === null) return null;
+      return rooms.find((row) => row.room.id === selectedId)?.identity ?? null;
+    },
+    get selectedAffordance(): RoomAffordance | null {
+      if (selectedId === null) return null;
+      return rooms.find((row) => row.room.id === selectedId)?.affordance ?? null;
+    },
     get selectedMembership(): Membership | null {
       if (selectedId === null) return null;
-      return rooms.find((room) => room.id === selectedId)?.membership ?? null;
+      return rooms.find((row) => row.room.id === selectedId)?.room.membership ?? null;
     },
     select,
     acceptInvitation,

@@ -8,7 +8,7 @@ supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android
 
 It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Kaambaan + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Kaambaan cards/runs, permission requests, station status), approvals from chat (Kaambaan gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
 
-**Current status: M0 and most of M1 are on `main`, plus a full design pass; v0.0.1 is tagged.** Password login, encrypted session persistence, `SyncService`, room-list and timeline streaming, send/receive, replies, reactions, typing notices, read receipts, media rendering, the custom-event framework, and a responsive three-pane desktop UI (186 Rust tests, 311 frontend tests, clippy and svelte-check clean).
+**Current status: M0 and most of M1 are on `main`, plus a full design pass; v0.0.1 is tagged.** Password login, encrypted session persistence, `SyncService`, room-list and timeline streaming, send/receive, replies, reactions, typing notices, read receipts, media rendering, the custom-event framework, and a responsive three-pane desktop UI (571 Rust tests, 379 frontend tests, clippy and svelte-check clean).
 
 **Before planning work, read [docs/parity-gap-analysis.md](docs/parity-gap-analysis.md).** It is the only document here grounded in the command surface rather than in intent, and it is blunt about how far this is from a general-purpose client: no file sending, no edit or delete, no room creation or joining, no search, no notifications, and encrypted rooms rendering a placeholder. The 17 commands registered in `src-tauri/src/lib.rs`'s `generate_handler!` are the authoritative capability list — everything else in these docs describes intent and drifts.
 
@@ -148,10 +148,67 @@ surrogates for astral-plane emoji; the script repairs them before printing.
 This harness is what caught the "opening a room shows one message" bug — it
 is worth reaching for before trusting a UI claim made from code reading alone.
 
+## The iOS app
+
+Native SwiftUI, not a webview. `apple/` holds three targets and `project.yml`
+generates the Xcode project — regenerate after adding a file:
+
+```bash
+cd apple && xcodegen generate && cd ..
+xcodebuild test -project apple/Supermessage.xcodeproj -scheme SupermessageKit -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+xcodebuild test -project apple/Supermessage.xcodeproj -scheme Supermessage    -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+```
+
+- `SupermessageFFI` — the generated bindings, **Swift 5**. UniFFI 0.28's
+  output is not `Sendable`-clean; quarantining it is what lets everything else
+  compile under strict concurrency.
+- `SupermessageKit` — the boundary and the stores. **Imports no SwiftUI**, so
+  the state layer stays testable and view code cannot leak into it.
+- `Supermessage` — the views.
+
+Three rules that are not style preferences:
+
+1. **The app parses nothing, and decides nothing.** No markdown, no HTML, no
+   `matrix.to`, no room-name splitting. Those arrive already decided on
+   `TimelineRow` and `RoomRow` as `RichBlock`, `ItemView`, `MatrixLinkTarget`
+   and `RoomIdentity`. The same goes for product rules: how the roster is
+   ordered and grouped, how long silence takes to read as quiet, what a
+   section is called when it is the only one — all of that is `core::roster`,
+   and a host asks for `RosterSection`s rather than computing them. Two hosts
+   each holding a copy is how they start disagreeing, which is exactly what
+   happened before it moved.
+2. **Events are delivered in order, by one consumer.** `EventPump` yields into
+   a single `AsyncStream` and `Session` drains it with one `for await`. A task
+   per event does not preserve order, and out-of-order diffs corrupt the
+   reader's view in a way that looks like a rendering bug.
+3. **No `Core` call on a cooperative thread.** `CoreClient` puts every one on
+   a `DispatchQueue`, because they all block and the cooperative pool assumes
+   tasks yield. `Task.detached` looks right and is not.
+
+Amber (`Theme.signal`) means a pending decision and nothing else. Only
+`DecisionCard` may use it.
+
+The app icon is generated, not hand-drawn: `assets/logo.svg` is the mark and
+`assets/build-icon.py` renders the three variants iOS asks for (light, dark and
+tinted) into `apple/Supermessage/Assets.xcassets`. Both need `librsvg`, and
+regenerating the mark itself needs `potrace` (`brew install librsvg potrace`).
+Read `assets/build-logo.py`'s doc comment before changing the mark — it records
+why it is drawn rather than traced.
+
+Design: `docs/superpowers/specs/2026-08-18-native-ios-app-design.md`.
+The AgentPod event contract this client consumes: `docs/agentpod-events.md`.
+
 ## Testing strategy
 
-`cargo test` covers the Rust core (288 tests) and `pnpm test` the frontend
-(327, vitest). Both are clean, and CI runs them on every PR along with
+`cargo test` covers the Rust core (621 tests) and `pnpm test` the frontend
+(380, vitest).
+
+The frontend count went *down* as the Rust one went up, and that is the
+shape of the shared view-model migration rather than lost coverage: the
+render classification, rich-text parsing, the custom-event registry, room
+identity, matrix-link parsing, mention collection, previews and affordances
+all moved into the core, taking their tests with them, so iOS and Android
+cannot disagree with this app about any of them. Both are clean, and CI runs them on every PR along with
 `clippy -D warnings` and a dependency-licence gate.
 
 ### A test that has never failed is not yet a regression test

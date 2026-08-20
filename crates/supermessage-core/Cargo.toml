@@ -1,0 +1,149 @@
+[package]
+name = "supermessage-core"
+version = "0.0.8"
+description = "Matrix client logic, with no opinion about how it is displayed"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[lib]
+name = "supermessage_core"
+
+[dependencies]
+uniffi = "0.28"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Matrix core. Default features give e2e-encryption + automatic room key
+# forwarding + the SQLite stores; `markdown` for formatted message bodies.
+matrix-sdk = { version = "0.18", features = ["markdown", "bundled-sqlite"] }
+matrix-sdk-ui = "0.18"
+# Direct deps on the diff/collection types that already flow through
+# matrix-sdk transitively (eyeball_im::Vector re-exports imbl::Vector); pinned
+# explicitly because core::dto matches on VectorDiff and builds imbl::Vector
+# values directly. imbl 6, not 5: eyeball-im 0.8 resolves imbl 6.x, and a `= "5"`
+# constraint would pull a second, incompatible copy (see cargo tree -i imbl).
+eyeball-im = "0.8"
+imbl = "6"
+keyring = "4.1"
+rand = "0.9"
+thiserror = "2"
+futures-util = "0.3"
+async-trait = "0.1"
+# Encodes fetched avatar bytes as `data:` URIs (core::media). Already resolved
+# transitively (matrix-sdk/reqwest pull base64 0.22.1 — see `cargo tree -p
+# base64`); listed directly since core::media calls it by name.
+base64 = "0.22"
+
+# `fs` for `tokio::fs::{metadata, read}` in core::attachments: a `stat` and a
+# whole-file read both block, and doing either on a runtime worker thread
+# would stall every other task on it for as long as the disk takes.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Pulled in explicitly so `rustls::crypto::ring` is available to install as the
+# process-wide provider. See core::tls for why. matrix-sdk forces
+# reqwest/rustls (= aws-lc-rs), so both providers are compiled in and rustls
+# has no implicit default — one must be installed at startup.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+
+# The native file picker (core::attachments). Used through its **Rust** API
+# (`DialogExt::dialog().file()`), never its JS one — see
+# docs/superpowers/specs/2026-08-14-attachments-design.md §3. That is why
+# `capabilities/default.json` grants no `dialog:*` permission at all: the
+# webview must not be able to open a picker, because a picker it opened
+# would hand *it* the path. The plugin drags `tauri-plugin-fs` in as a Rust
+# dependency of its own (it registers picked/dropped paths with the fs
+# scope); that is a crate in the tree, not a capability, and no `fs:*`
+# permission is granted either.
+
+# Image dimensions from the file *header* (core::attachments::image_dimensions).
+# MIT, zero dependencies, pure header parsing — deliberately not the `image`
+# crate: §5 needs two integers, and running a full decoder over a file a
+# stranger may have chosen is a far larger attack surface for no gain.
+#
+# `default-features = false` plus an explicit format list, rather than the
+# default "every format the crate knows": each feature is a separate parser
+# compiled in, and the ~18 left off (dds, ktx2, vtf, psd, pvrtc, aesprite,
+# …) are formats nobody attaches to a chat message. A format that isn't
+# enabled simply yields no dimensions, which degrades to "an image with no
+# width/height in its `info`" — the same thing that happens for a truncated
+# or malformed header. The list below is every `image/*` type
+# `mime_from_content` can actually recognise.
+imagesize = { version = "0.15", default-features = false, features = [
+    "bmp", "gif", "heif", "ico", "jpeg", "jxl", "png", "tiff", "webp",
+] }
+
+# Content-based mime detection (core::attachments::mime_from_content). §5:
+# "an extension is a claim, not a fact". Already resolved transitively via
+# tauri (see `cargo tree -i infer`); listed directly since core::attachments
+# calls it by name. Reads only the first few KiB of the file, never the
+# whole thing — which is the entire point at staging time (§4).
+infer = "0.19"
+
+# `mime::Mime`, the type `Timeline::send_attachment` takes and the type the
+# SDK's own mime-family -> msgtype mapping switches on (see
+# `msgtype_for_mime`). Already in the tree via reqwest/matrix-sdk; listed
+# directly for the same reason `base64` is.
+mime = "0.3"
+
+# Markdown -> RichBlock (core::rich). MIT. Agents send `m.text` with no
+# `formatted_body` — the hub generates none — so this parses the *dominant*
+# reading path in the app, not an edge case.
+#
+# `default-features = false` drops the `html` feature: this crate never renders
+# markdown to HTML, it renders to a block tree each host draws natively.
+# Pulling the HTML writer in would ship a second, unused serialisation of
+# untrusted text, and the whole point of core::rich is that there is exactly
+# one.
+pulldown-cmark = { version = "0.13", default-features = false }
+
+# matrix.to / `matrix:` parsing (core::matrix_links). Both already resolve
+# transitively through matrix-sdk's own URL handling; listed directly because
+# this module calls them by name. MIT/Apache-2.0.
+url = "2"
+percent-encoding = "2"
+# The embedded WebDriver server the WDIO Tauri service drives on macOS, where
+# `tauri-driver` does not work at all (no WKWebView driver exists). Debug builds
+# only — see `lib.rs`, where it is registered behind `debug_assertions`. It is
+# how this app's UI can be tested at all without a human at the keyboard, which
+# matters for a bug whose only symptom is what the rendered rows look like.
+# Lets a coding assistant *see* this app: screenshots, DOM and CSS, console
+# logs, IPC traffic. Optional and NOT in `default`, unlike `wdio` — three
+# rendering faults in one day got past every test here because nothing could
+# look at the screen, and this is the answer to that; but it executes arbitrary
+# JS in the webview and opens a socket, so it is compiled in only when somebody
+# asks for it by name (`--features mcp`), never in CI and never in a release.
+
+# Desktop only. Tauri forwards the default feature set to mobile builds, so on
+# iOS this crate was compiled too and its build script fails outright ("failed
+# to run custom build command for tauri-plugin-wdio-webdriver") — which stopped
+# the iOS build before anything of ours was reached. There is no WKWebView
+# driver for it to drive on a phone anyway. The `wdio` feature still exists on
+# every target; on mobile it simply activates nothing, and `lib.rs` gates the
+# registration on `desktop` to match.
+
+[dev-dependencies]
+matrix-sdk = { version = "0.18", features = ["testing"] }
+wiremock = "0.6"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+matrix-sdk-test = "0.18"
+
+# Belongs here, not in a host: `secrets.rs` is what calls keyring, and every
+# host that builds this crate for iOS needs the same thing. It lived in
+# `src-tauri` until the FFI crate built the core without src-tauri in the
+# graph and the feature simply vanished — the iOS build failed with the same
+# "The `protected` feature is required on iOS" it started with.
+# iOS keeps credentials in the Data Protection keychain, not the macOS one.
+# `keyring`'s default `v1` feature turns on `apple-native-keyring-store/keychain`,
+# which is `target_os = "macos"` only, and that crate refuses to build for iOS
+# without `protected` ("The `protected` feature is required on iOS"). keyring
+# does not re-export the flag, so it is enabled on the shared crate directly —
+# cargo features are additive, so this reaches the copy keyring already depends
+# on. Target-gated, so desktop builds are untouched.
+[target.'cfg(target_os = "ios")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["protected"] }
+# `set_default_store` lives here; `keyring` itself does not re-export it.
+keyring-core = "1"

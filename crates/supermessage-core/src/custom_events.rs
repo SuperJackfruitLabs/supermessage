@@ -1,0 +1,1784 @@
+//! The custom-event rendering registry.
+//!
+//! Suite events — Kaambaan cards and runs, permission requests, station
+//! status — arrive as `kind: "customMessage"` timeline items, with
+//! `TimelineItemDto::detail` carrying the Matrix event type and
+//! `custom_payload` its bounded `content` object. This module turns one of
+//! those into something a host can draw, and it is where **a permission
+//! request becomes a decision** — wedge #3 in `docs/positioning.md`, and the
+//! reason a decision is the only place amber ever appears.
+//!
+//! Ported from `$lib/components/customEvents.ts`. It moved into the core
+//! because it parses arbitrary JSON from anyone who can send to the room, and
+//! three hand-written copies of that — desktop, iOS, Android — would agree
+//! only by convention and would drift. The drift renders a wrong approval
+//! prompt, which nobody notices until it matters.
+//!
+//! This module does not — and must not — invent suite schemas. It builds the
+//! seam so that landing one is a `register` call rather than a refactor.
+//!
+//! ## Versioning — the decision this module encodes
+//!
+//! Two axes, because they answer two different questions:
+//!
+//! - **Major version, in the event type string itself** (the trailing `.v1`,
+//!   `.v2`, … in `dev.supermessage.demo.note.v1`). A breaking change — a
+//!   field renamed, retyped, or made non-optional — mints a *new* event type.
+//!   This is how Matrix itself handles incompatible changes, and it means an
+//!   old client's dispatch is a single map lookup: an unrecognised major
+//!   version is indistinguishable from an unrecognised type, which is a case
+//!   the fallback chain already has to handle.
+//! - **Minor version, as a `schema_version` integer inside `content`.** An
+//!   additive, backward-compatible change bumps this without changing the
+//!   type. A renderer that only reads the fields it was written against
+//!   tolerates a higher `schema_version` for free — it simply never looks at
+//!   the new field. [`resolve_custom_event`] still calls the renderer for a
+//!   newer-than-known version (best effort) and marks the result
+//!   `newer_version`, so a host can note it rather than silently pretend
+//!   nothing changed.
+//!
+//! Rejected alternatives, recorded so the choice can be checked:
+//!
+//! - **Version only in the type string.** Simpler, but a client one minor
+//!   version behind then treats a purely additive change as a wholly unknown
+//!   type, and every new optional field forces a new type on every client.
+//! - **Version only inside `content`.** Cheaper to extend, but a breaking
+//!   change silently reuses a type an old client already has a renderer for.
+//!   That renderer runs unmodified against a shape it was never written for —
+//!   a client that *thinks* it understands the payload, rendering subtly
+//!   wrong output instead of visibly degrading.
+//! - **Both, expressed as one field** (`content.schemaVersion: "2.3"`).
+//!   Nothing then distinguishes "old client, ignore this" from "old client,
+//!   this is incompatible" without parsing the major component anyway — the
+//!   type-suffix convention with extra steps and no dispatch by lookup.
+//!
+//! `schema_version`, not `schemaVersion`: this `content` is suite-shared wire
+//! format, so it follows the wire's snake_case convention rather than this
+//! codebase's. That is this module's assumption pending Kaambaan's actual
+//! co-designed schema, not a demand on it — if their schema lands with a
+//! different name, only [`read_schema_version`] changes.
+//!
+//! ## Why renderers never recurse
+//!
+//! A renderer reads **named fields, one level at a time** — the shape
+//! [`safe_string_field`] exists to make easy. That single discipline is what
+//! makes a huge or deeply nested payload harmless *without* a runtime depth
+//! or size guard: a renderer that never descends cannot be made to descend a
+//! thousand levels. Everything a renderer returns is **text only**. No host
+//! may route it into markup, a link target, an image source, or a style.
+//!
+//! ## What is different from the TypeScript, and why
+//!
+//! The TypeScript's `boundDecision` took `unknown` and checked every level,
+//! because the realistic mistake there was a renderer echoing
+//! `content.decision` straight off an untrusted payload — TypeScript's
+//! guarantee stops at the module edge. Here the trait returns a typed
+//! [`CustomEventDecision`], so a renderer *cannot* produce a malformed one:
+//! the arms for "not an object", "prompt is not a string", "options is not an
+//! array" and the function-valued case are unrepresentable rather than
+//! unwritten. What remains representable — the option cap, the length bounds,
+//! and dropping a decision with no valid options — is still enforced and
+//! still tested.
+//!
+//! The TypeScript also wrapped `render` in a `try`/`catch`, since a renderer
+//! could throw. A Rust renderer returns a value or `None`; there is no
+//! exception to catch, and the fall-through is exercised through those
+//! returns instead. A panicking renderer is not caught, deliberately: the
+//! three renderers here are in-tree, non-recursive and non-coercing, and
+//! `catch_unwind` around them would suggest a boundary that does not exist —
+//! the FFI layer above cannot survive a panic cleanly either way.
+
+use std::collections::HashMap;
+
+use serde_json::Value;
+
+/// How many fields one card may show.
+///
+/// Applied to *every* renderer's result, not just its own output, so a future
+/// renderer that forgets to bound itself still cannot blow out the layout.
+const FIELD_MAX_COUNT: usize = 12;
+
+/// Long enough to show a real sentence, short enough that a card stays a
+/// summary rather than becoming a log viewer.
+const FIELD_VALUE_MAX_CHARS: usize = 300;
+
+const FIELD_LABEL_MAX_CHARS: usize = 60;
+
+/// An option is a *button*, and a row of them is a decision a person has to
+/// make at a glance.
+const DECISION_MAX_OPTIONS: usize = 4;
+
+/// One labelled row on a card. Both halves are display text.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEventField {
+    pub label: String,
+    pub value: String,
+}
+
+/// One answer the reader can give.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEventDecisionOption {
+    /// Display text, bounded like any other field.
+    pub label: String,
+    /// An **identifier**, never rendered: it is handed back verbatim when the
+    /// reader answers. Deliberately not truncated — silently shortening
+    /// `approve-restart-hermes-gateway…` would produce a value the far end
+    /// has never heard of, which is a wrong answer sent confidently and
+    /// strictly worse than a long string in a callback. Its length is already
+    /// bounded upstream by `timeline::CUSTOM_PAYLOAD_MAX_BYTES`.
+    pub id: String,
+}
+
+/// A pending decision the reader still owes an answer to.
+///
+/// A **UI contract, not a wire schema** — that distinction is the point. A
+/// renderer translates whatever its event type actually carries into this
+/// shape; it never passes a payload object through.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEventDecision {
+    pub prompt: String,
+    pub options: Vec<CustomEventDecisionOption>,
+}
+
+/// What a renderer returns.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CustomEventRenderResult {
+    /// The rows to show. Empty means "this renderer could do nothing useful
+    /// with the payload", which [`resolve_custom_event`] treats exactly like
+    /// an unrecognised type.
+    pub fields: Vec<CustomEventField>,
+    pub decision: Option<CustomEventDecision>,
+    /// Long-form prose the card carries beside its rows — an agent's
+    /// reasoning, today.
+    ///
+    /// Separate from [`Self::fields`] because a field is a label and a short
+    /// value (300 characters), and reasoning is neither: it is paragraphs,
+    /// and squeezing it into a value column would truncate the middle of a
+    /// thought.
+    pub reasoning: Option<String>,
+}
+
+/// The outcome of the whole fallback chain — what a host switches on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase", tag = "status")]
+pub enum CustomEventView {
+    Rendered {
+        fields: Vec<CustomEventField>,
+        /// How the agent reached this, when it said — see
+        /// [`CustomEventRenderResult::reasoning`].
+        ///
+        /// **This is where reasoning persists.** The live channel carries it
+        /// on to-device messages, which are not room history and are gone the
+        /// moment the turn ends; a turn card is a real room event, so
+        /// reasoning that arrives here is still there tomorrow, on every
+        /// client, in its place in the conversation.
+        reasoning: Option<String>,
+        /// The payload declared a `schema_version` above what this renderer
+        /// knows. Rendered anyway, best effort, and flagged.
+        newer_version: bool,
+        /// Always present on this variant so a host never has to distinguish
+        /// "no decision" from "this variant has no such field". Only this
+        /// variant can carry one: the other two mean no renderer produced
+        /// anything, so nothing could have set a decision.
+        decision: Option<CustomEventDecision>,
+    },
+    /// No renderer produced anything, but the event carried a plain-text
+    /// `body` fallback, as Matrix convention asks of a custom event.
+    FallbackBody { text: String },
+    /// Nothing usable at all. Never empty — an empty card reads as a
+    /// rendering fault rather than as an unsupported event.
+    Placeholder { text: String },
+}
+
+/// A renderer for one event type (major version baked into the type string).
+pub trait CustomEventRenderer: Send + Sync {
+    fn event_type(&self) -> &str;
+
+    /// What to call this on screen.
+    ///
+    /// The card used to head itself with `event_type` — `dev.agentpod.turn.v1`
+    /// printed at a reader. That is an address for a schema, not a name for a
+    /// thing, and a reading surface should say the latter.
+    fn label(&self) -> &str;
+
+    /// The highest `schema_version` this renderer was written against.
+    fn max_known_schema_version(&self) -> f64;
+
+    /// Turn a payload into rows. `content` is arbitrary JSON from anyone who
+    /// can send to the room: read named fields one level at a time, never
+    /// coerce, never recurse.
+    fn render(&self, content: &Value, body: Option<&str>) -> CustomEventRenderResult;
+}
+
+/// Event type → renderer.
+#[derive(Default)]
+pub struct CustomEventRegistry {
+    renderers: HashMap<String, Box<dyn CustomEventRenderer>>,
+}
+
+impl CustomEventRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a renderer, replacing any already registered for its type.
+    pub fn register(&mut self, renderer: Box<dyn CustomEventRenderer>) {
+        self.renderers
+            .insert(renderer.event_type().to_string(), renderer);
+    }
+
+    pub fn get(&self, event_type: &str) -> Option<&dyn CustomEventRenderer> {
+        self.renderers.get(event_type).map(AsRef::as_ref)
+    }
+
+    pub fn len(&self) -> usize {
+        self.renderers.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.renderers.is_empty()
+    }
+}
+
+/// Truncate to `max_chars` code points, appending an ellipsis when it bites.
+///
+/// Cosmetic only — the bound that actually protects this process lives in the
+/// core, at `timeline::CUSTOM_PAYLOAD_MAX_BYTES`, before any of this runs.
+fn bound_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let head: String = value.chars().take(max_chars).collect();
+    format!("{head}…")
+}
+
+/// How much reasoning a card carries.
+///
+/// Far above [`FIELD_VALUE_MAX_CHARS`], because this is prose rather than a
+/// value — a thought cut at 300 characters is a thought nobody can follow —
+/// and still bounded, because it arrives from a sender and a card is not a
+/// document viewer.
+const REASONING_MAX_CHARS: usize = 4_000;
+
+/// Trim reasoning for display. Empty and absent are the same thing: a
+/// disclosure that opens onto nothing says there is something to read.
+fn bound_reasoning(value: Option<String>) -> Option<String> {
+    let value = value?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(bound_text(trimmed, REASONING_MAX_CHARS))
+}
+
+fn bound_fields(fields: Vec<CustomEventField>) -> Vec<CustomEventField> {
+    fields
+        .into_iter()
+        .take(FIELD_MAX_COUNT)
+        .map(|field| CustomEventField {
+            label: bound_text(&field.label, FIELD_LABEL_MAX_CHARS),
+            value: bound_text(&field.value, FIELD_VALUE_MAX_CHARS),
+        })
+        .collect()
+}
+
+/// Bound a renderer's decision, or drop it.
+///
+/// Everything that survives ends up in a bordered, amber, clickable object —
+/// the highest-value surface in the timeline to get wrong — so a decision
+/// with no options is dropped entirely rather than rendered as a card with no
+/// answer on it.
+///
+/// The option cap counts **valid** options rather than raw entries, which
+/// matters for the same reason it did in the TypeScript: capping first would
+/// let junk entries crowd out real ones.
+fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDecision> {
+    let decision = decision?;
+    let options: Vec<CustomEventDecisionOption> = decision
+        .options
+        .into_iter()
+        .filter(|option| !option.id.is_empty() && !option.label.is_empty())
+        .take(DECISION_MAX_OPTIONS)
+        .map(|option| CustomEventDecisionOption {
+            label: bound_text(&option.label, FIELD_LABEL_MAX_CHARS),
+            // Not bounded. See the field's doc comment.
+            id: option.id,
+        })
+        .collect();
+    if options.is_empty() {
+        return None;
+    }
+    Some(CustomEventDecision {
+        prompt: bound_text(&decision.prompt, FIELD_VALUE_MAX_CHARS),
+        options,
+    })
+}
+
+/// Read `content[key]` as a string, one level deep, bounded.
+///
+/// The shape every renderer copies. `None` when `content` is not an object,
+/// the key is absent, or the value is not a string — a hostile or malformed
+/// payload degrades to "nothing here", never to a coercion that could turn an
+/// attacker-controlled object into text that looks deliberate.
+pub fn safe_string_field(content: &Value, key: &str, max_chars: usize) -> Option<String> {
+    let value = content.as_object()?.get(key)?;
+    value.as_str().map(|s| bound_text(s, max_chars))
+}
+
+/// The numeric [`safe_string_field`]. Named fields, one level, no coercion.
+pub fn safe_number_field(content: &Value, key: &str) -> Option<f64> {
+    content.as_object()?.get(key)?.as_f64()
+}
+
+/// `content.schema_version` as a number, or `None`.
+///
+/// Absent or malformed is treated as "assume the baseline version", never as
+/// "newer than known".
+fn read_schema_version(content: &Value) -> Option<f64> {
+    safe_number_field(content, "schema_version")
+}
+
+/// The whole fallback chain, as one pure function.
+///
+/// Known type and a renderer that produced something → render it. Known type
+/// but the renderer produced nothing → the plain-text `body`. Unknown type →
+/// the plain-text `body`. No body → the generic placeholder. It never returns
+/// anything that lets a host render *nothing* for a `customMessage` item.
+///
+/// `registry` is a parameter rather than a module-level singleton so that the
+/// whole dispatch/fallback/version-tolerance behaviour is testable against a
+/// small fixture registry.
+pub fn resolve_custom_event(
+    registry: &CustomEventRegistry,
+    event_type: Option<&str>,
+    content: Option<&Value>,
+    body: Option<&str>,
+) -> CustomEventView {
+    let null = Value::Null;
+    let content = content.unwrap_or(&null);
+
+    if let Some(renderer) = event_type.and_then(|t| registry.get(t)) {
+        let result = renderer.render(content, body);
+        let fields = bound_fields(result.fields);
+        if !fields.is_empty() {
+            let newer_version = read_schema_version(content)
+                .is_some_and(|version| version > renderer.max_known_schema_version());
+            return CustomEventView::Rendered {
+                fields,
+                reasoning: bound_reasoning(result.reasoning),
+                newer_version,
+                decision: bound_decision(result.decision),
+            };
+        }
+    }
+
+    if let Some(text) = body.filter(|b| !b.trim().is_empty()) {
+        return CustomEventView::FallbackBody {
+            text: text.to_string(),
+        };
+    }
+    CustomEventView::Placeholder {
+        text: format!("Custom event ({})", event_type.unwrap_or("unknown")),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The shipped renderers.
+// ---------------------------------------------------------------------------
+
+/// The demo renderer, shipped to prove the extension path end to end.
+///
+/// **Not** a Kaambaan schema — those are co-designed with that team, never
+/// invented here. `dev.supermessage.demo.*` is a namespace this app owns for
+/// exactly this purpose, so it can never collide with, or be mistaken for, a
+/// genuine card, run or permission request.
+///
+/// Reads exactly one field: the minimum needed to demonstrate a renderer that
+/// only touches named fields at a fixed depth and tolerates a payload with
+/// extra unrecognised fields without any special-casing.
+pub const DEMO_NOTE_EVENT_TYPE: &str = "dev.supermessage.demo.note.v1";
+
+pub struct DemoNoteRenderer;
+
+impl CustomEventRenderer for DemoNoteRenderer {
+    fn event_type(&self) -> &str {
+        DEMO_NOTE_EVENT_TYPE
+    }
+
+    fn label(&self) -> &str {
+        "Note"
+    }
+    fn max_known_schema_version(&self) -> f64 {
+        1.0
+    }
+    fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+        match safe_string_field(content, "title", FIELD_VALUE_MAX_CHARS) {
+            Some(title) => CustomEventRenderResult {
+                fields: vec![CustomEventField {
+                    label: "Note".into(),
+                    value: title,
+                }],
+                reasoning: None,
+                decision: None,
+            },
+            None => CustomEventRenderResult::default(),
+        }
+    }
+}
+
+/// What an agent did during one turn — AgentPod's `dev.agentpod.turn.v1`.
+///
+/// The first renderer here for a real event type rather than a demonstration.
+/// It reads a bounded summary and nothing else: the wire carries at most
+/// twenty tool records and a set of counts, and a card is a summary surface,
+/// not a log viewer. Tool *output* never crosses the bridge at all.
+///
+/// Two of the fields it wants are a number and an array, which
+/// [`safe_string_field`] cannot express, so it reads those itself with the
+/// same discipline: check the shape, take the value, never coerce, never
+/// recurse.
+/// A tool's title, made readable without changing what it says.
+///
+/// An agent reports what it did as the argv it ran, which arrives wrapped in
+/// a shell invocation, spread over continuation lines, and carrying absolute
+/// paths long enough that the field cap cuts the filename off the end — the
+/// one part of the path a reader wanted. Three narrow, reversible-in-meaning
+/// passes fix all three: fold the whitespace, drop the shell wrapper, and
+/// shorten deep paths from the front so the tail survives.
+///
+/// Cosmetic only, and applied after the payload has already been bounded and
+/// validated — this never reads a new field or coerces a value.
+fn tool_title(raw: &str) -> String {
+    // A lone `\` is a line continuation with the line gone — folding leaves
+    // it stranded mid-command where it reads as an argument.
+    let folded = raw
+        .split_whitespace()
+        .filter(|token| *token != "\\")
+        .collect::<Vec<_>>()
+        .join(" ");
+    let unwrapped = unwrap_shell(&folded);
+    unwrapped
+        .split(' ')
+        .map(shorten_path)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `bash -lc 'cargo test'` is a way of running something, not the something.
+fn unwrap_shell(command: &str) -> String {
+    const SHELLS: [&str; 3] = ["bash", "sh", "zsh"];
+    let mut parts = command.splitn(3, ' ');
+    let (Some(program), Some(flags), Some(rest)) = (parts.next(), parts.next(), parts.next())
+    else {
+        return command.to_string();
+    };
+    if !SHELLS.contains(&program) {
+        return command.to_string();
+    }
+    // `-c`, `-lc`, `-lic` — any flag cluster ending in `c`, which is the one
+    // that says "the next argument is the command".
+    if !(flags.starts_with('-') && flags.ends_with('c')) {
+        return command.to_string();
+    }
+    let inner = rest.trim();
+    for quote in ['\'', '"'] {
+        if let Some(body) = inner
+            .strip_prefix(quote)
+            .and_then(|r| r.strip_suffix(quote))
+        {
+            return body.to_string();
+        }
+    }
+    inner.to_string()
+}
+
+/// `/Users/rakesh/Projects/app/crates/core/src/lib.rs` → `…/src/lib.rs`.
+///
+/// Only deep absolute paths, because those are the ones whose interesting end
+/// gets cut off. A short path is already readable and is left exactly as it is.
+fn shorten_path(token: &str) -> String {
+    let bare = token.trim_start_matches('~');
+    if !bare.starts_with('/') {
+        return token.to_string();
+    }
+    let segments: Vec<&str> = bare.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() <= 2 {
+        return token.to_string();
+    }
+    format!("…/{}", segments[segments.len() - 2..].join("/"))
+}
+
+pub const TURN_ACTIVITY_EVENT_TYPE: &str = "dev.agentpod.turn.v1";
+
+pub struct TurnActivityRenderer;
+
+impl CustomEventRenderer for TurnActivityRenderer {
+    fn event_type(&self) -> &str {
+        TURN_ACTIVITY_EVENT_TYPE
+    }
+
+    fn label(&self) -> &str {
+        "Turn"
+    }
+    fn max_known_schema_version(&self) -> f64 {
+        1.0
+    }
+    fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+        let Some(object) = content.as_object() else {
+            return CustomEventRenderResult::default();
+        };
+        let null = Value::Null;
+        let counts = object.get("counts").unwrap_or(&null);
+        let total = safe_number_field(counts, "total");
+        let failed = safe_number_field(counts, "failed").unwrap_or(0.0);
+        let omitted = safe_number_field(counts, "omitted").unwrap_or(0.0);
+
+        let empty: Vec<Value> = Vec::new();
+        let tools = object
+            .get("tools")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty);
+
+        // **Where reasoning becomes permanent.** The live channel carries it
+        // on to-device messages, which are not room history — they are gone
+        // the moment the turn ends. A turn card is a real room event, so
+        // reasoning an agent puts here is still there tomorrow, on every
+        // client, in its place in the conversation.
+        //
+        // Read with the same discipline as everything else in this module:
+        // check the shape, take the value, never coerce, never recurse.
+        let reasoning = content
+            .get("reasoning")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+
+        let mut fields = Vec::new();
+        // The headline first: a reader scanning a conversation wants "it did
+        // seven things and one failed" before it wants to know which seven.
+        if let Some(total) = total {
+            let total = total as i64;
+            let noun = if total == 1 { "thing" } else { "things" };
+            let failed_note = if failed > 0.0 {
+                format!(", {} failed", failed as i64)
+            } else {
+                String::new()
+            };
+            fields.push(CustomEventField {
+                label: "Did".into(),
+                value: format!("{total} {noun}{failed_note}"),
+            });
+        }
+
+        for entry in tools {
+            // The field cap truncates anyway; stopping here keeps the headline
+            // row from being the one that gets dropped.
+            if fields.len() >= FIELD_MAX_COUNT - 1 {
+                break;
+            }
+            let Some(title) = safe_string_field(entry, "title", FIELD_VALUE_MAX_CHARS) else {
+                continue;
+            };
+            // The status is the label, so the card reads as a list of what
+            // happened rather than a list of identical rows.
+            let status = safe_string_field(entry, "status", FIELD_LABEL_MAX_CHARS);
+            fields.push(CustomEventField {
+                label: status.unwrap_or_else(|| "did".to_string()),
+                value: tool_title(&title),
+            });
+        }
+
+        if omitted > 0.0 {
+            fields.push(CustomEventField {
+                label: "and".into(),
+                value: format!("{} more not listed", omitted as i64),
+            });
+        }
+        CustomEventRenderResult {
+            fields,
+            reasoning,
+            decision: None,
+        }
+    }
+}
+
+/// A permission request a reader can answer — AgentPod's
+/// `dev.agentpod.permission.v1`, and the first renderer anywhere to set a
+/// decision.
+///
+/// **The option's `id` carries its NAME, not its `option_id`.** That reads
+/// backwards until you see what `id` is for: it is handed back verbatim and
+/// sent, and the room transcript is a shared human record. The hub's own
+/// prose prints option names alongside the numbers "because '1' alone would
+/// make the transcript unreadable afterwards" — and a button that leaves
+/// `allow_once` in the room is the same mistake in a different alphabet. The
+/// hub's matcher accepts the number, the name or the id, so any of the three
+/// would work; the name is the one a person reading the room later
+/// understands.
+///
+/// The event is sent *beside* an ordinary prose message carrying the same
+/// question, so a client that never renders this — Element, or this one
+/// before the renderer existed — is exactly as able to answer as it was.
+pub const PERMISSION_REQUEST_EVENT_TYPE: &str = "dev.agentpod.permission.v1";
+
+pub struct PermissionRequestRenderer;
+
+impl CustomEventRenderer for PermissionRequestRenderer {
+    fn event_type(&self) -> &str {
+        PERMISSION_REQUEST_EVENT_TYPE
+    }
+
+    fn label(&self) -> &str {
+        "Permission"
+    }
+    fn max_known_schema_version(&self) -> f64 {
+        1.0
+    }
+    fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+        let Some(title) = safe_string_field(content, "title", FIELD_VALUE_MAX_CHARS) else {
+            return CustomEventRenderResult::default();
+        };
+
+        let mut options = Vec::new();
+        if let Some(raw) = content.get("options").and_then(Value::as_array) {
+            for entry in raw {
+                // An option with no name is one nothing could label, and
+                // nothing could be answered with.
+                let Some(name) = safe_string_field(entry, "name", FIELD_LABEL_MAX_CHARS) else {
+                    continue;
+                };
+                options.push(CustomEventDecisionOption {
+                    id: name.clone(),
+                    label: name,
+                });
+            }
+        }
+
+        let fields = vec![CustomEventField {
+            label: "Wants to".into(),
+            value: title.clone(),
+        }];
+        if options.is_empty() {
+            // Nothing to decide. `bound_decision` would reject an empty list
+            // anyway; the card falls back to describing the request.
+            return CustomEventRenderResult {
+                fields,
+                reasoning: None,
+                decision: None,
+            };
+        }
+        CustomEventRenderResult {
+            fields,
+            reasoning: None,
+            decision: Some(CustomEventDecision {
+                prompt: format!("Allow {title}?"),
+                options,
+            }),
+        }
+    }
+}
+
+/// The registry hosts render through in production.
+///
+/// Built once. Register a real renderer here once Kaambaan's schemas land.
+pub fn default_registry() -> &'static CustomEventRegistry {
+    static REGISTRY: std::sync::OnceLock<CustomEventRegistry> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut registry = CustomEventRegistry::new();
+        registry.register(Box::new(DemoNoteRenderer));
+        registry.register(Box::new(TurnActivityRenderer));
+        registry.register(Box::new(PermissionRequestRenderer));
+        registry
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A fixture renderer that reads one named field, like a real one.
+    struct Fixture {
+        event_type: &'static str,
+        max_version: f64,
+        result: CustomEventRenderResult,
+    }
+
+    impl Fixture {
+        fn new(event_type: &'static str) -> Self {
+            Self {
+                event_type,
+                max_version: 1.0,
+                result: CustomEventRenderResult::default(),
+            }
+        }
+
+        fn with_fields(mut self, fields: Vec<(&str, &str)>) -> Self {
+            self.result.fields = fields
+                .into_iter()
+                .map(|(label, value)| CustomEventField {
+                    label: label.to_string(),
+                    value: value.to_string(),
+                })
+                .collect();
+            self
+        }
+
+        fn with_decision(mut self, decision: CustomEventDecision) -> Self {
+            self.result.decision = Some(decision);
+            self
+        }
+    }
+
+    impl CustomEventRenderer for Fixture {
+        fn event_type(&self) -> &str {
+            self.event_type
+        }
+        fn label(&self) -> &str {
+            "Fixture"
+        }
+        fn max_known_schema_version(&self) -> f64 {
+            self.max_version
+        }
+        fn render(&self, _content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+            self.result.clone()
+        }
+    }
+
+    /// A renderer that reads `title` off the payload, so hostile-payload
+    /// behaviour is exercised through a real read rather than a canned value.
+    struct TitleReader;
+
+    impl CustomEventRenderer for TitleReader {
+        fn event_type(&self) -> &str {
+            "test.title.v1"
+        }
+        fn label(&self) -> &str {
+            "Title"
+        }
+        fn max_known_schema_version(&self) -> f64 {
+            1.0
+        }
+        fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+            match safe_string_field(content, "title", FIELD_VALUE_MAX_CHARS) {
+                Some(title) => CustomEventRenderResult {
+                    fields: vec![CustomEventField {
+                        label: "Title".into(),
+                        value: title,
+                    }],
+                    reasoning: None,
+                    decision: None,
+                },
+                None => CustomEventRenderResult::default(),
+            }
+        }
+    }
+
+    fn registry_with(renderers: Vec<Box<dyn CustomEventRenderer>>) -> CustomEventRegistry {
+        let mut registry = CustomEventRegistry::new();
+        for renderer in renderers {
+            registry.register(renderer);
+        }
+        registry
+    }
+
+    fn option(id: &str, label: &str) -> CustomEventDecisionOption {
+        CustomEventDecisionOption {
+            id: id.to_string(),
+            label: label.to_string(),
+        }
+    }
+
+    // ---- dispatch --------------------------------------------------------
+
+    #[test]
+    fn renders_through_the_registered_renderer_for_a_known_type() {
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.a.v1").with_fields(vec![("Note", "hello")]),
+        )]);
+        assert_eq!(
+            resolve_custom_event(&registry, Some("test.a.v1"), Some(&json!({})), None),
+            CustomEventView::Rendered {
+                fields: vec![CustomEventField {
+                    label: "Note".into(),
+                    value: "hello".into()
+                }],
+                reasoning: None,
+                newer_version: false,
+                decision: None,
+            }
+        );
+    }
+
+    #[test]
+    fn picks_the_renderer_matching_the_exact_event_type_among_several() {
+        let registry = registry_with(vec![
+            Box::new(Fixture::new("test.a.v1").with_fields(vec![("A", "a")])),
+            Box::new(Fixture::new("test.b.v1").with_fields(vec![("B", "b")])),
+        ]);
+        let CustomEventView::Rendered { fields, .. } =
+            resolve_custom_event(&registry, Some("test.b.v1"), Some(&json!({})), None)
+        else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(fields[0].label, "B");
+    }
+
+    #[test]
+    fn falls_back_to_the_plain_text_body_for_an_unknown_type() {
+        let registry = CustomEventRegistry::new();
+        assert_eq!(
+            resolve_custom_event(&registry, Some("test.unknown.v1"), None, Some("a note")),
+            CustomEventView::FallbackBody {
+                text: "a note".into()
+            }
+        );
+    }
+
+    #[test]
+    fn falls_back_to_the_generic_placeholder_for_an_unknown_type_with_no_body() {
+        let registry = CustomEventRegistry::new();
+        assert_eq!(
+            resolve_custom_event(&registry, Some("test.unknown.v1"), None, None),
+            CustomEventView::Placeholder {
+                text: "Custom event (test.unknown.v1)".into()
+            }
+        );
+    }
+
+    #[test]
+    fn names_unknown_in_the_placeholder_when_there_is_no_event_type_at_all() {
+        let registry = CustomEventRegistry::new();
+        assert_eq!(
+            resolve_custom_event(&registry, None, None, None),
+            CustomEventView::Placeholder {
+                text: "Custom event (unknown)".into()
+            }
+        );
+    }
+
+    #[test]
+    fn falls_back_to_the_body_when_a_known_renderer_produces_no_fields() {
+        // A renderer that could do nothing with the payload is treated
+        // exactly like an unrecognised type. This is also how the Rust port
+        // exercises what the TypeScript's try/catch covered: a Rust renderer
+        // cannot throw, so "produced nothing" is the whole of that path.
+        let registry = registry_with(vec![Box::new(Fixture::new("test.a.v1"))]);
+        assert_eq!(
+            resolve_custom_event(&registry, Some("test.a.v1"), Some(&json!({})), Some("body")),
+            CustomEventView::FallbackBody {
+                text: "body".into()
+            }
+        );
+    }
+
+    #[test]
+    fn falls_back_to_the_placeholder_when_a_renderer_produces_nothing_and_there_is_no_body() {
+        let registry = registry_with(vec![Box::new(Fixture::new("test.a.v1"))]);
+        assert_eq!(
+            resolve_custom_event(&registry, Some("test.a.v1"), Some(&json!({})), None),
+            CustomEventView::Placeholder {
+                text: "Custom event (test.a.v1)".into()
+            }
+        );
+    }
+
+    #[test]
+    fn treats_a_whitespace_only_body_the_same_as_no_body() {
+        let registry = CustomEventRegistry::new();
+        assert_eq!(
+            resolve_custom_event(&registry, Some("test.x.v1"), None, Some("   \n  ")),
+            CustomEventView::Placeholder {
+                text: "Custom event (test.x.v1)".into()
+            }
+        );
+    }
+
+    // ---- version tolerance ----------------------------------------------
+
+    #[test]
+    fn is_not_newer_for_a_payload_at_or_below_the_renderers_known_version() {
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.a.v1").with_fields(vec![("Note", "x")]),
+        )]);
+        for version in [json!(1), json!(0)] {
+            let CustomEventView::Rendered { newer_version, .. } = resolve_custom_event(
+                &registry,
+                Some("test.a.v1"),
+                Some(&json!({ "schema_version": version })),
+                None,
+            ) else {
+                panic!("expected a rendered view");
+            };
+            assert!(!newer_version, "version {version} was marked newer");
+        }
+    }
+
+    #[test]
+    fn still_renders_best_effort_and_marks_a_newer_schema_version() {
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.a.v1").with_fields(vec![("Note", "x")]),
+        )]);
+        let CustomEventView::Rendered {
+            fields,
+            newer_version,
+            ..
+        } = resolve_custom_event(
+            &registry,
+            Some("test.a.v1"),
+            Some(&json!({ "schema_version": 2 })),
+            None,
+        )
+        else {
+            panic!("expected a rendered view");
+        };
+        assert!(newer_version);
+        assert_eq!(fields.len(), 1, "a newer version must still render");
+    }
+
+    #[test]
+    fn treats_a_missing_schema_version_as_the_baseline_not_as_newer() {
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.a.v1").with_fields(vec![("Note", "x")]),
+        )]);
+        let CustomEventView::Rendered { newer_version, .. } =
+            resolve_custom_event(&registry, Some("test.a.v1"), Some(&json!({})), None)
+        else {
+            panic!("expected a rendered view");
+        };
+        assert!(!newer_version);
+    }
+
+    #[test]
+    fn ignores_a_non_numeric_schema_version_rather_than_treating_it_as_newer() {
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.a.v1").with_fields(vec![("Note", "x")]),
+        )]);
+        for version in [json!("2"), json!(null), json!({"v": 2}), json!([2])] {
+            let CustomEventView::Rendered { newer_version, .. } = resolve_custom_event(
+                &registry,
+                Some("test.a.v1"),
+                Some(&json!({ "schema_version": version })),
+                None,
+            ) else {
+                panic!("expected a rendered view");
+            };
+            assert!(!newer_version, "{version} was treated as a version");
+        }
+    }
+
+    // ---- hostile payloads render inert ----------------------------------
+
+    #[test]
+    fn degrades_when_a_field_expected_to_be_a_string_is_an_object_or_a_number() {
+        let registry = registry_with(vec![Box::new(TitleReader)]);
+        for title in [
+            json!({"nested": "x"}),
+            json!(42),
+            json!([1, 2]),
+            json!(null),
+        ] {
+            assert_eq!(
+                resolve_custom_event(
+                    &registry,
+                    Some("test.title.v1"),
+                    Some(&json!({ "title": title })),
+                    Some("fallback"),
+                ),
+                CustomEventView::FallbackBody {
+                    text: "fallback".into()
+                },
+                "a {title} title was coerced instead of refused"
+            );
+        }
+    }
+
+    #[test]
+    fn degrades_when_content_itself_is_not_an_object() {
+        let registry = registry_with(vec![Box::new(TitleReader)]);
+        for content in [json!([1, 2]), json!("a string"), json!(7), json!(null)] {
+            assert_eq!(
+                resolve_custom_event(
+                    &registry,
+                    Some("test.title.v1"),
+                    Some(&content),
+                    Some("fallback"),
+                ),
+                CustomEventView::FallbackBody {
+                    text: "fallback".into()
+                },
+                "content {content} was walked as an object"
+            );
+        }
+    }
+
+    /// Build a payload the way production does: as text, then parsed.
+    fn parse_nested(depth: usize) -> Result<Value, serde_json::Error> {
+        let text = format!(
+            r#"{{"title":"the real one","trap":{}"deep"{}}}"#,
+            r#"{"nested":"#.repeat(depth),
+            "}".repeat(depth)
+        );
+        serde_json::from_str(&text)
+    }
+
+    #[test]
+    fn a_payload_nested_past_serde_jsons_limit_never_becomes_a_value_at_all() {
+        // Where the protection against a pathologically deep payload actually
+        // lives, which is worth pinning because it is not where you would
+        // first look. A renderer reading named fields one level at a time
+        // cannot be made to descend — but `serde_json::Value` is itself a
+        // recursive Rust type, and merely *dropping* a few thousand levels of
+        // it overflows the stack before any renderer runs.
+        //
+        // That never happens in production because the payload arrives as
+        // text and serde_json's parser refuses to build it: `custom_payload`
+        // is then `None` and the item falls through to its body. Found by
+        // this test aborting the whole suite when it constructed the value
+        // programmatically instead, which is not a path any real input takes.
+        assert!(
+            parse_nested(1_000).is_err(),
+            "serde_json accepted a 1000-deep payload; the recursion limit that \
+             keeps a hostile payload from reaching a Value is gone"
+        );
+    }
+
+    #[test]
+    fn resolves_a_deep_but_parseable_payload_by_reading_only_its_shallow_field() {
+        // Just inside the parser's limit: the renderer must still cost
+        // nothing, because it never looks at `trap`.
+        let payload = parse_nested(100).expect("100 levels parses");
+        let registry = registry_with(vec![Box::new(TitleReader)]);
+        let CustomEventView::Rendered { fields, .. } =
+            resolve_custom_event(&registry, Some("test.title.v1"), Some(&payload), None)
+        else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(fields[0].value, "the real one");
+    }
+
+    // ---- field bounding --------------------------------------------------
+
+    #[test]
+    fn caps_an_overlong_field_value_and_appends_an_ellipsis() {
+        let long = "x".repeat(FIELD_VALUE_MAX_CHARS + 200);
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.a.v1").with_fields(vec![("Note", &long)]),
+        )]);
+        let CustomEventView::Rendered { fields, .. } =
+            resolve_custom_event(&registry, Some("test.a.v1"), Some(&json!({})), None)
+        else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(fields[0].value.chars().count(), FIELD_VALUE_MAX_CHARS + 1);
+        assert!(fields[0].value.ends_with('…'));
+    }
+
+    #[test]
+    fn caps_an_overlong_label_too_not_just_the_value() {
+        let long = "L".repeat(FIELD_LABEL_MAX_CHARS + 40);
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.a.v1").with_fields(vec![(&long, "v")]),
+        )]);
+        let CustomEventView::Rendered { fields, .. } =
+            resolve_custom_event(&registry, Some("test.a.v1"), Some(&json!({})), None)
+        else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(fields[0].label.chars().count(), FIELD_LABEL_MAX_CHARS + 1);
+        assert!(fields[0].label.ends_with('…'));
+    }
+
+    #[test]
+    fn caps_the_number_of_fields_a_renderer_can_contribute() {
+        let many: Vec<(&str, &str)> = (0..FIELD_MAX_COUNT + 8).map(|_| ("L", "v")).collect();
+        let registry = registry_with(vec![Box::new(Fixture::new("test.a.v1").with_fields(many))]);
+        let CustomEventView::Rendered { fields, .. } =
+            resolve_custom_event(&registry, Some("test.a.v1"), Some(&json!({})), None)
+        else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(fields.len(), FIELD_MAX_COUNT);
+    }
+
+    // ---- decision --------------------------------------------------------
+
+    fn with_decision(decision: CustomEventDecision) -> CustomEventRegistry {
+        registry_with(vec![Box::new(
+            Fixture::new("test.a.v1")
+                .with_fields(vec![("Wants to", "restart the gateway")])
+                .with_decision(decision),
+        )])
+    }
+
+    fn decision_from(registry: &CustomEventRegistry) -> Option<CustomEventDecision> {
+        let CustomEventView::Rendered { decision, .. } =
+            resolve_custom_event(registry, Some("test.a.v1"), Some(&json!({})), None)
+        else {
+            panic!("expected a rendered view");
+        };
+        decision
+    }
+
+    #[test]
+    fn passes_a_well_formed_decision_through() {
+        let registry = with_decision(CustomEventDecision {
+            prompt: "Allow restart?".into(),
+            options: vec![option("allow", "Allow"), option("deny", "Deny")],
+        });
+        assert_eq!(
+            decision_from(&registry),
+            Some(CustomEventDecision {
+                prompt: "Allow restart?".into(),
+                options: vec![option("allow", "Allow"), option("deny", "Deny")],
+            })
+        );
+    }
+
+    #[test]
+    fn bounds_the_prompt_and_each_option_label() {
+        let registry = with_decision(CustomEventDecision {
+            prompt: "P".repeat(FIELD_VALUE_MAX_CHARS + 50),
+            options: vec![option("id", &"L".repeat(FIELD_LABEL_MAX_CHARS + 50))],
+        });
+        let decision = decision_from(&registry).expect("a decision");
+        assert_eq!(decision.prompt.chars().count(), FIELD_VALUE_MAX_CHARS + 1);
+        assert_eq!(
+            decision.options[0].label.chars().count(),
+            FIELD_LABEL_MAX_CHARS + 1
+        );
+    }
+
+    #[test]
+    fn leaves_the_option_id_untruncated_because_it_is_an_identifier() {
+        // A shortened id is a wrong answer sent confidently — worse than a
+        // long string in a callback.
+        let long_id = "approve-".repeat(40);
+        let registry = with_decision(CustomEventDecision {
+            prompt: "Allow?".into(),
+            options: vec![option(&long_id, "Allow")],
+        });
+        let decision = decision_from(&registry).expect("a decision");
+        assert_eq!(decision.options[0].id, long_id);
+        assert!(!decision.options[0].id.ends_with('…'));
+    }
+
+    #[test]
+    fn caps_the_option_count_at_four() {
+        let options: Vec<_> = (0..9).map(|i| option(&format!("id{i}"), "Yes")).collect();
+        let registry = with_decision(CustomEventDecision {
+            prompt: "Allow?".into(),
+            options,
+        });
+        assert_eq!(
+            decision_from(&registry).expect("a decision").options.len(),
+            DECISION_MAX_OPTIONS
+        );
+    }
+
+    #[test]
+    fn counts_the_option_cap_in_valid_options_not_raw_entries() {
+        // Capping before validating would let junk entries crowd out real
+        // ones — six blanks would hide the two answers that mattered.
+        let mut options: Vec<_> = (0..6).map(|_| option("", "")).collect();
+        options.push(option("allow", "Allow"));
+        options.push(option("deny", "Deny"));
+        let registry = with_decision(CustomEventDecision {
+            prompt: "Allow?".into(),
+            options,
+        });
+        let decision = decision_from(&registry).expect("a decision");
+        assert_eq!(decision.options.len(), 2);
+        assert_eq!(decision.options[0].id, "allow");
+        assert_eq!(decision.options[1].id, "deny");
+    }
+
+    #[test]
+    fn drops_options_with_an_empty_id_or_label_without_dropping_their_siblings() {
+        let registry = with_decision(CustomEventDecision {
+            prompt: "Allow?".into(),
+            options: vec![
+                option("", "No id"),
+                option("allow", "Allow"),
+                option("no-label", ""),
+            ],
+        });
+        let decision = decision_from(&registry).expect("a decision");
+        assert_eq!(decision.options, vec![option("allow", "Allow")]);
+    }
+
+    #[test]
+    fn drops_a_decision_with_no_valid_options_rather_than_rendering_a_dead_card() {
+        let registry = with_decision(CustomEventDecision {
+            prompt: "Allow?".into(),
+            options: vec![option("", ""), option("", "")],
+        });
+        assert_eq!(decision_from(&registry), None);
+    }
+
+    #[test]
+    fn drops_an_empty_decision_entirely() {
+        let registry = with_decision(CustomEventDecision {
+            prompt: "Allow?".into(),
+            options: vec![],
+        });
+        assert_eq!(decision_from(&registry), None);
+    }
+
+    #[test]
+    fn is_none_when_a_renderer_sets_nothing() {
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.a.v1").with_fields(vec![("Note", "x")]),
+        )]);
+        assert_eq!(decision_from(&registry), None);
+    }
+
+    #[test]
+    fn never_sets_a_decision_on_a_fallback_or_placeholder_view() {
+        // Structural: those variants have no decision field at all, so this
+        // asserts the shape rather than a value — the point being that a host
+        // cannot be handed a decision it has no card to draw.
+        let registry = CustomEventRegistry::new();
+        assert!(matches!(
+            resolve_custom_event(&registry, Some("t.v1"), None, Some("b")),
+            CustomEventView::FallbackBody { .. }
+        ));
+        assert!(matches!(
+            resolve_custom_event(&registry, Some("t.v1"), None, None),
+            CustomEventView::Placeholder { .. }
+        ));
+    }
+
+    // ---- registry --------------------------------------------------------
+
+    #[test]
+    fn starts_empty_when_built_with_no_renderers() {
+        assert!(CustomEventRegistry::new().is_empty());
+    }
+
+    #[test]
+    fn registers_a_renderer_that_resolve_can_then_find() {
+        let registry = registry_with(vec![Box::new(
+            Fixture::new("test.new.v1").with_fields(vec![("N", "v")]),
+        )]);
+        assert!(matches!(
+            resolve_custom_event(&registry, Some("test.new.v1"), Some(&json!({})), None),
+            CustomEventView::Rendered { .. }
+        ));
+    }
+
+    #[test]
+    fn replaces_an_existing_renderer_registered_under_the_same_type() {
+        let registry = registry_with(vec![
+            Box::new(Fixture::new("test.a.v1").with_fields(vec![("Old", "old")])),
+            Box::new(Fixture::new("test.a.v1").with_fields(vec![("New", "new")])),
+        ]);
+        assert_eq!(registry.len(), 1);
+        let CustomEventView::Rendered { fields, .. } =
+            resolve_custom_event(&registry, Some("test.a.v1"), Some(&json!({})), None)
+        else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(fields[0].label, "New");
+    }
+
+    // ---- safeStringField -------------------------------------------------
+
+    #[test]
+    fn safe_string_field_reads_a_top_level_string() {
+        assert_eq!(
+            safe_string_field(&json!({ "title": "hi" }), "title", 100).as_deref(),
+            Some("hi")
+        );
+    }
+
+    #[test]
+    fn safe_string_field_is_none_when_the_field_is_absent() {
+        assert_eq!(
+            safe_string_field(&json!({ "other": "hi" }), "title", 100),
+            None
+        );
+    }
+
+    #[test]
+    fn safe_string_field_is_none_when_the_value_is_not_a_string() {
+        for value in [
+            json!(1),
+            json!(true),
+            json!(null),
+            json!([1]),
+            json!({"a": 1}),
+        ] {
+            assert_eq!(
+                safe_string_field(&json!({ "title": value }), "title", 100),
+                None,
+                "{value} was coerced"
+            );
+        }
+    }
+
+    #[test]
+    fn safe_string_field_is_none_when_content_is_not_an_object() {
+        for content in [json!("s"), json!(1), json!(null), json!([1])] {
+            assert_eq!(safe_string_field(&content, "title", 100), None);
+        }
+    }
+
+    #[test]
+    fn safe_string_field_truncates_to_max_chars_with_an_ellipsis() {
+        let long = "x".repeat(50);
+        let read = safe_string_field(&json!({ "title": long }), "title", 10).expect("a value");
+        assert_eq!(read.chars().count(), 11);
+        assert!(read.ends_with('…'));
+    }
+
+    #[test]
+    fn safe_string_field_cuts_on_a_character_boundary() {
+        let long = "🎉".repeat(50);
+        let read = safe_string_field(&json!({ "title": long }), "title", 10).expect("a value");
+        let kept = read.trim_end_matches('…');
+        assert_eq!(kept.chars().count(), 10);
+        assert!(kept.chars().all(|c| c == '🎉'));
+    }
+
+    // ---- the shipped renderers ------------------------------------------
+
+    fn render_with(renderer: Box<dyn CustomEventRenderer>, content: Value) -> CustomEventView {
+        let event_type = renderer.event_type().to_string();
+        let registry = registry_with(vec![renderer]);
+        resolve_custom_event(
+            &registry,
+            Some(&event_type),
+            Some(&content),
+            Some("fallback"),
+        )
+    }
+
+    fn rendered_fields(view: &CustomEventView) -> &[CustomEventField] {
+        match view {
+            CustomEventView::Rendered { fields, .. } => fields,
+            other => panic!("expected a rendered view, got {other:?}"),
+        }
+    }
+
+    // -- demo note --
+
+    #[test]
+    fn the_demo_renderer_reads_its_one_field_and_sets_no_decision() {
+        let view = render_with(
+            Box::new(DemoNoteRenderer),
+            json!({ "title": "Deployed to staging" }),
+        );
+        assert_eq!(
+            view,
+            CustomEventView::Rendered {
+                fields: vec![CustomEventField {
+                    label: "Note".into(),
+                    value: "Deployed to staging".into()
+                }],
+                reasoning: None,
+                newer_version: false,
+                decision: None,
+            },
+            "the shipped demo renderer must stay decision-free"
+        );
+    }
+
+    #[test]
+    fn the_demo_renderer_tolerates_a_newer_schema_with_extra_fields() {
+        // Additive minor versions must still render — a renderer that only
+        // reads what it was written against gets that for free.
+        let view = render_with(
+            Box::new(DemoNoteRenderer),
+            json!({ "title": "Note", "schema_version": 2, "some_new_field": "ignored" }),
+        );
+        let CustomEventView::Rendered {
+            fields,
+            newer_version,
+            ..
+        } = &view
+        else {
+            panic!("expected a rendered view");
+        };
+        assert!(newer_version);
+        assert_eq!(fields[0].value, "Note");
+    }
+
+    // -- turn activity --
+
+    fn a_turn() -> Value {
+        json!({
+            "schema_version": 1,
+            "session_id": "sess_1",
+            "tools": [
+                { "id": "c1", "title": "Read src/main.ts", "kind": "read", "status": "completed", "locations": [] },
+                { "id": "c2", "title": "Run tests", "kind": "execute", "status": "failed", "locations": [] }
+            ],
+            "counts": { "total": 2, "failed": 1, "omitted": 0 }
+        })
+    }
+
+    #[test]
+    fn a_turn_leads_with_what_happened_then_lists_it() {
+        let view = render_with(Box::new(TurnActivityRenderer), a_turn());
+        let fields = rendered_fields(&view);
+        assert_eq!(
+            fields[0],
+            CustomEventField {
+                label: "Did".into(),
+                value: "2 things, 1 failed".into()
+            }
+        );
+        assert_eq!(
+            fields[1],
+            CustomEventField {
+                label: "completed".into(),
+                value: "Read src/main.ts".into()
+            }
+        );
+        assert_eq!(
+            fields[2],
+            CustomEventField {
+                label: "failed".into(),
+                value: "Run tests".into()
+            }
+        );
+        assert!(matches!(
+            view,
+            CustomEventView::Rendered { decision: None, .. }
+        ));
+    }
+
+    #[test]
+    fn a_turn_carries_the_reasoning_that_produced_it() {
+        // The point of putting it here: the live channel delivers reasoning
+        // on to-device messages, which are not room history and are gone the
+        // moment the turn ends. A turn card is a real room event.
+        let mut turn = a_turn();
+        turn["reasoning"] = json!("Checked the logs before touching anything.");
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        let CustomEventView::Rendered { reasoning, .. } = view else {
+            panic!("expected a rendered card");
+        };
+        assert_eq!(
+            reasoning.as_deref(),
+            Some("Checked the logs before touching anything.")
+        );
+    }
+
+    #[test]
+    fn a_turn_that_said_nothing_about_its_reasoning_carries_none() {
+        let view = render_with(Box::new(TurnActivityRenderer), a_turn());
+        let CustomEventView::Rendered { reasoning, .. } = view else {
+            panic!("expected a rendered card");
+        };
+        assert!(reasoning.is_none(), "reasoning was invented");
+    }
+
+    #[test]
+    fn reasoning_that_is_not_prose_is_not_reasoning() {
+        // Arbitrary JSON from anyone who can send to the room. A number, an
+        // object or an array is not a thought, and coercing one into a string
+        // would put `{"a":1}` where a paragraph belongs.
+        for shape in [json!(42), json!({ "a": 1 }), json!(["a"]), json!(null)] {
+            let mut turn = a_turn();
+            turn["reasoning"] = shape.clone();
+            let view = render_with(Box::new(TurnActivityRenderer), turn);
+            let CustomEventView::Rendered { reasoning, .. } = view else {
+                panic!("expected a rendered card");
+            };
+            assert!(reasoning.is_none(), "{shape} was read as reasoning");
+        }
+    }
+
+    #[test]
+    fn empty_reasoning_is_the_same_as_none() {
+        // A disclosure that opens onto an empty box says there is something
+        // to read.
+        let mut turn = a_turn();
+        turn["reasoning"] = json!("   \n  ");
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        let CustomEventView::Rendered { reasoning, .. } = view else {
+            panic!("expected a rendered card");
+        };
+        assert!(reasoning.is_none());
+    }
+
+    #[test]
+    fn a_very_long_thought_is_cut_and_says_so() {
+        let mut turn = a_turn();
+        turn["reasoning"] = json!("z".repeat(REASONING_MAX_CHARS + 200));
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        let CustomEventView::Rendered { reasoning, .. } = view else {
+            panic!("expected a rendered card");
+        };
+        let text = reasoning.expect("reasoning");
+        assert_eq!(text.chars().count(), REASONING_MAX_CHARS + 1);
+        assert!(text.ends_with('…'), "the cut was silent");
+    }
+
+    #[test]
+    fn a_turn_lists_what_it_did_not_the_argv_it_did_it_with() {
+        let mut turn = a_turn();
+        turn["tools"] = json!([{
+            "id": "c1",
+            "title": "bash -lc 'cargo test -p supermessage-core --lib /Users/rakesh/Projects/supermessage/crates/core/src/lib.rs'",
+            "status": "completed"
+        }]);
+        turn["counts"] = json!({ "total": 1, "failed": 0, "omitted": 0 });
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        let fields = rendered_fields(&view);
+        assert_eq!(
+            fields[1].value, "cargo test -p supermessage-core --lib …/src/lib.rs",
+            "the shell wrapper and the path prefix are plumbing; the file is the point"
+        );
+    }
+
+    #[test]
+    fn a_turn_says_one_thing_in_the_singular_and_stays_quiet_about_no_failures() {
+        let mut turn = a_turn();
+        turn["tools"] = json!([{ "id": "c1", "title": "Read a file", "status": "completed" }]);
+        turn["counts"] = json!({ "total": 1, "failed": 0, "omitted": 0 });
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        assert_eq!(
+            rendered_fields(&view)[0],
+            CustomEventField {
+                label: "Did".into(),
+                value: "1 thing".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_turn_admits_what_it_left_out() {
+        let mut turn = a_turn();
+        turn["counts"] = json!({ "total": 25, "failed": 0, "omitted": 5 });
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        assert_eq!(
+            rendered_fields(&view).last().expect("a last field"),
+            &CustomEventField {
+                label: "and".into(),
+                value: "5 more not listed".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_turn_degrades_rather_than_coercing_a_hostile_payload() {
+        // Objects where strings and numbers belong. Nothing may be stringified
+        // into a card, and nothing readable survives, so the body shows.
+        let view = render_with(
+            Box::new(TurnActivityRenderer),
+            json!({
+                "counts": { "total": { "toString": "nope" }, "failed": [], "omitted": null },
+                "tools": [{ "title": { "evil": true }, "status": 42 }, "not an object", null]
+            }),
+        );
+        assert_eq!(
+            view,
+            CustomEventView::FallbackBody {
+                text: "fallback".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_turn_falls_back_when_there_is_nothing_to_show() {
+        assert_eq!(
+            render_with(
+                Box::new(TurnActivityRenderer),
+                json!({ "tools": [], "counts": {} })
+            ),
+            CustomEventView::FallbackBody {
+                text: "fallback".into()
+            }
+        );
+        assert_eq!(
+            render_with(Box::new(TurnActivityRenderer), json!(null)),
+            CustomEventView::FallbackBody {
+                text: "fallback".into()
+            }
+        );
+    }
+
+    // -- permission request --
+
+    fn a_request() -> Value {
+        json!({
+            "schema_version": 1,
+            "session_id": "sess_1",
+            "request_seq": 41,
+            "title": "Write src/main.ts",
+            "options": [
+                { "option_id": "allow_once", "name": "Allow once" },
+                { "option_id": "reject", "name": "Reject" }
+            ]
+        })
+    }
+
+    #[test]
+    fn a_permission_request_asks_the_question_and_offers_the_answers() {
+        let view = render_with(Box::new(PermissionRequestRenderer), a_request());
+        let CustomEventView::Rendered {
+            fields, decision, ..
+        } = &view
+        else {
+            panic!("expected a rendered view, got {view:?}");
+        };
+        assert_eq!(
+            fields[0],
+            CustomEventField {
+                label: "Wants to".into(),
+                value: "Write src/main.ts".into()
+            }
+        );
+        let decision = decision.as_ref().expect("a decision");
+        assert_eq!(decision.prompt, "Allow Write src/main.ts?");
+        assert_eq!(
+            decision.options,
+            vec![
+                option("Allow once", "Allow once"),
+                option("Reject", "Reject")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_permission_option_carries_its_name_as_its_id_because_the_id_is_what_gets_sent() {
+        // The id is sent verbatim as an ordinary message, and the room is a
+        // shared human record: "Allow once" belongs in it, "allow_once" does
+        // not. The hub's matcher accepts either.
+        let view = render_with(Box::new(PermissionRequestRenderer), a_request());
+        let CustomEventView::Rendered { decision, .. } = &view else {
+            panic!("expected a rendered view");
+        };
+        let ids: Vec<&str> = decision
+            .as_ref()
+            .expect("a decision")
+            .options
+            .iter()
+            .map(|o| o.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["Allow once", "Reject"]);
+    }
+
+    #[test]
+    fn a_permission_request_with_no_answers_describes_itself_rather_than_vanishing() {
+        let mut request = a_request();
+        request["options"] = json!([]);
+        let view = render_with(Box::new(PermissionRequestRenderer), request);
+        let CustomEventView::Rendered {
+            fields, decision, ..
+        } = &view
+        else {
+            panic!("expected a rendered view, got {view:?}");
+        };
+        assert_eq!(fields[0].value, "Write src/main.ts");
+        assert_eq!(*decision, None);
+    }
+
+    #[test]
+    fn a_permission_option_with_no_name_is_dropped() {
+        let mut request = a_request();
+        request["options"] = json!([{ "option_id": "a" }, { "option_id": "b", "name": "Reject" }]);
+        let view = render_with(Box::new(PermissionRequestRenderer), request);
+        let CustomEventView::Rendered { decision, .. } = &view else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(
+            decision.as_ref().expect("a decision").options,
+            vec![option("Reject", "Reject")]
+        );
+    }
+
+    #[test]
+    fn a_permission_request_renders_no_more_than_four_buttons() {
+        // The hub caps at four too, so this is the second line of defence.
+        let many: Vec<Value> = (0..7)
+            .map(|i| json!({ "option_id": format!("o{i}"), "name": format!("Option {i}") }))
+            .collect();
+        let mut request = a_request();
+        request["options"] = json!(many);
+        let view = render_with(Box::new(PermissionRequestRenderer), request);
+        let CustomEventView::Rendered { decision, .. } = &view else {
+            panic!("expected a rendered view");
+        };
+        assert_eq!(
+            decision.as_ref().expect("a decision").options.len(),
+            DECISION_MAX_OPTIONS
+        );
+    }
+
+    #[test]
+    fn a_permission_request_falls_back_when_there_is_no_question() {
+        assert_eq!(
+            render_with(
+                Box::new(PermissionRequestRenderer),
+                json!({ "options": [] })
+            ),
+            CustomEventView::FallbackBody {
+                text: "fallback".into()
+            }
+        );
+    }
+
+    #[test]
+    fn the_default_registry_carries_all_three_shipped_renderers() {
+        let registry = default_registry();
+        for event_type in [
+            DEMO_NOTE_EVENT_TYPE,
+            TURN_ACTIVITY_EVENT_TYPE,
+            PERMISSION_REQUEST_EVENT_TYPE,
+        ] {
+            assert!(
+                registry.get(event_type).is_some(),
+                "{event_type} is not registered"
+            );
+        }
+        assert_eq!(registry.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod tool_title_tests {
+    use super::tool_title;
+
+    #[test]
+    fn a_command_spread_over_lines_becomes_one_line() {
+        assert_eq!(
+            tool_title("cargo test \\\n  --all-features"),
+            "cargo test --all-features"
+        );
+    }
+
+    #[test]
+    fn a_shell_wrapper_is_plumbing_not_what_it_did() {
+        assert_eq!(tool_title("bash -lc 'cargo test'"), "cargo test");
+        assert_eq!(tool_title("sh -c \"ls -la\""), "ls -la");
+        assert_eq!(tool_title("zsh -c 'git status'"), "git status");
+    }
+
+    #[test]
+    fn an_absolute_path_keeps_the_end_that_says_which_file() {
+        assert_eq!(
+            tool_title("cat /Users/rakesh/Projects/supermessage/crates/core/src/lib.rs"),
+            "cat …/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn a_short_path_is_already_readable_and_is_left_alone() {
+        assert_eq!(tool_title("cat src/lib.rs"), "cat src/lib.rs");
+        assert_eq!(tool_title("cat /etc/hosts"), "cat /etc/hosts");
+    }
+
+    #[test]
+    fn a_plain_sentence_of_a_title_is_not_a_command_and_is_untouched() {
+        assert_eq!(
+            tool_title("Read the deployment runbook"),
+            "Read the deployment runbook"
+        );
+    }
+}

@@ -1,0 +1,40 @@
+[workspace]
+members = ["crates/supermessage-core", "crates/supermessage-ffi", "src-tauri"]
+resolver = "2"
+
+# Debug info dominates this workspace's build output: matrix-sdk, aws-lc and
+# ring are enormous, and the FFI crate links them three times over (lib,
+# staticlib, cdylib). Full debug info took `target/` past 30GB and filled a
+# 228GB disk three times in one session.
+#
+# `line-tables-only` keeps what a backtrace actually needs — file and line —
+# and drops the type and variable information a step debugger would want. If
+# you need to step through Rust in a debugger, override it locally rather than
+# putting it back for everyone.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
+# Dependencies get no debug info at all.
+#
+# We never step through matrix-sdk, aws-lc or ring — when they appear in a
+# backtrace it is as a frame to read past on the way to our own code, and a
+# symbol name is enough for that. They are also the overwhelming bulk of what
+# gets compiled here: our two crates are ~14k lines against a dependency tree
+# in the millions.
+#
+# Kept separate from the `debug` settings above so the trade is legible: our
+# code keeps line tables, theirs keeps nothing.
+[profile.dev.package."*"]
+debug = false
+
+[profile.test.package."*"]
+debug = false
+
+# iOS builds are release builds, and ship nothing that needs symbols. The
+# XCFramework is linked into an app whose crashes are symbolicated from its own
+# dSYM, not from Rust's.
+[profile.release]
+debug = false

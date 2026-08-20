@@ -4,7 +4,7 @@
   // Ported from svelte-ai-elements' `reasoning`: a collapsible whose header
   // reports whether the agent is still thinking and, once it has stopped, how
   // long it took. Its shadcn `Collapsible` is bits-ui here (which shadcn wraps
-  // anyway), its `Response` is this app's `AgentProse`, and its theme
+  // anyway), its `Response` is this app's `RichText`, and its theme
   // variables are this app's tokens. Its `runed` context class is Svelte 5
   // state held directly, since one component needs no shared context.
   //
@@ -23,7 +23,8 @@
   // persisted, not paginated, and a device that was asleep never sees it.
 
   import { Collapsible } from "bits-ui";
-  import AgentProse from "./AgentProse.svelte";
+  import RichText from "./RichText.svelte";
+  import { richBlocksFromMarkdown, type RichBlock } from "$lib/ipc";
   import Shimmer from "./ai/Shimmer.svelte";
   import { reasoningLabel } from "./reasoningLabel";
   import { liveStore } from "$lib/stores/live.svelte";
@@ -37,6 +38,44 @@
   let startedAt = $state<number | null>(null);
   let seconds = $state<number | undefined>(undefined);
   let open = $state(false);
+
+  /**
+   * The reasoning, parsed into blocks by the core.
+   *
+   * `AgentProse` tokenised markdown in-process and was deleted when parsing
+   * moved into the core, so that iOS and this app cannot disagree about what
+   * a `**bold**` is. Parsing now costs an IPC round trip.
+   *
+   * Which is affordable here for a reason `LiveTurn` cannot rely on: this is
+   * collapsed by default, so nothing is parsed until a reader opens it, and
+   * the reasoning of a turn that has already ended never changes. Only a
+   * reader watching an agent think with the panel *open* re-parses, and
+   * `PARSE_INTERVAL_MS` bounds that the same way it bounds the answer.
+   */
+  const PARSE_INTERVAL_MS = 60;
+
+  let blocks = $state<RichBlock[]>([]);
+
+  $effect(() => {
+    const source = open ? held : null;
+    if (!source) {
+      blocks = [];
+      return;
+    }
+    // A generation counter, for the same out-of-order reason `LiveTurn`
+    // documents: a later parse of a longer string can land before an earlier
+    // one, and the text would appear to go backwards.
+    let live = true;
+    const timer = setTimeout(() => {
+      void richBlocksFromMarkdown(source).then((parsed) => {
+        if (live) blocks = parsed;
+      });
+    }, PARSE_INTERVAL_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  });
 
   $effect(() => {
     const now = streaming;
@@ -89,7 +128,7 @@
       <Collapsible.Content
         class="max-h-40 overflow-y-auto pb-2 text-content-muted"
       >
-        <AgentProse content={held} />
+        <RichText {blocks} />
       </Collapsible.Content>
     </Collapsible.Root>
   </div>

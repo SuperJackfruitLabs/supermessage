@@ -128,6 +128,8 @@ describe("liveStore: tool calls", () => {
     toolCallId: "c1",
     title: "Read src/main.ts",
     kind: "read",
+    input: null,
+    output: null,
     status: "in_progress",
     locations: ["src/main.ts"],
     ...over,

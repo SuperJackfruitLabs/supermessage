@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createReplyTargetStore, type PendingReply } from "./replyTarget.svelte";
-import type { TimelineItem } from "$lib/ipc";
+import type { TimelineItem, TimelineRow } from "$lib/ipc";
 
 const ROOM_A = "!a:example.org";
 const ROOM_B = "!b:example.org";
@@ -90,10 +90,36 @@ describe("replyTargetStore: per-room scoping", () => {
 });
 
 describe("replyTargetStore: fromItem", () => {
+  /**
+   * A row as the core delivers one.
+   *
+   * `senderName` and `replyPreview` are the core's answers now — the
+   * attribution chain and the excerpt's bounding live in `core::item_view`,
+   * with their own tests. What is left to check here, and what these tests
+   * still catch, is that `fromItem` reads the right field: handing the
+   * composer a raw sender id where a display name was resolved, or the body
+   * where a bounded preview was, is a real bug and a plausible one.
+   */
+  function row(overrides: Partial<TimelineItem> = {}): TimelineRow {
+    const dto = item(overrides);
+    return {
+      item: dto,
+      view: { render: "bubble", muted: false, blocks: [] },
+      senderName: dto.senderDisplayName ?? dto.sender ?? "Someone",
+      senderShort: dto.senderDisplayName ?? dto.sender ?? "Someone",
+      membershipVerb: null,
+      replyQuote: null,
+      canReplyOrReact: true,
+      replyPreview: dto.body === null || dto.body.trim() === "" ? null : dto.body.trim(),
+    };
+  }
+
   function item(overrides: Partial<TimelineItem> = {}): TimelineItem {
     return {
-      id: "$e1:example.org",
+      id: "unique-1",
+      eventId: "$e1:example.org",
       kind: "message",
+      senderAvatar: null,
       msgtype: "m.text",
       detail: null,
       sender: "@alice:example.org",
@@ -109,25 +135,39 @@ describe("replyTargetStore: fromItem", () => {
       edited: false,
       reactions: [],
       readBy: [],
+      editable: false,
       ...overrides,
     };
   }
 
-  it("prefers the display name, falling back to the sender id", () => {
+  it("addresses the event, not the row's identity", () => {
+    // A reply is `m.in_reply_to`, which takes an event id. `item.id` is the
+    // SDK's stable identity — it holds still across the local-echo-to-
+    // confirmed transition precisely *because* it is not the event id, so
+    // sending it would address an event the homeserver has never heard of.
+    //
+    // The two were the same field until identity was split out, which is why
+    // reading the wrong one was invisible.
     const store = createReplyTargetStore();
-    expect(store.fromItem(item()).sender).toBe("Alice");
-    expect(store.fromItem(item({ senderDisplayName: null })).sender).toBe("@alice:example.org");
-    expect(store.fromItem(item({ senderDisplayName: null, sender: null })).sender).toBe("Someone");
+    const target = store.fromItem(row({ id: "unique-9", eventId: "$real:example.org" }));
+    expect(target.eventId).toBe("$real:example.org");
+  });
+
+  it("shows the name the core resolved, not a chain of its own", () => {
+    const store = createReplyTargetStore();
+    expect(store.fromItem(row()).sender).toBe("Alice");
+    expect(store.fromItem(row({ senderDisplayName: null })).sender).toBe("@alice:example.org");
+    expect(store.fromItem(row({ senderDisplayName: null, sender: null })).sender).toBe("Someone");
   });
 
   it("carries the event id through as the reply target", () => {
     const store = createReplyTargetStore();
-    expect(store.fromItem(item({ id: "$xyz:example.org" })).eventId).toBe("$xyz:example.org");
+    expect(store.fromItem(row({ eventId: "$xyz:example.org" })).eventId).toBe("$xyz:example.org");
   });
 
-  it("builds a preview excerpt from the item's body", () => {
+  it("shows the preview the core bounded, not the raw body", () => {
     const store = createReplyTargetStore();
-    expect(store.fromItem(item({ body: "hello there" })).excerpt).toBe("hello there");
-    expect(store.fromItem(item({ body: null })).excerpt).toBeNull();
+    expect(store.fromItem(row({ body: "hello there" })).excerpt).toBe("hello there");
+    expect(store.fromItem(row({ body: null })).excerpt).toBeNull();
   });
 });

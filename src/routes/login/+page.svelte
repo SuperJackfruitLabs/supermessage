@@ -56,7 +56,7 @@
 </script>
 
 <main
-  class="flex min-h-dvh flex-col items-center justify-center bg-surface-sunken p-6"
+  class="flex min-h-dvh flex-col items-center justify-center overflow-y-auto bg-surface-sunken p-6"
   style="padding-top: calc(1.5rem + var(--inset-top)); padding-bottom: calc(1.5rem + var(--inset-bottom));"
 >
   <div class="w-full max-w-sm rounded-xl border border-border bg-surface-raised p-8 shadow-sm">

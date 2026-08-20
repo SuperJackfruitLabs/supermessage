@@ -20,10 +20,35 @@ import { describe, expect, it } from "vitest";
 import type { SpaceSummary } from "$lib/ipc";
 import { railEntries, spaceEntryLabel } from "./spacesRailView";
 
+/** The subset of the core's parse these tests actually depend on. */
+function identityOf(name: string): SpaceSummary["identity"] {
+  const [head, role] = name.split(/\s+—\s*/, 2);
+  const parts = (head ?? "").split(" ");
+  const glyph = parts.length > 1 && /^[^\u0000-\u007f]/.test(parts[0]!) ? parts[0]! : null;
+  const label = glyph === null ? (head ?? "") : parts.slice(1).join(" ");
+  return {
+    glyph,
+    name: label,
+    role: role ?? null,
+    initial: glyph ?? (label.slice(0, 1).toUpperCase() || "?"),
+  };
+}
+
+/**
+ * A space as the core delivers one, with its name already parsed.
+ *
+ * The parse itself is `core::room_identity`'s and is tested there — including
+ * the glyph, the em-dash split and the bounds. What is under test here is what
+ * the rail *does* with an identity: which halves it joins, in what order, and
+ * what it says about a count. So the fixture parses just enough to feed that,
+ * rather than restating a grammar this file does not own.
+ */
 function space(overrides: Partial<SpaceSummary> = {}): SpaceSummary {
+  const name = overrides.name ?? "Fleet";
   return {
     id: "!space:x.org",
-    name: "Fleet",
+    name,
+    identity: identityOf(name),
     avatarUrl: null,
     childCount: 3,
     membership: "joined",
@@ -111,16 +136,23 @@ describe("spaceEntryLabel", () => {
     expect(spaceEntryLabel(space({ name: "Broken", childCount: -1 }))).toBe("Broken");
   });
 
-  it("bounds a hostile space name instead of putting it in an aria-label whole", () => {
-    // A space name is server-controlled text, and this label lands in both
-    // `aria-label` and `title`. `parseRoomIdentity` caps the name at 120
-    // code points and the role at 40; this asserts the label actually goes
-    // through that parse rather than interpolating `space.name` directly.
+  it("labels from the parsed identity, never from the raw name", () => {
+    // The bound itself moved to `core::room_identity`, which caps the name at
+    // 120 code points and the role at 40 and has its own test for it. What
+    // still matters here — and what this asserts — is that the label is built
+    // out of the *parsed* halves rather than interpolating `space.name`,
+    // because a space name is server-controlled text and this label lands in
+    // both `aria-label` and `title`.
     const label = spaceEntryLabel(
-      space({ name: `${"a".repeat(500)} — ${"b".repeat(500)}`, childCount: 1 }),
+      space({
+        name: "raw name that must not appear",
+        identity: { glyph: null, name: "Parsed", role: "Ops", initial: "P" },
+        childCount: 1,
+      }),
     );
 
-    expect(label).toBe(`${"a".repeat(120)}, ${"b".repeat(40)}, 1 room`);
+    expect(label).toBe("Parsed, Ops, 1 room");
+    expect(label).not.toContain("raw name");
   });
 });
 

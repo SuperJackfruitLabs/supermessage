@@ -1,8 +1,6 @@
-// `core::timeline::FocusedTimeline::subscribe`'s spawned task nests
-// `Timeline::subscribe`'s stream type (itself wrapping `TimelineWithDropHandle`
-// around an `eyeball_im` subscriber stream) inside a `pin_mut!`'d `while let`
-// loop inside an `async move` block passed to `tokio::spawn` — deep enough
-// that computing its layout overflows rustc's default query recursion limit.
+// The core carries this same attribute, and both need it: `commands.rs` wraps
+// `timeline_subscribe`, so the deep `Timeline::subscribe` stream type is laid
+// out in this crate too. An attribute cannot cross a crate boundary.
 #![recursion_limit = "256"]
 
 // `pub`, not merely `mod`: `tests/timeline_projection.rs` is a genuine Cargo
@@ -14,21 +12,24 @@
 // integration tests link against. Nothing here is meant as a stable external
 // API; this crate is never published, and the only consumers of the `rlib`
 // crate-type are this binary and its own test targets.
-pub mod core;
 
 use serde::Serialize;
 use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
-use crate::core::attachments;
-use crate::core::commands::{
-    attachment_discard, attachment_send, attachment_stage, connection_state, create_room,
-    invite_user, join_room, join_room_by_alias, leave_room, log_from_webview, login, logout,
-    mark_room_read, media_download, media_fetch, member_avatar, restore_session, room_avatar,
-    room_info, rooms_resync, search_messages, send_message, send_reply, set_typing, space_select,
-    spaces_list, timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
+mod commands;
+mod host;
+
+use crate::commands::{
+    attachment_discard, attachment_send, attachment_stage, collect_mentions, connection_state,
+    create_room, delete_message, edit_message, invite_user, join_room, join_room_by_alias,
+    leave_room, log_from_webview, login, logout, mark_room_read, media_download, media_fetch,
+    member_avatar, parse_matrix_link, restore_session, rich_blocks_from_markdown, room_avatar,
+    room_info, rooms_resync, roster_hidden_invitations, roster_sections, roster_state,
+    search_messages, send_message, send_reply, set_typing, space_select, spaces_list,
+    timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
 };
-use crate::core::secrets::KeyringStore;
-use crate::core::{session::Session, tls};
+use supermessage_core::secrets::KeyringStore;
+use supermessage_core::{session::Session, tls};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -123,7 +124,10 @@ pub fn run() {
     //
     // Debug builds only, and not merely by convention: this is a remote-control
     // surface on the running app, and a shipped binary must not carry one.
-    #[cfg(all(debug_assertions, feature = "wdio"))]
+    // `desktop` as well as the feature: the dependency is scoped to desktop
+    // targets (see Cargo.toml), so on mobile the feature can be on while the
+    // crate is absent, and this line would not compile.
+    #[cfg(all(desktop, debug_assertions, feature = "wdio"))]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     // The MCP bridge — same reasoning as the line above, one notch stricter.
@@ -164,7 +168,7 @@ pub fn run() {
         // the handler Tauri's own documented example uses.
         .on_window_event(|window, event| {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
-                attachments::on_files_dropped(window.app_handle(), paths.clone());
+                host::on_files_dropped(window.app_handle(), paths.clone());
             }
         })
         .setup(|app| {
@@ -219,9 +223,17 @@ pub fn run() {
             timeline_subscribe,
             timeline_paginate_back,
             timeline_resync,
+            rich_blocks_from_markdown,
+            parse_matrix_link,
+            collect_mentions,
             send_message,
             send_reply,
             toggle_reaction,
+            edit_message,
+            delete_message,
+            roster_sections,
+            roster_state,
+            roster_hidden_invitations,
             set_typing,
             mark_room_read,
             join_room,

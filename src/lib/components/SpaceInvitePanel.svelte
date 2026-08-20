@@ -20,22 +20,20 @@
 
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { invitationPrompt } from "./invitationView";
-  import { parseRoomIdentity } from "./roomIdentity";
 
   let {
     spaceId,
-    spaceName,
+    label,
     onClose,
-  }: { spaceId: string; spaceName: string; onClose: () => void } = $props();
+  }: { spaceId: string; label: string; onClose: () => void } = $props();
 
   /** Set while a join/leave is in flight, so neither button can be pressed twice. */
   let busy = $state(false);
   let failure = $state<string | null>(null);
 
-  // The parsed name, like everywhere else a room name is shown: a space can
-  // carry the same `glyph Name — Role` structure a room can, and the raw
-  // string would put the glyph in the middle of a sentence.
-  const label = $derived(parseRoomIdentity(spaceName).name);
+  // `label` is the *parsed* name, resolved by the core along with the space —
+  // a space carries the same `glyph Name — Role` structure a room does, and
+  // the raw string would put the glyph in the middle of a sentence.
 
   function focusOnMount(node: HTMLButtonElement) {
     node.focus();

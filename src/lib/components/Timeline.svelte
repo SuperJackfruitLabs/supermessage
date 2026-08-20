@@ -48,12 +48,11 @@
   //    incoming message.
   //
   // Every item renders something or is deliberately silent — there is no
-  // "falls through the template" case. `timelineItemView.ts` classifies each
+  // "falls through the template" case. `core::item_view` classifies each
   // item into a render decision (bubble / emote / system line / placeholder
   // / nothing); this component only switches on that decision, it never
-  // inspects the wire `kind` itself beyond `dateDivider`, which renders real
-  // content the classifier's vocabulary doesn't cover, and `membershipGroup`
-  // rows, which `groupTimelineItems` already reduced to display text. See
+  // inspects the wire `kind` itself, except for `membershipGroup` rows,
+  // which `groupTimelineItems` already reduced to display text. See
   // that module's doc comment for why suppression happens here and not in
   // the core.
   //
@@ -131,7 +130,7 @@
   //     than shrinking to fit.
   //   - **The event type truncates from the left**, with a leading ellipsis
   //     (`…supermessage.demo.note.v1`), in `displayEventType`
-  //     (`timelineItemView.ts`) — a pure, unit-tested code-point slice
+  //     (`core::item_view`) — a pure, unit-tested code-point slice
   //     rather than the `direction: rtl` CSS trick, because the type is a
   //     sender-controlled string and an RTL base direction lets the bidi
   //     algorithm visually reorder a crafted one. See that function's doc
@@ -147,10 +146,10 @@
   //     cannot render is not worth a bordered object.
   // Every label, value, prompt and option label is plain-text `{...}`
   // interpolation. `content` is arbitrary JSON from anyone who can send to
-  // the room, and `resolveCustomEvent` has already bounded and validated
-  // all of it (`customEvents.ts` — `boundFields`, `boundDecision`); the
-  // `{@html}` precedent below applies to `item.formattedBody` alone and
-  // must never be extended to a custom payload.
+  // the room, and `core::custom_events` has already bounded and validated all
+  // of it (`bound_fields`, `bound_decision`) before it ever reaches a host.
+  // Nothing read out of a custom payload may be rendered as anything but
+  // text — not as markup, not as an `href`, not as an `src`, not as a style.
   //
   // Never optimistically appends: `timelineStore.items` is driven entirely
   // by the diff stream (see `timeline.svelte.ts`), including the local echo
@@ -184,33 +183,28 @@
   // failing to decode — converges on `mediaCache.hasFailed`, which falls
   // back to the plain-text placeholder row, never a broken-image icon.
   //
-  // A bubble renders `item.formattedBody` with `{@html}` when present,
-  // falling back to the plain `item.body` otherwise (the `{#if
-  // item.formattedBody}` branch in the bubble markup below). `{@html}` is
-  // otherwise a red flag in a Svelte app — it is safe here **only** because
-  // of guarantees made entirely on the Rust side, before this string ever
-  // crosses IPC:
-  //   1. `core::timeline::formatted_html_body` only populates `formattedBody`
-  //      for a `format: "org.matrix.custom.html"` body, and only after
-  //      `matrix_sdk_ui::timeline::Message::from_event` has already run
-  //      ruma's `HtmlSanitizerMode::Compat` allowlist sanitiser over it
-  //      (`matrix-sdk-ui`'s own `DEFAULT_SANITIZER_MODE`) — that pass is
-  //      reliable for *element*/*attribute* allowlisting (no `<script>`, no
-  //      `on*` handler, no `style` attribute survives it, on any element).
-  //   2. `core::timeline::harden_formatted_body` then runs a second,
-  //      narrower pass. This is **not** belt-and-braces on top of a working
-  //      upstream check: ruma-html 0.8.0 has a real bug in the loop that
-  //      checks `<a href>`/`<img src>` *schemes* (see that function's own
-  //      doc comment for the exact mechanism), and without this second
-  //      pass, `<a class="x" href="javascript:alert(1)">` and `<img
-  //      alt="a" src="https://evil.example/beacon.png">` both reach this
-  //      component's `{@html}` unchanged. This pass is what actually
-  //      removes `<img>`/`<mx-reply>` outright and restricts `<a href>` to
-  //      `http`/`https`/`mailto`/`matrix`.
-  // If a future change needs to render more of the timeline as HTML, run it
-  // through that same core-side path — never pipe a fresh string through
-  // `{@html}` here just because this precedent exists; the guarantee lives
-  // in the Rust code that produced the string, not in this file.
+  // **There is no `{@html}` in this file any more, and there is nothing left
+  // here for one to be needed for.** A bubble renders `view.blocks` through
+  // `RichText.svelte` — data, not markup — and `core::rich` produced those
+  // blocks from whichever of the two paths the message had: a sanitised
+  // `formatted_body` from a human's client, or the raw markdown an agent
+  // wrote. Every string in a block reaches the DOM through Svelte's default
+  // `{...}` escaping.
+  //
+  // The sanitising itself did not go away, it just stopped being this file's
+  // problem to justify. `core::timeline::formatted_html_body` still only
+  // populates a formatted body for `format: "org.matrix.custom.html"`, still
+  // after ruma's Compat allowlist pass, and `harden_formatted_body` still
+  // runs the second, narrower pass that exists because ruma-html 0.8.0 has a
+  // real bug in its `<a href>`/`<img src>` scheme check — without it,
+  // `<a href="javascript:alert(1)">` survives. That pass removes `<img>` and
+  // `<mx-reply>` outright and restricts `<a href>` to
+  // `http`/`https`/`mailto`/`matrix`.
+  //
+  // What changed is where the guarantee has to be argued. It lives in the
+  // Rust that produced the blocks, and iOS inherits it rather than
+  // re-arguing it. If a future change needs to render something new, give it
+  // a block — do not reintroduce an escape hatch here.
   //
   // Replies/reactions (M2, `docs/matrix-events.md` Table A) are interactive
   // as of this pass — editing is still a follow-up. `replyQuote`/
@@ -218,7 +212,7 @@
   // once by `messageBlock` (see the reading-surface note above) rather than
   // duplicated per branch. Several things worth calling out:
   //   - A reply's parent (`item.replyTo`) may not have loaded —
-  //     `replyQuoteView` (`timelineItemView.ts`) reduces the SDK's four
+  //     `replyQuoteView` (`core::item_view`) reduces the SDK's four
   //     `TimelineDetails` states to two outcomes: `available` (something to
   //     quote) or not (render "Original message unavailable", never an
   //     empty quote or a spinner — this build never calls
@@ -246,7 +240,7 @@
   //     arrives back through the same diff stream this component only ever
   //     reads. Adding a second, local update here would double-render,
   //     exactly the bug that note already guards `Composer` against.
-  //   - Both controls are gated by `canReplyOrReact` (`timelineItemView.ts`):
+  //   - Both controls are gated by `core::item_view::can_reply_or_react` (`core::item_view`):
   //     an item only has a real Matrix event id — which `Timeline::
   //     toggle_reaction`/`send_reply` both require — once the server has
   //     echoed it back, never while it's still a local echo
@@ -293,21 +287,18 @@
   import { QUICK_REACTIONS } from "./emojiPicker";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { roomsStore } from "$lib/stores/rooms.svelte";
-  import {
-    canReplyOrReact,
-    displayEventType,
-    displayReactionKey,
-    replyQuoteView,
-    viewFor,
-  } from "./timelineItemView";
+
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
   import { shouldRepin, shouldSettleAtBottom } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
-  import AgentProse from "./AgentProse.svelte";
+  import RichText from "./RichText.svelte";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
-  import type { TimelineItem } from "$lib/ipc";
+  import type { ReplyQuoteView, TimelineItem } from "$lib/ipc";
+
+  /** The `item` arm of a display row — everything but a membership group. */
+  type ItemRow = Extract<TimelineDisplayRow, { type: "item" }>;
 
   /**
    * The room this pane shows — needed only to scope `replyTargetStore`'s
@@ -458,8 +449,11 @@
     const items = timelineStore.items;
     for (let i = items.length - 1; i >= 0; i -= 1) {
       const candidate = items[i]!;
-      if (candidate.isOwn && (candidate.kind === "message" || candidate.kind === "customMessage")) {
-        return candidate.id;
+      if (
+        candidate.item.isOwn &&
+        (candidate.item.kind === "message" || candidate.item.kind === "customMessage")
+      ) {
+        return candidate.item.id;
       }
     }
     return null;
@@ -535,7 +529,7 @@
    */
   $effect(() => {
     const items = timelineStore.items;
-    const lastId = items.length > 0 ? items[items.length - 1]!.id : null;
+    const lastId = items.length > 0 ? items[items.length - 1]!.item.id : null;
     if (lastId === previousLastId) return;
 
     const isFirstLoadForRoom = previousLastId === null;
@@ -600,7 +594,7 @@
    */
   $effect(() => {
     const items = timelineStore.items;
-    const lastItemId = items.length > 0 ? items[items.length - 1]!.id : null;
+    const lastItemId = items.length > 0 ? items[items.length - 1]!.item.id : null;
     if (
       !shouldMarkRead({
         followBottom,
@@ -779,8 +773,10 @@
    * A cancelled dialog resolves to null and says nothing: the reader knows
    * they cancelled, and announcing it would be noise.
    */
-  async function saveMedia(eventId: string, filename: string): Promise<void> {
-    if (savingMedia !== null) return;
+  async function saveMedia(eventId: string | null, filename: string): Promise<void> {
+    // Same reasoning as `handleToggleReaction`: media is fetched by event id,
+    // and a local echo has none.
+    if (eventId === null || savingMedia !== null) return;
     savingMedia = eventId;
     saveNote = null;
     try {
@@ -829,7 +825,13 @@
    * comment for why the local echo arriving back through the diff stream is
    * what actually updates the chip, not this function.
    */
-  async function handleToggleReaction(eventId: string, key: string): Promise<void> {
+  async function handleToggleReaction(eventId: string | null, key: string): Promise<void> {
+    // `null` while the message is still a local echo. A reaction addresses an
+    // event, and there is no event yet — the affordance is already hidden in
+    // that state (`canReplyOrReact`), so reaching here means something raced,
+    // and doing nothing is the correct answer rather than sending a reaction
+    // against an id the homeserver has never heard of.
+    if (eventId === null) return;
     try {
       // Same reasoning as `requestOlderMessages`'s `roomId` argument: stable
       // for this component's lifetime, passed explicitly so a stale toggle
@@ -848,8 +850,8 @@
    * allowed to follow the reader across a room switch the way a stale
    * composer draft once did.
    */
-  function startReply(item: TimelineItem): void {
-    replyTargetStore.set(roomId, replyTargetStore.fromItem(item));
+  function startReply(row: ItemRow): void {
+    replyTargetStore.set(roomId, replyTargetStore.fromItem(row));
   }
 
   /**
@@ -883,14 +885,14 @@
    * option id and the event it answers. Two further things this slot waits
    * on, both that team's to design rather than this app's to invent: the
    * inbound schema whose renderer sets `CustomEventRenderResult.decision`
-   * (`customEvents.ts`, "Decisions"), and the outbound decision event type
+   * (`core::custom_events`, "Decisions"), and the outbound decision event type
    * itself. Note also that "gate" is two mechanisms there — a stage-review
    * gate, which resolves today, and a mid-run elicitation, which currently
    * has no return path at all — so this may end up answering two event
    * types rather than one.
    *
    * Nothing in this build can reach it: no shipped renderer sets
-   * `decision`, so `resolveCustomEvent` returns `decision: null` for every
+   * `decision`, so `core::custom_events::resolve_custom_event` returns `decision: null` for every
    * real event and the branch that renders these buttons never executes.
    * That is the spec's requirement, not an accident — §7.1: "Do not ship a
    * visible button that does nothing." It logs rather than being an empty
@@ -941,12 +943,11 @@
    * routing across spaces matters later, that is a core change, not a
    * webview one. */
   function knownRoomIds(): readonly string[] {
-    return roomsStore.rooms.map((room) => room.id);
+    return roomsStore.rooms.map((row) => row.room.id);
   }
 </script>
 
-{#snippet replyQuote(item: TimelineItem)}
-  {@const quote = replyQuoteView(item.replyTo)}
+{#snippet replyQuote(quote: ReplyQuoteView | null, isOwn: boolean)}
   {#if quote}
     <!--
       A 2px rail rather than a filled inset, matching the composer's
@@ -958,7 +959,7 @@
       `accent-content` pair would have been near-invisible on both.
     -->
     <div class="mb-1.5 border-l-2 border-border pl-2 text-content-muted">
-      {#if quote.available}
+      {#if quote.state === "available"}
         <!--
           `truncate` alone here (no `break-words`): `truncate` is
           `white-space: nowrap` + `text-overflow: ellipsis` + `overflow:
@@ -980,7 +981,7 @@
                sticker, a poll, undecryptable, ...) — `quote.label` is the
                same short classification text `core::timeline::
                reply_parent_label` computes for it, so this reads with the
-               vocabulary `viewFor`'s own placeholders already use. Fixes
+               vocabulary `core::item_view::view_for`'s own placeholders already use. Fixes
                the review finding that this used to render as a bare sender
                name with no indication why. -->
           <!-- Mono, and *not* italic: these two lines share the placeholder
@@ -1001,7 +1002,7 @@
                token-pair calculator gives for `faint` on `surface` (4.92)
                do not describe this ground at all. -->
           <p
-            class="mt-0.5 font-mono text-meta break-words {item.isOwn
+            class="mt-0.5 font-mono text-meta break-words {isOwn
               ? 'text-content-muted'
               : 'text-content-faint'}"
           >
@@ -1010,7 +1011,7 @@
         {/if}
       {:else}
         <p
-          class="font-mono text-meta break-words {item.isOwn
+          class="font-mono text-meta break-words {isOwn
             ? 'text-content-muted'
             : 'text-content-faint'}"
         >
@@ -1021,7 +1022,7 @@
   {/if}
 {/snippet}
 
-{#snippet reactionsRow(item: TimelineItem, alignEnd: boolean = item.isOwn)}
+{#snippet reactionsRow(item: TimelineItem, interactive: boolean, alignEnd: boolean = item.isOwn)}
   <!--
     `alignEnd` defaults to `item.isOwn` — an own bubble's affordances hang
     off its right edge — but it is a *parameter*, not a read of `isOwn`,
@@ -1046,7 +1047,6 @@
   {#if item.reactions.length > 0}
     <div class="mt-1.5 flex flex-wrap gap-1 {alignEnd ? 'justify-end' : ''}">
       {#each item.reactions as reaction (reaction.key)}
-        {@const interactive = canReplyOrReact(item)}
         {@const chipClass = reaction.byMe
           ? "reaction-chip-mine border-accent font-medium text-accent"
           : "border-border bg-surface-sunken text-content-muted hover:border-border-strong hover:text-content"}
@@ -1092,21 +1092,23 @@
         <button
           type="button"
           disabled={!interactive}
-          onclick={() => handleToggleReaction(item.id, reaction.key)}
+          onclick={() => handleToggleReaction(item.eventId, reaction.key)}
           aria-pressed={reaction.byMe}
-          aria-label={`${displayReactionKey(reaction.key)}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
+          aria-label={`${reaction.displayKey}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
           class="rounded-full border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
         >
-          {displayReactionKey(reaction.key)} {reaction.count}
+          {reaction.displayKey} {reaction.count}
         </button>
       {/each}
     </div>
   {/if}
 {/snippet}
 
-{#snippet messageActions(item: TimelineItem, alignEnd: boolean = item.isOwn)}
+{#snippet messageActions(row: ItemRow, alignEnd: boolean = row.item.isOwn)}
+  {@const item = row.item}
+  {@const interactive = row.canReplyOrReact}
   <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter. -->
-  {#if canReplyOrReact(item)}
+  {#if interactive}
     <!--
       Chrome, not content — no `.selectable` here (see this file's
       top-of-script comment on user-select discipline), and rendered
@@ -1157,7 +1159,7 @@
     >
       <button
         type="button"
-        onclick={() => startReply(item)}
+        onclick={() => startReply(row)}
         class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
       >
         Reply
@@ -1165,7 +1167,7 @@
       {#each QUICK_REACTIONS as emoji (emoji)}
         <button
           type="button"
-          onclick={() => handleToggleReaction(item.id, emoji)}
+          onclick={() => handleToggleReaction(item.eventId, emoji)}
           aria-label={`React with ${emoji}`}
           class="rounded px-1 py-0.5 text-ui transition-colors hover:bg-surface-sunken"
         >
@@ -1248,7 +1250,9 @@
   </div>
 {/snippet}
 
-{#snippet messageBlock(item: TimelineItem, continuesRun: boolean, content: Snippet)}
+{#snippet messageBlock(row: ItemRow, content: Snippet)}
+  {@const item = row.item}
+  {@const continuesRun = row.continuesRun}
   <!--
     The single wrapper every message-shaped render kind
     (`bubble`/`image`/`mediaFile`) shares — see this file's top-of-script
@@ -1275,7 +1279,7 @@
     "2px": the gap above a row must not depend on whether the row above it
     happened to render an actions row. `messageActions` is hidden with
     `opacity`, never `display: none` (it has to stay in the tab order), so
-    it occupies ~26px of layout whenever `canReplyOrReact` is true and 0px
+    it occupies ~26px of layout whenever `core::item_view::can_reply_or_react` is true and 0px
     when it is not — a local echo, a failed send, anything without a server
     event id yet. At `pt-0.5` that made the gap between two run
     continuations 28px in the common case but **2px** in the other, which
@@ -1366,7 +1370,7 @@
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
-        {@render replyQuote(item)}
+        {@render replyQuote(row.replyQuote, item.isOwn)}
         {@render content()}
         {@render seenMarker(item)}
         {#if item.isOwn}
@@ -1405,8 +1409,8 @@
         {/if}
       </div>
     </div>
-    {@render reactionsRow(item)}
-    {@render messageActions(item)}
+    {@render reactionsRow(item, row.canReplyOrReact)}
+    {@render messageActions(row)}
   </div>
 {/snippet}
 
@@ -1562,7 +1566,8 @@
           {:else}
             {@const item = row.item}
             {@const continuesRun = row.continuesRun}
-            {#if item.kind === "dateDivider"}
+            {@const view = row.view}
+            {#if view.render === "dateDivider"}
               <!--
                 A hairline with the date sitting *on* it, not a pill (spec
                 §6.3): the rule runs the full width behind an absolutely
@@ -1579,89 +1584,63 @@
                   {formatDate(item.timestampMs)}
                 </span>
               </div>
-            {:else}
-              {@const view = viewFor(item)}
-              {#if view.render === "bubble"}
+            {:else if view.render === "bubble"}
                 {#snippet bubbleContent()}
-                  {#if item.formattedBody}
-                    <!--
-                      `{@html}` — safe only because of the guarantees this
-                      file's top-of-script doc comment spells out in full
-                      (core-side sanitisation + hardening, never redone here).
-                      Do not copy this pattern onto any other field.
+                  <!--
+                    One renderer for both bodies now. `core::rich` parses the
+                    sanitised `formatted_body` a human's client sent *and* the
+                    raw markdown an agent wrote into the same block tree, so
+                    this branch no longer chooses between an `{@html}` and a
+                    markdown tokeniser — the choice, and the guarantees that
+                    made each one safe, moved to Rust where iOS and Android
+                    inherit them.
 
-                      `onclick`/`onauxclick` here are delegated link handling,
-                      not a control of their own — `handleMessageBodyClick`/
-                      `handleMessageBodyAuxClick` only act when the click
-                      bubbled up from a nested `<a href>`, and an `<a>`'s own
-                      native keyboard activation (Enter/Space) already
-                      dispatches a bubbling `click` the same way a primary
-                      mouse click does, so there is no extra keyboard handler
-                      this div itself needs to add. `onauxclick` specifically
-                      exists for the middle-click case `onclick` alone cannot
-                      see — see `messageLinks.ts`'s doc comment.
+                    What is gone with it: the `{@html}` that was safe only
+                    because of a chain of core-side guarantees, and the
+                    three-paragraph comment that had to explain why. There is
+                    no escape hatch left on this path to guard.
 
-                      No face or size class here on purpose: the enclosing
-                      message block already sets serif `--text-body` (peer) or
-                      sans `--text-body-own` (own), and `.message-html`'s own
-                      rules read through `currentColor` and `em` so they suit
-                      either.
-                    -->
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div
-                      class="message-html selectable {view.muted && !item.isOwn
-                        ? 'text-content-muted'
-                        : ''}"
-                      onclick={(e: MouseEvent) =>
-                        handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
-                      onauxclick={(e: MouseEvent) =>
-                        handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
-                    >
-                      {@html item.formattedBody}
-                    </div>
-                  {:else if item.isOwn}
+                    `onclick`/`onauxclick` are delegated link handling, not
+                    controls of their own — they act only when the click
+                    bubbled up from a nested `<a href>`. An `<a>`'s native
+                    keyboard activation already dispatches a bubbling `click`,
+                    so this element needs no keyboard handler of its own.
+                    `onauxclick` covers the middle-click case `onclick` cannot
+                    see; see `messageLinks.ts`.
+                  -->
+                  {#if item.isOwn}
                     <!--
                       What the operator typed, exactly as typed. *You type,
                       they write* (spec §6.3): an own message is a command, and
                       rendering markdown in it would mean a stray asterisk
                       silently changing what you appear to have said. The
                       client also sends it as plain `m.text`, so this is what
-                      every other client in the room sees too — rendering it
-                      one way here and another way everywhere else would be the
-                      worse lie.
+                      every other client in the room sees too.
+
+                      The core enforces that — `blocks_for` returns an own
+                      message verbatim as a single paragraph rather than
+                      parsing it — so this branch differs only in styling, and
+                      a host cannot forget the rule by rendering the same
+                      blocks the peer branch does.
                     -->
-                    <p
-                      class="selectable whitespace-pre-wrap break-words {view.muted && !item.isOwn
-                        ? 'text-content-muted'
-                        : ''}"
-                    >
-                      {item.body}
-                    </p>
+                    <div class="selectable whitespace-pre-wrap break-words">
+                      <RichText blocks={view.blocks} />
+                    </div>
                   {:else}
-                    <!--
-                      An agent's message with no `formattedBody` — which is all
-                      of them, since the hub sends plain `m.text`. Markdown is
-                      what agents actually write, and it used to land as
-                      literal `**` and `---` in the middle of the prose. See
-                      `AgentProse.svelte` for why this renders to components
-                      rather than through `{@html}`, given that `item.body` has
-                      been through none of the sanitising `formattedBody` has.
-                    -->
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
-                      class="selectable break-words {view.muted ? 'text-content-muted' : ''}"
+                      class="message-html selectable {view.muted ? 'text-content-muted' : ''}"
                       onclick={(e: MouseEvent) =>
                         handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
                       onauxclick={(e: MouseEvent) =>
                         handleMessageBodyAuxClick(e, undefined, selectKnownRoom, knownRoomIds)}
                     >
-                      <AgentProse content={item.body ?? ""} />
+                      <RichText blocks={view.blocks} />
                     </div>
                   {/if}
                 {/snippet}
-                {@render messageBlock(item, continuesRun, bubbleContent)}
+                {@render messageBlock(row, bubbleContent)}
               {:else if view.render === "emote"}
                 <!--
                   Centred, serif *italic* — the one italic that survives in
@@ -1683,8 +1662,14 @@
                   </p>
                 </div>
               {:else if view.render === "image"}
-                {@const src = mediaCache.get(item.id)}
-                {@const failed = mediaCache.hasFailed(item.id)}
+                <!--
+                  Keyed by the *event* id, not the row's identity: the media
+                  repository is addressed by event, and a local echo has no
+                  event to address. `""` never resolves, which is the honest
+                  answer for an image whose event does not exist yet.
+                -->
+                {@const src = mediaCache.get(item.eventId ?? "")}
+                {@const failed = mediaCache.hasFailed(item.eventId ?? "")}
                 {#snippet imageContent()}
                   {#if failed}
                     <!-- Never a broken-image icon: any failure — nothing
@@ -1715,7 +1700,7 @@
                       alt={view.alt}
                       class="block rounded-md object-cover"
                       style={imageBoxStyle(view.width, view.height)}
-                      onerror={() => mediaCache.markFailed(item.id)}
+                      onerror={() => mediaCache.markFailed(item.eventId ?? "")}
                     />
                   {:else}
                     <!-- Still fetching: reserves the identical box the
@@ -1727,7 +1712,7 @@
                     ></div>
                   {/if}
                 {/snippet}
-                {@render messageBlock(item, continuesRun, imageContent)}
+                {@render messageBlock(row, imageContent)}
               {:else if view.render === "mediaFile"}
                 <!--
                   `m.file`/`m.audio`/`m.video`: an informative row (filename,
@@ -1766,14 +1751,14 @@
                     </span>
                     <button
                       type="button"
-                      onclick={() => void saveMedia(item.id, view.filename)}
-                      disabled={savingMedia === item.id}
+                      onclick={() => void saveMedia(item.eventId, view.filename)}
+                      disabled={savingMedia === item.eventId}
                       class="ml-auto shrink-0 rounded px-2 py-1 text-ui text-content-muted transition-colors hover:bg-surface-sunken hover:text-content disabled:opacity-50"
                     >
-                      {savingMedia === item.id ? "Saving…" : "Save"}
+                      {savingMedia === item.eventId ? "Saving…" : "Save"}
                     </button>
                   </div>
-                  {#if saveNote?.eventId === item.id}
+                  {#if saveNote?.eventId === item.eventId}
                     <p
                       class="mt-1 font-mono text-meta {saveNote.failed
                         ? 'text-destructive'
@@ -1783,15 +1768,15 @@
                     </p>
                   {/if}
                 {/snippet}
-                {@render messageBlock(item, continuesRun, mediaFileContent)}
+                {@render messageBlock(row, mediaFileContent)}
               {:else if view.render === "customEvent"}
                 <!--
                   The dispatch card (spec §7) — a `kind: "customMessage"`
                   item: Kaambaan cards/runs/permission requests/station status
                   once those schemas land (`docs/matrix-events.md` §G), the
                   demo renderer until then. `view.view` is the whole
-                  `resolveCustomEvent` outcome
-                  (`$lib/components/customEvents.ts`) — this block only
+                  `core::custom_events::resolve_custom_event` outcome
+                  (`core::custom_events`) — this block only
                   switches on its `status`, never decides anything itself.
                   See this file's top-of-script doc comment for the four
                   decisions this markup expresses.
@@ -1799,7 +1784,7 @@
                   Every value below is plain-text interpolation (`{...}`),
                   never `{@html}`, never an `href`/`src`/inline style —
                   `content` is arbitrary JSON from anyone who can send to the
-                  room, and `resolveCustomEvent` has already bounded its
+                  room, and `core::custom_events::resolve_custom_event` has already bounded its
                   fields and validated its decision before either reaches
                   here. `break-words` + the card's own `max-w-[68ch]`/
                   `min-w-0` guard against a long unbroken value, label or
@@ -1833,18 +1818,25 @@
                     <div class="group relative min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
                       <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
                         <!--
-                          Header: the event type left, the timestamp right, a
-                          hairline beneath. Both mono — an event type and a
-                          time are data (spec §5.3). `displayEventType`
-                          truncates the type from the *left*; see its doc
-                          comment for why that is a pure helper and not a
-                          `direction: rtl` trick.
+                          Header: what the card is left, the timestamp right,
+                          a hairline beneath. The *name* the renderer gives
+                          this kind of event ("Turn", "Permission") rather
+                          than `view.eventType` — a reader should not have to
+                          parse `dev.agentpod.turn.v1` to learn they are
+                          looking at a turn. The schema address stays in the
+                          `title`, for a card nothing recognises and for
+                          anyone diagnosing one; `displayEventType` truncated
+                          it from the *left* for exactly that case, and still
+                          does.
                         -->
                         <div
                           class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
                         >
-                          <span class="min-w-0 flex-1 text-label uppercase break-words">
-                            {displayEventType(item.detail)}
+                          <span
+                            class="min-w-0 flex-1 text-label uppercase break-words"
+                            title={view.eventType}
+                          >
+                            {view.label}
                           </span>
                           <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
                         </div>
@@ -1899,6 +1891,31 @@
                               <dd class="m-0 min-w-0 break-words">{field.value}</dd>
                             {/each}
                           </dl>
+                          {#if view.view.reasoning}
+                            <!--
+                              How the agent reached this, when it said.
+                              Collapsed: it is context, not the conclusion,
+                              and an operator scanning a room wants the
+                              conclusion first.
+
+                              A `<details>` rather than a scripted toggle —
+                              the element already is a disclosure, keyboard
+                              operable and announced as one, and re-building
+                              that in Svelte would only be a worse version.
+                            -->
+                            <details class="border-t border-border px-3 py-2">
+                              <summary
+                                class="cursor-pointer font-mono text-label uppercase text-content-muted"
+                              >
+                                Reasoning
+                              </summary>
+                              <p
+                                class="selectable mt-2 mb-0 break-words whitespace-pre-wrap text-meta text-content-muted"
+                              >
+                                {view.view.reasoning}
+                              </p>
+                            </details>
+                          {/if}
                           {#if view.view.newerVersion}
                             <!--
                               Mono and emphatically *not* amber: this is a
@@ -1933,9 +1950,9 @@
                             UNREACHABLE IN THIS BUILD — do not go looking for
                             these buttons in the running app. No shipped
                             renderer sets `CustomEventRenderResult.decision`
-                            (`customEvents.ts` "Decisions"; the demo renderer
+                            (`core::custom_events` "Decisions"; the demo renderer
                             never does, and a unit test holds it that way), so
-                            `resolveCustomEvent` returns `decision: null` for
+                            `core::custom_events::resolve_custom_event` returns `decision: null` for
                             every real event and this block never executes.
                             That is spec §7.1's requirement — "do not ship a
                             visible button that does nothing" — and the reason
@@ -2008,8 +2025,8 @@
                         `seenMarker`. Left the default and these rows would
                         hang off the right edge of a left-anchored card.
                       -->
-                      {@render reactionsRow(item, false)}
-                      {@render messageActions(item, false)}
+                      {@render reactionsRow(item, row.canReplyOrReact, false)}
+                      {@render messageActions(row, false)}
                       {@render seenMarker(item, false)}
                     </div>
                   </div>
@@ -2037,12 +2054,11 @@
                   (the common case in a real encrypted room), redactions,
                   media, stickers, polls, custom suite events. Never the bare
                   empty bubble that rendering nothing used to produce — see
-                  `timelineItemView.ts`. Rendered as the same log row as a
+                  `core::item_view`. Rendered as the same log row as a
                   system line, deliberately: see `logLine`.
                 -->
                 {@render logLine(view.text)}
-              {/if}
-              <!-- view.render === "none": deliberately silent, see `timelineItemView.ts`. -->
+              <!-- view.render === "none": deliberately silent, see `core::item_view`. -->
             {/if}
           {/if}
         </div>

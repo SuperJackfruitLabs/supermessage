@@ -1,0 +1,1694 @@
+//! IPC DTOs and the single translation point from SDK diffs to wire format.
+//!
+//! No SDK type crosses the IPC boundary. `matrix_sdk`/`eyeball_im` types stay
+//! on the core side of this module; the webview only ever sees these structs.
+//! `project_diff` is the exhaustive match that guarantees that boundary holds
+//! even as the SDK evolves.
+
+use crate::UniffiCustomTypeConverter;
+use eyeball_im::VectorDiff;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use std::collections::HashSet;
+
+/// This account's relationship to a room.
+///
+/// The roster is filtered with `new_filter_non_left`, so an **invited** room
+/// is listed exactly like a joined one — and until this field existed the
+/// webview could not tell the two apart. That is issue #1: 32 agent rooms
+/// arrived as invites, each rendering as a room with one unreadable state
+/// event in it and no way to accept, because nothing in the wire format said
+/// "this is an invitation".
+///
+/// Carried as an enum rather than an `is_invite` boolean: `Knocked` and
+/// `Banned` are states the SDK can report, and a boolean would have to fold
+/// them into "joined", which is the kind of lie that costs a second bug
+/// later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase")]
+pub enum Membership {
+    Joined,
+    Invited,
+    Left,
+    Knocked,
+    Banned,
+}
+
+/// Arbitrary JSON, crossing the FFI as text because that is what it is.
+///
+/// `TimelineItemDto::custom_payload` carries the body of an event type this
+/// core has never heard of — a dispatch card, an approval request, whatever a
+/// suite ships next. There is no static shape to describe, so UniFFI has no
+/// type for it, and inventing one would be a lie about a payload whose whole
+/// purpose is to be open-ended.
+///
+/// A newtype rather than `serde_json::Value` directly: UniFFI's custom-type
+/// conversion is a trait impl, and both the trait and `Value` are foreign, so
+/// the orphan rule forbids it. `#[serde(transparent)]` keeps the JSON the
+/// webview receives byte-identical — see the wire-format goldens.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct CustomPayload(pub JsonValue);
+
+uniffi::custom_type!(CustomPayload, String);
+
+impl UniffiCustomTypeConverter for CustomPayload {
+    type Builtin = String;
+
+    /// Text to payload. A host that sends back malformed JSON gets an error
+    /// rather than a silent empty object.
+    fn into_custom(value: String) -> uniffi::Result<Self> {
+        Ok(CustomPayload(serde_json::from_str(&value)?))
+    }
+
+    /// Payload to text, for the host to parse as it sees fit.
+    fn from_custom(obj: Self) -> String {
+        obj.0.to_string()
+    }
+}
+
+/// A single room as summarized for the room list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomSummary {
+    pub id: String,
+    pub name: String,
+    pub avatar_url: Option<String>,
+    pub unread: u64,
+    /// The roster's preview line (spec §6.1.1): what was last *said* in the
+    /// room, already whitespace-collapsed and bounded to
+    /// `core::timeline::PREVIEW_MAX_CHARS`.
+    ///
+    /// **Never carries a sender prefix** — composing `You: ` from
+    /// [`Self::last_message_is_own`] is the webview's job, so the core keeps
+    /// returning facts rather than a composed display string. `None` when
+    /// the room's latest event is not message-like (a membership change, a
+    /// rename, a redaction, an undecryptable event, …), and the row then
+    /// omits the preview line entirely rather than showing a placeholder.
+    ///
+    /// One exception to "no sender prefix" is inherent rather than a
+    /// decoration: an emote reads as a sentence about its sender, so its
+    /// preview is the sender's name followed by the body, exactly as
+    /// `Timeline.svelte` renders the same event.
+    pub last_message: Option<String>,
+    /// Whether this account sent the previewed event. Always `false` when
+    /// [`Self::last_message`] is `None` — the two are resolved together (see
+    /// `core::rooms::project_room_parts`), so this can never claim ownership
+    /// of a preview that doesn't exist.
+    pub last_message_is_own: bool,
+    /// Whether [`Self::last_message`] already names its own sender, so a
+    /// caller adding a `You: `-style prefix would double-name them. True for
+    /// an emote, which renders as `"<Name> waves"` to match the timeline;
+    /// false for everything else, including when there is no preview at all.
+    ///
+    /// This exists because [`Self::last_message_is_own`] and the emote
+    /// rendering are each correct alone and wrong together: an own emote
+    /// would otherwise read `You: <MyName> waves`. The core states a
+    /// property of the string it produced rather than guessing what the
+    /// webview will do with it (see
+    /// `core::timeline::MessagePreview::names_sender` for the alternatives
+    /// this was chosen over).
+    pub last_message_names_sender: bool,
+    /// The Matrix event type, populated **only** for a custom
+    /// (`MsgLikeKind::Other`) event; `None` for an ordinary message. This is
+    /// the hook §6.1.1's pending-decision path keys off.
+    ///
+    /// Unreachable in production today, for two independent reasons: no gate
+    /// schema exists to send, *and* the SDK's own latest-event filter rejects
+    /// unrecognized message-like content outright (see
+    /// `core::rooms::room_preview`).
+    pub last_event_type: Option<String>,
+    pub last_activity_ms: Option<u64>,
+    /// Which harness this room's agent runs, and on which machine — both in
+    /// display form, read from the room topic by
+    /// `display_name::parse_runtime`.
+    ///
+    /// `None` for a room that is not an agent's, which is a **normal
+    /// outcome**: a roster grouped by machine files those under nothing
+    /// rather than guessing. Same posture as the room-name parse.
+    pub runtime: Option<RuntimeDto>,
+    /// This account's relationship to the room — see [`Membership`]. The
+    /// roster row and the timeline both branch on it: an invitation is not a
+    /// conversation yet, and offering a composer for a room you have not
+    /// joined would fail at the homeserver.
+    pub membership: Membership,
+}
+
+/// Who this app is signed in as, and where.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountDto {
+    /// The full Matrix id — `@rakesh:id.agentpod.dev`.
+    pub user_id: String,
+    /// The homeserver's base URL.
+    pub homeserver: String,
+}
+
+/// The harness and machine behind an agent's room, ready to render.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeDto {
+    /// `OpenClaw`, `Claude Code` — as the harness's own project spells it.
+    pub harness: String,
+    /// `Ashram`, `Rakesh's MacBook Pro` — no `.local`, no kebab.
+    pub host: String,
+}
+
+/// Media metadata projected from an `m.image`/`m.file`/`m.audio`/`m.video`
+/// message's `MessageType` (see `core::timeline::media_meta`) — deliberately
+/// never the media's bytes themselves. `TimelineItemDto` streams to the
+/// webview as `VectorDiff`s, and a `Set` op re-sends the *whole* item, so
+/// embedding image data on this struct would inflate every timeline update —
+/// the top IPC-cost risk called out in `docs/tech-stack.md`. The webview
+/// fetches bytes lazily instead, on demand, through the `media_fetch`
+/// command (`core::commands::media_fetch`), keyed by the item's event id —
+/// never an mxc URI copied out of this struct, since nothing here carries
+/// one (see that command's doc comment for why).
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaMetaDto {
+    /// The file's display name — `MessageType::*::filename()`, which falls
+    /// back to the message `body` when no separate `filename` field was set
+    /// on the event (see that method's doc comment on each ruma content
+    /// type).
+    pub filename: String,
+    /// The MIME type reported by the sender's client, e.g. `"image/png"`.
+    /// Untrusted (any client can lie about it) — `core::media::sniff_mime`
+    /// is what actually decides how fetched bytes get rendered; this field
+    /// is display-only (the "File · 2.1 MB" row for non-image media).
+    pub mimetype: Option<String>,
+    /// The file size in bytes, as reported by the sender's client.
+    pub size: Option<u64>,
+    /// The image's pixel width, from `ImageInfo` — used to reserve layout
+    /// space for the thumbnail before its bytes arrive, so the (virtualized)
+    /// timeline doesn't reflow when it loads. `None` for every msgtype but
+    /// `m.image`, even though `m.video`'s `VideoInfo` carries the same
+    /// field: nothing in this pass renders a video thumbnail, so there is no
+    /// reserved-space calculation that would consume it (see
+    /// `core::timeline::media_meta`).
+    pub width: Option<u64>,
+    /// The image's pixel height, from `ImageInfo`. Same scoping as
+    /// [`Self::width`].
+    pub height: Option<u64>,
+}
+
+/// A reply's quoted parent, projected from the SDK's `InReplyToDetails` (see
+/// `core::timeline::reply_to_dto`). The parent is fetched lazily by the SDK
+/// and can be in any of `TimelineDetails`'s four states — `available` is
+/// `false` for all but `Ready`, which is the only state with anything to
+/// show. The webview must render a neutral "unavailable" quote in that case,
+/// never an empty quote or a spinner: this pass never calls
+/// `Timeline::fetch_details_for_event`, so a `Pending`/`Unavailable` parent
+/// will not resolve itself on its own.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyToDto {
+    /// The parent event's id. Always present, even when the parent itself
+    /// couldn't be loaded — enough to link to it later.
+    pub event_id: String,
+    /// Whether the parent's details were actually loaded (`TimelineDetails::Ready`).
+    /// `false` for `Unavailable`/`Pending`/`Error` alike; the webview doesn't
+    /// need to distinguish those three for this read-only rendering pass.
+    pub available: bool,
+    /// The parent's raw sender id. `None` when `available` is `false`.
+    pub sender: Option<String>,
+    /// The parent's sender display name, when known. `None` when
+    /// `available` is `false`, or when the parent's sender profile itself
+    /// hadn't resolved.
+    pub sender_display_name: Option<String>,
+    /// A short, already-truncated quote of the parent's body (see
+    /// `core::timeline::REPLY_EXCERPT_MAX_CHARS` and
+    /// `truncate_reply_excerpt`) — truncated in the core so a quoted 64KiB
+    /// message never crosses IPC anywhere near full size. `None` when
+    /// `available` is `false`, or when the parent isn't a message (or has no
+    /// body) to quote.
+    pub excerpt: Option<String>,
+    /// A short label for *why* there's nothing to quote, populated only when
+    /// `available` is `true` but `excerpt` is `None` — a `Ready` parent that
+    /// isn't a message (redacted, a sticker, a poll, undecryptable, ...) has
+    /// a sender but no body. Classified the same way a top-level item is
+    /// (see `core::timeline::reply_parent_label`, built on that module's
+    /// `classify_content`), so the webview renders it with the same
+    /// vocabulary `$lib/components/timelineItemView.ts`'s `viewFor`
+    /// placeholders already use for that event kind (e.g. `"Message
+    /// deleted"`) instead of a bare sender name with no explanation. Always
+    /// `None` when `excerpt` is `Some`, and always `None` when `available`
+    /// is `false` (that case already has its own "Original message
+    /// unavailable" wording on the webview side).
+    pub label: Option<String>,
+}
+
+/// One reaction key aggregated across senders on a message (see
+/// `core::timeline::project_reactions`), projected from the SDK's
+/// `ReactionsByKeyBySender`.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct ReactionDto {
+    /// The reaction's key — an arbitrary sender-controlled string (usually,
+    /// but not necessarily, a single emoji). The webview must cap its
+    /// rendered length and guard it against overflow the same as any other
+    /// free-text field from a sender.
+    pub key: String,
+    /// The same key, bounded for rendering.
+    ///
+    /// Separate from [`Self::key`] because they are different things that
+    /// happen to usually look alike: `key` is wire data, compared
+    /// byte-for-byte against what other clients sent, and truncating it would
+    /// break that comparison. This is the display form, and it exists here
+    /// rather than in a host because a key is arbitrary sender-controlled
+    /// text and bounding it is the same overflow guard every other free-text
+    /// field from a sender gets.
+    pub display_key: String,
+    /// How many distinct senders have reacted with this key.
+    pub count: u32,
+    /// Whether the current user is among those senders — what the
+    /// interaction pass needs to render this chip as already-active/toggled.
+    pub by_me: bool,
+    /// The raw user ids of everyone who reacted with this key.
+    ///
+    /// Ids, not names: this is who, addressably, and a host that wants to
+    /// show a name asks [`crate::display_name::people_label`] for one. A
+    /// chip that can only say "3" makes a reader guess whether they are one
+    /// of the three, and guessing is what [`Self::by_me`] and this field
+    /// between them remove.
+    pub senders: Vec<String>,
+}
+
+/// A single timeline item (message, state event, etc.) as rendered.
+///
+/// `kind` is the semantic discriminant projected from the SDK's
+/// `TimelineItemContent` (see `core::timeline::classify_content`) — never a
+/// raw Matrix event-type string. `msgtype` and `detail` carry the two kinds
+/// of extra context a `kind` sometimes needs to be rendered correctly:
+/// `msgtype` is only populated for `kind: "message"` (`m.text`, `m.notice`,
+/// …); `detail` carries kind-specific context such as a membership change's
+/// change kind, a state event's event type, or a custom event's event type.
+/// Both are `None` when the `kind` doesn't need them — see the table in
+/// `docs/matrix-events.md` for the full mapping.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineItemDto {
+    /// **Identity, not an address.** The SDK's `TimelineItem::unique_id()`.
+    ///
+    /// Stable across the local-echo-to-confirmed transition, which is the
+    /// whole reason it is not the event id: `matrix_sdk_ui` preserves an
+    /// item's `internal_id` when it updates a send state
+    /// (`algorithms.rs::with_inner_kind`) and recycles it when an item is
+    /// removed and re-added (`state_transaction.rs`), so a list keyed on this
+    /// sees an update where one keyed on the event id sees a delete and an
+    /// insert. Keying rows on the event id made every message change identity
+    /// at the instant it was confirmed — a row that vanished and returned,
+    /// and a scroll anchor pointing at an id that no longer existed.
+    ///
+    /// Never send this to the homeserver. Use [`Self::event_id`].
+    pub id: String,
+    /// **The address**, once there is one to address.
+    ///
+    /// `None` while the message is a local echo the server has not echoed
+    /// back, `Some` afterwards. This is what reply, react and redact take,
+    /// and its absence is exactly why a message that has not landed yet
+    /// cannot be replied to — see `item_view::can_reply_or_react`, which used
+    /// to infer that from the send state because this field did not exist.
+    pub event_id: Option<String>,
+    pub kind: String,
+    pub msgtype: Option<String>,
+    pub detail: Option<String>,
+    pub sender: Option<String>,
+    pub sender_display_name: Option<String>,
+    /// The sender's avatar as an `mxc:` URI, when their profile carries one.
+    ///
+    /// A URI, not bytes: it is a stable key a host caches against, and
+    /// fetching it is a network round trip that belongs on the host's
+    /// schedule (see `Core::member_avatar`) rather than inline in a
+    /// projection that runs for every item in the timeline.
+    pub sender_avatar: Option<String>,
+    pub body: Option<String>,
+    /// The message's HTML formatted body, present only when the SDK reports
+    /// `format: "org.matrix.custom.html"` (see
+    /// `core::timeline::formatted_html_body`). Already sanitised — first by
+    /// `matrix_sdk_ui::timeline::Message::from_event`'s
+    /// `HtmlSanitizerMode::Compat` pass, then by this project's own
+    /// `img`/link hardening on top of it (see `core::timeline`'s doc
+    /// comments for exactly what each pass does) — because the webview
+    /// renders this directly with `{@html}`. `body` stays the untouched
+    /// plain-text fallback; never derive one from the other.
+    pub formatted_body: Option<String>,
+    /// Size/dimension metadata for an `m.image`/`m.file`/`m.audio`/`m.video`
+    /// message, `None` for every other `kind`/`msgtype`. See
+    /// [`MediaMetaDto`]'s doc comment for why this never carries the
+    /// media's actual bytes.
+    pub media: Option<MediaMetaDto>,
+    /// The event's raw `content` object, present only for `kind:
+    /// "customMessage"` — this is the plumbing `docs/matrix-events.md` §G
+    /// describes for Kaambaan cards/runs/permission requests/station status
+    /// (see `core::timeline::custom_message_payload`). The SDK's
+    /// `MsgLikeKind::Other` discards a custom event's content entirely
+    /// (`matrix-sdk-ui`'s `OtherMessageLike` carries only the event type), so
+    /// this is read back out of `EventTimelineItem::original_json` instead —
+    /// which is `None` for a local echo (this app sends no custom events of
+    /// its own today, so that gap is only theoretical), and for anything
+    /// whose `content` isn't a JSON object.
+    ///
+    /// `None` also when the serialized `content` exceeds
+    /// [`crate::timeline::CUSTOM_PAYLOAD_MAX_BYTES`] — the whole
+    /// payload is dropped rather than truncated into a JSON fragment that
+    /// would fail to parse on the webview side; see
+    /// `core::timeline::bound_custom_payload`'s doc comment for why. `body`
+    /// (Matrix convention: a custom event should carry a plain-text
+    /// `content.body` fallback for clients that don't understand the type)
+    /// is extracted independently of this cap, so an oversized payload can
+    /// still degrade to a readable fallback line instead of the generic
+    /// placeholder.
+    ///
+    /// This is untrusted, arbitrary JSON from anyone who can send to the
+    /// room — the webview's custom-event registry
+    /// (`$lib/components/customEvents.ts`) must render every value out of it
+    /// as text only, never into `{@html}`, an `href`, an `src`, or a style.
+    pub custom_payload: Option<CustomPayload>,
+    pub timestamp_ms: Option<u64>,
+    pub is_own: bool,
+    pub send_state: Option<String>,
+    /// Present when this item is a reply (`m.in_reply_to`); `None` for an
+    /// ordinary message and for every non-message `kind`. See [`ReplyToDto`]
+    /// for how an unloaded parent is represented.
+    pub reply_to: Option<ReplyToDto>,
+    /// Whether the SDK has folded an `m.replace` edit into this item
+    /// (`Message::is_edited`). Always `false` for a non-message `kind`.
+    pub edited: bool,
+    /// Reactions aggregated onto this item, one entry per distinct key.
+    /// Empty (never omitted) when the item has none — see [`ReactionDto`].
+    pub reactions: Vec<ReactionDto>,
+    /// The raw user ids of every *other* member whose latest read receipt
+    /// (`m.read`) currently points at this event — projected from
+    /// `EventTimelineItem::read_receipts()` (see
+    /// `core::timeline::project_event_item`), with the current user always
+    /// filtered out. Empty (never omitted) for a non-message `kind`, an item
+    /// nobody has read up to yet, or when read-receipt tracking isn't
+    /// populated for this item's kind (`core::timeline`'s `Timeline` is built
+    /// with `TimelineReadReceiptTracking::MessageLikeEvents`, so only
+    /// message-like items ever carry one).
+    ///
+    /// Deliberately just ids, not resolved display names: the SDK's receipt
+    /// map carries no profile data, and resolving one would mean an async
+    /// member lookup from inside `project_event_item`'s synchronous
+    /// projection — the same constraint `core::rooms::resolve_room_avatar_mxc`
+    /// exists to work around for avatars, not worth re-solving here for a
+    /// "seen by N" marker (see this app's `ReadState`/`shouldMarkRead` design
+    /// note) that never needs to name anyone. The webview renders this as a
+    /// simple "Seen"/"Seen by N" marker on the reader's own latest message —
+    /// never a per-message avatar stack.
+    pub read_by: Vec<String>,
+    /// Whether this account may rewrite this message — the SDK's
+    /// `EventTimelineItem::is_editable()`, not a guess made from `is_own`.
+    ///
+    /// Asked rather than assumed because "mine" and "editable" are not the
+    /// same set: a state event of your own is not editable, and neither is
+    /// one already redacted. Offering an Edit that the homeserver then
+    /// refuses is worse than not offering it.
+    pub editable: bool,
+}
+
+/// One member currently typing in a room, projected from the SDK's
+/// `Vec<OwnedUserId>` (`Room::subscribe_to_typing_notifications`) plus a
+/// best-effort local member-list lookup for a display name — see
+/// `core::timeline::resolve_typing_users`, the async adapter that builds
+/// this (member resolution needs a store read `project_typing_users` itself
+/// can't do, the same split `core::rooms::resolve_room_avatar_mxc` uses for
+/// an avatar).
+///
+/// The current user is never present: `subscribe_to_typing_notifications`
+/// filters it out before this project ever sees the id list.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct TypingUserDto {
+    pub user_id: String,
+    /// `None` when the room's local member store has nothing cached for
+    /// this id yet (lazy-loaded membership — same caveat
+    /// `core::rooms::resolve_room_avatar_mxc`'s doc comment describes for
+    /// avatars). The webview falls back to `userId` in that case, the same
+    /// convention every other sender-name field in this codebase already
+    /// uses. Server-controlled, arbitrary text otherwise — the webview must
+    /// cap its rendered length the same as any other free-text field from a
+    /// sender.
+    pub display_name: Option<String>,
+    /// What to call this person on screen — the same rules the timeline names
+    /// a sender by (`display_name::sender_parts`), so one agent is not
+    /// `super-chotu (hermes @ guild)` on the typing line and `Super Chotu`
+    /// three centimetres above it.
+    ///
+    /// The short form, without the runtime: the line is a sentence about
+    /// someone, and "super-chotu (hermes @ guild) is typing…" is an address
+    /// with a verb attached.
+    pub label: String,
+}
+
+/// The wire projection of an `eyeball_im::VectorDiff<T>`.
+///
+/// Tagged with `op` in camelCase so the webview can switch on an exact
+/// string (`"pushFront"`, `"popBack"`, ...) without parsing prose.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum DiffOp<T> {
+    Append { values: Vec<T> },
+    Clear,
+    PushFront { value: T },
+    PushBack { value: T },
+    PopFront,
+    PopBack,
+    Insert { index: usize, value: T },
+    Set { index: usize, value: T },
+    Remove { index: usize },
+    Truncate { length: usize },
+    Reset { values: Vec<T> },
+}
+
+/// The variant name of an op, for diagnostics. Kept next to the enum so a new
+/// variant is an obvious thing to add here too.
+pub fn op_name<T>(op: &DiffOp<T>) -> &'static str {
+    match op {
+        DiffOp::Append { .. } => "append",
+        DiffOp::Clear => "clear",
+        DiffOp::PushFront { .. } => "pushFront",
+        DiffOp::PushBack { .. } => "pushBack",
+        DiffOp::PopFront => "popFront",
+        DiffOp::PopBack => "popBack",
+        DiffOp::Insert { .. } => "insert",
+        DiffOp::Set { .. } => "set",
+        DiffOp::Remove { .. } => "remove",
+        DiffOp::Truncate { .. } => "truncate",
+        DiffOp::Reset { .. } => "reset",
+    }
+}
+
+/// Every item value an op carries, in order — empty for the ops that only
+/// move or drop items (`Clear`, `PopFront`, `PopBack`, `Remove`,
+/// `Truncate`).
+///
+/// This is what lets a caller do *asynchronous* work per item before
+/// projecting a batch, without a second traversal of `VectorDiff` competing
+/// with [`project_diff`] for the "exhaustive match" role that module's doc
+/// comment reserves for it. `core::rooms::project_batch` is the caller:
+/// resolving a room's message preview needs `RoomExt::latest_event`, which
+/// is `async`, and `project_diff`'s mapping closure is not — so it walks the
+/// batch's values through here first, resolves a preview per room, then
+/// projects with the results in hand.
+///
+/// Exhaustive with no wildcard arm, like [`project_diff`]/[`apply_ops`]/
+/// [`erase_op_value`]: a future `DiffOp` variant carrying items must fail
+/// this to compile rather than silently skip them, which would leave exactly
+/// the rooms in that op with no preview at all.
+pub fn op_values<T>(op: &DiffOp<T>) -> Vec<&T> {
+    match op {
+        DiffOp::Append { values } => values.iter().collect(),
+        DiffOp::Clear => Vec::new(),
+        DiffOp::PushFront { value } => vec![value],
+        DiffOp::PushBack { value } => vec![value],
+        DiffOp::PopFront => Vec::new(),
+        DiffOp::PopBack => Vec::new(),
+        DiffOp::Insert { value, .. } => vec![value],
+        DiffOp::Set { value, .. } => vec![value],
+        DiffOp::Remove { .. } => Vec::new(),
+        DiffOp::Truncate { .. } => Vec::new(),
+        DiffOp::Reset { values } => values.iter().collect(),
+    }
+}
+
+/// A batch of ops for one subject (room list, or a specific room's
+/// timeline), stamped with a sequence number the webview uses to detect a
+/// dropped event and force a resync.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffEnvelope<T> {
+    pub channel: String,
+    pub subject: String,
+    pub seq: u64,
+    pub ops: Vec<DiffOp<T>>,
+}
+
+/// Translate one SDK `VectorDiff<S>` into a `DiffOp<T>`, mapping contained
+/// items through `f`.
+///
+/// This match is exhaustive with **no wildcard arm** on purpose: if a future
+/// eyeball-im version adds a `VectorDiff` variant, this must fail to compile
+/// rather than silently drop the update.
+pub fn project_diff<S, T, F>(diff: VectorDiff<S>, f: F) -> DiffOp<T>
+where
+    S: Clone,
+    F: Fn(S) -> T,
+{
+    match diff {
+        VectorDiff::Append { values } => DiffOp::Append {
+            values: values.into_iter().map(f).collect(),
+        },
+        VectorDiff::Clear => DiffOp::Clear,
+        VectorDiff::PushFront { value } => DiffOp::PushFront { value: f(value) },
+        VectorDiff::PushBack { value } => DiffOp::PushBack { value: f(value) },
+        VectorDiff::PopFront => DiffOp::PopFront,
+        VectorDiff::PopBack => DiffOp::PopBack,
+        VectorDiff::Insert { index, value } => DiffOp::Insert {
+            index,
+            value: f(value),
+        },
+        VectorDiff::Set { index, value } => DiffOp::Set {
+            index,
+            value: f(value),
+        },
+        VectorDiff::Remove { index } => DiffOp::Remove { index },
+        VectorDiff::Truncate { length } => DiffOp::Truncate { length },
+        VectorDiff::Reset { values } => DiffOp::Reset {
+            values: values.into_iter().map(f).collect(),
+        },
+    }
+}
+
+/// Applies a batch of ops to a materialized `Vec<T>` in place, mirroring
+/// exactly what the webview's `DiffTracker`/`applyOps`
+/// (`src/lib/stores/diff.ts`) does to its own copy of the same list.
+///
+/// For a channel that keeps a server-side materialized view in sync with
+/// what it emits — so a resync can be served from that view instead of a
+/// second, uncoordinated subscription (see `core::rooms::RoomListHandle`) —
+/// this is the one place that folds a `DiffOp` batch into it. Exhaustive
+/// with no wildcard arm, like `project_diff`: if `DiffOp` ever grows a
+/// variant, this must fail to compile rather than silently leave the
+/// materialized view out of sync with what was already emitted, which would
+/// corrupt every resync served from it.
+/// Collapse a batch that takes items out and puts the same items back.
+///
+/// **The problem this solves.** On send, `matrix-sdk-ui` emits `Remove` then
+/// `PushBack` for the message being confirmed — the item leaves the list and
+/// rejoins it at the same place. Replayed literally by a UI that renders a
+/// list, the row disappears and reappears. That is the "Buddy? disappeared and
+/// then reappeared" report of 2026-08-17, and it is visible in the core's own
+/// log as `["remove", "pushBack"]` batches carrying one id.
+///
+/// **The rule.** If the batch leaves the sequence of ids exactly as it found
+/// it, then nothing moved, and the only honest thing the batch can be saying is
+/// "these items' contents changed". So it becomes a `Set` per carried item, at
+/// the index that item already occupies. Anything that changes the sequence —
+/// a real arrival, a reorder, a `Reset` that shrinks the list — is passed
+/// through untouched, because those genuinely move rows and a `Set` cannot say
+/// so.
+///
+/// Only items the batch actually carried are re-sent. A `Set` costs the webview
+/// a re-render of that row, so re-sending the whole list would trade a flicker
+/// for a stutter.
+///
+/// **Deliberately conservative.** Fractal solves the general case with a full
+/// id-diff that computes minimal splices (`timeline_diff_minimizer`); this
+/// handles only the case where the membership *and order* are unchanged, which
+/// is the one the reported bug is made of. The general version can come later
+/// with the tests to justify it. (Approach only — fractal is GPLv3 and this
+/// crate is MIT, so nothing here is derived from its source.)
+pub fn collapse_reinsertions<T, F>(
+    before_ids: &[String],
+    after: &[T],
+    ops: Vec<DiffOp<T>>,
+    id_of: F,
+) -> Vec<DiffOp<T>>
+where
+    T: Clone,
+    F: Fn(&T) -> &str,
+{
+    if before_ids.len() != after.len()
+        || before_ids
+            .iter()
+            .zip(after.iter())
+            .any(|(before, item)| before != id_of(item))
+    {
+        return ops;
+    }
+
+    let carried: HashSet<&str> = ops.iter().flat_map(op_values).map(&id_of).collect();
+
+    // A batch that changed nothing and carried nothing is not something this
+    // can improve on — hand it back rather than inventing an empty batch.
+    if carried.is_empty() {
+        return ops;
+    }
+
+    after
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| carried.contains(id_of(item)))
+        .map(|(index, item)| DiffOp::Set {
+            index,
+            value: item.clone(),
+        })
+        .collect()
+}
+
+pub fn apply_ops<T: Clone>(items: &mut Vec<T>, ops: &[DiffOp<T>]) {
+    for op in ops {
+        match op {
+            DiffOp::Append { values } => items.extend(values.iter().cloned()),
+            DiffOp::Clear => items.clear(),
+            DiffOp::PushFront { value } => items.insert(0, value.clone()),
+            DiffOp::PushBack { value } => items.push(value.clone()),
+            DiffOp::PopFront => {
+                if !items.is_empty() {
+                    items.remove(0);
+                }
+            }
+            DiffOp::PopBack => {
+                items.pop();
+            }
+            DiffOp::Insert { index, value } => {
+                if *index <= items.len() {
+                    items.insert(*index, value.clone());
+                }
+            }
+            DiffOp::Set { index, value } => {
+                if let Some(slot) = items.get_mut(*index) {
+                    *slot = value.clone();
+                }
+            }
+            DiffOp::Remove { index } => {
+                if *index < items.len() {
+                    items.remove(*index);
+                }
+            }
+            DiffOp::Truncate { length } => items.truncate(*length),
+            DiffOp::Reset { values } => *items = values.clone(),
+        }
+    }
+}
+
+/// The length a list of `before` items would have after `ops` were folded
+/// into it via [`apply_ops`] — computed without either the list's actual
+/// content or mutating anything, just `before`'s count.
+///
+/// `core::timeline`'s re-seed detection (`decide_batch`, built on
+/// `should_reseed`) is what this exists for: it must know whether an
+/// incoming batch is *about to* empty an already-populated materialized
+/// list *before* deciding whether to fold that batch into the real shared
+/// state at all — folding first and deciding after would leave a window
+/// where the materialized list and the last-emitted sequence number
+/// disagree (see `core::timeline::TimelineState`'s doc comment for why that
+/// invariant is load-bearing for `snapshot`/resync), and cloning the whole
+/// real item list on every batch just to peek at a length is wasteful when
+/// only the length is ever in question.
+///
+/// Delegates to [`apply_ops`] itself, via a same-length placeholder list
+/// with every op's payload erased to `()`, rather than re-deriving each op's
+/// length effect independently — so this can never drift from what
+/// `apply_ops` (and the webview's identical `applyOps`) actually do to a
+/// list's length, the same reasoning [`apply_ops`]'s own doc comment gives
+/// for staying the single place that logic lives.
+pub fn ops_len_after<T>(before: usize, ops: &[DiffOp<T>]) -> usize {
+    let mut scratch = vec![(); before];
+    let erased: Vec<DiffOp<()>> = ops.iter().map(erase_op_value).collect();
+    apply_ops(&mut scratch, &erased);
+    scratch.len()
+}
+
+/// Erases a `DiffOp<T>`'s payload down to `()`, preserving every op's
+/// length-affecting shape (index, item count) — never its content. The
+/// private helper behind [`ops_len_after`]; not exported, since nothing
+/// outside that function needs a `DiffOp<()>`.
+///
+/// Exhaustive with no wildcard arm, like [`project_diff`]/[`apply_ops`]: a
+/// future `DiffOp` variant must fail this to compile rather than silently
+/// mis-measure a batch's effect on length.
+fn erase_op_value<T>(op: &DiffOp<T>) -> DiffOp<()> {
+    match op {
+        DiffOp::Append { values } => DiffOp::Append {
+            values: vec![(); values.len()],
+        },
+        DiffOp::Clear => DiffOp::Clear,
+        DiffOp::PushFront { .. } => DiffOp::PushFront { value: () },
+        DiffOp::PushBack { .. } => DiffOp::PushBack { value: () },
+        DiffOp::PopFront => DiffOp::PopFront,
+        DiffOp::PopBack => DiffOp::PopBack,
+        DiffOp::Insert { index, .. } => DiffOp::Insert {
+            index: *index,
+            value: (),
+        },
+        DiffOp::Set { index, .. } => DiffOp::Set {
+            index: *index,
+            value: (),
+        },
+        DiffOp::Remove { index } => DiffOp::Remove { index: *index },
+        DiffOp::Truncate { length } => DiffOp::Truncate { length: *length },
+        DiffOp::Reset { values } => DiffOp::Reset {
+            values: vec![(); values.len()],
+        },
+    }
+}
+
+/// Monotonic sequence number generator, starting at 1. The webview uses gaps
+/// in this sequence to detect a dropped event and force a resync.
+#[derive(Debug, Default)]
+pub struct SeqCounter(u64);
+
+impl SeqCounter {
+    pub fn next_seq(&mut self) -> u64 {
+        self.0 += 1;
+        self.0
+    }
+}
+
+/// A room together with every decision the core made about it.
+///
+/// The same shape, and the same reason, as [`TimelineRow`]: a host draws a
+/// roster row from a name already split into sigil/name/role, a preview line
+/// already composed, and an affordance already chosen — none of which it can
+/// go and fetch mid-render.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomRow {
+    pub room: RoomSummary,
+    /// The name parsed into the suite's `<glyph> <Name> — <Role>` convention.
+    pub identity: crate::room_identity::RoomIdentity,
+    /// The preview line, or `None` when the row shows none. There is no
+    /// placeholder: a row with nothing to say says nothing.
+    pub preview: Option<crate::room_preview::RoomPreview>,
+    /// What the room pane may offer for this membership.
+    pub affordance: crate::invitation::RoomAffordance,
+}
+
+impl RoomRow {
+    pub fn new(room: RoomSummary) -> Self {
+        let identity = crate::room_identity::parse_room_identity(&room.name);
+        let preview = crate::room_preview::room_preview(&room);
+        let affordance = crate::invitation::room_affordance(room.membership);
+        Self {
+            room,
+            identity,
+            preview,
+            affordance,
+        }
+    }
+}
+
+/// A timeline item together with the render decision the core made for it.
+///
+/// The view travels with the item rather than being asked for per row. A host
+/// calling `view_for` itself would pay an FFI round trip **per visible row per
+/// scroll frame** — the one cost profile a lazy list cannot absorb — and would
+/// re-parse the message's markdown on every re-render. Computing it once, where
+/// the item is built, means a message is parsed once in its lifetime.
+///
+/// `item` keeps its own shape rather than being flattened in, so consumers that
+/// want raw fields — search results, room previews — are unaffected.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineRow {
+    pub item: TimelineItemDto,
+    pub view: crate::item_view::ItemView,
+    /// Who to attribute this item to: display name, then the raw sender id,
+    /// then a generic placeholder. Never empty.
+    pub sender_name: String,
+    /// The same attribution **without** the bridge's `(harness on host)`
+    /// suffix, when there is one — otherwise identical to `sender_name`.
+    ///
+    /// A room where one agent speaks repeats that suffix under every message
+    /// and it never changes there; a room where several do needs it. Carried
+    /// rather than derived so a host chooses between two given strings instead
+    /// of taking a composed one back apart.
+    pub sender_short: String,
+    /// The verb phrase for a membership change — "joined the room" — and
+    /// `None` for every other kind.
+    ///
+    /// Carried separately from [`Self::view`] even though the view's `System`
+    /// text already embeds it, because a *grouped* run of membership changes
+    /// composes one sentence out of many names and a single verb ("Alice, Bob
+    /// and 3 others joined the room"). A host doing that needs the verb by
+    /// itself, and re-deriving it from a rendered sentence is parsing your own
+    /// output.
+    pub membership_verb: Option<String>,
+    /// The quoted parent, when this item is a reply.
+    pub reply_quote: Option<crate::item_view::ReplyQuoteView>,
+    /// Whether this item can be replied to or reacted to — false while it is
+    /// still a local echo with no real event id.
+    pub can_reply_or_react: bool,
+    /// A short preview of this item's own body, for the composer's
+    /// "Replying to …" row when someone replies *to* it. `None` when there is
+    /// nothing to preview — a media message with no caption, say.
+    ///
+    /// A snapshot, not a binding: the composer keeps whatever it was handed
+    /// when the reply was started, so a parent that is later redacted or
+    /// scrolls out of the materialised timeline does not make the preview
+    /// change or vanish underneath the person writing.
+    pub reply_preview: Option<String>,
+}
+
+impl TimelineRow {
+    /// Wrap an item with every decision a host would otherwise have to make
+    /// about it.
+    ///
+    /// The set of fields here is not decoration. Each one was a synchronous
+    /// helper the desktop called from inside its markup, and a host cannot
+    /// `await` mid-render — so anything a renderer needs *while drawing* has
+    /// to arrive with the item rather than be fetchable. That is the whole
+    /// reason this is a row and not a bare DTO.
+    pub fn new(item: TimelineItemDto) -> Self {
+        let view = crate::item_view::view_for(&item);
+        let (sender_name, sender_short) = crate::item_view::attributed_parts(&item);
+        let membership_verb = (item.kind == "membership")
+            .then(|| crate::item_view::membership_verb(item.detail.as_deref()));
+        let reply_quote = crate::item_view::reply_quote_view(item.reply_to.as_ref());
+        let can_reply_or_react = crate::item_view::can_reply_or_react(&item);
+        let reply_preview = crate::item_view::reply_preview_excerpt(item.body.as_deref());
+        Self {
+            item,
+            view,
+            sender_name,
+            sender_short,
+            membership_verb,
+            reply_quote,
+            can_reply_or_react,
+            reply_preview,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eyeball_im::VectorDiff;
+    use imbl::vector;
+
+    // Projection must be exhaustive: if eyeball-im adds a variant, this file
+    // must fail to compile rather than silently drop updates.
+    #[test]
+    fn projects_every_variant() {
+        let id = |n: i32| n.to_string();
+
+        assert!(matches!(
+            project_diff(VectorDiff::Append { values: vector![1, 2] }, id),
+            DiffOp::Append { ref values } if values == &["1".to_string(), "2".to_string()]
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::Clear, id),
+            DiffOp::Clear
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::PushFront { value: 1 }, id),
+            DiffOp::PushFront { ref value } if value == "1"
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::PushBack { value: 1 }, id),
+            DiffOp::PushBack { ref value } if value == "1"
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::PopFront, id),
+            DiffOp::PopFront
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::PopBack, id),
+            DiffOp::PopBack
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::Insert { index: 3, value: 1 }, id),
+            DiffOp::Insert { index: 3, ref value } if value == "1"
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::Set { index: 2, value: 1 }, id),
+            DiffOp::Set { index: 2, ref value } if value == "1"
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::Remove { index: 4 }, id),
+            DiffOp::Remove { index: 4 }
+        ));
+        assert!(matches!(
+            project_diff::<i32, String, _>(VectorDiff::Truncate { length: 5 }, id),
+            DiffOp::Truncate { length: 5 }
+        ));
+        assert!(matches!(
+            project_diff(VectorDiff::Reset { values: vector![1] }, id),
+            DiffOp::Reset { ref values } if values == &["1".to_string()]
+        ));
+    }
+
+    #[test]
+    fn ops_serialize_with_a_discriminant_the_webview_can_switch_on() {
+        let json = serde_json::to_value(DiffOp::Insert {
+            index: 2,
+            value: "x",
+        })
+        .unwrap();
+        assert_eq!(json["op"], "insert");
+        assert_eq!(json["index"], 2);
+        assert_eq!(json["value"], "x");
+
+        assert_eq!(
+            serde_json::to_value(DiffOp::<String>::Clear).unwrap()["op"],
+            "clear"
+        );
+        assert_eq!(
+            serde_json::to_value(DiffOp::<String>::PopBack).unwrap()["op"],
+            "popBack"
+        );
+    }
+
+    #[test]
+    fn sequence_numbers_start_at_one_and_increment() {
+        let mut seq = SeqCounter::default();
+        assert_eq!(seq.next_seq(), 1);
+        assert_eq!(seq.next_seq(), 2);
+        assert_eq!(seq.next_seq(), 3);
+    }
+
+    #[test]
+    fn envelope_serializes_camel_case() {
+        let env = DiffEnvelope {
+            channel: "timeline".into(),
+            subject: "!room:example.org".into(),
+            seq: 7,
+            ops: vec![DiffOp::<String>::PopFront],
+        };
+        let json = serde_json::to_value(&env).unwrap();
+        assert_eq!(json["seq"], 7);
+        assert_eq!(json["subject"], "!room:example.org");
+        assert_eq!(json["ops"][0]["op"], "popFront");
+    }
+
+    // apply_ops: every DiffOp variant, mirroring the applyOps coverage in
+    // src/lib/stores/diff.test.ts (Task 11) one-for-one, since a divergence
+    // between the two would silently corrupt every resync served from the
+    // Rust-side materialized state.
+    #[test]
+    fn apply_ops_appends() {
+        let mut items = vec![1];
+        apply_ops(&mut items, &[DiffOp::Append { values: vec![2, 3] }]);
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn apply_ops_clears() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::Clear]);
+        assert_eq!(items, Vec::<i32>::new());
+    }
+
+    #[test]
+    fn apply_ops_pushes_front() {
+        let mut items = vec![2];
+        apply_ops(&mut items, &[DiffOp::PushFront { value: 1 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_pushes_back() {
+        let mut items = vec![1];
+        apply_ops(&mut items, &[DiffOp::PushBack { value: 2 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_pops_front() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::PopFront]);
+        assert_eq!(items, vec![2]);
+    }
+
+    #[test]
+    fn apply_ops_pops_back() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::PopBack]);
+        assert_eq!(items, vec![1]);
+    }
+
+    #[test]
+    fn apply_ops_inserts() {
+        let mut items = vec![1, 3];
+        apply_ops(&mut items, &[DiffOp::Insert { index: 1, value: 2 }]);
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn apply_ops_sets() {
+        let mut items = vec![1, 9];
+        apply_ops(&mut items, &[DiffOp::Set { index: 1, value: 2 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_removes() {
+        let mut items = vec![1, 2, 3];
+        apply_ops(&mut items, &[DiffOp::Remove { index: 1 }]);
+        assert_eq!(items, vec![1, 3]);
+    }
+
+    #[test]
+    fn apply_ops_truncates() {
+        let mut items = vec![1, 2, 3];
+        apply_ops(&mut items, &[DiffOp::Truncate { length: 2 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_ops_resets() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::Reset { values: vec![9] }]);
+        assert_eq!(items, vec![9]);
+    }
+
+    #[test]
+    fn apply_ops_applies_a_batch_in_order() {
+        let mut items = vec![1];
+        apply_ops(
+            &mut items,
+            &[DiffOp::PushBack { value: 2 }, DiffOp::PopFront],
+        );
+        assert_eq!(items, vec![2]);
+    }
+
+    // Defensive: an out-of-bounds op should never happen against a
+    // consistent SDK-driven stream, but silently skipping rather than
+    // panicking keeps one malformed batch from permanently killing the
+    // background streaming task.
+    #[test]
+    fn apply_ops_ignores_out_of_bounds_indices_instead_of_panicking() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::Remove { index: 5 }]);
+        assert_eq!(items, vec![1, 2]);
+
+        apply_ops(&mut items, &[DiffOp::Set { index: 5, value: 9 }]);
+        assert_eq!(items, vec![1, 2]);
+    }
+
+    // `Vec::insert` panics when `index > len` — unlike `Set`/`Remove`/
+    // `PopFront`/`PopBack`, which are all guarded above, an unguarded
+    // `Insert` would crash the streaming task (and silently freeze the
+    // affected list) on one malformed batch instead of just skipping it.
+    #[test]
+    fn apply_ops_ignores_an_out_of_range_insert_instead_of_panicking() {
+        let mut items = vec![1, 2];
+        apply_ops(&mut items, &[DiffOp::Insert { index: 5, value: 9 }]);
+        assert_eq!(items, vec![1, 2]);
+
+        // The boundary case `index == len` is a valid append-via-insert and
+        // must still work.
+        apply_ops(&mut items, &[DiffOp::Insert { index: 2, value: 3 }]);
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn apply_ops_ignores_pop_on_an_empty_list_instead_of_panicking() {
+        let mut items = Vec::<i32>::new();
+        apply_ops(&mut items, &[DiffOp::PopFront]);
+        apply_ops(&mut items, &[DiffOp::PopBack]);
+        assert_eq!(items, Vec::<i32>::new());
+    }
+
+    // ops_len_after: mirrors the apply_ops coverage above one-for-one (same
+    // ops, same before/after shapes), since this exists specifically to
+    // agree with apply_ops's own length effect without re-deriving it — a
+    // divergence here would corrupt `core::timeline`'s re-seed detection
+    // exactly the way a divergence in `apply_ops` itself would corrupt a
+    // resync (see this function's doc comment).
+    #[test]
+    fn ops_len_after_appends() {
+        assert_eq!(
+            ops_len_after(1, &[DiffOp::Append { values: vec![2, 3] }]),
+            3
+        );
+    }
+
+    #[test]
+    fn ops_len_after_clears() {
+        assert_eq!(ops_len_after(2, &[DiffOp::<i32>::Clear]), 0);
+    }
+
+    #[test]
+    fn ops_len_after_pushes_front_and_back() {
+        assert_eq!(ops_len_after(1, &[DiffOp::PushFront { value: 0 }]), 2);
+        assert_eq!(ops_len_after(1, &[DiffOp::PushBack { value: 2 }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_pops_front_and_back() {
+        assert_eq!(ops_len_after(2, &[DiffOp::<i32>::PopFront]), 1);
+        assert_eq!(ops_len_after(2, &[DiffOp::<i32>::PopBack]), 1);
+    }
+
+    #[test]
+    fn ops_len_after_pop_on_an_empty_list_is_a_no_op() {
+        assert_eq!(ops_len_after(0, &[DiffOp::<i32>::PopFront]), 0);
+        assert_eq!(ops_len_after(0, &[DiffOp::<i32>::PopBack]), 0);
+    }
+
+    #[test]
+    fn ops_len_after_inserts_and_removes() {
+        assert_eq!(
+            ops_len_after(2, &[DiffOp::Insert { index: 1, value: 9 }]),
+            3
+        );
+        assert_eq!(ops_len_after(3, &[DiffOp::<i32>::Remove { index: 1 }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_ignores_out_of_range_insert_and_remove() {
+        assert_eq!(
+            ops_len_after(2, &[DiffOp::Insert { index: 5, value: 9 }]),
+            2
+        );
+        assert_eq!(ops_len_after(2, &[DiffOp::<i32>::Remove { index: 5 }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_set_does_not_change_length() {
+        assert_eq!(ops_len_after(2, &[DiffOp::Set { index: 0, value: 9 }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_truncates_and_resets() {
+        assert_eq!(
+            ops_len_after(3, &[DiffOp::<i32>::Truncate { length: 1 }]),
+            1
+        );
+        assert_eq!(ops_len_after(3, &[DiffOp::Reset { values: vec![9, 9] }]), 2);
+    }
+
+    #[test]
+    fn ops_len_after_applies_a_batch_in_order() {
+        assert_eq!(
+            ops_len_after(1, &[DiffOp::PushBack { value: 2 }, DiffOp::<i32>::PopFront]),
+            1
+        );
+    }
+
+    #[test]
+    fn op_values_returns_every_item_a_single_item_op_carries() {
+        assert_eq!(op_values(&DiffOp::PushFront { value: 1 }), vec![&1]);
+        assert_eq!(op_values(&DiffOp::PushBack { value: 2 }), vec![&2]);
+        assert_eq!(op_values(&DiffOp::Insert { index: 0, value: 3 }), vec![&3]);
+        assert_eq!(op_values(&DiffOp::Set { index: 0, value: 4 }), vec![&4]);
+    }
+
+    #[test]
+    fn op_values_returns_every_item_a_multi_item_op_carries() {
+        // The two that matter most for the room list: `Reset` re-sends the
+        // whole list, and `Append` is how the first page of rooms arrives.
+        // Missing either would leave every one of those rooms with a blank
+        // preview line.
+        assert_eq!(
+            op_values(&DiffOp::Append {
+                values: vec![1, 2, 3]
+            }),
+            vec![&1, &2, &3]
+        );
+        assert_eq!(
+            op_values(&DiffOp::Reset { values: vec![4, 5] }),
+            vec![&4, &5]
+        );
+    }
+
+    #[test]
+    fn op_values_is_empty_for_the_ops_that_carry_no_items() {
+        let empty: Vec<&i32> = Vec::new();
+        assert_eq!(op_values(&DiffOp::<i32>::Clear), empty);
+        assert_eq!(op_values(&DiffOp::<i32>::PopFront), empty);
+        assert_eq!(op_values(&DiffOp::<i32>::PopBack), empty);
+        assert_eq!(op_values(&DiffOp::<i32>::Remove { index: 0 }), empty);
+        assert_eq!(op_values(&DiffOp::<i32>::Truncate { length: 0 }), empty);
+    }
+
+    /// A stand-in for a timeline item: an identity and some content.
+    #[derive(Debug, Clone, PartialEq)]
+    struct Row(&'static str, &'static str);
+
+    fn ids(rows: &[Row]) -> Vec<String> {
+        rows.iter().map(|r| r.0.to_string()).collect()
+    }
+
+    #[test]
+    fn a_remove_then_readd_of_the_same_item_collapses_to_one_set() {
+        // The batch this exists for, seen against the live homeserver on
+        // 2026-08-17: sending a message makes the SDK emit `remove` then
+        // `pushBack` for the message being confirmed. Replayed literally, the
+        // row leaves the list and comes back — which is what "Buddy?
+        // disappeared and then reappeared" was.
+        //
+        // The list is the same before and after, so nothing needs to move.
+        let before = [Row("a", "one"), Row("b", "two")];
+        let ops = vec![
+            DiffOp::Remove { index: 1 },
+            DiffOp::PushBack {
+                value: Row("b", "two (confirmed)"),
+            },
+        ];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops, |row| row.0);
+
+        assert_eq!(
+            collapsed,
+            vec![DiffOp::Set {
+                index: 1,
+                value: Row("b", "two (confirmed)")
+            }]
+        );
+    }
+
+    #[test]
+    fn an_item_that_really_arrives_is_left_alone() {
+        // The shape changed, so the batch says something a `Set` cannot.
+        let before = [Row("a", "one")];
+        let ops = vec![DiffOp::PushBack {
+            value: Row("b", "two"),
+        }];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops.clone(), |row| row.0);
+
+        assert_eq!(collapsed, ops);
+    }
+
+    #[test]
+    fn a_reset_that_shrinks_the_list_is_left_alone() {
+        // The limited-sync unload (matrix-rust-sdk#4694). It is not a
+        // reinsertion and must not be silently swallowed: the events really
+        // are gone from the SDK's own list until pagination refills them.
+        let before = [Row("a", "one"), Row("b", "two"), Row("c", "three")];
+        let ops = vec![DiffOp::Reset {
+            values: vec![Row("c", "three")],
+        }];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops.clone(), |row| row.0);
+
+        assert_eq!(collapsed, ops);
+    }
+
+    #[test]
+    fn a_reorder_is_left_alone_even_though_the_membership_is_the_same() {
+        // Same ids, different order. Emitting `Set`s here would leave the two
+        // rows swapped on screen relative to the core's list.
+        let before = [Row("a", "one"), Row("b", "two")];
+        let ops = vec![
+            DiffOp::Remove { index: 0 },
+            DiffOp::PushBack {
+                value: Row("a", "one"),
+            },
+        ];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops.clone(), |row| row.0);
+
+        assert_eq!(collapsed, ops);
+    }
+
+    #[test]
+    fn only_the_items_the_batch_carried_are_re_sent() {
+        // A batch that churns one row must not re-send the whole list: every
+        // `Set` is a row the webview re-renders.
+        let before = [Row("a", "one"), Row("b", "two"), Row("c", "three")];
+        let ops = vec![
+            DiffOp::Remove { index: 2 },
+            DiffOp::PushBack {
+                value: Row("c", "three!"),
+            },
+        ];
+        let mut after = before.to_vec();
+        apply_ops(&mut after, &ops);
+
+        let collapsed = collapse_reinsertions(&ids(&before), &after, ops, |row| row.0);
+
+        assert_eq!(collapsed.len(), 1);
+        assert_eq!(
+            collapsed[0],
+            DiffOp::Set {
+                index: 2,
+                value: Row("c", "three!")
+            }
+        );
+    }
+}
+
+#[cfg(test)]
+mod wire_format_golden {
+    //! The desktop app's wire format, frozen.
+    //!
+    //! Everything the core-decoupling work does — moving these types into
+    //! their own crate, deriving `uniffi::Record` on them, re-homing the
+    //! commands that emit them — must leave the bytes the webview receives
+    //! exactly as they are. These tests turn that promise into a check.
+    //!
+    //! Every literal below was transcribed from the serialiser's own output,
+    //! never hand-written: a hand-written literal tests what someone believed
+    //! the shape was, which is precisely the belief under suspicion.
+    //!
+    //! A failure here is not a test to update. It means the webview is about
+    //! to receive something it was not written to parse.
+
+    use super::*;
+
+    fn a_room() -> RoomSummary {
+        RoomSummary {
+            id: "!r:example.org".into(),
+            name: "Room".into(),
+            avatar_url: None,
+            unread: 0,
+            last_message: Some("hi".into()),
+            last_message_is_own: false,
+            last_message_names_sender: false,
+            last_event_type: None,
+            last_activity_ms: Some(1_700_000_000_000),
+            runtime: None,
+            membership: Membership::Joined,
+        }
+    }
+
+    const ROOM_JSON: &str = r#"{"id":"!r:example.org","name":"Room","avatarUrl":null,"unread":0,"lastMessage":"hi","lastMessageIsOwn":false,"lastMessageNamesSender":false,"lastEventType":null,"lastActivityMs":1700000000000,"runtime":null,"membership":"joined"}"#;
+
+    #[test]
+    fn membership_is_a_camel_case_string() {
+        assert_eq!(
+            serde_json::to_string(&Membership::Joined).unwrap(),
+            r#""joined""#
+        );
+    }
+
+    #[test]
+    fn a_room_summary_keeps_every_field_and_its_name() {
+        assert_eq!(serde_json::to_string(&a_room()).unwrap(), ROOM_JSON);
+    }
+
+    #[test]
+    fn a_timeline_item_keeps_every_field_and_its_name() {
+        // The widest type here, and the one the reading pane is built on:
+        // twenty fields, most optional. `null` is part of the contract —
+        // nothing is skipped when absent, and the webview's TypeScript is
+        // written against fields that are always present.
+        let item = TimelineItemDto {
+            id: "unique-1".into(),
+            event_id: Some("$e1".into()),
+            kind: "message".into(),
+            msgtype: Some("m.text".into()),
+            detail: None,
+            sender: Some("@a:x.org".into()),
+            sender_avatar: None,
+            sender_display_name: Some("A".into()),
+            body: Some("hello".into()),
+            formatted_body: None,
+            media: None,
+            custom_payload: None,
+            timestamp_ms: Some(1_700_000_000_000),
+            is_own: false,
+            send_state: None,
+            reply_to: None,
+            edited: false,
+            reactions: vec![],
+            read_by: vec![],
+            editable: false,
+        };
+        assert_eq!(
+            serde_json::to_string(&item).unwrap(),
+            r#"{"id":"unique-1","eventId":"$e1","kind":"message","msgtype":"m.text","detail":null,"sender":"@a:x.org","senderDisplayName":"A","senderAvatar":null,"body":"hello","formattedBody":null,"media":null,"customPayload":null,"timestampMs":1700000000000,"isOwn":false,"sendState":null,"replyTo":null,"edited":false,"reactions":[],"readBy":[],"editable":false}"#
+        );
+    }
+
+    #[test]
+    fn media_metadata_keeps_its_shape() {
+        let media = MediaMetaDto {
+            filename: "a.png".into(),
+            mimetype: Some("image/png".into()),
+            size: Some(12),
+            width: Some(3),
+            height: Some(4),
+        };
+        assert_eq!(
+            serde_json::to_string(&media).unwrap(),
+            r#"{"filename":"a.png","mimetype":"image/png","size":12,"width":3,"height":4}"#
+        );
+    }
+
+    #[test]
+    fn a_reply_reference_keeps_its_shape() {
+        let reply = ReplyToDto {
+            event_id: "$e".into(),
+            available: true,
+            sender: Some("@a:x.org".into()),
+            sender_display_name: Some("A".into()),
+            excerpt: Some("x".into()),
+            label: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&reply).unwrap(),
+            r#"{"eventId":"$e","available":true,"sender":"@a:x.org","senderDisplayName":"A","excerpt":"x","label":null}"#
+        );
+    }
+
+    #[test]
+    fn a_reaction_keeps_its_shape() {
+        let reaction = ReactionDto {
+            key: "+1".into(),
+            display_key: "+1".into(),
+            count: 2,
+            by_me: true,
+            senders: vec!["@me:x.org".into(), "@alice:x.org".into()],
+        };
+        assert_eq!(
+            serde_json::to_string(&reaction).unwrap(),
+            r#"{"key":"+1","displayKey":"+1","count":2,"byMe":true,"senders":["@me:x.org","@alice:x.org"]}"#
+        );
+    }
+
+    #[test]
+    fn a_typing_user_keeps_its_shape() {
+        let typing = TypingUserDto {
+            user_id: "@a:x.org".into(),
+            display_name: Some("A".into()),
+            label: "A".into(),
+        };
+        assert_eq!(
+            serde_json::to_string(&typing).unwrap(),
+            r#"{"userId":"@a:x.org","displayName":"A","label":"A"}"#
+        );
+    }
+
+    #[test]
+    fn a_diff_envelope_tags_its_op_and_nests_the_value() {
+        // `DiffOp` is internally tagged with `op`, and the timeline's ordering
+        // logic reads `seq`. Both are load-bearing on the webview side.
+        let envelope = DiffEnvelope {
+            channel: "sm://rooms/diff".into(),
+            subject: "!r:example.org".into(),
+            seq: 1,
+            ops: vec![DiffOp::PushBack { value: a_room() }],
+        };
+        assert_eq!(
+            serde_json::to_string(&envelope).unwrap(),
+            format!(
+                r#"{{"channel":"sm://rooms/diff","subject":"!r:example.org","seq":1,"ops":[{{"op":"pushBack","value":{ROOM_JSON}}}]}}"#
+            )
+        );
+    }
+
+    fn a_room_summary(name: &str) -> RoomSummary {
+        RoomSummary {
+            id: "!r:example.org".into(),
+            name: name.into(),
+            avatar_url: None,
+            unread: 0,
+            last_message: Some("hello".into()),
+            last_message_is_own: false,
+            last_message_names_sender: false,
+            last_event_type: None,
+            last_activity_ms: Some(1_700_000_000_000),
+            runtime: None,
+            membership: Membership::Joined,
+        }
+    }
+
+    #[test]
+    fn a_room_row_splits_its_name_and_composes_its_preview() {
+        let row = RoomRow::new(a_room_summary("🧠 Buddhimaan — Squad Lead"));
+        assert_eq!(row.identity.glyph.as_deref(), Some("🧠"));
+        assert_eq!(row.identity.name, "Buddhimaan");
+        assert_eq!(row.identity.role.as_deref(), Some("Squad Lead"));
+        assert_eq!(row.preview.expect("a preview").text, "hello");
+        assert_eq!(row.affordance, crate::invitation::RoomAffordance::Compose);
+    }
+
+    #[test]
+    fn an_invited_room_row_offers_a_response_rather_than_a_composer() {
+        let mut summary = a_room_summary("research");
+        summary.membership = Membership::Invited;
+        assert_eq!(
+            RoomRow::new(summary).affordance,
+            crate::invitation::RoomAffordance::RespondToInvitation
+        );
+    }
+
+    #[test]
+    fn a_room_row_omits_a_preview_it_has_nothing_to_show_for() {
+        // No placeholder line: a row with nothing to say says nothing.
+        let mut summary = a_room_summary("research");
+        summary.last_message = None;
+        assert_eq!(RoomRow::new(summary).preview, None);
+    }
+
+    #[test]
+    fn a_room_row_nests_its_summary_rather_than_flattening_it() {
+        let row = RoomRow::new(a_room_summary("research"));
+        let json = serde_json::to_value(&row).unwrap();
+        assert!(json.get("room").is_some(), "no `room` key in {json}");
+        assert_eq!(json["room"]["id"], "!r:example.org");
+        assert!(json.get("identity").is_some());
+        assert!(json.get("affordance").is_some());
+    }
+
+    #[test]
+    fn a_timeline_row_carries_its_view_beside_its_item() {
+        // If this struct ever loses `view`, every host silently regains an FFI
+        // round trip per visible row per scroll frame.
+        let row = TimelineRow::new(a_text_item());
+        assert_eq!(row.item.id, "unique-1");
+        assert_eq!(row.item.event_id.as_deref(), Some("$e1"));
+        assert!(
+            matches!(row.view, crate::item_view::ItemView::Bubble { .. }),
+            "an m.text item must classify as a bubble, got {:?}",
+            row.view
+        );
+    }
+
+    #[test]
+    fn a_row_nests_its_item_rather_than_flattening_it() {
+        // A host reads `row.item.id` and `row.view`. Flattening would be a
+        // silent breaking change to every consumer of the timeline channel.
+        let row = TimelineRow::new(a_text_item());
+        let json = serde_json::to_value(&row).unwrap();
+        assert!(json.get("item").is_some(), "no `item` key in {json}");
+        assert!(json.get("view").is_some(), "no `view` key in {json}");
+        assert_eq!(json["item"]["id"], "unique-1");
+        assert_eq!(json["item"]["eventId"], "$e1");
+    }
+
+    #[test]
+    fn a_row_names_its_sender_so_a_host_never_resolves_attribution_itself() {
+        let mut item = a_text_item();
+        item.sender_display_name = Some("Alice".into());
+        assert_eq!(TimelineRow::new(item.clone()).sender_name, "Alice");
+
+        item.sender_display_name = None;
+        assert_eq!(TimelineRow::new(item.clone()).sender_name, "@a:x.org");
+
+        item.sender = None;
+        assert_eq!(TimelineRow::new(item).sender_name, "Someone");
+    }
+
+    #[test]
+    fn only_a_membership_row_carries_a_verb() {
+        // The verb is carried apart from the rendered sentence because a
+        // grouped run composes one sentence from many names and a single
+        // verb. Anything else must not offer one to compose with.
+        assert_eq!(TimelineRow::new(a_text_item()).membership_verb, None);
+
+        let mut membership = a_text_item();
+        membership.kind = "membership".into();
+        membership.detail = Some("joined".into());
+        assert_eq!(
+            TimelineRow::new(membership).membership_verb.as_deref(),
+            Some("joined the room")
+        );
+    }
+
+    #[test]
+    fn a_row_carries_its_reply_quote_only_when_it_is_a_reply() {
+        assert_eq!(TimelineRow::new(a_text_item()).reply_quote, None);
+
+        let mut reply = a_text_item();
+        reply.reply_to = Some(ReplyToDto {
+            event_id: "$parent".into(),
+            available: true,
+            sender: Some("@b:x.org".into()),
+            sender_display_name: Some("Bob".into()),
+            excerpt: Some("the original".into()),
+            label: None,
+        });
+        assert_eq!(
+            TimelineRow::new(reply).reply_quote,
+            Some(crate::item_view::ReplyQuoteView::Available {
+                sender: "Bob".into(),
+                excerpt: Some("the original".into()),
+                label: None,
+            })
+        );
+    }
+
+    #[test]
+    fn a_row_previews_its_own_body_for_whoever_replies_to_it() {
+        let mut item = a_text_item();
+        item.body = Some("  the original message  ".into());
+        assert_eq!(
+            TimelineRow::new(item).reply_preview.as_deref(),
+            Some("the original message")
+        );
+
+        let mut empty = a_text_item();
+        empty.body = None;
+        assert_eq!(TimelineRow::new(empty).reply_preview, None);
+    }
+
+    #[test]
+    fn a_row_carries_the_attribution_with_and_without_the_runtime() {
+        // The path that actually had the bug. Deriving the short form from the
+        // *composed* `sender_name` finds no `@` and hands the whole string
+        // back, so a room with one speaker kept repeating the suffix — and a
+        // test that only exercised `attributed_parts` passed throughout.
+        let mut item = a_text_item();
+        item.sender_display_name = Some("ganesha (openclaw @ ashram)".into());
+        let row = TimelineRow::new(item);
+        assert_eq!(row.sender_name, "Ganesha (OpenClaw on Ashram)");
+        assert_eq!(row.sender_short, "Ganesha");
+    }
+
+    #[test]
+    fn a_row_says_whether_it_can_be_replied_to_yet() {
+        // A local echo has no event id, so a reply or reaction against it has
+        // nothing to address and would fail at the homeserver.
+        //
+        // This used to be expressed by setting a send state, because that was
+        // the only evidence available. The absence of an event id is the
+        // thing itself.
+        let mut echo = a_text_item();
+        echo.event_id = None;
+        echo.send_state = Some("notSentYet".into());
+        assert!(!TimelineRow::new(echo).can_reply_or_react);
+        assert!(TimelineRow::new(a_text_item()).can_reply_or_react);
+    }
+
+    #[test]
+    fn a_rows_view_carries_the_parsed_body_so_a_host_parses_nothing() {
+        let mut item = a_text_item();
+        item.body = Some("**bold**".into());
+        let row = TimelineRow::new(item);
+        let crate::item_view::ItemView::Bubble { blocks, .. } = &row.view else {
+            panic!("expected a bubble, got {:?}", row.view);
+        };
+        assert_eq!(blocks, &crate::rich::blocks_from_markdown("**bold**"));
+    }
+
+    fn a_text_item() -> TimelineItemDto {
+        TimelineItemDto {
+            id: "unique-1".into(),
+            event_id: Some("$e1".into()),
+            kind: "message".into(),
+            msgtype: Some("m.text".into()),
+            detail: None,
+            sender: Some("@a:x.org".into()),
+            sender_avatar: None,
+            sender_display_name: Some("A".into()),
+            body: Some("hello".into()),
+            formatted_body: None,
+            media: None,
+            custom_payload: None,
+            timestamp_ms: Some(1_700_000_000_000),
+            is_own: false,
+            send_state: None,
+            reply_to: None,
+            edited: false,
+            reactions: vec![],
+            read_by: vec![],
+            editable: false,
+        }
+    }
+}

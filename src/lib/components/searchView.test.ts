@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { projectSearchResults, roomLabel, snippet, SNIPPET_MAX } from "./searchView";
-import type { RoomSummary, SearchResult } from "$lib/ipc";
+import type { RoomRow, RoomSummary, SearchResult } from "$lib/ipc";
 
-function room(id: string, name: string): RoomSummary {
+/** A row, since the roster carries rows. Only the name is read here. */
+function room(id: string, name: string): RoomRow {
+  return {
+    room: summary(id, name),
+    identity: { glyph: null, name, role: null, initial: name.slice(0, 1).toUpperCase() },
+    preview: null,
+    affordance: "compose",
+  };
+}
+
+function summary(id: string, name: string): RoomSummary {
   return {
     id,
     name,
@@ -13,6 +23,7 @@ function room(id: string, name: string): RoomSummary {
     lastMessageNamesSender: false,
     lastEventType: null,
     lastActivityMs: null,
+  runtime: null,
     membership: "joined",
   };
 }

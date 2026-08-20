@@ -25,7 +25,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FEATURES=("$@")
-BIN="src-tauri/target/debug/supermessage"
+# Workspace root, not `src-tauri/target`: extracting the core made this a
+# cargo workspace, and a workspace builds into one shared target directory at
+# its root. The old path silently referred to nothing.
+BIN="target/debug/supermessage"
 # Matches `identifier` in tauri.conf.json. It has to: the keychain entry is
 # recorded against this, so a different string here would look like a different
 # app and re-prompt.
@@ -52,7 +55,11 @@ if ! curl -sf -o /dev/null --max-time 2 http://localhost:1420; then
 fi
 
 # 2. Build, then sign what was just linked.
-( cd src-tauri && cargo build "${FEATURES[@]}" )
+# `${FEATURES[@]+"${FEATURES[@]}"}` rather than `"${FEATURES[@]}"`: macOS ships
+# bash 3.2, where expanding an empty array under `set -u` is an unbound-variable
+# error rather than nothing. The script worked only for as long as it was
+# always given arguments.
+cargo build -p supermessage ${FEATURES[@]+"${FEATURES[@]}"}
 codesign --force --sign "$IDENTITY" --identifier "$IDENTIFIER" "$BIN"
 codesign -dv "$BIN" 2>&1 | grep -E "Identifier|Signature=|flags" || true
 

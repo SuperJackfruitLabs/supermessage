@@ -3,7 +3,7 @@ import { MAX_NAMED_TYPERS, typingIndicatorText } from "./typingView";
 import type { TypingUser } from "$lib/ipc";
 
 function user(userId: string, displayName: string | null = null): TypingUser {
-  return { userId, displayName };
+  return { userId, displayName, label: displayName ?? userId };
 }
 
 describe("typingIndicatorText", () => {

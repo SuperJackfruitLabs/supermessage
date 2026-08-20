@@ -5,7 +5,7 @@
 // whether it is the one they meant. That resolution is here, pure, because it
 // is the part that can be wrong — the panel just draws it.
 
-import type { RoomSummary, SearchResult } from "$lib/ipc";
+import type { RoomRow, SearchResult } from "$lib/ipc";
 
 export interface SearchResultView {
   eventId: string;
@@ -41,13 +41,13 @@ export function snippet(body: string, max: number = SNIPPET_MAX): string {
  * looks technical. A room the roster does not list is a real case — a search
  * reaches rooms the current space filter hides.
  */
-export function roomLabel(roomId: string, rooms: readonly RoomSummary[]): string {
-  return rooms.find((room) => room.id === roomId)?.name ?? roomId;
+export function roomLabel(roomId: string, rooms: readonly RoomRow[]): string {
+  return rooms.find((row) => row.room.id === roomId)?.room.name ?? roomId;
 }
 
 export function projectSearchResults(
   results: readonly SearchResult[],
-  rooms: readonly RoomSummary[]
+  rooms: readonly RoomRow[]
 ): SearchResultView[] {
   return results.map((result) => ({
     eventId: result.eventId,

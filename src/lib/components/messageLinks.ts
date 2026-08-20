@@ -57,14 +57,26 @@
 // Pure functions, not Svelte event handlers themselves, so they're
 // unit-testable without a DOM (this project's vitest runs with
 // `environment: "node"`, same constraint `draftTracker.ts` and
-// `timelineItemView.ts` are built around): they take the minimal shape they
+// `core::item_view` are built around): they take the minimal shape they
 // need out of the click event and element, plus injectable `open`/
 // `selectRoom`/`knownRoomIds` functions, so a test can hand them plain fakes
 // and assert on those instead of asserting anything about real navigation or
 // a real store.
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { parseMatrixLink, resolveInAppRoomId } from "./matrixLinks";
+import { resolveInAppRoomId } from "./matrixLinks";
+// The parse is the core's now — it is protocol, and iOS reads the same
+// grammar. Awaiting costs nothing: `preventDefault()` runs unconditionally,
+// before anything is known about the href, so no default navigation races it.
+//
+// Injected like `open`/`selectRoom`/`knownRoomIds` rather than imported and
+// called directly, for the reason this file already injects those: a handler
+// that reaches for IPC on its own cannot be tested without a running app, and
+// every rule in here is worth testing without one.
+import { parseMatrixLink as parseViaCore, type MatrixLinkTarget } from "$lib/ipc";
+
+/** How a handler resolves an href. See the note above on why it is a parameter. */
+export type ParseMatrixLink = (href: string) => Promise<MatrixLinkTarget | null>;
 
 /** The parts of a DOM click event this module actually touches. */
 export interface MessageBodyClickEvent {
@@ -127,12 +139,13 @@ function noKnownRoomIds(): readonly string[] {
  * either way, so the failure mode is "nothing visibly happens", never "the
  * app navigates away".
  */
-export function handleMessageBodyClick(
+export async function handleMessageBodyClick(
   event: MessageBodyClickEvent,
   open: (url: string) => Promise<void> = openUrl,
   selectRoom: (roomId: string) => void = noopSelectRoom,
   knownRoomIds: () => readonly string[] = noKnownRoomIds,
-): void {
+  parse: ParseMatrixLink = parseViaCore,
+): Promise<void> {
   const { target } = event;
   if (!isClosestCapable(target)) return;
 
@@ -151,7 +164,7 @@ export function handleMessageBodyClick(
   const href = anchor.getAttribute("href");
   if (!href) return;
 
-  const target_ = parseMatrixLink(href);
+  const target_ = await parse(href);
   // `knownRoomIds()` is only ever called for a link that actually parsed as
   // a room-by-id target — never for an ordinary link, and never for an
   // alias/user/unknown one — so the common case (a plain https link) never
@@ -179,12 +192,13 @@ export function handleMessageBodyClick(
  * {@link handleMessageBodyClick}, so a middle-click on an in-app-routable
  * room link is handled identically to a primary click on one.
  */
-export function handleMessageBodyAuxClick(
+export async function handleMessageBodyAuxClick(
   event: MessageBodyAuxClickEvent,
   open: (url: string) => Promise<void> = openUrl,
   selectRoom: (roomId: string) => void = noopSelectRoom,
   knownRoomIds: () => readonly string[] = noKnownRoomIds,
-): void {
+  parse: ParseMatrixLink = parseViaCore,
+): Promise<void> {
   if (event.button !== 1) return;
-  handleMessageBodyClick(event, open, selectRoom, knownRoomIds);
+  await handleMessageBodyClick(event, open, selectRoom, knownRoomIds, parse);
 }

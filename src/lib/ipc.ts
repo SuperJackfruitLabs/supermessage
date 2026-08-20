@@ -31,7 +31,7 @@ export interface CoreStatus {
  * `lastMessageNamesSender` are `false` and `lastEventType` is `null`. The
  * core returns facts, never a composed display string — building the line
  * (including the `You: ` prefix) is the webview's job, and
- * `$lib/components/roomPreview.ts` is the one place it happens.
+ * `core::room_preview` is the one place it happens.
  *
  * `avatarUrl` is the room's raw `mxc://` URI when the room has one set, but
  * it is **not** the full picture: it's `null` for a room whose "avatar" is
@@ -119,8 +119,8 @@ export interface RoomSummary {
    * whenever there is no preview.
    *
    * The hook the roster's pending-decision path keys off
-   * (`$lib/components/roomPreview.ts` against
-   * `customEvents.ts`'s `DECISION_BEARING_EVENT_TYPES`). Unreachable in
+   * (`core::room_preview` against
+   * `core::custom_events`'s `core::room_preview`'s decision-bearing types). Unreachable in
    * production **twice over**, and the second reason survives the first
    * being fixed: no gate schema exists yet, *and* the SDK's latest-event
    * builder ends its message-like arm in an unqualified catch-all that
@@ -134,6 +134,14 @@ export interface RoomSummary {
    */
   lastEventType: string | null;
   lastActivityMs: number | null;
+  /**
+   * Which harness this room's agent runs and on which machine, both ready to
+   * render — read from the room topic by the core.
+   *
+   * `null` for a room that is not an agent's, which is a normal outcome: a
+   * roster grouped by machine files those under nothing rather than guessing.
+   */
+  runtime: { harness: string; host: string } | null;
   /**
    * Whether this account has joined the room or has merely been invited to
    * it — see {@link Membership}.
@@ -167,9 +175,24 @@ export interface RoomMember {
  * unlike {@link RoomSummary}/{@link TimelineItem}.
  */
 export interface RoomInfo {
+  /**
+   * The name parsed into the suite's `<glyph> <Name> — <Role>` convention,
+   * by the same code a room's is — so a rail label, a panel header and a
+   * roster row cannot disagree about what something is called.
+   */
+  identity: RoomIdentity;
   roomId: string;
   name: string | null;
+  /**
+   * The topic **as a person wrote it**, or `null`.
+   *
+   * `null` also when the topic was the bridge's runtime line rather than
+   * prose — everything worth saying from that line is in {@link runtime}, in
+   * structured form, and showing both would say it twice.
+   */
   topic: string | null;
+  /** The harness and machine this room's agent runs on, read from the topic. */
+  runtime: { harness: string; host: string } | null;
   canonicalAlias: string | null;
   altAliases: string[];
   /** The room's active (joined + invited) member count — may exceed
@@ -177,7 +200,20 @@ export interface RoomInfo {
    * doc comment on the Rust side for why that's expected, not a mismatch. */
   activeMemberCount: number;
   members: RoomMember[];
+  /** How loudly this room may interrupt. */
+  notifications: NotificationMode;
+  /** Whether this room carries the `m.favourite` tag. */
+  pinned: boolean;
 }
+
+/**
+ * Mirrors `NotificationMode` from `core::room_info`.
+ *
+ * `"default"` means no rule is set for this room, so the account default
+ * applies — deliberately *not* resolved into a concrete level, see the Rust
+ * enum's doc comment.
+ */
+export type NotificationMode = "default" | "allMessages" | "mentionsOnly" | "muted";
 
 /**
  * Mirrors `TimelineItemDto` from `src-tauri/src/core/dto.rs`.
@@ -187,17 +223,41 @@ export interface RoomInfo {
  * Matrix event-type string. `msgtype` is only populated for `kind:
  * "message"`; `detail` carries kind-specific context (a membership change's
  * change kind, a state event's event type, a custom event's event type, …).
- * `$lib/components/timelineItemView.ts` is what turns this into a render
+ * `core::item_view` is what turns this into a render
  * decision — see its doc comment and `docs/matrix-events.md` for the full
  * mapping.
  */
 export interface TimelineItem {
+  /**
+   * **Identity, not an address.** The SDK's `TimelineItem::unique_id()`.
+   *
+   * Stable across the local-echo-to-confirmed transition, which is why it is
+   * not the event id: keying a list on the event id made every message change
+   * identity at the instant it was confirmed, so a row that should have
+   * updated was deleted and re-inserted instead. Key rows on this; never send
+   * it to the homeserver.
+   */
   id: string;
+  /**
+   * **The address**, once there is one. `null` while the message is a local
+   * echo the server has not echoed back.
+   *
+   * What reply, react, redact and media fetches take. Its absence is exactly
+   * why a message that has not landed cannot be replied to — see
+   * `canReplyOrReact`.
+   */
+  eventId: string | null;
   kind: string;
   msgtype: string | null;
   detail: string | null;
   sender: string | null;
   senderDisplayName: string | null;
+  /**
+   * The sender's avatar as an `mxc:` URI, when their profile carries one.
+   * A URI rather than bytes — fetching it is a round trip the host schedules
+   * (`memberAvatar`), not something a projection does per item.
+   */
+  senderAvatar: string | null;
   body: string | null;
   /**
    * The message's HTML formatted body, present only when the core reports
@@ -243,7 +303,7 @@ export interface TimelineItem {
    * **Untrusted, arbitrary JSON from anyone who can send to the room.**
    * Typed `unknown`, not a shaped interface, deliberately: nothing may read
    * a field out of this without checking its type first (see
-   * `$lib/components/customEvents.ts`'s `safeStringField` for the pattern),
+   * `core::custom_events`'s `core::custom_events::safe_string_field` for the pattern),
    * and nothing read out of it may ever reach `{@html}`, an `href`, an
    * `src`, or a `style` — nothing here narrows that responsibility away.
    */
@@ -284,6 +344,11 @@ export interface TimelineItem {
    * message, never a per-message avatar stack or a name list.
    */
   readBy: string[];
+  /**
+   * Whether this account may rewrite this message — the SDK's
+   * `is_editable()`, asked rather than inferred from `isOwn`.
+   */
+  editable: boolean;
 }
 
 /** Mirrors `MediaMetaDto` from `src-tauri/src/core/dto.rs`. See {@link TimelineItem.media}. */
@@ -329,11 +394,11 @@ export interface ReplyTo {
    * undecryptable parent has a sender but no body. Classified in the core
    * the same way a top-level item is (`core::timeline::reply_parent_label`,
    * built on `classify_content`), so it reads with the same vocabulary
-   * `$lib/components/timelineItemView.ts`'s `viewFor` placeholders already
+   * `core::item_view`'s `core::item_view::view_for` placeholders already
    * use (e.g. `"Message deleted"`). `null` whenever `excerpt` is non-null,
    * and always `null` when `available` is `false` (that case already has
    * its own "Original message unavailable" wording — see `ReplyQuoteView`
-   * in `timelineItemView.ts`).
+   * in `core::item_view`).
    */
   label: string | null;
 }
@@ -349,10 +414,21 @@ export interface Reaction {
    * overflow like any other free-text field from a sender.
    */
   key: string;
+  /**
+   * The same key, bounded for rendering by the core. Use this on screen and
+   * {@link Reaction.key} on the wire — they usually look alike, but `key` is
+   * compared byte-for-byte against what other clients sent.
+   */
+  displayKey: string;
   /** How many distinct senders have reacted with this key. */
   count: number;
   /** Whether the current user is among those senders. */
   byMe: boolean;
+  /**
+   * The raw user ids of everyone who reacted with this key — ids, not names,
+   * so a host that wants a name asks `peopleLabel` for one.
+   */
+  senders: string[];
 }
 
 /**
@@ -363,11 +439,17 @@ export interface Reaction {
  *
  * A space **is a room** — same state, same timeline, marked only by
  * `m.room.type: "m.space"` — which is why `name` gets parsed by the same
- * `parseRoomIdentity` the roster uses (a space can carry the `glyph — Name
+ * `core::room_identity::parse_room_identity` the roster uses (a space can carry the `glyph — Name
  * — Role` structure too) and why its avatar is fetched with the ordinary
  * {@link roomAvatar}, keyed on this `id`.
  */
 export interface SpaceSummary {
+  /**
+   * The name parsed into the suite's `<glyph> <Name> — <Role>` convention,
+   * by the same code a room's is — so a rail label, a panel header and a
+   * roster row cannot disagree about what something is called.
+   */
+  identity: RoomIdentity;
   id: string;
   /**
    * The space's display name, **never empty**: the core falls back to the
@@ -519,6 +601,12 @@ export interface TypingUser {
    * `$lib/components/typingView.ts`).
    */
   displayName: string | null;
+  /**
+   * What to call this person on screen — the same naming rules the timeline
+   * uses for a sender, so one agent is not `super-chotu (hermes @ guild)` on
+   * the typing line and `Super Chotu` three centimetres above it.
+   */
+  label: string;
 }
 
 /**
@@ -598,6 +686,223 @@ export interface StagedAttachment {
   height?: number;
 }
 
+/**
+ * One inline-level element of a message body, as `core::rich` parsed it.
+ *
+ * Mirrors `RichInline` tag-for-tag. The webview never parses markdown or HTML
+ * itself: the rule that raw HTML is dropped rather than escaped is made once,
+ * in Rust, so iOS and Android cannot disagree with this app about it.
+ */
+export type RichInline =
+  | { inline: "text"; text: string }
+  | { inline: "emphasis"; inlines: RichInline[] }
+  | { inline: "strong"; inlines: RichInline[] }
+  | { inline: "code"; text: string }
+  | { inline: "link"; href: string; inlines: RichInline[] }
+  | { inline: "break" };
+
+/** One cell of a rendered table. */
+export interface RichTableCell {
+  inlines: RichInline[];
+}
+
+/** Mirrors `RichBlock` tag-for-tag. Nesting is capped at 16 by the core. */
+export type RichBlock =
+  | { block: "paragraph"; inlines: RichInline[] }
+  | { block: "heading"; level: number; inlines: RichInline[] }
+  | { block: "codeBlock"; language: string | null; text: string }
+  | { block: "blockQuote"; blocks: RichBlock[] }
+  | {
+      block: "list";
+      ordered: boolean;
+      start: number;
+      items: { blocks: RichBlock[] }[];
+    }
+  | { block: "thematicBreak" }
+  | { block: "table"; header: RichTableCell[]; rows: { cells: RichTableCell[] }[] };
+
+/** One labelled row on a custom-event card. Both halves are display text. */
+export interface CustomEventField {
+  label: string;
+  value: string;
+}
+
+/**
+ * One answer the reader can give. `id` is an identifier, never rendered — it
+ * is sent verbatim, so it is deliberately not truncated by the core.
+ */
+export interface CustomEventDecisionOption {
+  label: string;
+  id: string;
+}
+
+/** A pending decision. The only thing in this app that may be amber. */
+export interface CustomEventDecision {
+  prompt: string;
+  options: CustomEventDecisionOption[];
+}
+
+/**
+ * The custom-event fallback chain's outcome, decided by
+ * `core::custom_events::resolve_custom_event`. This app renders its three
+ * states; it never makes the decision itself.
+ */
+export type CustomEventView =
+  | {
+      status: "rendered";
+      fields: CustomEventField[];
+      /**
+       * How the agent reached this, when it said.
+       *
+       * **Where reasoning persists.** The live channel carries it on
+       * to-device messages, which are not room history and are gone the
+       * moment the turn ends; a turn card is a real room event, so reasoning
+       * that arrives here is still there tomorrow, on every client, in its
+       * place in the conversation.
+       */
+      reasoning: string | null;
+      newerVersion: boolean;
+      decision: CustomEventDecision | null;
+    }
+  | { status: "fallbackBody"; text: string }
+  | { status: "placeholder"; text: string };
+
+/** The quoted parent of a reply, resolved by the core. */
+export type ReplyQuoteView =
+  | { state: "unavailable" }
+  | {
+      state: "available";
+      sender: string;
+      excerpt: string | null;
+      label: string | null;
+    };
+
+/**
+ * The render decision for one item, made by `core::item_view::view_for`.
+ */
+export type ItemView =
+  | { render: "bubble"; muted: boolean; blocks: RichBlock[] }
+  | { render: "emote" }
+  | { render: "system"; text: string }
+  | { render: "unreadMarker" }
+  /**
+   * The line between one day and the next. Carries no text: the date is
+   * formatted by the host from the item's own `timestampMs`, because that
+   * reads a clock and a locale and both belong where the rendering is.
+   */
+  | { render: "dateDivider" }
+  | { render: "placeholder"; text: string }
+  | { render: "image"; alt: string; width: number | null; height: number | null }
+  | {
+      render: "mediaFile";
+      label: "File" | "Audio" | "Video";
+      filename: string;
+      size: number | null;
+      mimetype: string | null;
+    }
+  | { render: "customEvent"; view: CustomEventView; label: string; eventType: string }
+  | { render: "none" };
+
+/**
+ * A timeline item together with every decision the core made about it.
+ *
+ * The set of fields beyond `item` is not decoration. Each was a synchronous
+ * helper this app called from inside its markup, and markup cannot `await` —
+ * so anything needed *while drawing* has to arrive with the item rather than
+ * be fetchable. That is why the timeline channel carries rows and not DTOs.
+ */
+export interface TimelineRow {
+  item: TimelineItem;
+  view: ItemView;
+  /** Display name, then the raw sender id, then a placeholder. Never empty. */
+  senderName: string;
+  /**
+   * The same attribution **without** the bridge's `(harness on host)` suffix,
+   * when there is one — otherwise identical to {@link senderName}.
+   *
+   * A room where one agent speaks repeats that suffix under every message and
+   * it never changes there; a room where several do needs it. Carried rather
+   * than derived so a host chooses between two given strings instead of taking
+   * a composed one back apart.
+   */
+  senderShort: string;
+  /**
+   * The verb phrase for a membership change, `null` otherwise. Carried apart
+   * from the rendered system sentence because a grouped run composes one
+   * sentence from many names and a single verb.
+   */
+  membershipVerb: string | null;
+  replyQuote: ReplyQuoteView | null;
+  /** False while the item is still a local echo with no real event id. */
+  canReplyOrReact: boolean;
+  /**
+   * A short preview of this item's body, for the composer's "Replying to …"
+   * row when someone replies to it. `null` when there is nothing to show.
+   */
+  replyPreview: string | null;
+}
+
+/** A room name split into the suite's `<glyph> <Name> — <Role>` convention. */
+export interface RoomIdentity {
+  /** The leading emoji or symbol, `null` when the name has none. */
+  glyph: string | null;
+  /** Never empty — a blank name becomes the literal "Unnamed room". */
+  name: string;
+  role: string | null;
+  /**
+   * The single character for an avatar's fallback slot. Derived from the
+   * *parsed* name, never the raw one.
+   */
+  initial: string;
+}
+
+/** A composed roster preview line. */
+export interface RoomPreview {
+  /** Ready to render. Never empty. */
+  text: string;
+  /**
+   * Whether this is the pending-decision line — the row's amber switch.
+   * `true` only ever means the operator owes someone an answer.
+   */
+  pending: boolean;
+}
+
+/** What the room pane may offer for a membership. */
+export type RoomAffordance = "compose" | "respondToInvitation" | "nothing";
+
+/**
+ * A room together with every decision the core made about it.
+ *
+ * The roster mirror of {@link TimelineRow}, and for the same reason: a row is
+ * drawn from a name already split, a preview already composed and an
+ * affordance already chosen, none of which markup can go and fetch.
+ */
+export interface RoomRow {
+  room: RoomSummary;
+  identity: RoomIdentity;
+  /** `null` when the row shows no preview line at all. */
+  preview: RoomPreview | null;
+  affordance: RoomAffordance;
+}
+
+/** A member a message can address, for {@link collectMentions}. */
+export interface Mentionable {
+  userId: string;
+  displayName: string | null;
+}
+
+/** What a parsed matrix.to or `matrix:` link addresses. */
+export type MatrixLinkTarget =
+  | { kind: "room"; roomId: string; eventId: string | null }
+  | { kind: "roomAlias"; alias: string; eventId: string | null }
+  | { kind: "user"; userId: string }
+  /**
+   * Recognisably a matrix link, but too malformed — or an address form the
+   * grammar does not define — to extract anything from. Distinct from `null`,
+   * which means "not a matrix link in the first place".
+   */
+  | { kind: "unknown" };
+
 const ROOMS_DIFF_EVENT = "sm://rooms/diff";
 const TIMELINE_DIFF_EVENT = "sm://timeline/diff";
 const CONNECTION_EVENT = "sm://connection";
@@ -667,8 +972,8 @@ export async function logout(): Promise<void> {
  * core returns this as a 2-element JSON array, not an object — destructure
  * positionally (`const [seq, rooms] = await roomsResync();`).
  */
-export async function roomsResync(): Promise<[number, RoomSummary[]]> {
-  return invoke<[number, RoomSummary[]]>("rooms_resync");
+export async function roomsResync(): Promise<[number, RoomRow[]]> {
+  return invoke<[number, RoomRow[]]>("rooms_resync");
 }
 
 /**
@@ -751,8 +1056,8 @@ export async function timelinePaginateBack(roomId: string, count: number): Promi
  * messages under the new room's header, permanently. See
  * `core::timeline::TimelineSnapshot` for the full sequence.
  */
-export async function timelineResync(): Promise<[string, number, TimelineItem[]]> {
-  return invoke<[string, number, TimelineItem[]]>("timeline_resync");
+export async function timelineResync(): Promise<[string, number, TimelineRow[]]> {
+  return invoke<[string, number, TimelineRow[]]>("timeline_resync");
 }
 
 /**
@@ -791,7 +1096,7 @@ export async function sendMessage(
  *
  * `inReplyTo` must be a real Matrix event id, not a local echo's transaction
  * id — see `TimelineItem.sendState`'s doc comment and
- * `$lib/components/timelineItemView.ts`'s `canReplyOrReact` for the rule the
+ * `core::item_view`'s `core::item_view::can_reply_or_react` for the rule the
  * webview uses to only ever offer this for an item that already has one.
  */
 export async function sendReply(roomId: string, body: string, inReplyTo: string): Promise<void> {
@@ -961,7 +1266,74 @@ export interface SearchResult {
 }
 
 /**
- * Searches every room this account can see, newest first.
+ * Which roster arrangement the reader chose — mirrors `core::roster`.
+ *
+ * Three rather than one, because a fleet is read for different reasons: to
+ * find a room you have in mind, to answer whatever is waiting, or to see how
+ * a machine is doing.
+ */
+export type RosterView = "recent" | "waiting" | "machine";
+
+/**
+ * What an agent is doing, as far as the roster can honestly tell.
+ *
+ * Not a health check: the roster does not know whether a process is running
+ * and must not imply that it does.
+ */
+export type AgentState = "needsYou" | "active" | "idle" | "quiet";
+
+/** One roster row, with the state the roster may say about it. */
+export interface RosterRow {
+  row: RoomRow;
+  state: AgentState;
+}
+
+/** One section of the roster. */
+export interface RosterSection {
+  id: string;
+  /** `null` for an arrangement that does not label its one section. */
+  title: string | null;
+  /** A count the header may show — waiting rooms, agents on a host. */
+  detail: string | null;
+  rows: RosterRow[];
+  /** Whether this section is the one that wants attention. */
+  attention: boolean;
+}
+
+/**
+ * Order and group the roster.
+ *
+ * In the core rather than here because every rule inside it is a product
+ * decision about what a fleet looks like — how long silence takes to become
+ * quiet, which room outranks which, what a section is called when it is the
+ * only one. Two clients each holding their own copy is two clients that
+ * disagree about what a roster is, which is what this replaced.
+ */
+export async function rosterSections(
+  rows: RoomRow[],
+  view: RosterView,
+  showsInvitations: boolean,
+  nowMs: number,
+): Promise<RosterSection[]> {
+  return invoke<RosterSection[]>("roster_sections", {
+    rows,
+    view,
+    showsInvitations,
+    nowMs,
+  });
+}
+
+/** How many invitations a filter is withholding — hidden must never mean gone. */
+export async function rosterHiddenInvitations(
+  rows: RoomRow[],
+  showsInvitations: boolean,
+): Promise<number> {
+  return invoke<number>("roster_hidden_invitations", { rows, showsInvitations });
+}
+
+/**
+ * Searches for `term`, newest first — in `roomId` when one is given, and in
+ * every room this account can see otherwise.
  *
  * Server-side (`POST /_matrix/client/v3/search`), which rests on these rooms
  * being unencrypted — an encrypted room simply will not appear in results.
@@ -970,8 +1342,11 @@ export interface SearchResult {
  * An empty term resolves to an empty list without asking the homeserver, since
  * it would otherwise ask for the whole of history.
  */
-export async function searchMessages(term: string): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>("search_messages", { term });
+export async function searchMessages(
+  term: string,
+  roomId?: string,
+): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>("search_messages", { term, roomId: roomId ?? null });
 }
 
 /**
@@ -1121,13 +1496,48 @@ export function onStagedAttachment(handler: (staged: StagedAttachment) => void):
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
-export function onRoomsDiff(handler: (env: DiffEnvelope<RoomSummary>) => void): Promise<UnlistenFn> {
-  return listen<DiffEnvelope<RoomSummary>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));
+export function onRoomsDiff(handler: (env: DiffEnvelope<RoomRow>) => void): Promise<UnlistenFn> {
+  return listen<DiffEnvelope<RoomRow>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * Parses a matrix.to URL or a `matrix:` URI into what it addresses.
+ *
+ * `null` when the href is not a matrix link at all — the signal
+ * `messageLinks.ts` uses to fall back to the system browser unchanged.
+ */
+export async function parseMatrixLink(href: string): Promise<MatrixLinkTarget | null> {
+  return invoke<MatrixLinkTarget | null>("parse_matrix_link", { href });
+}
+
+/**
+ * The user ids a finished message mentions, for `m.mentions`.
+ *
+ * Matched on the label the composer inserted, longest first, so a member
+ * whose name is a prefix of another's is not reported alongside them.
+ */
+export async function collectMentions(
+  text: string,
+  members: readonly Mentionable[],
+): Promise<string[]> {
+  return invoke<string[]>("collect_mentions", { text, members });
 }
 
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */
-export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineItem>) => void): Promise<UnlistenFn> {
-  return listen<DiffEnvelope<TimelineItem>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
+export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void): Promise<UnlistenFn> {
+  return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * Parses a live turn's partial markdown into blocks.
+ *
+ * A landed message arrives with its blocks already on its {@link TimelineRow};
+ * this is for a turn still being written on `sm://live`, which has no timeline
+ * item yet. Same parser on the Rust side, so a turn does not change appearance
+ * the instant it lands.
+ */
+export async function richBlocksFromMarkdown(source: string): Promise<RichBlock[]> {
+  return invoke<RichBlock[]>("rich_blocks_from_markdown", { source });
 }
 
 /**
@@ -1197,6 +1607,14 @@ export interface ToolPayload {
   /** `pending` | `in_progress` | `completed` | `failed`, or something newer. */
   status: string;
   locations: string[];
+  /**
+   * What the call was given and what it produced, bounded by the core
+   * (`live::bound_tool_text`). `null` from a harness that does not report
+   * them — which is every harness today; the field exists so one that starts
+   * to needs no schema change.
+   */
+  input: string | null;
+  output: string | null;
 }
 
 /** Subscribes to tool-call state on {@link TOOL_EVENT}. */

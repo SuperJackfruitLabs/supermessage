@@ -89,12 +89,12 @@ use matrix_sdk_ui::timeline::{
 };
 use serde::{Deserialize, Serialize};
 
-use supermessage_lib::core::dto::{apply_ops, project_diff, TimelineItemDto};
-use supermessage_lib::core::timeline::{
+use supermessage_core::dto::{apply_ops, project_diff, TimelineItemDto};
+use supermessage_core::timeline::{
     latest_event_preview, project_item, timeline_event_filter, MessagePreview,
     CUSTOM_PAYLOAD_MAX_BYTES, PREVIEW_MAX_CHARS,
 };
-use supermessage_lib::core::tls::install_ring_provider;
+use supermessage_core::tls::install_ring_provider;
 
 /// A hand-rolled custom message-like event content, standing in for a real
 /// (not-yet-designed — see `docs/matrix-events.md` §G) Kaambaan schema, so
@@ -119,7 +119,14 @@ async fn projected_items(
     build: impl FnOnce(&RoomId, JoinedRoomBuilder) -> JoinedRoomBuilder,
 ) -> Vec<TimelineItemDto> {
     projected(build, |item, own_user| {
-        project_item(item, own_user).expect("project_item is total over TimelineItemKind")
+        // `.item`: the projection now hands back a row (DTO plus the render
+        // decision the core made for it). This file is about the DTO, and
+        // every assertion below is written against it, so the view is
+        // unwrapped here rather than threaded through a thousand lines of
+        // expectations that were never about it.
+        project_item(item, own_user)
+            .expect("project_item is total over TimelineItemKind")
+            .item
     })
     .await
 }
@@ -730,8 +737,8 @@ async fn custom_message_like_event_projects_a_bounded_payload_and_fallback_body(
         .custom_payload
         .as_ref()
         .expect("a payload under the byte cap must be carried across IPC");
-    assert_eq!(payload["title"], "Deployed to staging");
-    assert_eq!(payload["schema_version"], 1);
+    assert_eq!(payload.0["title"], "Deployed to staging");
+    assert_eq!(payload.0["schema_version"], 1);
 }
 
 #[tokio::test]
@@ -1065,6 +1072,7 @@ async fn projected_items_across_syncs(builds: Vec<SyncBuild>) -> Vec<TimelineIte
                 project_diff(diff, |item| {
                     project_item(&item, &own_user)
                         .expect("project_item is total over TimelineItemKind")
+                        .item
                 })
             })
             .collect();
@@ -1207,6 +1215,7 @@ async fn a_message_from_another_client_survives_this_client_having_sent_one_of_i
                         project_diff(diff, |item| {
                             project_item(&item, own_user)
                                 .expect("project_item is total over TimelineItemKind")
+                                .item
                         })
                     })
                     .collect();
@@ -1298,7 +1307,9 @@ async fn a_gappy_sync_clears_the_timeline_and_the_rebuild_arrives_separately() {
             .into_iter()
             .map(|diff| {
                 project_diff(diff, |item| {
-                    project_item(&item, &own_user).expect("project_item is total")
+                    project_item(&item, &own_user)
+                        .expect("project_item is total")
+                        .item
                 })
             })
             .collect();
