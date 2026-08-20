@@ -28,6 +28,7 @@
   import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
+  import AgentReasoning from "$lib/components/AgentReasoning.svelte";
   import LiveTurn from "$lib/components/LiveTurn.svelte";
   import LiveActivity from "$lib/components/LiveActivity.svelte";
   import Composer from "$lib/components/Composer.svelte";
@@ -894,6 +895,12 @@
           {#key roomsStore.selectedId}
             <Timeline roomId={roomsStore.selectedId} />
           {/key}
+          <!--
+            Why the answer is what it is, above the answer itself — the order
+            the agent produced them in, and the order a reader reconstructs
+            them in. Collapsed unless asked for; see `AgentReasoning.svelte`.
+          -->
+          <AgentReasoning roomId={roomsStore.selectedId} />
           <!--
             The answer as it is written, between the timeline and the typing
             line: closest to where it will land, and outside the virtual list

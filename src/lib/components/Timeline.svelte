@@ -278,10 +278,9 @@
   //      gone" unreachable — layer 1 only covers the click paths this file
   //      knows about today.
 
-  import { onDestroy, tick, type Snippet } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
-  import { recallCache, rememberCache } from "./timelineCache";
-  import type { CacheSnapshot } from "virtua";
+  import Shimmer from "./ai/Shimmer.svelte";
   import { mediaDownload } from "$lib/ipc";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
@@ -290,7 +289,7 @@
   import { roomsStore } from "$lib/stores/rooms.svelte";
 
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
-  import { shouldRepin } from "./timelineFollow";
+  import { shouldRepin, shouldSettleAtBottom } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
@@ -353,49 +352,6 @@
 
   let vlist: VListHandle | undefined = $state();
 
-  /*
-   * Hand this room's row measurements to `timelineCache` on the way out.
-   *
-   * `+page.svelte` remounts this component per room (`{#key
-   * roomsStore.selectedId}`), so "destroyed" here means "the reader went
-   * somewhere else" — the exact moment worth remembering, and the last one at
-   * which `vlist` can still be asked. Without it, coming back re-measures
-   * every row from an estimate and the list settles visibly under the reader.
-   *
-   * The row count goes with it because a snapshot is only valid at the length
-   * it was taken at; `recallCache` is what enforces that, and its module
-   * comment says why.
-   */
-  /**
-   * The remembered measurements to mount `VList` with, resolved once.
-   *
-   * `VList` reads `cache` on mount and ignores it afterwards, so this must
-   * answer for the render that mounts it — which is the first one where rows
-   * exist, since the list lives behind `pane === "rows"`. Memoized rather than
-   * derived because it is a question with one correct moment to ask: later
-   * renders have a different row count (messages arrive) and would answer
-   * `undefined`, and a prop flipping to `undefined` after mount would be noise
-   * at best.
-   *
-   * Returning `undefined` is the ordinary case, not a failure — see
-   * `recallCache` for when a snapshot is declined.
-   */
-  let mountCache: { resolved: boolean; value: CacheSnapshot | undefined } = {
-    resolved: false,
-    value: undefined,
-  };
-
-  function cacheForMount(rowCount: number): CacheSnapshot | undefined {
-    if (!mountCache.resolved) {
-      mountCache = { resolved: true, value: recallCache(roomId, rowCount) };
-    }
-    return mountCache.value;
-  }
-
-  onDestroy(() => {
-    if (vlist === undefined) return;
-    rememberCache(roomId, vlist.getCache(), displayRows.length);
-  });
   let paginating = $state(false);
   let reachedStart = $state(false);
   // `$state`, not a plain variable: the read-tracking effect further down
@@ -745,8 +701,22 @@
     scroller.scrollTop = scroller.scrollHeight;
     let previous = measure();
 
+    // Whether the list has yet been landed on its newest row. False until the
+    // first content arrives — see `shouldSettleAtBottom`, which explains why
+    // arrival cannot be folded into `shouldRepin`.
+    let settled = previous.content > 0;
+    if (settled) scroller.scrollTop = scroller.scrollHeight;
+
     const react = () => {
       const next = measure();
+      if (shouldSettleAtBottom(previous, next, settled)) {
+        // The rows a room opens with have just landed. Same assignment as the
+        // repin below, for the same reason: the bottom is exact.
+        scroller.scrollTop = scroller.scrollHeight;
+        settled = true;
+        previous = measure();
+        return;
+      }
       if (shouldRepin(previous, next, followBottom)) {
         // Assigning `scrollTop` rather than `scrollToIndex`: the bottom of the
         // scroller is exact and needs no index, no measurement and no guess
@@ -1477,7 +1447,16 @@
       {#if pane === "empty"}
         <p class="fade-in text-ui text-content-muted">Nothing here yet.</p>
       {:else if pane === "loading"}
-        <p class="fade-in text-ui text-content-faint">Loading conversation…</p>
+        <!--
+          A sweep rather than a static line: this appears only when the pane
+          has been waiting past `LOADING_AFTER_MS`, so by the time a reader
+          sees it they are already wondering whether anything is happening.
+          Motion answers that; a still label does not. See `ai/Shimmer.svelte`.
+        -->
+        <Shimmer
+          class="fade-in text-ui"
+          contentLength={21}>Loading conversation…</Shimmer
+        >
       {/if}
     </div>
   {:else}
@@ -1497,7 +1476,6 @@
       getKey={(row: TimelineDisplayRow) => row.key}
       shift={view.shift}
       bufferSize={BUFFER_SIZE}
-      cache={cacheForMount(displayRows.length)}
       onscroll={handleScroll}
       class="bg-surface-sunken"
     >
