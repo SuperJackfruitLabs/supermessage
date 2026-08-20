@@ -29,6 +29,14 @@ import SupermessageFFI
 @Observable
 public final class TimelineStore {
     public private(set) var items: [TimelineRow] = []
+    /// Bumped whenever [`items`] is replaced.
+    ///
+    /// A cheap way for a list to answer "did the history actually change" in
+    /// constant time. It matters because a streaming turn updates other
+    /// observable state many times a second, and a list that cannot tell
+    /// "new token" from "new message" rebuilds every row for both — which is
+    /// exactly what made the timeline jitter while an agent was writing.
+    public private(set) var revision: UInt64 = 0
     public private(set) var roomId: String?
     /// Set while a back-pagination round trip is in flight, so the view can
     /// show it and so two do not overlap.
@@ -52,7 +60,13 @@ public final class TimelineStore {
             // The subject is the focused room id, and it changes under this
             // store while a subscribe round trip is in flight.
             accepts: { [weak self] subject in subject == self?.roomId },
-            onUpdate: { [weak self] items in self?.items = items })
+            onUpdate: { [weak self] items in self?.replaceItems(items) })
+    }
+
+    /// The one place `items` is written, so the revision cannot drift from it.
+    private func replaceItems(_ next: [TimelineRow]) {
+        items = next
+        revision &+= 1
     }
 
     public func handle(_ envelope: TimelineDiffEnvelope) {
@@ -68,7 +82,7 @@ public final class TimelineStore {
         // by `accepts` rather than mistaken for a gap.
         sync?.resetForNewSubscription()
         self.roomId = roomId
-        items = []
+        replaceItems([])
         canPaginate = true
         try? await client.timelineSubscribe(roomId: roomId, sink: sink)
     }
@@ -116,7 +130,7 @@ public final class TimelineStore {
 
     public func clear() {
         sync?.stop()
-        items = []
+        replaceItems([])
         roomId = nil
     }
 }

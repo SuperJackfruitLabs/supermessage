@@ -112,7 +112,9 @@ struct TimelineCollectionView: UIViewRepresentable {
                 DispatchQueue.main.async { isAwayFromNewest = away }
             }
         }
-        context.coordinator.apply(rows: timeline.items, isPaginating: timeline.isPaginating)
+        context.coordinator.apply(
+            rows: timeline.items, revision: timeline.revision,
+            isPaginating: timeline.isPaginating, isLive: session.live.isLive)
     }
 
     /// Bring the newest message back into view.
@@ -157,6 +159,16 @@ struct TimelineCollectionView: UIViewRepresentable {
         private var rowsById: [String: (row: TimelineRow, continuesRun: Bool)] = [:]
         /// The sentence for each collapsed membership run, by its id.
         private var runsById: [String: String] = [:]
+        /// The history's entry list from the last full pass, so an update
+        /// that only toggles the live turn can be applied without redoing
+        /// the grouping.
+        private var displayEntries: [Entry] = []
+        /// What the last pass was given, so the next one can tell what — if
+        /// anything — actually changed. See `apply`.
+        private var appliedRevision: UInt64 = 0
+        private var appliedPaginating = false
+        private var appliedLive = false
+        private var hasApplied = false
         /// Whether one agent does all the talking, so the runtime suffix can
         /// come off every attribution in the room.
         private var singleSpeaker = true
@@ -250,11 +262,50 @@ struct TimelineCollectionView: UIViewRepresentable {
 
         /// Hand the list a new set of rows.
         ///
-        /// Called from `updateUIView`, so it runs on every SwiftUI update. The
-        /// diffable data source is what makes that cheap — and what makes an
-        /// unchanged identity an update rather than a delete and an insert.
-        func apply(rows: [TimelineRow], isPaginating: Bool) {
+        /// Called from `updateUIView`, so it runs on **every** SwiftUI update
+        /// — and while an agent is writing, that is many times a second. So
+        /// the first thing it does is work out how much of itself it can
+        /// skip:
+        ///
+        /// - Nothing changed at all: return before touching anything.
+        /// - Only the live turn or the pagination spinner changed: the
+        ///   history is the same, so reuse the entry list computed last time
+        ///   and re-apply. No grouping pass, no reconfigure.
+        /// - The history changed: recompute, and reconfigure only the rows
+        ///   whose content actually differs.
+        ///
+        /// The version this replaced did the full pass every time and called
+        /// `reconfigureItems` on *every* carried identifier, which threw away
+        /// and rebuilt the `UIHostingConfiguration` of every visible cell on
+        /// every streaming token. That is what the jitter was: not a missing
+        /// animation, but every row on screen being re-measured and laid out
+        /// again several times a second.
+        func apply(rows: [TimelineRow], revision: UInt64, isPaginating: Bool, isLive: Bool) {
             guard let dataSource else { return }
+
+            let historyChanged = revision != appliedRevision || !hasApplied
+            if !historyChanged, isPaginating == appliedPaginating, isLive == appliedLive {
+                return
+            }
+
+            if !historyChanged {
+                appliedPaginating = isPaginating
+                appliedLive = isLive
+                // One row appearing or disappearing at the newest end — the
+                // "writing…" card, or the pagination spinner. Always worth
+                // animating when the reader is looking at it.
+                dataSource.apply(
+                    snapshot(entries: displayEntries, isPaginating: isPaginating, isLive: isLive),
+                    animatingDifferences: !wasAway)
+                return
+            }
+
+            appliedRevision = revision
+            appliedPaginating = isPaginating
+            appliedLive = isLive
+            // Set *after* this pass, so `animates` can tell a first fill —
+            // a room switch — from an arrival into a room already on screen.
+            defer { hasApplied = true }
 
             writerName = rows.last { !$0.item.isOwn }?.senderName
                 ?? session.rooms.selectedName ?? "Agent"
@@ -278,32 +329,93 @@ struct TimelineCollectionView: UIViewRepresentable {
                     previous = nil
                 }
             }
+            let previousRows = rowsById
+            let previousRuns = runsById
+            let previousSingleSpeaker = singleSpeaker
+
             rowsById = byId
             runsById = runs
             singleSpeaker = TimelineGrouping.hasSingleSpeaker(rows)
 
-            var snapshot = NSDiffableDataSourceSnapshot<Int, Entry>()
-            snapshot.appendSections([0])
             // Newest first, because the view is inverted. Index 0 is what the
             // reader sees at the bottom of the screen.
-            if session.live.isLive { snapshot.appendItems([.liveTurn]) }
-            snapshot.appendItems(
-                display.reversed().map { entry in
-                    switch entry {
-                    case let .row(row): return Entry.row(row.item.id)
-                    case let .membershipRun(id, _, _): return Entry.membershipRun(id)
-                    }
-                })
-            if isPaginating { snapshot.appendItems([.paginating]) }
+            displayEntries = display.reversed().map { entry in
+                switch entry {
+                case let .row(row): return Entry.row(row.item.id)
+                case let .membershipRun(id, _, _): return Entry.membershipRun(id)
+                }
+            }
+
+            var snap = snapshot(
+                entries: displayEntries, isPaginating: isPaginating, isLive: isLive)
 
             // Reconfigure rather than reload: an identity that survived should
             // update in place, which is the point of the identity this list is
             // keyed on.
+            //
+            // **Only the ones that changed.** Reconfiguring every carried
+            // identifier rebuilds the hosting configuration of every visible
+            // cell, so a single edited message re-laid-out the whole screen.
+            // A row is worth reconfiguring when its content differs, when its
+            // place in a run changed, or when the attribution rule flipped —
+            // `singleSpeaker` decides which name every row shows, so a change
+            // there is a change to all of them.
             let existing = Set(dataSource.snapshot().itemIdentifiers)
-            let carried = snapshot.itemIdentifiers.filter { existing.contains($0) }
-            if !carried.isEmpty { snapshot.reconfigureItems(carried) }
+            let changed = snap.itemIdentifiers.filter { entry in
+                guard existing.contains(entry) else { return false }
+                switch entry {
+                case let .row(id):
+                    if previousSingleSpeaker != singleSpeaker { return true }
+                    guard let before = previousRows[id], let after = byId[id] else { return true }
+                    return before.row != after.row || before.continuesRun != after.continuesRun
+                case let .membershipRun(id):
+                    return previousRuns[id] != runs[id]
+                // The live turn redraws itself: `LiveTurnView` reads the
+                // observable store directly, so its cell never needs telling.
+                case .liveTurn, .paginating:
+                    return false
+                }
+            }
+            if !changed.isEmpty { snap.reconfigureItems(changed) }
 
-            dataSource.apply(snapshot, animatingDifferences: false)
+            let arrived = snap.itemIdentifiers.filter { !existing.contains($0) }.count
+            dataSource.apply(
+                snap, animatingDifferences: animates(arrived: arrived, had: existing.count))
+        }
+
+        /// Whether an update to the history should animate.
+        ///
+        /// **A message arriving, and nothing else.** That is the one change
+        /// where the movement carries information: the conversation makes
+        /// room for something new while the reader is watching the place it
+        /// appears.
+        ///
+        /// Everything else is excluded, each for its own reason:
+        ///
+        /// - *Away from the newest end*: the reader is reading something, and
+        ///   animating moves it under them.
+        /// - *A room with nothing in it yet*: the first fill is not an
+        ///   arrival, it is the room appearing, and animating every row of it
+        ///   is a screenful of movement that says nothing.
+        /// - *More than a handful at once*: that is a page of history, or a
+        ///   resync. A conversation does not gain eight messages in one
+        ///   moment, so if it looks like it did, this is not an arrival.
+        private func animates(arrived: Int, had: Int) -> Bool {
+            guard hasApplied, !wasAway, had > 0 else { return false }
+            return arrived > 0 && arrived <= 3
+        }
+
+        /// The snapshot for a given entry list, with the two transient rows
+        /// that bracket it.
+        private func snapshot(
+            entries: [Entry], isPaginating: Bool, isLive: Bool
+        ) -> NSDiffableDataSourceSnapshot<Int, Entry> {
+            var snapshot = NSDiffableDataSourceSnapshot<Int, Entry>()
+            snapshot.appendSections([0])
+            if isLive { snapshot.appendItems([.liveTurn]) }
+            snapshot.appendItems(entries)
+            if isPaginating { snapshot.appendItems([.paginating]) }
+            return snapshot
         }
 
         /// Start a reply to `row`, for the composer to pick up.
