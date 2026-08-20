@@ -403,6 +403,38 @@ pub fn log_from_webview(level: String, message: String) {
     }
 }
 
+/// Arrange a roster: order it, group it, and label the groups.
+///
+/// Pure — no session state — and in the core so both clients agree about what
+/// a roster is. See `core::roster`.
+#[tauri::command]
+pub fn roster_sections(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    view: supermessage_core::roster::RosterView,
+    shows_invitations: bool,
+    now_ms: u64,
+) -> Vec<supermessage_core::roster::RosterSection> {
+    supermessage_core::roster::sections(&rows, view, shows_invitations, now_ms)
+}
+
+/// What the roster may say a room is doing.
+#[tauri::command]
+pub fn roster_state(
+    row: supermessage_core::dto::RoomRow,
+    now_ms: u64,
+) -> supermessage_core::roster::AgentState {
+    supermessage_core::roster::state_for(&row, now_ms)
+}
+
+/// How many invitations a filter is withholding.
+#[tauri::command]
+pub fn roster_hidden_invitations(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    shows_invitations: bool,
+) -> u32 {
+    supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
+}
+
 #[tauri::command]
 pub async fn search_messages(
     term: String,

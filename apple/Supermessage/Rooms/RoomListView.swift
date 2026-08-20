@@ -19,7 +19,7 @@ struct RoomListView: View {
     let clearsSelectionOnPop: Bool
 
     /// The arrangement the app opens on, and the filters, all remembered.
-    @AppStorage("roster.view") private var storedView = RosterView.waiting.rawValue
+    @AppStorage("roster.view") private var storedView = RosterChoice.waiting.rawValue
     @AppStorage("roster.showsInvitations") private var showsInvitations = false
     @AppStorage("roster.showsState") private var showsState = true
 
@@ -29,7 +29,7 @@ struct RoomListView: View {
     /// The room whose info panel is open from the roster, if any.
     @State private var infoRequest: RoomInfoRequest?
 
-    private var view: RosterView { RosterView(rawValue: storedView) ?? .waiting }
+    private var view: RosterChoice { RosterChoice(rawValue: storedView) ?? .waiting }
 
     private var sections: [RosterSection] {
         RosterArrangement.sections(
@@ -53,20 +53,24 @@ struct RoomListView: View {
                 }
             }
 
-            ForEach(sections) { section in
+            ForEach(sections, id: \.id) { section in
                 Section {
-                    ForEach(section.rows, id: \.room.id) { row in
+                    ForEach(section.rows, id: \.row.room.id) { entry in
+                        // The state arrives on the row. Asking per row would
+                        // be a boundary crossing per visible room per
+                        // re-render — see `core::roster::RosterRow`.
                         RoomRowView(
-                            row: row,
-                            avatarURI: session.avatars.uri(for: row.room.id),
-                            state: RosterArrangement.state(for: row, now: now),
-                            when: RelativeTime.label(for: row.room.lastActivityMs, now: now),
+                            row: entry.row,
+                            avatarURI: session.avatars.uri(for: entry.row.room.id),
+                            state: entry.state,
+                            when: RelativeTime.label(
+                                for: entry.row.room.lastActivityMs, now: now),
                             showsState: showsState,
                             hidesHost: view == .machine,
-                            onOpenInfo: { infoRequest = RoomInfoRequest(id: row.room.id) }
+                            onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
                         )
-                        .tag(row.room.id)
-                        .task { await session.avatars.load(row.room.id) }
+                        .tag(entry.row.room.id)
+                        .task { await session.avatars.load(entry.row.room.id) }
                     }
                 } header: {
                     if let title = section.title {
@@ -127,7 +131,7 @@ struct RoomListView: View {
     private var arrangementMenu: some View {
         Menu {
             Picker("Arrangement", selection: $storedView) {
-                ForEach(RosterView.allCases, id: \.rawValue) { option in
+                ForEach(RosterChoice.allCases, id: \.rawValue) { option in
                     Text(option.title).tag(option.rawValue)
                 }
             }
@@ -202,7 +206,7 @@ private struct RosterSettings: View {
         NavigationStack {
             List {
                 Section("Open the roster on") {
-                    ForEach(RosterView.allCases, id: \.rawValue) { option in
+                    ForEach(RosterChoice.allCases, id: \.rawValue) { option in
                         Button { view = option.rawValue } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 1) {
@@ -250,7 +254,7 @@ private struct RosterSettings: View {
         }
     }
 
-    private func blurb(for option: RosterView) -> String {
+    private func blurb(for option: RosterChoice) -> String {
         switch option {
         case .recent: return "newest first"
         case .waiting: return "what needs an answer, then the rest"

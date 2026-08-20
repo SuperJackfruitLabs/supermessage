@@ -44,6 +44,12 @@
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { relativeTime } from "./roomIdentity";
+  import {
+    rosterSections,
+    type AgentState,
+    type RosterSection,
+    type RosterView,
+  } from "$lib/ipc";
 
   /**
    * `onSelect` fires after a row is chosen, whether or not that changed the
@@ -75,11 +81,70 @@
     onSelect?.();
   }
 
-  const sortedRooms = $derived(
-    [...roomsStore.rooms].sort(
-      (a, b) => (b.room.lastActivityMs ?? 0) - (a.room.lastActivityMs ?? 0),
-    ),
+  /**
+   * The arrangement, remembered between sessions.
+   *
+   * Three of them, because a fleet is read for different reasons — see
+   * `core::roster`. iOS shipped these first and this app did not have them,
+   * so the two clients disagreed about what a roster was; the rules now live
+   * in the core and both read the same answer.
+   */
+  const VIEW_KEY = "supermessage.roster.view";
+  let view = $state<RosterView>(
+    (localStorage.getItem(VIEW_KEY) as RosterView | null) ?? "recent",
   );
+  $effect(() => {
+    localStorage.setItem(VIEW_KEY, view);
+  });
+
+  /**
+   * The arranged roster.
+   *
+   * Asked for once per change rather than per row: the section list carries
+   * each row's state with it, so drawing a dot costs nothing beyond the one
+   * call this effect already makes.
+   */
+  let sections = $state<RosterSection[]>([]);
+  $effect(() => {
+    const rows = roomsStore.rooms;
+    const chosen = view;
+    void rosterSections(rows, chosen, true, Date.now()).then((next) => {
+      sections = next;
+    });
+  });
+
+  const sortedRooms = $derived(sections.flatMap((section) => section.rows));
+
+  /**
+   * The dot's colour, in the vocabulary the console reserves: amber for what
+   * is owed, accent for what is alive, a faint mark for what is merely quiet,
+   * and nothing at all for silence — absence is not a state worth a mark.
+   */
+  function stateClass(state: AgentState): string {
+    switch (state) {
+      case "needsYou":
+        return "bg-signal";
+      case "active":
+        return "bg-accent";
+      case "idle":
+        return "bg-content-faint";
+      case "quiet":
+        return "bg-transparent";
+    }
+  }
+
+  function stateWord(state: AgentState): string {
+    switch (state) {
+      case "needsYou":
+        return "needs you";
+      case "active":
+        return "active";
+      case "idle":
+        return "idle";
+      case "quiet":
+        return "quiet";
+    }
+  }
 
   // Recency threshold for spec §6.1's muted-vs-faint split on the "· 4m"
   // time: rooms active within the last 5 minutes render their time in
@@ -146,6 +211,7 @@
     unread: number,
     pendingDecision: boolean,
     invited: boolean,
+    state: AgentState,
   ): string {
     const parts = [name];
     // Right after the name, because it changes what the row *is*: an
@@ -155,6 +221,12 @@
     if (role !== null) parts.push(role);
     if (unread > 0) parts.push(`${unread} unread`);
     if (pendingDecision) parts.push("Approval needed");
+    // The dot is `aria-hidden`, and an explicit `aria-label` replaces the
+    // button's whole subtree — so without this the state would exist in
+    // colour only, which is the one thing an accessible name must not do.
+    // `needsYou` is already carried by "Approval needed" above, and saying
+    // it twice is noise.
+    if (state !== "needsYou") parts.push(stateWord(state));
     return parts.join(", ");
   }
 </script>
@@ -166,11 +238,64 @@
   Safe here, and specifically not in the timeline: see that action's doc comment
   for why a virtualized list must never have it.
 -->
-<nav use:animateList aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
+<nav aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
+  <!--
+    The arrangement switcher. Sticky rather than scrolling away: on a desktop
+    the roster column is always on screen, so the control that decides what
+    it *is* should be too — unlike the phone, where the same control lives in
+    the toolbar because there is no column to spare.
+  -->
+  <div
+    role="radiogroup"
+    aria-label="Roster arrangement"
+    class="sticky top-0 z-10 flex gap-1 border-b border-border bg-surface px-3 py-2"
+  >
+    {#each [{ id: "recent", label: "Recent" }, { id: "waiting", label: "Waiting" }, { id: "machine", label: "Machine" }] as option (option.id)}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={view === option.id}
+        onclick={() => (view = option.id as RosterView)}
+        class="flex-1 rounded px-2 py-1 text-label transition-colors {view === option.id
+          ? 'bg-surface-raised text-content'
+          : 'text-content-muted hover:text-content'}"
+      >
+        {option.label}
+      </button>
+    {/each}
+  </div>
+
+  <!--
+    The list reorders itself constantly — it is sorted by last activity, so
+    any message in any room moves a row, and a row that teleports past its
+    neighbours reads as a different room having appeared. `animateList` moves
+    it instead. On this element rather than the `nav`, so the sticky control
+    above is not something the action tries to animate.
+  -->
+  <div use:animateList class="flex flex-col">
   {#if sortedRooms.length === 0}
     <p class="px-4 py-6 text-center text-ui text-content-muted">No rooms yet.</p>
   {:else}
-    {#each sortedRooms as row (row.room.id)}
+    {#each sections as section (section.id)}
+      {#if section.title}
+        <!--
+          Named only when something sits above or beside it. A lone section
+          on a quiet fleet gets no heading — "Everything else" above the
+          whole roster labels the absence of a section. The core decides
+          that, not this markup.
+        -->
+        <h2
+          class="flex items-baseline gap-2 px-4 pt-3 pb-1 text-label uppercase
+            {section.attention ? 'text-signal' : 'text-content-faint'}"
+        >
+          <span class="min-w-0 truncate">{section.title}</span>
+          {#if section.detail}
+            <span class="shrink-0 font-mono text-meta normal-case">{section.detail}</span>
+          {/if}
+        </h2>
+      {/if}
+      {#each section.rows as entry (entry.row.room.id)}
+        {@const row = entry.row}
       <!--
         The row arrives with its name already split, its preview already
         composed and its affordance already chosen — the core decided all
@@ -202,6 +327,7 @@
           room.unread,
           preview?.pending ?? false,
           invited,
+          entry.state,
         )}
         class="flex gap-3 border-l-2 pr-4 pl-[10px] text-left transition-colors {selected
           ? 'border-l-accent bg-surface'
@@ -237,7 +363,20 @@
         -->
         <span class="min-w-0 flex-1 border-b border-border py-3">
           <span class="flex items-center justify-between gap-2">
-            <span class="truncate text-ui font-medium text-content">{identity.name}</span>
+            <!--
+              What the roster may say this agent is doing, decided by
+              `core::roster` and carried on the row. Quiet draws a
+              transparent dot rather than nothing, so names stay aligned
+              down the column — absence is not a state worth a mark, but it
+              is not a reason to move everything either.
+            -->
+            <span
+              class="h-1.5 w-1.5 shrink-0 rounded-full {stateClass(entry.state)}"
+              aria-hidden="true"
+            ></span>
+            <span class="min-w-0 flex-1 truncate text-ui font-medium text-content"
+              >{identity.name}</span
+            >
             {#if invited}
               <!--
                 An invitation reads as a room in every other respect — name,
@@ -329,6 +468,8 @@
           {/if}
         </span>
       </button>
+      {/each}
     {/each}
   {/if}
+  </div>
 </nav>

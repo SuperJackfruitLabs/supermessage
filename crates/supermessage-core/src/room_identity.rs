@@ -21,7 +21,7 @@
 //! panics mid-character, and the caps below are therefore counted in `char`s.
 
 /// The parsed structure of a room name.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomIdentity {
     /// The leading emoji or symbol, `None` when the name does not start with

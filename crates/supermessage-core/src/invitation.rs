@@ -16,7 +16,7 @@
 use crate::dto::Membership;
 
 /// What the room pane should offer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum RoomAffordance {
     /// An ordinary room: write in it.

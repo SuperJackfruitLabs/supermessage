@@ -491,6 +491,21 @@ RustBuffer uniffi_supermessage_ffi_fn_func_people_matching(RustBuffer people, Ru
 RustBuffer uniffi_supermessage_ffi_fn_func_rich_blocks_from_markdown(RustBuffer source, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_HIDDEN_INVITATIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_HIDDEN_INVITATIONS
+uint32_t uniffi_supermessage_ffi_fn_func_roster_hidden_invitations(RustBuffer rows, int8_t shows_invitations, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_SECTIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_SECTIONS
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_sections(RustBuffer rows, RustBuffer view, int8_t shows_invitations, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_STATE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_STATE
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_state(RustBuffer row, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_SUPERMESSAGE_FFI_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_SUPERMESSAGE_FFI_RUSTBUFFER_ALLOC
 RustBuffer ffi_supermessage_ffi_rustbuffer_alloc(uint64_t size, RustCallStatus *_Nonnull out_status
@@ -798,6 +813,24 @@ uint16_t uniffi_supermessage_ffi_checksum_func_people_matching(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 uint16_t uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_HIDDEN_INVITATIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_HIDDEN_INVITATIONS
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_hidden_invitations(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_SECTIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_SECTIONS
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_sections(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_state(void
     
 );
 #endif

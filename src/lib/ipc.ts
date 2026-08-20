@@ -1250,6 +1250,72 @@ export interface SearchResult {
 }
 
 /**
+ * Which roster arrangement the reader chose — mirrors `core::roster`.
+ *
+ * Three rather than one, because a fleet is read for different reasons: to
+ * find a room you have in mind, to answer whatever is waiting, or to see how
+ * a machine is doing.
+ */
+export type RosterView = "recent" | "waiting" | "machine";
+
+/**
+ * What an agent is doing, as far as the roster can honestly tell.
+ *
+ * Not a health check: the roster does not know whether a process is running
+ * and must not imply that it does.
+ */
+export type AgentState = "needsYou" | "active" | "idle" | "quiet";
+
+/** One roster row, with the state the roster may say about it. */
+export interface RosterRow {
+  row: RoomRow;
+  state: AgentState;
+}
+
+/** One section of the roster. */
+export interface RosterSection {
+  id: string;
+  /** `null` for an arrangement that does not label its one section. */
+  title: string | null;
+  /** A count the header may show — waiting rooms, agents on a host. */
+  detail: string | null;
+  rows: RosterRow[];
+  /** Whether this section is the one that wants attention. */
+  attention: boolean;
+}
+
+/**
+ * Order and group the roster.
+ *
+ * In the core rather than here because every rule inside it is a product
+ * decision about what a fleet looks like — how long silence takes to become
+ * quiet, which room outranks which, what a section is called when it is the
+ * only one. Two clients each holding their own copy is two clients that
+ * disagree about what a roster is, which is what this replaced.
+ */
+export async function rosterSections(
+  rows: RoomRow[],
+  view: RosterView,
+  showsInvitations: boolean,
+  nowMs: number,
+): Promise<RosterSection[]> {
+  return invoke<RosterSection[]>("roster_sections", {
+    rows,
+    view,
+    showsInvitations,
+    nowMs,
+  });
+}
+
+/** How many invitations a filter is withholding — hidden must never mean gone. */
+export async function rosterHiddenInvitations(
+  rows: RoomRow[],
+  showsInvitations: boolean,
+): Promise<number> {
+  return invoke<number>("roster_hidden_invitations", { rows, showsInvitations });
+}
+
+/**
  * Searches for `term`, newest first — in `roomId` when one is given, and in
  * every room this account can see otherwise.
  *

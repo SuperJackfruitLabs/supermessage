@@ -7,7 +7,7 @@
 
 use crate::UniffiCustomTypeConverter;
 use eyeball_im::VectorDiff;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 
@@ -24,7 +24,7 @@ use std::collections::HashSet;
 /// `Banned` are states the SDK can report, and a boolean would have to fold
 /// them into "joined", which is the kind of lie that costs a second bug
 /// later.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum Membership {
     Joined,
@@ -68,7 +68,7 @@ impl UniffiCustomTypeConverter for CustomPayload {
 }
 
 /// A single room as summarized for the room list.
-#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomSummary {
     pub id: String,
@@ -135,7 +135,7 @@ pub struct RoomSummary {
 }
 
 /// Who this app is signed in as, and where.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountDto {
     /// The full Matrix id — `@rakesh:id.agentpod.dev`.
@@ -145,7 +145,7 @@ pub struct AccountDto {
 }
 
 /// The harness and machine behind an agent's room, ready to render.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeDto {
     /// `OpenClaw`, `Claude Code` — as the harness's own project spells it.
@@ -745,7 +745,7 @@ impl SeqCounter {
 /// roster row from a name already split into sigil/name/role, a preview line
 /// already composed, and an affordance already chosen — none of which it can
 /// go and fetch mid-render.
-#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomRow {
     pub room: RoomSummary,

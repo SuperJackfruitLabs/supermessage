@@ -2869,6 +2869,31 @@ fileprivate struct FfiConverterSequenceTypeRoomRow: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeRosterSection: FfiConverterRustBuffer {
+    typealias SwiftType = [RosterSection]
+
+    public static func write(_ value: [RosterSection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRosterSection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RosterSection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RosterSection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRosterSection.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSearchResultDto: FfiConverterRustBuffer {
     typealias SwiftType = [SearchResultDto]
 
@@ -2962,6 +2987,12 @@ fileprivate struct FfiConverterSequenceTypeTimelineRow: FfiConverterRustBuffer {
 
 
 
+
+
+
+
+
+
 /**
  * The user ids a finished message mentions, for `m.mentions`.
  */
@@ -3033,6 +3064,47 @@ public func richBlocksFromMarkdown(source: String) -> [RichBlock] {
     )
 })
 }
+/**
+ * How many invitations are being withheld, for a filter to admit to.
+ */
+public func rosterHiddenInvitations(rows: [RoomRow], showsInvitations: Bool) -> UInt32 {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_hidden_invitations(
+        FfiConverterSequenceTypeRoomRow.lower(rows),
+        FfiConverterBool.lower(showsInvitations),$0
+    )
+})
+}
+/**
+ * Arrange a roster: order it, group it, and label the groups.
+ *
+ * A free function for the same reason as `rich_blocks_from_markdown` — it
+ * touches no session state — and in the core rather than in each host
+ * because every rule inside it is a product decision about what a fleet
+ * looks like. Two hosts each holding a copy is two clients that disagree
+ * about what a roster is.
+ */
+public func rosterSections(rows: [RoomRow], view: RosterView, showsInvitations: Bool, nowMs: UInt64) -> [RosterSection] {
+    return try!  FfiConverterSequenceTypeRosterSection.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_sections(
+        FfiConverterSequenceTypeRoomRow.lower(rows),
+        FfiConverterTypeRosterView_lower(view),
+        FfiConverterBool.lower(showsInvitations),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * What the roster may say a room is doing.
+ */
+public func rosterState(row: RoomRow, nowMs: UInt64) -> AgentState {
+    return try!  FfiConverterTypeAgentState_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_state(
+        FfiConverterTypeRoomRow_lower(row),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -3062,6 +3134,15 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_hidden_invitations() != 61544) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_sections() != 28434) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_state() != 4121) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_account() != 48469) {

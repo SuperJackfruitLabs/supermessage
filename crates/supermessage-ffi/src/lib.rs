@@ -618,3 +618,38 @@ pub fn people_matching(
 ) -> Vec<supermessage_core::people::PersonDto> {
     supermessage_core::people::matching(&people, &query)
 }
+
+/// Arrange a roster: order it, group it, and label the groups.
+///
+/// A free function for the same reason as `rich_blocks_from_markdown` — it
+/// touches no session state — and in the core rather than in each host
+/// because every rule inside it is a product decision about what a fleet
+/// looks like. Two hosts each holding a copy is two clients that disagree
+/// about what a roster is.
+#[uniffi::export]
+pub fn roster_sections(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    view: supermessage_core::roster::RosterView,
+    shows_invitations: bool,
+    now_ms: u64,
+) -> Vec<supermessage_core::roster::RosterSection> {
+    supermessage_core::roster::sections(&rows, view, shows_invitations, now_ms)
+}
+
+/// What the roster may say a room is doing.
+#[uniffi::export]
+pub fn roster_state(
+    row: supermessage_core::dto::RoomRow,
+    now_ms: u64,
+) -> supermessage_core::roster::AgentState {
+    supermessage_core::roster::state_for(&row, now_ms)
+}
+
+/// How many invitations are being withheld, for a filter to admit to.
+#[uniffi::export]
+pub fn roster_hidden_invitations(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    shows_invitations: bool,
+) -> u32 {
+    supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
+}

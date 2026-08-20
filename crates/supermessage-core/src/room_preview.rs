@@ -46,7 +46,7 @@ pub struct RoomPreviewFacts<'a> {
 }
 
 /// A composed preview line.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomPreview {
     /// Ready to render as text. Never empty.

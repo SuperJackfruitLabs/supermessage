@@ -127,7 +127,7 @@ do not call them.
 
 ## I · Consistency across hosts
 
-- [ ] **I1.** The desktop has not received the roster work: three arrangements,
+- [x] **I1.** The desktop has not received the roster work: three arrangements,
       state dots, unread and time. The two clients now disagree about what a
       roster is.
 - [x] **I2.** The timeline spec's acceptance rules
