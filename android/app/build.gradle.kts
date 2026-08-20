@@ -54,6 +54,12 @@ dependencies {
     testImplementation(libs.junit)
 
     androidTestImplementation(libs.androidx.test.junit)
+    // androidx.test.ext:junit 1.2.1 no longer pulls in androidx.test:runner
+    // transitively (see :core's build.gradle.kts) — the class named by
+    // testInstrumentationRunner above. :app currently gets it transitively
+    // through compose-ui-test-junit4, but that is not this module's own
+    // dependency to rely on; declared explicitly, as :core does.
+    androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)

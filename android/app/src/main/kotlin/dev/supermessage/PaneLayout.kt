@@ -6,7 +6,12 @@ import androidx.compose.ui.unit.dp
 /** Roster, a readable timeline, and a panel, none squeezed to uselessness. */
 val ThreePaneWidth: Dp = 1000.dp
 
-/** Roster beside a timeline, with the panel as a sheet over them. */
+/**
+ * Roster beside a timeline. Below [ThreePaneWidth] the info panel has no
+ * pane to live in — RootScaffold withholds it entirely rather than squeeze
+ * it in, and today that just means "not shown". A sheet over the two panes
+ * is the intended future treatment, not something that exists yet.
+ */
 val TwoPaneWidth: Dp = 600.dp
 
 /**

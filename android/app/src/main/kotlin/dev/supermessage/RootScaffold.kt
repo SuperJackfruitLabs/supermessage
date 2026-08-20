@@ -101,8 +101,7 @@ fun RootScaffold(modifier: Modifier = Modifier) {
  * case this comment used to cite, and it undercounts rather than the
  * overcounts the iPad postmortem describes, but the mechanism is the same
  * substitution: window size class in place of measured width. See
- * task-7-report.md for the verification trail and PaneLayout.kt for the
- * rule this directive is required to defer to.
+ * PaneLayout.kt for the rule this directive is required to defer to.
  */
 private fun directiveFor(panes: Int) = PaneScaffoldDirective.Default.copy(
     maxHorizontalPartitions = panes,

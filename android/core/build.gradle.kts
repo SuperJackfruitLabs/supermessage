@@ -75,4 +75,13 @@ val checkJniLibs by tasks.registering {
     }
 }
 
-tasks.named("preBuild") { dependsOn(checkJniLibs) }
+// Attached to the assemble/packaging path, not preBuild: preBuild is an
+// ancestor of compileDebugKotlin, which :app:testDebugUnitTest reaches
+// through the project(":core") dependency to build its JVM classpath — a
+// pure-JVM unit test run needs none of the .so files and must not require a
+// 15-minute NDK build in a fresh clone. assembleDebug/assembleRelease are
+// what actually merge jniLibs into a packaged artifact, so that is where a
+// missing ABI needs to turn into a build failure instead of a run-time
+// UnsatisfiedLinkError.
+tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" }
+    .configureEach { dependsOn(checkJniLibs) }

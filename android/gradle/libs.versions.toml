@@ -5,7 +5,7 @@ kotlin = "2.4.0"
 # declares minCompileSdk=37 — a hard build error against this module's fixed
 # compileSdk=36 (:app:checkDebugAarMetadata FAILED, 12 issues, all "requires
 # ... version 37 or later"). 2026.06.01 is the newest BOM still pinning
-# ui-android 1.11.4, whose minCompileSdk is 35. See task-5-report.md.
+# ui-android 1.11.4, whose minCompileSdk is 35.
 composeBom = "2026.06.01"
 # 1.3.0 has the same problem: adaptive-layout-android and
 # adaptive-navigation-android both declare minCompileSdk=37. 1.2.0 declares 35.
@@ -37,5 +37,7 @@ compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-mani
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# No kotlin-android alias: applying org.jetbrains.kotlin.android on top of
+# this repo's AGP 9.3.1 is a hard configuration error (AGP 9.0+ has built-in
+# Kotlin support). See :core's, :kit's, and :app's build.gradle.kts.
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

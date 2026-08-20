@@ -82,9 +82,16 @@ cargo run -q -p supermessage-ffi --bin uniffi-bindgen -- generate \
     --language kotlin \
     --out-dir "$STAGE"
 
-rm -rf "$GENERATED"
-mkdir -p "$(dirname "$GENERATED")"
-mv "$STAGE" "$GENERATED"
+# Narrowed to uniffi/, not the whole of $GENERATED: android/core/src/main/kotlin
+# is :core's real auto-discovered source root (AGP 9's built-in Kotlin
+# support), so wiping it outright would also take out any non-generated
+# Kotlin ever added there. uniffi-bindgen's --out-dir writes exactly one
+# top-level entry, uniffi/, so that is the only thing swapped.
+GENERATED_UNIFFI="$GENERATED/uniffi"
+rm -rf "$GENERATED_UNIFFI"
+mkdir -p "$GENERATED"
+mv "$STAGE/uniffi" "$GENERATED_UNIFFI"
+rm -rf "$STAGE"
 trap - EXIT
 
 echo

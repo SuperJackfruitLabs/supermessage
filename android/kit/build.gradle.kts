@@ -42,9 +42,12 @@ dependencies {
 // hope. See docs/superpowers/specs/2026-08-20-android-scaffold-design.md §3.
 //
 // configurations.all is not deprecated; configurations.configureEach is the
-// lazy equivalent, evaluating its block only for configurations that are
-// actually resolved rather than eagerly for all of them. Preferred here for
-// that performance reason, not because .all is going away.
+// lazy equivalent, deferring its block until a configuration is actually
+// realized rather than running eagerly for all of them at configuration
+// time. Realized is not the same as resolved — this still runs for a
+// configuration nobody ever resolves, as long as something realizes it (e.g.
+// Gradle wiring it as another task's input). Preferred here for the
+// performance reason, not because .all is going away.
 configurations.configureEach {
     resolutionStrategy.eachDependency {
         check(!requested.group.startsWith("androidx.compose")) {

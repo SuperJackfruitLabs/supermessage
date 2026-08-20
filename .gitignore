@@ -50,3 +50,13 @@ android/core/src/main/jniLibs/
 android/.gradle/
 android/build/
 android/*/build/
+
+# Points at this machine's SDK install (sdk.dir=...); every checkout gets its
+# own from the SDK manager or Android Studio on first sync. The sibling Tauri
+# Android project (src-tauri/gen/android/.gitignore) ignores the same file
+# for the same reason.
+android/local.properties
+
+# Kotlin compiler daemon session state, keyed to this machine. Same story as
+# android/.gradle/ above.
+android/.kotlin/

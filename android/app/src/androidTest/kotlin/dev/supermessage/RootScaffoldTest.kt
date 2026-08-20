@@ -2,7 +2,6 @@ package dev.supermessage
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -150,7 +149,7 @@ class RootScaffoldTest {
     fun paneCountFollowsAWidthChangeDuringComposition() {
         var width by mutableStateOf(1200.dp)
         compose.setContent {
-            Box(Modifier.size(width, 800.dp)) { RootScaffold() }
+            Box(Modifier.requiredSize(width, 800.dp)) { RootScaffold() }
         }
         compose.onNodeWithTag("pane-info").assertIsDisplayed()
 
