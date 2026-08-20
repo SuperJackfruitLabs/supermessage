@@ -40,6 +40,10 @@ src-tauri/           — the Rust core and Tauri config
   src/core/tls.rs    — rustls provider selection (ring); see the Android note below
   src/core/session.rs— ownership seam for the logged-in matrix_sdk::Client
   gen/android/       — generated Android Studio project (committed)
+android/             — the native Android app (Gradle, over the Rust core via UniFFI)
+  core/              — the FFI boundary module: generated Kotlin bindings + jniLibs
+  kit/               — Kotlin-side domain/state layer, no Compose UI
+  app/               — the Compose app: adaptive three-pane shell, views
 ```
 
 ## Decided technology stack
@@ -200,8 +204,22 @@ The AgentPod event contract this client consumes: `docs/agentpod-events.md`.
 
 ## The Android app
 
-Not built. `docs/superpowers/specs/2026-08-20-android-app-design.md` specs it,
-and `scripts/build-android-libs.sh` builds the four ABIs and generates the
+Native Kotlin/Compose, not the Tauri webview path. `android/` is a three-module
+Gradle build — `:core` (the FFI boundary: generated Kotlin bindings + jniLibs),
+`:kit` (domain/state, no Compose dependency, enforced by two independent
+checks), `:app` (Compose, the adaptive three-pane shell) — consuming the same
+Rust core as iOS through the same UniFFI bindings. The shell picks pane count
+from its own measured width, not from `WindowSizeClass`, for the reason
+recorded at `directiveFor()` in `RootScaffold.kt`: the default directive ties
+pane count to the real window instead of the width the shell was actually
+given, which is the same substitution that put iOS's info panel off the side
+of an iPad. Tests pass on both `supermessage-phone` and `supermessage-tablet`
+AVDs, portrait and landscape.
+
+`docs/superpowers/specs/2026-08-20-android-app-design.md` specs the module
+layout and `docs/superpowers/specs/2026-08-20-android-scaffold-design.md`
+specs the adaptive shell built on top of it; both are binding.
+`scripts/build-android-libs.sh` builds the four ABIs and generates the
 Kotlin — the same `#[uniffi::export]` definitions that produce the Swift, so
 no new Rust is needed. The script runs green on this machine, unmodified:
 
@@ -221,6 +239,26 @@ build failure. The generated Kotlin *is* checked in, exactly as the generated
 Swift is, and for the same reason: it is the boundary's shape, and a moved API
 should appear in review.
 
+**Every Gradle command below runs from `android/`, not the repo root** — it is
+its own Gradle project, separate from the pnpm/cargo one at the top of this
+file:
+
+```bash
+cd android
+./gradlew test                                    # :core and :kit unit tests (JVM, no emulator)
+./gradlew :app:testDebugUnitTest                   # :app unit tests (JVM, no emulator)
+./gradlew :core:connectedDebugAndroidTest          # :core instrumented tests (needs a device)
+./gradlew :app:connectedDebugAndroidTest           # :app instrumented tests (needs a device)
+```
+
+The instrumented suites need a running device or emulator (`adb devices`).
+Available AVDs: `supermessage-tablet` (800dp portrait / 1280dp landscape),
+`supermessage-phone` (411/914dp), `supermessage-16k` (411/923dp) — the shell's
+pane-count tests are written to be device-independent (`requiredSize`, not
+`size`; bounds compared against the shell's own rect, not the device's), so
+any of them should pass any of these tests, but the tablet is the one that
+exercises three panes.
+
 Two things there that are easy to get wrong and expensive to find later. Play
 requires 16 KB page support, which needs *both* halves — ring as the active
 provider (`core::tls`, done) and `-Wl,-z,max-page-size=16384` at link time (in
@@ -229,7 +267,7 @@ working and is deliberately **not** the plan; the spec says why.
 
 ## Testing strategy
 
-`cargo test` covers the Rust core (621 tests) and `pnpm test` the frontend
+`cargo test` covers the Rust core (622 tests) and `pnpm test` the frontend
 (380, vitest).
 
 The frontend count went *down* as the Rust one went up, and that is the

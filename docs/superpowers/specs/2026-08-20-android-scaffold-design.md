@@ -167,11 +167,11 @@ test failed instead: a shell measured wide enough for three panes lost its
 third one, because the default directive answers from the real window's
 (capped) size class, not from the width this shell was actually given. The
 default's fault on this pinned version is an **undercount**, not the iPad's
-overcount — same substitution, opposite direction. See `task-7-report.md` for
-the full decompilation and test trail, and note for whoever next touches this
-version pin: an upgrade past 1.2.0 could change this mechanism again in
-either direction, which is exactly why the directive stays overridden rather
-than reasoned about from whichever behavior happens to be current.
+overcount — same substitution, opposite direction. Note for whoever next
+touches this version pin: an upgrade past 1.2.0 could change this mechanism
+again in either direction, which is exactly why the directive stays
+overridden rather than reasoned about from whichever behavior happens to be
+current.
 
 Overriding it removes the guesswork regardless of which way the default is
 wrong this month. So the shell measures, with `BoxWithConstraints`, and:
@@ -229,10 +229,9 @@ through the no-arg `currentWindowAdaptiveInfo()` entrypoint at any width, so
 a shell measured wide enough for three loses its third pane under the
 default — an 840dp shell was never going to show the fault, because two is
 what both the rule and the (miscounting) default agree on there. This is not
-a prediction: Task 7 mutated the directive to confirm it, and the 840dp test
-this section used to point at as the guard stayed green under that mutation
-while the 1200dp test broke. See `task-7-report.md` for the mutation
-evidence.
+a prediction: mutating the directive to the library default confirmed it —
+the 840dp test this section used to point at as the guard stayed green under
+that mutation, while the 1200dp test broke.
 
 The repo's falsification standard applies and is not optional: **a test that
 has never failed is not yet a regression test.** Each of these gets mutated
@@ -247,7 +246,7 @@ until it fails before it is kept.
 3. `:core` instrumented test — `peopleLabel`. **Done when it passes on a device**, which closes step 2 of the companion's sequence.
 4. `:kit` — empty module, JVM test source set, the Compose ban. Done when adding a Compose dependency fails the build.
 5. `:app` — manifest, theme stub, `RootScaffold` with placeholder panes.
-6. `:app` UI tests at the three widths, including 840dp.
+6. `:app` UI tests at the three widths — 1200dp is the guard now (§5).
 
 Steps 1–3 are where being wrong is expensive and the answer is binary. Step 5
 is where the judgement is.

@@ -164,10 +164,13 @@ Each step ends somewhere you could stop.
 
 1. **Prove the pipeline.** ~~Run `scripts/build-android-libs.sh` on a machine
    with the NDK.~~ Done 20 Aug on the Linux box — the script needed no fixing,
-   only `cargo install cargo-ndk`. Four `.so` files and the Kotlin exist. What
-   remains of this step is a scratch Android test calling `peopleLabel`.
-2. **`core` module.** Gradle consumes the `.so` and the bindings. Done when an
-   instrumented test on a device calls into Rust and gets an answer.
+   only `cargo install cargo-ndk`. Four `.so` files and the Kotlin exist.
+   ~~What remains of this step is a scratch Android test calling
+   `peopleLabel`.~~ Done — `:core`'s instrumented test calls it directly.
+2. **`core` module.** Gradle consumes the `.so` and the bindings. ~~Done when
+   an instrumented test on a device calls into Rust and gets an answer.~~
+   Done — that instrumented test passes on a device (`supermessage-tablet`
+   and `supermessage-phone` AVDs).
 3. **`kit`: client and pump.** `CoreClient` off the main thread, `EventPump`
    in order, with their tests. Done when a login and a room list arrive.
 4. **`kit`: stores.** All eleven, tests ported. Done on the JVM, no emulator.
