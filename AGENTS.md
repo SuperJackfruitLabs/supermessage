@@ -168,10 +168,15 @@ xcodebuild test -project apple/Supermessage.xcodeproj -scheme Supermessage    -d
 
 Three rules that are not style preferences:
 
-1. **The app parses nothing.** No markdown, no HTML, no `matrix.to`, no
-   room-name splitting. Those arrive already decided on `TimelineRow` and
-   `RoomRow` as `RichBlock`, `ItemView`, `MatrixLinkTarget` and `RoomIdentity`.
-   Re-deriving any of them here is how iOS and the desktop start disagreeing.
+1. **The app parses nothing, and decides nothing.** No markdown, no HTML, no
+   `matrix.to`, no room-name splitting. Those arrive already decided on
+   `TimelineRow` and `RoomRow` as `RichBlock`, `ItemView`, `MatrixLinkTarget`
+   and `RoomIdentity`. The same goes for product rules: how the roster is
+   ordered and grouped, how long silence takes to read as quiet, what a
+   section is called when it is the only one — all of that is `core::roster`,
+   and a host asks for `RosterSection`s rather than computing them. Two hosts
+   each holding a copy is how they start disagreeing, which is exactly what
+   happened before it moved.
 2. **Events are delivered in order, by one consumer.** `EventPump` yields into
    a single `AsyncStream` and `Session` drains it with one `for await`. A task
    per event does not preserve order, and out-of-order diffs corrupt the
@@ -183,12 +188,20 @@ Three rules that are not style preferences:
 Amber (`Theme.signal`) means a pending decision and nothing else. Only
 `DecisionCard` may use it.
 
+The app icon is generated, not hand-drawn: `assets/logo.svg` is the mark and
+`assets/build-icon.py` renders the three variants iOS asks for (light, dark and
+tinted) into `apple/Supermessage/Assets.xcassets`. Both need `librsvg`, and
+regenerating the mark itself needs `potrace` (`brew install librsvg potrace`).
+Read `assets/build-logo.py`'s doc comment before changing the mark — it records
+why it is drawn rather than traced.
+
 Design: `docs/superpowers/specs/2026-08-18-native-ios-app-design.md`.
+The AgentPod event contract this client consumes: `docs/agentpod-events.md`.
 
 ## Testing strategy
 
-`cargo test` covers the Rust core (571 tests) and `pnpm test` the frontend
-(379, vitest).
+`cargo test` covers the Rust core (621 tests) and `pnpm test` the frontend
+(380, vitest).
 
 The frontend count went *down* as the Rust one went up, and that is the
 shape of the shared view-model migration rather than lost coverage: the
