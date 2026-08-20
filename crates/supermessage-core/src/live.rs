@@ -116,6 +116,17 @@ pub struct ToolUpdateToDeviceEventContent {
     pub status: String,
     #[serde(default)]
     pub locations: Vec<String>,
+    /// What the call was given, as text a reader can look at.
+    ///
+    /// Optional because AgentPod does not send it yet — a harness that starts
+    /// to will land here without a schema change, and one that never does
+    /// leaves the row exactly as it is today. Never parsed or interpreted:
+    /// it is a sender-controlled string, bounded before it is shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<String>,
+    /// What the call produced, under the same rules as [`Self::input`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 }
 
 /// What the webview is told when a tool call moves.
@@ -129,6 +140,35 @@ pub struct ToolPayload {
     pub kind: Option<String>,
     pub status: String,
     pub locations: Vec<String>,
+    /// Bounded for display — see [`bound_tool_text`].
+    pub input: Option<String>,
+    pub output: Option<String>,
+}
+
+/// How much of a tool's input or output crosses to a host.
+///
+/// A tool can return a whole file. The row that shows it is a disclosure
+/// inside a turn card, and past a few thousand characters nobody is reading
+/// it there — they are looking for whether it worked and roughly what it
+/// touched. Bounding here rather than in a host is the same rule every other
+/// sender-controlled string in this crate follows: the boundary is where the
+/// guarantee is made.
+const TOOL_TEXT_MAX_CHARS: usize = 4_000;
+
+/// Trim `value` to [`TOOL_TEXT_MAX_CHARS`], appending an ellipsis when it
+/// bites. `None` and empty both come back as `None` — a disclosure that opens
+/// on nothing is worse than no disclosure.
+pub fn bound_tool_text(value: Option<String>) -> Option<String> {
+    let value = value?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.chars().count() <= TOOL_TEXT_MAX_CHARS {
+        return Some(trimmed.to_string());
+    }
+    let head: String = trimmed.chars().take(TOOL_TEXT_MAX_CHARS).collect();
+    Some(format!("{head}…"))
 }
 
 /// Tauri event channel carrying an agent's reasoning to the webview.
@@ -300,6 +340,8 @@ pub fn listen(client: &Client, sink: Arc<dyn EventSink>) -> EventHandlerHandle {
                 kind: content.kind,
                 status: content.status,
                 locations: content.locations,
+                input: bound_tool_text(content.input),
+                output: bound_tool_text(content.output),
             };
             sink.emit(CoreEvent::Tool(payload));
         },
@@ -432,5 +474,44 @@ mod tests {
         assert!(starts_new_turn("session-2", Some("session-1")));
         assert!(!starts_new_turn("session-1", Some("session-1")));
         assert!(starts_new_turn("session-1", None));
+    }
+}
+
+#[cfg(test)]
+mod tool_text_tests {
+    use super::{bound_tool_text, TOOL_TEXT_MAX_CHARS};
+
+    #[test]
+    fn nothing_stays_nothing() {
+        assert_eq!(bound_tool_text(None), None);
+    }
+
+    #[test]
+    fn whitespace_is_nothing_too() {
+        // A disclosure that opens on an empty box is worse than no
+        // disclosure: it says there is something to see.
+        assert_eq!(bound_tool_text(Some("   \n  ".into())), None);
+    }
+
+    #[test]
+    fn ordinary_output_crosses_intact() {
+        assert_eq!(
+            bound_tool_text(Some("  exit 0\n2 files changed  ".into())),
+            Some("exit 0\n2 files changed".to_string())
+        );
+    }
+
+    #[test]
+    fn a_whole_file_is_cut_and_says_so() {
+        let huge = "x".repeat(TOOL_TEXT_MAX_CHARS + 500);
+        let bounded = bound_tool_text(Some(huge)).expect("bounded text");
+        assert_eq!(bounded.chars().count(), TOOL_TEXT_MAX_CHARS + 1);
+        assert!(bounded.ends_with('…'), "the cut was silent");
+    }
+
+    #[test]
+    fn text_exactly_at_the_bound_is_left_alone() {
+        let exact = "y".repeat(TOOL_TEXT_MAX_CHARS);
+        assert_eq!(bound_tool_text(Some(exact.clone())), Some(exact));
     }
 }

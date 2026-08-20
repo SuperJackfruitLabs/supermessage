@@ -27,6 +27,12 @@ struct TimelineView: View {
 
     @State private var isAwayFromNewest = false
 
+    /// What re-marks the room read: a change to the history, or the reader
+    /// coming back to the newest end after being away.
+    private var readMarker: String {
+        "\(timeline.roomId ?? "")-\(timeline.revision)-\(isAwayFromNewest)"
+    }
+
     var body: some View {
         // Everything that used to be here — the ScrollView, the LazyVStack,
         // the scroll-position binding, the ScrollViewReader and the geometry
@@ -36,6 +42,21 @@ struct TimelineView: View {
         TimelineCollectionView(
             session: session, timeline: timeline, isAwayFromNewest: $isAwayFromNewest)
             .task(id: timeline.roomId) {
+                await timeline.markRead()
+            }
+            // **And again whenever something arrives while you are reading.**
+            // Marking on entry alone meant a message that landed while the
+            // room was open on screen stayed unread — you read it, went back
+            // to the roster, and the room was still bold, which is the app
+            // disagreeing with what you just did.
+            //
+            // Gated on being at the newest end: scrolled up in history, the
+            // newest message genuinely has not been read, and saying it has
+            // would lose it. `mark_as_read` is a no-op at the homeserver when
+            // the receipt already points at the latest event, so firing this
+            // per arrival costs nothing when there is nothing to say.
+            .task(id: readMarker) {
+                guard !isAwayFromNewest else { return }
                 await timeline.markRead()
             }
             .overlay(alignment: .bottomTrailing) {

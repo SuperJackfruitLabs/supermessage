@@ -2084,7 +2084,18 @@ public enum FfiEvent {
     )
     case thought(roomId: String, seq: UInt64, text: String, done: Bool
     )
-    case tool(roomId: String, seq: UInt64, toolCallId: String, title: String, status: String
+    case tool(roomId: String, seq: UInt64, toolCallId: String, title: String, 
+        /**
+         * ACP's tool kind, when the harness said. Display text, never
+         * switched on.
+         */kind: String?, status: String, 
+        /**
+         * What the call touched — paths, mostly.
+         */locations: [String], 
+        /**
+         * What it was given, and what it produced, bounded by the core.
+         * `None` from a harness that does not report them.
+         */input: String?, output: String?
     )
     case attachmentStaged(token: String, filename: String, sizeBytes: UInt64, mime: String
     )
@@ -2119,7 +2130,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case 6: return .thought(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), text: try FfiConverterString.read(from: &buf), done: try FfiConverterBool.read(from: &buf)
         )
         
-        case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), status: try FfiConverterString.read(from: &buf)
+        case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), kind: try FfiConverterOptionString.read(from: &buf), status: try FfiConverterString.read(from: &buf), locations: try FfiConverterSequenceString.read(from: &buf), input: try FfiConverterOptionString.read(from: &buf), output: try FfiConverterOptionString.read(from: &buf)
         )
         
         case 8: return .attachmentStaged(token: try FfiConverterString.read(from: &buf), filename: try FfiConverterString.read(from: &buf), sizeBytes: try FfiConverterUInt64.read(from: &buf), mime: try FfiConverterString.read(from: &buf)
@@ -2170,13 +2181,17 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterBool.write(done, into: &buf)
             
         
-        case let .tool(roomId,seq,toolCallId,title,status):
+        case let .tool(roomId,seq,toolCallId,title,kind,status,locations,input,output):
             writeInt(&buf, Int32(7))
             FfiConverterString.write(roomId, into: &buf)
             FfiConverterUInt64.write(seq, into: &buf)
             FfiConverterString.write(toolCallId, into: &buf)
             FfiConverterString.write(title, into: &buf)
+            FfiConverterOptionString.write(kind, into: &buf)
             FfiConverterString.write(status, into: &buf)
+            FfiConverterSequenceString.write(locations, into: &buf)
+            FfiConverterOptionString.write(input, into: &buf)
+            FfiConverterOptionString.write(output, into: &buf)
             
         
         case let .attachmentStaged(token,filename,sizeBytes,mime):

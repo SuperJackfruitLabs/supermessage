@@ -415,9 +415,10 @@ public final class Session {
             live.handleLive(roomId: roomId, seq: seq, text: text, done: done)
         case let .thought(roomId, seq, text, done):
             live.handleThought(roomId: roomId, seq: seq, text: text, done: done)
-        case let .tool(roomId, seq, toolCallId, title, status):
+        case let .tool(roomId, seq, toolCallId, title, kind, status, locations, input, output):
             live.handleTool(
-                roomId: roomId, seq: seq, toolCallId: toolCallId, title: title, status: status)
+                roomId: roomId, seq: seq, toolCallId: toolCallId, title: title, kind: kind,
+                status: status, locations: locations, input: input, output: output)
         case .attachmentStaged:
             // Handled by the composer, which owns the staged strip. Listed
             // rather than swept into a `default` so a new variant on the

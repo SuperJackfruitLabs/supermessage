@@ -1591,6 +1591,14 @@ export interface ToolPayload {
   /** `pending` | `in_progress` | `completed` | `failed`, or something newer. */
   status: string;
   locations: string[];
+  /**
+   * What the call was given and what it produced, bounded by the core
+   * (`live::bound_tool_text`). `null` from a harness that does not report
+   * them — which is every harness today; the field exists so one that starts
+   * to needs no schema change.
+   */
+  input: string | null;
+  output: string | null;
 }
 
 /** Subscribes to tool-call state on {@link TOOL_EVENT}. */

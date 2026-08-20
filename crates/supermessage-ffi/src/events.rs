@@ -53,7 +53,16 @@ pub enum FfiEvent {
         seq: u64,
         tool_call_id: String,
         title: String,
+        /// ACP's tool kind, when the harness said. Display text, never
+        /// switched on.
+        kind: Option<String>,
         status: String,
+        /// What the call touched — paths, mostly.
+        locations: Vec<String>,
+        /// What it was given, and what it produced, bounded by the core.
+        /// `None` from a harness that does not report them.
+        input: Option<String>,
+        output: Option<String>,
     },
     AttachmentStaged {
         token: String,
@@ -108,7 +117,11 @@ impl CoreSink for HostSink {
                 seq: p.seq,
                 tool_call_id: p.tool_call_id,
                 title: p.title,
+                kind: p.kind,
                 status: p.status,
+                locations: p.locations,
+                input: p.input,
+                output: p.output,
             },
             CoreEvent::AttachmentStaged(m) => FfiEvent::AttachmentStaged {
                 token: m.token,
