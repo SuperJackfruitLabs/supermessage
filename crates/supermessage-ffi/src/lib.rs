@@ -411,6 +411,11 @@ impl Core {
         Ok(self.runtime.block_on(self.session.room_info(&room_id))?)
     }
 
+    /// Who this app is signed in as, and where.
+    pub fn account(&self) -> Result<supermessage_core::dto::AccountDto, FfiError> {
+        Ok(self.runtime.block_on(self.session.account())?)
+    }
+
     /// Sign out and wipe the local stores.
     pub fn logout(&self) -> Result<(), FfiError> {
         self.runtime.block_on(self.session.logout())?;

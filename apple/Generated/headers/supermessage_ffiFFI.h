@@ -281,6 +281,11 @@ void uniffi_supermessage_ffi_fn_free_core(void*_Nonnull ptr, RustCallStatus *_No
 void*_Nonnull uniffi_supermessage_ffi_fn_constructor_core_new(RustBuffer data_dir, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ACCOUNT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ACCOUNT
+RustBuffer uniffi_supermessage_ffi_fn_method_core_account(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_DISCARD
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_DISCARD
 void uniffi_supermessage_ffi_fn_method_core_attachment_discard(void*_Nonnull ptr, RustBuffer token, RustCallStatus *_Nonnull out_status
@@ -736,6 +741,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_parse_matrix_link(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 uint16_t uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ACCOUNT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ACCOUNT
+uint16_t uniffi_supermessage_ffi_checksum_method_core_account(void
     
 );
 #endif

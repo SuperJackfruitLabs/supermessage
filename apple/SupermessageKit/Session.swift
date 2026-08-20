@@ -183,6 +183,11 @@ public final class Session {
         _ = try? await client.toggleReaction(roomId: roomId, eventId: eventId, key: key)
     }
 
+    /// Who this app is signed in as, and where.
+    public func account() async -> AccountDto? {
+        try? await client.account()
+    }
+
     public func roomInfo(_ roomId: String) async throws -> RoomInfoDto {
         try await client.roomInfo(roomId: roomId)
     }

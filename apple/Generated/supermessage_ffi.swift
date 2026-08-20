@@ -522,6 +522,11 @@ fileprivate struct FfiConverterString: FfiConverter {
 public protocol CoreProtocol : AnyObject {
     
     /**
+     * Who this app is signed in as, and where.
+     */
+    func account() throws  -> AccountDto
+    
+    /**
      * Throw a staged file away without sending it.
      */
     func attachmentDiscard(token: String) 
@@ -790,6 +795,16 @@ public convenience init(dataDir: String) {
 
     
 
+    
+    /**
+     * Who this app is signed in as, and where.
+     */
+open func account()throws  -> AccountDto {
+    return try  FfiConverterTypeAccountDto_lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_account(self.uniffiClonePointer(),$0
+    )
+})
+}
     
     /**
      * Throw a staged file away without sending it.
@@ -2793,6 +2808,8 @@ fileprivate struct FfiConverterSequenceTypeTimelineRow: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * The user ids a finished message mentions, for `m.mentions`.
  */
@@ -2857,6 +2874,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_account() != 48469) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741) {

@@ -134,6 +134,16 @@ pub struct RoomSummary {
     pub membership: Membership,
 }
 
+/// Who this app is signed in as, and where.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountDto {
+    /// The full Matrix id — `@rakesh:id.agentpod.dev`.
+    pub user_id: String,
+    /// The homeserver's base URL.
+    pub homeserver: String,
+}
+
 /// The harness and machine behind an agent's room, ready to render.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]

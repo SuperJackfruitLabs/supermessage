@@ -54,6 +54,8 @@ extension RoomDiffEnvelope: @retroactive @unchecked Sendable {}
 extension RoomDiffOp: @retroactive @unchecked Sendable {}
 extension RoomIdentity: @retroactive @unchecked Sendable {}
 extension RoomInfoDto: @retroactive @unchecked Sendable {}
+extension RuntimeDto: @retroactive @unchecked Sendable {}
+extension AccountDto: @retroactive @unchecked Sendable {}
 extension RoomMemberDto: @retroactive @unchecked Sendable {}
 extension RoomPreview: @retroactive @unchecked Sendable {}
 extension RoomRow: @retroactive @unchecked Sendable {}

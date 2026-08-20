@@ -60,7 +60,7 @@ do not call them.
 
 ## C · Room info
 
-- [ ] **C1.** Says nothing about the runtime — harness, host, last seen, room id
+- [x] **C1.** Says nothing about the runtime — harness, host, last seen, room id
       are what you open this panel to find.
 - [ ] **C2.** "Leave room" sits below the fold at the medium detent: the only
       destructive action is the one you have to hunt for.
@@ -96,12 +96,12 @@ do not call them.
 
 ## F · Account and toolbar
 
-- [ ] **F1.** **No way to sign out.** `Session.signOut` is implemented, tested,
+- [x] **F1.** **No way to sign out.** `Session.signOut` is implemented, tested,
       and called from nowhere. A missing exit, not a missing feature.
-- [ ] **F2.** No account or settings entry point anywhere in the app.
-- [ ] **F3.** Nothing shows who you are signed in as — worth knowing on a
+- [x] **F2.** No account or settings entry point anywhere in the app.
+- [x] **F3.** Nothing shows who you are signed in as — worth knowing on a
       console that acts on your behalf.
-- [ ] **F4.** Sign-in does not remember the homeserver between attempts, so a
+- [x] **F4.** Sign-in does not remember the homeserver between attempts, so a
       typo costs the whole field.
 - [ ] **F5.** The roster's arrangement filter sits *inside the list* rather than
       in the toolbar, inconsistent with search and compose.

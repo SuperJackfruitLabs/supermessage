@@ -511,6 +511,87 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 
 /**
+ * Who this app is signed in as, and where.
+ */
+public struct AccountDto {
+    /**
+     * The full Matrix id — `@rakesh:id.agentpod.dev`.
+     */
+    public var userId: String
+    /**
+     * The homeserver's base URL.
+     */
+    public var homeserver: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The full Matrix id — `@rakesh:id.agentpod.dev`.
+         */userId: String, 
+        /**
+         * The homeserver's base URL.
+         */homeserver: String) {
+        self.userId = userId
+        self.homeserver = homeserver
+    }
+}
+
+
+
+extension AccountDto: Equatable, Hashable {
+    public static func ==(lhs: AccountDto, rhs: AccountDto) -> Bool {
+        if lhs.userId != rhs.userId {
+            return false
+        }
+        if lhs.homeserver != rhs.homeserver {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(userId)
+        hasher.combine(homeserver)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAccountDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AccountDto {
+        return
+            try AccountDto(
+                userId: FfiConverterString.read(from: &buf), 
+                homeserver: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AccountDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterString.write(value.homeserver, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccountDto_lift(_ buf: RustBuffer) throws -> AccountDto {
+    return try FfiConverterTypeAccountDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccountDto_lower(_ value: AccountDto) -> RustBuffer {
+    return FfiConverterTypeAccountDto.lower(value)
+}
+
+
+/**
  * A pending decision the reader still owes an answer to.
  *
  * A **UI contract, not a wire schema** — that distinction is the point. A

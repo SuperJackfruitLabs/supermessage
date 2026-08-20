@@ -731,6 +731,22 @@ impl Session {
         room_info::build_room_info(&room).await
     }
 
+    /// Who this app is signed in as, and where.
+    ///
+    /// Exists because nothing showed it. A console that can act on someone's
+    /// behalf should be able to say whose behalf that is, and the screen that
+    /// answers it is also the only sensible home for signing out.
+    pub async fn account(&self) -> CoreResult<crate::dto::AccountDto> {
+        let client = self.require_client().await?;
+        Ok(crate::dto::AccountDto {
+            user_id: client
+                .user_id()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            homeserver: client.homeserver().to_string(),
+        })
+    }
+
     /// Accepts an invitation to `room_id`.
     ///
     /// Issue #1: every bridged agent room arrives as an invitation, and
@@ -1093,6 +1109,59 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn the_session_can_say_who_it_is_signed_in_as() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // Nothing in the app showed this, and `signOut` was unreachable
+        // because there was no screen to put it on.
+        tls::install_ring_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/_matrix/client/versions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "versions": ["r0.6.0"],
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/_matrix/client/r0/login"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "abc123",
+                "device_id": "GHTYAJCE",
+                "user_id": "@alice:localhost",
+            })))
+            .mount(&server)
+            .await;
+
+        let data_dir = std::env::temp_dir().join(format!("sm-account-{}", rand::random::<u64>()));
+        let session = Session::new(data_dir.clone(), Box::new(MemoryStore::default()));
+        session.login(&server.uri(), "alice", "hunter2").await.unwrap();
+
+        let account = session.account().await.unwrap();
+        assert_eq!(account.user_id, "@alice:localhost");
+        assert!(
+            account.homeserver.contains(&server.address().port().to_string()),
+            "the homeserver should be the one signed in to, got {}",
+            account.homeserver
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn asking_who_we_are_before_signing_in_is_not_ready() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-account-none"),
+            Box::new(MemoryStore::default()),
+        );
+        assert!(matches!(
+            session.account().await,
+            Err(CoreError::NotReady)
+        ));
     }
 
     #[tokio::test]

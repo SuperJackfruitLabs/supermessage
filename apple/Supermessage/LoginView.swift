@@ -10,7 +10,12 @@ import SwiftUI
 struct LoginView: View {
     let session: Session
 
-    @State private var homeserver = "https://id.agentpod.dev"
+    /// Remembered between attempts.
+    ///
+    /// It was `@State`, so a failed sign-in — a typo in the password, a
+    /// homeserver that was briefly down — threw the address away and made the
+    /// reader type it again to try the thing that was nearly right.
+    @AppStorage("login.homeserver") private var homeserver = "https://id.agentpod.dev"
     @State private var username = ""
     @State private var password = ""
     @State private var busy = false

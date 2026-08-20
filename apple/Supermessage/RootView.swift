@@ -53,6 +53,7 @@ struct SignedInView: View {
     /// the roster is the stack's root.
     @State private var columns: NavigationSplitViewVisibility = .all
     @State private var showsInfo = false
+    @State private var showsAccount = false
     @State private var showsSearch = false
     @State private var showsNewRoom = false
 
@@ -100,6 +101,15 @@ struct SignedInView: View {
                     ConnectionBar(connection: session.connection)
                 }
                 .toolbar {
+                    // The leading edge, where every messaging app puts the
+                    // account — and where the way out has to live, since
+                    // signing out had nowhere to be reached from at all.
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { showsAccount = true } label: {
+                            Image(systemName: "person.crop.circle")
+                        }
+                        .accessibilityLabel("Account")
+                    }
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Button { showsSearch = true } label: { Image(systemName: "magnifyingglass") }
                         Button { showsNewRoom = true } label: { Image(systemName: "square.and.pencil") }
@@ -129,6 +139,9 @@ struct SignedInView: View {
             if id != nil, !isWide { columns = .detailOnly }
         }
 
+        .sheet(isPresented: $showsAccount) {
+            AccountPanel(session: session) { showsAccount = false }
+        }
         .sheet(isPresented: $showsSearch) {
             SearchPanel(session: session, onOpen: { session.rooms.select($0) }) {
                 showsSearch = false

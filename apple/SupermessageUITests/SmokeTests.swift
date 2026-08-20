@@ -129,6 +129,20 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["Ganesha"].waitForExistence(timeout: 30), "no roster appeared")
 
+        // The account screen, and the only way out of the app. `signOut` was
+        // implemented, tested, and reachable from nowhere.
+        app.buttons["Account"].tap()
+        Thread.sleep(forTimeInterval: 2)
+        // Case-insensitive: `List` uppercases section headers, so the label is
+        // "SIGNED IN AS". The exact-match version of this has now caught me
+        // twice.
+        let signedIn = app.staticTexts.containing(
+            NSPredicate(format: "label BEGINSWITH[c] 'Signed in as'"))
+        XCTAssertTrue(signedIn.firstMatch.waitForExistence(timeout: 10), "no account screen")
+        XCTAssertTrue(app.buttons["Sign out"].exists, "no way to sign out")
+        attach(XCUIScreen.main.screenshot(), named: "panel-account")
+        dismissSheet(app)
+
         app.buttons["square.and.pencil"].tap()
         Thread.sleep(forTimeInterval: 2)
         attach(XCUIScreen.main.screenshot(), named: "panel-new-room")
