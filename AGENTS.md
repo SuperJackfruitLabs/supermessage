@@ -203,7 +203,23 @@ The AgentPod event contract this client consumes: `docs/agentpod-events.md`.
 Not built. `docs/superpowers/specs/2026-08-20-android-app-design.md` specs it,
 and `scripts/build-android-libs.sh` builds the four ABIs and generates the
 Kotlin — the same `#[uniffi::export]` definitions that produce the Swift, so
-no new Rust is needed. The script has never been run: this machine has no NDK.
+no new Rust is needed. The script runs green on this machine, unmodified:
+
+```bash
+cargo install cargo-ndk                                    # the one missing piece
+export ANDROID_NDK_HOME="$HOME/Android/Sdk/ndk/29.0.14206865"
+./scripts/build-android-libs.sh                            # ~15 min, four ABIs
+```
+
+**Run it in a fresh checkout before touching Gradle**, and again whenever the
+FFI surface changes. The `.so` files are *not* in the repo — `.gitignore` drops
+`android/core/src/main/jniLibs/`, because they are 362MB across four ABIs and
+the x86 slice alone is over GitHub's 100MB per-file limit. A clone therefore
+has the generated Kotlin but no libraries behind it, and Gradle never invokes
+cargo, so the missing half shows up as a link error at runtime rather than as a
+build failure. The generated Kotlin *is* checked in, exactly as the generated
+Swift is, and for the same reason: it is the boundary's shape, and a moved API
+should appear in review.
 
 Two things there that are easy to get wrong and expensive to find later. Play
 requires 16 KB page support, which needs *both* halves — ring as the active

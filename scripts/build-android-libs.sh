@@ -14,6 +14,11 @@
 # **checked in**, for the reason the iOS script gives: it keeps Gradle builds
 # hermetic and makes a moved boundary show up in review as a diff.
 #
+# The `.so` files are **not** checked in — `.gitignore` drops `jniLibs/`, since
+# they are 362MB across four ABIs and x86 alone is over GitHub's per-file
+# limit. So a fresh checkout has the Kotlin and no libraries behind it: run
+# this once after cloning, or the first call into `Core` fails to link.
+#
 # Requires the NDK. `cargo-ndk` handles the toolchain plumbing — the sysroot,
 # the right clang per ABI, the linker flags — which is otherwise a page of
 # per-target environment variables that go stale with every NDK release:
@@ -88,3 +93,4 @@ echo "kotlin $GENERATED/uniffi/"
 echo
 echo "The generated Kotlin is checked in on purpose. Commit it with the Rust"
 echo "change that moved it, so the boundary and its bindings travel together."
+echo "The .so files are gitignored — every checkout runs this script once."

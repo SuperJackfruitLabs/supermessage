@@ -35,3 +35,11 @@ e2e/last-run.json
 
 # Xcode
 apple/Supermessage.xcodeproj/
+
+# The Android `.so` files are the same build product as the XCFramework above,
+# and ignored for the same reason plus a harder one: 362MB across four ABIs,
+# with the x86 slice alone over GitHub's 100MB per-file limit. Rebuilt by
+# `scripts/build-android-libs.sh`. The *generated Kotlin* beside them
+# (android/core/src/main/kotlin) is deliberately NOT ignored, exactly as the
+# generated Swift is not.
+android/core/src/main/jniLibs/
