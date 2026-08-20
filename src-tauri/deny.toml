@@ -60,6 +60,12 @@ confidence-threshold = 0.93
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# `supermessage-core` and `supermessage-ffi` are this repository's own crates,
+# depended on by path. A path dependency has no version to pin, so cargo-deny
+# counts it as a wildcard — which is the right rule for a crate coming from a
+# registry, where "any version" means an unreviewed one, and the wrong one for
+# a sibling directory that is reviewed in the same pull request as its caller.
+allow-wildcard-paths = true
 
 [advisories]
 version = 2
