@@ -4872,7 +4872,7 @@ public enum RichBlock {
     )
     case blockQuote(blocks: [RichBlock]
     )
-    case list(ordered: Bool, start: UInt32, items: [RichListItem]
+    case listBlock(ordered: Bool, start: UInt32, items: [RichListItem]
     )
     case thematicBreak
     case table(header: [RichTableCell], rows: [RichTableRow]
@@ -4902,7 +4902,7 @@ public struct FfiConverterTypeRichBlock: FfiConverterRustBuffer {
         case 4: return .blockQuote(blocks: try FfiConverterSequenceTypeRichBlock.read(from: &buf)
         )
         
-        case 5: return .list(ordered: try FfiConverterBool.read(from: &buf), start: try FfiConverterUInt32.read(from: &buf), items: try FfiConverterSequenceTypeRichListItem.read(from: &buf)
+        case 5: return .listBlock(ordered: try FfiConverterBool.read(from: &buf), start: try FfiConverterUInt32.read(from: &buf), items: try FfiConverterSequenceTypeRichListItem.read(from: &buf)
         )
         
         case 6: return .thematicBreak
@@ -4940,7 +4940,7 @@ public struct FfiConverterTypeRichBlock: FfiConverterRustBuffer {
             FfiConverterSequenceTypeRichBlock.write(blocks, into: &buf)
             
         
-        case let .list(ordered,start,items):
+        case let .listBlock(ordered,start,items):
             writeInt(&buf, Int32(5))
             FfiConverterBool.write(ordered, into: &buf)
             FfiConverterUInt32.write(start, into: &buf)

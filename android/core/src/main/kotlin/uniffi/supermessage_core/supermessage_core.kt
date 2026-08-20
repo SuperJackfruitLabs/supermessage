@@ -3684,7 +3684,7 @@ sealed class RichBlock {
         companion object
     }
     
-    data class List(
+    data class ListBlock(
         val `ordered`: kotlin.Boolean, 
         val `start`: kotlin.UInt, 
         val `items`: List<RichListItem>) : RichBlock() {
@@ -3725,7 +3725,7 @@ public object FfiConverterTypeRichBlock : FfiConverterRustBuffer<RichBlock>{
             4 -> RichBlock.BlockQuote(
                 FfiConverterSequenceTypeRichBlock.read(buf),
                 )
-            5 -> RichBlock.List(
+            5 -> RichBlock.ListBlock(
                 FfiConverterBoolean.read(buf),
                 FfiConverterUInt.read(buf),
                 FfiConverterSequenceTypeRichListItem.read(buf),
@@ -3770,7 +3770,7 @@ public object FfiConverterTypeRichBlock : FfiConverterRustBuffer<RichBlock>{
                 + FfiConverterSequenceTypeRichBlock.allocationSize(value.`blocks`)
             )
         }
-        is RichBlock.List -> {
+        is RichBlock.ListBlock -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
@@ -3819,7 +3819,7 @@ public object FfiConverterTypeRichBlock : FfiConverterRustBuffer<RichBlock>{
                 FfiConverterSequenceTypeRichBlock.write(value.`blocks`, buf)
                 Unit
             }
-            is RichBlock.List -> {
+            is RichBlock.ListBlock -> {
                 buf.putInt(5)
                 FfiConverterBoolean.write(value.`ordered`, buf)
                 FfiConverterUInt.write(value.`start`, buf)

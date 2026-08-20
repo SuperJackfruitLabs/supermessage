@@ -71,7 +71,15 @@ pub enum RichBlock {
     BlockQuote {
         blocks: Vec<RichBlock>,
     },
-    List {
+    // Named `ListBlock`, not `List`: UniFFI's Kotlin backend emits a bare
+    // `data class List : RichBlock`, which shadows `kotlin.collections.List`
+    // and fails to compile everywhere the shadowed name is read. The wire
+    // name is pinned to the pre-rename `"list"` with `#[serde(rename)]`
+    // below because the desktop app matches on that exact string
+    // (`RichText.svelte`, `ipc.ts`) — do not let this drift back in step
+    // with the variant name.
+    #[serde(rename = "list")]
+    ListBlock {
         ordered: bool,
         start: u32,
         items: Vec<RichListItem>,
@@ -273,7 +281,7 @@ impl<'a> Walker<'a> {
                             _ => walker.pos += 1,
                         }
                     }
-                    RichBlock::List {
+                    RichBlock::ListBlock {
                         ordered,
                         start,
                         items,
@@ -681,7 +689,7 @@ impl DomWalker {
                             }
                         }
                     }
-                    RichBlock::List {
+                    RichBlock::ListBlock {
                         ordered,
                         start,
                         items,
@@ -834,7 +842,7 @@ mod tests {
             .iter()
             .map(|b| match b {
                 RichBlock::BlockQuote { blocks } => 1 + depth_of(blocks),
-                RichBlock::List { items, .. } => {
+                RichBlock::ListBlock { items, .. } => {
                     1 + items.iter().map(|i| depth_of(&i.blocks)).max().unwrap_or(0)
                 }
                 // A leaf block adds no nesting. MAX_RICH_DEPTH caps how deeply
@@ -910,7 +918,7 @@ mod tests {
     fn an_ordered_list_carries_its_start_number() {
         // Not always 1: an agent numbering steps from 3 means 3.
         let blocks = blocks_from_markdown("3. third\n4. fourth");
-        let RichBlock::List {
+        let RichBlock::ListBlock {
             ordered,
             start,
             items,
@@ -926,7 +934,7 @@ mod tests {
     #[test]
     fn a_bullet_list_reports_ordered_false_and_start_one() {
         let blocks = blocks_from_markdown("- a\n- b");
-        let RichBlock::List {
+        let RichBlock::ListBlock {
             ordered,
             start,
             items,
@@ -937,6 +945,26 @@ mod tests {
         assert!(!ordered);
         assert_eq!(*start, 1);
         assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn a_list_block_serialises_its_wire_tag_as_list_not_list_block() {
+        // `ListBlock` is the Rust name (a Kotlin-shadowing workaround, see the
+        // comment on the variant); `"list"` is the wire name the desktop app
+        // (RichText.svelte, ipc.ts) has always matched on. Renaming the
+        // variant must never rename the string the two apps agree on, so this
+        // asserts the JSON directly rather than trusting the `#[serde(rename)]`
+        // to keep working.
+        let block = RichBlock::ListBlock {
+            ordered: false,
+            start: 1,
+            items: vec![],
+        };
+        let json = serde_json::to_string(&block).expect("RichBlock serialises");
+        assert!(
+            json.contains("\"block\":\"list\""),
+            "expected the wire tag to read \"list\", got: {json}"
+        );
     }
 
     #[test]
@@ -1035,7 +1063,7 @@ mod tests {
         // block level — where a walker that only understood `Text` dropped
         // every code span, every emphasis, and the words inside them.
         let blocks = blocks_from_markdown("- `write` \u{2014} makes a file\n- **bold** start");
-        let RichBlock::List { items, .. } = &blocks[0] else {
+        let RichBlock::ListBlock { items, .. } = &blocks[0] else {
             panic!("expected a list, got {blocks:?}");
         };
         assert_eq!(items.len(), 2);
@@ -1066,7 +1094,7 @@ mod tests {
     #[test]
     fn a_tight_list_item_keeps_a_link_whole() {
         let blocks = blocks_from_markdown("- see [docs](https://e.org/x) now");
-        let RichBlock::List { items, .. } = &blocks[0] else {
+        let RichBlock::ListBlock { items, .. } = &blocks[0] else {
             panic!("expected a list");
         };
         let RichBlock::Paragraph { inlines } = &items[0].blocks[0] else {
@@ -1223,7 +1251,7 @@ mod tests {
     #[test]
     fn a_formatted_list_carries_its_start_and_ordering() {
         let blocks = blocks_from_sanitised_html(r#"<ol start="3"><li>a</li><li>b</li></ol>"#);
-        let RichBlock::List {
+        let RichBlock::ListBlock {
             ordered,
             start,
             items,

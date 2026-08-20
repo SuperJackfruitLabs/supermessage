@@ -3023,6 +3023,12 @@ public object FfiConverterTypeTimelineSnapshot: FfiConverterRustBuffer<TimelineS
 
 /**
  * A failure the host can act on.
+ *
+ * The string fields on `Auth`, `Network`, `Store` and `Protocol` are called
+ * `detail`, not `message`. UniFFI compiles this into a Kotlin exception
+ * extending `kotlin.Exception`, which already declares `message`; a field of
+ * the same name collides with it (`'message' hides member of supertype`,
+ * plus overload-resolution ambiguity). Do not rename it back.
  */
 sealed class FfiException: kotlin.Exception() {
     
@@ -3032,10 +3038,10 @@ sealed class FfiException: kotlin.Exception() {
      */
     class Auth(
         
-        val `message`: kotlin.String
+        val `detail`: kotlin.String
         ) : FfiException() {
         override val message
-            get() = "message=${ `message` }"
+            get() = "detail=${ `detail` }"
     }
     
     /**
@@ -3043,10 +3049,10 @@ sealed class FfiException: kotlin.Exception() {
      */
     class Network(
         
-        val `message`: kotlin.String
+        val `detail`: kotlin.String
         ) : FfiException() {
         override val message
-            get() = "message=${ `message` }"
+            get() = "detail=${ `detail` }"
     }
     
     /**
@@ -3057,10 +3063,10 @@ sealed class FfiException: kotlin.Exception() {
      */
     class Store(
         
-        val `message`: kotlin.String
+        val `detail`: kotlin.String
         ) : FfiException() {
         override val message
-            get() = "message=${ `message` }"
+            get() = "detail=${ `detail` }"
     }
     
     /**
@@ -3068,10 +3074,10 @@ sealed class FfiException: kotlin.Exception() {
      */
     class Protocol(
         
-        val `message`: kotlin.String
+        val `detail`: kotlin.String
         ) : FfiException() {
         override val message
-            get() = "message=${ `message` }"
+            get() = "detail=${ `detail` }"
     }
     
     /**
@@ -3183,22 +3189,22 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             is FfiException.Auth -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
-                + FfiConverterString.allocationSize(value.`message`)
+                + FfiConverterString.allocationSize(value.`detail`)
             )
             is FfiException.Network -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
-                + FfiConverterString.allocationSize(value.`message`)
+                + FfiConverterString.allocationSize(value.`detail`)
             )
             is FfiException.Store -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
-                + FfiConverterString.allocationSize(value.`message`)
+                + FfiConverterString.allocationSize(value.`detail`)
             )
             is FfiException.Protocol -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
-                + FfiConverterString.allocationSize(value.`message`)
+                + FfiConverterString.allocationSize(value.`detail`)
             )
             is FfiException.NotReady -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
@@ -3232,22 +3238,22 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
         when(value) {
             is FfiException.Auth -> {
                 buf.putInt(1)
-                FfiConverterString.write(value.`message`, buf)
+                FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
             is FfiException.Network -> {
                 buf.putInt(2)
-                FfiConverterString.write(value.`message`, buf)
+                FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
             is FfiException.Store -> {
                 buf.putInt(3)
-                FfiConverterString.write(value.`message`, buf)
+                FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
             is FfiException.Protocol -> {
                 buf.putInt(4)
-                FfiConverterString.write(value.`message`, buf)
+                FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
             is FfiException.NotReady -> {

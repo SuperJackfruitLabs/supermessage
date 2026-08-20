@@ -1895,6 +1895,12 @@ public func FfiConverterTypeTimelineSnapshot_lower(_ value: TimelineSnapshot) ->
 
 /**
  * A failure the host can act on.
+ *
+ * The string fields on `Auth`, `Network`, `Store` and `Protocol` are called
+ * `detail`, not `message`. UniFFI compiles this into a Kotlin exception
+ * extending `kotlin.Exception`, which already declares `message`; a field of
+ * the same name collides with it (`'message' hides member of supertype`,
+ * plus overload-resolution ambiguity). Do not rename it back.
  */
 public enum FfiError {
 
@@ -1904,12 +1910,12 @@ public enum FfiError {
      * Credentials were refused, or the session is no longer valid. The host
      * should return to its sign-in screen.
      */
-    case Auth(message: String
+    case Auth(detail: String
     )
     /**
      * The homeserver could not be reached. Worth retrying.
      */
-    case Network(message: String
+    case Network(detail: String
     )
     /**
      * The credential store or the local database refused. On iOS this is
@@ -1917,12 +1923,12 @@ public enum FfiError {
      * unreadable until first unlock, which is a state to wait out rather
      * than an error to report.
      */
-    case Store(message: String
+    case Store(detail: String
     )
     /**
      * Anything else: a malformed response, an unexpected state.
      */
-    case Protocol(message: String
+    case Protocol(detail: String
     )
     /**
      * There is no session yet. The host asked for something that needs one.
@@ -1968,16 +1974,16 @@ public struct FfiConverterTypeFfiError: FfiConverterRustBuffer {
 
         
         case 1: return .Auth(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 2: return .Network(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 3: return .Store(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 4: return .Protocol(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 5: return .NotReady
         case 6: return .RoomChanged(
@@ -2004,24 +2010,24 @@ public struct FfiConverterTypeFfiError: FfiConverterRustBuffer {
 
         
         
-        case let .Auth(message):
+        case let .Auth(detail):
             writeInt(&buf, Int32(1))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Network(message):
+        case let .Network(detail):
             writeInt(&buf, Int32(2))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Store(message):
+        case let .Store(detail):
             writeInt(&buf, Int32(3))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Protocol(message):
+        case let .Protocol(detail):
             writeInt(&buf, Int32(4))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
         case .NotReady:

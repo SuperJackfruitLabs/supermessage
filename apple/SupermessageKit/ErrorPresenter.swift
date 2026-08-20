@@ -11,10 +11,10 @@ public enum ErrorPresenter {
         switch error {
         case .Auth:
             return "Signed out. Sign in again to continue."
-        case let .Network(message):
+        case let .Network(detail):
             // The homeserver's own words when it has any: "connection refused"
             // tells an operator more than "something went wrong" ever will.
-            return message.isEmpty ? "Can't reach the homeserver." : message
+            return detail.isEmpty ? "Can't reach the homeserver." : detail
         case .Store:
             return "Couldn't read this device's local store."
         case .Protocol:

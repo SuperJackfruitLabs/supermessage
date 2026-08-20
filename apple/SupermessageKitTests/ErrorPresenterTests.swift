@@ -6,8 +6,8 @@ import SupermessageFFI
 struct ErrorPresenterTests {
     /// Every variant the boundary can produce.
     static let all: [FfiError] = [
-        .Auth(message: "m"), .Network(message: "m"), .Store(message: "m"),
-        .Protocol(message: "m"), .NotReady,
+        .Auth(detail: "m"), .Network(detail: "m"), .Store(detail: "m"),
+        .Protocol(detail: "m"), .NotReady,
         .RoomChanged(requested: "!a:x", focused: "!b:x"),
         .AttachmentTooLarge(bytes: 9_000_000, limit: 5_000_000),
         .UnknownAttachment, .UnknownSpace(spaceId: "!s:x"),
@@ -26,11 +26,11 @@ struct ErrorPresenterTests {
     func onlyAuthSignsOut() {
         // Treating a network failure as a sign-out throws away a working
         // session every time a train enters a tunnel.
-        #expect(ErrorPresenter.isAuthFailure(.Auth(message: "m")))
+        #expect(ErrorPresenter.isAuthFailure(.Auth(detail: "m")))
         for error in Self.all where !ErrorPresenter.isAuthFailure(error) {
             #expect(!ErrorPresenter.isAuthFailure(error), "\(error)")
         }
-        #expect(!ErrorPresenter.isAuthFailure(.Network(message: "m")))
+        #expect(!ErrorPresenter.isAuthFailure(.Network(detail: "m")))
         #expect(!ErrorPresenter.isAuthFailure(.NotReady))
     }
 
@@ -48,6 +48,6 @@ struct ErrorPresenterTests {
     func notReadyIsQuiet() {
         // It happens on every cold start before sync comes up.
         #expect(!ErrorPresenter.isWorthSurfacing(.NotReady))
-        #expect(ErrorPresenter.isWorthSurfacing(.Network(message: "m")))
+        #expect(ErrorPresenter.isWorthSurfacing(.Network(detail: "m")))
     }
 }
