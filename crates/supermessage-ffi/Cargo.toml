@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "lib"]
 
 [dependencies]
 supermessage-core = { path = "../supermessage-core" }
-uniffi = { version = "0.29.5", features = ["tokio", "cli"] }
+uniffi = { version = "0.32.0", features = ["tokio", "cli"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 async-trait = "0.1"
 thiserror = "2"
@@ -22,4 +22,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [build-dependencies]
-uniffi = { version = "0.29.5", features = ["build"] }
+uniffi = { version = "0.32.0", features = ["build"] }

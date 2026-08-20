@@ -5,7 +5,6 @@
 //! `project_diff` is the exhaustive match that guarantees that boundary holds
 //! even as the SDK evolves.
 
-use crate::UniffiCustomTypeConverter;
 use eyeball_im::VectorDiff;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -50,22 +49,18 @@ pub enum Membership {
 #[serde(transparent)]
 pub struct CustomPayload(pub JsonValue);
 
-uniffi::custom_type!(CustomPayload, String);
-
-impl UniffiCustomTypeConverter for CustomPayload {
-    type Builtin = String;
-
-    /// Text to payload. A host that sends back malformed JSON gets an error
-    /// rather than a silent empty object.
-    fn into_custom(value: String) -> uniffi::Result<Self> {
-        Ok(CustomPayload(serde_json::from_str(&value)?))
-    }
-
-    /// Payload to text, for the host to parse as it sees fit.
-    fn from_custom(obj: Self) -> String {
-        obj.0.to_string()
-    }
-}
+// Text to payload. A host that sends back malformed JSON gets an error
+// rather than a silent empty object. Payload to text, for the host to
+// parse as it sees fit.
+//
+// Closure form of `custom_type!` (the trait-based `UniffiCustomTypeConverter`
+// impl this replaces was removed from UniFFI's public API between 0.28 and
+// 0.29). Semantics are unchanged: `try_lift` is exactly the old
+// `into_custom`, `lower` is exactly the old `from_custom`.
+uniffi::custom_type!(CustomPayload, String, {
+    lower: |obj| obj.0.to_string(),
+    try_lift: |val| Ok(CustomPayload(serde_json::from_str(&val)?)),
+});
 
 /// A single room as summarized for the room list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
