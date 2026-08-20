@@ -5,6 +5,12 @@ description = "Cross-platform, agent-aware Matrix chat client"
 authors = ["supermessage contributors"]
 license = "MIT"
 edition = "2021"
+# None of these three go to crates.io — this one is an application, and the two
+# crates it depends on by path are its own. Saying so is not bookkeeping: a
+# crate cargo-deny believes is publishable cannot have path dependencies at
+# all, so `allow-wildcard-paths` is ignored for it and the licence gate fails
+# on the workspace's own layout.
+publish = false
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
