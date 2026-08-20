@@ -355,6 +355,13 @@ impl Core {
         Ok(self.runtime.block_on(self.session.room_avatar(&room_id))?)
     }
 
+    /// A room's avatar at its original size, for viewing the picture itself.
+    pub fn room_avatar_full(&self, room_id: String) -> Result<Option<String>, FfiError> {
+        Ok(self
+            .runtime
+            .block_on(self.session.room_avatar_full(&room_id))?)
+    }
+
     /// A member's avatar as a `data:` URI, given its `mxc:` URI.
     pub fn member_avatar(&self, mxc_uri: String) -> Result<Option<String>, FfiError> {
         Ok(self

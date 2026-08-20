@@ -75,6 +75,34 @@ pub async fn avatar_thumbnail(client: &Client, mxc_uri: &str) -> CoreResult<Opti
     .await
 }
 
+/// Fetches an avatar at its **original** size, for a reader looking at the
+/// picture itself rather than at a row.
+///
+/// [`avatar_thumbnail`] asks for 96px, which is right for a circle in a list
+/// and wrong the moment someone opens it full screen — a 96px image on a
+/// 400pt-wide phone is scaled four times up, and reads as a broken picture
+/// rather than a small one.
+///
+/// Deliberately not what the roster caches: this can be megabytes, and paying
+/// that for every row of a list to serve the rare tap is the trade
+/// [`AVATAR_THUMBNAIL_SIZE`] exists to avoid. Fetched on demand instead, and
+/// the SDK's own media store means opening the same picture twice hits the
+/// network once.
+pub async fn avatar_full(client: &Client, mxc_uri: &str) -> CoreResult<Option<String>> {
+    let request = MediaRequestParameters {
+        source: MediaSource::Plain(OwnedMxcUri::from(mxc_uri)),
+        format: MediaFormat::File,
+    };
+
+    let bytes = client
+        .media()
+        .get_media_content(&request, true)
+        .await
+        .map_err(|e| CoreError::Network(e.to_string()))?;
+
+    Ok(to_data_uri(&bytes))
+}
+
 /// Fetches a message's media (an `m.image`/`m.file`/`m.audio`/`m.video`'s
 /// `source`) as a thumbnail and encodes it as a `data:` URI, exactly like
 /// [`avatar_thumbnail`] but sized for a bubble-width image instead of an

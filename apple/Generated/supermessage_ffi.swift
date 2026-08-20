@@ -657,6 +657,11 @@ public protocol CoreProtocol : AnyObject {
     func roomAvatar(roomId: String) throws  -> String?
     
     /**
+     * A room's avatar at its original size, for viewing the picture itself.
+     */
+    func roomAvatarFull(roomId: String) throws  -> String?
+    
+    /**
      * Everything the info panel shows about a room.
      */
     func roomInfo(roomId: String) throws  -> RoomInfoDto
@@ -1089,6 +1094,17 @@ open func restoreSession(sink: EventSink)throws  -> Bool {
 open func roomAvatar(roomId: String)throws  -> String? {
     return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_room_avatar(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+    
+    /**
+     * A room's avatar at its original size, for viewing the picture itself.
+     */
+open func roomAvatarFull(roomId: String)throws  -> String? {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_room_avatar_full(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),$0
     )
 })
@@ -3206,6 +3222,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_room_avatar() != 58138) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_room_avatar_full() != 19639) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_room_info() != 28126) {

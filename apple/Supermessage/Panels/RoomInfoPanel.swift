@@ -154,8 +154,17 @@ struct RoomInfoPanel: View {
             await load()
         }
         .fullScreenCover(isPresented: $showsAvatar) {
-            if let avatarURI, let image = RoomRowView.image(from: avatarURI) {
-                AvatarViewer(image: image, title: info?.identity.name ?? "") {
+            if let avatarURI, let thumbnail = RoomRowView.image(from: avatarURI) {
+                // The thumbnail opens immediately and the full-size picture
+                // replaces it when it arrives. Waiting for the fetch before
+                // showing anything would make tapping a picture feel broken
+                // on a slow connection; showing only the thumbnail is what
+                // this is fixing.
+                AvatarViewer(
+                    thumbnail: thumbnail,
+                    title: info?.identity.name ?? "",
+                    full: { await session.fullAvatar(of: roomId) }
+                ) {
                     showsAvatar = false
                 }
             }
@@ -258,10 +267,20 @@ private struct CopyableRow: View {
 /// content, and anything else on screen is competing with it. Pinch to zoom,
 /// drag to pan, and a drag down when unzoomed dismisses — the gestures a
 /// reader already expects from Photos.
+///
+/// Opens on the thumbnail the roster already holds and swaps in the original
+/// when it arrives. The roster caches 96px, which is right for a circle in a
+/// list and four times too small on a phone-width screen — scaled up it reads
+/// as a broken picture rather than a small one.
 private struct AvatarViewer: View {
-    let image: Image
+    let thumbnail: Image
     let title: String
+    /// Fetches the original. Called once, when the viewer appears.
+    let full: () async -> String?
     let onClose: () -> Void
+
+    @State private var fullImage: Image?
+    @State private var loading = true
 
     @State private var zoom: CGFloat = 1
     @State private var committedZoom: CGFloat = 1
@@ -271,58 +290,75 @@ private struct AvatarViewer: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                image
-                    .resizable()
-                    .scaledToFit()
-                    .scaleEffect(zoom)
-                    .offset(offset)
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        MagnifyGesture()
-                            .onChanged { value in
-                                // Never below 1: a picture smaller than the
-                                // screen it is being viewed on is not a view
-                                // of it.
-                                zoom = max(1, committedZoom * value.magnification)
-                            }
-                            .onEnded { _ in
-                                committedZoom = zoom
-                                if zoom <= 1 { resetPan() }
-                            }
-                    )
-                    .simultaneousGesture(
-                        DragGesture()
-                            .onChanged { value in
-                                guard zoom > 1 else { return }
-                                offset = CGSize(
-                                    width: committedOffset.width + value.translation.width,
-                                    height: committedOffset.height + value.translation.height)
-                            }
-                            .onEnded { value in
-                                if zoom > 1 {
-                                    committedOffset = offset
-                                } else if value.translation.height > 80 {
-                                    onClose()
-                                }
-                            }
-                    )
-                    .onTapGesture(count: 2) {
-                        // Double tap toggles between fit and 2×, which is
-                        // faster than pinching for the one thing anyone wants
-                        // to do to a small round picture.
-                        withAnimation(.snappy(duration: 0.2)) {
-                            zoom = zoom > 1 ? 1 : 2
-                            committedZoom = zoom
-                            if zoom == 1 { resetPan() }
-                        }
+                ZStack {
+                    (fullImage ?? thumbnail)
+                        .resizable()
+                        .scaledToFit()
+                        // Only while it is the thumbnail standing in: a
+                        // blurred-up 96px image is honest about being a
+                        // placeholder, and snapping to sharp says the real
+                        // one has arrived.
+                        .blur(radius: fullImage == nil && loading ? 6 : 0)
+                        .scaleEffect(zoom)
+                        .offset(offset)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .animation(.easeOut(duration: 0.2), value: fullImage == nil)
+
+                    if fullImage == nil, loading {
+                        ProgressView().tint(.white)
                     }
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    MagnifyGesture()
+                        .onChanged { value in
+                            // Never below 1: a picture smaller than the
+                            // screen it is being viewed on is not a view of
+                            // it.
+                            zoom = max(1, committedZoom * value.magnification)
+                        }
+                        .onEnded { _ in
+                            committedZoom = zoom
+                            if zoom <= 1 { resetPan() }
+                        }
+                )
+                .simultaneousGesture(
+                    DragGesture()
+                        .onChanged { value in
+                            guard zoom > 1 else { return }
+                            offset = CGSize(
+                                width: committedOffset.width + value.translation.width,
+                                height: committedOffset.height + value.translation.height)
+                        }
+                        .onEnded { value in
+                            if zoom > 1 {
+                                committedOffset = offset
+                            } else if value.translation.height > 80 {
+                                onClose()
+                            }
+                        }
+                )
+                .onTapGesture(count: 2) {
+                    // Double tap toggles between fit and 2×, which is faster
+                    // than pinching for the one thing anyone wants to do to a
+                    // small round picture.
+                    withAnimation(.snappy(duration: 0.2)) {
+                        zoom = zoom > 1 ? 1 : 2
+                        committedZoom = zoom
+                        if zoom == 1 { resetPan() }
+                    }
+                }
             }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onClose) }
+            }
+            .task {
+                defer { loading = false }
+                guard let uri = await full() else { return }
+                fullImage = RoomRowView.image(from: uri)
             }
         }
     }

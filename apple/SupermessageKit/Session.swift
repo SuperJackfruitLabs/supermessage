@@ -272,6 +272,16 @@ public final class Session {
         case failure(String)
     }
 
+    /// A room's avatar at its original size, for looking at the picture.
+    ///
+    /// Not the roster's cache: that holds a 96px thumbnail, which is right
+    /// for a circle in a list and four times too small the moment someone
+    /// opens it. Fetched on demand, and the SDK's media store means opening
+    /// the same picture twice hits the network once.
+    public func fullAvatar(of roomId: String) async -> String? {
+        (try? await client.roomAvatarFull(roomId: roomId)) ?? nil
+    }
+
     /// Everyone this account shares a room with, agents first.
     public func people() async -> [PersonDto] {
         (try? await client.knownPeople()) ?? []

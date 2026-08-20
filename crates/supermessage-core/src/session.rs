@@ -607,6 +607,28 @@ impl Session {
         media::avatar_thumbnail(&client, &mxc_uri).await
     }
 
+    /// Fetches a room's avatar at its **original** size, for a reader who has
+    /// opened the picture rather than a row showing it.
+    ///
+    /// Same resolution as [`Self::room_avatar`] — the room's own avatar, a
+    /// hero's, or a member's — and a different fetch. See
+    /// [`media::avatar_full`] for why the thumbnail cache is not the place
+    /// for this.
+    pub async fn room_avatar_full(&self, room_id: &str) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        let parsed_room_id =
+            RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let room = client
+            .get_room(&parsed_room_id)
+            .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
+
+        let Some(mxc_uri) = rooms::resolve_room_avatar_mxc(&room).await? else {
+            return Ok(None);
+        };
+
+        media::avatar_full(&client, &mxc_uri).await
+    }
+
     /// Fetches `event_id`'s media as a thumbnail, encoded as a `data:` URI
     /// the webview can render directly — the same shape as
     /// [`Self::room_avatar`], but for a message's `m.image`/`m.file`/
