@@ -213,16 +213,26 @@ call and one assertion, and it fails loudly if any link in the chain is wrong.
 
 **The `app` tests assert geometry, not existence.** This is the iOS lesson
 restated: a test once asserted the room-info panel existed while it was laid
-out off the side of an iPad. The three widths are chosen to include the trap:
+out off the side of an iPad. The three widths cover our own rule's
+boundaries, plus the one width that actually guards the directive override:
 
 | Width | Expect |
 |---|---|
 | 411dp (phone portrait) | one pane |
-| **840dp** | **two panes, not three** — the band the default directive gets wrong |
-| 1200dp (tablet landscape) | three panes |
+| 840dp (tablet portrait) | two panes — `paneCountFor`'s own 600–999dp band. Not the default directive's trap: on the pinned adaptive 1.2.0, `calculatePaneScaffoldDirective(currentWindowAdaptiveInfo())` also gives two here (§4.1) |
+| **1200dp** (tablet landscape) | **three panes** — the regression test for §4.1 |
 
-The 840dp case is the regression test for §4.1. It is the one that fails if
-somebody later deletes the custom directive as redundant.
+**1200dp, not 840dp, is what fails if somebody later deletes the custom
+directive as redundant.** On the pinned adaptive 1.2.0 the default's
+`Expanded` bucket is hardcoded to two partitions and never reaches three
+through the no-arg `currentWindowAdaptiveInfo()` entrypoint at any width, so
+a shell measured wide enough for three loses its third pane under the
+default — an 840dp shell was never going to show the fault, because two is
+what both the rule and the (miscounting) default agree on there. This is not
+a prediction: Task 7 mutated the directive to confirm it, and the 840dp test
+this section used to point at as the guard stayed green under that mutation
+while the 1200dp test broke. See `task-7-report.md` for the mutation
+evidence.
 
 The repo's falsification standard applies and is not optional: **a test that
 has never failed is not yet a regression test.** Each of these gets mutated
