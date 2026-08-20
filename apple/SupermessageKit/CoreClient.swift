@@ -148,6 +148,14 @@ public actor CoreClient {
         try await run { try $0.account() }
     }
 
+    public func knownPeople() async throws -> [PersonDto] {
+        try await run { try $0.knownPeople() }
+    }
+
+    public func directRoomWith(userId: String) async throws -> String? {
+        try await run { try $0.directRoomWith(userId: userId) }
+    }
+
     public func roomInfo(roomId: String) async throws -> RoomInfoDto {
         try await run { try $0.roomInfo(roomId: roomId) }
     }

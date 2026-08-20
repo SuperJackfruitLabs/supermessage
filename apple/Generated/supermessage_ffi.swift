@@ -572,6 +572,11 @@ public protocol CoreProtocol : AnyObject {
     func deleteMessage(roomId: String, eventId: String) throws 
     
     /**
+     * The room this account already shares with `user_id` alone, if any.
+     */
+    func directRoomWith(userId: String) throws  -> String?
+    
+    /**
      * Rewrite a message this account sent.
      */
     func editMessage(roomId: String, eventId: String, body: String) throws 
@@ -590,6 +595,12 @@ public protocol CoreProtocol : AnyObject {
      * Join by alias (`#room:server`) or id, returning the id joined.
      */
     func joinRoomByAlias(aliasOrId: String) throws  -> String
+    
+    /**
+     * Everyone this account shares a room with — the new-conversation
+     * screen's directory. See `core::people`.
+     */
+    func knownPeople() throws  -> [PersonDto]
     
     /**
      * Leave a room. It disappears from the roster on the next diff.
@@ -918,6 +929,17 @@ open func deleteMessage(roomId: String, eventId: String)throws  {try rustCallWit
 }
     
     /**
+     * The room this account already shares with `user_id` alone, if any.
+     */
+open func directRoomWith(userId: String)throws  -> String? {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_direct_room_with(self.uniffiClonePointer(),
+        FfiConverterString.lower(userId),$0
+    )
+})
+}
+    
+    /**
      * Rewrite a message this account sent.
      */
 open func editMessage(roomId: String, eventId: String, body: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
@@ -957,6 +979,17 @@ open func joinRoomByAlias(aliasOrId: String)throws  -> String {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_join_room_by_alias(self.uniffiClonePointer(),
         FfiConverterString.lower(aliasOrId),$0
+    )
+})
+}
+    
+    /**
+     * Everyone this account shares a room with — the new-conversation
+     * screen's directory. See `core::people`.
+     */
+open func knownPeople()throws  -> [PersonDto] {
+    return try  FfiConverterSequenceTypePersonDto.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_known_people(self.uniffiClonePointer(),$0
     )
 })
 }
@@ -2761,6 +2794,31 @@ fileprivate struct FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePersonDto: FfiConverterRustBuffer {
+    typealias SwiftType = [PersonDto]
+
+    public static func write(_ value: [PersonDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePersonDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PersonDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PersonDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePersonDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeRichBlock: FfiConverterRustBuffer {
     typealias SwiftType = [RichBlock]
 
@@ -2902,6 +2960,8 @@ fileprivate struct FfiConverterSequenceTypeTimelineRow: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * The user ids a finished message mentions, for `m.mentions`.
  */
@@ -2939,6 +2999,21 @@ public func peopleLabel(userIds: [String]) -> String {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_supermessage_ffi_fn_func_people_label(
         FfiConverterSequenceString.lower(userIds),$0
+    )
+})
+}
+/**
+ * Filter a directory by what the reader has typed — name, machine, or id.
+ *
+ * A free function for the same reason as `rich_blocks_from_markdown`: it
+ * touches no session state, and it runs on every keystroke, so a round trip
+ * through the session would be a round trip per character.
+ */
+public func peopleMatching(people: [PersonDto], query: String) -> [PersonDto] {
+    return try!  FfiConverterSequenceTypePersonDto.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_people_matching(
+        FfiConverterSequenceTypePersonDto.lower(people),
+        FfiConverterString.lower(query),$0
     )
 })
 }
@@ -2983,6 +3058,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_people_label() != 2363) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_people_matching() != 1897) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3007,6 +3085,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_delete_message() != 1652) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_direct_room_with() != 2764) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_edit_message() != 26116) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3017,6 +3098,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_join_room_by_alias() != 49294) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_known_people() != 46506) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_leave_room() != 44268) {

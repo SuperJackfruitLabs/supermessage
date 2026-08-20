@@ -39,6 +39,7 @@ extension ItemView: @retroactive @unchecked Sendable {}
 extension MatrixLinkTarget: @retroactive @unchecked Sendable {}
 extension MediaFileLabel: @retroactive @unchecked Sendable {}
 extension NotificationMode: @retroactive @unchecked Sendable {}
+extension PersonDto: @retroactive @unchecked Sendable {}
 extension MediaMetaDto: @retroactive @unchecked Sendable {}
 extension Membership: @retroactive @unchecked Sendable {}
 extension Mentionable: @retroactive @unchecked Sendable {}

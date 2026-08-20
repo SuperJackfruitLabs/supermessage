@@ -316,6 +316,11 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_create_room(void*_Nonnull ptr,
 void uniffi_supermessage_ffi_fn_method_core_delete_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer event_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_DIRECT_ROOM_WITH
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_DIRECT_ROOM_WITH
+RustBuffer uniffi_supermessage_ffi_fn_method_core_direct_room_with(void*_Nonnull ptr, RustBuffer user_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_EDIT_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_EDIT_MESSAGE
 void uniffi_supermessage_ffi_fn_method_core_edit_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer event_id, RustBuffer body, RustCallStatus *_Nonnull out_status
@@ -334,6 +339,11 @@ void uniffi_supermessage_ffi_fn_method_core_join_room(void*_Nonnull ptr, RustBuf
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_JOIN_ROOM_BY_ALIAS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_JOIN_ROOM_BY_ALIAS
 RustBuffer uniffi_supermessage_ffi_fn_method_core_join_room_by_alias(void*_Nonnull ptr, RustBuffer alias_or_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_KNOWN_PEOPLE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_KNOWN_PEOPLE
+RustBuffer uniffi_supermessage_ffi_fn_method_core_known_people(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_LEAVE_ROOM
@@ -469,6 +479,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_parse_matrix_link(RustBuffer href, Ru
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_LABEL
 RustBuffer uniffi_supermessage_ffi_fn_func_people_label(RustBuffer user_ids, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_MATCHING
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_MATCHING
+RustBuffer uniffi_supermessage_ffi_fn_func_people_matching(RustBuffer people, RustBuffer query, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_RICH_BLOCKS_FROM_MARKDOWN
@@ -774,6 +789,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_people_label(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PEOPLE_MATCHING
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PEOPLE_MATCHING
+uint16_t uniffi_supermessage_ffi_checksum_func_people_matching(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 uint16_t uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown(void
@@ -822,6 +843,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_delete_message(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_DIRECT_ROOM_WITH
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_DIRECT_ROOM_WITH
+uint16_t uniffi_supermessage_ffi_checksum_method_core_direct_room_with(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_EDIT_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_EDIT_MESSAGE
 uint16_t uniffi_supermessage_ffi_checksum_method_core_edit_message(void
@@ -843,6 +870,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_join_room(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_JOIN_ROOM_BY_ALIAS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_JOIN_ROOM_BY_ALIAS
 uint16_t uniffi_supermessage_ffi_checksum_method_core_join_room_by_alias(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_KNOWN_PEOPLE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_KNOWN_PEOPLE
+uint16_t uniffi_supermessage_ffi_checksum_method_core_known_people(void
     
 );
 #endif

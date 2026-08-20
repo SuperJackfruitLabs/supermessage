@@ -800,6 +800,89 @@ impl Session {
             .map_err(|e| CoreError::Protocol(e.to_string()))
     }
 
+    /// Everyone this account shares a room with.
+    ///
+    /// There is no address book in Matrix, and this is the nearest honest
+    /// answer to "who can I talk to" — see `core::people` for why the
+    /// new-conversation screen needed one.
+    ///
+    /// Reads the local cache only (`members_no_sync`). A directory that
+    /// blocks on a member fetch per room is a directory that appears seconds
+    /// after the screen it belongs to, and every id here has already been
+    /// seen in a timeline this account has read.
+    pub async fn known_people(&self) -> CoreResult<Vec<crate::people::PersonDto>> {
+        let client = self.require_client().await?;
+        let me = client
+            .user_id()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+
+        let mut seen: std::collections::HashMap<String, crate::people::PersonDto> =
+            std::collections::HashMap::new();
+        for room in client.joined_rooms() {
+            let Ok(members) = room
+                .members_no_sync(matrix_sdk::RoomMemberships::JOIN)
+                .await
+            else {
+                continue;
+            };
+            for member in members {
+                let user_id = member.user_id().to_string();
+                if user_id == me {
+                    continue;
+                }
+                // First sighting wins. A member's display name can differ
+                // per room, and re-projecting on every sighting would make
+                // the directory's order depend on which room synced last.
+                seen.entry(user_id.clone()).or_insert_with(|| {
+                    let avatar = member.avatar_url().map(|url| url.to_string());
+                    crate::people::project_person_parts(
+                        &user_id,
+                        member.display_name(),
+                        avatar.as_deref(),
+                    )
+                });
+            }
+        }
+
+        Ok(crate::people::arrange(seen.into_values().collect()))
+    }
+
+    /// The room this account already shares with `user_id` alone, if there is
+    /// one.
+    ///
+    /// Checked before creating: starting a second conversation with an agent
+    /// every time the reader taps its name leaves a roster full of rooms with
+    /// the same name and the history in whichever one they used last.
+    ///
+    /// Joined membership only, and exactly two of them — a room with a third
+    /// participant is a group, not this conversation, even if it happens to
+    /// contain the right person.
+    pub async fn direct_room_with(&self, user_id: &str) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        let me = client
+            .user_id()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+
+        for room in client.joined_rooms() {
+            let Ok(members) = room
+                .members_no_sync(matrix_sdk::RoomMemberships::JOIN)
+                .await
+            else {
+                continue;
+            };
+            if members.len() != 2 {
+                continue;
+            }
+            let ids: Vec<String> = members.iter().map(|m| m.user_id().to_string()).collect();
+            if ids.contains(&me) && ids.iter().any(|id| id == user_id) {
+                return Ok(Some(room.room_id().to_string()));
+            }
+        }
+        Ok(None)
+    }
+
     /// Who this app is signed in as, and where.
     ///
     /// Exists because nothing showed it. A console that can act on someone's

@@ -450,6 +450,19 @@ impl Core {
             .block_on(self.session.search_messages(&term, room_id.as_deref()))?)
     }
 
+    /// Everyone this account shares a room with — the new-conversation
+    /// screen's directory. See `core::people`.
+    pub fn known_people(&self) -> Result<Vec<supermessage_core::people::PersonDto>, FfiError> {
+        Ok(self.runtime.block_on(self.session.known_people())?)
+    }
+
+    /// The room this account already shares with `user_id` alone, if any.
+    pub fn direct_room_with(&self, user_id: String) -> Result<Option<String>, FfiError> {
+        Ok(self
+            .runtime
+            .block_on(self.session.direct_room_with(&user_id))?)
+    }
+
     /// Everything the info panel shows about a room.
     pub fn room_info(
         &self,
@@ -591,4 +604,17 @@ pub fn collect_mentions(
 #[uniffi::export]
 pub fn people_label(user_ids: Vec<String>) -> String {
     supermessage_core::display_name::people_label(&user_ids)
+}
+
+/// Filter a directory by what the reader has typed — name, machine, or id.
+///
+/// A free function for the same reason as `rich_blocks_from_markdown`: it
+/// touches no session state, and it runs on every keystroke, so a round trip
+/// through the session would be a round trip per character.
+#[uniffi::export]
+pub fn people_matching(
+    people: Vec<supermessage_core::people::PersonDto>,
+    query: String,
+) -> Vec<supermessage_core::people::PersonDto> {
+    supermessage_core::people::matching(&people, &query)
 }

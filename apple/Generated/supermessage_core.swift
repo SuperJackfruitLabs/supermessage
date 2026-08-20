@@ -1058,6 +1058,125 @@ public func FfiConverterTypeMentionable_lower(_ value: Mentionable) -> RustBuffe
 
 
 /**
+ * Someone this account shares a room with.
+ */
+public struct PersonDto {
+    /**
+     * The raw Matrix user id — what an invite is addressed to.
+     */
+    public var userId: String
+    /**
+     * What to call them, with any `(harness @ host)` suffix taken off and
+     * carried in [`Self::runtime`] instead.
+     */
+    public var name: String
+    /**
+     * The harness and machine, when this is an agent rather than a person.
+     *
+     * Also the flag that says *which* it is: the app is for talking to
+     * agents, and a list that cannot tell one from a colleague is a list
+     * that buries what the reader came for.
+     */
+    public var runtime: RuntimeDto?
+    /**
+     * Their avatar as a raw `mxc:` URI, fetched by the host on demand.
+     */
+    public var avatarUrl: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The raw Matrix user id — what an invite is addressed to.
+         */userId: String, 
+        /**
+         * What to call them, with any `(harness @ host)` suffix taken off and
+         * carried in [`Self::runtime`] instead.
+         */name: String, 
+        /**
+         * The harness and machine, when this is an agent rather than a person.
+         *
+         * Also the flag that says *which* it is: the app is for talking to
+         * agents, and a list that cannot tell one from a colleague is a list
+         * that buries what the reader came for.
+         */runtime: RuntimeDto?, 
+        /**
+         * Their avatar as a raw `mxc:` URI, fetched by the host on demand.
+         */avatarUrl: String?) {
+        self.userId = userId
+        self.name = name
+        self.runtime = runtime
+        self.avatarUrl = avatarUrl
+    }
+}
+
+
+
+extension PersonDto: Equatable, Hashable {
+    public static func ==(lhs: PersonDto, rhs: PersonDto) -> Bool {
+        if lhs.userId != rhs.userId {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.runtime != rhs.runtime {
+            return false
+        }
+        if lhs.avatarUrl != rhs.avatarUrl {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(userId)
+        hasher.combine(name)
+        hasher.combine(runtime)
+        hasher.combine(avatarUrl)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonDto {
+        return
+            try PersonDto(
+                userId: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                runtime: FfiConverterOptionTypeRuntimeDto.read(from: &buf), 
+                avatarUrl: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PersonDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionTypeRuntimeDto.write(value.runtime, into: &buf)
+        FfiConverterOptionString.write(value.avatarUrl, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonDto_lift(_ buf: RustBuffer) throws -> PersonDto {
+    return try FfiConverterTypePersonDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonDto_lower(_ value: PersonDto) -> RustBuffer {
+    return FfiConverterTypePersonDto.lower(value)
+}
+
+
+/**
  * One reaction key aggregated across senders on a message (see
  * `core::timeline::project_reactions`), projected from the SDK's
  * `ReactionsByKeyBySender`.

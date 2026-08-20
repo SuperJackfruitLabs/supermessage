@@ -272,6 +272,25 @@ public final class Session {
         case failure(String)
     }
 
+    /// Everyone this account shares a room with, agents first.
+    public func people() async -> [PersonDto] {
+        (try? await client.knownPeople()) ?? []
+    }
+
+    /// Open the conversation with `person`, creating it only if there is not
+    /// one already.
+    ///
+    /// Reusing an existing one-to-one is the whole point: tapping an agent's
+    /// name twice should return the reader to the conversation they had, not
+    /// leave a roster of identically named rooms with the history scattered
+    /// between them.
+    public func openConversation(with person: PersonDto) async -> Outcome {
+        if let roomId = try? await client.directRoomWith(userId: person.userId) {
+            return .success(roomId)
+        }
+        return await createRoom(name: person.name, invite: [person.userId])
+    }
+
     public func createRoom(name: String, invite: [String]) async -> Outcome {
         do {
             let roomId = try await client.createRoom(

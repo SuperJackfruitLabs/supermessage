@@ -82,16 +82,16 @@ do not call them.
 
 ## E · New conversation
 
-- [ ] **E1.** Create and Join read as labels rather than buttons — grey list
+- [x] **E1.** Create and Join read as labels rather than buttons — grey list
       rows, and grey is also how iOS draws disabled.
-- [ ] **E2.** "Invite (user id)" takes a raw `@someone:server` with no
+- [x] **E2.** "Invite (user id)" takes a raw `@someone:server` with no
       completion, no validation, and no way to pick from people already in your
       rooms.
-- [ ] **E3.** The join placeholder is the wire format: `#room:server or
+- [x] **E3.** The join placeholder is the wire format: `#room:server or
       !id:server`.
-- [ ] **E4.** No busy state on either action; a slow homeserver looks like a
+- [x] **E4.** No busy state on either action; a slow homeserver looks like a
       dead button.
-- [ ] **E5.** Nothing here starts a conversation *with an agent*, which is what
+- [x] **E5.** Nothing here starts a conversation *with an agent*, which is what
       the app is for.
 
 ## F · Account and toolbar
