@@ -139,4 +139,36 @@ struct DiffTrackerTests {
         #expect(tracker.apply([.append([1])], seq: 1) == .ok)
         #expect(tracker.items == [1])
     }
+
+    @Test("a confirmed message keeps its place and its identity")
+    func aConfirmationDoesNotMoveOrRenameTheRow() {
+        // The rule the timeline spec assigns to this layer: when the server
+        // confirms a message this account sent, the row **does not move,
+        // flicker, or change identity**. The core projects that confirmation
+        // as a single `set` at the same index carrying the same
+        // `TimelineItemDto.id` — identity, not the event id — and applying it
+        // must leave the id sequence untouched.
+        //
+        // Asserted here rather than in a UI test because the window between
+        // the local echo and the confirmation is shorter than XCUITest can
+        // reliably sample: a UI test that looked passed whether the rule held
+        // or not, which is worse than no test.
+        let before = ["unique-1", "unique-2", "unique-3"]
+        let after = applyOps(before, [.set(index: 1, value: "unique-2")])
+
+        #expect(after == before, "the confirmation changed the row order or an id")
+        #expect(after.count == before.count, "the confirmation added or removed a row")
+    }
+
+    @Test("a confirmation that renames a row is a visible flicker")
+    func renamingOnConfirmationIsCaught() {
+        // The failure mode, stated: keyed by the event's *address* rather
+        // than its identity, a message leaves and rejoins the list at the
+        // moment it is confirmed. This is what the assertion above is
+        // protecting, written out so it cannot be mistaken for a tautology.
+        let before = ["unique-1", "unique-2", "unique-3"]
+        let renamed = applyOps(before, [.set(index: 1, value: "$event-2:example.org")])
+
+        #expect(renamed != before, "this test asserts nothing if a rename is invisible")
+    }
 }

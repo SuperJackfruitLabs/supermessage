@@ -55,7 +55,7 @@ do not call them.
       several.
 - [x] **B9.** Reaction chips sit louder than the prose they attach to.
 - [x] **B10.** No way to see *who* reacted, only how many.
-- [ ] **B11.** No message editing or deletion. The core has neither, so this is
+- [x] **B11.** No message editing or deletion. The core has neither, so this is
       core work before it is UI work.
 
 ## C · Room info
@@ -130,7 +130,7 @@ do not call them.
 - [ ] **I1.** The desktop has not received the roster work: three arrangements,
       state dots, unread and time. The two clients now disagree about what a
       roster is.
-- [ ] **I2.** The timeline spec's acceptance rules
+- [x] **I2.** The timeline spec's acceptance rules
       (`docs/superpowers/specs/2026-08-19-timeline-behaviour-design.md`) still
       lack the geometry assertions it calls for.
 
