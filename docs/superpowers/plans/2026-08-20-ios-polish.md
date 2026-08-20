@@ -71,12 +71,12 @@ do not call them.
 
 ## D · Search
 
-- [ ] **D1.** **Looks broken while working.** Typing a query leaves the *empty
+- [x] **D1.** **Looks broken while working.** Typing a query leaves the *empty
       state* on screen — magnifying glass and "Find a message across your
       rooms."
-- [ ] **D2.** No searching state between submit and results.
-- [ ] **D3.** No "no matches for …" state.
-- [ ] **D4.** Results carry no date.
+- [x] **D2.** No searching state between submit and results.
+- [x] **D3.** No "no matches for …" state.
+- [x] **D4.** Results carry no date.
 - [ ] **D5.** Results carry no room avatar, so a hit is hard to place.
 - [ ] **D6.** No scope — no way to search within one room.
 

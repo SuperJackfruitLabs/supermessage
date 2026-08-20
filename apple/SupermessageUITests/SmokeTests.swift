@@ -129,6 +129,28 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["Ganesha"].waitForExistence(timeout: 30), "no roster appeared")
 
+        // Search, which used to leave the untouched empty state on screen while
+        // it worked. Each state must say which one it is.
+        app.buttons["magnifyingglass"].tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "no search field")
+        attach(XCUIScreen.main.screenshot(), named: "panel-search-idle")
+
+        field.tap()
+        field.typeText("hello")
+        Thread.sleep(forTimeInterval: 1)
+        // The fault this pins: typing left "Find a message across your rooms"
+        // up, so a reader could not tell thinking from ignoring.
+        XCTAssertFalse(
+            app.staticTexts["Find a message across your rooms."].exists,
+            "the untouched empty state survived a query being typed")
+        attach(XCUIScreen.main.screenshot(), named: "panel-search-ready")
+
+        field.typeText("\n")
+        Thread.sleep(forTimeInterval: 5)
+        attach(XCUIScreen.main.screenshot(), named: "panel-search-results")
+        dismissSheet(app)
+
         // The account screen, and the only way out of the app. `signOut` was
         // implemented, tested, and reachable from nowhere.
         app.buttons["Account"].tap()
