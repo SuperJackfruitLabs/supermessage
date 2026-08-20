@@ -4059,6 +4059,16 @@ public enum CustomEventView {
     
     case rendered(fields: [CustomEventField], 
         /**
+         * How the agent reached this, when it said — see
+         * [`CustomEventRenderResult::reasoning`].
+         *
+         * **This is where reasoning persists.** The live channel carries it
+         * on to-device messages, which are not room history and are gone the
+         * moment the turn ends; a turn card is a real room event, so
+         * reasoning that arrives here is still there tomorrow, on every
+         * client, in its place in the conversation.
+         */reasoning: String?, 
+        /**
          * The payload declared a `schema_version` above what this renderer
          * knows. Rendered anyway, best effort, and flagged.
          */newerVersion: Bool, 
@@ -4094,7 +4104,7 @@ public struct FfiConverterTypeCustomEventView: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .rendered(fields: try FfiConverterSequenceTypeCustomEventField.read(from: &buf), newerVersion: try FfiConverterBool.read(from: &buf), decision: try FfiConverterOptionTypeCustomEventDecision.read(from: &buf)
+        case 1: return .rendered(fields: try FfiConverterSequenceTypeCustomEventField.read(from: &buf), reasoning: try FfiConverterOptionString.read(from: &buf), newerVersion: try FfiConverterBool.read(from: &buf), decision: try FfiConverterOptionTypeCustomEventDecision.read(from: &buf)
         )
         
         case 2: return .fallbackBody(text: try FfiConverterString.read(from: &buf)
@@ -4111,9 +4121,10 @@ public struct FfiConverterTypeCustomEventView: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .rendered(fields,newerVersion,decision):
+        case let .rendered(fields,reasoning,newerVersion,decision):
             writeInt(&buf, Int32(1))
             FfiConverterSequenceTypeCustomEventField.write(fields, into: &buf)
+            FfiConverterOptionString.write(reasoning, into: &buf)
             FfiConverterBool.write(newerVersion, into: &buf)
             FfiConverterOptionTypeCustomEventDecision.write(decision, into: &buf)
             

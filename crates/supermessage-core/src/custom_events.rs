@@ -151,6 +151,14 @@ pub struct CustomEventRenderResult {
     /// an unrecognised type.
     pub fields: Vec<CustomEventField>,
     pub decision: Option<CustomEventDecision>,
+    /// Long-form prose the card carries beside its rows — an agent's
+    /// reasoning, today.
+    ///
+    /// Separate from [`Self::fields`] because a field is a label and a short
+    /// value (300 characters), and reasoning is neither: it is paragraphs,
+    /// and squeezing it into a value column would truncate the middle of a
+    /// thought.
+    pub reasoning: Option<String>,
 }
 
 /// The outcome of the whole fallback chain — what a host switches on.
@@ -159,6 +167,15 @@ pub struct CustomEventRenderResult {
 pub enum CustomEventView {
     Rendered {
         fields: Vec<CustomEventField>,
+        /// How the agent reached this, when it said — see
+        /// [`CustomEventRenderResult::reasoning`].
+        ///
+        /// **This is where reasoning persists.** The live channel carries it
+        /// on to-device messages, which are not room history and are gone the
+        /// moment the turn ends; a turn card is a real room event, so
+        /// reasoning that arrives here is still there tomorrow, on every
+        /// client, in its place in the conversation.
+        reasoning: Option<String>,
         /// The payload declared a `schema_version` above what this renderer
         /// knows. Rendered anyway, best effort, and flagged.
         newer_version: bool,
@@ -236,6 +253,25 @@ fn bound_text(value: &str, max_chars: usize) -> String {
     }
     let head: String = value.chars().take(max_chars).collect();
     format!("{head}…")
+}
+
+/// How much reasoning a card carries.
+///
+/// Far above [`FIELD_VALUE_MAX_CHARS`], because this is prose rather than a
+/// value — a thought cut at 300 characters is a thought nobody can follow —
+/// and still bounded, because it arrives from a sender and a card is not a
+/// document viewer.
+const REASONING_MAX_CHARS: usize = 4_000;
+
+/// Trim reasoning for display. Empty and absent are the same thing: a
+/// disclosure that opens onto nothing says there is something to read.
+fn bound_reasoning(value: Option<String>) -> Option<String> {
+    let value = value?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(bound_text(trimmed, REASONING_MAX_CHARS))
 }
 
 fn bound_fields(fields: Vec<CustomEventField>) -> Vec<CustomEventField> {
@@ -332,6 +368,7 @@ pub fn resolve_custom_event(
                 .is_some_and(|version| version > renderer.max_known_schema_version());
             return CustomEventView::Rendered {
                 fields,
+                reasoning: bound_reasoning(result.reasoning),
                 newer_version,
                 decision: bound_decision(result.decision),
             };
@@ -384,6 +421,7 @@ impl CustomEventRenderer for DemoNoteRenderer {
                     label: "Note".into(),
                     value: title,
                 }],
+                reasoning: None,
                 decision: None,
             },
             None => CustomEventRenderResult::default(),
@@ -504,6 +542,19 @@ impl CustomEventRenderer for TurnActivityRenderer {
             .and_then(Value::as_array)
             .unwrap_or(&empty);
 
+        // **Where reasoning becomes permanent.** The live channel carries it
+        // on to-device messages, which are not room history — they are gone
+        // the moment the turn ends. A turn card is a real room event, so
+        // reasoning an agent puts here is still there tomorrow, on every
+        // client, in its place in the conversation.
+        //
+        // Read with the same discipline as everything else in this module:
+        // check the shape, take the value, never coerce, never recurse.
+        let reasoning = content
+            .get("reasoning")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+
         let mut fields = Vec::new();
         // The headline first: a reader scanning a conversation wants "it did
         // seven things and one failed" before it wants to know which seven.
@@ -547,6 +598,7 @@ impl CustomEventRenderer for TurnActivityRenderer {
         }
         CustomEventRenderResult {
             fields,
+            reasoning,
             decision: None,
         }
     }
@@ -613,11 +665,13 @@ impl CustomEventRenderer for PermissionRequestRenderer {
             // anyway; the card falls back to describing the request.
             return CustomEventRenderResult {
                 fields,
+                reasoning: None,
                 decision: None,
             };
         }
         CustomEventRenderResult {
             fields,
+            reasoning: None,
             decision: Some(CustomEventDecision {
                 prompt: format!("Allow {title}?"),
                 options,
@@ -714,6 +768,7 @@ mod tests {
                         label: "Title".into(),
                         value: title,
                     }],
+                    reasoning: None,
                     decision: None,
                 },
                 None => CustomEventRenderResult::default(),
@@ -750,6 +805,7 @@ mod tests {
                     label: "Note".into(),
                     value: "hello".into()
                 }],
+                reasoning: None,
                 newer_version: false,
                 decision: None,
             }
@@ -1322,6 +1378,7 @@ mod tests {
                     label: "Note".into(),
                     value: "Deployed to staging".into()
                 }],
+                reasoning: None,
                 newer_version: false,
                 decision: None,
             },
@@ -1392,6 +1449,74 @@ mod tests {
             view,
             CustomEventView::Rendered { decision: None, .. }
         ));
+    }
+
+    #[test]
+    fn a_turn_carries_the_reasoning_that_produced_it() {
+        // The point of putting it here: the live channel delivers reasoning
+        // on to-device messages, which are not room history and are gone the
+        // moment the turn ends. A turn card is a real room event.
+        let mut turn = a_turn();
+        turn["reasoning"] = json!("Checked the logs before touching anything.");
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        let CustomEventView::Rendered { reasoning, .. } = view else {
+            panic!("expected a rendered card");
+        };
+        assert_eq!(
+            reasoning.as_deref(),
+            Some("Checked the logs before touching anything.")
+        );
+    }
+
+    #[test]
+    fn a_turn_that_said_nothing_about_its_reasoning_carries_none() {
+        let view = render_with(Box::new(TurnActivityRenderer), a_turn());
+        let CustomEventView::Rendered { reasoning, .. } = view else {
+            panic!("expected a rendered card");
+        };
+        assert!(reasoning.is_none(), "reasoning was invented");
+    }
+
+    #[test]
+    fn reasoning_that_is_not_prose_is_not_reasoning() {
+        // Arbitrary JSON from anyone who can send to the room. A number, an
+        // object or an array is not a thought, and coercing one into a string
+        // would put `{"a":1}` where a paragraph belongs.
+        for shape in [json!(42), json!({ "a": 1 }), json!(["a"]), json!(null)] {
+            let mut turn = a_turn();
+            turn["reasoning"] = shape.clone();
+            let view = render_with(Box::new(TurnActivityRenderer), turn);
+            let CustomEventView::Rendered { reasoning, .. } = view else {
+                panic!("expected a rendered card");
+            };
+            assert!(reasoning.is_none(), "{shape} was read as reasoning");
+        }
+    }
+
+    #[test]
+    fn empty_reasoning_is_the_same_as_none() {
+        // A disclosure that opens onto an empty box says there is something
+        // to read.
+        let mut turn = a_turn();
+        turn["reasoning"] = json!("   \n  ");
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        let CustomEventView::Rendered { reasoning, .. } = view else {
+            panic!("expected a rendered card");
+        };
+        assert!(reasoning.is_none());
+    }
+
+    #[test]
+    fn a_very_long_thought_is_cut_and_says_so() {
+        let mut turn = a_turn();
+        turn["reasoning"] = json!("z".repeat(REASONING_MAX_CHARS + 200));
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        let CustomEventView::Rendered { reasoning, .. } = view else {
+            panic!("expected a rendered card");
+        };
+        let text = reasoning.expect("reasoning");
+        assert_eq!(text.chars().count(), REASONING_MAX_CHARS + 1);
+        assert!(text.ends_with('…'), "the cut was silent");
     }
 
     #[test]

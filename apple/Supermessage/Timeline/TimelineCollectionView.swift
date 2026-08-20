@@ -82,6 +82,17 @@ struct TimelineCollectionView: UIViewRepresentable {
         view.backgroundColor = .clear
         view.delegate = context.coordinator
         view.alwaysBounceVertical = true
+        // Drag the conversation to put the keyboard away, the way Messages
+        // does. There was no way to dismiss it at all: it took half the
+        // screen and stayed there, so a reader who tapped the composer to
+        // write and then changed their mind had to leave the room.
+        //
+        // `.interactive` rather than `.onDrag` because the list is inverted —
+        // dragging *down* moves toward the newest message, which is the same
+        // gesture that should bring the keyboard down with it, and
+        // interactive tracking is what keeps the two moving together instead
+        // of the keyboard snapping away on the first pixel.
+        view.keyboardDismissMode = .interactive
         // The inversion itself. Everything else in this file follows from it.
         view.transform = CGAffineTransform(scaleX: 1, y: -1)
         // It would otherwise run down the leading edge and travel backwards.
@@ -114,7 +125,8 @@ struct TimelineCollectionView: UIViewRepresentable {
         }
         context.coordinator.apply(
             rows: timeline.items, revision: timeline.revision,
-            isPaginating: timeline.isPaginating, isLive: session.live.isLive)
+            isPaginating: timeline.isPaginating, isLive: session.live.isLive,
+            isFinished: session.live.finished)
     }
 
     /// Bring the newest message back into view.
@@ -168,6 +180,7 @@ struct TimelineCollectionView: UIViewRepresentable {
         private var appliedRevision: UInt64 = 0
         private var appliedPaginating = false
         private var appliedLive = false
+        private var appliedFinished = false
         private var hasApplied = false
         /// Whether one agent does all the talking, so the runtime suffix can
         /// come off every attribution in the room.
@@ -280,11 +293,16 @@ struct TimelineCollectionView: UIViewRepresentable {
         /// every streaming token. That is what the jitter was: not a missing
         /// animation, but every row on screen being re-measured and laid out
         /// again several times a second.
-        func apply(rows: [TimelineRow], revision: UInt64, isPaginating: Bool, isLive: Bool) {
+        func apply(
+            rows: [TimelineRow], revision: UInt64, isPaginating: Bool, isLive: Bool,
+            isFinished: Bool
+        ) {
             guard let dataSource else { return }
 
             let historyChanged = revision != appliedRevision || !hasApplied
-            if !historyChanged, isPaginating == appliedPaginating, isLive == appliedLive {
+            if !historyChanged, isPaginating == appliedPaginating, isLive == appliedLive,
+                isFinished == appliedFinished
+            {
                 return
             }
 
@@ -294,8 +312,11 @@ struct TimelineCollectionView: UIViewRepresentable {
                 // One row appearing or disappearing at the newest end — the
                 // "writing…" card, or the pagination spinner. Always worth
                 // animating when the reader is looking at it.
+                appliedFinished = isFinished
                 dataSource.apply(
-                    snapshot(entries: displayEntries, isPaginating: isPaginating, isLive: isLive),
+                    snapshot(
+                        entries: displayEntries, isPaginating: isPaginating, isLive: isLive,
+                        isFinished: isFinished),
                     animatingDifferences: !wasAway)
                 return
             }
@@ -303,6 +324,7 @@ struct TimelineCollectionView: UIViewRepresentable {
             appliedRevision = revision
             appliedPaginating = isPaginating
             appliedLive = isLive
+            appliedFinished = isFinished
             // Set *after* this pass, so `animates` can tell a first fill —
             // a room switch — from an arrival into a room already on screen.
             defer { hasApplied = true }
@@ -347,7 +369,8 @@ struct TimelineCollectionView: UIViewRepresentable {
             }
 
             var snap = snapshot(
-                entries: displayEntries, isPaginating: isPaginating, isLive: isLive)
+                entries: displayEntries, isPaginating: isPaginating, isLive: isLive,
+                isFinished: isFinished)
 
             // Reconfigure rather than reload: an identity that survived should
             // update in place, which is the point of the identity this list is
@@ -407,13 +430,34 @@ struct TimelineCollectionView: UIViewRepresentable {
 
         /// The snapshot for a given entry list, with the two transient rows
         /// that bracket it.
+        ///
+        /// **Where the turn card goes depends on whether it has finished.**
+        /// Index 0 is the bottom of the screen, because the list is inverted.
+        ///
+        /// A turn *in progress* belongs at the bottom: it is the newest thing
+        /// in the room, still being written, and the message it becomes has
+        /// not arrived.
+        ///
+        /// A turn that has *finished* belongs above the message it produced.
+        /// The reasoning and the tool calls happened before the answer, and
+        /// drawing them under it says they happened after — which is what the
+        /// room looked like: an answer, and then, below it, the thinking that
+        /// led to it.
         private func snapshot(
-            entries: [Entry], isPaginating: Bool, isLive: Bool
+            entries: [Entry], isPaginating: Bool, isLive: Bool, isFinished: Bool
         ) -> NSDiffableDataSourceSnapshot<Int, Entry> {
             var snapshot = NSDiffableDataSourceSnapshot<Int, Entry>()
             snapshot.appendSections([0])
-            if isLive { snapshot.appendItems([.liveTurn]) }
-            snapshot.appendItems(entries)
+            if isLive, !isFinished { snapshot.appendItems([.liveTurn]) }
+            if isLive, isFinished, let newest = entries.first {
+                // The newest message stays at the bottom; the record of the
+                // turn sits immediately older than it.
+                snapshot.appendItems([newest])
+                snapshot.appendItems([.liveTurn])
+                snapshot.appendItems(Array(entries.dropFirst()))
+            } else {
+                snapshot.appendItems(entries)
+            }
             if isPaginating { snapshot.appendItems([.paginating]) }
             return snapshot
         }

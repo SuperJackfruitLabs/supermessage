@@ -745,6 +745,16 @@ export type CustomEventView =
   | {
       status: "rendered";
       fields: CustomEventField[];
+      /**
+       * How the agent reached this, when it said.
+       *
+       * **Where reasoning persists.** The live channel carries it on
+       * to-device messages, which are not room history and are gone the
+       * moment the turn ends; a turn card is a real room event, so reasoning
+       * that arrives here is still there tomorrow, on every client, in its
+       * place in the conversation.
+       */
+      reasoning: string | null;
       newerVersion: boolean;
       decision: CustomEventDecision | null;
     }

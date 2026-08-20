@@ -19,8 +19,10 @@ struct CustomEventCard: View {
 
     var body: some View {
         switch view {
-        case let .rendered(fields, newerVersion, decision):
-            card(fields: fields, newerVersion: newerVersion, decision: decision)
+        case let .rendered(fields, reasoning, newerVersion, decision):
+            card(
+                fields: fields, reasoning: reasoning, newerVersion: newerVersion,
+                decision: decision)
 
         case let .fallbackBody(text):
             // A type nothing here can render, but which carried a plain-text
@@ -45,7 +47,8 @@ struct CustomEventCard: View {
 
     @ViewBuilder
     private func card(
-        fields: [CustomEventField], newerVersion: Bool, decision: CustomEventDecision?
+        fields: [CustomEventField], reasoning: String?, newerVersion: Bool,
+        decision: CustomEventDecision?
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -75,6 +78,27 @@ struct CustomEventCard: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 84, alignment: .leading)
                     Text(field.value).font(.callout)
+                }
+            }
+
+            // How the agent got here, when it said. Collapsed: it is context,
+            // not the conclusion, and a reader scanning a room wants the
+            // conclusion first.
+            //
+            // This is the reasoning that *lasts*. The live card shows the
+            // turn's reasoning while it is being written and until the next
+            // turn replaces it; what arrives here is a room event, so it is
+            // still in place tomorrow and on every other client.
+            if let reasoning {
+                DisclosureGroup {
+                    Text(reasoning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 2)
+                } label: {
+                    Text("Reasoning").metaFace().foregroundStyle(.secondary)
                 }
             }
 

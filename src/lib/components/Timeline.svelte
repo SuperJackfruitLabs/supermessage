@@ -1913,6 +1913,31 @@
                               <dd class="m-0 min-w-0 break-words">{field.value}</dd>
                             {/each}
                           </dl>
+                          {#if view.view.reasoning}
+                            <!--
+                              How the agent reached this, when it said.
+                              Collapsed: it is context, not the conclusion,
+                              and an operator scanning a room wants the
+                              conclusion first.
+
+                              A `<details>` rather than a scripted toggle —
+                              the element already is a disclosure, keyboard
+                              operable and announced as one, and re-building
+                              that in Svelte would only be a worse version.
+                            -->
+                            <details class="border-t border-border px-3 py-2">
+                              <summary
+                                class="cursor-pointer font-mono text-label uppercase text-content-muted"
+                              >
+                                Reasoning
+                              </summary>
+                              <p
+                                class="selectable mt-2 mb-0 break-words whitespace-pre-wrap text-meta text-content-muted"
+                              >
+                                {view.view.reasoning}
+                              </p>
+                            </details>
+                          {/if}
                           {#if view.view.newerVersion}
                             <!--
                               Mono and emphatically *not* amber: this is a

@@ -1177,6 +1177,7 @@ mod tests {
                         label: "Note".into(),
                         value: "Deployed to staging".into(),
                     }],
+                    reasoning: None,
                     newer_version: false,
                     decision: None,
                 }
