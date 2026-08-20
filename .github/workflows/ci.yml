@@ -25,9 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No pinned version: `packageManager` in package.json is the one
+      # source of truth, and pinning here as well makes the action fail with
+      # "multiple versions of pnpm specified" the moment the two drift — which
+      # is what happened when the lockfile moved to pnpm 11.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -76,9 +78,11 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # No pinned version: `packageManager` in package.json is the one
+      # source of truth, and pinning here as well makes the action fail with
+      # "multiple versions of pnpm specified" the moment the two drift — which
+      # is what happened when the lockfile moved to pnpm 11.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
