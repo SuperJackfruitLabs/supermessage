@@ -75,13 +75,21 @@ val checkJniLibs by tasks.registering {
     }
 }
 
-// Attached to the assemble/packaging path, not preBuild: preBuild is an
-// ancestor of compileDebugKotlin, which :app:testDebugUnitTest reaches
-// through the project(":core") dependency to build its JVM classpath — a
-// pure-JVM unit test run needs none of the .so files and must not require a
-// 15-minute NDK build in a fresh clone. assembleDebug/assembleRelease are
-// what actually merge jniLibs into a packaged artifact, so that is where a
-// missing ABI needs to turn into a build failure instead of a run-time
-// UnsatisfiedLinkError.
-tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" }
+// Attached to the JNI-merge tasks, not preBuild and not the assemble
+// lifecycle tasks. preBuild is an ancestor of compileDebugKotlin, which
+// :app:testDebugUnitTest reaches through the project(":core") dependency to
+// build its JVM classpath — a pure-JVM unit test run needs none of the .so
+// files and must not require a 15-minute NDK build in a fresh clone.
+//
+// assembleDebug/assembleRelease looked right and were not: :app consuming
+// :core as a project dependency never invokes :core:assembleDebug at all —
+// it resolves straight to :core:mergeDebugJniLibFolders /
+// copyDebugJniLibsProjectOnly. And connectedDebugAndroidTest installs via
+// assembleDebugAndroidTest, a variant assembleDebug/assembleRelease does not
+// cover either. Verified with --dry-run task-graph dumps for all four paths
+// that matter (:core:assembleDebug, :app:assembleDebug,
+// :core:assembleDebugAndroidTest, :app:assembleDebugAndroidTest) before
+// settling on the merge tasks below, which every one of those four actually
+// runs through.
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }
     .configureEach { dependsOn(checkJniLibs) }
