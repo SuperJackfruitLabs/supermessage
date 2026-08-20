@@ -693,6 +693,18 @@ public protocol CoreProtocol : AnyObject {
     func sendReply(roomId: String, body: String, inReplyTo: String) throws 
     
     /**
+     * Set how loudly a room may interrupt. `Default` unsets the room's own
+     * rule so the account default applies again.
+     */
+    func setRoomNotifications(roomId: String, mode: NotificationMode) throws 
+    
+    /**
+     * Pin or unpin a room — the `m.favourite` tag, so it travels between
+     * clients.
+     */
+    func setRoomPinned(roomId: String, pinned: Bool) throws 
+    
+    /**
      * Tell the room whether this account is typing.
      */
     func setTyping(roomId: String, typing: Bool) throws 
@@ -1128,6 +1140,30 @@ open func sendReply(roomId: String, body: String, inReplyTo: String)throws  {try
         FfiConverterString.lower(roomId),
         FfiConverterString.lower(body),
         FfiConverterString.lower(inReplyTo),$0
+    )
+}
+}
+    
+    /**
+     * Set how loudly a room may interrupt. `Default` unsets the room's own
+     * rule so the account default applies again.
+     */
+open func setRoomNotifications(roomId: String, mode: NotificationMode)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_set_room_notifications(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterTypeNotificationMode_lower(mode),$0
+    )
+}
+}
+    
+    /**
+     * Pin or unpin a room — the `m.favourite` tag, so it travels between
+     * clients.
+     */
+open func setRoomPinned(roomId: String, pinned: Bool)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_set_room_pinned(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterBool.lower(pinned),$0
     )
 }
 }
@@ -2861,6 +2897,8 @@ fileprivate struct FfiConverterSequenceTypeTimelineRow: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * The user ids a finished message mentions, for `m.mentions`.
  */
@@ -3018,6 +3056,12 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_set_room_notifications() != 42292) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_set_room_pinned() != 62431) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_set_typing() != 5775) {

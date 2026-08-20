@@ -245,6 +245,26 @@ impl Core {
         Ok(())
     }
 
+    /// Set how loudly a room may interrupt. `Default` unsets the room's own
+    /// rule so the account default applies again.
+    pub fn set_room_notifications(
+        &self,
+        room_id: String,
+        mode: supermessage_core::room_info::NotificationMode,
+    ) -> Result<(), FfiError> {
+        self.runtime
+            .block_on(self.session.set_room_notification_mode(&room_id, mode))?;
+        Ok(())
+    }
+
+    /// Pin or unpin a room — the `m.favourite` tag, so it travels between
+    /// clients.
+    pub fn set_room_pinned(&self, room_id: String, pinned: bool) -> Result<(), FfiError> {
+        self.runtime
+            .block_on(self.session.set_room_pinned(&room_id, pinned))?;
+        Ok(())
+    }
+
     /// Rewrite a message this account sent.
     pub fn edit_message(
         &self,

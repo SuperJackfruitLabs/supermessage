@@ -731,6 +731,70 @@ impl Session {
         room_info::build_room_info(&room).await
     }
 
+    /// How loudly `room_id` may interrupt.
+    ///
+    /// [`NotificationMode::Default`] *unsets* this room's own rule rather
+    /// than writing the account default into it, which is what makes the
+    /// setting reversible: a room set to Default follows the account
+    /// afterwards, instead of being frozen at whatever the default happened
+    /// to be on the day it was chosen.
+    pub async fn set_room_notification_mode(
+        &self,
+        room_id: &str,
+        mode: crate::room_info::NotificationMode,
+    ) -> CoreResult<()> {
+        use crate::room_info::NotificationMode;
+        use matrix_sdk::notification_settings::RoomNotificationMode;
+
+        let client = self.require_client().await?;
+        let parsed_room_id =
+            RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let settings = client.notification_settings().await;
+
+        let result = match mode {
+            NotificationMode::Default => {
+                settings
+                    .delete_user_defined_room_rules(&parsed_room_id)
+                    .await
+            }
+            NotificationMode::AllMessages => {
+                settings
+                    .set_room_notification_mode(&parsed_room_id, RoomNotificationMode::AllMessages)
+                    .await
+            }
+            NotificationMode::MentionsOnly => {
+                settings
+                    .set_room_notification_mode(
+                        &parsed_room_id,
+                        RoomNotificationMode::MentionsAndKeywordsOnly,
+                    )
+                    .await
+            }
+            NotificationMode::Muted => {
+                settings
+                    .set_room_notification_mode(&parsed_room_id, RoomNotificationMode::Mute)
+                    .await
+            }
+        };
+        result.map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
+    /// Pin or unpin `room_id` — Matrix's `m.favourite` room tag.
+    ///
+    /// A tag rather than anything local, so a room pinned here is pinned in
+    /// Element too. See [`crate::room_info::RoomInfoDto::pinned`].
+    pub async fn set_room_pinned(&self, room_id: &str, pinned: bool) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        let parsed_room_id =
+            RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let room = client
+            .get_room(&parsed_room_id)
+            .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
+        room.set_is_favourite(pinned, None)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
     /// Who this app is signed in as, and where.
     ///
     /// Exists because nothing showed it. A console that can act on someone's

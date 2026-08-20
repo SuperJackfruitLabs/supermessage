@@ -12,6 +12,7 @@
 //! delegates to it — see `core::rooms::project_room_parts`'s doc comment for
 //! why that split exists throughout this codebase.
 
+use matrix_sdk::notification_settings::RoomNotificationMode;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::{Room, RoomMemberships};
 use serde::Serialize;
@@ -35,6 +36,33 @@ pub struct RoomMemberDto {
     /// the new `member_avatar` command), not a second fetch path — see that
     /// command's doc comment in `core::commands`.
     pub avatar_url: Option<String>,
+}
+
+impl From<RoomNotificationMode> for NotificationMode {
+    fn from(mode: RoomNotificationMode) -> Self {
+        match mode {
+            RoomNotificationMode::AllMessages => Self::AllMessages,
+            RoomNotificationMode::MentionsAndKeywordsOnly => Self::MentionsOnly,
+            RoomNotificationMode::Mute => Self::Muted,
+        }
+    }
+}
+
+/// How loudly a room is allowed to interrupt.
+///
+/// Mirrors the SDK's `RoomNotificationMode` plus one case it does not have:
+/// `Default`, meaning nothing has been set for this room and the account's
+/// default applies. The SDK expresses that as `Option<RoomNotificationMode>`,
+/// and an `Option` of an enum across a UniFFI boundary makes every host write
+/// the same double-unwrap — so the absence gets a name here instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase")]
+pub enum NotificationMode {
+    /// Nothing set for this room; the account default decides.
+    Default,
+    AllMessages,
+    MentionsOnly,
+    Muted,
 }
 
 /// A room's descriptive metadata plus its joined member list, for the
@@ -71,6 +99,15 @@ pub struct RoomInfoDto {
     /// comment for why this can require a live fetch rather than always
     /// being served from the local cache.
     pub members: Vec<RoomMemberDto>,
+    /// How loudly this room may interrupt.
+    pub notifications: NotificationMode,
+    /// Whether this room is tagged `m.favourite`.
+    ///
+    /// Matrix's word is "favourite"; every messaging app's word for the same
+    /// gesture is "pin", and the roster sorts on it. Carried as the tag's own
+    /// meaning rather than as a sort key, because the tag is what other
+    /// clients read.
+    pub pinned: bool,
 }
 
 /// Builds a [`RoomMemberDto`] from already-extracted parts. Pure, mirroring
@@ -108,6 +145,8 @@ pub fn project_room_info_parts(
     alt_aliases: Vec<String>,
     active_member_count: u64,
     members: Vec<RoomMemberDto>,
+    notifications: NotificationMode,
+    pinned: bool,
 ) -> RoomInfoDto {
     // The bridge writes the runtime into the topic. Read as a runtime it is
     // worth showing; read as prose it is an internal address sitting on the
@@ -134,6 +173,8 @@ pub fn project_room_info_parts(
         alt_aliases,
         active_member_count,
         members,
+        notifications,
+        pinned,
     }
 }
 
@@ -208,6 +249,19 @@ pub async fn build_room_info(room: &Room) -> CoreResult<RoomInfoDto> {
     let members = resolve_joined_members(room).await?;
     let member_dtos = members.iter().map(project_member).collect();
 
+    // The account's *user-defined* mode for this room, which is the thing a
+    // panel can change and unset. The account default is deliberately not
+    // resolved into it: showing a room as "All messages" because that is the
+    // default, and then having the reader's Default selection appear to do
+    // nothing, is worse than saying Default.
+    let notifications = room
+        .client()
+        .notification_settings()
+        .await
+        .get_user_defined_room_notification_mode(room.room_id())
+        .await
+        .map_or(NotificationMode::Default, NotificationMode::from);
+
     Ok(project_room_info_parts(
         room.room_id().as_str(),
         room.name(),
@@ -219,6 +273,8 @@ pub async fn build_room_info(room: &Room) -> CoreResult<RoomInfoDto> {
             .collect(),
         room.active_members_count(),
         member_dtos,
+        notifications,
+        room.is_favourite(),
     ))
 }
 
@@ -236,6 +292,44 @@ mod tests {
             display_name.map(str::to_string),
             avatar_url.map(str::to_string),
         )
+    }
+
+    #[test]
+    fn every_sdk_notification_mode_has_a_name_here() {
+        assert_eq!(
+            NotificationMode::from(RoomNotificationMode::AllMessages),
+            NotificationMode::AllMessages
+        );
+        assert_eq!(
+            NotificationMode::from(RoomNotificationMode::MentionsAndKeywordsOnly),
+            NotificationMode::MentionsOnly
+        );
+        assert_eq!(
+            NotificationMode::from(RoomNotificationMode::Mute),
+            NotificationMode::Muted
+        );
+    }
+
+    #[test]
+    fn a_room_nobody_has_set_a_rule_for_says_default_not_all_messages() {
+        // The SDK says `None` here, and the tempting fix is to resolve the
+        // account default into it. Then a reader choosing "Default" appears
+        // to change nothing, because the panel already said what the default
+        // was — and the room's rule is silently frozen at whatever the
+        // default happened to be that day.
+        let info = project_room_info_parts(
+            "!r:x.org",
+            Some("Ganesha".into()),
+            None,
+            None,
+            Vec::new(),
+            2,
+            Vec::new(),
+            NotificationMode::Default,
+            false,
+        );
+        assert_eq!(info.notifications, NotificationMode::Default);
+        assert!(!info.pinned);
     }
 
     #[test]
@@ -274,6 +368,8 @@ mod tests {
             vec![],
             2,
             vec![],
+            NotificationMode::Default,
+            false,
         );
         assert_eq!(
             info.runtime,
@@ -297,6 +393,8 @@ mod tests {
             vec![],
             4,
             vec![],
+            NotificationMode::Default,
+            false,
         );
         assert_eq!(info.runtime, None);
         assert_eq!(info.topic.as_deref(), Some("Where we plan the release"));
@@ -316,6 +414,8 @@ mod tests {
                 Some("Alice"),
                 Some("mxc://x.org/a"),
             )],
+            NotificationMode::Default,
+            false,
         );
         assert_eq!(info.room_id, "!abc:example.org");
         assert_eq!(info.name.as_deref(), Some("Ops"));
@@ -337,6 +437,8 @@ mod tests {
             Vec::new(),
             1,
             Vec::new(),
+            NotificationMode::Default,
+            false,
         );
         assert_eq!(info.name, None);
         assert_eq!(info.topic, None);

@@ -19,7 +19,17 @@ struct RoomRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            avatar
+            // The avatar is the shortcut into room info: it is the one part
+            // of the row that is *about* the room rather than about the
+            // conversation, so tapping it asks about the room and tapping
+            // anywhere else opens the conversation.
+            if let onOpenInfo {
+                Button(action: onOpenInfo) { avatar }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("About \(row.identity.name)")
+            } else {
+                avatar
+            }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(row.identity.name)
@@ -97,6 +107,9 @@ struct RoomRowView: View {
 
     /// Set by the machine view, whose section header already names the host.
     var hidesHost: Bool = false
+    /// Open this room's info. When `nil` the avatar is not a control — a
+    /// picture that does nothing when tapped should not look tappable.
+    var onOpenInfo: (() -> Void)?
 
     private var dotColour: Color {
         switch state {

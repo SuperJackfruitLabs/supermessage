@@ -200,7 +200,20 @@ export interface RoomInfo {
    * doc comment on the Rust side for why that's expected, not a mismatch. */
   activeMemberCount: number;
   members: RoomMember[];
+  /** How loudly this room may interrupt. */
+  notifications: NotificationMode;
+  /** Whether this room carries the `m.favourite` tag. */
+  pinned: boolean;
 }
+
+/**
+ * Mirrors `NotificationMode` from `core::room_info`.
+ *
+ * `"default"` means no rule is set for this room, so the account default
+ * applies — deliberately *not* resolved into a concrete level, see the Rust
+ * enum's doc comment.
+ */
+export type NotificationMode = "default" | "allMessages" | "mentionsOnly" | "muted";
 
 /**
  * Mirrors `TimelineItemDto` from `src-tauri/src/core/dto.rs`.

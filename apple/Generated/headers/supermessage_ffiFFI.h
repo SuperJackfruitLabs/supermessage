@@ -406,6 +406,16 @@ void uniffi_supermessage_ffi_fn_method_core_send_message(void*_Nonnull ptr, Rust
 void uniffi_supermessage_ffi_fn_method_core_send_reply(void*_Nonnull ptr, RustBuffer room_id, RustBuffer body, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_ROOM_NOTIFICATIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_ROOM_NOTIFICATIONS
+void uniffi_supermessage_ffi_fn_method_core_set_room_notifications(void*_Nonnull ptr, RustBuffer room_id, RustBuffer mode, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_ROOM_PINNED
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_ROOM_PINNED
+void uniffi_supermessage_ffi_fn_method_core_set_room_pinned(void*_Nonnull ptr, RustBuffer room_id, int8_t pinned, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_TYPING
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_TYPING
 void uniffi_supermessage_ffi_fn_method_core_set_typing(void*_Nonnull ptr, RustBuffer room_id, int8_t typing, RustCallStatus *_Nonnull out_status
@@ -917,6 +927,18 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_send_message(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_REPLY
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_REPLY
 uint16_t uniffi_supermessage_ffi_checksum_method_core_send_reply(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SET_ROOM_NOTIFICATIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SET_ROOM_NOTIFICATIONS
+uint16_t uniffi_supermessage_ffi_checksum_method_core_set_room_notifications(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SET_ROOM_PINNED
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SET_ROOM_PINNED
+uint16_t uniffi_supermessage_ffi_checksum_method_core_set_room_pinned(void
     
 );
 #endif

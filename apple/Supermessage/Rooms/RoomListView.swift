@@ -26,6 +26,8 @@ struct RoomListView: View {
     @State private var showsSettings = false
     /// Re-read on every roster change so "2m" does not sit at "2m" all day.
     @State private var now = Date()
+    /// The room whose info panel is open from the roster, if any.
+    @State private var infoRequest: RoomInfoRequest?
 
     private var view: RosterView { RosterView(rawValue: storedView) ?? .waiting }
 
@@ -62,7 +64,8 @@ struct RoomListView: View {
                             state: RosterArrangement.state(for: row, now: now),
                             when: RelativeTime.label(for: row.room.lastActivityMs, now: now),
                             showsState: showsState,
-                            hidesHost: view == .machine
+                            hidesHost: view == .machine,
+                            onOpenInfo: { infoRequest = RoomInfoRequest(id: row.room.id) }
                         )
                         .tag(row.room.id)
                         .task { await session.avatars.load(row.room.id) }
@@ -104,9 +107,22 @@ struct RoomListView: View {
             ) { showsSettings = false }
             .presentationDetents([.medium])
         }
+        // Reached by tapping a row's avatar. Presented from the roster rather
+        // than by opening the room first: asking what a room *is* should not
+        // require entering the conversation and marking it read.
+        .sheet(item: $infoRequest) { request in
+            RoomInfoPanel(session: session, roomId: request.id) { infoRequest = nil }
+                .presentationDetents([.large, .medium])
+        }
     }
 
-    /// The arrangement switcher, plus a way into the rest.
+    /// A room the reader has asked about, wrapping the id so `sheet(item:)` has
+/// something `Identifiable` without a retroactive conformance on `String`.
+private struct RoomInfoRequest: Identifiable {
+    let id: String
+}
+
+/// The arrangement switcher, plus a way into the rest.
     private var picker: some View {
         HStack(spacing: 8) {
             Picker("Arrangement", selection: $storedView) {

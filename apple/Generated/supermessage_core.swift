@@ -1751,6 +1751,19 @@ public struct RoomInfoDto {
      * being served from the local cache.
      */
     public var members: [RoomMemberDto]
+    /**
+     * How loudly this room may interrupt.
+     */
+    public var notifications: NotificationMode
+    /**
+     * Whether this room is tagged `m.favourite`.
+     *
+     * Matrix's word is "favourite"; every messaging app's word for the same
+     * gesture is "pin", and the roster sorts on it. Carried as the tag's own
+     * meaning rather than as a sort key, because the tag is what other
+     * clients read.
+     */
+    public var pinned: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1784,7 +1797,18 @@ public struct RoomInfoDto {
          * The room's joined members. See [`resolve_joined_members`]'s doc
          * comment for why this can require a live fetch rather than always
          * being served from the local cache.
-         */members: [RoomMemberDto]) {
+         */members: [RoomMemberDto], 
+        /**
+         * How loudly this room may interrupt.
+         */notifications: NotificationMode, 
+        /**
+         * Whether this room is tagged `m.favourite`.
+         *
+         * Matrix's word is "favourite"; every messaging app's word for the same
+         * gesture is "pin", and the roster sorts on it. Carried as the tag's own
+         * meaning rather than as a sort key, because the tag is what other
+         * clients read.
+         */pinned: Bool) {
         self.roomId = roomId
         self.name = name
         self.identity = identity
@@ -1794,6 +1818,8 @@ public struct RoomInfoDto {
         self.altAliases = altAliases
         self.activeMemberCount = activeMemberCount
         self.members = members
+        self.notifications = notifications
+        self.pinned = pinned
     }
 }
 
@@ -1828,6 +1854,12 @@ extension RoomInfoDto: Equatable, Hashable {
         if lhs.members != rhs.members {
             return false
         }
+        if lhs.notifications != rhs.notifications {
+            return false
+        }
+        if lhs.pinned != rhs.pinned {
+            return false
+        }
         return true
     }
 
@@ -1841,6 +1873,8 @@ extension RoomInfoDto: Equatable, Hashable {
         hasher.combine(altAliases)
         hasher.combine(activeMemberCount)
         hasher.combine(members)
+        hasher.combine(notifications)
+        hasher.combine(pinned)
     }
 }
 
@@ -1860,7 +1894,9 @@ public struct FfiConverterTypeRoomInfoDto: FfiConverterRustBuffer {
                 canonicalAlias: FfiConverterOptionString.read(from: &buf), 
                 altAliases: FfiConverterSequenceString.read(from: &buf), 
                 activeMemberCount: FfiConverterUInt64.read(from: &buf), 
-                members: FfiConverterSequenceTypeRoomMemberDto.read(from: &buf)
+                members: FfiConverterSequenceTypeRoomMemberDto.read(from: &buf), 
+                notifications: FfiConverterTypeNotificationMode.read(from: &buf), 
+                pinned: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -1874,6 +1910,8 @@ public struct FfiConverterTypeRoomInfoDto: FfiConverterRustBuffer {
         FfiConverterSequenceString.write(value.altAliases, into: &buf)
         FfiConverterUInt64.write(value.activeMemberCount, into: &buf)
         FfiConverterSequenceTypeRoomMemberDto.write(value.members, into: &buf)
+        FfiConverterTypeNotificationMode.write(value.notifications, into: &buf)
+        FfiConverterBool.write(value.pinned, into: &buf)
     }
 }
 
@@ -4199,6 +4237,96 @@ public func FfiConverterTypeMembership_lower(_ value: Membership) -> RustBuffer 
 
 
 extension Membership: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * How loudly a room is allowed to interrupt.
+ *
+ * Mirrors the SDK's `RoomNotificationMode` plus one case it does not have:
+ * `Default`, meaning nothing has been set for this room and the account's
+ * default applies. The SDK expresses that as `Option<RoomNotificationMode>`,
+ * and an `Option` of an enum across a UniFFI boundary makes every host write
+ * the same double-unwrap — so the absence gets a name here instead.
+ */
+
+public enum NotificationMode {
+    
+    /**
+     * Nothing set for this room; the account default decides.
+     */
+    case `default`
+    case allMessages
+    case mentionsOnly
+    case muted
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationMode: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationMode
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationMode {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .`default`
+        
+        case 2: return .allMessages
+        
+        case 3: return .mentionsOnly
+        
+        case 4: return .muted
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: NotificationMode, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .`default`:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .allMessages:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .mentionsOnly:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .muted:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationMode_lift(_ buf: RustBuffer) throws -> NotificationMode {
+    return try FfiConverterTypeNotificationMode.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationMode_lower(_ value: NotificationMode) -> RustBuffer {
+    return FfiConverterTypeNotificationMode.lower(value)
+}
+
+
+
+extension NotificationMode: Equatable, Hashable {}
 
 
 

@@ -190,6 +190,14 @@ public actor CoreClient {
         try await run { try $0.sendReply(roomId: roomId, body: body, inReplyTo: inReplyTo) }
     }
 
+    public func setRoomNotifications(roomId: String, mode: NotificationMode) async throws {
+        try await run { try $0.setRoomNotifications(roomId: roomId, mode: mode) }
+    }
+
+    public func setRoomPinned(roomId: String, pinned: Bool) async throws {
+        try await run { try $0.setRoomPinned(roomId: roomId, pinned: pinned) }
+    }
+
     public func editMessage(roomId: String, eventId: String, body: String) async throws {
         try await run { try $0.editMessage(roomId: roomId, eventId: eventId, body: body) }
     }

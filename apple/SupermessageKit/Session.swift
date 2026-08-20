@@ -219,6 +219,34 @@ public final class Session {
         }
     }
 
+    /// Set how loudly a room may interrupt.
+    ///
+    /// `.default` unsets this room's own rule rather than writing today's
+    /// account default into it — see `Session::set_room_notification_mode`.
+    /// Returns whether it landed, so a control can put itself back rather
+    /// than showing a setting the homeserver never accepted.
+    @discardableResult
+    public func setNotifications(_ mode: NotificationMode, in roomId: String) async -> Bool {
+        do {
+            try await client.setRoomNotifications(roomId: roomId, mode: mode)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Pin or unpin a room. The `m.favourite` tag, so it travels to other
+    /// clients rather than living only on this phone.
+    @discardableResult
+    public func setPinned(_ pinned: Bool, in roomId: String) async -> Bool {
+        do {
+            try await client.setRoomPinned(roomId: roomId, pinned: pinned)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Who invited this account to `roomId`, or `nil`.
     public func inviter(of roomId: String) async -> String? {
         (try? await client.roomInviter(roomId: roomId)) ?? nil

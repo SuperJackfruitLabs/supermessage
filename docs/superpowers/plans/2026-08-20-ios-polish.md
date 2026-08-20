@@ -64,9 +64,9 @@ do not call them.
       are what you open this panel to find.
 - [x] **C2.** "Leave room" sits below the fold at the medium detent: the only
       destructive action is the one you have to hunt for.
-- [ ] **C3.** No mute, no notification setting, no pin. Mute is the one people
+- [x] **C3.** No mute, no notification setting, no pin. Mute is the one people
       reach for first.
-- [ ] **C4.** A member list of two, one of whom is always you — in an agent room
+- [x] **C4.** A member list of two, one of whom is always you — in an agent room
       the useful question is what it is and where it runs.
 
 ## D · Search
