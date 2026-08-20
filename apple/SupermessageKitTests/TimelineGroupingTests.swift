@@ -11,9 +11,9 @@ struct TimelineGroupingTests {
         let item = TimelineItemDto(
             id: id, eventId: id, kind: system ? "state" : "message",
             msgtype: system ? nil : "m.text",
-            detail: nil, sender: sender, senderDisplayName: nil, body: "hi", formattedBody: nil,
+            detail: nil, sender: sender, senderDisplayName: nil, senderAvatar: nil, body: "hi", formattedBody: nil,
             media: nil, customPayload: nil, timestampMs: ms, isOwn: isOwn, sendState: nil,
-            replyTo: nil, edited: false, reactions: [], readBy: [])
+            replyTo: nil, edited: false, reactions: [], readBy: [], editable: false)
         return TimelineRow(
             item: item,
             view: system ? .system(text: "something happened") : .bubble(muted: false, blocks: []),
@@ -108,9 +108,9 @@ struct MembershipRunTests {
         var row = TimelineGroupingTests.row(id: id, sender: sender, at: 1, system: true)
         let item = TimelineItemDto(
             id: id, eventId: id, kind: "membership", msgtype: nil, detail: verb,
-            sender: sender, senderDisplayName: sender, body: nil, formattedBody: nil,
+            sender: sender, senderDisplayName: sender, senderAvatar: nil, body: nil, formattedBody: nil,
             media: nil, customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil,
-            replyTo: nil, edited: false, reactions: [], readBy: [])
+            replyTo: nil, edited: false, reactions: [], readBy: [], editable: false)
         row = TimelineRow(
             item: item, view: .system(text: "\(sender) \(verb)"), senderName: sender,
             senderShort: sender, membershipVerb: verb, replyQuote: nil,
@@ -180,9 +180,9 @@ struct SilentRowTests {
     static func silent(_ id: String) -> TimelineRow {
         let item = TimelineItemDto(
             id: id, eventId: id, kind: "state", msgtype: nil, detail: nil, sender: "@a:x",
-            senderDisplayName: nil, body: nil, formattedBody: nil, media: nil,
+            senderDisplayName: nil, senderAvatar: nil, body: nil, formattedBody: nil, media: nil,
             customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil, replyTo: nil,
-            edited: false, reactions: [], readBy: [])
+            edited: false, reactions: [], readBy: [], editable: false)
         return TimelineRow(
             item: item, view: .none, senderName: "a", senderShort: "a", membershipVerb: nil,
             replyQuote: nil, canReplyOrReact: false, replyPreview: nil)

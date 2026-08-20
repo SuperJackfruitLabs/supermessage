@@ -142,7 +142,11 @@ pub fn humanise(raw: &str) -> String {
             out.push(format!("{}'s", title_case(stem)));
             continue;
         }
-        out.push(known(part).map(str::to_string).unwrap_or_else(|| title_case(part)));
+        out.push(
+            known(part)
+                .map(str::to_string)
+                .unwrap_or_else(|| title_case(part)),
+        );
     }
     out.join(" ")
 }
@@ -201,7 +205,9 @@ fn looks_machine_written(raw: &str) -> bool {
     }
     let has_separator = raw.contains('-') || raw.contains('_');
     let single_lowercase_word = !raw.is_empty()
-        && raw.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+        && raw
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
     has_separator || single_lowercase_word
 }
 
@@ -215,6 +221,53 @@ pub fn room_name_label(raw: &str) -> String {
         humanise(trimmed)
     } else {
         trimmed.to_string()
+    }
+}
+
+/// The person behind a Matrix user id.
+///
+/// `@cleaner-cody:supermessage.dev` is an address; "Cleaner Cody" is who it
+/// belongs to. Read receipts and reaction chips both need the second one, and
+/// neither has a display name to hand — the SDK gives them user ids and
+/// nothing else. A leading `_` and any `bridge_` prefix belong to the bridge
+/// that minted the account, not to the person, so they come off first.
+pub fn user_label(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let Some(rest) = trimmed.strip_prefix('@') else {
+        return room_name_label(trimmed);
+    };
+    let localpart = rest.split(':').next().unwrap_or(rest);
+    // `_agentpod_ganesha` — a bridge namespaces its puppets with a leading
+    // underscore, so only the segment after the namespace is the name. The
+    // leading underscore is the whole signal: without it, `john_doe` is a
+    // person who wrote their own localpart, and dropping `john` renames them.
+    let name = match localpart.strip_prefix('_') {
+        Some(namespaced) => match namespaced.trim_start_matches('_').split_once('_') {
+            Some((_, tail)) if !tail.is_empty() => tail,
+            _ => namespaced,
+        },
+        None => localpart,
+    };
+    humanise(name)
+}
+
+/// A set of people, named the way a sentence would name them.
+///
+/// Read receipts and reaction chips both have the same problem: a list of
+/// user ids that has to become something a person reads at a glance. Naming
+/// everyone is unreadable past two, and a bare count ("3") says nothing about
+/// who — so the first two are named and the rest are counted.
+pub fn people_label(user_ids: &[String]) -> String {
+    let names: Vec<String> = user_ids.iter().map(|id| user_label(id)).collect();
+    match names.len() {
+        0 => String::new(),
+        1 => names[0].clone(),
+        2 => format!("{} and {}", names[0], names[1]),
+        n => {
+            let rest = n - 2;
+            let others = if rest == 1 { "other" } else { "others" };
+            format!("{}, {} and {rest} {others}", names[0], names[1])
+        }
     }
 }
 
@@ -281,9 +334,7 @@ pub fn parse_runtime(topic: &str) -> Option<(String, String)> {
         return None;
     }
 
-    let (harness, host) = head
-        .split_once(" on ")
-        .or_else(|| head.split_once(" @ "))?;
+    let (harness, host) = head.split_once(" on ").or_else(|| head.split_once(" @ "))?;
     let harness = harness.trim();
     let host = host.trim();
     if harness.is_empty() || host.is_empty() {
@@ -331,7 +382,10 @@ mod tests {
     fn a_mac_hostname_reads_as_a_person_again() {
         // These are built by macOS from "Rakesh's MacBook Pro", and reading it
         // back is the difference between naming a machine and naming a person.
-        assert_eq!(host_label("Rakeshs-MacBook-Pro.local"), "Rakesh's MacBook Pro");
+        assert_eq!(
+            host_label("Rakeshs-MacBook-Pro.local"),
+            "Rakesh's MacBook Pro"
+        );
         assert_eq!(host_label("rakeshs-macbook-pro"), "Rakesh's MacBook Pro");
     }
 
@@ -439,7 +493,10 @@ mod tests {
         // under every message — without parsing the composed string back apart.
         assert_eq!(
             sender_parts("ganesha (openclaw @ ashram)"),
-            ("Ganesha".to_string(), Some("OpenClaw on Ashram".to_string()))
+            (
+                "Ganesha".to_string(),
+                Some("OpenClaw on Ashram".to_string())
+            )
         );
         assert_eq!(sender_parts("Rakesh"), ("Rakesh".to_string(), None));
     }
@@ -450,7 +507,10 @@ mod tests {
         // including a parenthetical someone wrote themselves — is theirs.
         assert_eq!(sender_label("Rakesh"), "Rakesh");
         assert_eq!(sender_label("Ada (she/her)"), "Ada (she/her)");
-        assert_eq!(sender_label("@rakesh:id.agentpod.dev"), "@rakesh:id.agentpod.dev");
+        assert_eq!(
+            sender_label("@rakesh:id.agentpod.dev"),
+            "@rakesh:id.agentpod.dev"
+        );
     }
 
     #[test]
@@ -478,5 +538,88 @@ mod tests {
     #[test]
     fn an_id_embedded_in_a_longer_name_is_shortened_in_place() {
         assert_eq!(humanise("agent-9247e5a88cfa"), "Agent 9247e5…");
+    }
+}
+
+#[cfg(test)]
+mod user_label_tests {
+    use super::user_label;
+
+    #[test]
+    fn a_user_id_reads_as_the_person_it_names() {
+        assert_eq!(user_label("@cleaner-cody:supermessage.dev"), "Cleaner Cody");
+        assert_eq!(user_label("@hanuman:supermessage.dev"), "Hanuman");
+    }
+
+    #[test]
+    fn a_bridges_underscore_prefix_is_not_part_of_anyones_name() {
+        assert_eq!(user_label("@_agentpod_ganesha:supermessage.dev"), "Ganesha");
+    }
+
+    #[test]
+    fn an_underscore_someone_chose_is_not_a_bridge_namespace() {
+        assert_eq!(user_label("@john_doe:supermessage.dev"), "John Doe");
+    }
+
+    #[test]
+    fn a_provisioned_runtimes_hex_localpart_is_shortened_not_shouted() {
+        assert_eq!(user_label("@9247e5a88cfa:supermessage.dev"), "9247e5…");
+    }
+
+    #[test]
+    fn something_that_is_not_a_user_id_is_left_recognisable() {
+        assert_eq!(user_label("Rakesh"), "Rakesh");
+    }
+}
+
+#[cfg(test)]
+mod people_label_tests {
+    use super::people_label;
+
+    fn ids(raw: &[&str]) -> Vec<String> {
+        raw.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn nobody_is_nothing_to_say() {
+        assert_eq!(people_label(&ids(&[])), "");
+    }
+
+    #[test]
+    fn one_person_is_named() {
+        assert_eq!(people_label(&ids(&["@cleaner-cody:x.org"])), "Cleaner Cody");
+    }
+
+    #[test]
+    fn two_people_are_both_named() {
+        assert_eq!(
+            people_label(&ids(&["@cleaner-cody:x.org", "@hanuman:x.org"])),
+            "Cleaner Cody and Hanuman"
+        );
+    }
+
+    #[test]
+    fn a_crowd_names_the_first_two_and_counts_the_rest() {
+        assert_eq!(
+            people_label(&ids(&[
+                "@cleaner-cody:x.org",
+                "@hanuman:x.org",
+                "@ganesha:x.org",
+                "@rakesh:x.org",
+            ])),
+            "Cleaner Cody, Hanuman and 2 others"
+        );
+    }
+
+    #[test]
+    fn one_left_over_is_one_other_not_one_others() {
+        assert_eq!(
+            people_label(&ids(&[
+                "@cleaner-cody:x.org",
+                "@hanuman:x.org",
+                "@ganesha:x.org"
+            ])),
+            "Cleaner Cody, Hanuman and 1 other"
+        );
     }
 }

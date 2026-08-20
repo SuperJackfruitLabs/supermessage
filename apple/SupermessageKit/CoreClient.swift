@@ -190,6 +190,14 @@ public actor CoreClient {
         try await run { try $0.sendReply(roomId: roomId, body: body, inReplyTo: inReplyTo) }
     }
 
+    public func editMessage(roomId: String, eventId: String, body: String) async throws {
+        try await run { try $0.editMessage(roomId: roomId, eventId: eventId, body: body) }
+    }
+
+    public func deleteMessage(roomId: String, eventId: String) async throws {
+        try await run { try $0.deleteMessage(roomId: roomId, eventId: eventId) }
+    }
+
     public func toggleReaction(roomId: String, eventId: String, key: String) async throws -> Bool {
         try await run { try $0.toggleReaction(roomId: roomId, eventId: eventId, key: key) }
     }

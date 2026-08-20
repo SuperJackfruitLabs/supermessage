@@ -89,6 +89,13 @@ pub enum ItemView {
     /// three states but never makes that decision itself.
     CustomEvent {
         view: CustomEventView,
+        /// What to call this card on screen — "Turn", "Permission".
+        ///
+        /// A card headed `dev.agentpod.turn.v1` is showing a reader the
+        /// address of a schema where a name for a thing belongs. The event
+        /// type is still carried below, for a card whose type nothing here
+        /// recognises and for anyone diagnosing one.
+        label: String,
         /// The Matrix event type as the card's header should show it —
         /// truncated from the left, never from the right, and never rendered
         /// with a right-to-left base direction. See [`display_event_type`]:
@@ -428,6 +435,21 @@ fn state_view(item: &TimelineItemDto) -> ItemView {
     }
 }
 
+/// What to head a custom event's card with.
+///
+/// The registry's name for a type it knows; otherwise the bounded event type,
+/// because a card for something unrecognised has nothing better to say and
+/// should say what it actually is rather than "Event".
+pub fn custom_event_label(
+    registry: &crate::custom_events::CustomEventRegistry,
+    event_type: Option<&str>,
+) -> String {
+    match event_type.and_then(|t| registry.get(t)) {
+        Some(renderer) => renderer.label().to_string(),
+        None => display_event_type(event_type),
+    }
+}
+
 /// The render decision for `item`.
 pub fn view_for(item: &TimelineItemDto) -> ItemView {
     match item.kind.as_str() {
@@ -460,6 +482,7 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         },
 
         "customMessage" => ItemView::CustomEvent {
+            label: custom_event_label(default_registry(), item.detail.as_deref()),
             event_type: display_event_type(item.detail.as_deref()),
             view: resolve_custom_event(
                 default_registry(),
@@ -525,6 +548,7 @@ mod tests {
             msgtype: None,
             detail: None,
             sender: Some("@someone:example.org".to_string()),
+            sender_avatar: None,
             sender_display_name: None,
             body: None,
             formatted_body: None,
@@ -537,6 +561,7 @@ mod tests {
             edited: false,
             reactions: Vec::new(),
             read_by: Vec::new(),
+            editable: false,
         }
     }
 
@@ -982,6 +1007,37 @@ mod tests {
     }
 
     #[test]
+    fn a_card_is_headed_with_a_name_not_a_schema_address() {
+        // `dev.agentpod.turn.v1` printed at a reader is the address of a
+        // schema where the name of a thing belongs.
+        assert_eq!(
+            custom_event_label(
+                default_registry(),
+                Some(crate::custom_events::TURN_ACTIVITY_EVENT_TYPE)
+            ),
+            "Turn"
+        );
+        assert_eq!(
+            custom_event_label(
+                default_registry(),
+                Some(crate::custom_events::PERMISSION_REQUEST_EVENT_TYPE)
+            ),
+            "Permission"
+        );
+    }
+
+    #[test]
+    fn a_card_nothing_recognises_says_what_it_actually_is() {
+        // Not "Event": a type this build does not know is exactly the case
+        // where a reader — or whoever they forward it to — needs the real
+        // identifier.
+        assert_eq!(
+            custom_event_label(default_registry(), Some("com.example.thing.v3")),
+            display_event_type(Some("com.example.thing.v3"))
+        );
+    }
+
+    #[test]
     fn a_date_divider_is_its_own_decision_not_an_unsupported_event() {
         // Found on an iPad: "Unsupported event (dateDivider)" in the middle of
         // a conversation.
@@ -1078,6 +1134,7 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::CustomEvent {
+                label: "org.kaambaan.card.v1".into(),
                 event_type: "org.kaambaan.card.v1".into(),
                 view: CustomEventView::Placeholder {
                     text: "Custom event (org.kaambaan.card.v1)".into()
@@ -1094,6 +1151,7 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::CustomEvent {
+                label: "org.kaambaan.card.v1".into(),
                 event_type: "org.kaambaan.card.v1".into(),
                 view: CustomEventView::FallbackBody {
                     text: "New card: Ship it".into()
@@ -1112,6 +1170,7 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::CustomEvent {
+                label: "Note".into(),
                 event_type: crate::custom_events::DEMO_NOTE_EVENT_TYPE.into(),
                 view: CustomEventView::Rendered {
                     fields: vec![crate::custom_events::CustomEventField {

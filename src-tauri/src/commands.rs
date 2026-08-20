@@ -207,6 +207,30 @@ pub async fn send_reply(
     timeline.send_reply(&room_id, &body, &in_reply_to).await
 }
 
+/// Rewrites a message this account sent.
+///
+/// `room_id` is checked the same way, and for the same race, as
+/// [`send_message`] — see `FocusedTimeline::edit_text`'s doc comment.
+#[tauri::command]
+pub async fn edit_message(
+    room_id: String,
+    event_id: String,
+    body: String,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<(), CoreError> {
+    timeline.edit_text(&room_id, &event_id, &body).await
+}
+
+/// Deletes a message — a Matrix redaction, permanent and visible to the room.
+#[tauri::command]
+pub async fn delete_message(
+    room_id: String,
+    event_id: String,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<(), CoreError> {
+    timeline.redact(&room_id, &event_id).await
+}
+
 /// Toggles `key` as a reaction on `event_id` in `room_id`. Returns whether
 /// the reaction was added (`true`) or removed (`false`).
 ///

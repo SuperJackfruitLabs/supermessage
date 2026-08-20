@@ -248,12 +248,16 @@ mod tests {
             Some("ganesha (openclaw @ ashram)".into()),
             None,
         );
-        assert_eq!(member.display_name.as_deref(), Some("Ganesha (OpenClaw on Ashram)"));
+        assert_eq!(
+            member.display_name.as_deref(),
+            Some("Ganesha (OpenClaw on Ashram)")
+        );
     }
 
     #[test]
     fn a_person_keeps_the_display_name_they_set() {
-        let member = project_member_parts("@rakesh:id.agentpod.dev", Some("rakesh 💕".into()), None);
+        let member =
+            project_member_parts("@rakesh:id.agentpod.dev", Some("rakesh 💕".into()), None);
         assert_eq!(member.display_name.as_deref(), Some("rakesh 💕"));
     }
 

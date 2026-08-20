@@ -566,6 +566,17 @@ public protocol CoreProtocol : AnyObject {
     func createRoom(name: String, invite: [String], isDirect: Bool) throws  -> String
     
     /**
+     * Delete a message — a Matrix redaction, which is permanent and visible
+     * to the whole room.
+     */
+    func deleteMessage(roomId: String, eventId: String) throws 
+    
+    /**
+     * Rewrite a message this account sent.
+     */
+    func editMessage(roomId: String, eventId: String, body: String) throws 
+    
+    /**
      * Invite someone to a room.
      */
     func inviteUser(roomId: String, userId: String) throws 
@@ -879,6 +890,30 @@ open func createRoom(name: String, invite: [String], isDirect: Bool)throws  -> S
         FfiConverterBool.lower(isDirect),$0
     )
 })
+}
+    
+    /**
+     * Delete a message — a Matrix redaction, which is permanent and visible
+     * to the whole room.
+     */
+open func deleteMessage(roomId: String, eventId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_delete_message(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),$0
+    )
+}
+}
+    
+    /**
+     * Rewrite a message this account sent.
+     */
+open func editMessage(roomId: String, eventId: String, body: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_edit_message(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),
+        FfiConverterString.lower(body),$0
+    )
+}
 }
     
     /**
@@ -2852,6 +2887,21 @@ public func parseMatrixLink(href: String) -> MatrixLinkTarget? {
 })
 }
 /**
+ * Name a set of people from their user ids — "Cleaner Cody and 2 others".
+ *
+ * A free function for the same reason as `rich_blocks_from_markdown`: read
+ * receipts and reaction chips are handed user ids by the SDK and no display
+ * names, and naming is a core decision (see `display_name`) rather than
+ * something each host re-invents in its own idiom.
+ */
+public func peopleLabel(userIds: [String]) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_people_label(
+        FfiConverterSequenceString.lower(userIds),$0
+    )
+})
+}
+/**
  * Parse a live turn's partial markdown into blocks.
  *
  * A free function rather than a `Core` method: it touches no session state,
@@ -2889,6 +2939,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_people_label() != 2363) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2908,6 +2961,12 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_create_room() != 28480) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_delete_message() != 1652) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_edit_message() != 26116) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_invite_user() != 43593) {

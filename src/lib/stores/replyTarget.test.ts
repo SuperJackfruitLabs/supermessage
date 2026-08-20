@@ -119,6 +119,7 @@ describe("replyTargetStore: fromItem", () => {
       id: "unique-1",
       eventId: "$e1:example.org",
       kind: "message",
+      senderAvatar: null,
       msgtype: "m.text",
       detail: null,
       sender: "@alice:example.org",
@@ -134,6 +135,7 @@ describe("replyTargetStore: fromItem", () => {
       edited: false,
       reactions: [],
       readBy: [],
+      editable: false,
       ...overrides,
     };
   }

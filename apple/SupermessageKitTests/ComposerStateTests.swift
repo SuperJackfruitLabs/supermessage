@@ -41,9 +41,9 @@ struct ReplyTargetTests {
         let item = TimelineItemDto(
             id: id, eventId: eventId ?? id, kind: "message", msgtype: "m.text", detail: nil,
             sender: "@a:x",
-            senderDisplayName: sender, body: "body", formattedBody: nil, media: nil,
+            senderDisplayName: sender, senderAvatar: nil, body: "body", formattedBody: nil, media: nil,
             customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil, replyTo: nil,
-            edited: false, reactions: [], readBy: [])
+            edited: false, reactions: [], readBy: [], editable: false)
         return TimelineRow(
             item: item, view: .bubble(muted: false, blocks: []), senderName: sender, senderShort: sender,
             membershipVerb: nil, replyQuote: nil, canReplyOrReact: true, replyPreview: preview)

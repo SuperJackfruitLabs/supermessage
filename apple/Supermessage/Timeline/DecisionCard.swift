@@ -11,6 +11,9 @@ import SwiftUI
 /// payload may be rendered as anything but text.
 struct CustomEventCard: View {
     let view: CustomEventView
+    /// What this kind of event is called — "Turn", "Permission" — decided by
+    /// the renderer that drew the card, not by reading the schema address.
+    let label: String
     let eventType: String
     let senderName: String
 
@@ -46,10 +49,15 @@ struct CustomEventCard: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                // The left-truncated display form the core produced. Never
-                // built here: the obvious CSS-style approach hands the bidi
-                // algorithm a sender-controlled string.
-                Text(eventType).metaFace().foregroundStyle(.tertiary)
+                // What it is, in the words the renderer uses — a reader
+                // should not have to parse `dev.agentpod.turn.v1` to learn
+                // they are looking at a turn. The schema address stays
+                // available to accessibility for anyone debugging a room.
+                Text(label)
+                    .metaFace()
+                    .textCase(.uppercase)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("\(label), \(eventType)")
                 Spacer()
                 if newerVersion {
                     // Rendered best-effort against a newer minor schema. Said

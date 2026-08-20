@@ -1091,6 +1091,16 @@ public struct ReactionDto {
      * interaction pass needs to render this chip as already-active/toggled.
      */
     public var byMe: Bool
+    /**
+     * The raw user ids of everyone who reacted with this key.
+     *
+     * Ids, not names: this is who, addressably, and a host that wants to
+     * show a name asks [`crate::display_name::people_label`] for one. A
+     * chip that can only say "3" makes a reader guess whether they are one
+     * of the three, and guessing is what [`Self::by_me`] and this field
+     * between them remove.
+     */
+    public var senders: [String]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1118,11 +1128,21 @@ public struct ReactionDto {
         /**
          * Whether the current user is among those senders — what the
          * interaction pass needs to render this chip as already-active/toggled.
-         */byMe: Bool) {
+         */byMe: Bool, 
+        /**
+         * The raw user ids of everyone who reacted with this key.
+         *
+         * Ids, not names: this is who, addressably, and a host that wants to
+         * show a name asks [`crate::display_name::people_label`] for one. A
+         * chip that can only say "3" makes a reader guess whether they are one
+         * of the three, and guessing is what [`Self::by_me`] and this field
+         * between them remove.
+         */senders: [String]) {
         self.key = key
         self.displayKey = displayKey
         self.count = count
         self.byMe = byMe
+        self.senders = senders
     }
 }
 
@@ -1142,6 +1162,9 @@ extension ReactionDto: Equatable, Hashable {
         if lhs.byMe != rhs.byMe {
             return false
         }
+        if lhs.senders != rhs.senders {
+            return false
+        }
         return true
     }
 
@@ -1150,6 +1173,7 @@ extension ReactionDto: Equatable, Hashable {
         hasher.combine(displayKey)
         hasher.combine(count)
         hasher.combine(byMe)
+        hasher.combine(senders)
     }
 }
 
@@ -1164,7 +1188,8 @@ public struct FfiConverterTypeReactionDto: FfiConverterRustBuffer {
                 key: FfiConverterString.read(from: &buf), 
                 displayKey: FfiConverterString.read(from: &buf), 
                 count: FfiConverterUInt32.read(from: &buf), 
-                byMe: FfiConverterBool.read(from: &buf)
+                byMe: FfiConverterBool.read(from: &buf), 
+                senders: FfiConverterSequenceString.read(from: &buf)
         )
     }
 
@@ -1173,6 +1198,7 @@ public struct FfiConverterTypeReactionDto: FfiConverterRustBuffer {
         FfiConverterString.write(value.displayKey, into: &buf)
         FfiConverterUInt32.write(value.count, into: &buf)
         FfiConverterBool.write(value.byMe, into: &buf)
+        FfiConverterSequenceString.write(value.senders, into: &buf)
     }
 }
 
@@ -2861,6 +2887,15 @@ public struct TimelineItemDto {
     public var detail: String?
     public var sender: String?
     public var senderDisplayName: String?
+    /**
+     * The sender's avatar as an `mxc:` URI, when their profile carries one.
+     *
+     * A URI, not bytes: it is a stable key a host caches against, and
+     * fetching it is a network round trip that belongs on the host's
+     * schedule (see `Core::member_avatar`) rather than inline in a
+     * projection that runs for every item in the timeline.
+     */
+    public var senderAvatar: String?
     public var body: String?
     /**
      * The message's HTML formatted body, present only when the SDK reports
@@ -2951,6 +2986,16 @@ public struct TimelineItemDto {
      * never a per-message avatar stack.
      */
     public var readBy: [String]
+    /**
+     * Whether this account may rewrite this message — the SDK's
+     * `EventTimelineItem::is_editable()`, not a guess made from `is_own`.
+     *
+     * Asked rather than assumed because "mine" and "editable" are not the
+     * same set: a state event of your own is not editable, and neither is
+     * one already redacted. Offering an Edit that the homeserver then
+     * refuses is worse than not offering it.
+     */
+    public var editable: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2978,7 +3023,15 @@ public struct TimelineItemDto {
          * and its absence is exactly why a message that has not landed yet
          * cannot be replied to — see `item_view::can_reply_or_react`, which used
          * to infer that from the send state because this field did not exist.
-         */eventId: String?, kind: String, msgtype: String?, detail: String?, sender: String?, senderDisplayName: String?, body: String?, 
+         */eventId: String?, kind: String, msgtype: String?, detail: String?, sender: String?, senderDisplayName: String?, 
+        /**
+         * The sender's avatar as an `mxc:` URI, when their profile carries one.
+         *
+         * A URI, not bytes: it is a stable key a host caches against, and
+         * fetching it is a network round trip that belongs on the host's
+         * schedule (see `Core::member_avatar`) rather than inline in a
+         * projection that runs for every item in the timeline.
+         */senderAvatar: String?, body: String?, 
         /**
          * The message's HTML formatted body, present only when the SDK reports
          * `format: "org.matrix.custom.html"` (see
@@ -3057,7 +3110,16 @@ public struct TimelineItemDto {
          * note) that never needs to name anyone. The webview renders this as a
          * simple "Seen"/"Seen by N" marker on the reader's own latest message —
          * never a per-message avatar stack.
-         */readBy: [String]) {
+         */readBy: [String], 
+        /**
+         * Whether this account may rewrite this message — the SDK's
+         * `EventTimelineItem::is_editable()`, not a guess made from `is_own`.
+         *
+         * Asked rather than assumed because "mine" and "editable" are not the
+         * same set: a state event of your own is not editable, and neither is
+         * one already redacted. Offering an Edit that the homeserver then
+         * refuses is worse than not offering it.
+         */editable: Bool) {
         self.id = id
         self.eventId = eventId
         self.kind = kind
@@ -3065,6 +3127,7 @@ public struct TimelineItemDto {
         self.detail = detail
         self.sender = sender
         self.senderDisplayName = senderDisplayName
+        self.senderAvatar = senderAvatar
         self.body = body
         self.formattedBody = formattedBody
         self.media = media
@@ -3076,6 +3139,7 @@ public struct TimelineItemDto {
         self.edited = edited
         self.reactions = reactions
         self.readBy = readBy
+        self.editable = editable
     }
 }
 
@@ -3102,6 +3166,9 @@ extension TimelineItemDto: Equatable, Hashable {
             return false
         }
         if lhs.senderDisplayName != rhs.senderDisplayName {
+            return false
+        }
+        if lhs.senderAvatar != rhs.senderAvatar {
             return false
         }
         if lhs.body != rhs.body {
@@ -3137,6 +3204,9 @@ extension TimelineItemDto: Equatable, Hashable {
         if lhs.readBy != rhs.readBy {
             return false
         }
+        if lhs.editable != rhs.editable {
+            return false
+        }
         return true
     }
 
@@ -3148,6 +3218,7 @@ extension TimelineItemDto: Equatable, Hashable {
         hasher.combine(detail)
         hasher.combine(sender)
         hasher.combine(senderDisplayName)
+        hasher.combine(senderAvatar)
         hasher.combine(body)
         hasher.combine(formattedBody)
         hasher.combine(media)
@@ -3159,6 +3230,7 @@ extension TimelineItemDto: Equatable, Hashable {
         hasher.combine(edited)
         hasher.combine(reactions)
         hasher.combine(readBy)
+        hasher.combine(editable)
     }
 }
 
@@ -3177,6 +3249,7 @@ public struct FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer {
                 detail: FfiConverterOptionString.read(from: &buf), 
                 sender: FfiConverterOptionString.read(from: &buf), 
                 senderDisplayName: FfiConverterOptionString.read(from: &buf), 
+                senderAvatar: FfiConverterOptionString.read(from: &buf), 
                 body: FfiConverterOptionString.read(from: &buf), 
                 formattedBody: FfiConverterOptionString.read(from: &buf), 
                 media: FfiConverterOptionTypeMediaMetaDto.read(from: &buf), 
@@ -3187,7 +3260,8 @@ public struct FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer {
                 replyTo: FfiConverterOptionTypeReplyToDto.read(from: &buf), 
                 edited: FfiConverterBool.read(from: &buf), 
                 reactions: FfiConverterSequenceTypeReactionDto.read(from: &buf), 
-                readBy: FfiConverterSequenceString.read(from: &buf)
+                readBy: FfiConverterSequenceString.read(from: &buf), 
+                editable: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -3199,6 +3273,7 @@ public struct FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.detail, into: &buf)
         FfiConverterOptionString.write(value.sender, into: &buf)
         FfiConverterOptionString.write(value.senderDisplayName, into: &buf)
+        FfiConverterOptionString.write(value.senderAvatar, into: &buf)
         FfiConverterOptionString.write(value.body, into: &buf)
         FfiConverterOptionString.write(value.formattedBody, into: &buf)
         FfiConverterOptionTypeMediaMetaDto.write(value.media, into: &buf)
@@ -3210,6 +3285,7 @@ public struct FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer {
         FfiConverterBool.write(value.edited, into: &buf)
         FfiConverterSequenceTypeReactionDto.write(value.reactions, into: &buf)
         FfiConverterSequenceString.write(value.readBy, into: &buf)
+        FfiConverterBool.write(value.editable, into: &buf)
     }
 }
 
@@ -3707,6 +3783,14 @@ public enum ItemView {
      */
     case customEvent(view: CustomEventView, 
         /**
+         * What to call this card on screen — "Turn", "Permission".
+         *
+         * A card headed `dev.agentpod.turn.v1` is showing a reader the
+         * address of a schema where a name for a thing belongs. The event
+         * type is still carried below, for a card whose type nothing here
+         * recognises and for anyone diagnosing one.
+         */label: String, 
+        /**
          * The Matrix event type as the card's header should show it —
          * truncated from the left, never from the right, and never rendered
          * with a right-to-left base direction. See [`display_event_type`]:
@@ -3750,7 +3834,7 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         
         case 8: return .dateDivider
         
-        case 9: return .customEvent(view: try FfiConverterTypeCustomEventView.read(from: &buf), eventType: try FfiConverterString.read(from: &buf)
+        case 9: return .customEvent(view: try FfiConverterTypeCustomEventView.read(from: &buf), label: try FfiConverterString.read(from: &buf), eventType: try FfiConverterString.read(from: &buf)
         )
         
         case 10: return .none
@@ -3806,9 +3890,10 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             writeInt(&buf, Int32(8))
         
         
-        case let .customEvent(view,eventType):
+        case let .customEvent(view,label,eventType):
             writeInt(&buf, Int32(9))
             FfiConverterTypeCustomEventView.write(view, into: &buf)
+            FfiConverterString.write(label, into: &buf)
             FfiConverterString.write(eventType, into: &buf)
             
         

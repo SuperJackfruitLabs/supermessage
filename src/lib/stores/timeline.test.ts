@@ -48,6 +48,7 @@ function dto(id: string): TimelineItem {
     id,
     eventId: id,
     kind: "message",
+    senderAvatar: null,
     msgtype: "m.text",
     detail: null,
     sender: "@someone:example.org",
@@ -63,6 +64,7 @@ function dto(id: string): TimelineItem {
     edited: false,
     reactions: [],
     readBy: [],
+    editable: false,
   };
 }
 

@@ -311,6 +311,16 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_connection_state(void*_Nonnull
 RustBuffer uniffi_supermessage_ffi_fn_method_core_create_room(void*_Nonnull ptr, RustBuffer name, RustBuffer invite, int8_t is_direct, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_DELETE_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_DELETE_MESSAGE
+void uniffi_supermessage_ffi_fn_method_core_delete_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer event_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_EDIT_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_EDIT_MESSAGE
+void uniffi_supermessage_ffi_fn_method_core_edit_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer event_id, RustBuffer body, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_INVITE_USER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_INVITE_USER
 void uniffi_supermessage_ffi_fn_method_core_invite_user(void*_Nonnull ptr, RustBuffer room_id, RustBuffer user_id, RustCallStatus *_Nonnull out_status
@@ -444,6 +454,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_collect_mentions(RustBuffer text, Rus
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PARSE_MATRIX_LINK
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PARSE_MATRIX_LINK
 RustBuffer uniffi_supermessage_ffi_fn_func_parse_matrix_link(RustBuffer href, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_LABEL
+RustBuffer uniffi_supermessage_ffi_fn_func_people_label(RustBuffer user_ids, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_RICH_BLOCKS_FROM_MARKDOWN
@@ -743,6 +758,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_parse_matrix_link(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PEOPLE_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PEOPLE_LABEL
+uint16_t uniffi_supermessage_ffi_checksum_func_people_label(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 uint16_t uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown(void
@@ -782,6 +803,18 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_connection_state(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_CREATE_ROOM
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_CREATE_ROOM
 uint16_t uniffi_supermessage_ffi_checksum_method_core_create_room(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_DELETE_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_DELETE_MESSAGE
+uint16_t uniffi_supermessage_ffi_checksum_method_core_delete_message(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_EDIT_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_EDIT_MESSAGE
+uint16_t uniffi_supermessage_ffi_checksum_method_core_edit_message(void
     
 );
 #endif

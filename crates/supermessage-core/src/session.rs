@@ -1170,12 +1170,17 @@ mod tests {
 
         let data_dir = std::env::temp_dir().join(format!("sm-account-{}", rand::random::<u64>()));
         let session = Session::new(data_dir.clone(), Box::new(MemoryStore::default()));
-        session.login(&server.uri(), "alice", "hunter2").await.unwrap();
+        session
+            .login(&server.uri(), "alice", "hunter2")
+            .await
+            .unwrap();
 
         let account = session.account().await.unwrap();
         assert_eq!(account.user_id, "@alice:localhost");
         assert!(
-            account.homeserver.contains(&server.address().port().to_string()),
+            account
+                .homeserver
+                .contains(&server.address().port().to_string()),
             "the homeserver should be the one signed in to, got {}",
             account.homeserver
         );
@@ -1189,10 +1194,7 @@ mod tests {
             std::env::temp_dir().join("sm-account-none"),
             Box::new(MemoryStore::default()),
         );
-        assert!(matches!(
-            session.account().await,
-            Err(CoreError::NotReady)
-        ));
+        assert!(matches!(session.account().await, Err(CoreError::NotReady)));
     }
 
     #[tokio::test]

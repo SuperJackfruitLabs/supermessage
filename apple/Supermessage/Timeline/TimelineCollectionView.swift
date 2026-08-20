@@ -147,6 +147,8 @@ struct TimelineCollectionView: UIViewRepresentable {
         private let session: Session
         private let timeline: TimelineStore
         private var dataSource: UICollectionViewDiffableDataSource<Int, Entry>?
+        /// Weak, and only for presenting from — the list owns the coordinator.
+        private weak var list: UICollectionView?
 
         /// The rows behind the identifiers in the snapshot, and whether each
         /// continues a run. Grouping is resolved once here rather than per
@@ -170,6 +172,7 @@ struct TimelineCollectionView: UIViewRepresentable {
         }
 
         func attach(to view: UICollectionView) {
+            list = view
             let cell = UICollectionView.CellRegistration<UICollectionViewListCell, Entry> {
                 [weak self] cell, _, entry in
                 guard let self else { return }
@@ -185,6 +188,7 @@ struct TimelineCollectionView: UIViewRepresentable {
                             attribution: self.singleSpeaker
                                 ? found.row.senderShort : found.row.senderName,
                             media: self.session.media,
+                            faces: self.session.faces,
                             onReply: { self.startReply(found.row) },
                             onReact: { key in self.react(found.row, key) }
                         )
@@ -312,6 +316,39 @@ struct TimelineCollectionView: UIViewRepresentable {
             session.replies.start(row, in: roomId)
         }
 
+        /// Put a message back into the composer to be rewritten.
+        ///
+        /// The room comes from the timeline store rather than being captured,
+        /// for the same reason `startReply` does it: a cell can outlive a room
+        /// switch, and an edit filed against a room the reader has left would
+        /// rewrite a message they are no longer looking at.
+        fileprivate func startEdit(_ row: TimelineRow) {
+            guard let roomId = timeline.roomId else { return }
+            session.edits.start(row, in: roomId)
+        }
+
+        /// Ask before deleting. A redaction is permanent and public, which is
+        /// exactly the shape of action that should not happen on one tap of a
+        /// menu the reader opened by long-pressing.
+        fileprivate func confirmDelete(_ row: TimelineRow) {
+            guard let roomId = timeline.roomId, let view = list else { return }
+            let sheet = UIAlertController(
+                title: "Delete message?",
+                message: "This removes it for everyone in the room.",
+                preferredStyle: .actionSheet)
+            sheet.addAction(
+                UIAlertAction(title: "Delete", style: .destructive) { _ in
+                    Task { await self.session.delete(row.item.eventId, in: roomId) }
+                })
+            sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            // iPad presents an action sheet as a popover and requires an
+            // anchor; without one it traps rather than falling back.
+            sheet.popoverPresentationController?.sourceView = view
+            sheet.popoverPresentationController?.sourceRect = CGRect(
+                x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+            view.window?.rootViewController?.topmostPresented.present(sheet, animated: true)
+        }
+
         fileprivate func react(_ row: TimelineRow, _ key: String) {
             guard let roomId = timeline.roomId else { return }
             Task { await session.toggleReaction(row.item.eventId, key: key, in: roomId) }
@@ -342,7 +379,8 @@ struct TimelineCollectionView: UIViewRepresentable {
                         guard let self else { return nil }
                         let host = UIHostingController(
                             rootView: TimelineRowView(
-                                row: row, continuesRun: false, media: self.session.media
+                                row: row, continuesRun: false,
+                                media: self.session.media, faces: self.session.faces
                             )
                             .padding(.horizontal, 16)
                             .frame(maxWidth: 360, alignment: .leading))
@@ -382,6 +420,27 @@ struct TimelineCollectionView: UIViewRepresentable {
                             UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) {
                                 _ in UIPasteboard.general.string = body
                             })
+                    }
+                    // `editable` is the SDK's answer, not `isOwn`: a state
+                    // event of your own is not editable and neither is a
+                    // redacted one, so inferring it from ownership would
+                    // offer an Edit the homeserver refuses.
+                    if row.item.editable {
+                        actions.append(
+                            UIAction(title: "Edit", image: UIImage(systemName: "pencil")) { _ in
+                                self.startEdit(row)
+                            })
+                    }
+                    // Deletion is offered only for this account's own
+                    // messages. Redacting someone else's needs a power level
+                    // this app does not check, and an action that fails at
+                    // the homeserver reads as the app being broken.
+                    if row.item.isOwn, row.canReplyOrReact {
+                        actions.append(
+                            UIAction(
+                                title: "Delete", image: UIImage(systemName: "trash"),
+                                attributes: .destructive
+                            ) { _ in self.confirmDelete(row) })
                     }
                     return actions.isEmpty ? nil : UIMenu(children: actions)
                 }
@@ -447,4 +506,13 @@ extension Notification.Name {
     /// binding because the button is SwiftUI and the scroll view is UIKit, and
     /// a one-shot command is not state either of them owns.
     static let scrollTimelineToNewest = Notification.Name("dev.supermessage.scrollTimelineToNewest")
+}
+
+extension UIViewController {
+    /// The controller actually on screen, so a sheet is presented from it
+    /// rather than from a root that is already covered by something else —
+    /// presenting on a covered controller silently does nothing.
+    var topmostPresented: UIViewController {
+        presentedViewController?.topmostPresented ?? self
+    }
 }

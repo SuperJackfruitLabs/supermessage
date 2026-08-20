@@ -245,6 +245,29 @@ impl Core {
         Ok(())
     }
 
+    /// Rewrite a message this account sent.
+    pub fn edit_message(
+        &self,
+        room_id: String,
+        event_id: String,
+        body: String,
+    ) -> Result<(), FfiError> {
+        self.runtime.block_on(
+            self.session
+                .focused_timeline()
+                .edit_text(&room_id, &event_id, &body),
+        )?;
+        Ok(())
+    }
+
+    /// Delete a message — a Matrix redaction, which is permanent and visible
+    /// to the whole room.
+    pub fn delete_message(&self, room_id: String, event_id: String) -> Result<(), FfiError> {
+        self.runtime
+            .block_on(self.session.focused_timeline().redact(&room_id, &event_id))?;
+        Ok(())
+    }
+
     /// Add or remove a reaction. Returns whether the reaction is now present.
     pub fn toggle_reaction(
         &self,
@@ -533,4 +556,15 @@ pub fn collect_mentions(
     members: Vec<supermessage_core::mentions::Mentionable>,
 ) -> Vec<String> {
     supermessage_core::mentions::collect_mentions(&text, &members)
+}
+
+/// Name a set of people from their user ids — "Cleaner Cody and 2 others".
+///
+/// A free function for the same reason as `rich_blocks_from_markdown`: read
+/// receipts and reaction chips are handed user ids by the SDK and no display
+/// names, and naming is a core decision (see `display_name`) rather than
+/// something each host re-invents in its own idiom.
+#[uniffi::export]
+pub fn people_label(user_ids: Vec<String>) -> String {
+    supermessage_core::display_name::people_label(&user_ids)
 }

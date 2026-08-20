@@ -167,10 +167,17 @@ pub fn parse_room_identity(raw_name: &str) -> RoomIdentity {
     let name = if without_glyph.is_empty() {
         UNNAMED_ROOM.to_string()
     } else {
-        bound(&crate::display_name::room_name_label(without_glyph), MAX_NAME_CHARS)
+        bound(
+            &crate::display_name::room_name_label(without_glyph),
+            MAX_NAME_CHARS,
+        )
     };
-    let role = (!role_half.is_empty())
-        .then(|| bound(&crate::display_name::room_name_label(role_half), MAX_ROLE_CHARS));
+    let role = (!role_half.is_empty()).then(|| {
+        bound(
+            &crate::display_name::room_name_label(role_half),
+            MAX_ROLE_CHARS,
+        )
+    });
 
     finish(glyph.map(str::to_string), name, role)
 }

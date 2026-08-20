@@ -30,6 +30,8 @@ struct TimelineRowView: View {
     /// which can see every row; a single row cannot.
     var attribution: String = ""
     let media: MediaCache
+    /// Senders' faces, keyed by `mxc:` URI.
+    let faces: AvatarCache
     /// Start a reply to this row. `nil` in contexts with no composer.
     var onReply: (() -> Void)?
     /// Add or remove one of this account's reactions.
@@ -58,7 +60,7 @@ struct TimelineRowView: View {
         case let .bubble(muted, blocks):
             MessageBlock(
                 row: row, named: named, muted: muted, blocks: blocks,
-                continuesRun: continuesRun, onReact: onReact
+                continuesRun: continuesRun, faces: faces, onReact: onReact
             )
 
         case .emote:
@@ -105,8 +107,9 @@ struct TimelineRowView: View {
         case let .mediaFile(label, filename, size, _):
             MediaFileRow(label: label, filename: filename, size: size)
 
-        case let .customEvent(view, eventType):
-            CustomEventCard(view: view, eventType: eventType, senderName: named)
+        case let .customEvent(view, label, eventType):
+            CustomEventCard(
+                view: view, label: label, eventType: eventType, senderName: named)
 
         case .none:
             EmptyView()
@@ -122,6 +125,7 @@ private struct MessageBlock: View {
     let muted: Bool
     let blocks: [RichBlock]
     let continuesRun: Bool
+    let faces: AvatarCache
     var onReact: ((String) -> Void)?
 
     private var isOwn: Bool { row.item.isOwn }
@@ -131,6 +135,12 @@ private struct MessageBlock: View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
             if !isOwn && !continuesRun {
                 HStack(spacing: 6) {
+                    // A face, where the sender has one. In a room with a
+                    // single agent the name alone was enough; in a room with
+                    // four it is four near-identical grey headers, and a
+                    // reader scanning back for who said what has to read
+                    // rather than glance.
+                    SenderFace(mxcUri: row.item.senderAvatar, initial: named, faces: faces)
                     Text(named).nameFace()
                     if let timestamp = row.item.timestampMs {
                         Text(Self.time(timestamp)).metaFace().foregroundStyle(.tertiary)
@@ -171,6 +181,17 @@ private struct MessageBlock: View {
                 // Failure is the one state that may speak up. Everything else
                 // here is a quiet timestamp.
                 .foregroundStyle(sendState == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.tertiary))
+            }
+
+            // Only under your own messages, and only where a receipt
+            // actually points: a receipt names the latest event a member has
+            // read, so this lands on the newest thing they have seen and
+            // stays off everything older. Under someone else's message it
+            // would be telling a reader what they already know.
+            if isOwn, !row.item.readBy.isEmpty {
+                Text("Read by \(peopleLabel(userIds: row.item.readBy))")
+                    .metaFace()
+                    .foregroundStyle(.tertiary)
             }
 
             if !row.item.reactions.isEmpty {
@@ -227,8 +248,13 @@ private struct ReactionRow: View {
     let reactions: [ReactionDto]
     var onReact: ((String) -> Void)?
 
+    /// Which chip the reader is asking about. A chip says how many; only
+    /// asking says who, because a row of names is wider than the message it
+    /// hangs under.
+    @State private var asking: ReactionQuery?
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             ForEach(reactions, id: \.key) { reaction in
                 Button { onReact?(reaction.key) } label: {
                     chip(reaction)
@@ -244,8 +270,25 @@ private struct ReactionRow: View {
                     "\(reaction.displayKey), \(reaction.count)"
                         + (reaction.byMe ? ", including yours" : ""))
                 .accessibilityAddTraits(reaction.byMe ? [.isSelected] : [])
+                .accessibilityHint(who(reaction))
+                .onLongPressGesture { asking = ReactionQuery(reaction: reaction) }
             }
         }
+        .popover(item: $asking) { query in
+            VStack(alignment: .leading, spacing: 4) {
+                Text(query.reaction.displayKey).font(.title3)
+                Text(who(query.reaction)).metaFace().foregroundStyle(.secondary)
+            }
+            .padding(12)
+            // Without this a popover on iPhone arrives as a half-height
+            // sheet — far too much furniture for one line of names.
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    /// Who reacted, named by the core so both hosts say it the same way.
+    private func who(_ reaction: ReactionDto) -> String {
+        peopleLabel(userIds: reaction.senders)
     }
 
     @ViewBuilder private func chip(_ reaction: ReactionDto) -> some View {
@@ -253,17 +296,69 @@ private struct ReactionRow: View {
             // `displayKey`, never `key`: they usually look alike, but `key` is
             // wire data compared byte-for-byte against what other clients
             // sent, and this one is bounded for display.
-            Text(reaction.displayKey)
-            Text("\(reaction.count)").metaFace()
+            Text(reaction.displayKey).font(.caption)
+            // One reaction is already fully described by the emoji; printing
+            // "1" beside it is a count of nothing anyone wondered about.
+            if reaction.count > 1 {
+                Text("\(reaction.count)")
+                    .metaFace()
+                    .monospacedDigit()
+                    .foregroundStyle(reaction.byMe ? Theme.accent : .secondary)
+            }
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
         .contentShape(Capsule())
+        // A fill rather than an outline: a dozen stroked capsules under a
+        // message read as a toolbar. Only the reader's own reaction is drawn
+        // with an edge, because that is the one distinction a chip must make.
+        .background(
+            reaction.byMe ? Theme.accent.opacity(0.16) : Color.secondary.opacity(0.10),
+            in: Capsule())
         .overlay(
-            Capsule().stroke(
-                reaction.byMe ? Theme.accent : Color.secondary.opacity(0.4),
-                lineWidth: reaction.byMe ? 1.5 : 1))
+            Capsule().strokeBorder(
+                reaction.byMe ? Theme.accent.opacity(0.55) : .clear, lineWidth: 1))
     }
+}
+
+/// A sender's face beside their name, or the initial of the name itself.
+///
+/// Small — 18pt, the cap height of the name it sits beside — because this is
+/// an aid to scanning, not a portrait. A face that competes with the message
+/// makes the timeline a contact list.
+private struct SenderFace: View {
+    let mxcUri: String?
+    let initial: String
+    let faces: AvatarCache
+
+    var body: some View {
+        ZStack {
+            if let mxcUri, let uri = faces.uri(for: mxcUri),
+                let image = RoomRowView.image(from: uri)
+            {
+                image.resizable().scaledToFill()
+            } else {
+                Circle().fill(.quaternary)
+                Text(letter).font(.system(size: 10, weight: .medium))
+            }
+        }
+        .frame(width: 18, height: 18)
+        .clipShape(Circle())
+        .task(id: mxcUri) {
+            guard let mxcUri else { return }
+            await faces.load(mxcUri)
+        }
+    }
+
+    private var letter: String {
+        initial.first.map { String($0).uppercased() } ?? "?"
+    }
+}
+
+/// A chip the reader has asked about, identified by its wire key.
+private struct ReactionQuery: Identifiable {
+    let reaction: ReactionDto
+    var id: String { reaction.key }
 }
 
 /// A quiet line about the room rather than in it — a membership change, a

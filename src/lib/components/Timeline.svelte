@@ -1840,18 +1840,25 @@
                     <div class="group relative min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
                       <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
                         <!--
-                          Header: the event type left, the timestamp right, a
-                          hairline beneath. Both mono — an event type and a
-                          time are data (spec §5.3). `displayEventType`
-                          truncates the type from the *left*; see its doc
-                          comment for why that is a pure helper and not a
-                          `direction: rtl` trick.
+                          Header: what the card is left, the timestamp right,
+                          a hairline beneath. The *name* the renderer gives
+                          this kind of event ("Turn", "Permission") rather
+                          than `view.eventType` — a reader should not have to
+                          parse `dev.agentpod.turn.v1` to learn they are
+                          looking at a turn. The schema address stays in the
+                          `title`, for a card nothing recognises and for
+                          anyone diagnosing one; `displayEventType` truncated
+                          it from the *left* for exactly that case, and still
+                          does.
                         -->
                         <div
                           class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
                         >
-                          <span class="min-w-0 flex-1 text-label uppercase break-words">
-                            {view.eventType}
+                          <span
+                            class="min-w-0 flex-1 text-label uppercase break-words"
+                            title={view.eventType}
+                          >
+                            {view.label}
                           </span>
                           <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
                         </div>

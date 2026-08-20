@@ -28,6 +28,7 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind" | "id
     msgtype: null,
     detail: null,
     sender: "@someone:example.org",
+    senderAvatar: null,
     senderDisplayName: null,
     body: null,
     formattedBody: null,
@@ -40,6 +41,7 @@ function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind" | "id
     edited: false,
     reactions: [],
     readBy: [],
+    editable: false,
     ...overrides,
   };
   return row(dto);
@@ -384,7 +386,7 @@ describe("a row's key encodes its shape, not just its identity", () => {
   it("changes when a reaction arrives, so the row is measured again", () => {
     const before = groupTimelineItems([message({ id: "$a", reactions: [] })]);
     const after = groupTimelineItems([
-      message({ id: "$a", reactions: [{ key: "✅", displayKey: "✅", count: 1, byMe: false }] }),
+      message({ id: "$a", reactions: [{ key: "✅", displayKey: "✅", count: 1, byMe: false, senders: [] }] }),
     ]);
 
     expect(before[0]!.key).not.toBe(after[0]!.key);

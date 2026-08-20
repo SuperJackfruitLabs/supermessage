@@ -33,12 +33,15 @@ public final class Session {
     public let rooms: RoomsStore
     public let spaces: SpacesStore
     public let avatars: AvatarCache
+    /// Senders' faces, keyed by `mxc:` URI — see `AvatarCache.forMembers`.
+    public let faces: AvatarCache
     public let media: MediaCache
     public let timeline: TimelineStore
     public let live = LiveStore()
     public let typing = TypingStore()
     public let drafts = DraftStore()
     public let replies = ReplyTarget()
+    public let edits = EditTarget()
     public let staged: StagedAttachment
 
     private let client: CoreClient
@@ -50,6 +53,7 @@ public final class Session {
         rooms = RoomsStore(client: client)
         spaces = SpacesStore(client: client)
         avatars = AvatarCache(client: client)
+        faces = AvatarCache.forMembers(client: client)
         media = MediaCache(client: client)
         timeline = TimelineStore(client: client, sink: pump)
         staged = StagedAttachment(client: client)
@@ -183,6 +187,38 @@ public final class Session {
         _ = try? await client.toggleReaction(roomId: roomId, eventId: eventId, key: key)
     }
 
+    /// Rewrite a message this account sent.
+    ///
+    /// Takes the **event** id for the same reason `toggleReaction` does: an
+    /// edit is a relation pointing at an event, and a message the homeserver
+    /// has not acknowledged has none.
+    ///
+    /// Returns whether it landed, so a caller can leave the reader's text in
+    /// the composer rather than discarding it into a failure.
+    @discardableResult
+    public func edit(_ eventId: String?, body: String, in roomId: String) async -> Bool {
+        guard let eventId else { return false }
+        do {
+            try await client.editMessage(roomId: roomId, eventId: eventId, body: body)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Delete a message. A Matrix redaction: permanent, and visible to
+    /// everyone in the room.
+    @discardableResult
+    public func delete(_ eventId: String?, in roomId: String) async -> Bool {
+        guard let eventId else { return false }
+        do {
+            try await client.deleteMessage(roomId: roomId, eventId: eventId)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Who invited this account to `roomId`, or `nil`.
     public func inviter(of roomId: String) async -> String? {
         (try? await client.roomInviter(roomId: roomId)) ?? nil
@@ -276,6 +312,8 @@ public final class Session {
         await staged.discard()
         spaces.clear()
         avatars.clear()
+        faces.clear()
+        edits.clearAll()
         phase = .signedOut
     }
 

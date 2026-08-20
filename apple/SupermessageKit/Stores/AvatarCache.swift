@@ -2,7 +2,13 @@ import Foundation
 import Observation
 import SupermessageFFI
 
-/// Room avatars, fetched once and kept.
+/// Avatars, fetched once and kept.
+///
+/// Keyed by whatever the caller fetches by — a room id for the roster, an
+/// `mxc:` URI for a message sender. One type rather than two because the hard
+/// part here is not the fetch (one line either way) but the observation and
+/// eviction discipline below, and having that written twice is how one copy
+/// quietly regresses.
 ///
 /// **A dictionary, bounded by hand — not an `NSCache`.** An `NSCache` was the
 /// obvious choice and was wrong for one decisive reason: `@Observable` cannot
@@ -37,13 +43,38 @@ public final class AvatarCache {
     private var withoutAvatar: Set<String> = []
     /// Fetches in flight, so the many rows that appear at once ask once.
     private var fetching: Set<String> = []
-    private let client: CoreClient
+    /// How a key becomes a `data:` URI. `nil` means this key has no avatar.
+    private let fetch: (String) async -> String?
 
     private let countLimit: Int
 
-    public init(client: CoreClient, countLimit: Int = 200) {
-        self.client = client
+    private init(countLimit: Int, fetch: @escaping (String) async -> String?) {
         self.countLimit = countLimit
+        self.fetch = fetch
+    }
+
+    /// Room avatars, keyed by room id.
+    public convenience init(client: CoreClient, countLimit: Int = 200) {
+        self.init(countLimit: countLimit) { roomId in
+            guard let uri = try? await client.roomAvatar(roomId: roomId), !uri.isEmpty else {
+                return nil
+            }
+            return uri
+        }
+    }
+
+    /// Message senders' faces, keyed by the `mxc:` URI their profile carries.
+    ///
+    /// Keyed by the URI rather than the user id on purpose: two members with
+    /// the same picture share one entry, and a member who changes their
+    /// picture gets a new key rather than a stale hit.
+    public static func forMembers(client: CoreClient, countLimit: Int = 200) -> AvatarCache {
+        AvatarCache(countLimit: countLimit) { mxcUri in
+            guard let uri = try? await client.memberAvatar(mxcUri: mxcUri), !uri.isEmpty else {
+                return nil
+            }
+            return uri
+        }
     }
 
     public func uri(for roomId: String) -> String? {
@@ -89,7 +120,7 @@ public final class AvatarCache {
     public func load(_ roomId: String) async {
         guard shouldFetch(roomId) else { return }
         beginFetch(roomId)
-        guard let uri = try? await client.roomAvatar(roomId: roomId), !uri.isEmpty else {
+        guard let uri = await fetch(roomId) else {
             rememberAbsent(roomId)
             return
         }

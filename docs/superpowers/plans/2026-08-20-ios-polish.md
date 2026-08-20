@@ -44,17 +44,17 @@ do not call them.
       place a chat app must not be ambiguous.
 - [x] **B3.** No timestamps on own messages. The peer header carries one; your
       side carries nothing, so three identical messages are indistinguishable.
-- [ ] **B4.** Read receipts unused. `readBy` is on the DTO and nothing reads it.
+- [x] **B4.** Read receipts unused. `readBy` is on the DTO and nothing reads it.
 - [x] **B5.** No jump-to-latest and no new-message badge. Nearly free in an
       inverted list, where being at the bottom is exactly `contentOffset.y <= 0`.
-- [ ] **B6.** Turn cards are headed `dev.agentpod.turn.v1` — a Matrix event type
+- [x] **B6.** Turn cards are headed `dev.agentpod.turn.v1` — a Matrix event type
       shown to a reader.
-- [ ] **B7.** Turn card bodies are raw argv, truncated mid-path. What it did and
+- [x] **B7.** Turn card bodies are raw argv, truncated mid-path. What it did and
       whether it worked matters more than the exact command.
-- [ ] **B8.** No sender avatars. Fine with one agent, weak in a room with
+- [x] **B8.** No sender avatars. Fine with one agent, weak in a room with
       several.
-- [ ] **B9.** Reaction chips sit louder than the prose they attach to.
-- [ ] **B10.** No way to see *who* reacted, only how many.
+- [x] **B9.** Reaction chips sit louder than the prose they attach to.
+- [x] **B10.** No way to see *who* reacted, only how many.
 - [ ] **B11.** No message editing or deletion. The core has neither, so this is
       core work before it is UI work.
 

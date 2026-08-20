@@ -27,9 +27,15 @@ struct ComposerView: View {
         session.replies.pending(for: roomId)
     }
 
+    private var pendingEdit: EditTarget.Pending? {
+        session.edits.pending(for: roomId)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            if let pendingReply {
+            if pendingEdit != nil {
+                EditStrip { cancelEdit() }
+            } else if let pendingReply {
                 ReplyStrip(pending: pendingReply) { session.replies.cancel(roomId) }
             }
             if let staged = session.staged.file {
@@ -60,14 +66,23 @@ struct ComposerView: View {
                 }
 
                 HStack(alignment: .bottom, spacing: 6) {
-                    TextField("Message", text: $text, axis: .vertical)
+                    TextField(
+                        pendingEdit == nil ? "Message" : "Edit message", text: $text,
+                        axis: .vertical
+                    )
                         .lineLimit(1...6)
                         .textFieldStyle(.plain)
                         .focused($focused)
                         .padding(.leading, 12)
                         .padding(.vertical, 7)
                         .onChange(of: text) { _, next in
-                            session.drafts.set(next, for: roomId)
+                            // Not while editing: the composer is holding an
+                            // existing message, and writing that over the
+                            // draft would destroy whatever was being written
+                            // before the edit began.
+                            if pendingEdit == nil {
+                                session.drafts.set(next, for: roomId)
+                            }
                             Task { await session.setTyping(!next.isEmpty, in: roomId) }
                         }
 
@@ -79,9 +94,15 @@ struct ComposerView: View {
                         Button {
                             Task { await send() }
                         } label: {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 27))
-                                .foregroundStyle(.white, Theme.accent)
+                            // A tick rather than an arrow while editing:
+                            // nothing is being sent to anyone, an existing
+                            // message is being replaced.
+                            Image(
+                                systemName: pendingEdit == nil
+                                    ? "arrow.up.circle.fill" : "checkmark.circle.fill"
+                            )
+                            .font(.system(size: 27))
+                            .foregroundStyle(.white, Theme.accent)
                         }
                         .disabled(sending)
                         .padding(.trailing, 3)
@@ -101,6 +122,13 @@ struct ComposerView: View {
         }
         .background(.bar)
         .task(id: roomId) { text = session.drafts.draft(for: roomId) }
+        // An edit begun from the timeline arrives here, not the other way
+        // round: the composer is what holds the text.
+        .onChange(of: pendingEdit) { _, next in
+            guard let next else { return }
+            text = next.body
+            focused = true
+        }
         .onChange(of: photo) { _, item in
             guard let item else { return }
             Task { await stage(item) }
@@ -119,11 +147,36 @@ struct ComposerView: View {
     private func send() async {
         sending = true
         defer { sending = false }
+
+        if let pendingEdit {
+            // The reader's text stays in the composer when this fails: an
+            // edit that vanished into an error would have silently discarded
+            // what they wrote.
+            guard await session.edit(pendingEdit.eventId, body: text, in: roomId) else {
+                failure = "Could not save the edit."
+                return
+            }
+            failure = nil
+            session.edits.cancel(roomId)
+            text = session.drafts.draft(for: roomId)
+            return
+        }
+
         failure = await session.send(text: text, in: roomId)
         if failure == nil {
             text = ""
             session.drafts.clear(roomId)
         }
+    }
+
+    /// Abandon an edit, putting back whatever was being written before it.
+    ///
+    /// The draft was never cleared when the edit began, so what the reader had
+    /// half-typed is still there — dropping them back into an empty composer
+    /// would lose it.
+    private func cancelEdit() {
+        session.edits.cancel(roomId)
+        text = session.drafts.draft(for: roomId)
     }
 
     /// A picked photo has no path until its bytes are written somewhere.
@@ -148,6 +201,27 @@ struct ComposerView: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         failure = await session.staged.stage(path: url.path, in: roomId)
+    }
+}
+
+/// "Editing message", with a way out.
+///
+/// No excerpt: the message being edited is already in the composer, in full,
+/// and showing it twice would be the same text stacked on itself.
+private struct EditStrip: View {
+    let cancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pencil").font(.footnote).foregroundStyle(Theme.accent)
+            Text("Editing message").metaFace().textCase(.uppercase)
+            Spacer()
+            Button(action: cancel) { Image(systemName: "xmark") }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
     }
 }
 

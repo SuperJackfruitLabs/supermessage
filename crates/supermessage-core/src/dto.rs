@@ -264,6 +264,14 @@ pub struct ReactionDto {
     /// Whether the current user is among those senders — what the
     /// interaction pass needs to render this chip as already-active/toggled.
     pub by_me: bool,
+    /// The raw user ids of everyone who reacted with this key.
+    ///
+    /// Ids, not names: this is who, addressably, and a host that wants to
+    /// show a name asks [`crate::display_name::people_label`] for one. A
+    /// chip that can only say "3" makes a reader guess whether they are one
+    /// of the three, and guessing is what [`Self::by_me`] and this field
+    /// between them remove.
+    pub senders: Vec<String>,
 }
 
 /// A single timeline item (message, state event, etc.) as rendered.
@@ -307,6 +315,13 @@ pub struct TimelineItemDto {
     pub detail: Option<String>,
     pub sender: Option<String>,
     pub sender_display_name: Option<String>,
+    /// The sender's avatar as an `mxc:` URI, when their profile carries one.
+    ///
+    /// A URI, not bytes: it is a stable key a host caches against, and
+    /// fetching it is a network round trip that belongs on the host's
+    /// schedule (see `Core::member_avatar`) rather than inline in a
+    /// projection that runs for every item in the timeline.
+    pub sender_avatar: Option<String>,
     pub body: Option<String>,
     /// The message's HTML formatted body, present only when the SDK reports
     /// `format: "org.matrix.custom.html"` (see
@@ -383,6 +398,14 @@ pub struct TimelineItemDto {
     /// simple "Seen"/"Seen by N" marker on the reader's own latest message —
     /// never a per-message avatar stack.
     pub read_by: Vec<String>,
+    /// Whether this account may rewrite this message — the SDK's
+    /// `EventTimelineItem::is_editable()`, not a guess made from `is_own`.
+    ///
+    /// Asked rather than assumed because "mine" and "editable" are not the
+    /// same set: a state event of your own is not editable, and neither is
+    /// one already redacted. Offering an Edit that the homeserver then
+    /// refuses is worse than not offering it.
+    pub editable: bool,
 }
 
 /// One member currently typing in a room, projected from the SDK's
@@ -1342,7 +1365,7 @@ mod wire_format_golden {
     #[test]
     fn a_timeline_item_keeps_every_field_and_its_name() {
         // The widest type here, and the one the reading pane is built on:
-        // eighteen fields, most optional. `null` is part of the contract —
+        // twenty fields, most optional. `null` is part of the contract —
         // nothing is skipped when absent, and the webview's TypeScript is
         // written against fields that are always present.
         let item = TimelineItemDto {
@@ -1352,6 +1375,7 @@ mod wire_format_golden {
             msgtype: Some("m.text".into()),
             detail: None,
             sender: Some("@a:x.org".into()),
+            sender_avatar: None,
             sender_display_name: Some("A".into()),
             body: Some("hello".into()),
             formatted_body: None,
@@ -1364,10 +1388,11 @@ mod wire_format_golden {
             edited: false,
             reactions: vec![],
             read_by: vec![],
+            editable: false,
         };
         assert_eq!(
             serde_json::to_string(&item).unwrap(),
-            r#"{"id":"unique-1","eventId":"$e1","kind":"message","msgtype":"m.text","detail":null,"sender":"@a:x.org","senderDisplayName":"A","body":"hello","formattedBody":null,"media":null,"customPayload":null,"timestampMs":1700000000000,"isOwn":false,"sendState":null,"replyTo":null,"edited":false,"reactions":[],"readBy":[]}"#
+            r#"{"id":"unique-1","eventId":"$e1","kind":"message","msgtype":"m.text","detail":null,"sender":"@a:x.org","senderDisplayName":"A","senderAvatar":null,"body":"hello","formattedBody":null,"media":null,"customPayload":null,"timestampMs":1700000000000,"isOwn":false,"sendState":null,"replyTo":null,"edited":false,"reactions":[],"readBy":[],"editable":false}"#
         );
     }
 
@@ -1409,10 +1434,11 @@ mod wire_format_golden {
             display_key: "+1".into(),
             count: 2,
             by_me: true,
+            senders: vec!["@me:x.org".into(), "@alice:x.org".into()],
         };
         assert_eq!(
             serde_json::to_string(&reaction).unwrap(),
-            r#"{"key":"+1","displayKey":"+1","count":2,"byMe":true}"#
+            r#"{"key":"+1","displayKey":"+1","count":2,"byMe":true,"senders":["@me:x.org","@alice:x.org"]}"#
         );
     }
 
@@ -1639,6 +1665,7 @@ mod wire_format_golden {
             msgtype: Some("m.text".into()),
             detail: None,
             sender: Some("@a:x.org".into()),
+            sender_avatar: None,
             sender_display_name: Some("A".into()),
             body: Some("hello".into()),
             formatted_body: None,
@@ -1651,6 +1678,7 @@ mod wire_format_golden {
             edited: false,
             reactions: vec![],
             read_by: vec![],
+            editable: false,
         }
     }
 }

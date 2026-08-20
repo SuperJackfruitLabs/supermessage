@@ -239,6 +239,12 @@ export interface TimelineItem {
   detail: string | null;
   sender: string | null;
   senderDisplayName: string | null;
+  /**
+   * The sender's avatar as an `mxc:` URI, when their profile carries one.
+   * A URI rather than bytes — fetching it is a round trip the host schedules
+   * (`memberAvatar`), not something a projection does per item.
+   */
+  senderAvatar: string | null;
   body: string | null;
   /**
    * The message's HTML formatted body, present only when the core reports
@@ -325,6 +331,11 @@ export interface TimelineItem {
    * message, never a per-message avatar stack or a name list.
    */
   readBy: string[];
+  /**
+   * Whether this account may rewrite this message — the SDK's
+   * `is_editable()`, asked rather than inferred from `isOwn`.
+   */
+  editable: boolean;
 }
 
 /** Mirrors `MediaMetaDto` from `src-tauri/src/core/dto.rs`. See {@link TimelineItem.media}. */
@@ -400,6 +411,11 @@ export interface Reaction {
   count: number;
   /** Whether the current user is among those senders. */
   byMe: boolean;
+  /**
+   * The raw user ids of everyone who reacted with this key — ids, not names,
+   * so a host that wants a name asks `peopleLabel` for one.
+   */
+  senders: string[];
 }
 
 /**
@@ -755,7 +771,7 @@ export type ItemView =
       size: number | null;
       mimetype: string | null;
     }
-  | { render: "customEvent"; view: CustomEventView; eventType: string }
+  | { render: "customEvent"; view: CustomEventView; label: string; eventType: string }
   | { render: "none" };
 
 /**

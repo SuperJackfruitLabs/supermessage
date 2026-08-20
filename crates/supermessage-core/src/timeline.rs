@@ -147,6 +147,7 @@ use std::time::Duration;
 use eyeball_im::VectorDiff;
 use futures_util::{Stream, StreamExt};
 use imbl::Vector;
+use matrix_sdk::room::edit::EditedContent;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use matrix_sdk::ruma::events::room::message::{
     FormattedBody, MessageFormat, MessageType, RoomMessageEventContent,
@@ -300,6 +301,8 @@ pub fn project_item_parts(
     detail: Option<&str>,
     sender: Option<&str>,
     sender_display_name: Option<&str>,
+    sender_avatar: Option<&str>,
+    editable: bool,
     body: Option<&str>,
     formatted_body: Option<&str>,
     media: Option<MediaMetaDto>,
@@ -320,6 +323,8 @@ pub fn project_item_parts(
         detail: detail.map(str::to_string),
         sender: sender.map(str::to_string),
         sender_display_name: sender_display_name.map(str::to_string),
+        sender_avatar: sender_avatar.map(str::to_string),
+        editable,
         body: body.map(str::to_string),
         formatted_body: formatted_body.map(str::to_string),
         media,
@@ -1318,6 +1323,7 @@ fn project_reactions(entries: &[(String, Vec<String>)], own_user_id: &str) -> Ve
             key: key.clone(),
             count: senders.len() as u32,
             by_me: senders.iter().any(|sender| sender == own_user_id),
+            senders: senders.clone(),
         })
         .collect()
 }
@@ -1420,6 +1426,10 @@ fn project_event_item(
         TimelineDetails::Ready(profile) => profile.display_name.clone(),
         _ => None,
     };
+    let sender_avatar = match event.sender_profile() {
+        TimelineDetails::Ready(profile) => profile.avatar_url.as_ref().map(|u| u.to_string()),
+        _ => None,
+    };
     let message = event.content().as_message();
     // Only ever both `Some` for `kind == "customMessage"`, and mutually
     // exclusive with `message` above (a `MsgLikeKind::Other` event has no
@@ -1450,6 +1460,8 @@ fn project_event_item(
         detail.as_deref(),
         Some(&sender),
         sender_display_name.as_deref(),
+        sender_avatar.as_deref(),
+        event.is_editable(),
         body.as_deref(),
         formatted_body.as_deref(),
         media,
@@ -1486,6 +1498,8 @@ fn project_virtual_item(
         None,
         None,
         None,
+        None,
+        false,
         None,
         None,
         None,
@@ -2129,6 +2143,54 @@ impl FocusedTimeline {
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))?;
         Ok(())
+    }
+
+    /// Replaces the body of a message this account sent.
+    ///
+    /// Only what the reader typed changes: the edit is sent as markdown the
+    /// same way [`Self::send_text`] sends a new message, so a message reads
+    /// identically whether it was edited or not.
+    ///
+    /// Checked against the focused room for the same reason as
+    /// [`Self::send_reply`] — an edit that lands in whichever room happens to
+    /// be focused when a slow command finally runs rewrites the wrong
+    /// message, which is worse than a misdirected send because it is silent.
+    ///
+    /// The SDK refuses events that are not editable (someone else's message,
+    /// a state event, an already-redacted one), which surfaces here as
+    /// [`CoreError::Protocol`] rather than being guessed at in advance.
+    ///
+    /// Emits nothing itself: the edit arrives back through the same diff
+    /// stream `subscribe` set up, as a local echo and then as the remote
+    /// event.
+    pub async fn edit_text(&self, room_id: &str, event_id: &str, body: &str) -> CoreResult<()> {
+        let event_id = EventId::parse(event_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let timeline = self.active_timeline_for(room_id)?;
+        let content =
+            EditedContent::RoomMessage(RoomMessageEventContentWithoutRelation::text_markdown(body));
+        timeline
+            .edit(&TimelineEventItemId::EventId(event_id), content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
+    /// Redacts a message — Matrix's word for deleting one.
+    ///
+    /// No reason is sent. A reason is public, permanent and shown to everyone
+    /// in the room, and nothing in this app's UI asks the reader for one, so
+    /// inventing one here would put words in their mouth.
+    ///
+    /// Checked against the focused room for the same reason as
+    /// [`Self::edit_text`]. A redaction of a *local echo* is handled by the
+    /// SDK as an abort of the pending send rather than a request, which is
+    /// what should happen to a message that never left the device.
+    pub async fn redact(&self, room_id: &str, event_id: &str) -> CoreResult<()> {
+        let event_id = EventId::parse(event_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let timeline = self.active_timeline_for(room_id)?;
+        timeline
+            .redact(&TimelineEventItemId::EventId(event_id), None)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))
     }
 
     /// Toggles `reaction_key` as a reaction on `event_id` in `room_id`.
@@ -2865,6 +2927,8 @@ mod tests {
             None,
             Some("@me:x.org"),
             Some("Me"),
+            None,
+            false,
             Some("hello"),
             None,
             None,
@@ -2892,6 +2956,38 @@ mod tests {
     }
 
     #[test]
+    fn a_sender_carries_the_address_of_their_face() {
+        let dto = project_item_parts(
+            "$e1",
+            Some("$e1"),
+            "message",
+            Some("m.text"),
+            None,
+            Some("@cody:x.org"),
+            Some("Cleaner Cody"),
+            Some("mxc://x.org/abc123"),
+            false,
+            Some("hello"),
+            None,
+            None,
+            None,
+            Some(1_700_000_000_000),
+            false,
+            None,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        );
+        assert_eq!(
+            dto.sender_avatar.as_deref(),
+            Some("mxc://x.org/abc123"),
+            "a room with several agents in it needs faces, and a host cannot \
+             fetch one it was never given the address of"
+        );
+    }
+
+    #[test]
     fn virtual_items_are_projected_with_their_own_kind() {
         let dto = project_item_parts(
             "vd1",
@@ -2901,6 +2997,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            false,
             None,
             None,
             None,
@@ -2936,6 +3034,8 @@ mod tests {
             Some("@alice:x.org"),
             Some("Alice"),
             None,
+            false,
+            None,
             None,
             None,
             None,
@@ -2962,6 +3062,8 @@ mod tests {
             None,
             Some("@bot:x.org"),
             None,
+            None,
+            false,
             Some("build finished"),
             None,
             None,
@@ -2991,6 +3093,8 @@ mod tests {
             None,
             Some("@me:x.org"),
             Some("Me"),
+            None,
+            false,
             Some("plain"),
             Some("<p>rich</p>"),
             None,
@@ -3748,6 +3852,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            false,
             None,
             None,
             None,
@@ -4758,6 +4864,20 @@ mod tests {
     }
 
     #[test]
+    fn a_reaction_carries_who_reacted_not_only_how_many() {
+        let entries = vec![(
+            "\u{1f44d}".to_string(),
+            vec!["@alice:x.org".to_string(), "@me:x.org".to_string()],
+        )];
+        let reactions = project_reactions(&entries, "@me:x.org");
+        assert_eq!(
+            reactions[0].senders,
+            vec!["@alice:x.org".to_string(), "@me:x.org".to_string()],
+            "a chip that can only say \"2\" cannot answer who"
+        );
+    }
+
+    #[test]
     fn project_reactions_is_empty_for_no_reaction_data() {
         assert!(project_reactions(&[], "@me:x.org").is_empty());
     }
@@ -4785,6 +4905,8 @@ mod tests {
             None,
             Some("@me:x.org"),
             Some("Me"),
+            None,
+            false,
             Some("edited text"),
             None,
             None,
@@ -4807,6 +4929,7 @@ mod tests {
             display_key: "👍".to_string(),
             count: 2,
             by_me: true,
+            senders: vec!["@me:x.org".into(), "@alice:x.org".into()],
         }];
         let dto = project_item_parts(
             "$e6",
@@ -4816,6 +4939,8 @@ mod tests {
             None,
             Some("@me:x.org"),
             Some("Me"),
+            None,
+            false,
             Some("hi"),
             None,
             None,
@@ -4849,6 +4974,8 @@ mod tests {
             None,
             Some("@me:x.org"),
             Some("Me"),
+            None,
+            false,
             Some("a reply"),
             None,
             None,

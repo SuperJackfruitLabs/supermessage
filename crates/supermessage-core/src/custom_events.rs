@@ -180,6 +180,13 @@ pub enum CustomEventView {
 pub trait CustomEventRenderer: Send + Sync {
     fn event_type(&self) -> &str;
 
+    /// What to call this on screen.
+    ///
+    /// The card used to head itself with `event_type` — `dev.agentpod.turn.v1`
+    /// printed at a reader. That is an address for a schema, not a name for a
+    /// thing, and a reading surface should say the latter.
+    fn label(&self) -> &str;
+
     /// The highest `schema_version` this renderer was written against.
     fn max_known_schema_version(&self) -> f64;
 
@@ -363,6 +370,10 @@ impl CustomEventRenderer for DemoNoteRenderer {
     fn event_type(&self) -> &str {
         DEMO_NOTE_EVENT_TYPE
     }
+
+    fn label(&self) -> &str {
+        "Note"
+    }
     fn max_known_schema_version(&self) -> f64 {
         1.0
     }
@@ -391,6 +402,77 @@ impl CustomEventRenderer for DemoNoteRenderer {
 /// [`safe_string_field`] cannot express, so it reads those itself with the
 /// same discipline: check the shape, take the value, never coerce, never
 /// recurse.
+/// A tool's title, made readable without changing what it says.
+///
+/// An agent reports what it did as the argv it ran, which arrives wrapped in
+/// a shell invocation, spread over continuation lines, and carrying absolute
+/// paths long enough that the field cap cuts the filename off the end — the
+/// one part of the path a reader wanted. Three narrow, reversible-in-meaning
+/// passes fix all three: fold the whitespace, drop the shell wrapper, and
+/// shorten deep paths from the front so the tail survives.
+///
+/// Cosmetic only, and applied after the payload has already been bounded and
+/// validated — this never reads a new field or coerces a value.
+fn tool_title(raw: &str) -> String {
+    // A lone `\` is a line continuation with the line gone — folding leaves
+    // it stranded mid-command where it reads as an argument.
+    let folded = raw
+        .split_whitespace()
+        .filter(|token| *token != "\\")
+        .collect::<Vec<_>>()
+        .join(" ");
+    let unwrapped = unwrap_shell(&folded);
+    unwrapped
+        .split(' ')
+        .map(shorten_path)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `bash -lc 'cargo test'` is a way of running something, not the something.
+fn unwrap_shell(command: &str) -> String {
+    const SHELLS: [&str; 3] = ["bash", "sh", "zsh"];
+    let mut parts = command.splitn(3, ' ');
+    let (Some(program), Some(flags), Some(rest)) = (parts.next(), parts.next(), parts.next())
+    else {
+        return command.to_string();
+    };
+    if !SHELLS.contains(&program) {
+        return command.to_string();
+    }
+    // `-c`, `-lc`, `-lic` — any flag cluster ending in `c`, which is the one
+    // that says "the next argument is the command".
+    if !(flags.starts_with('-') && flags.ends_with('c')) {
+        return command.to_string();
+    }
+    let inner = rest.trim();
+    for quote in ['\'', '"'] {
+        if let Some(body) = inner
+            .strip_prefix(quote)
+            .and_then(|r| r.strip_suffix(quote))
+        {
+            return body.to_string();
+        }
+    }
+    inner.to_string()
+}
+
+/// `/Users/rakesh/Projects/app/crates/core/src/lib.rs` → `…/src/lib.rs`.
+///
+/// Only deep absolute paths, because those are the ones whose interesting end
+/// gets cut off. A short path is already readable and is left exactly as it is.
+fn shorten_path(token: &str) -> String {
+    let bare = token.trim_start_matches('~');
+    if !bare.starts_with('/') {
+        return token.to_string();
+    }
+    let segments: Vec<&str> = bare.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() <= 2 {
+        return token.to_string();
+    }
+    format!("…/{}", segments[segments.len() - 2..].join("/"))
+}
+
 pub const TURN_ACTIVITY_EVENT_TYPE: &str = "dev.agentpod.turn.v1";
 
 pub struct TurnActivityRenderer;
@@ -398,6 +480,10 @@ pub struct TurnActivityRenderer;
 impl CustomEventRenderer for TurnActivityRenderer {
     fn event_type(&self) -> &str {
         TURN_ACTIVITY_EVENT_TYPE
+    }
+
+    fn label(&self) -> &str {
+        "Turn"
     }
     fn max_known_schema_version(&self) -> f64 {
         1.0
@@ -449,7 +535,7 @@ impl CustomEventRenderer for TurnActivityRenderer {
             let status = safe_string_field(entry, "status", FIELD_LABEL_MAX_CHARS);
             fields.push(CustomEventField {
                 label: status.unwrap_or_else(|| "did".to_string()),
-                value: title,
+                value: tool_title(&title),
             });
         }
 
@@ -490,6 +576,10 @@ pub struct PermissionRequestRenderer;
 impl CustomEventRenderer for PermissionRequestRenderer {
     fn event_type(&self) -> &str {
         PERMISSION_REQUEST_EVENT_TYPE
+    }
+
+    fn label(&self) -> &str {
+        "Permission"
     }
     fn max_known_schema_version(&self) -> f64 {
         1.0
@@ -592,6 +682,9 @@ mod tests {
         fn event_type(&self) -> &str {
             self.event_type
         }
+        fn label(&self) -> &str {
+            "Fixture"
+        }
         fn max_known_schema_version(&self) -> f64 {
             self.max_version
         }
@@ -607,6 +700,9 @@ mod tests {
     impl CustomEventRenderer for TitleReader {
         fn event_type(&self) -> &str {
             "test.title.v1"
+        }
+        fn label(&self) -> &str {
+            "Title"
         }
         fn max_known_schema_version(&self) -> f64 {
             1.0
@@ -1299,6 +1395,23 @@ mod tests {
     }
 
     #[test]
+    fn a_turn_lists_what_it_did_not_the_argv_it_did_it_with() {
+        let mut turn = a_turn();
+        turn["tools"] = json!([{
+            "id": "c1",
+            "title": "bash -lc 'cargo test -p supermessage-core --lib /Users/rakesh/Projects/supermessage/crates/core/src/lib.rs'",
+            "status": "completed"
+        }]);
+        turn["counts"] = json!({ "total": 1, "failed": 0, "omitted": 0 });
+        let view = render_with(Box::new(TurnActivityRenderer), turn);
+        let fields = rendered_fields(&view);
+        assert_eq!(
+            fields[1].value, "cargo test -p supermessage-core --lib …/src/lib.rs",
+            "the shell wrapper and the path prefix are plumbing; the file is the point"
+        );
+    }
+
+    #[test]
     fn a_turn_says_one_thing_in_the_singular_and_stays_quiet_about_no_failures() {
         let mut turn = a_turn();
         turn["tools"] = json!([{ "id": "c1", "title": "Read a file", "status": "completed" }]);
@@ -1500,5 +1613,47 @@ mod tests {
             );
         }
         assert_eq!(registry.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod tool_title_tests {
+    use super::tool_title;
+
+    #[test]
+    fn a_command_spread_over_lines_becomes_one_line() {
+        assert_eq!(
+            tool_title("cargo test \\\n  --all-features"),
+            "cargo test --all-features"
+        );
+    }
+
+    #[test]
+    fn a_shell_wrapper_is_plumbing_not_what_it_did() {
+        assert_eq!(tool_title("bash -lc 'cargo test'"), "cargo test");
+        assert_eq!(tool_title("sh -c \"ls -la\""), "ls -la");
+        assert_eq!(tool_title("zsh -c 'git status'"), "git status");
+    }
+
+    #[test]
+    fn an_absolute_path_keeps_the_end_that_says_which_file() {
+        assert_eq!(
+            tool_title("cat /Users/rakesh/Projects/supermessage/crates/core/src/lib.rs"),
+            "cat …/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn a_short_path_is_already_readable_and_is_left_alone() {
+        assert_eq!(tool_title("cat src/lib.rs"), "cat src/lib.rs");
+        assert_eq!(tool_title("cat /etc/hosts"), "cat /etc/hosts");
+    }
+
+    #[test]
+    fn a_plain_sentence_of_a_title_is_not_a_command_and_is_untouched() {
+        assert_eq!(
+            tool_title("Read the deployment runbook"),
+            "Read the deployment runbook"
+        );
     }
 }
