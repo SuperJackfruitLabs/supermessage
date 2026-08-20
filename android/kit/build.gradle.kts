@@ -41,9 +41,10 @@ dependencies {
 // into it. A rule a build can check is a rule; a rule in a document is a
 // hope. See docs/superpowers/specs/2026-08-20-android-scaffold-design.md §3.
 //
-// configurations.all is deprecated on this Gradle/AGP combination in favour
-// of configurations.configureEach; the effect is the same, this is just the
-// modern spelling.
+// configurations.all is not deprecated; configurations.configureEach is the
+// lazy equivalent, evaluating its block only for configurations that are
+// actually resolved rather than eagerly for all of them. Preferred here for
+// that performance reason, not because .all is going away.
 configurations.configureEach {
     resolutionStrategy.eachDependency {
         check(!requested.group.startsWith("androidx.compose")) {
