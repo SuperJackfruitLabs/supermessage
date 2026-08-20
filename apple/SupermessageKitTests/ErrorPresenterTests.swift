@@ -27,7 +27,8 @@ struct ErrorPresenterTests {
         // Treating a network failure as a sign-out throws away a working
         // session every time a train enters a tunnel.
         #expect(ErrorPresenter.isAuthFailure(.Auth(detail: "m")))
-        for error in Self.all where !ErrorPresenter.isAuthFailure(error) {
+        for error in Self.all {
+            if case .Auth = error { continue }
             #expect(!ErrorPresenter.isAuthFailure(error), "\(error)")
         }
         #expect(!ErrorPresenter.isAuthFailure(.Network(detail: "m")))
