@@ -139,15 +139,15 @@ fun TimelineRow(
         is ItemView.MediaFile ->
             MediaFileRow(label = view.label, filename = view.filename, size = view.size, modifier = modifier)
 
-        // TODO(Task 5): render `view.view` as a DecisionCard. Until then,
-        // `label` keeps the row from going blank — an unlabelled placeholder
-        // for a real event reads as data loss, the same failure
-        // `ItemView.DateDivider`'s doc comment warns a hidden variant causes.
+        // A suite event — a Kaambaan card or run, a permission request,
+        // station status. `DecisionCard` renders the whole fallback-chain
+        // decision; see its own doc for the three states it handles.
         is ItemView.CustomEvent ->
-            Text(
-                view.label,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
+            DecisionCard(
+                view = view.view,
+                label = view.label,
+                eventType = view.eventType,
+                modifier = modifier,
             )
 
         // Deliberately nothing. A row for this would still occupy layout

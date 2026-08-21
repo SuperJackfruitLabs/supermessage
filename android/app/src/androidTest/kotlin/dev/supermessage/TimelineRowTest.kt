@@ -144,7 +144,10 @@ class TimelineRowTest {
         compose.onNodeWithTag("unread-marker").assertIsDisplayed()
         compose.onNodeWithText("a sunset").assertIsDisplayed()
         compose.onNodeWithText("report.pdf").assertIsDisplayed()
-        compose.onNodeWithText("Turn").assertIsDisplayed()
+        // `CustomEventView.Placeholder` renders its own quiet line rather
+        // than the row's `label` — see `DecisionCard.kt` and its own tests
+        // for the other two `CustomEventView` states.
+        compose.onNodeWithText("nothing usable").assertIsDisplayed()
         // `None` occupies no layout space at all — not an empty box, nothing.
         compose.onNodeWithTag("none-holder").onChildren().assertCountEquals(0)
     }
