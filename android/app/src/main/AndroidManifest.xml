@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
+      Without this the app cannot reach a homeserver at all: Android blocks
+      every socket and the core surfaces it as "error sending request for
+      url (…/_matrix/client/versions)" — a message that reads like the server
+      is down rather than like a missing declaration. It stayed invisible
+      until the secret store landed, because before that sign-in failed
+      earlier, inside load_or_create_passphrase, and never reached the
+      network to be blocked. INTERNET is install-time; there is no runtime
+      request to make.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
       Theme.Material3.DayNight.NoActionBar lives in com.google.android.material,
       not a declared dependency here, so AAPT fails to resolve it. The framework
       fallback below is light-only: a cold start under system dark mode shows a
