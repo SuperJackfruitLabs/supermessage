@@ -27,20 +27,47 @@ import dev.supermessage.kit.Session
 /**
  * The shell, gated on [Session.Phase] the way iOS gates at
  * `apple/Supermessage/RootView.swift:15-25`: [Session.Phase.STARTING] shows a
- * progress indicator, [Session.Phase.SIGNED_OUT] shows the login placeholder
- * (Task 4 replaces it with the real form), and [Session.Phase.SIGNED_IN]
- * shows the panes below — unchanged.
+ * progress indicator, [Session.Phase.SIGNED_OUT] shows [LoginScreen], and
+ * [Session.Phase.SIGNED_IN] shows the panes below — unchanged.
  *
  * `phase` defaults to [Session.Phase.SIGNED_IN] so every existing caller of
  * `RootScaffold()` — RootScaffoldTest's geometry tests among them — keeps
  * compiling and keeps seeing exactly what it saw before this gate existed.
+ *
+ * The five `login*` parameters carry the [LoginScreen] contract — the
+ * homeserver, its setter, the last failure, whether a sign-in is in flight,
+ * and the sign-in callback — straight through with plain values and
+ * defaults, deliberately not a [Session]. `MainActivity` is where those
+ * values actually come from: it owns the `RosterPreferences` and the
+ * `Session` this screen needs, and reaches down through `RootScaffold` with
+ * nothing more than what [LoginScreen] itself asks for. That keeps this
+ * composable, like [LoginScreen], free of `Session` and constructible with
+ * only default values — which is what lets `PhaseGateTest`'s
+ * `signedOutShowsLoginAndNoPanes` call `RootScaffold(phase =
+ * Session.Phase.SIGNED_OUT)` with nothing else and still see the "login" tag.
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-fun RootScaffold(modifier: Modifier = Modifier, phase: Session.Phase = Session.Phase.SIGNED_IN) {
+fun RootScaffold(
+    modifier: Modifier = Modifier,
+    phase: Session.Phase = Session.Phase.SIGNED_IN,
+    loginHomeserver: String = "",
+    onLoginHomeserverChange: (String) -> Unit = {},
+    loginFailure: String? = null,
+    loginBusy: Boolean = false,
+    onLoginSignIn: (username: String, password: String) -> Unit = { _, _ -> },
+) {
     when (phase) {
         Session.Phase.STARTING -> Starting(modifier)
-        Session.Phase.SIGNED_OUT -> LoginPlaceholder(modifier)
+        Session.Phase.SIGNED_OUT -> Box(modifier.fillMaxSize().testTag("login")) {
+            LoginScreen(
+                homeserver = loginHomeserver,
+                onHomeserverChange = onLoginHomeserverChange,
+                failure = loginFailure,
+                busy = loginBusy,
+                onSignIn = onLoginSignIn,
+            )
+        }
         Session.Phase.SIGNED_IN -> SignedIn(modifier)
     }
 }
@@ -54,23 +81,6 @@ private fun Starting(modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         CircularProgressIndicator()
-    }
-}
-
-/**
- * Deliberately minimal and obviously temporary: Task 4 replaces this with
- * `LoginScreen`. The "login" tag is the only contract this placeholder makes
- * with the gate test — nothing here is a form.
- */
-@Composable
-private fun LoginPlaceholder(modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .fillMaxSize()
-            .testTag("login"),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("Sign in (placeholder — Task 4)")
     }
 }
 
