@@ -149,9 +149,9 @@ class RootScaffoldTest {
     fun paneCountFollowsAWidthChangeDuringComposition() {
         var width by mutableStateOf(1200.dp)
         compose.setContent {
-            Box(Modifier.requiredSize(width, 800.dp)) { RootScaffold() }
+            Box(Modifier.requiredSize(width, 800.dp).testTag(ShellTag)) { RootScaffold() }
         }
-        compose.onNodeWithTag("pane-info").assertIsDisplayed()
+        assertWithinShell("pane-info")
 
         width = 840.dp
         compose.waitForIdle()
