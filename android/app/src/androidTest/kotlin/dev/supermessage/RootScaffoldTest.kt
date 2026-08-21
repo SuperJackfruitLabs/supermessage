@@ -1,6 +1,8 @@
 package dev.supermessage
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,6 +12,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -157,5 +160,38 @@ class RootScaffoldTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag("pane-info").assertDoesNotExist()
+    }
+
+    /**
+     * Tapping in the list pane opens the detail pane on a one-pane shell.
+     *
+     * The roster is not involved: this pins the SHELL's contract — that list-pane
+     * content is given a way to navigate — independently of what fills it. Before
+     * this existed, `onOpenRoom` updated state and nothing moved, which is
+     * invisible on a tablet (both panes always shown) and total on a phone.
+     */
+    @Test
+    fun tappingInTheListPaneOpensTheDetailPaneOnAPhone() {
+        compose.setContent {
+            Box(Modifier.requiredSize(411.dp, 800.dp).testTag(ShellTag)) {
+                RootScaffold(
+                    listPaneContent = { _, openDetail ->
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .testTag("list-pane-tap-target")
+                                .clickable(onClick = openDetail)
+                        )
+                    },
+                )
+            }
+        }
+
+        compose.onNodeWithTag("list-pane-tap-target").performClick()
+        compose.waitForIdle()
+
+        // 411dp fits every device this suite runs on (see the class doc), so
+        // assertIsDisplayed() here is meaningful and still device-independent.
+        compose.onNodeWithTag("pane-timeline").assertIsDisplayed()
     }
 }

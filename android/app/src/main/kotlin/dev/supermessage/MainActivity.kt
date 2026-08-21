@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
 
                     RootScaffold(
                         phase = phase,
-                        listPaneContent = {
+                        listPaneContent = { _, openDetail ->
                             Roster(
                                 sections = sections,
                                 hiddenInvitations = hiddenInvitations,
@@ -111,6 +111,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenRoom = { roomId ->
                                     vm.session.rooms.select(roomId)
                                     scope.launch { vm.session.open(roomId) }
+                                    openDetail()
                                 },
                                 onLoadAvatar = { roomId -> vm.session.avatars.load(roomId) },
                                 modifier = Modifier.fillMaxSize(),

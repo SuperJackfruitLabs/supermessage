@@ -17,12 +17,14 @@ import androidx.compose.material3.adaptive.layout.PaneScaffoldDirective
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.Session
+import kotlinx.coroutines.launch
 
 /**
  * The shell, gated on [Session.Phase] the way iOS gates at
@@ -78,7 +80,7 @@ fun RootScaffold(
     modifier: Modifier = Modifier,
     phase: Session.Phase = Session.Phase.SIGNED_IN,
     signedOutContent: @Composable () -> Unit = {},
-    listPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
+    listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit) -> Unit = { shellWidth, _ ->
         Pane("pane-roster", "Roster", shellWidth)
     },
 ) {
@@ -105,7 +107,7 @@ private fun Starting(modifier: Modifier = Modifier) {
 @Composable
 private fun SignedIn(
     modifier: Modifier = Modifier,
-    listPaneContent: @Composable (shellWidth: Dp) -> Unit,
+    listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit) -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         // Captured into a local before the nested pane lambdas: their
@@ -117,6 +119,11 @@ private fun SignedIn(
         val navigator = rememberListDetailPaneScaffoldNavigator<Nothing>(
             scaffoldDirective = directiveFor(panes),
         )
+        // navigateTo is suspend on this adaptive version (confirmed against
+        // ThreePaneScaffoldNavigator's actual signature, not assumed from the
+        // navigateBack() call below) — a scope is what lets listPaneContent's
+        // ordinary `() -> Unit` callback launch it.
+        val scope = rememberCoroutineScope()
 
         // Rule 2: when the shell narrows past three panes, an open info pane
         // must go away rather than be laid out where it no longer fits. This
@@ -151,7 +158,11 @@ private fun SignedIn(
         ListDetailPaneScaffold(
             directive = navigator.scaffoldDirective,
             value = navigator.scaffoldValue,
-            listPane = { listPaneContent(shellWidth) },
+            listPane = {
+                listPaneContent(shellWidth) {
+                    scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail) }
+                }
+            },
             detailPane = { Pane("pane-timeline", "Timeline", shellWidth) },
             extraPane = if (extraIsShown) {
                 { Pane("pane-info", "Room info", shellWidth) }
