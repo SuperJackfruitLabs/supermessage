@@ -68,7 +68,11 @@ import uniffi.supermessage_ffi.TimelineSnapshot
  *   actor. Injecting it — defaulting to [Dispatchers.IO] — is what lets a
  *   test supply a probe dispatcher instead of exercising a real thread pool,
  *   and it is what will let every later store built on this class be tested
- *   the same way, without a real `Core`.
+ *   the same way, without a real `Core`. It is `internal val`, not
+ *   `private`, for exactly one reason: a test in this module needs to read
+ *   the default back to assert it is actually [Dispatchers.IO] rather than
+ *   [Dispatchers.Default] — a change no test that only exercises an
+ *   explicitly-injected dispatcher could ever catch.
  * - **No `CoreEventSink`-equivalent marker protocol.** Swift's `login`,
  *   `restoreSession` and `timelineSubscribe` take a `CoreEventSink`, a local
  *   protocol that adds nothing but `Sendable` to the generated `EventSink` —
@@ -83,7 +87,7 @@ import uniffi.supermessage_ffi.TimelineSnapshot
  */
 class CoreClient(
     private val core: CoreInterface,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    internal val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
     /** Run one blocking call on [dispatcher]. */

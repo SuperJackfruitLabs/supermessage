@@ -71,6 +71,15 @@ class CoreClientTest {
         // without making the rest wait. `Dispatchers.IO` — this client's
         // default — is built to be blocked, so all 64 finish rather than
         // queueing behind however many cores this machine has.
+        //
+        // What this does NOT prove: it does not discriminate between
+        // `Dispatchers.IO` and `Dispatchers.Default`. On a machine with
+        // enough cores, `Default`'s pool serves 64 ten-millisecond blocking
+        // calls in a few queued batches well within any timeout this test
+        // could reasonably assert, so a wrong default would still pass here.
+        // This test only proves many concurrent blocking calls all
+        // complete; [defaultDispatcherIsIO] below is the guard on which
+        // dispatcher the default actually is.
         val core = FakeCore(blockMillis = 10)
         val client = CoreClient(core = core)
 
@@ -78,6 +87,21 @@ class CoreClientTest {
         jobs.forEach { it.join() }
 
         assertEquals(64, core.connectionStateCallCount)
+    }
+
+    /** a default-constructed client uses `Dispatchers.IO`, not the cooperative pool */
+    @Test
+    fun defaultDispatcherIsIO() {
+        // Deterministic, not a timing test. `manyBlockingCallsAtOnceDoNotStarveAnything`
+        // above proves many concurrent blocking calls all complete, but on a
+        // machine with enough cores that is equally true of `Dispatchers.IO`
+        // and the wrong choice, `Dispatchers.Default` — so it cannot catch
+        // someone changing the default. This assertion can: it reads the
+        // constructor's default value back directly, the same one
+        // `Task.detached` on iOS and `Dispatchers.Default` on Android are
+        // both wrong to be.
+        val client = CoreClient(core = FakeCore())
+        assertEquals(Dispatchers.IO, client.dispatcher)
     }
 }
 
