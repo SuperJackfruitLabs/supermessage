@@ -10,6 +10,8 @@ import org.junit.Test
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RichInline
 import uniffi.supermessage_core.RichListItem
+import uniffi.supermessage_core.RichTableRow
+import uniffi.supermessage_core.RichTableCell
 
 /**
  * `RichText` renders the core's already-parsed block tree — see that
@@ -109,5 +111,42 @@ class RichTextTest {
         compose.onNodeWithText("click here").assertIsDisplayed()
         compose.onAllNodesWithText("https://example.org/secret-path", substring = true)
             .assertCountEquals(0)
+    }
+
+    /**
+     * A table renders its header and every body row.
+     *
+     * Added after Task 2's review: `Table` was the one untested variant with
+     * real branching logic, and it is half of this task's wide-content
+     * requirement. A regression that dropped body rows, lost the header, or
+     * moved `horizontalScroll` onto an individual `Row` — which would break
+     * column alignment by letting each row scroll independently — compiles
+     * cleanly and would otherwise ship unnoticed.
+     */
+    @Test
+    fun aTableRendersItsHeaderAndEveryRow() {
+        fun cell(text: String) =
+            RichTableCell(inlines = listOf(RichInline.Text(text)))
+        compose.setContent {
+            RichText(
+                blocks = listOf(
+                    RichBlock.Table(
+                        header = listOf(cell("Host"), cell("State")),
+                        rows = listOf(
+                            RichTableRow(cells = listOf(cell("guild"), cell("idle"))),
+                            RichTableRow(cells = listOf(cell("ashram"), cell("busy"))),
+                        ),
+                    )
+                )
+            )
+        }
+        // Header, then both body rows: a renderer that emitted only the first
+        // row would still pass a header-only assertion.
+        compose.onNodeWithText("Host").assertIsDisplayed()
+        compose.onNodeWithText("State").assertIsDisplayed()
+        compose.onNodeWithText("guild").assertIsDisplayed()
+        compose.onNodeWithText("idle").assertIsDisplayed()
+        compose.onNodeWithText("ashram").assertIsDisplayed()
+        compose.onNodeWithText("busy").assertIsDisplayed()
     }
 }
