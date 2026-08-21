@@ -47,10 +47,25 @@ class RichTextFoldingTest {
     @Test
     fun brokenLinkKeepsText() {
         // Losing the target is a degradation; losing the sentence is a bug.
-        val folded = RichTextFolding.attributed(listOf(
+        // A blank href, which never reaches `URI(...)` at all — `isBlank()`
+        // short-circuits it first — and a genuinely unparseable one, which
+        // does: `URI(...)` throws a `URISyntaxException` on the space, so
+        // this is the case that actually exercises `runCatching`'s catch arm
+        // rather than `isUsableHref`'s earlier, cheaper check.
+        val blank = RichTextFolding.attributed(listOf(
             RichInline.Link("", listOf(RichInline.Text("still readable"))),
         ))
-        assertEquals("still readable", folded.text)
+        assertEquals("still readable", blank.text)
+        assertTrue("a blank href must not be kept as a link", blank.runs.none { it.link != null })
+
+        val unparseable = RichTextFolding.attributed(listOf(
+            RichInline.Link("http://exa mple.com", listOf(RichInline.Text("still readable too"))),
+        ))
+        assertEquals("still readable too", unparseable.text)
+        assertTrue(
+            "an unparseable href must not be kept as a link",
+            unparseable.runs.none { it.link != null },
+        )
     }
 
     /** "inline code is marked as code, not as plain text" */

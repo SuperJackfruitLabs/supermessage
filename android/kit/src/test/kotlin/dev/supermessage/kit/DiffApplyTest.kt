@@ -198,7 +198,20 @@ class DiffApplyTest {
         assertEquals(listOf(1), tracker.items)
     }
 
-    /** "a confirmed message keeps its place and its identity" */
+    /**
+     * "a confirmed message keeps its place and its identity"
+     *
+     * **This pins only `applyOps`' half of the rule.** Asserting that
+     * applying `Set(1, …)` leaves the list's shape and order unchanged holds
+     * for *any* `Set` that writes index 1 — including one that, at a layer
+     * above this one, arrived by removing the row and reinserting it under a
+     * new key. The rule's real enforcement is the core's projection (which
+     * must actually emit a `set` at a stable index rather than a
+     * remove-then-insert) and `:app`'s row `key` (which must actually be
+     * that stable identity, not the event id). Neither is this test's to
+     * prove; it only proves `applyOps` itself does not introduce movement or
+     * renaming that was not already in the ops it was given.
+     */
     @Test
     fun aConfirmationDoesNotMoveOrRenameTheRow() {
         // The rule the timeline spec assigns to this layer: when the server
@@ -219,7 +232,17 @@ class DiffApplyTest {
         assertEquals("the confirmation added or removed a row", before.size, after.size)
     }
 
-    /** "a confirmation that renames a row is a visible flicker" */
+    /**
+     * "a confirmation that renames a row is a visible flicker"
+     *
+     * **Also only half the rule, for the same reason as the test above.**
+     * This shows `applyOps` faithfully surfaces a `Set` that changes the id
+     * at an index — which is necessary for the rule above to mean anything,
+     * but is not itself proof that the core never emits such a `Set` for a
+     * real confirmation, or that `:app`'s row `key` would actually flicker
+     * if it did. Both of those live outside `applyOps` and outside what this
+     * file can assert on.
+     */
     @Test
     fun renamingOnConfirmationIsCaught() {
         // The failure mode, stated: keyed by the event's *address* rather

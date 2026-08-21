@@ -14,7 +14,7 @@ import uniffi.supermessage_core.SearchResultDto
 sealed class SearchState {
     /** Nothing typed. The only state that may show the invitation to
      * search. */
-    object Idle : SearchState()
+    data object Idle : SearchState()
 
     /** Something typed, not yet run. Says how to run it rather than
      * pretending nothing has happened. */

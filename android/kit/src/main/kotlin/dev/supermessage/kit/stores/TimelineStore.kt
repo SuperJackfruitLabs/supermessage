@@ -179,7 +179,7 @@ class TimelineStore(
      * a homeserver — the inversion above was invisible until this had a
      * name.
      */
-    fun applyPaginationResult(reachedStart: Boolean) {
+    internal fun applyPaginationResult(reachedStart: Boolean) {
         _canPaginate.value = !reachedStart
     }
 

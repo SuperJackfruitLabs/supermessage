@@ -15,7 +15,13 @@ import java.util.Locale
  * never a precision nobody asked for.
  *
  * Takes `now` rather than reading the clock, so the rules can be tested at a
- * fixed instant instead of being restated in the test.
+ * fixed instant instead of being restated in the test. [locale] is the same
+ * kind of seam: a device's default locale changes what "EEE" and "d MMM"
+ * actually spell out — `weekdayThenDate`'s own length check
+ * (`recent.length <= 4`) is true of "Wed" and false of a locale whose
+ * abbreviated weekday is longer — so a test that never passes one explicitly
+ * is really pinned to whichever locale the machine running it happens to
+ * default to.
  */
 object RelativeTime {
 
@@ -23,6 +29,7 @@ object RelativeTime {
         ms: ULong?,
         now: Instant,
         zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
     ): String {
         if (ms == null) return ""
         val then = Instant.ofEpochMilli(ms.toLong())
@@ -37,21 +44,21 @@ object RelativeTime {
         val nowDate = now.atZone(zone).toLocalDate()
         if (thenDate == nowDate) {
             return DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
-                .withLocale(Locale.getDefault())
+                .withLocale(locale)
                 .format(then.atZone(zone))
         }
 
         // A weekday only means something while it is unambiguous. Beyond six
         // days "Tuesday" could be either of two Tuesdays.
         if (elapsedSeconds < 60L * 60 * 24 * 6) {
-            return DateTimeFormatter.ofPattern("EEE", Locale.getDefault())
+            return DateTimeFormatter.ofPattern("EEE", locale)
                 .format(then.atZone(zone))
         }
 
         // No year within this one: it is noise on all but a handful of rows.
         val sameYear = thenDate.year == nowDate.year
         val pattern = if (sameYear) "d MMM" else "d MMM yyyy"
-        return DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
+        return DateTimeFormatter.ofPattern(pattern, locale)
             .format(then.atZone(zone))
     }
 }

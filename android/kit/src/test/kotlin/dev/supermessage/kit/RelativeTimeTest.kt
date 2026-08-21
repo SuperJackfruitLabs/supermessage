@@ -2,6 +2,7 @@ package dev.supermessage.kit
 
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,6 +13,18 @@ class RelativeTimeTest {
      * instant in one zone rather than wherever the runner happens to be. */
     private val zone = ZoneId.of("UTC")
 
+    /**
+     * Fixed for the same reason as [zone]: `RelativeTime.label` formats with
+     * `Locale.getDefault()` when none is given, and `weekdayThenDate`'s own
+     * assertion (`recent.length <= 4`) is only true of English's "Wed" — a
+     * locale whose abbreviated weekday runs longer would fail that assertion
+     * even though the *rule* being tested (a weekday within the week, a date
+     * beyond it) still held. Pinning the locale here is what makes this
+     * suite pass or fail on the rule rather than on whatever locale happens
+     * to be default wherever it runs.
+     */
+    private val locale = Locale.US
+
     /** A Wednesday, mid-afternoon UTC. */
     private val now = Instant.ofEpochSecond(1_755_700_000)
 
@@ -19,7 +32,7 @@ class RelativeTimeTest {
         ((now.epochSecond - seconds) * 1000).toULong()
 
     private fun label(seconds: Long): String =
-        RelativeTime.label(ago(seconds), now, zone)
+        RelativeTime.label(ago(seconds), now, zone, locale)
 
     /** "the first minute is now, not zero" */
     @Test
@@ -59,6 +72,6 @@ class RelativeTimeTest {
     /** "nothing to say says nothing" */
     @Test
     fun noTimestamp() {
-        assertEquals("", RelativeTime.label(null, now, zone))
+        assertEquals("", RelativeTime.label(null, now, zone, locale))
     }
 }

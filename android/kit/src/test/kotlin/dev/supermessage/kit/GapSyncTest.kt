@@ -233,4 +233,80 @@ class GapSyncTest {
 
         assertTrue(published.isEmpty())
     }
+
+    /**
+     * "resume undoes stop, so handle applies envelopes again" — not from
+     * Swift, which has no [GapSync.resume] to test at all. Direct coverage
+     * for the half of `RoomsStore.resume`'s recovery this class actually
+     * owns: without it, the *first* `stop()` in a process's life — every
+     * `signOut` — would leave `handle`'s own `if (stopped) return` guard
+     * permanently tripped, and a later sign-in's roster or timeline would
+     * stay empty forever, silently.
+     */
+    @Test
+    fun resumeAfterStopLetsHandleApplyEnvelopesAgain() = runTest {
+        val published = mutableListOf<List<Int>>()
+        val sync =
+            GapSync(
+                scope = this,
+                resync = { Snapshot(subject = "s", seq = 0uL, items = emptyList()) },
+                onUpdate = { published.add(it) },
+            )
+
+        sync.stop()
+        sync.handle(subject = "s", seq = 1uL, ops = listOf(DiffOp.Append(listOf(1))))
+        assertTrue("stop should still be in effect", published.isEmpty())
+
+        sync.resume()
+        // The tracker's own sequence was never advanced by the ignored
+        // envelope above — `handle`'s `stopped` guard returns before
+        // `tracker.apply` ever runs — so the next live envelope is still
+        // seq 1, not seq 2.
+        sync.handle(subject = "s", seq = 1uL, ops = listOf(DiffOp.Append(listOf(1))))
+
+        assertEquals("resume must let handle apply again", listOf(listOf(1)), published)
+    }
+
+    /**
+     * "a resync already in flight when stop/resume run is still discarded
+     * on landing" — the generation bump [GapSync.resume]'s own KDoc
+     * documents and calls out as easy to get wrong: a resync launched
+     * before [GapSync.stop] can still be genuinely in flight when
+     * [GapSync.resume] runs, and simply clearing `stopped` would let that
+     * stale resync land later with its *original* captured generation still
+     * matching the current one, rolling a fresh session back to a torn-down
+     * one's snapshot.
+     */
+    @Test
+    fun aResyncInFlightAcrossStopAndResumeIsStillDiscarded() = runTest {
+        val gate = Gate()
+        val published = mutableListOf<List<Int>>()
+        val sync = GapSync(scope = this, resync = { gate.resync() }, onUpdate = { published.add(it) })
+
+        sync.handle(subject = "s", seq = 5uL, ops = listOf(DiffOp.Append(listOf(5)))) // gap -> resync
+        testScheduler.runCurrent()
+
+        // The teardown/recovery `Session` drives on a sign-out/sign-in that
+        // races a still-in-flight resync: `stop()` on the old session,
+        // `resume()` beginning the new one, all before the old resync's
+        // `resync()` call has returned.
+        sync.stop()
+        sync.resume()
+
+        gate.resolve(seq = 9uL, items = listOf(7, 8, 9))
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(
+            "a resync started before stop/resume must not land in the new generation",
+            published.isEmpty(),
+        )
+
+        // The new generation must still be able to recover on its own.
+        sync.handle(subject = "s", seq = 4uL, ops = listOf(DiffOp.Append(listOf(4))))
+        testScheduler.runCurrent()
+        gate.resolve(seq = 4uL, items = listOf(1, 2))
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf(1, 2), published.last())
+    }
 }

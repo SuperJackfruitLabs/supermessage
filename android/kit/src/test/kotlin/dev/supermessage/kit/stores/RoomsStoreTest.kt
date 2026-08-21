@@ -154,6 +154,66 @@ class RoomsStoreTest {
         assertEquals(listOf("!a:x"), selected)
     }
 
+    /**
+     * "resume undoes clear's latch, so a later sign-in's diffs are not
+     * silently dropped" — not from Swift, which has no `RoomsStore.resume`
+     * at all. `clear()` calls `GapSync.stop()`, and without `resume()`
+     * undoing it, the *first* sign-out in a process's life would leave
+     * every later sign-in's roster permanently empty: `handle`'s own
+     * `sync.handle` is gated on `GapSync`'s `stopped` flag, which `stop()`
+     * never had a way back from before this fix. See `RoomsStore.resume`'s
+     * own KDoc for why `Session` calls this directly rather than relying on
+     * `seed`.
+     */
+    @Test
+    fun `resume after clear lets handle publish again`() = runTest {
+        val rooms = RoomsStore(client = CoreClient(core = FakeCore()), scope = this)
+        rooms.handle(
+            RoomDiffEnvelope(
+                channel = "sm://rooms/diff", subject = "", seq = 1uL,
+                ops = listOf(RoomDiffOp.Reset(values = listOf(row("!a:x", "Ganesha")))),
+            ),
+        )
+        assertEquals(listOf("!a:x"), rooms.rooms.value.map { it.room.id })
+
+        rooms.clear()
+        assertEquals(emptyList<RoomRow>(), rooms.rooms.value)
+
+        // seq 2 — genuinely the next envelope in sequence, so a rejection
+        // here can only be `stopped`'s doing, not `DiffTracker` treating it
+        // as an already-seen duplicate. Without resume(), this would be
+        // silently swallowed by GapSync's still-tripped `stopped` latch —
+        // the same failure mode a later sign-in's roster would show,
+        // permanently, after the first sign-out in a process's life.
+        rooms.handle(
+            RoomDiffEnvelope(
+                channel = "sm://rooms/diff", subject = "", seq = 2uL,
+                ops = listOf(RoomDiffOp.Reset(values = listOf(row("!b:x", "Ops")))),
+            ),
+        )
+        assertEquals(
+            "handle before resume must have done nothing, silently, without this",
+            emptyList<RoomRow>(),
+            rooms.rooms.value,
+        )
+
+        rooms.resume()
+        // The same envelope, replayed: `stop()`/`resume()` never touched the
+        // tracker's own sequence, so seq 2 is still the next one expected.
+        rooms.handle(
+            RoomDiffEnvelope(
+                channel = "sm://rooms/diff", subject = "", seq = 2uL,
+                ops = listOf(RoomDiffOp.Reset(values = listOf(row("!b:x", "Ops")))),
+            ),
+        )
+
+        assertEquals(
+            "resume must let a later sign-in's diffs publish again",
+            listOf("!b:x"),
+            rooms.rooms.value.map { it.room.id },
+        )
+    }
+
     private class FakeCore : CoreInterface {
         override fun account(): AccountDto = throw NotImplementedError()
         override fun attachmentDiscard(token: String): Unit = throw NotImplementedError()

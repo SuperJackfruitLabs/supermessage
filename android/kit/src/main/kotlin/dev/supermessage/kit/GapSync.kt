@@ -218,10 +218,23 @@ class GapSync<T>(
      * to recover from teardown. The old one's own `finally` clears
      * [resyncing] whenever it actually completes, whether or not [resume]
      * was ever called, and the generation bump above is what makes its
-     * result harmless if it lands after this. The practical cost is narrow:
-     * a `seed` called immediately after [resume], while that stale resync
-     * is still resolving, is a no-op until it does — self-healing within
-     * one round trip, not a second permanent freeze.
+     * result harmless if it lands after this.
+     *
+     * **The practical cost is not as narrow as "self-healing within one
+     * round trip" would suggest, and that phrase used to appear here.** A
+     * `seed` called immediately after [resume], while that stale resync is
+     * still resolving, does not queue behind it or retry once it clears —
+     * `performResync`'s own `if (resyncing) return` guard makes it a no-op,
+     * full stop. The stale resync's snapshot then lands and is correctly
+     * discarded (`generation != this.generation`), but nothing re-issues the
+     * seed that was actually needed: the caller gets a store that is empty,
+     * or holds only what it had before, until *something else* asks again —
+     * the next envelope that happens to arrive as a fresh gap, or a caller
+     * invoking `seed` a second time. `RoomsStore.resume`'s own caller,
+     * `Session`, avoids the worst of this by calling [resume] before the
+     * pump is even handed back to the core, so a stale resync from a prior
+     * session is rarely still in flight by the time anything asks again —
+     * but "rarely" is not "never", and nothing here forces a retry if it is.
      *
      * ## Where callers reach this
      *
