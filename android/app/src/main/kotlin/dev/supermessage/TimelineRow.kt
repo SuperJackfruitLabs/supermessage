@@ -159,9 +159,15 @@ fun TimelineRow(
     }
 }
 
-/** A quiet line about the room rather than in it. */
+/**
+ * A quiet line about the room rather than in it.
+ *
+ * Not `private`: [Timeline] reuses this to draw a collapsed
+ * [dev.supermessage.kit.DisplayRow.MembershipRun] with the same visual
+ * treatment as any other system line, rather than inventing a second one.
+ */
 @Composable
-private fun SystemLine(text: String, modifier: Modifier = Modifier) {
+internal fun SystemLine(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         style = MaterialTheme.typography.labelSmall,

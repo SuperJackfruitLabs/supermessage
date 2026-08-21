@@ -65,6 +65,27 @@ class TimelineTest {
     private fun ascendingRows(count: Int): List<TimelineRowDto> =
         (1..count).map { row(id = "$it", body = "row $it", timestampMs = it.toULong() * 1_000uL) }
 
+    /** A membership row: kind and `detail` are what `collapseMembershipRuns` groups on. */
+    private fun membershipRow(id: String, sender: String, verb: String, timestampMs: ULong): TimelineRowDto {
+        val item = TimelineItemDto(
+            id = id, eventId = id, kind = "membership", msgtype = null, detail = verb,
+            sender = "@$sender:x", senderDisplayName = sender, senderAvatar = null, body = null,
+            formattedBody = null, media = null, customPayload = null, timestampMs = timestampMs,
+            isOwn = false, sendState = null, replyTo = null, edited = false,
+            reactions = emptyList(), readBy = emptyList(), editable = false,
+        )
+        return TimelineRowDto(
+            item = item,
+            view = ItemView.System(text = "$sender $verb"),
+            senderName = sender,
+            senderShort = sender,
+            membershipVerb = verb,
+            replyQuote = null,
+            canReplyOrReact = false,
+            replyPreview = null,
+        )
+    }
+
     /**
      * Rule 1: the room opens at its newest message, fully visible.
      *
@@ -266,5 +287,69 @@ class TimelineTest {
         typingLine = null
         compose.waitForIdle()
         compose.onNodeWithTag("typing-line").assertDoesNotExist()
+    }
+
+    /**
+     * A run of identical membership changes collapses into one line.
+     *
+     * Found on a device: eight consecutive "Annapurna … updated their
+     * membership" rows filled the screen. `:kit` has collapsed these since
+     * the port; the container simply never called it.
+     */
+    @Test
+    fun aRunOfMembershipChangesCollapses() {
+        val senders = listOf("Ganesha", "Krishna", "Annapurna", "Surya", "A5", "A6", "A7", "A8")
+        val fixed = senders.mapIndexed { index, sender ->
+            membershipRow(
+                id = "${index + 1}",
+                sender = sender,
+                verb = "updated their membership",
+                timestampMs = (index + 1).toULong() * 1_000uL,
+            )
+        }
+
+        compose.setContent {
+            Timeline(
+                rows = fixed,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+            )
+        }
+
+        // One collapsed line, not eight identical ones.
+        compose.onNodeWithText("Ganesha, Krishna and 6 others updated their membership")
+            .assertIsDisplayed()
+        // The rows that fed the run are no longer drawn individually.
+        compose.onNodeWithTag("row-2").assertDoesNotExist()
+        compose.onNodeWithTag("row-8").assertDoesNotExist()
+    }
+
+    /**
+     * Runs break on a different verb — "three joined" and "one left" stay two
+     * sentences rather than becoming one that is true of neither.
+     */
+    @Test
+    fun aDifferentVerbStartsANewRun() {
+        val fixed = listOf(
+            membershipRow(id = "1", sender = "Ganesha", verb = "joined the room", timestampMs = 1_000uL),
+            membershipRow(id = "2", sender = "Krishna", verb = "left the room", timestampMs = 2_000uL),
+        )
+
+        compose.setContent {
+            Timeline(
+                rows = fixed,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+            )
+        }
+
+        compose.onNodeWithText("Ganesha joined the room").assertIsDisplayed()
+        compose.onNodeWithText("Krishna left the room").assertIsDisplayed()
     }
 }

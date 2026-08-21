@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.supermessage.kit.DisplayRow
 import dev.supermessage.kit.TimelineGrouping
 import dev.supermessage.kit.stores.LiveStore
 import java.time.Instant
@@ -94,11 +95,23 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * show ([LiveStore.isLive]); nothing here duplicates that check to decide
  * *whether* to render it, only *where*.
  *
+ * ## Membership runs — collapsed after grouping, before reversing
+ *
+ * [rows] is fed through [TimelineGrouping.collapseMembershipRuns] before
+ * anything else touches it, so a run of consecutive "updated their
+ * membership" rows becomes one [DisplayRow.MembershipRun] rather than one
+ * line per row — the failure [TimelineGrouping.collapseMembershipRuns]'s own
+ * doc names, found on a device that drew eight of them in a row. Collapsing
+ * happens **before** [newestFirst]'s `asReversed()`: runs are consecutive in
+ * the chronological order [rows] already arrives in, so collapsing first and
+ * reversing the (shorter) result keeps the newest-first contract with one
+ * less thing to reason about than reversing first would.
+ *
  * ## What this does not do
  *
- * No swipe-to-reply, no avatar cache, no membership-run collapsing: none of
- * those are in this composable's signature, and inventing parameters for
- * them here would be guessing at a wiring this task was not given.
+ * No swipe-to-reply, no avatar cache: neither is in this composable's
+ * signature, and inventing parameters for them here would be guessing at a
+ * wiring this task was not given.
  */
 @Composable
 fun Timeline(
@@ -132,8 +145,11 @@ fun Timeline(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    // Newest first: see the class doc's "Feed order" section.
-    val newestFirst = rows.asReversed()
+    // Collapse membership runs first — they are consecutive in the
+    // chronological order `rows` already arrives in — then reverse. See the
+    // class doc's "Feed order" and "Membership runs" sections.
+    val displayRows = remember(rows) { TimelineGrouping.collapseMembershipRuns(rows) }
+    val newestFirst = displayRows.asReversed()
 
     // Exact, not a tuned threshold — `derivedStateOf` so scrolling a single
     // pixel does not recompose anything that reads this; it only changes
@@ -179,18 +195,27 @@ fun Timeline(
     }
 
     // Grouping applied here, the row's own header rendered by TimelineRow.
+    // Exhaustive over DisplayRow — no `else` — so a third variant added later
+    // is a compile error here rather than a blank row.
     @Composable
-    fun HistoryRow(row: TimelineRowDto) {
-        TimelineRow(
-            row = row,
-            now = Instant.now(),
-            continuesRun = continuesRun[row.item.id] ?: false,
-            attribution = if (singleSpeaker) row.senderShort else row.senderName,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .testTag("row-${row.item.id}"),
-        )
+    fun HistoryRow(display: DisplayRow) {
+        val rowModifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .testTag("row-${display.id}")
+        when (display) {
+            is DisplayRow.Row ->
+                TimelineRow(
+                    row = display.row,
+                    now = Instant.now(),
+                    continuesRun = continuesRun[display.row.item.id] ?: false,
+                    attribution = if (singleSpeaker) display.row.senderShort else display.row.senderName,
+                    modifier = rowModifier,
+                )
+
+            is DisplayRow.MembershipRun ->
+                SystemLine(text = display.text, modifier = rowModifier)
+        }
     }
 
     @Composable
@@ -227,11 +252,11 @@ fun Timeline(
                     // "the reasoning and the tool calls happened before the
                     // answer". The newest message stays at the very bottom.
                     val newest = newestFirst.first()
-                    item(key = newest.item.id) { HistoryRow(newest) }
+                    item(key = newest.id) { HistoryRow(newest) }
                     item(key = "live-turn") { LiveTurnCell() }
-                    items(newestFirst.drop(1), key = { it.item.id }) { row -> HistoryRow(row) }
+                    items(newestFirst.drop(1), key = { it.id }) { row -> HistoryRow(row) }
                 } else {
-                    items(newestFirst, key = { it.item.id }) { row -> HistoryRow(row) }
+                    items(newestFirst, key = { it.id }) { row -> HistoryRow(row) }
                 }
                 if (isPaginating) {
                     item(key = "pagination-spinner") {
