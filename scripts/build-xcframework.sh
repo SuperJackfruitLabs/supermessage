@@ -59,9 +59,17 @@ done
 echo "==> generating Swift bindings"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
+# `--no-format` is what makes this reproducible. UniFFI shells out to
+# `swiftformat` if it happens to be on PATH and silently skips it if not, so the
+# same Rust produced two very different files depending on whose machine ran it
+# — 2,265 insertions and 2,828 deletions of pure reformatting between a laptop
+# without the tool and a CI runner whose image ships it. The bindings are
+# checked in and diffed against, so "formatted by whoever last ran this" is not
+# a property they can have.
 cargo run -q -p supermessage-ffi --bin uniffi-bindgen -- generate \
     --library "target/aarch64-apple-ios/$PROFILE_DIR/$LIB" \
     --language swift \
+    --no-format \
     --out-dir "$STAGE"
 
 # UniFFI emits `<name>FFI.modulemap`; an XCFramework wants it called
