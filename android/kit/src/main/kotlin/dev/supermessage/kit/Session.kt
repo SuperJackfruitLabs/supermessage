@@ -92,11 +92,13 @@ import uniffi.supermessage_ffi.collectMentions
  *   needs to read the job back to assert it actually finishes on `signOut`
  *   and actually restarts on a later `signIn`. Nothing outside this module
  *   sees either.
- * - **[start] and [signIn] both undo a prior `signOut`'s teardown before
- *   handing anything back to the core** — `pump.reset()` and
- *   `rooms.resume()`, both called before [pump] is registered via
- *   `restoreSession`/`login`. Two independent instances of the same defect
- *   class, both absent from Swift, both confirmed rather than assumed:
+ * - **[start] and [signIn] both undo a prior `signOut`'s teardown — or a
+ *   still-active drain, if there was no `signOut` at all — before handing
+ *   anything back to the core** — `pump.finish()`, `drainJob?.cancel()` and
+ *   `drainJob = null` (the same three lines `signOut` itself runs), then
+ *   `pump.reset()` and `rooms.resume()`, all before [pump] is registered via
+ *   `restoreSession`/`login`. Three independent instances of the same defect
+ *   class, all absent from Swift, all confirmed rather than assumed:
  *   - **`pump.reset()`.** Swift's [pump] is a `private let` built once and
  *     never touched again — `apple/SupermessageKit/Session.swift:48` —
  *     because a Swift `AsyncStream` has no equivalent gap to fall into
@@ -114,6 +116,22 @@ import uniffi.supermessage_ffi.collectMentions
  *     (`apple/Supermessage/RootView.swift:12`), signing out and back in on
  *     that same instance (`apple/Supermessage/Panels/AccountPanel.swift:67`),
  *     with nothing in `EventPump.swift` that plays [reset]'s role.
+ *   - **The `pump.finish()`/`drainJob?.cancel()`/`drainJob = null` teardown
+ *     ahead of `pump.reset()`.** A narrower, later find than the two above:
+ *     [reset] by itself only swaps [EventPump]'s channel, and does nothing
+ *     about whichever coroutine is still collecting the old one. Calling
+ *     [start] or [signIn] on a `Session` that is already signed in and
+ *     draining — no `signOut` in between — left that collector suspended on
+ *     the orphaned old channel forever, while [beginDraining]'s own
+ *     `drainJob != null` guard saw a still-non-null, still-active job and
+ *     never started a new one on the fresh channel. Every event pushed
+ *     afterward landed in a channel nobody was reading — the identical
+ *     silent-failure shape as the `pump.reset()` defect above, one call
+ *     earlier. Running `signOut`'s own teardown unconditionally here closes
+ *     it: `finish`, `cancel` and setting [drainJob] to `null` are each
+ *     idempotent on an already-torn-down pump, so repeating them costs
+ *     nothing when a real `signOut` already ran. See `EventPump.reset`'s own
+ *     KDoc for the full reasoning.
  *   - **`rooms.resume()`.** [rooms] and [timeline] are each built once, here,
  *     for this object's whole lifetime, and each owns a `GapSync` whose
  *     `stop()` — called from `clear()` on every `signOut` — was, until this
@@ -130,10 +148,15 @@ import uniffi.supermessage_ffi.collectMentions
  *     `.../TimelineStore.swift` each build their one `GapSync` once, inside
  *     `init`, never rebuilt.
  *
- *   This class's `SessionTest` proves both end to end — the sign-out/
- *   sign-in cycle it drives pushes both a `Connection` event (isolating the
- *   pump fix from the latch fix) and a `TimelineDiff` (the actual symptom a
- *   reader would notice: sign out, sign back in, open a room, see nothing).
+ *   This class's `SessionTest` proves the pump fix and the timeline half of
+ *   the latch fix end to end — the sign-out/sign-in cycle it drives pushes
+ *   both a `Connection` event (isolating the pump fix from the latch fix)
+ *   and a `TimelineDiff` (the actual symptom a reader would notice: sign
+ *   out, sign back in, open a room, see nothing) — and a second test drives
+ *   the sign-in/sign-in cycle the same way to pin the drain-teardown fix.
+ *   **It does not exercise [rooms] directly**, so it is not evidence for
+ *   `RoomsStore.resume`; that half is `RoomsStoreTest`'s and `GapSyncTest`'s
+ *   to prove, and they do.
  *
  * Twelve stores are constructed below, not eleven — [avatars] and [faces]
  * are two separate [AvatarCache] instances, one keyed by room id and one
@@ -195,6 +218,20 @@ class Session(
             // roster no longer permanently latched off (see
             // RoomsStore.resume's KDoc — timeline needs no equivalent call
             // here; see GapSync.resume's KDoc for why).
+            //
+            // The teardown below — finish, cancel, clear — runs
+            // unconditionally, not only after a signOut: `EventPump.reset`
+            // alone only swaps the channel, and if this Session was already
+            // signed in and draining when start()/signIn() ran again, the
+            // old collector would be left suspended on an orphaned channel
+            // forever, with `drainJob` still non-null so `beginDraining`
+            // below would never start a new one — silence, not a crash. This
+            // is the exact same teardown `signOut` performs, made safe to
+            // repeat here because `finish`, `cancel` and `drainJob = null`
+            // are each idempotent on an already-torn-down pump.
+            pump.finish()
+            drainJob?.cancel()
+            drainJob = null
             pump.reset()
             rooms.resume()
             val restored = client.restoreSession(sink = pump)
@@ -218,8 +255,14 @@ class Session(
     suspend fun signIn(homeserver: String, username: String, password: String) {
         _failure.value = null
         try {
-            // Same reason as start(): undo a prior signOut's teardown
-            // before the core can possibly start talking again.
+            // Same reason as start(): undo a prior signOut's teardown — or a
+            // still-active drain, if this is called again without one —
+            // before the core can possibly start talking again. See start()'s
+            // own comment for why this runs unconditionally rather than only
+            // after a signOut.
+            pump.finish()
+            drainJob?.cancel()
+            drainJob = null
             pump.reset()
             rooms.resume()
             client.login(homeserver = homeserver, username = username, password = password, sink = pump)

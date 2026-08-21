@@ -80,6 +80,25 @@ import uniffi.supermessage_ffi.FfiEvent
  * safe to call from any thread, and this class holds no other mutable state
  * beyond [channel] itself for a marker like that to protect. [reset] has no
  * Swift counterpart at all — see the section above.
+ *
+ * ## The straggler case
+ *
+ * In principle, one event emitted by a session that is already being torn
+ * down can land after `Session` has moved on to a fresh one — the core calls
+ * [onEvent] on its own thread, concurrently with whatever teardown or
+ * `signIn` is running on `Session`'s confined one, so there is no lock that
+ * makes "finish, then no more events" atomic. This is self-correcting rather
+ * than corrupting, though, not a second version of the bug [reset] and
+ * `Session`'s own teardown fix: a straggler that reaches the *new* session's
+ * channel carries a `seq` from the old one's sequence, which `DiffTracker`
+ * reads as either a gap (if it is ahead of what the new session expects) or
+ * a duplicate to ignore (if it is behind) — never a silent corruption of the
+ * new session's state. And a straggler that instead triggers a resync
+ * inherits `GapSync`'s own protections: its generation is stamped in before
+ * launch, and by the time it would land, `resume`'s generation bump has
+ * already made it stale, so [GapSync]'s own checks discard it the same way
+ * they discard any other slow resync from a dead context. Worst case is one
+ * unnecessary resync, not a wrong one landing.
  */
 class EventPump : EventSink {
     @Volatile
@@ -125,9 +144,27 @@ class EventPump : EventSink {
      * this class's own KDoc for why this exists and why it is safe for every
      * store that already holds a reference to this pump.
      *
-     * Safe to call even when nothing was ever [finish]ed: replacing an
-     * unused, empty channel with another empty one is a no-op in every way
-     * that matters.
+     * **Not, by itself, safe to call on a pump that is still being drained.**
+     * [reset] only swaps [channel]; it does not close the one it replaces
+     * and does not touch whatever coroutine is collecting [events]. Call it
+     * on a pump nobody has [finish]ed and is actively draining — `Session`
+     * calling `pump.reset()` again without an intervening `signOut` is
+     * exactly this — and the existing collector is left suspended on an
+     * orphaned channel that will never close and never receive again, while
+     * `Session`'s own `drainJob != null` guard in `beginDraining` sees a
+     * still-non-null, still-active job and never starts a new collector on
+     * the fresh channel. The result is silent: every `onEvent` afterwards
+     * succeeds into a channel with no reader, no error and no crash.
+     *
+     * This was previously documented as "a no-op in every way that matters"
+     * even when nothing was [finish]ed. That was true only for an idle,
+     * never-drained pump, and false even then in one respect: a channel
+     * holding buffered-but-undrained events is discarded, silently, along
+     * with everything in it. Neither case is this method's problem to
+     * solve on its own — see `Session.start`'s and `Session.signIn`'s own
+     * KDoc for how the caller is required to tear down a possibly-still-
+     * draining pump (`finish`, cancel the drain job, clear the reference)
+     * before calling this.
      */
     fun reset() {
         channel = Channel(Channel.UNLIMITED)

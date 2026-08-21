@@ -234,6 +234,57 @@ class SessionTest {
     }
 
     /**
+     * "signing in again without an intervening signOut still drains events,
+     * rather than orphaning the collector on a stale channel" — a distinct
+     * defect from the one the sign-out/sign-in test above pins.
+     * `EventPump.reset` only swaps the channel; it does not close the one it
+     * replaces and does not touch whatever coroutine is already collecting
+     * `events`. A `Session` that is already signed in and draining, asked to
+     * `signIn` again — with no `signOut` in between, so `drainJob` is still
+     * non-null and still active — used to leave the existing collector
+     * suspended on the orphaned old channel forever, while
+     * `beginDraining`'s `drainJob != null` guard skipped starting a new one
+     * on the fresh channel `reset()` had just installed. Every event pushed
+     * after that landed in a channel with no reader: no error, no crash,
+     * just silence.
+     */
+    @Test
+    fun `signing in again without signing out still drains events`() = runTest {
+        val fake = FakeCore(restoreSessionResult = { false })
+        val session = sessionOf(fake, this)
+
+        session.signIn(homeserver = "https://x.example", username = "u", password = "p")
+        advanceUntilIdle()
+        assertEquals(Session.Phase.SIGNED_IN, session.phase.value)
+        val firstDrain = session.drainJob
+        assertNotNull("the first sign-in should have begun draining", firstDrain)
+        assertTrue(firstDrain!!.isActive)
+
+        session.pump.onEvent(FfiEvent.Connection(ConnectionState(state = "live", message = null)))
+        advanceUntilIdle()
+        assertEquals(
+            "an event pushed after the first sign-in must reach connection",
+            ConnectionStore.Connection.Live,
+            session.connection.state.value,
+        )
+
+        // No signOut() here — the whole point of this test.
+        session.signIn(homeserver = "https://x.example", username = "u", password = "p")
+        advanceUntilIdle()
+
+        session.pump.onEvent(FfiEvent.Connection(ConnectionState(state = "offline", message = null)))
+        advanceUntilIdle()
+        assertEquals(
+            "an event pushed after re-signing in without signing out first must still reach connection",
+            ConnectionStore.Connection.Offline,
+            session.connection.state.value,
+        )
+
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    /**
      * "`open(roomId:)` is idempotent" — calling it again for the room
      * already open does nothing, which `TimelineStore.swift:77`
      * documents (`subscribeTo`'s `if roomId == _roomId.value { return }`).
