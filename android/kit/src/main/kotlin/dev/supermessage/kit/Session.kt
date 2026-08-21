@@ -48,6 +48,13 @@ import uniffi.supermessage_ffi.collectMentions
  *
  * ## Where this differs from `apple/SupermessageKit/Session.swift`
  *
+ * - **`@MainActor @Observable` becomes [phase] and [failure] exposed as
+ *   [StateFlow]s**, matching every store under `stores/` (`RoomsStore`,
+ *   `TypingStore`, `SpacesStore`, and the rest) — see [DraftStore]'s doc
+ *   comment for why `@MainActor` becomes a documented, not checked,
+ *   invariant here rather than a compiler-enforced one. `Session` itself is
+ *   the same translation at the top of the object graph that every store
+ *   already carries at the leaves.
  * - **Takes a built [CoreClient], not a data directory.** Swift's
  *   `convenience init()` calls `CoreClient(dataDirectory: CoreClient.dataDirectory())`,
  *   which asks `FileManager` for the app's own container — a decision
@@ -85,6 +92,26 @@ import uniffi.supermessage_ffi.collectMentions
  *   needs to read the job back to assert it actually finishes on `signOut`
  *   and actually restarts on a later `signIn`. Nothing outside this module
  *   sees either.
+ * - **[start] and [signIn] both call `pump.reset()` before handing [pump]
+ *   to the core.** Swift's [pump] is a `private let` built once and never
+ *   touched again — `apple/SupermessageKit/Session.swift:48` — because a
+ *   Swift `AsyncStream` has no equivalent gap to fall into here. A Kotlin
+ *   `Channel`, once [EventPump.finish] closes it on `signOut`, cannot be
+ *   reopened: re-registering the same, already-finished [pump] with the
+ *   core on a later [signIn] would produce a collector that completes
+ *   immediately over a dead channel, with no error and no crash — just
+ *   silence, on every event from then on. `EventPump.reset` recreates only
+ *   the pump's internal channel, not the [EventPump] object itself, so
+ *   [timeline]'s own captured `sink` reference (set once, at construction)
+ *   never goes stale and never needs to be reconstructed. This is a
+ *   deliberate Android-side addition with no Swift counterpart — see
+ *   `EventPump`'s own KDoc for the full reasoning, and this class's
+ *   `SessionTest` for the sign-out/sign-in cycle that pins it. As far as
+ *   this port could establish, iOS carries the same latent bug: a single
+ *   `Session` living for the app's process lifetime
+ *   (`apple/Supermessage/RootView.swift:12`), signing out and back in on
+ *   that same instance (`apple/Supermessage/Panels/AccountPanel.swift:67`),
+ *   with nothing in `EventPump.swift` that plays [reset]'s role.
  *
  * Twelve stores are constructed below, not eleven — [avatars] and [faces]
  * are two separate [AvatarCache] instances, one keyed by room id and one
@@ -139,6 +166,10 @@ class Session(
      */
     suspend fun start(): Boolean {
         return try {
+            // Fresh channel before registering: see EventPump.reset's KDoc
+            // for why a pump that a prior signOut already finish()ed must
+            // not be handed back to the core as-is.
+            pump.reset()
             val restored = client.restoreSession(sink = pump)
             _phase.value = if (restored) Phase.SIGNED_IN else Phase.SIGNED_OUT
             if (restored) {
@@ -160,6 +191,10 @@ class Session(
     suspend fun signIn(homeserver: String, username: String, password: String) {
         _failure.value = null
         try {
+            // Same reason as start(): a fresh channel before this pump goes
+            // back to the core, so a sign-out/sign-in cycle does not hand
+            // the core a permanently closed one.
+            pump.reset()
             client.login(homeserver = homeserver, username = username, password = password, sink = pump)
             _phase.value = Phase.SIGNED_IN
             beginDraining()
@@ -546,11 +581,13 @@ class Session(
             // typing than the server-side timeout on the notice — see
             // `TypingStore.messagesArrived`. Own messages are excluded: this
             // reader's own send says nothing about who else is writing.
-            // **Ids, not names.** `senderDisplayName` is the profile's own
-            // name, not the timeline's composed attribution, and the typing
-            // store holds whichever label the core gave it — matching those
-            // two strings is how the indicator got stuck for minutes after
-            // the reply landed on iOS.
+            // **Ids, not names.** `TimelineRow.senderName` is the composed
+            // attribution — "Super Chotu (Hermes on Guild)" — and the typing
+            // store holds whichever `label` the core gave it ("Super
+            // Chotu"). Matching one of those two strings against the other
+            // is how the indicator got stuck for minutes after the reply
+            // landed on iOS; `item.sender`, the raw user id, is what both
+            // sides can actually agree on.
             val spoke = event.envelope.ops
                 .map { it.generic }
                 .flatMap { opValues(it) }

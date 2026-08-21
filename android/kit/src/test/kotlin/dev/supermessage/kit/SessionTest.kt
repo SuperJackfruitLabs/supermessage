@@ -1,5 +1,6 @@
 package dev.supermessage.kit
 
+import dev.supermessage.kit.stores.ConnectionStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -178,6 +179,38 @@ class SessionTest {
         val secondDrain = session.drainJob
         assertNotNull("a fresh sign-in must begin draining again", secondDrain)
         assertTrue("the new drain must not be the same, dead job", firstDrain !== secondDrain)
+
+        // Existing is not enough: `secondDrain` can be a distinct, "active"
+        // job that is nonetheless collecting a permanently closed channel —
+        // a Kotlin `Channel` cannot be reopened, so if `signIn` re-registers
+        // the same, already-`finish()`-ed pump with the core, the second
+        // drain completes immediately with zero elements and every later
+        // `onEvent` silently no-ops. Prove the pipe is actually live: push an
+        // event through the *same* `session.pump` reference used throughout
+        // this test and confirm it reaches the store that owns it.
+        //
+        // `connection`, not `timeline` or `rooms`: both of those are backed
+        // by `GapSync`, whose own `stop()` (called from `RoomsStore.clear`
+        // and `TimelineStore.clear`, both invoked by the `signOut` above) is
+        // a one-way latch with no way back — a *separate* defect this fix
+        // does not touch, found while writing this very test and reported
+        // alongside it rather than folded silently into this task. Routing
+        // the proof through `ConnectionStore.apply`, which `signOut` never
+        // touches and which carries no such latch, isolates what this test
+        // is actually about: whether an event reaches *any* store after the
+        // pump has been reset and re-registered, not whether every store's
+        // own logout bookkeeping also survives a second login.
+        session.pump.onEvent(FfiEvent.Connection(ConnectionState(state = "live", message = null)))
+        advanceUntilIdle()
+
+        assertEquals(
+            "an event pushed after a sign-out/sign-in cycle must still reach a store",
+            ConnectionStore.Connection.Live,
+            session.connection.state.value,
+        )
+
+        session.drainJob?.cancel()
+        advanceUntilIdle()
     }
 
     /**
@@ -220,6 +253,14 @@ class SessionTest {
      * notice; the same message from this account's own sender id must
      * not, since a reader's own send says nothing about who *else* is
      * writing (`Session.swift:405`'s comment on `spoke`).
+     *
+     * The second push below carries **two** items in a single `Append`, one
+     * from each of two different typers, and asserts both notices clear.
+     * That is deliberate, not incidental: a fixture with only one item per
+     * op would still pass against an `opValues` that returned just
+     * `values.first()` (or just `values.last()`) instead of flattening the
+     * whole list — this shape requires every item in the op to actually
+     * come through.
      */
     @Test
     fun `a message from someone typing clears their notice, but this account's own message does not`() = runTest {
@@ -232,9 +273,15 @@ class SessionTest {
         session.open(roomId)
         session.typing.handle(
             roomId = roomId,
-            users = listOf(TypingUserDto(userId = "@bob:x.example", displayName = "Bob", label = "Bob")),
+            users = listOf(
+                TypingUserDto(userId = "@bob:x.example", displayName = "Bob", label = "Bob"),
+                TypingUserDto(userId = "@carol:x.example", displayName = "Carol", label = "Carol"),
+            ),
         )
-        assertEquals(listOf("@bob:x.example"), session.typing.typers.value.map { it.userId })
+        assertEquals(
+            setOf("@bob:x.example", "@carol:x.example"),
+            session.typing.typers.value.map { it.userId }.toSet(),
+        )
 
         // This account's own message must not clear anyone else's notice —
         // it says nothing about who else is writing.
@@ -249,22 +296,30 @@ class SessionTest {
         advanceUntilIdle()
         assertEquals(
             "an own message must not clear someone else's typing notice",
-            listOf("@bob:x.example"),
-            session.typing.typers.value.map { it.userId },
+            setOf("@bob:x.example", "@carol:x.example"),
+            session.typing.typers.value.map { it.userId }.toSet(),
         )
 
-        // Bob's own message is what clears it.
+        // Bob's and Carol's messages, as two items of the *same* Append op,
+        // are what clears both notices.
         session.pump.onEvent(
             FfiEvent.TimelineDiff(
                 TimelineDiffEnvelope(
                     channel = "timeline", subject = roomId, seq = 2uL,
-                    ops = listOf(TimelineDiffOp.Append(listOf(row("bob-1", sender = "@bob:x.example", isOwn = false)))),
+                    ops = listOf(
+                        TimelineDiffOp.Append(
+                            listOf(
+                                row("bob-1", sender = "@bob:x.example", isOwn = false),
+                                row("carol-1", sender = "@carol:x.example", isOwn = false),
+                            ),
+                        ),
+                    ),
                 ),
             ),
         )
         advanceUntilIdle()
         assertTrue(
-            "a message from the typer should clear their own notice",
+            "a message from each typer should clear their own notice",
             session.typing.typers.value.isEmpty(),
         )
 
