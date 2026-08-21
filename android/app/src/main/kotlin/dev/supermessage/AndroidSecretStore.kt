@@ -30,9 +30,13 @@ import uniffi.supermessage_ffi.HostSecretStore
  * `RosterPreferences` uses DataStore because Compose wants a `Flow`; this
  * wants a blocking read. Opposite requirements, opposite tools.
  */
-class AndroidSecretStore(context: Context) : HostSecretStore {
+class AndroidSecretStore(
+    context: Context,
+    prefsName: String = PREFS,
+    private val alias: String = ALIAS,
+) : HostSecretStore {
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
 
     override fun get(key: String): String? {
         val stored = prefs.getString(key, null) ?: return null
@@ -86,11 +90,11 @@ class AndroidSecretStore(context: Context) : HostSecretStore {
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-        (ks.getEntry(ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let { return it }
+        (ks.getEntry(alias, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let { return it }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).apply {
             init(
                 KeyGenParameterSpec.Builder(
-                    ALIAS,
+                    alias,
                     KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
                 )
                     .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
@@ -109,7 +113,7 @@ class AndroidSecretStore(context: Context) : HostSecretStore {
 
     private fun forget(key: String) {
         prefs.edit().remove(key).commit()
-        runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS) }
+        runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(alias) }
     }
 
     /** Test seam: the stored ciphertext, to prove two writes differ. */
@@ -118,7 +122,7 @@ class AndroidSecretStore(context: Context) : HostSecretStore {
     /** Test seam: drop every stored value and the key itself. */
     internal fun clearForTest() {
         prefs.edit().clear().commit()
-        runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS) }
+        runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(alias) }
     }
 
     private companion object {

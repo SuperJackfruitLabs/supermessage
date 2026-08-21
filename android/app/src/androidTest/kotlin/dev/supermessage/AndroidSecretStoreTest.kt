@@ -16,7 +16,7 @@ class AndroidSecretStoreTest {
     private lateinit var store: AndroidSecretStore
 
     @Before fun setUp() {
-        store = AndroidSecretStore(context)
+        store = AndroidSecretStore(context, TEST_PREFS, TEST_ALIAS)
         store.clearForTest()
     }
 
@@ -76,7 +76,7 @@ class AndroidSecretStoreTest {
      */
     @Test fun aValueSurvivesANewInstance() {
         store.set("passphrase", "hunter2")
-        assertEquals("hunter2", AndroidSecretStore(context).get("passphrase"))
+        assertEquals("hunter2", AndroidSecretStore(context, TEST_PREFS, TEST_ALIAS).get("passphrase"))
     }
 
     /**
@@ -89,5 +89,19 @@ class AndroidSecretStoreTest {
         store.set("passphrase", "hunter2")
         val raw = store.rawForTest("passphrase")
         assertFalse(raw != null && raw.contains("hunter2"))
+    }
+
+    private companion object {
+        /**
+         * A store of its own, deliberately.
+         *
+         * Instrumented tests run under the app's OWN uid, so a test sharing
+         * the production alias shares the production KEY — and `clearForTest`
+         * deletes it. That silently destroyed the real signed-in session on
+         * every suite run, and no amount of restoring app data would fix it,
+         * because the ciphertext is unreadable once its key is gone.
+         */
+        const val TEST_PREFS = "secrets-test"
+        const val TEST_ALIAS = "dev.supermessage.secrets.test"
     }
 }
