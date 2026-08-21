@@ -130,7 +130,13 @@ An invalidated key must also be regenerated rather than reused, or every subsequ
 
 **No `setUserAuthenticationRequired`.** It reads as the safer setting and is the wrong one here: it makes secrets unreadable while the device is locked, which breaks background sync and restore-on-boot, and push is on the roadmap. iOS already meets this state and its own comment says the app should expect it rather than treat it as corruption. A chat client that cannot receive messages while in a pocket has traded its function for a security property the app sandbox already substantially provides.
 
-**Ciphertext goes in DataStore**, not SharedPreferences. `RosterPreferences` established DataStore in `:app`; one storage idiom beats two. A separate DataStore file (`secrets`) from the roster's, because their lifetimes differ — signing out clears one and not the other.
+**Ciphertext goes in `SharedPreferences`, not DataStore** — and this reverses the first instinct, so the reason matters.
+
+`RosterPreferences` uses DataStore, and one storage idiom would beat two. But `supermessage_core::secrets::SecretStore::get` is **synchronous** (`secrets.rs:66`) — the core calls it inline, inside `load_or_create_passphrase`, on whatever thread it is already on. So the foreign trait must be synchronous, and DataStore is deliberately async-only. Bridging them means `runBlocking` inside a callback invoked from Rust's tokio runtime: blocking a runtime worker thread on disk I/O, which is the one thing an async runtime asks you not to do.
+
+`SharedPreferences` is synchronous by design and is the right shape here. `RosterPreferences` needs a `Flow` for Compose; this needs a blocking read for FFI. Opposite requirements, so opposite tools — a file named `secrets`, separate from the roster's, since their lifetimes differ.
+
+Use `commit()` rather than `apply()` on write: `apply()` returns before the write reaches disk, and `set` must not claim success for a passphrase that is still in memory when the process dies.
 
 ## 5. What this must prove
 
