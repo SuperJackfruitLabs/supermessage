@@ -166,7 +166,7 @@ git add android/kit/ && git commit -m "Android kit: the reveal pacer"
 
 **Interfaces:**
 - Consumes: timeline DTOs from `:core` (`uniffi.supermessage_ffi.*`).
-- Produces: the grouping decision — when consecutive messages from one sender collapse into a run, and where headers and date dividers fall. `:app`'s timeline consumes it.
+- Produces: the grouping decision — when consecutive messages from one sender collapse into a run, when a run of membership events collapses into one line, and which silent rows drop out entirely. No date dividers: `TimelineGrouping.swift` has no such logic, so there is none to port. `:app`'s timeline consumes it.
 
 214 lines of tests against 144 of source: the tests are the larger artifact, which is the signal that this file is mostly rules.
 
