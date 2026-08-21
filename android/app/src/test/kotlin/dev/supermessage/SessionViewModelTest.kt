@@ -28,13 +28,28 @@ class SessionViewModelTest {
         assertEquals(vm.session, vm.session)
     }
 
-    /** Clearing the ViewModel signs the session out. */
+    /**
+     * [SessionViewModel.build] wires the `CoreInterface` it is handed all
+     * the way through to the `Session` it returns — this is a `Session`
+     * that actually talks to the core it was built with, not one that
+     * looks real but reaches nothing.
+     *
+     * This replaces an earlier `clearingSignsOut` test that asserted
+     * clearing the ViewModel calls the fake's `logout()`. That behaviour
+     * does not exist in production — see [SessionViewModel.onCleared]'s own
+     * KDoc for why it must not — so the old test's mutation could only ever
+     * break the test's own harness, never a real code path. It has been
+     * removed rather than kept as a decorative pass.
+     */
     @Test
-    fun clearingSignsOut() = runTest {
+    fun theSessionReachesTheCoreItWasBuiltWith() = runTest {
         val core = FakeCore()
         val vm = SessionViewModel.forTest(core)
-        vm.clearForTest()
-        assertEquals(1, core.logoutCalls)
+
+        val inviter = vm.session.inviter(roomId = "room-1")
+
+        assertEquals("the-fake-core-answered", inviter)
+        assertEquals(1, core.roomInviterCalls)
     }
 
     /**
@@ -42,25 +57,24 @@ class SessionViewModelTest {
      * pattern `:kit`'s `CoreClientTest` establishes: `private`, nested
      * inside the test class it belongs to, and every method this test does
      * not configure throws rather than returning a default that happens to
-     * work. [logout] is the exception — the one call `Session.signOut`
-     * actually makes on the path these tests exercise — and it counts
-     * rather than throwing, deliberately: a no-op here would let
-     * `clearingSignsOut` pass whether or not `signOut` was ever wired up to
-     * call it, which is exactly the trap `:kit`'s `TimelineStoreTest`
-     * documents about `NotImplementedError` being an `Error`, not an
-     * `Exception` — silence would look identical to success. Everything
-     * else `Session.signOut` reaches on this path (`RoomsStore.clear`,
-     * `TimelineStore.clear`, `SpacesStore.clear`, `AvatarCache.clear`,
-     * `EventPump.finish`, `StagedAttachment.discard`'s early return with
-     * nothing staged) is confirmed, by reading each one, to touch no
-     * `CoreInterface` method at all — so nothing else here needs a body.
+     * work. [roomInviter] is the one exception — `Session.inviter` calls it
+     * directly, with no `try`/`catch` swallowing a wrong answer into a
+     * default, which is exactly why it is the call
+     * [theSessionReachesTheCoreItWasBuiltWith] uses to prove the wiring:
+     * a `NotImplementedError` here (an `Error`, not an `Exception` —
+     * `:kit`'s `TimelineStoreTest` documents the same trap) would fail
+     * loudly rather than being caught and hidden, and a wrong return value
+     * would be visible directly in the assertion, not laundered through a
+     * `catch (e: Exception) { null }` the way most of `Session`'s other
+     * passthroughs are.
      */
     private class FakeCore : CoreInterface {
-        var logoutCalls: Int = 0
+        var roomInviterCalls: Int = 0
             private set
 
-        override fun logout() {
-            logoutCalls++
+        override fun roomInviter(roomId: String): String? {
+            roomInviterCalls++
+            return "the-fake-core-answered"
         }
 
         override fun account(): uniffi.supermessage_core.AccountDto = throw NotImplementedError()
@@ -82,6 +96,7 @@ class SessionViewModelTest {
         override fun leaveRoom(roomId: String): Unit = throw NotImplementedError()
         override fun login(homeserver: String, username: String, password: String, sink: EventSink): Unit =
             throw NotImplementedError()
+        override fun logout(): Unit = throw NotImplementedError()
         override fun markRoomRead(roomId: String): Unit = throw NotImplementedError()
         override fun mediaFetch(eventId: String): String? = throw NotImplementedError()
         override fun memberAvatar(mxcUri: String): String? = throw NotImplementedError()
@@ -90,7 +105,6 @@ class SessionViewModelTest {
         override fun roomAvatarFull(roomId: String): String? = throw NotImplementedError()
         override fun roomInfo(roomId: String): uniffi.supermessage_core.RoomInfoDto =
             throw NotImplementedError()
-        override fun roomInviter(roomId: String): String? = throw NotImplementedError()
         override fun roomsSnapshot(): uniffi.supermessage_ffi.RoomsSnapshot = throw NotImplementedError()
         override fun searchMessages(term: String, roomId: String?): List<uniffi.supermessage_core.SearchResultDto> =
             throw NotImplementedError()

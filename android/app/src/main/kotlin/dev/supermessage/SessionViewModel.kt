@@ -40,6 +40,20 @@ import uniffi.supermessage_ffi.CoreInterface
 class SessionViewModel(app: Application) : AndroidViewModel(app) {
     val session: Session = build(Core(dataDir = app.filesDir.path), viewModelScope)
 
+    /**
+     * Deliberately empty beyond `super.onCleared()`. See this class's own
+     * KDoc above for why a genuine clear must not mean "signed out".
+     *
+     * **If you are here to add `session.signOut()` because clearing feels
+     * like it should sign out: don't.** No test in `SessionViewModelTest`
+     * asserts that, and none should — `theSessionReachesTheCoreItWasBuiltWith`
+     * is what this class's coverage actually pins (that [build] wires the
+     * given `CoreInterface` through to the `Session` it returns), not that
+     * clearing the ViewModel signs anyone out. An earlier draft of that
+     * suite had exactly that test, asserting a fake `logout()` was called
+     * once a test-only teardown ran — it passed by exercising the test
+     * harness, not this method, and it was removed once that was noticed.
+     */
     override fun onCleared() {
         super.onCleared()
     }
@@ -59,8 +73,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
          * [build] factory the real constructor uses, handed a fake
          * [CoreInterface] and an ordinary [CoroutineScope] instead of
          * `viewModelScope`, wrapped in [Harness] so the test can read
-         * [Harness.session] and drive [Harness.clearForTest] without ever
-         * touching `Application` or `Core`.
+         * [Harness.session] without ever touching `Application` or `Core`.
          */
         internal fun forTest(
             core: CoreInterface,
@@ -78,13 +91,5 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         /** Built once, from the same [build] factory the real ViewModel uses. */
         val session: Session = build(core, scope)
-
-        /**
-         * Stands in for whatever screen later calls [Session.signOut] for
-         * real (see this class's own KDoc for why that is never
-         * [SessionViewModel.onCleared] itself) — proving the wiring [build]
-         * assembles here actually reaches the [CoreInterface] it was given.
-         */
-        internal suspend fun clearForTest() = session.signOut()
     }
 }
