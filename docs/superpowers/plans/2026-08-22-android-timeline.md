@@ -198,22 +198,40 @@ Render only the first inline of an `Emphasis` → `nestedEmphasisKeepsItsText` f
 
 **Name collision:** the composable and the core's DTO are both `TimelineRow`. Import the DTO and name the composable `TimelineRow` anyway — Kotlin resolves the call by position — but if that proves ambiguous at any call site, alias the import (`import uniffi.supermessage_core.TimelineRow as TimelineRowDto`) rather than renaming the composable, which the plan's later tasks call by name.
 
-`ItemView`'s six variants, verified:
+`ItemView`'s **ten** variants, read off the Rust source and the generated bindings:
 
 ```
+// data classes
 Bubble(muted: Boolean, blocks: List<RichBlock>)
 System(text: String)
 Placeholder(text: String)
 Image(alt: String, width: ULong?, height: ULong?)
-MediaFile(label: MediaFileLabel, filename: String, size: ULong?, mimetype: String?)
+MediaFile(label: MediaFileLabel, filename: String, size: ULong?, mimetype: String?)   // FILE | AUDIO | VIDEO
 CustomEvent(view: CustomEventView, label: String, eventType: String)
+// objects — no fields, and the half most easily dropped
+Emote
+UnreadMarker
+DateDivider
+None
 ```
+
+**Write the `when` with NO `else` branch.** Kotlin enforces exhaustiveness over a sealed
+class, so omitting `else` makes a future core variant a compile error rather than a
+silently blank row. That is deliberate: `DateDivider` exists as a variant *because* a host
+missed it when it was only a comment — iOS rendered "Unsupported event (dateDivider)" in
+the middle of a conversation (`item_view.rs:81`). An `else` branch would reintroduce
+exactly that failure mode.
+
+`DateDivider` carries no text; format the date from `row.item.timestampMs`, because
+"formatting reads a clock and a locale and both belong where the rendering is". Take the
+clock as a parameter rather than calling `System.currentTimeMillis()` inside the row — the
+roster's `RelativeTime` takes an injected clock for the same reason.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```kotlin
 /** Each ItemView variant renders something a reader can see. */
-@Test fun everyVariantRendersSomething()      // all six, no blank rows
+@Test fun everyVariantRendersSomething()      // ALL TEN, no blank rows
 /** A muted bubble (m.notice) is visually distinct but still legible. */
 @Test fun aMutedBubbleStillShowsItsText()
 /** Attribution comes from senderName; the row derives no names. */

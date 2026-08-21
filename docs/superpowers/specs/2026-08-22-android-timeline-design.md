@@ -59,7 +59,24 @@ It had no way down for weeks on iOS. In Compose this is a `nestedScroll` connect
 
 ## 4. What a row is
 
-`TimelineRow` carries `item: TimelineItemDto`, `view: ItemView`, and its attribution (`senderName`, plus a bridge-suffix-stripped variant). `ItemView` is a sealed class from the core with six shapes: `Bubble`, `System`, `Placeholder`, `Image`, `MediaFile`, `CustomEvent`.
+`TimelineRow` carries `item: TimelineItemDto`, `view: ItemView`, and its attribution (`senderName`, plus a bridge-suffix-stripped variant).
+
+`ItemView` is a sealed class from the core with **ten** variants — six carrying fields and four generated as Kotlin `object`s:
+
+| With fields | Fieldless (`object`) |
+|---|---|
+| `Bubble(muted, blocks)` | `Emote` |
+| `System(text)` | `UnreadMarker` |
+| `Placeholder(text)` | `DateDivider` |
+| `Image(alt, width, height)` | `None` |
+| `MediaFile(label, filename, size, mimetype)` | |
+| `CustomEvent(view, label, eventType)` | |
+
+**The four fieldless ones are the dangerous half**, and `DateDivider` has a history. From `item_view.rs:81`: *"This used to have no variant, and this function carried a note telling every caller to special-case the kind before asking. The desktop did. iOS did not, and put 'Unsupported event (dateDivider)' in the middle of a conversation — a contract in a comment is one a second host will eventually miss. As a variant, ignoring it fails to compile."*
+
+That last sentence is a Rust guarantee. **It holds on Android only if the `when` has no `else` branch** — Kotlin enforces exhaustiveness over a sealed class, but an `else` silently absorbs every variant added later. So: no `else`, ever, in the row's `when`. A new core variant must break the build, which is the entire point of it being a variant.
+
+`DateDivider` carries no text because *"formatting reads a clock and a locale and both belong where the rendering is"* — the date comes from the row's own `item.timestampMs`.
 
 **The view branches on `ItemView` and renders. It classifies nothing.** Which shape a row is, who to attribute it to, whether it is muted — all decided in the core, all already tested there.
 
