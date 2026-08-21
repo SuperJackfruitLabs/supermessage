@@ -50,8 +50,16 @@ dependencies {
     implementation(libs.adaptive)
     implementation(libs.adaptive.layout)
     implementation(libs.adaptive.navigation)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.datastore.preferences)
 
     testImplementation(libs.junit)
+    // SessionViewModelTest drives suspend functions via runTest — kotlinx's
+    // own test dispatcher, not this repo's real Dispatchers.IO. :kit exposes
+    // kotlinx-coroutines-core transitively (its api dependency), but not the
+    // test artifact, so :app needs its own like :kit's test source does.
+    testImplementation(libs.kotlinx.coroutines.test)
 
     androidTestImplementation(libs.androidx.test.junit)
     // androidx.test.ext:junit 1.2.1 no longer pulls in androidx.test:runner
