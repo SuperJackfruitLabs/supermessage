@@ -81,18 +81,21 @@ One direction, and no decisions along it:
 Session.rooms: RoomsStore
     └── rooms: StateFlow<List<RoomRow>>
             │
-            ├── RosterArrangement.sections(rows, view, showsInvitations, nowMs)
-            ├── RosterArrangement.hiddenInvitations(rows, showsInvitations)
-            └── RosterArrangement.state(row, now)
+            ├── RosterArrangement.sections(rows, view, showsInvitations, now)
+            │       └── RosterSection(id, title, detail, rows, attention)
+            │               └── RosterRow(row, state)   ← state arrives here
+            └── RosterArrangement.hiddenInvitations(rows, showsInvitations)
                     │
                     ▼
-              Roster ──► RoomRow(row, avatarUri, state, when, showsState)
+              Roster ──► RoomRow(row, avatarUri, state, when, showsState, hidesHost)
                             ├── row.identity.name, row.identity sigil
                             ├── row.preview
                             ├── row.affordance == RespondToInvitation
                             ├── AvatarCache.uri(roomId) ──► remember { decode }
                             └── RelativeTime.label(ms, now, locale)
 ```
+
+**Read `state` off the section's row, never per row.** `RosterArrangement.state(row, now)` exists but its own KDoc warns against it, and `RoomListView.swift:62-64` says why: *"The state arrives on the row. Asking per row would be a boundary crossing per visible room per re-render."* `sections` already carries it on each `RosterRow`.
 
 **Every ordering, grouping, section title and attention rule already has an answer** in `crates/supermessage-core/src/roster.rs`, which carries 13 tests of its own. `RosterArrangement` is a thin call into it, verified as such during the port.
 
