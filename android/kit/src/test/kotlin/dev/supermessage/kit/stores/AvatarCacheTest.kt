@@ -1,8 +1,14 @@
 package dev.supermessage.kit.stores
 
 import dev.supermessage.kit.CoreClient
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -113,7 +119,62 @@ class AvatarCacheTest {
         assertFalse(avatars.shouldFetch("!a:x"))
     }
 
-    private class FakeCore : CoreInterface {
+    /**
+     * "a cancelled load releases its in-flight guard" — the bug this pins.
+     *
+     * `load` is documented as safe to call from a row's `LaunchedEffect`,
+     * which Compose cancels every time the row leaves composition — on every
+     * scroll. `fetch` runs inside `CoreClient.run`'s `withContext`, which
+     * throws `CancellationException` when the caller is cancelled. Without a
+     * `finally`, that exception skips both `remember` and `rememberAbsent`
+     * and leaves the room latched in `fetching` forever: `shouldFetch` then
+     * returns `false` for the rest of the session and the row shows an empty
+     * circle — the exact symptom eviction already has a regression test for,
+     * arriving through cancellation instead.
+     *
+     * Real threads, not `runTest`'s virtual scheduler: the fake's
+     * `roomAvatar` blocks a real `Dispatchers.IO` thread behind a
+     * `CountDownLatch` so the test can hold the fetch open, cancel the
+     * loading coroutine while it is genuinely in flight, and only then let
+     * the core "answer" — the same shape a real cancelled network call takes.
+     */
+    @Test
+    fun `a cancelled load releases its in-flight guard`() {
+        val roomId = "!a:x"
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val fake = FakeCore(
+            roomAvatarBody = {
+                entered.countDown()
+                release.await(5, TimeUnit.SECONDS)
+                "data:image/png;base64,AAAA"
+            },
+        )
+        val avatars = AvatarCache(client = CoreClient(core = fake))
+        val scope = CoroutineScope(Dispatchers.Default)
+
+        try {
+            runBlocking {
+                val job = scope.launch { avatars.load(roomId) }
+
+                assertTrue("the fetch never started", entered.await(5, TimeUnit.SECONDS))
+                job.cancel()
+                release.countDown()
+                job.join()
+            }
+
+            assertTrue(
+                "a cancelled load must not leave the room permanently latched in `fetching`",
+                avatars.shouldFetch(roomId),
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    private class FakeCore(
+        private val roomAvatarBody: (String) -> String? = { throw NotImplementedError() },
+    ) : CoreInterface {
         override fun account(): AccountDto = throw NotImplementedError()
         override fun attachmentDiscard(token: String): Unit = throw NotImplementedError()
         override fun attachmentSend(roomId: String, token: String): Unit = throw NotImplementedError()
@@ -138,7 +199,7 @@ class AvatarCacheTest {
         override fun mediaFetch(eventId: String): String? = throw NotImplementedError()
         override fun memberAvatar(mxcUri: String): String? = throw NotImplementedError()
         override fun restoreSession(sink: EventSink): Boolean = throw NotImplementedError()
-        override fun roomAvatar(roomId: String): String? = throw NotImplementedError()
+        override fun roomAvatar(roomId: String): String? = roomAvatarBody(roomId)
         override fun roomAvatarFull(roomId: String): String? = throw NotImplementedError()
         override fun roomInfo(roomId: String): RoomInfoDto = throw NotImplementedError()
         override fun roomInviter(roomId: String): String? = throw NotImplementedError()

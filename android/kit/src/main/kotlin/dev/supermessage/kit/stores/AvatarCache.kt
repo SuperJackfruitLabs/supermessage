@@ -148,15 +148,36 @@ class AvatarCache private constructor(
      * Fetch unless it is held, known absent, or already in flight. Safe to
      * call from a row's `LaunchedEffect`, which is to say on every
      * appearance.
+     *
+     * **Wrapped in `finally`, not just a `catch`.** [fetch] runs inside
+     * [dev.supermessage.kit.CoreClient.run]'s `withContext(dispatcher)`,
+     * which throws `CancellationException` when the caller — this row's own
+     * `LaunchedEffect` — is cancelled, which Compose does on every scroll
+     * that carries the row out of composition. Without `finally`, that
+     * exception skips both `rememberAbsent` and `remember` and leaves
+     * `roomId` in [fetching] forever: [shouldFetch] then returns `false` for
+     * the rest of the session, and the row shows an empty circle — the same
+     * symptom this class's own doc comment describes for eviction, arriving
+     * by a different door. [MediaCache.load] already gets this right with
+     * its own `try`/`finally`; this one did not, even though both were
+     * ported in the same pass.
      */
     suspend fun load(roomId: String) {
         if (!shouldFetch(roomId)) return
         beginFetch(roomId)
-        val fetched = fetch(roomId)
-        if (fetched == null) {
-            rememberAbsent(roomId)
-        } else {
-            remember(fetched, roomId)
+        try {
+            val fetched = fetch(roomId)
+            if (fetched == null) {
+                rememberAbsent(roomId)
+            } else {
+                remember(fetched, roomId)
+            }
+        } finally {
+            // Idempotent: `remember`/`rememberAbsent` already remove `roomId`
+            // from `fetching` on the success path, so this is a no-op there
+            // and only does real work when an exception — chiefly
+            // cancellation — skipped both.
+            fetching.remove(roomId)
         }
     }
 
