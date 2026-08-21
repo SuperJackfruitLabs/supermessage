@@ -14,6 +14,8 @@ A1 proved the plumbing: real `Core`, real session, real roster. **This is the pa
 
 `LazyColumn(reverseLayout = true)`, fed **newest-first**.
 
+**The store is oldest-first; the list is not.** `TimelineStore.items` grows by `PushFront`/`Insert(0)` for paginated history and `PushBack`/`Append` for arrivals (`DiffApply.kt`), so index 0 is the *oldest* row. `reverseLayout` needs index 0 to be the *newest*, so the container reverses before handing rows to `items(...)` — exactly as `TimelineCollectionView.swift:364` does with an explicit `display.reversed()`. Use `asReversed()`, which is a view rather than a copy, so this costs nothing per recomposition.
+
 iOS reached this the hard way. `TimelineCollectionView.swift`'s header records that a `ScrollView` + `LazyVStack` in natural order needs three separate mechanisms — `defaultScrollAnchor(.bottom)`, `scrollPosition(id:)`, and a `ScrollViewReader` — *and nothing arbitrates between them*. It dropped to an inverted `UICollectionView`. Element X iOS reached the same place.
 
 Compose does not need the UIKit escape hatch, because `LazyColumn` already takes `reverseLayout`. What it inherits is the *reasoning*, and inversion buys exactly the same three things:
