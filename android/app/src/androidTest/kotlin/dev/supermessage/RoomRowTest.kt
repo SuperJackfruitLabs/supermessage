@@ -7,6 +7,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.Assert.assertEquals
 import org.junit.Rule
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.semantics.getOrNull
 import org.junit.Test
 import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.Membership
@@ -161,5 +165,43 @@ class RoomRowTest {
         }
         compose.onNodeWithTag("avatar").assertIsDisplayed()
         compose.onNodeWithText("G").assertIsDisplayed()
+    }
+
+    /**
+     * A screen reader hears "3 unread", not a bare "3".
+     *
+     * Carried from Task 5's review as a deferred gap: the port dropped iOS's
+     * `.accessibilityLabel("\(count) unread")`, leaving the badge announcing a
+     * number with no noun. In a room list that is indistinguishable from a
+     * timestamp or any other count.
+     */
+    @Test
+    fun theUnreadBadgeAnnouncesWhatItCounts() {
+        compose.setContent {
+            RoomRow(row = row(unread = 3uL), avatarUri = null, state = AgentState.IDLE, `when` = "now")
+        }
+        compose.onNodeWithContentDescription("3 unread").assertExists()
+    }
+
+    /**
+     * The avatar's tap target says where it goes.
+     *
+     * Also carried from Task 5's review: `onClickLabel` was a reasonable Compose
+     * analogue to Swift's `.accessibilityLabel`, but nothing asserted it, so the
+     * claim that the two tap targets are distinguishable rested on inspection.
+     */
+    @Test
+    fun theAvatarsClickTargetIsLabelled() {
+        compose.setContent {
+            RoomRow(
+                row = row(name = "Ganesha"), avatarUri = null, state = AgentState.IDLE,
+                `when` = "now", onOpenInfo = {},
+            )
+        }
+        compose.onNode(
+            SemanticsMatcher("has an onClick label naming the room") { node ->
+                node.config.getOrNull(SemanticsActions.OnClick)?.label == "About Ganesha"
+            }
+        ).assertExists()
     }
 }

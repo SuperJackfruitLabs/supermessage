@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.word
@@ -217,6 +219,13 @@ private fun UnreadBadge(count: ULong) {
         color = MaterialTheme.colorScheme.onPrimary,
         modifier = Modifier
             .testTag("unread-badge")
+            // Without this a screen reader announces a bare number, which in a
+            // list of rooms is indistinguishable from a timestamp or a count of
+            // anything else. iOS says "N unread" here; the port dropped it.
+            // The clamped label deliberately reads the true count rather than
+            // "99+", because "more than 99 unread" is the useful fact and the
+            // clamp exists only to bound the badge's width.
+            .semantics { contentDescription = "$count unread" }
             .background(MaterialTheme.colorScheme.primary, CircleShape)
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
