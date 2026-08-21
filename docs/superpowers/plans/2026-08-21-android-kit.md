@@ -495,7 +495,7 @@ git add android/kit/ && git commit -m "Android kit: connection state, and what a
 - Read first: `RoomsStore.swift` (89/81), `SpacesStore.swift` (65/none)
 
 **Interfaces:**
-- Consumes: `CoreClient` (Task 7), `GapSync` (Task 6), `RosterArrangement` (Task 4).
+- Consumes: `CoreClient` (Task 7) and `GapSync` (Task 6). **Not `RosterArrangement`** — verified against the Swift: it is used only by the view layer (`RoomListView.swift`, `RootView.swift`), never by either store.
 - Produces: the room list and the space list as `StateFlow`. `Session` owns both; `:app`'s roster consumes them.
 
 - [ ] **Step 1: Port `RoomsStoreTests.swift`, write `SpacesStoreTest`**
