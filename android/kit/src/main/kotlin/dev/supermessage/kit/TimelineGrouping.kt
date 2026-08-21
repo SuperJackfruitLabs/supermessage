@@ -125,7 +125,16 @@ object TimelineGrouping {
      */
     internal fun text(run: List<TimelineRow>): String {
         val verb = run.firstOrNull()?.membershipVerb ?: "updated their membership"
-        val names = run.map { it.senderShort }
+        // DISTINCT senders, not one name per event. A run is consecutive events
+        // sharing a verb, and one person can produce several: a real room showed
+        // "Annapurna, Annapurna and 1 other updated their membership", naming the
+        // same person twice and counting her repeatedly toward "others".
+        //
+        // The desktop's `groupTimelineItems`, which this was ported from, has the
+        // same defect (`src/lib/components/timelineGrouping.ts` maps senderName per
+        // row with no dedupe). Fixed here rather than reproduced faithfully; the
+        // desktop is tracked separately.
+        val names = run.map { it.senderShort }.distinct()
         if (names.size <= maxNamed) {
             return "${joined(names)} $verb"
         }

@@ -251,6 +251,32 @@ class MembershipRunTest {
             fail("a message became part of a run")
         }
     }
+    /**
+     * One person changing membership repeatedly is named once.
+     *
+     * Found on a device: a real room rendered "Annapurna, Annapurna and 1 other
+     * updated their membership" — the same person named twice and counted
+     * toward "others". Runs group by verb, so several events from one member
+     * land in one run, and mapping a name per *event* rather than per *person*
+     * produces a sentence that is false about who was involved.
+     */
+    @Test
+    fun onePersonChangingRepeatedlyIsNamedOnce() {
+        val rows = List(4) { membership("${it + 1}", "Annapurna", "updated their membership") }
+        val out = TimelineGrouping.collapseMembershipRuns(rows)
+        assertEquals(1, out.size)
+        val run = out[0] as DisplayRow.MembershipRun
+        assertEquals("Annapurna updated their membership", run.text)
+    }
+
+    /** Distinct people are still all counted. */
+    @Test
+    fun distinctPeopleAreStillCounted() {
+        val rows = listOf("Annapurna", "Ganesha", "Krishna", "Annapurna")
+            .mapIndexed { i, who -> membership("${i + 1}", who, "updated their membership") }
+        val run = TimelineGrouping.collapseMembershipRuns(rows)[0] as DisplayRow.MembershipRun
+        assertEquals("Annapurna, Ganesha and 1 other updated their membership", run.text)
+    }
 }
 
 /** Rows the core said to draw nothing for. */
@@ -325,4 +351,5 @@ class SilentRowTest {
             out.size == 1,
         )
     }
+
 }
