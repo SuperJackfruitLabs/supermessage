@@ -70,6 +70,7 @@ public final class Session {
     @discardableResult
     public func start() async -> Bool {
         do {
+            prepareForNewSession()
             let restored = try await client.restoreSession(sink: pump)
             phase = restored ? .signedIn : .signedOut
             if restored {
@@ -89,6 +90,7 @@ public final class Session {
     public func signIn(homeserver: String, username: String, password: String) async {
         failure = nil
         do {
+            prepareForNewSession()
             try await client.login(
                 homeserver: homeserver, username: username, password: password, sink: pump)
             phase = .signedIn
@@ -374,6 +376,23 @@ public final class Session {
         faces.clear()
         edits.clearAll()
         phase = .signedOut
+    }
+
+    /// Make a session that has been signed out usable again.
+    ///
+    /// Called BEFORE the core is handed the sink, which is the whole ordering
+    /// question. `login` and `restoreSession` may emit as soon as they have
+    /// it, and anything emitted into the channel this is about to replace
+    /// would be dropped — which is the very failure it exists to fix.
+    ///
+    /// Harmless on a first sign-in: the pump's channel is fresh, and resuming
+    /// a sync that was never stopped only bumps a generation nobody is
+    /// waiting on. Cheap enough not to be worth a flag saying which case this
+    /// is, and a flag would be a second thing to get wrong (#28).
+    private func prepareForNewSession() {
+        pump.reset()
+        rooms.resume()
+        timeline.resume()
     }
 
     /// The single consumer. See this type's note on ordering.

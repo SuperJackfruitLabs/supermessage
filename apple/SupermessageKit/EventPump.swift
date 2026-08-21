@@ -34,10 +34,40 @@ import SupermessageFFI
 /// `@unchecked Sendable` because `AsyncStream.Continuation` is itself
 /// thread-safe and the only stored state besides it is immutable.
 public final class EventPump: CoreEventSink, @unchecked Sendable {
-    public let events: AsyncStream<FfiEvent>
-    private let continuation: AsyncStream<FfiEvent>.Continuation
+    /// The current stream. `var`, not `let`, because `reset` replaces it —
+    /// read it at the point you drain, never hold it across a sign-out.
+    public private(set) var events: AsyncStream<FfiEvent>
+    private var continuation: AsyncStream<FfiEvent>.Continuation
+    /// Guards the two properties against a `yield` racing a `reset`. The
+    /// continuation is itself thread-safe; *swapping* it is not, and `onEvent`
+    /// arrives on whatever thread the core is using.
+    private let lock = NSLock()
 
     public init() {
+        var escaping: AsyncStream<FfiEvent>.Continuation!
+        events = AsyncStream(bufferingPolicy: .unbounded) { escaping = $0 }
+        continuation = escaping
+    }
+
+    /// Give the pump a fresh channel after `finish`, so a signed-out session
+    /// can sign back in.
+    ///
+    /// `finish()` is terminal — an `AsyncStream.Continuation` cannot be
+    /// restarted — and `Session` holds one pump for its whole life, so without
+    /// this a second sign-in drained a stream that had already completed and
+    /// every event went into a dead continuation. No error, no crash: the app
+    /// looked signed in and received nothing until it was force-quit (#28).
+    ///
+    /// Replacing the channel rather than the pump keeps this object's
+    /// identity, which matters because the core holds it as a sink and has no
+    /// idea a session ended.
+    ///
+    /// The caller must have finished the old stream and cancelled its drain
+    /// task first. A collector still suspended on the old stream is not moved
+    /// here — it is stranded on a channel nothing will ever write to again.
+    public func reset() {
+        lock.lock()
+        defer { lock.unlock() }
         var escaping: AsyncStream<FfiEvent>.Continuation!
         events = AsyncStream(bufferingPolicy: .unbounded) { escaping = $0 }
         continuation = escaping
@@ -47,12 +77,22 @@ public final class EventPump: CoreEventSink, @unchecked Sendable {
     /// matrix-sdk's event handlers. Hands the event over and returns; it never
     /// waits for anyone.
     public func onEvent(event: FfiEvent) {
-        continuation.yield(event)
+        lock.lock()
+        let sink = continuation
+        lock.unlock()
+        // Yielded outside the lock: `yield` runs the stream's buffering, and
+        // holding a lock across it would put core threads behind each other
+        // for no reason. A yield into a channel `reset` has just replaced is
+        // harmless — that channel is finished and nobody is reading it.
+        sink.yield(event)
     }
 
     /// Ends the stream, on logout and on teardown. The drain task's `for await`
     /// finishes, and with it the task.
     public func finish() {
-        continuation.finish()
+        lock.lock()
+        let sink = continuation
+        lock.unlock()
+        sink.finish()
     }
 }

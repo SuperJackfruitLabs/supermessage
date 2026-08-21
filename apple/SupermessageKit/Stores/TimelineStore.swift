@@ -133,4 +133,13 @@ public final class TimelineStore {
         replaceItems([])
         roomId = nil
     }
+
+    /// Undo `clear`'s stop, for a sign-in that follows a sign-out.
+    ///
+    /// `resetForNewSubscription` bumps the generation but does not clear the
+    /// stopped latch, so opening a room after signing back in would otherwise
+    /// find a sync that never folds another envelope.
+    public func resume() {
+        sync?.resume()
+    }
 }

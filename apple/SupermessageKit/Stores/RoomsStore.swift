@@ -86,4 +86,15 @@ public final class RoomsStore {
         selectedNameFallback = nil
         sync?.stop()
     }
+
+    /// Undo `clear`'s stop, for a sign-in that follows a sign-out.
+    ///
+    /// The sync is built in `init` and never rebuilt, so its stopped latch
+    /// outlives the session that set it. Unlike `TimelineStore` there is no
+    /// per-subscription reset to carry this, so it is its own call — and
+    /// `Session` makes it before the core is given the sink, so a diff
+    /// arriving immediately cannot land on a still-stopped sync.
+    public func resume() {
+        sync?.resume()
+    }
 }
