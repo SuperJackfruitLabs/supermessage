@@ -44,6 +44,39 @@ struct EventPumpTests {
         #expect(seen == Array(0..<count), "events were reordered")
     }
 
+    /// Signing out and back in without killing the app.
+    ///
+    /// `finish()` is terminal — an `AsyncStream.Continuation` cannot be
+    /// restarted — so a `Session` that finishes its pump on sign-out and holds
+    /// the same pump for its whole life has nothing to deliver through
+    /// afterwards. The app looked signed in and received nothing at all, with
+    /// no error and no crash, until it was force-quit (issue #28).
+    ///
+    /// The pump's *identity* has to survive, because the core holds it as a
+    /// sink; only the channel inside it may be replaced.
+    @Test("a pump delivers again after it is finished and reset")
+    func resetRevivesAFinishedPump() async {
+        let pump = EventPump()
+        pump.finish()
+
+        // The old stream is done. Draining it here is what a `Session` does on
+        // sign-out, and it must not hang.
+        for await _ in pump.events {}
+
+        pump.reset()
+
+        pump.onEvent(event: .typing(roomId: "!r:x.org", users: [typist("after")]))
+        pump.finish()
+
+        var labels: [String] = []
+        for await event in pump.events {
+            if case let .typing(_, users) = event, let first = users.first {
+                labels.append(first.label)
+            }
+        }
+        #expect(labels == ["after"], "a reset pump delivered nothing — sign-in after sign-out is silent")
+    }
+
     @Test("the stream ends when the pump is finished")
     func finishEndsTheStream() async {
         let pump = EventPump()

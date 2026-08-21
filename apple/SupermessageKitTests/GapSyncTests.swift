@@ -219,4 +219,56 @@ struct GapSyncTests {
         sync.handle(subject: "s", seq: 1, ops: [.append([1])])
         #expect(published.isEmpty)
     }
+    /// The second half of issue #28.
+    ///
+    /// `stop()` sets a latch that nothing cleared: `stopped = false` appeared
+    /// exactly once in the file, at its declaration. Both gates read it, so a
+    /// sync stopped on sign-out stayed stopped for the life of the process,
+    /// and signing back in produced a client that received nothing.
+    @Test("a stopped sync folds envelopes again once it is resumed")
+    func resumeUnlatchesAStoppedSync() async {
+        var published: [[Int]] = []
+        let sync = GapSync<Int>(
+            resync: { Snapshot(subject: "s", seq: 0, items: []) },
+            onUpdate: { published.append($0) })
+
+        sync.handle(subject: "s", seq: 1, ops: [.append([1])])
+        #expect(published.last == [1])
+
+        sync.stop()
+        sync.handle(subject: "s", seq: 2, ops: [.append([2])])
+        #expect(published.last == [1], "a stopped sync kept folding")
+
+        sync.resume()
+        sync.handle(subject: "s", seq: 2, ops: [.append([2])])
+        #expect(published.last == [1, 2], "a resumed sync never started folding again")
+    }
+
+    /// Resuming must not let the *previous* session's resync land.
+    ///
+    /// A resync in flight when sign-out happened would otherwise resolve after
+    /// sign-in and repopulate the new session with the old one's rows — the
+    /// same hazard `resetForNewSubscription` bumps the generation for, on a
+    /// path that had no bump at all.
+    @Test("a resync in flight across a stop is discarded by resume")
+    func resumeDiscardsAnInFlightResync() async {
+        var published: [[Int]] = []
+        let gate = Gate()
+        let sync = GapSync<Int>(resync: { await gate.resync() }, onUpdate: { published.append($0) })
+
+        sync.handle(subject: "s", seq: 1, ops: [.append([1])])
+        sync.handle(subject: "s", seq: 5, ops: [.append([5])])  // gap -> resync
+        await gate.waitUntilCalled()
+
+        sync.stop()
+        sync.resume()
+
+        // The old session's resync lands now, carrying its rows.
+        gate.resolve(seq: 9, items: [99])
+        await settle()
+
+        #expect(
+            published.last != [99],
+            "a resync from before the stop repopulated the session that replaced it")
+    }
 }

@@ -130,9 +130,26 @@ public final class GapSync<T: Sendable> {
         onUpdate(tracker.items)
     }
 
-    /// Stop for good, on logout or teardown.
+    /// Stop, on logout or teardown.
     public func stop() {
         stopped = true
+    }
+
+    /// Start again after a `stop`, on a sign-in that follows a sign-out.
+    ///
+    /// `stop` used to be a one-way latch: nothing anywhere cleared `stopped`,
+    /// so a sync stopped on sign-out stayed stopped for the life of the
+    /// process and the next session received nothing (#28).
+    ///
+    /// The generation bump is the load-bearing half. A resync in flight when
+    /// the stop happened is still going to land, and without a bump it lands
+    /// against a session that has nothing to do with it and repopulates the
+    /// new context with the old one's rows — the same hazard
+    /// `resetForNewSubscription` exists to prevent, on a path that had no
+    /// protection at all.
+    public func resume() {
+        generation += 1
+        stopped = false
     }
 
     private func performResync(generation: Int) async {
