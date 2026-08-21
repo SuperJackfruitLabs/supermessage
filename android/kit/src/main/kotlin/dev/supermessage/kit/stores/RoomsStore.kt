@@ -111,4 +111,26 @@ class RoomsStore(
         selectedNameFallback = null
         sync.stop()
     }
+
+    /**
+     * Undo [clear]'s [GapSync.stop], so a later sign-in's `seed` actually
+     * does something rather than being silently swallowed by a latch that
+     * never reset.
+     *
+     * Unlike [TimelineStore], which reaches the same recovery for free
+     * because [GapSync.resetForNewSubscription] already calls
+     * [GapSync.resume] and every `subscribeTo` — including the first one
+     * after a sign-in — calls that, this store has no subscription context
+     * to reset for: the room list is the single-subject channel
+     * [GapSync]'s own KDoc describes, live continuously once signed in
+     * rather than opened per room. So `Session` calls this directly instead,
+     * and calls it *before* handing the pump back to the core (the same
+     * spot `EventPump.reset` is called from) — not from inside `seed` — so
+     * that a `RoomsDiff` racing in immediately after a fresh `signIn`, before
+     * `seed` gets around to running, is not silently dropped by a latch
+     * this store has not yet had the chance to clear.
+     */
+    fun resume() {
+        sync.resume()
+    }
 }

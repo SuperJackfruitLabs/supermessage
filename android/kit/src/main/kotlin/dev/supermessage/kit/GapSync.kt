@@ -63,14 +63,32 @@ data class Snapshot<T>(val subject: String, val seq: ULong, val items: List<T>)
  *
  * Swift's original is `@MainActor`, which the compiler enforces. Kotlin has
  * no equivalent, so this is a documented invariant instead of a checked one:
- * [handle], [resetForNewSubscription], [stop], [seed], and the completion of
- * a launched resync all read and write [resyncing], [generation] and
- * [stopped] without locking, so every call — including the one the resync
- * coroutine makes back into this instance when it lands — must happen on the
- * same single thread of execution. [scope] is what supplies that thread, the
- * same way `StreamingText`'s constructor takes one: on Android that is
- * `Dispatchers.Main.immediate`, and in a test it is the dispatcher `runTest`
- * hands out.
+ * [handle], [resetForNewSubscription], [stop], [resume], [seed], and the
+ * completion of a launched resync all read and write [resyncing],
+ * [generation] and [stopped] without locking, so every call — including the
+ * one the resync coroutine makes back into this instance when it lands —
+ * must happen on the same single thread of execution. [scope] is what
+ * supplies that thread, the same way `StreamingText`'s constructor takes
+ * one: on Android that is `Dispatchers.Main.immediate`, and in a test it is
+ * the dispatcher `runTest` hands out.
+ *
+ * ## Where this differs from `apple/SupermessageKit/GapSync.swift`
+ *
+ * [stop] is reversible here; on the Swift side it is not, and this is a
+ * confirmed, not assumed, divergence: `GapSync.swift` has no counterpart to
+ * [resume] at all, its own `resetForNewSubscription()` (`GapSync.swift:127`)
+ * does not clear `stopped` either, and both
+ * `apple/SupermessageKit/Stores/RoomsStore.swift` and
+ * `.../TimelineStore.swift` build their one `GapSync` inside `init` and
+ * never rebuild it — matching `Session.swift:53` and `:58` constructing
+ * each store exactly once, inside a `Session` that itself lives for the
+ * whole app process (`RootView.swift:12`). Both call `sync?.stop()` from
+ * their own `clear()` (`RoomsStore.swift:87`, `TimelineStore.swift:132`) on
+ * sign-out. So iOS carries the identical bug on **both** stores: after the
+ * first sign-out in a process's life, a later sign-in's roster and timeline
+ * stay permanently empty, silently — the same failure `EventPump.reset`
+ * fixes for the pump, one layer up, on this platform only. See [resume]'s
+ * own doc for the full reasoning behind the fix applied here.
  *
  * @param resync Fetches a full snapshot to recover from a gap.
  * @param accepts Whether an envelope carrying this subject is ours. Anything
@@ -129,19 +147,96 @@ class GapSync<T>(
      * Hard-reset for a new subscription context — a room switch, where the
      * core restarts the sequence at 1. Publishes an empty list immediately.
      *
-     * Bumps the generation so a resync already in flight has its result
-     * discarded when it lands: without that, a slow one could resolve after
-     * the reset and roll the new context back to stale data.
+     * Calls [resume] first: a room switch is one of the two moments this
+     * instance may need to recover from a prior [stop] (the other is
+     * [RoomsStore.resume], for a store with no subscription context of its
+     * own) — see [resume]'s own doc for why that specifically needs a
+     * generation bump too, not just clearing the flag. Bumping generation a
+     * second time immediately afterward is redundant but harmless: only
+     * inequality against a resync's captured value is ever tested, never the
+     * exact number.
      */
     fun resetForNewSubscription() {
+        resume()
         generation += 1
         tracker.reset(items = emptyList(), seq = 0uL)
         onUpdate(tracker.items)
     }
 
-    /** Stop for good, on logout or teardown. */
+    /**
+     * Stop until [resume] undoes it, on logout or teardown.
+     *
+     * Reversible, unlike `apple/SupermessageKit/GapSync.swift`'s equivalent
+     * — see [resume]'s doc for why, and this class's own KDoc for the
+     * incident this class exists to prevent in the first place, which
+     * [stop] is what protects: a resync launched before a deliberate
+     * teardown landing afterward and repopulating what that teardown just
+     * emptied.
+     */
     fun stop() {
         stopped = true
+    }
+
+    /**
+     * Undo [stop]: let this instance accept envelopes and resyncs again, for
+     * a new subscription context or a new session beginning on top of a
+     * torn-down one.
+     *
+     * ## Why this exists at all
+     *
+     * `RoomsStore` and `TimelineStore` are each built once, inside `Session`,
+     * for the whole app process's lifetime — matching
+     * `apple/SupermessageKit/Session.swift:48`'s single, never-rebuilt
+     * `pump`, the same shape that made [EventPump.reset] necessary. [stop]
+     * used to have no way back, which meant the *first* sign-out in a
+     * process's life left every store built on this class permanently inert
+     * — not just against diffs (`handle`, gated at the top by `stopped`),
+     * but against `seed` too (`performResync` gates on the same flag), so a
+     * later sign-in's roster and timeline stayed empty forever, silently,
+     * with no error to notice. `Session`'s `SessionTest` proves this on the
+     * timeline route end to end.
+     *
+     * ## Why [generation] is bumped here too
+     *
+     * Clearing [stopped] alone is not enough. A resync launched before
+     * [stop] can still be genuinely in flight — a slow `resync()` call that
+     * has not yet returned — and simply flipping [stopped] back to `false`
+     * would let it land later with its *original* captured generation still
+     * matching [generation], and `performResync`'s guard would wave it
+     * straight through into a session it has nothing to do with. Bumping
+     * [generation] here is the same protection Hazard 3 already documents
+     * for [resetForNewSubscription], applied to the same hazard at a
+     * different boundary: a session boundary instead of a room-subscription
+     * one.
+     *
+     * ## Why [resyncing] is deliberately left alone
+     *
+     * A stale resync genuinely still in flight when this is called has not
+     * finished, so [resyncing] is still `true`. Forcing it back to `false`
+     * here would let a *second* resync start alongside the first —
+     * Hazard 1's mutual-exclusion invariant broken by the very method meant
+     * to recover from teardown. The old one's own `finally` clears
+     * [resyncing] whenever it actually completes, whether or not [resume]
+     * was ever called, and the generation bump above is what makes its
+     * result harmless if it lands after this. The practical cost is narrow:
+     * a `seed` called immediately after [resume], while that stale resync
+     * is still resolving, is a no-op until it does — self-healing within
+     * one round trip, not a second permanent freeze.
+     *
+     * ## Where callers reach this
+     *
+     * [resetForNewSubscription] calls it directly — every `subscribeTo` a
+     * room hits it, including the very first one after a sign-in, so
+     * `TimelineStore` needed no change at all. `RoomsStore`, which has no
+     * subscription context to reset for, exposes its own
+     * [RoomsStore.resume] that calls this directly instead — see that
+     * method's doc for why `Session` calls it proactively, before the pump
+     * is even handed back to the core, rather than waiting for `seed` to
+     * get around to it.
+     */
+    fun resume() {
+        generation += 1
+        stopped = false
     }
 
     private suspend fun performResync(generation: Int) {

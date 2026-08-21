@@ -189,24 +189,44 @@ class SessionTest {
         // event through the *same* `session.pump` reference used throughout
         // this test and confirm it reaches the store that owns it.
         //
-        // `connection`, not `timeline` or `rooms`: both of those are backed
-        // by `GapSync`, whose own `stop()` (called from `RoomsStore.clear`
-        // and `TimelineStore.clear`, both invoked by the `signOut` above) is
-        // a one-way latch with no way back — a *separate* defect this fix
-        // does not touch, found while writing this very test and reported
-        // alongside it rather than folded silently into this task. Routing
-        // the proof through `ConnectionStore.apply`, which `signOut` never
-        // touches and which carries no such latch, isolates what this test
-        // is actually about: whether an event reaches *any* store after the
-        // pump has been reset and re-registered, not whether every store's
-        // own logout bookkeeping also survives a second login.
+        // `connection` first, in isolation: `ConnectionStore.apply` is not
+        // backed by `GapSync` and `signOut` never touches it, so this proves
+        // specifically that the pump itself is live again — reset and
+        // re-registered — independent of whatever `rooms`/`timeline` do with
+        // what arrives.
         session.pump.onEvent(FfiEvent.Connection(ConnectionState(state = "live", message = null)))
         advanceUntilIdle()
-
         assertEquals(
-            "an event pushed after a sign-out/sign-in cycle must still reach a store",
+            "an event pushed after a sign-out/sign-in cycle must reach connection",
             ConnectionStore.Connection.Live,
             session.connection.state.value,
+        )
+
+        // Then `timeline` — the symptom a reader would actually notice: sign
+        // out, sign back in, open a room, see nothing. `rooms` and
+        // `timeline` are both backed by `GapSync`, whose `stop()` (called
+        // from `RoomsStore.clear`/`TimelineStore.clear`, both invoked by the
+        // `signOut` above) used to have no way back — a second, independent
+        // defect from the pump one, found while first writing this test,
+        // now fixed by `GapSync.resume` and `RoomsStore.resume` (see both
+        // classes' KDoc). The pump alone reaching `connection` above is not
+        // enough to call the sign-out/sign-in cycle actually recovered; this
+        // is.
+        val roomId = "!after-relogin:x.example"
+        session.open(roomId)
+        session.pump.onEvent(
+            FfiEvent.TimelineDiff(
+                TimelineDiffEnvelope(
+                    channel = "timeline", subject = roomId, seq = 1uL,
+                    ops = listOf(TimelineDiffOp.Append(listOf(row("m1")))),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        assertEquals(
+            "an event pushed after a sign-out/sign-in cycle must still reach the timeline",
+            listOf("m1"),
+            session.timeline.items.value.map { it.item.id },
         )
 
         session.drainJob?.cancel()
