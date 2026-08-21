@@ -1,7 +1,5 @@
 package dev.supermessage.kit.stores
 
-import dev.supermessage.kit.StreamingText
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,26 +19,16 @@ import kotlinx.coroutines.flow.asStateFlow
  * [DraftStore]'s KDoc for why `@MainActor` becomes a documented, not
  * checked, invariant here.
  *
- * **Deliberate difference from Swift.** In Swift, [answer] is the raw
- * streamed text and nothing paces it here at all: `LiveTurnView` owns its
- * own `StreamingText` and feeds it from a `.onChange(of: live.answer)`
- * handler, so the store itself never touches the pacer. Android's `:kit`
- * has no view layer for this port to put that in — it declares no
- * dependency on Compose — so the pacer moves down into the store instead:
- * [stream] is a [StreamingText] this type owns and feeds identically to
- * what that `onChange` handler did (`accept` on every delta, `finish` then
- * `clear` when the turn ends), constructed from the [scope] the caller
- * supplies for exactly the reason [StreamingText]'s own KDoc gives — it
- * must be confined to a single thread of execution, the way `@MainActor`
- * confined Swift's view. [answer] itself stays the raw, un-paced text
- * so every rule the Swift suite pins about *what survives a turn* still
- * means the same thing here; a future UI reads the paced text and reveal
- * count off [stream] directly, at whatever cadence it recomposes on.
+ * **This store does not pace [answer] onto the screen.** In Swift, pacing
+ * belongs to the view — `LiveTurnView` owns its own `StreamingText` and
+ * feeds it from `.onChange(of: live.answer)` — and the same split holds
+ * here: a future UI is what owns and drives a `StreamingText` for this
+ * store's raw `answer`, the same way `LiveTurnView` does on iOS.
  */
-class LiveStore(scope: CoroutineScope) {
+class LiveStore {
     private val _answer = MutableStateFlow<String?>(null)
 
-    /** What the agent is writing, or `null` when no turn is live. Raw — see the KDoc above. */
+    /** What the agent is writing, or `null` when no turn is live. */
     val answer: StateFlow<String?> = _answer.asStateFlow()
 
     private val _thought = MutableStateFlow<String?>(null)
@@ -70,13 +58,6 @@ class LiveStore(scope: CoroutineScope) {
      * it better; what stays is everything the message does not carry.
      */
     val finished: StateFlow<Boolean> = _finished.asStateFlow()
-
-    /**
-     * Paces [answer] onto the screen — see [StreamingText]. Read-only:
-     * this store feeds it, a caller only reads [StreamingText.text] and
-     * [StreamingText.revealed] off it.
-     */
-    val stream: StreamingText = StreamingText(scope)
 
     data class ToolCall(
         val id: String,
@@ -129,19 +110,12 @@ class LiveStore(scope: CoroutineScope) {
             _answer.value = null
             answerSeq = 0uL
             _finished.value = true
-            // Mirrors what Swift's `LiveTurnView.onChange(of: live.answer)`
-            // did when `live.answer` went nil: drain whatever was still
-            // queued, then forget it — the record that stays on screen
-            // does not include the streamed text.
-            stream.finish()
-            stream.clear()
             return
         }
         beginTurnIfFinished()
         if (seq < answerSeq) return
         answerSeq = seq
         _answer.value = text
-        stream.accept(text)
     }
 
     fun handleThought(roomId: String, seq: ULong, text: String, done: Boolean) {
@@ -213,7 +187,6 @@ class LiveStore(scope: CoroutineScope) {
         answerSeq = 0uL
         thoughtSeq = 0uL
         _finished.value = false
-        stream.clear()
     }
 
     /**
