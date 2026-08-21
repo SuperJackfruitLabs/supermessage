@@ -69,10 +69,19 @@ import kotlinx.coroutines.launch
  * function body, so it cannot see a local computed deeper in — passing it
  * as an argument is what lets the default (and any real content Task 6
  * supplies) use it without `RootScaffold` needing to expose it any other
- * way. The detail and info panes stay hardcoded placeholders rather than
- * slots: nothing in this phase of the roster work consumes them, and a slot
- * with no real caller would be exactly the kind of premature seam the
- * parameter-list problem above already was.
+ * way.
+ *
+ * [detailPaneContent] follows the identical shape, added by Task 7 once the
+ * timeline had a named consumer for it. It takes no `openDetail`: the
+ * detail pane is already open by the time it is shown, so there is nowhere
+ * further for it to navigate to. Its default reproduces today's
+ * "Timeline" placeholder exactly — same tag, same label — so
+ * `RootScaffoldTest`'s five geometry tests, which call bare `RootScaffold()`
+ * (or override only `listPaneContent`) and assert on `pane-timeline`'s
+ * bounds, keep passing unmodified. The info pane stays a hardcoded
+ * placeholder rather than a slot: nothing in this phase of the work
+ * consumes it, and a slot with no real caller would be exactly the kind of
+ * premature seam the parameter-list problem above already was.
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
@@ -83,11 +92,14 @@ fun RootScaffold(
     listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit) -> Unit = { shellWidth, _ ->
         Pane("pane-roster", "Roster", shellWidth)
     },
+    detailPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
+        Pane("pane-timeline", "Timeline", shellWidth)
+    },
 ) {
     when (phase) {
         Session.Phase.STARTING -> Starting(modifier)
         Session.Phase.SIGNED_OUT -> Box(modifier) { signedOutContent() }
-        Session.Phase.SIGNED_IN -> SignedIn(modifier, listPaneContent)
+        Session.Phase.SIGNED_IN -> SignedIn(modifier, listPaneContent, detailPaneContent)
     }
 }
 
@@ -108,6 +120,7 @@ private fun Starting(modifier: Modifier = Modifier) {
 private fun SignedIn(
     modifier: Modifier = Modifier,
     listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit) -> Unit,
+    detailPaneContent: @Composable (shellWidth: Dp) -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         // Captured into a local before the nested pane lambdas: their
@@ -163,7 +176,7 @@ private fun SignedIn(
                     scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail) }
                 }
             },
-            detailPane = { Pane("pane-timeline", "Timeline", shellWidth) },
+            detailPane = { detailPaneContent(shellWidth) },
             extraPane = if (extraIsShown) {
                 { Pane("pane-info", "Room info", shellWidth) }
             } else null,

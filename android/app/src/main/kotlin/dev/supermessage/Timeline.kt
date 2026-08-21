@@ -29,6 +29,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.supermessage.kit.TimelineGrouping
+import dev.supermessage.kit.stores.LiveStore
 import java.time.Instant
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
@@ -66,16 +68,37 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * `TimelineCollectionView.swift`'s explicit `display.reversed()` before it
  * applies its own snapshot.
  *
+ * ## Grouping — [TimelineRow]'s stated gap, closed here
+ *
+ * [TimelineRow] takes `continuesRun`/`attribution` as parameters precisely
+ * because, in its own words, that decision is "chosen by the list that can
+ * see every row; a single row cannot." This container is where the whole
+ * list is in hand, so it is where [TimelineGrouping.continuesRun] and
+ * [TimelineGrouping.hasSingleSpeaker] actually run — mirroring
+ * `TimelineCollectionView.swift`'s `rowsById`/`singleSpeaker`. A row's
+ * attribution is its short name when one agent does all the talking in the
+ * room, and its full name otherwise; a row continues the run above it when
+ * [TimelineGrouping.continuesRun] says so, computed walking [rows] in the
+ * chronological order it already arrives in (not [newestFirst]'s reversed
+ * order — "the row above it" means the row before it in time).
+ *
+ * ## The live turn's place in the list
+ *
+ * Mirrors `TimelineCollectionView.swift`'s `snapshot(entries:...)`: a turn
+ * **in progress** ([liveFinished] false) is the newest thing in the room, so
+ * it sits at index 0 of the inverted list — below every history row. A
+ * turn that has **finished** sits *above* the message it produced (one
+ * position further from index 0), because "the reasoning and the tool
+ * calls happened before the answer, and drawing them under it says they
+ * happened after." [LiveTurn] itself decides whether there is anything to
+ * show ([LiveStore.isLive]); nothing here duplicates that check to decide
+ * *whether* to render it, only *where*.
+ *
  * ## What this does not do
  *
- * No live turn, no membership-run collapsing, no swipe-to-reply, no avatar
- * cache: none of those are in this composable's signature, and inventing
- * parameters for them here would be guessing at a wiring this task was not
- * given. Grouping ([continuesRun]/attribution) is [TimelineRow]'s own stated
- * gap — "chosen by the list that can see every row" — but nothing in this
- * task's brief or test list asks this container to compute it, so each row
- * renders with [TimelineRow]'s own fallback (`row.senderName`, no run
- * collapsing) rather than this task inventing an untested wiring for it.
+ * No swipe-to-reply, no avatar cache, no membership-run collapsing: none of
+ * those are in this composable's signature, and inventing parameters for
+ * them here would be guessing at a wiring this task was not given.
  */
 @Composable
 fun Timeline(
@@ -85,8 +108,27 @@ fun Timeline(
     canPaginate: Boolean,
     onPaginate: () -> Unit,
     onMarkRead: () -> Unit,
+    liveAnswer: String? = null,
+    liveThought: String? = null,
+    liveTools: List<LiveStore.ToolCall> = emptyList(),
+    liveFinished: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
+
+    // Walked in the order `rows` already arrives in — oldest first — because
+    // "the row above it" means the row before it in time, not before it in
+    // the inverted list this container displays.
+    val continuesRun = remember(rows) {
+        val out = HashMap<String, Boolean>(rows.size)
+        var previous: TimelineRowDto? = null
+        for (row in rows) {
+            out[row.item.id] = TimelineGrouping.continuesRun(row, previous)
+            previous = row
+        }
+        out
+    }
+    val singleSpeaker = remember(rows) { TimelineGrouping.hasSingleSpeaker(rows) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -136,6 +178,32 @@ fun Timeline(
         if (isAtNewest) onMarkRead()
     }
 
+    // Grouping applied here, the row's own header rendered by TimelineRow.
+    @Composable
+    fun HistoryRow(row: TimelineRowDto) {
+        TimelineRow(
+            row = row,
+            now = Instant.now(),
+            continuesRun = continuesRun[row.item.id] ?: false,
+            attribution = if (singleSpeaker) row.senderShort else row.senderName,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .testTag("row-${row.item.id}"),
+        )
+    }
+
+    @Composable
+    fun LiveTurnCell() {
+        LiveTurn(
+            answer = liveAnswer,
+            thought = liveThought,
+            tools = liveTools,
+            finished = liveFinished,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        )
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
@@ -147,15 +215,23 @@ fun Timeline(
                     .testTag("timeline-list"),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
-                items(newestFirst, key = { it.item.id }) { row ->
-                    TimelineRow(
-                        row = row,
-                        now = Instant.now(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .testTag("row-${row.item.id}"),
-                    )
+                // A turn in progress is the newest thing in the room: index 0,
+                // below every history row. See the class doc's "The live
+                // turn's place in the list".
+                if (isLive && !liveFinished) {
+                    item(key = "live-turn") { LiveTurnCell() }
+                }
+
+                if (isLive && liveFinished && newestFirst.isNotEmpty()) {
+                    // A finished turn sits above the message it produced —
+                    // "the reasoning and the tool calls happened before the
+                    // answer". The newest message stays at the very bottom.
+                    val newest = newestFirst.first()
+                    item(key = newest.item.id) { HistoryRow(newest) }
+                    item(key = "live-turn") { LiveTurnCell() }
+                    items(newestFirst.drop(1), key = { it.item.id }) { row -> HistoryRow(row) }
+                } else {
+                    items(newestFirst, key = { it.item.id }) { row -> HistoryRow(row) }
                 }
                 if (isPaginating) {
                     item(key = "pagination-spinner") {

@@ -5,16 +5,20 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
@@ -116,6 +120,64 @@ class MainActivity : ComponentActivity() {
                                 onLoadAvatar = { roomId -> vm.session.avatars.load(roomId) },
                                 modifier = Modifier.fillMaxSize(),
                             )
+                        },
+                        detailPaneContent = { _ ->
+                            // The room this pane is showing, reactively:
+                            // `TimelineStore.roomId` is set the moment
+                            // `Session.open` subscribes, before the first
+                            // diff for it has even arrived.
+                            val roomId by vm.session.timeline.roomId.collectAsStateWithLifecycle()
+
+                            // Trigger 1 of spec §6's two: on room change,
+                            // mark it read. Trigger 2 — on any history
+                            // change while at the newest end — is Timeline's
+                            // own job (see its class doc): it can see `rows`
+                            // and `isAtNewest` together, neither of which
+                            // this call site has reason to duplicate.
+                            LaunchedEffect(roomId) {
+                                if (roomId != null) vm.session.timeline.markRead()
+                            }
+
+                            val currentRoomId = roomId
+                            if (currentRoomId == null) {
+                                Box(
+                                    Modifier.fillMaxSize().testTag("pane-timeline"),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("Select a room")
+                                }
+                            } else {
+                                val items by vm.session.timeline.items.collectAsStateWithLifecycle()
+                                val isPaginating by vm.session.timeline.isPaginating.collectAsStateWithLifecycle()
+                                val canPaginate by vm.session.timeline.canPaginate.collectAsStateWithLifecycle()
+
+                                // `TypingStore.line` is a computed property,
+                                // not a StateFlow — `typers` is what is
+                                // actually observable, so that is what is
+                                // collected; `line` is re-read from it every
+                                // time `typers` changes.
+                                val typers by vm.session.typing.typers.collectAsStateWithLifecycle()
+                                val typingLine = remember(typers) { vm.session.typing.line }
+
+                                val liveAnswer by vm.session.live.answer.collectAsStateWithLifecycle()
+                                val liveThought by vm.session.live.thought.collectAsStateWithLifecycle()
+                                val liveTools by vm.session.live.tools.collectAsStateWithLifecycle()
+                                val liveFinished by vm.session.live.finished.collectAsStateWithLifecycle()
+
+                                Timeline(
+                                    rows = items,
+                                    typingLine = typingLine,
+                                    isPaginating = isPaginating,
+                                    canPaginate = canPaginate,
+                                    onPaginate = { scope.launch { vm.session.timeline.paginateBack() } },
+                                    onMarkRead = { scope.launch { vm.session.timeline.markRead() } },
+                                    liveAnswer = liveAnswer,
+                                    liveThought = liveThought,
+                                    liveTools = liveTools,
+                                    liveFinished = liveFinished,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         },
                         signedOutContent = {
                             LoginScreen(
