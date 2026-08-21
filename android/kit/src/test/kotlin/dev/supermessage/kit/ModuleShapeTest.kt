@@ -4,8 +4,9 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * kit is empty of logic in this pass, but the rule it exists to enforce —
- * no Compose — is already load-bearing, and it deserves more than one check.
+ * kit gained its first real logic in this pass, but the rule that predates
+ * it — no Compose — is already load-bearing, and it deserves more than one
+ * check.
  *
  * build.gradle.kts bans Compose by inspecting *declared* dependencies via
  * resolutionStrategy.eachDependency. That is a real check, but it is a
@@ -38,6 +39,31 @@ class ModuleShapeTest {
                 // what we want: kit stays testable on a plain JVM, with no
                 // view toolkit reachable from its state layer.
             }
+        }
+    }
+
+    /**
+     * The mirror image of the test above. :kit's whole purpose is to sit on
+     * top of Core, so a type from Core's generated bindings had better be
+     * reachable — the Android sibling of apple/SupermessageKit/Version.swift
+     * and its BuildTests: "a constant of the Kit's own would still compile
+     * with the dependency removed, and would prove nothing about the
+     * structure this file exists to pin."
+     *
+     * Deliberately a plain classloader probe, not a call into a Core
+     * function: calling one would load the .so, which is exactly what the
+     * class comment above says this file must not do.
+     */
+    @Test
+    fun aCoreTypeIsReachableFromKit() {
+        val loader = this::class.java.classLoader!!
+        try {
+            Class.forName("uniffi.supermessage_core.SearchResultDto", false, loader)
+        } catch (notFound: ClassNotFoundException) {
+            fail(
+                "uniffi.supermessage_core.SearchResultDto is not reachable from :kit — " +
+                    "the dependency on :core's generated bindings is missing or broken"
+            )
         }
     }
 }

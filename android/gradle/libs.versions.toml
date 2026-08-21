@@ -16,6 +16,10 @@ activityCompose = "1.9.3"
 junit = "4.13.2"
 androidxTestJunit = "1.2.1"
 androidxTestRunner = "1.7.0"
+# StreamingText (Task 2) is :kit's first consumer of coroutines; every later
+# store built on top of it (LiveStore, EventPump, CoreClient) needs the same
+# artifact, so it lives in the catalog rather than being added ad hoc later.
+kotlinxCoroutines = "1.11.0"
 
 [libraries]
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
@@ -33,6 +37,8 @@ androidx-test-junit = { group = "androidx.test.ext", name = "junit", version.ref
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

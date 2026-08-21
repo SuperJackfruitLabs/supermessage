@@ -251,6 +251,25 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest           # :app instrumented tests (needs a device)
 ```
 
+`:kit`'s tests are JVM-only, but a handful (`RosterArrangementTest`) call the
+real Core rather than just constructing its plain data classes — that is
+what makes `RosterArrangement` thin instead of a second copy of the roster's
+rules. Reaching Rust from a desktop JVM test needs a *host* build, distinct
+from the four cross-compiled `.so`s above: `target/debug/libsupermessage_ffi.so`,
+which `./gradlew test` does not build for you any more than it builds the
+Android ABIs.
+
+```bash
+cargo build -p supermessage-ffi                    # once, or whenever the FFI surface changes
+```
+
+Skip this and run `:kit:test` anyway and it **fails**, not skips — same
+posture as the missing-`.so` check above, for the same reason: a quiet skip
+here would mean these tests silently stop running in CI and nobody notices.
+The failure names the exact file and the exact command. If you deliberately
+don't want to build Rust right now, `-Pkit.allowMissingHostCore=true` opts
+out and skips those tests instead, saying so in the skip message.
+
 The instrumented suites need a running device or emulator (`adb devices`).
 Available AVDs: `supermessage-tablet` (800dp portrait / 1280dp landscape),
 `supermessage-phone` (411/914dp), `supermessage-16k` (411/923dp) — the shell's
