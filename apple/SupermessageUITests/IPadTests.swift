@@ -64,12 +64,18 @@ final class IPadTests: XCTestCase {
             app.navigationBars["Ganesha"].waitForExistence(timeout: 20),
             "the room did not open")
 
-        let info = app.navigationBars["Ganesha"].buttons["Info"]
-        XCTAssertTrue(info.waitForExistence(timeout: 10), "no info button in the toolbar")
+        // The room *header* is the control, not a ⓘ button beside it. Once the
+        // header became a button (`RootView`'s `.principal` toolbar item, which
+        // shows the agent's liveness as well as its name) a separate info
+        // button was a second door to the same room, and it was removed. This
+        // test still asks the same question — does the panel describe the room
+        // that is open — only the way in changed.
+        let info = app.navigationBars["Ganesha"].buttons["Ganesha, about this room"]
+        XCTAssertTrue(info.waitForExistence(timeout: 10), "no room-info control in the toolbar")
         // Existence is not reach. A toolbar button can be in the tree and
         // unreachable — something laid over the bar swallowing its touches —
         // and then the rest of this test fails somewhere misleading.
-        XCTAssertTrue(info.isHittable, "the info button is on screen but not hittable")
+        XCTAssertTrue(info.isHittable, "the room-info control is on screen but not hittable")
 
         // Tapped at an absolute window coordinate. `tap()` on this element
         // makes XCUITest attempt `AXScrollToVisible` first, which a navigation
@@ -104,9 +110,15 @@ final class IPadTests: XCTestCase {
         XCTAssertTrue(
             frame.width > 1 && frame.height > 1,
             "the member list is in the tree but has no area on screen: \(frame)")
+        // The window's own frame is in the message because without it this
+        // failure is unreadable: "laid out off screen: (850.5, …)" says
+        // nothing about what it is off the side *of*, and the answer decides
+        // whether the panel is misplaced or the device is simply narrower
+        // than the layout assumed.
+        let window = app.windows.firstMatch.frame
         XCTAssertTrue(
-            app.windows.firstMatch.frame.contains(frame),
-            "the info panel is laid out off screen: \(frame)")
+            window.contains(frame),
+            "the info panel is laid out off screen: \(frame) is outside \(window)")
     }
 
     /// Screenshots travel in the result bundle, not through `/tmp`.

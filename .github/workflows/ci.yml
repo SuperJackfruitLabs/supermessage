@@ -115,6 +115,76 @@ jobs:
         run: cargo test --all-features
         working-directory: src-tauri
 
+  ios:
+    name: iOS
+    # macOS runners are 10x the minute cost of Linux ones on private repos.
+    # This one is public, so the job is free — but it is also the reason to
+    # keep it lean: it builds the core in `dev`, not `release`.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The two slices `build-xcframework.sh` packages. No x86_64
+          # simulator: the runner is Apple silicon and an unused slice is
+          # build time for nobody.
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Generate the Xcode project
+        # `apple/Supermessage.xcodeproj` is gitignored — `project.yml` is the
+        # source of truth — so a fresh clone has no project to build.
+        run: |
+          brew install xcodegen
+          cd apple && xcodegen generate
+
+      - name: Build the XCFramework and regenerate the bindings
+        # `--debug`: this job exists to prove the Swift compiles against the
+        # Rust and the tests pass, and a `release` core answers neither
+        # question differently while costing several minutes more.
+        run: ./scripts/build-xcframework.sh --debug
+
+      - name: The checked-in bindings match the Rust that generates them
+        # The bindings are committed, the framework is not — so a Mac builds
+        # the committed Swift against whatever Rust it has locally. UniFFI
+        # serialises field *order*, not names, so a rename that nobody
+        # regenerated links cleanly and fails at runtime, or worse, silently
+        # reads the wrong field. Nothing else in the tree would notice.
+        run: |
+          if ! git diff --quiet -- apple/Generated; then
+            echo "::error::apple/Generated is stale — run ./scripts/build-xcframework.sh and commit the result"
+            git diff --stat -- apple/Generated
+            exit 1
+          fi
+
+      - name: Kit tests
+        # The boundary and the stores. No live session, so these are the iOS
+        # tests that can honestly run on a machine nobody has signed in on.
+        run: |
+          xcodebuild test \
+            -project apple/Supermessage.xcodeproj \
+            -scheme SupermessageKit \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+
+      - name: The app and its UI tests compile
+        # `build-for-testing`, not `test`. The `Supermessage` scheme runs
+        # `SupermessageUITests`, and those drive a signed-in app against a
+        # real homeserver — they wait 30s for a joined room named "Ganesha"
+        # and fail without one. There is no session on a CI runner and
+        # inventing one would mean shipping credentials into a public repo.
+        #
+        # Compiling them still earns its place: it is what catches a Rust
+        # rename breaking `RichTextView` or a UI test that no longer matches
+        # the app, which is most of what the iOS surface actually risks.
+        # Running them stays a human step on a Mac — see AGENTS.md.
+        run: |
+          xcodebuild build-for-testing \
+            -project apple/Supermessage.xcodeproj \
+            -scheme Supermessage \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+
   licences:
     name: Dependency licences
     runs-on: ubuntu-24.04

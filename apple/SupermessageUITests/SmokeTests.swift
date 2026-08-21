@@ -186,8 +186,10 @@ final class SmokeTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         attach(XCUIScreen.main.screenshot(), named: "panel-room-toolbar")
 
-        let info = app.navigationBars["Ganesha"].buttons["Info"]
-        XCTAssertTrue(info.waitForExistence(timeout: 10), "no info button")
+        // The room header is the way into room info; the ⓘ button beside it
+        // was removed as a second door to the same place.
+        let info = app.navigationBars["Ganesha"].buttons["Ganesha, about this room"]
+        XCTAssertTrue(info.waitForExistence(timeout: 10), "no room-info control")
         let centre = CGVector(dx: info.frame.midX, dy: info.frame.midY)
         app.coordinate(withNormalizedOffset: .zero).withOffset(centre).tap()
         Thread.sleep(forTimeInterval: 4)
