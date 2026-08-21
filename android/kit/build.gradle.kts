@@ -33,7 +33,15 @@ dependencies {
     // It talks to Core, never to a view toolkit — see the Compose ban below.
     api(project(":core"))
 
+    // StreamingText (Task 2) is the first type here that is coroutine-driven,
+    // and every later store built on it (LiveStore, EventPump, CoreClient)
+    // needs the same artifact — api, not implementation, because
+    // StreamingText's constructor takes a CoroutineScope, which makes
+    // CoroutineScope part of :kit's own public surface.
+    api(libs.kotlinx.coroutines.core)
+
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 // kit importing no Compose is not tidiness. It is what keeps the state layer
