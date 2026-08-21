@@ -12,7 +12,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -20,7 +19,6 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.supermessage.kit.Session
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -52,34 +50,10 @@ class MainActivity : ComponentActivity() {
                     // the one place in the tree that has one to give it.
                     val prefs = remember { RosterPreferences(applicationContext.rosterDataStore) }
 
-                    // Local state, seeded once — not a continuous collection
-                    // of prefs.homeserver.
-                    //
-                    // A TextField is a controlled component: its `value` is
-                    // whatever the caller hands it back. Binding that value
-                    // straight to a Flow that this same field also writes to
-                    // on every keystroke created a race — a second keystroke
-                    // arriving before DataStore's write had re-emitted fired
-                    // onValueChange against a *stale* displayed value and
-                    // silently overwrote the character in between rather
-                    // than appending it. `username` and `password` in
-                    // LoginScreen never had this problem because they live
-                    // in ordinary `remember` state; `homeserver` needs the
-                    // same shape to be correct, while still surviving a
-                    // failed sign-in the way RosterPreferences.homeserver's
-                    // own doc comment describes — which is what seeding once
-                    // from the stored value, then writing through without
-                    // reading back, gives it: one read at start, writes
-                    // fire-and-forget from then on, the displayed value
-                    // never again waits on the store.
-                    var homeserverSeeded by rememberSaveable { mutableStateOf(false) }
-                    var homeserver by rememberSaveable { mutableStateOf("") }
-                    LaunchedEffect(Unit) {
-                        if (!homeserverSeeded) {
-                            homeserver = prefs.homeserver.first()
-                            homeserverSeeded = true
-                        }
-                    }
+                    // Seeded once from prefs.homeserver, write-through from
+                    // then on — see SeededHomeserver.kt for why this is its
+                    // own seam rather than inline state here.
+                    val homeserverField = rememberSeededHomeserver(prefs)
 
                     val failure by vm.session.failure.collectAsStateWithLifecycle()
                     var busy by remember { mutableStateOf(false) }
@@ -89,11 +63,8 @@ class MainActivity : ComponentActivity() {
                         phase = phase,
                         signedOutContent = {
                             LoginScreen(
-                                homeserver = homeserver,
-                                onHomeserverChange = { value ->
-                                    homeserver = value
-                                    scope.launch { prefs.setHomeserver(value) }
-                                },
+                                homeserver = homeserverField.value,
+                                onHomeserverChange = homeserverField::onChange,
                                 failure = failure,
                                 busy = busy,
                                 onSignIn = { username, password ->
@@ -108,7 +79,7 @@ class MainActivity : ComponentActivity() {
                                         busy = true
                                         try {
                                             vm.session.signIn(
-                                                homeserver = homeserver,
+                                                homeserver = homeserverField.value,
                                                 username = username,
                                                 password = password,
                                             )

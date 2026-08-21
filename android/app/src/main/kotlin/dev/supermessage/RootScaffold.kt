@@ -84,7 +84,7 @@ fun RootScaffold(
 ) {
     when (phase) {
         Session.Phase.STARTING -> Starting(modifier)
-        Session.Phase.SIGNED_OUT -> signedOutContent()
+        Session.Phase.SIGNED_OUT -> Box(modifier) { signedOutContent() }
         Session.Phase.SIGNED_IN -> SignedIn(modifier, listPaneContent)
     }
 }
