@@ -80,7 +80,7 @@ Ordered by dependency: pure functions first (Tasks 1–6), then the boundary (7�
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: four pure modules. `RelativeTime` formats an instant against a clock; `SendState` models a message's send lifecycle; `SearchState` models a search's; `RichTextFolding` decides when a long block collapses. Later tasks use `SendState` (Task 15) and `RichTextFolding` (`:app`, later plan).
+- Produces: four pure modules. `RelativeTime` formats an instant against a clock; `SendState` models a message's send lifecycle; `SearchState` models a search's; `RichTextFolding` folds the core's recursive `[RichInline]` tree into flat styled runs a view can draw — it collapses nothing, and it parses nothing, since the core hands over an already-parsed tree. Later tasks use `SendState` (Task 15) and `RichTextFolding` (`:app`, later plan).
 
 This is one task rather than four because each is under 60 lines, pure, and shaped identically — a batch a single reviewer can judge as one diff.
 
