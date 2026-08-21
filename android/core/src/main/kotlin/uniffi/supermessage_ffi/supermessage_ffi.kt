@@ -702,6 +702,15 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 internal interface UniffiCallbackInterfaceEventSinkMethod0 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`event`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
 }
+internal interface UniffiCallbackInterfaceHostSecretStoreMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`key`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceHostSecretStoreMethod1 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`key`: RustBuffer.ByValue,`value`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceHostSecretStoreMethod2 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`key`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
 @Structure.FieldOrder("onEvent", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceEventSink(
     @JvmField internal var `onEvent`: UniffiCallbackInterfaceEventSinkMethod0? = null,
@@ -718,6 +727,34 @@ internal open class UniffiVTableCallbackInterfaceEventSink(
     }
 
 }
+@Structure.FieldOrder("get", "set", "delete", "uniffiFree")
+internal open class UniffiVTableCallbackInterfaceHostSecretStore(
+    @JvmField internal var `get`: UniffiCallbackInterfaceHostSecretStoreMethod0? = null,
+    @JvmField internal var `set`: UniffiCallbackInterfaceHostSecretStoreMethod1? = null,
+    @JvmField internal var `delete`: UniffiCallbackInterfaceHostSecretStoreMethod2? = null,
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+) : Structure() {
+    class UniffiByValue(
+        `get`: UniffiCallbackInterfaceHostSecretStoreMethod0? = null,
+        `set`: UniffiCallbackInterfaceHostSecretStoreMethod1? = null,
+        `delete`: UniffiCallbackInterfaceHostSecretStoreMethod2? = null,
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    ): UniffiVTableCallbackInterfaceHostSecretStore(`get`,`set`,`delete`,`uniffiFree`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceHostSecretStore) {
+        `get` = other.`get`
+        `set` = other.`set`
+        `delete` = other.`delete`
+        `uniffiFree` = other.`uniffiFree`
+    }
+
+}
+
+
+
+
+
+
 
 
 
@@ -883,6 +920,7 @@ internal interface UniffiLib : Library {
                 uniffiCheckContractApiVersion(lib)
                 uniffiCheckApiChecksums(lib)
                 uniffiCallbackInterfaceEventSink.register(lib)
+                uniffiCallbackInterfaceHostSecretStore.register(lib)
                 }
         }
         
@@ -897,6 +935,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_free_core(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_constructor_core_new(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Pointer
+    fun uniffi_supermessage_ffi_fn_constructor_core_with_secret_store(`dataDir`: RustBuffer.ByValue,`store`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
     fun uniffi_supermessage_ffi_fn_method_core_account(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferAccountDto.ByValue
@@ -973,6 +1013,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_toggle_reaction(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`key`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_eventsink(`vtable`: UniffiVTableCallbackInterfaceEventSink,
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
     ): Unit
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1194,7 +1236,15 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_constructor_core_new(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_constructor_core_with_secret_store(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_eventsink_on_event(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_hostsecretstore_get(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_hostsecretstore_set(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_hostsecretstore_delete(
     ): Short
     fun ffi_supermessage_ffi_uniffi_contract_version(
     ): Int
@@ -1348,10 +1398,22 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_toggle_reaction() != 6594.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_constructor_core_new() != 5076.toShort()) {
+    if (lib.uniffi_supermessage_ffi_checksum_constructor_core_new() != 35650.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_constructor_core_with_secret_store() != 63818.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_eventsink_on_event() != 32204.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_hostsecretstore_get() != 62557.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_hostsecretstore_set() != 32621.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_hostsecretstore_delete() != 38582.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1995,7 +2057,7 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
         this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
     }
     /**
-     * Build a core rooted at `data_dir`.
+     * Build a core rooted at `data_dir`, using the OS secret store.
      *
      * `data_dir` is the host's to choose — an app-support directory on macOS,
      * the app container on iOS. The core puts its stores under it and does
@@ -2709,8 +2771,26 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     
 
     
+    companion object {
+        
+    /**
+     * Build a core whose secrets live in a store the host supplies.
+     *
+     * For platforms where the core has no usable store of its own. Android is
+     * the only one today: `KeyringStore` has no implementation there and
+     * fails every call, so a host that used [`Core::new`] could never sign in.
+     */ fun `withSecretStore`(`dataDir`: kotlin.String, `store`: HostSecretStore): Core {
+            return FfiConverterTypeCore.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_constructor_core_with_secret_store(
+        FfiConverterString.lower(`dataDir`),FfiConverterTypeHostSecretStore.lower(`store`),_status)
+}
+    )
+    }
     
-    companion object
+
+        
+    }
     
 }
 
@@ -4151,6 +4231,119 @@ internal object uniffiCallbackInterfaceEventSink {
  * @suppress
  */
 public object FfiConverterTypeEventSink: FfiConverterCallbackInterface<EventSink>()
+
+
+
+
+
+/**
+ * A place to put secrets, implemented by the host.
+ *
+ * Synchronous, because the core calls it inline — see `SecretStore` in the
+ * core, whose signature this must satisfy through [`ForeignStore`]. A host
+ * backing this with an async store must bridge on its own side.
+ */
+public interface HostSecretStore {
+    
+    /**
+     * The value for `key`, or `None` when nothing is stored under it.
+     *
+     * `None` is not an error and must not be reported as one: `restore()`
+     * reads a missing key as "first run" and sends the user to sign-in,
+     * which is the correct outcome when a stored value is unrecoverable.
+     */
+    fun `get`(`key`: kotlin.String): kotlin.String?
+    
+    fun `set`(`key`: kotlin.String, `value`: kotlin.String)
+    
+    fun `delete`(`key`: kotlin.String)
+    
+    companion object
+}
+
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceHostSecretStore {
+    internal object `get`: UniffiCallbackInterfaceHostSecretStoreMethod0 {
+        override fun callback(`uniffiHandle`: Long,`key`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeHostSecretStore.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`get`(
+                    FfiConverterString.lift(`key`),
+                )
+            }
+            val writeReturn = { value: kotlin.String? -> uniffiOutReturn.setValue(FfiConverterOptionalString.lower(value)) }
+            uniffiTraitInterfaceCallWithError(
+                uniffiCallStatus,
+                makeCall,
+                writeReturn,
+                { e: FfiException -> FfiConverterTypeFfiError.lower(e) }
+            )
+        }
+    }
+    internal object `set`: UniffiCallbackInterfaceHostSecretStoreMethod1 {
+        override fun callback(`uniffiHandle`: Long,`key`: RustBuffer.ByValue,`value`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeHostSecretStore.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`set`(
+                    FfiConverterString.lift(`key`),
+                    FfiConverterString.lift(`value`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCallWithError(
+                uniffiCallStatus,
+                makeCall,
+                writeReturn,
+                { e: FfiException -> FfiConverterTypeFfiError.lower(e) }
+            )
+        }
+    }
+    internal object `delete`: UniffiCallbackInterfaceHostSecretStoreMethod2 {
+        override fun callback(`uniffiHandle`: Long,`key`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeHostSecretStore.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`delete`(
+                    FfiConverterString.lift(`key`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCallWithError(
+                uniffiCallStatus,
+                makeCall,
+                writeReturn,
+                { e: FfiException -> FfiConverterTypeFfiError.lower(e) }
+            )
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeHostSecretStore.handleMap.remove(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceHostSecretStore.UniffiByValue(
+        `get`,
+        `set`,
+        `delete`,
+        uniffiFree,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(vtable)
+    }
+}
+
+/**
+ * The ffiConverter which transforms the Callbacks in to handles to pass to Rust.
+ *
+ * @suppress
+ */
+public object FfiConverterTypeHostSecretStore: FfiConverterCallbackInterface<HostSecretStore>()
 
 
 
