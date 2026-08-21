@@ -26,49 +26,66 @@ import dev.supermessage.kit.Session
 
 /**
  * The shell, gated on [Session.Phase] the way iOS gates at
- * `apple/Supermessage/RootView.swift:15-25`: [Session.Phase.STARTING] shows a
- * progress indicator, [Session.Phase.SIGNED_OUT] shows [LoginScreen], and
- * [Session.Phase.SIGNED_IN] shows the panes below — unchanged.
+ * `apple/Supermessage/RootView.swift:15-25`. This composable is phase-gating
+ * logic and nothing else: what each phase actually shows is content the
+ * caller supplies, not something this file builds or imports.
  *
  * `phase` defaults to [Session.Phase.SIGNED_IN] so every existing caller of
  * `RootScaffold()` — RootScaffoldTest's geometry tests among them — keeps
  * compiling and keeps seeing exactly what it saw before this gate existed.
  *
- * The five `login*` parameters carry the [LoginScreen] contract — the
- * homeserver, its setter, the last failure, whether a sign-in is in flight,
- * and the sign-in callback — straight through with plain values and
- * defaults, deliberately not a [Session]. `MainActivity` is where those
- * values actually come from: it owns the `RosterPreferences` and the
- * `Session` this screen needs, and reaches down through `RootScaffold` with
- * nothing more than what [LoginScreen] itself asks for. That keeps this
- * composable, like [LoginScreen], free of `Session` and constructible with
- * only default values — which is what lets `PhaseGateTest`'s
- * `signedOutShowsLoginAndNoPanes` call `RootScaffold(phase =
- * Session.Phase.SIGNED_OUT)` with nothing else and still see the "login" tag.
+ * ## Why content slots, not per-screen parameters
+ *
+ * An earlier version of this signature carried five `login*` parameters —
+ * `LoginScreen`'s whole contract, threaded through individually so
+ * `RootScaffold` could build that screen itself. Task 6's roster content
+ * would have added a comparable handful for the `SIGNED_IN` side, leaving
+ * this function past a dozen parameters spanning two unrelated screens, all
+ * defaulted only so old call sites kept compiling — defaults papering over
+ * a widening seam rather than closing it. [signedOutContent] and
+ * [listPaneContent] replace that: this file no longer imports `LoginScreen`
+ * at all, and never will import whatever Task 6's roster content turns out
+ * to be. It gates; it does not know what it is gating to.
+ *
+ * [signedOutContent] defaults to rendering nothing. Nothing in this
+ * codebase relies on that default actually showing something —
+ * `RootScaffoldTest` never drives [Session.Phase.SIGNED_OUT], and
+ * `PhaseGateTest` supplies its own tagged stub rather than depending on
+ * whatever `MainActivity`'s real content (`LoginScreen`) happens to render.
+ * That is deliberate: a gate test should prove the gate opens the right
+ * door, not re-assert what is behind it.
+ *
+ * [listPaneContent] defaults to today's "Roster" placeholder pane, because
+ * unlike the sign-out screen, `SIGNED_IN`'s list pane already has a named
+ * consumer on the horizon — Task 6. Confirmed, not assumed: running
+ * `RootScaffoldTest` unmodified against this default still passes, because
+ * its three geometry tests assert `pane-roster`'s bounds, not its content,
+ * and the default reproduces the exact tag and label the old inline call
+ * used to render. It takes `shellWidth` as a lambda parameter rather than
+ * closing over the one computed inside [SignedIn]: a default parameter
+ * expression is evaluated where the parameter is declared, not inside the
+ * function body, so it cannot see a local computed deeper in — passing it
+ * as an argument is what lets the default (and any real content Task 6
+ * supplies) use it without `RootScaffold` needing to expose it any other
+ * way. The detail and info panes stay hardcoded placeholders rather than
+ * slots: nothing in this phase of the roster work consumes them, and a slot
+ * with no real caller would be exactly the kind of premature seam the
+ * parameter-list problem above already was.
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun RootScaffold(
     modifier: Modifier = Modifier,
     phase: Session.Phase = Session.Phase.SIGNED_IN,
-    loginHomeserver: String = "",
-    onLoginHomeserverChange: (String) -> Unit = {},
-    loginFailure: String? = null,
-    loginBusy: Boolean = false,
-    onLoginSignIn: (username: String, password: String) -> Unit = { _, _ -> },
+    signedOutContent: @Composable () -> Unit = {},
+    listPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
+        Pane("pane-roster", "Roster", shellWidth)
+    },
 ) {
     when (phase) {
         Session.Phase.STARTING -> Starting(modifier)
-        Session.Phase.SIGNED_OUT -> Box(modifier.fillMaxSize().testTag("login")) {
-            LoginScreen(
-                homeserver = loginHomeserver,
-                onHomeserverChange = onLoginHomeserverChange,
-                failure = loginFailure,
-                busy = loginBusy,
-                onSignIn = onLoginSignIn,
-            )
-        }
-        Session.Phase.SIGNED_IN -> SignedIn(modifier)
+        Session.Phase.SIGNED_OUT -> signedOutContent()
+        Session.Phase.SIGNED_IN -> SignedIn(modifier, listPaneContent)
     }
 }
 
@@ -86,7 +103,10 @@ private fun Starting(modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-private fun SignedIn(modifier: Modifier = Modifier) {
+private fun SignedIn(
+    modifier: Modifier = Modifier,
+    listPaneContent: @Composable (shellWidth: Dp) -> Unit,
+) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         // Captured into a local before the nested pane lambdas: their
         // receiver is ThreePaneScaffoldPaneScope, which shadows the implicit
@@ -131,7 +151,7 @@ private fun SignedIn(modifier: Modifier = Modifier) {
         ListDetailPaneScaffold(
             directive = navigator.scaffoldDirective,
             value = navigator.scaffoldValue,
-            listPane = { Pane("pane-roster", "Roster", shellWidth) },
+            listPane = { listPaneContent(shellWidth) },
             detailPane = { Pane("pane-timeline", "Timeline", shellWidth) },
             extraPane = if (extraIsShown) {
                 { Pane("pane-info", "Room info", shellWidth) }
