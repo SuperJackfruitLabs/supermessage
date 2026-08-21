@@ -326,7 +326,24 @@ Per-variant rendering, as iOS does it (`TimelineRowView.swift:58-118`):
 - [ ] **Step 2: Run, confirm failure**
 - [ ] **Step 3: Write it**
 - [ ] **Step 4: Run, confirm pass**
-- [ ] **Step 5: Mutate** — make the composable render `stream.text` instead of the first `stream.revealed` characters, and confirm `theAnswerRevealsProgressively` fails. This is the mutation that matters: `StreamingText`'s pacing loop was never exercised on iOS, and this project's port added `pacesTheRevealOverTicks` precisely because of it.
+- [ ] **Step 5: Mutate** — bypass the pacer (assign the whole answer at once instead of
+  letting `StreamingText` grow `text` over ticks) and confirm `theAnswerRevealsProgressively`
+  fails. This is the mutation that matters: `StreamingText`'s pacing loop was never exercised
+  on iOS, and this project's port added `pacesTheRevealOverTicks` precisely because of it.
+
+  **`revealed` is NOT a cumulative index** — an earlier draft of this plan said to render
+  "the first `stream.revealed` characters", which is wrong and would show only the last few.
+  From `StreamingText.kt:47`: *"How many characters of [text] are new enough to still be
+  animating in. A caller fades exactly these."* It is the per-tick batch (1–12 via `batch()`,
+  reset to 0 when idle). The paced content is `text` itself, which grows tick by tick;
+  `revealed` only says how much of the tail is still arriving.
+
+  **Two consequences.** First, `text` and `revealed` are plain `var`s, not Compose `State`,
+  so reading them inside a composable never triggers recomposition — the value must be
+  bridged into a `mutableStateOf` from the `LaunchedEffect` that drives the stream. Second,
+  iOS uses `revealed` to fade the arriving glyphs (`StreamingTextView.swift:32`:
+  `settled: Double(max(0, text.count - revealed))`). Android renders the paced text without
+  that fade; see the ledger's deferred-gap note.
 - [ ] **Step 6: Commit**
 
 ---
