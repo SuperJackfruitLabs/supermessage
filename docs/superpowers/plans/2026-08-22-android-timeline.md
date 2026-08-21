@@ -194,7 +194,27 @@ Render only the first inline of an `Emphasis` → `nestedEmphasisKeepsItsText` f
 
 **Interfaces:**
 - Consumes: `RichText` (Task 2), `uniffi.supermessage_core.{TimelineRow, ItemView, TimelineItemDto}`
-- Produces: `@Composable fun TimelineRow(row: TimelineRow, isOwn: Boolean = row.item.isOwn, modifier: Modifier = Modifier)`
+- Produces:
+```kotlin
+@Composable fun TimelineRow(
+    row: TimelineRowDto,
+    now: Instant,                       // injected clock; DateDivider formats from it
+    continuesRun: Boolean = false,      // does the row above already carry this sender's header?
+    attribution: String = "",           // chosen by the LIST, which can see every row
+    avatarUri: (userId: String) -> String? = { null },
+    modifier: Modifier = Modifier,
+)
+```
+
+`attribution` and `continuesRun` are the list's to decide — from `TimelineRowView.swift:28`:
+*"Who to name, already chosen: the full attribution in a room where several agents speak,
+the bare name where one does. Chosen by the list, which can see every row; a single row
+cannot."* Fall back to `row.senderName` when `attribution` is empty, exactly as iOS does.
+
+**No `onReply` or `onReact` in A2.** iOS's row takes both, and its own doc says `onReply` is
+*"nil in contexts with no composer"* — which is precisely this phase. Reactions and replies
+arrive with Phase B. Displaying existing reactions and read receipts is in scope; *changing*
+them is not.
 
 **Name collision:** the composable and the core's DTO are both `TimelineRow`. Import the DTO and name the composable `TimelineRow` anyway — Kotlin resolves the call by position — but if that proves ambiguous at any call site, alias the import (`import uniffi.supermessage_core.TimelineRow as TimelineRowDto`) rather than renaming the composable, which the plan's later tasks call by name.
 
@@ -227,11 +247,38 @@ exactly that failure mode.
 clock as a parameter rather than calling `System.currentTimeMillis()` inside the row — the
 roster's `RelativeTime` takes an injected clock for the same reason.
 
+Use **relative** day formatting — "Today" and "Yesterday" where they apply — because, per
+`TimelineRowView.swift:47`, *"a date is harder to place than a word."*
+
+Per-variant rendering, as iOS does it (`TimelineRowView.swift:58-118`):
+
+| Variant | Renders |
+|---|---|
+| `Bubble` | the message block; `muted` (`m.notice`) de-emphasised but never suppressed |
+| `Emote` | centred italic `"$named ${item.body}"` — prose *about* its sender |
+| `System`, `Placeholder` | a system line (both, identically) |
+| `DateDivider` | a hairline with the day on it |
+| `UnreadMarker` | an accented rule, **no label** |
+| `Image` | thumbnail, reserving its box from `width`/`height` before bytes land |
+| `MediaFile` | an informative row: label · filename · size |
+| `CustomEvent` | `DecisionCard` (Task 5) |
+| `None` | **nothing at all** |
+
 - [ ] **Step 1: Write the failing tests**
 
 ```kotlin
-/** Each ItemView variant renders something a reader can see. */
-@Test fun everyVariantRendersSomething()      // ALL TEN, no blank rows
+/**
+ * Every one of the ten ItemView variants is HANDLED.
+ *
+ * Not "renders something visible" — `None` renders deliberately nothing
+ * (iOS returns `EmptyView()`), and `UnreadMarker` renders a rule with no
+ * label on purpose: "a caption repeated at every scroll position would be
+ * chrome pretending to be content." The property under test is that no
+ * variant falls through unhandled, which with no `else` branch is largely
+ * the compiler's job — so assert the nine visible ones render their
+ * distinguishing content, and assert `None` renders nothing.
+ */
+@Test fun everyVariantIsHandled()
 /** A muted bubble (m.notice) is visually distinct but still legible. */
 @Test fun aMutedBubbleStillShowsItsText()
 /** Attribution comes from senderName; the row derives no names. */
