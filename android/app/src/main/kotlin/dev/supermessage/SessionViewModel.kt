@@ -38,7 +38,13 @@ import uniffi.supermessage_ffi.CoreInterface
  * [Session.signOut] directly, not something this lifecycle hook infers.
  */
 class SessionViewModel(app: Application) : AndroidViewModel(app) {
-    val session: Session = build(Core(dataDir = app.filesDir.path), viewModelScope)
+    val session: Session = build(
+        Core.withSecretStore(
+            dataDir = app.filesDir.path,
+            store = AndroidSecretStore(app),
+        ),
+        viewModelScope,
+    )
 
     /**
      * Deliberately empty beyond `super.onCleared()`. See this class's own
