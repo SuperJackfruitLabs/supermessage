@@ -1,6 +1,7 @@
 package dev.supermessage.kit.stores
 
 import dev.supermessage.kit.CoreClient
+import dev.supermessage.kit.ErrorPresenter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,14 +19,12 @@ import uniffi.supermessage_ffi.StagedFile
  * no Swift test of its own. See [DraftStore]'s doc comment for why
  * `@MainActor` becomes a documented, not checked, invariant here.
  *
- * **Where this deliberately differs from Swift:** the source calls
- * `ErrorPresenter.message(for:)` to turn a typed failure into per-case
- * wording ("that file is 12 MB; the limit is 10 MB", and so on).
- * `ErrorPresenter` is Task 10's file and does not exist yet at this point in
- * the port, so every failure here is reported with the same fixed apology
- * instead of case-specific text. This is a placeholder, not a design choice:
- * once `ErrorPresenter` lands, [stage] and [send] should call it instead of
- * returning their own fallback strings.
+ * A typed refusal from the core is turned into per-case wording by
+ * [ErrorPresenter] — "that file is 12 MB; the limit is 10 MB", and so on —
+ * the same as Swift's `ErrorPresenter.message(for:)`. Anything the core did
+ * *not* throw as its own [FfiException] (a coroutine-machinery failure, say)
+ * falls back to a fixed apology instead, since there is no per-case wording
+ * for a failure the core never described.
  */
 class StagedAttachment(private val client: CoreClient) {
     private val _file = MutableStateFlow<StagedFile?>(null)
@@ -46,7 +45,7 @@ class StagedAttachment(private val client: CoreClient) {
             _file.value = client.attachmentStagePath(roomId = roomId, path = path)
             null
         } catch (error: FfiException) {
-            "Couldn't attach that file."
+            ErrorPresenter.message(error)
         } catch (error: Throwable) {
             "Couldn't attach that file."
         }
@@ -60,7 +59,7 @@ class StagedAttachment(private val client: CoreClient) {
             _file.value = null
             null
         } catch (error: FfiException) {
-            "Couldn't send that file."
+            ErrorPresenter.message(error)
         } catch (error: Throwable) {
             "Couldn't send that file."
         }
