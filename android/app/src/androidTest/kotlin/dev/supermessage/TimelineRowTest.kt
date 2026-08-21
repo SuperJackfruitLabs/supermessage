@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.width
 import java.time.Instant
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import androidx.compose.ui.test.onAllNodesWithText
 import org.junit.Test
 import uniffi.supermessage_core.CustomEventView
 import uniffi.supermessage_core.ItemView
@@ -251,5 +252,36 @@ class TimelineRowTest {
         compose.onNodeWithText("✅", substring = true).assertIsDisplayed()
         compose.onNodeWithText("2", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Read by", substring = true).assertIsDisplayed()
+    }
+
+    /**
+     * Read receipts name people, not Matrix ids.
+     *
+     * The first implementation of this row reimplemented the core's
+     * `people_label` locally, because it looked for free functions in
+     * `supermessage_core.kt` and found none — they live in
+     * `supermessage_ffi.kt`. The grouping it wrote was right; the fallback was
+     * not, and a reader saw `@_agentpod_ganesha:id.agentpod.dev` under their
+     * own message instead of `Ganesha`.
+     *
+     * The binding's own doc says why it exists: "naming is a core decision
+     * rather than something each host re-invents in its own idiom." This test
+     * is what stops the next host re-inventing it.
+     */
+    @Test
+    fun readReceiptsNamePeopleRatherThanIds() {
+        compose.setContent {
+            TimelineRow(
+                row = row(
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("hello")),
+                    isOwn = true,
+                    readBy = listOf("@_agentpod_ganesha:id.agentpod.dev"),
+                ),
+                now = now,
+            )
+        }
+        compose.onNodeWithText("Read by Ganesha").assertExists()
+        compose.onAllNodesWithText("@_agentpod_ganesha:id.agentpod.dev", substring = true)
+            .assertCountEquals(0)
     }
 }

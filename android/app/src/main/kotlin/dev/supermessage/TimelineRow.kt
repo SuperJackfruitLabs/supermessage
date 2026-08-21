@@ -46,6 +46,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import uniffi.supermessage_ffi.peopleLabel
 import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.MediaFileLabel
 import uniffi.supermessage_core.ReactionDto
@@ -290,7 +291,7 @@ private fun MessageBlock(
         // what they already know.
         if (isOwn && row.item.readBy.isNotEmpty()) {
             Text(
-                "Read by ${readByLabel(row.item.readBy)}",
+                "Read by ${peopleLabel(row.item.readBy)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,
             )
@@ -299,23 +300,6 @@ private fun MessageBlock(
         if (row.item.reactions.isNotEmpty()) {
             ReactionsRow(row.item.reactions)
         }
-    }
-}
-
-/**
- * Names up to two read-receipt (or reaction) senders and counts the rest —
- * the same shape as the core's `display_name::people_label`. That function
- * is not yet exposed through this host's uniffi bindings (only `Core`'s own
- * methods are; no free function crosses today), so this falls back to the
- * raw user ids rather than pretending a display name is known.
- */
-private fun readByLabel(userIds: List<String>): String = when (userIds.size) {
-    0 -> ""
-    1 -> userIds[0]
-    2 -> "${userIds[0]} and ${userIds[1]}"
-    else -> {
-        val rest = userIds.size - 2
-        "${userIds[0]}, ${userIds[1]} and $rest ${if (rest == 1) "other" else "others"}"
     }
 }
 
