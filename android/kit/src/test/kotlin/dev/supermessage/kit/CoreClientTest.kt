@@ -1,5 +1,6 @@
 package dev.supermessage.kit
 
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -116,8 +117,18 @@ class CoreClientTest {
  * meaningful without slowing the suite down.
  */
 class FakeCore(private val blockMillis: Long = 0) : CoreInterface {
-    var connectionStateCallCount: Int = 0
-        private set
+    // `manyBlockingCallsAtOnceDoNotStarveAnything` drives this fake from 64
+    // real `Dispatchers.IO` threads at once, all incrementing this counter
+    // concurrently. A plain `var Int` loses updates under that — `count++`
+    // is read-modify-write, not atomic, so two threads can both read the
+    // same value before either writes back, and one increment vanishes.
+    // That is exactly the 63/64 flake this counter caused: `AtomicInteger`
+    // is what makes `incrementAndGet()` a single indivisible operation.
+    // Any future counter here that a concurrent test can observe needs the
+    // same treatment.
+    private val _connectionStateCallCount = AtomicInteger(0)
+    val connectionStateCallCount: Int
+        get() = _connectionStateCallCount.get()
 
     private fun block() {
         if (blockMillis > 0) Thread.sleep(blockMillis)
@@ -134,7 +145,7 @@ class FakeCore(private val blockMillis: Long = 0) : CoreInterface {
 
     override fun connectionState(): ConnectionState {
         block()
-        connectionStateCallCount++
+        _connectionStateCallCount.incrementAndGet()
         return ConnectionState(state = "offline", message = null)
     }
 
