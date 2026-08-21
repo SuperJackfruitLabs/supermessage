@@ -55,7 +55,7 @@ extension RichBlock {
                 RichTextView(blocks: blocks)
             }
 
-        case let .list(ordered, start, items):
+        case let .listBlock(ordered, start, items):
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .top, spacing: 8) {

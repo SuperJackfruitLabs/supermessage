@@ -38,8 +38,8 @@ Same `#[uniffi::export]` definitions, second language, no new Rust.
 |---|---|
 | `crate-type` | Already lists `cdylib` — the manifest comment says "for Android's `.so`" |
 | 16 KB pages | `core::tls` installs ring explicitly because aws-lc-rs crashes on 16 KB-page devices, which Play now requires. Half the fix; the other half is a linker flag, in `scripts/build-android-libs.sh` |
-| Build pipeline | `scripts/build-android-libs.sh` — four ABIs plus Kotlin bindings, mirroring `build-xcframework.sh`. **Written, not yet run**: this machine has no NDK. Expect to debug it once |
-| Toolchain | `AGENTS.md` records SDK, NDK `29.0.14206865` and all four Rust targets on the Linux box. Treat as a claim to verify, not a fact — that file has been stale before |
+| Build pipeline | `scripts/build-android-libs.sh` — four ABIs plus Kotlin bindings, mirroring `build-xcframework.sh`. **Run green on the Linux box, 20 Aug**, unmodified: four `.so` in ~15 min and 9,449 lines of Kotlin, the count this spec predicted. Every `LOAD` segment aligns `0x4000`, so the 16 KB fix is real and not just a flag that was passed |
+| Toolchain | Verified 20 Aug: SDK at `~/Android/Sdk`, NDK `29.0.14206865`, JDK 21, all four Rust targets. `AGENTS.md` was right about the machine and wrong about the NDK — it said there was none, having been written on the Mac. Only `cargo-ndk` was missing |
 
 ## The decision: native Compose, not the Tauri webview
 
@@ -65,7 +65,9 @@ reasons:
 
 ```
 android/
-  core/     the generated bindings + the .so files. Checked in.
+  core/     the generated bindings + the .so files. The Kotlin is checked in;
+            the .so are not — 362MB across four ABIs, and x86 alone is over
+            GitHub's 100MB per-file limit. Run the build script for those.
   kit/      the boundary and the stores. Imports no Compose.
   app/      the views.
 ```
@@ -160,11 +162,15 @@ room-info panel existed while it was laid out off the side of an iPad.
 
 Each step ends somewhere you could stop.
 
-1. **Prove the pipeline.** Run `scripts/build-android-libs.sh` on a machine
-   with the NDK. Expect to fix it. Done when four `.so` files and the Kotlin
-   exist, and a scratch Android test can call `peopleLabel`.
-2. **`core` module.** Gradle consumes the `.so` and the bindings. Done when an
-   instrumented test on a device calls into Rust and gets an answer.
+1. **Prove the pipeline.** ~~Run `scripts/build-android-libs.sh` on a machine
+   with the NDK.~~ Done 20 Aug on the Linux box — the script needed no fixing,
+   only `cargo install cargo-ndk`. Four `.so` files and the Kotlin exist.
+   ~~What remains of this step is a scratch Android test calling
+   `peopleLabel`.~~ Done — `:core`'s instrumented test calls it directly.
+2. **`core` module.** Gradle consumes the `.so` and the bindings. ~~Done when
+   an instrumented test on a device calls into Rust and gets an answer.~~
+   Done — that instrumented test passes on a device (`supermessage-tablet`
+   and `supermessage-phone` AVDs).
 3. **`kit`: client and pump.** `CoreClient` off the main thread, `EventPump`
    in order, with their tests. Done when a login and a room list arrive.
 4. **`kit`: stores.** All eleven, tests ported. Done on the JVM, no emulator.

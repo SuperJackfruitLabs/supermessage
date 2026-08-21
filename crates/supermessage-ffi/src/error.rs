@@ -11,27 +11,33 @@
 use supermessage_core::error::CoreError;
 
 /// A failure the host can act on.
+///
+/// The string fields on `Auth`, `Network`, `Store` and `Protocol` are called
+/// `detail`, not `message`. UniFFI compiles this into a Kotlin exception
+/// extending `kotlin.Exception`, which already declares `message`; a field of
+/// the same name collides with it (`'message' hides member of supertype`,
+/// plus overload-resolution ambiguity). Do not rename it back.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum FfiError {
     /// Credentials were refused, or the session is no longer valid. The host
     /// should return to its sign-in screen.
-    #[error("{message}")]
-    Auth { message: String },
+    #[error("{detail}")]
+    Auth { detail: String },
 
     /// The homeserver could not be reached. Worth retrying.
-    #[error("{message}")]
-    Network { message: String },
+    #[error("{detail}")]
+    Network { detail: String },
 
     /// The credential store or the local database refused. On iOS this is
     /// also what a locked device looks like — the Data Protection keychain is
     /// unreadable until first unlock, which is a state to wait out rather
     /// than an error to report.
-    #[error("{message}")]
-    Store { message: String },
+    #[error("{detail}")]
+    Store { detail: String },
 
     /// Anything else: a malformed response, an unexpected state.
-    #[error("{message}")]
-    Protocol { message: String },
+    #[error("{detail}")]
+    Protocol { detail: String },
 
     /// There is no session yet. The host asked for something that needs one.
     #[error("no session is running")]
@@ -63,10 +69,10 @@ impl From<CoreError> for FfiError {
         // Exhaustive, so a new variant in the core has to be considered here
         // rather than collapsing into `Protocol` by default.
         match error {
-            CoreError::Auth(message) => Self::Auth { message },
-            CoreError::Network(message) => Self::Network { message },
-            CoreError::Store(message) => Self::Store { message },
-            CoreError::Protocol(message) => Self::Protocol { message },
+            CoreError::Auth(detail) => Self::Auth { detail },
+            CoreError::Network(detail) => Self::Network { detail },
+            CoreError::Store(detail) => Self::Store { detail },
+            CoreError::Protocol(detail) => Self::Protocol { detail },
             CoreError::NotReady => Self::NotReady,
             CoreError::RoomChanged { requested, focused } => {
                 Self::RoomChanged { requested, focused }

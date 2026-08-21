@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Theme.Material3.DayNight.NoActionBar lives in com.google.android.material,
+      not a declared dependency here, so AAPT fails to resolve it. The framework
+      fallback below is light-only: a cold start under system dark mode shows a
+      white window until Compose paints its first frame. The SDK has no
+      dependency-free DayNight.NoActionBar sibling; reaching day/night without
+      the flash needs a custom styles.xml. Forward-looking placeholder, not
+      tied to a task number: real theming belongs with the real UI, built in
+      docs/superpowers/specs/2026-08-20-android-app-design.md's step 5
+      (roster/timeline) and step 6 (composer and the rest) — revisit there.
+    -->
+    <!--
+      allowBackup=false: Auto Backup is on by default, and this app will hold
+      a Matrix session store and an encrypted database that must not
+      round-trip through a cloud backup.
+    -->
+    <application
+        android:label="Supermessage"
+        android:supportsRtl="true"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!--
+          configChanges suppresses activity recreation on rotation. This is
+          load-bearing, not incidental: it is what makes spec §4.2 rule 2
+          necessary at all — RootScaffold recomputes pane count from measured
+          width on every recomposition rather than relying on a fresh
+          Activity per rotation, so an opened info pane can be stranded by a
+          narrowing instead of simply restarting clean. No test guards this
+          line; it would need a real rotation on a device.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -14,6 +14,11 @@
 # **checked in**, for the reason the iOS script gives: it keeps Gradle builds
 # hermetic and makes a moved boundary show up in review as a diff.
 #
+# The `.so` files are **not** checked in — `.gitignore` drops `jniLibs/`, since
+# they are 362MB across four ABIs and x86 alone is over GitHub's per-file
+# limit. So a fresh checkout has the Kotlin and no libraries behind it: run
+# this once after cloning, or the first call into `Core` fails to link.
+#
 # Requires the NDK. `cargo-ndk` handles the toolchain plumbing — the sysroot,
 # the right clang per ABI, the linker flags — which is otherwise a page of
 # per-target environment variables that go stale with every NDK release:
@@ -77,9 +82,16 @@ cargo run -q -p supermessage-ffi --bin uniffi-bindgen -- generate \
     --language kotlin \
     --out-dir "$STAGE"
 
-rm -rf "$GENERATED"
-mkdir -p "$(dirname "$GENERATED")"
-mv "$STAGE" "$GENERATED"
+# Narrowed to uniffi/, not the whole of $GENERATED: android/core/src/main/kotlin
+# is :core's real auto-discovered source root (AGP 9's built-in Kotlin
+# support), so wiping it outright would also take out any non-generated
+# Kotlin ever added there. uniffi-bindgen's --out-dir writes exactly one
+# top-level entry, uniffi/, so that is the only thing swapped.
+GENERATED_UNIFFI="$GENERATED/uniffi"
+rm -rf "$GENERATED_UNIFFI"
+mkdir -p "$GENERATED"
+mv "$STAGE/uniffi" "$GENERATED_UNIFFI"
+rm -rf "$STAGE"
 trap - EXIT
 
 echo
@@ -88,3 +100,4 @@ echo "kotlin $GENERATED/uniffi/"
 echo
 echo "The generated Kotlin is checked in on purpose. Commit it with the Rust"
 echo "change that moved it, so the boundary and its bindings travel together."
+echo "The .so files are gitignored — every checkout runs this script once."
