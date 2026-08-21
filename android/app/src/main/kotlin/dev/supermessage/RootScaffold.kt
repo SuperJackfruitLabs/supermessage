@@ -1,10 +1,12 @@
 package dev.supermessage
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
@@ -15,23 +17,66 @@ import androidx.compose.material3.adaptive.layout.PaneScaffoldDirective
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.supermessage.kit.Session
 
 /**
- * The shell, and the one decision it makes.
+ * The shell, gated on [Session.Phase] the way iOS gates at
+ * `apple/Supermessage/RootView.swift:15-25`: [Session.Phase.STARTING] shows a
+ * progress indicator, [Session.Phase.SIGNED_OUT] shows the login placeholder
+ * (Task 4 replaces it with the real form), and [Session.Phase.SIGNED_IN]
+ * shows the panes below — unchanged.
  *
- * Panes are placeholders in this pass: each reports its own measured width, so
- * the adaptation is visible and testable before there is any real data.
- *
- * The width is measured here, at the top, because this is the only place that
- * knows the window's width — a pane reports its own.
+ * `phase` defaults to [Session.Phase.SIGNED_IN] so every existing caller of
+ * `RootScaffold()` — RootScaffoldTest's geometry tests among them — keeps
+ * compiling and keeps seeing exactly what it saw before this gate existed.
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-fun RootScaffold(modifier: Modifier = Modifier) {
+fun RootScaffold(modifier: Modifier = Modifier, phase: Session.Phase = Session.Phase.SIGNED_IN) {
+    when (phase) {
+        Session.Phase.STARTING -> Starting(modifier)
+        Session.Phase.SIGNED_OUT -> LoginPlaceholder(modifier)
+        Session.Phase.SIGNED_IN -> SignedIn(modifier)
+    }
+}
+
+@Composable
+private fun Starting(modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .fillMaxSize()
+            .testTag("phase-starting"),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator()
+    }
+}
+
+/**
+ * Deliberately minimal and obviously temporary: Task 4 replaces this with
+ * `LoginScreen`. The "login" tag is the only contract this placeholder makes
+ * with the gate test — nothing here is a form.
+ */
+@Composable
+private fun LoginPlaceholder(modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .fillMaxSize()
+            .testTag("login"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("Sign in (placeholder — Task 4)")
+    }
+}
+
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
+@Composable
+private fun SignedIn(modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         // Captured into a local before the nested pane lambdas: their
         // receiver is ThreePaneScaffoldPaneScope, which shadows the implicit
