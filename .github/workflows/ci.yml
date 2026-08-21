@@ -159,6 +159,38 @@ jobs:
             exit 1
           fi
 
+      - name: Choose a simulator
+        id: sim
+        # Resolved at run time, not hard-coded. The first run of this job asked
+        # for "iPhone 16 Pro" and xcodebuild answered with a list containing no
+        # concrete simulators at all — only `Any iOS Simulator Device`
+        # placeholders — because the image's runtime set is tied to the Xcode
+        # it ships and neither is ours to pin. Both lists are printed so a
+        # future image change reads as a fact rather than a mystery.
+        run: |
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          pick() {
+            xcrun simctl list devices available --json \
+              | jq -r '[.devices | to_entries[]
+                        | select(.key | test("iOS"))
+                        | .value[]]
+                       | map(select(.name | test("^iPhone")))
+                       | last | .udid // empty'
+          }
+          UDID="$(pick)"
+          if [ -z "$UDID" ]; then
+            echo "No iOS simulator on this image — fetching the platform."
+            xcodebuild -downloadPlatform iOS
+            UDID="$(pick)"
+          fi
+          if [ -z "$UDID" ]; then
+            echo "::error::no iOS simulator available even after -downloadPlatform"
+            exit 1
+          fi
+          echo "Using simulator $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
       - name: Kit tests
         # The boundary and the stores. No live session, so these are the iOS
         # tests that can honestly run on a machine nobody has signed in on.
@@ -166,7 +198,7 @@ jobs:
           xcodebuild test \
             -project apple/Supermessage.xcodeproj \
             -scheme SupermessageKit \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+            -destination "id=${{ steps.sim.outputs.udid }}"
 
       - name: The app and its UI tests compile
         # `build-for-testing`, not `test`. The `Supermessage` scheme runs
@@ -183,7 +215,7 @@ jobs:
           xcodebuild build-for-testing \
             -project apple/Supermessage.xcodeproj \
             -scheme Supermessage \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+            -destination "id=${{ steps.sim.outputs.udid }}"
 
   licences:
     name: Dependency licences
