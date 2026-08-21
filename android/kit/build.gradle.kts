@@ -61,12 +61,22 @@ dependencies {
 // which a desktop JVM cannot load. Cargo (never this Gradle build) produces
 // it at the workspace's target/debug. Relative, not absolute, so this
 // resolves the same on any clone: two directories up from :kit is the
-// workspace root. See RosterArrangementTest's own guard for what happens
-// when that build is missing.
+// workspace root.
+//
+// Default is failure, not a quiet skip, when that build is missing —
+// RosterArrangementTest's own guard fails loudly with the rebuild command,
+// the same shape as :core's checkJniLibs. `-Pkit.allowMissingHostCore=true`
+// is the deliberate opt-out for a developer who does not want to build Rust
+// right now; its name is meant to read clearly in a CI config diff, so a
+// green run with tests skipped is never silent about why.
 tasks.withType<Test>().configureEach {
     systemProperty(
         "jna.library.path",
         layout.projectDirectory.dir("../../target/debug").asFile.absolutePath,
+    )
+    systemProperty(
+        "kit.allowMissingHostCore",
+        (findProperty("kit.allowMissingHostCore") ?: "false").toString(),
     )
 }
 

@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
 import org.junit.BeforeClass
 import org.junit.Test
@@ -49,19 +50,37 @@ class RosterArrangementTest {
          * process has to be pointed at a host build by hand (see
          * `:kit`'s build file), and that build is never a Gradle output —
          * `cargo build` produces it, and `target/` is gitignored, so a fresh
-         * clone will not have it yet. Skip with a clear reason rather than
-         * fail with a bare `UnsatisfiedLinkError` far from its cause.
+         * clone will not have it yet.
+         *
+         * **Default is failure, not a skip.** A quiet `assumeTrue` would let
+         * these 11 tests vanish while the suite still reports green — the
+         * exact silent-success shape `checkJniLibs` refuses for the .so
+         * itself. Skipping happens only when a developer opts out on
+         * purpose via `-Pkit.allowMissingHostCore=true`, and even then the
+         * skip message says so, so a green-with-skips run is never silent
+         * about why.
          */
         @BeforeClass
         @JvmStatic
         fun ensureHostCoreIsBuilt() {
             val dir = System.getProperty("jna.library.path")
             val hostLib = File(dir, "libsupermessage_ffi.so")
-            assumeTrue(
-                "RosterArrangementTest calls the real Core and needs a host build at " +
-                    "$hostLib — run `cargo build -p supermessage-ffi` from the repo root, then retry.",
-                hostLib.exists(),
-            )
+            val allowMissing = System.getProperty("kit.allowMissingHostCore").toBoolean()
+            if (hostLib.exists()) return
+            if (allowMissing) {
+                assumeTrue(
+                    "kit.allowMissingHostCore is set: skipping RosterArrangementTest " +
+                        "because $hostLib is missing.",
+                    false,
+                )
+            } else {
+                fail(
+                    "RosterArrangementTest calls the real Core and needs a host build at " +
+                        "$hostLib — run `cargo build -p supermessage-ffi` from the repo root, " +
+                        "then retry. Pass -Pkit.allowMissingHostCore=true to skip these tests " +
+                        "instead.",
+                )
+            }
         }
 
         fun row(
