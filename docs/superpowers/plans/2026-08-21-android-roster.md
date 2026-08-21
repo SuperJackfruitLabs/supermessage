@@ -254,7 +254,7 @@ Four keys and their defaults, from the spec:
 | Key | Type | Default |
 |---|---|---|
 | `login.homeserver` | String | `https://id.agentpod.dev` |
-| `roster.view` | `RosterChoice` | `RosterChoice.Waiting` |
+| `roster.view` | `RosterChoice` | `RosterChoice.WAITING` |
 | `roster.showsInvitations` | Boolean | `false` |
 | `roster.showsState` | Boolean | `true` |
 
@@ -280,7 +280,7 @@ class RosterPreferencesTest {
     fun defaultsBeforeAnyWrite() = runTest {
         val p = prefs(this)
         assertEquals("https://id.agentpod.dev", p.homeserver.first())
-        assertEquals(RosterChoice.Waiting, p.view.first())
+        assertEquals(RosterChoice.WAITING, p.view.first())
         assertEquals(false, p.showsInvitations.first())
         assertEquals(true, p.showsState.first())
     }
@@ -289,8 +289,8 @@ class RosterPreferencesTest {
     @Test
     fun theChosenArrangementSurvives() = runTest {
         val p = prefs(this)
-        p.setView(RosterChoice.Machine)
-        assertEquals(RosterChoice.Machine, p.view.first())
+        p.setView(RosterChoice.MACHINE)
+        assertEquals(RosterChoice.MACHINE, p.view.first())
     }
 
     /**
@@ -311,7 +311,7 @@ class RosterPreferencesTest {
     fun anUnknownArrangementFallsBack() = runTest {
         val p = prefs(this)
         p.setRawViewForTest("NotAChoice")
-        assertEquals(RosterChoice.Waiting, p.view.first())
+        assertEquals(RosterChoice.WAITING, p.view.first())
     }
 }
 ```
