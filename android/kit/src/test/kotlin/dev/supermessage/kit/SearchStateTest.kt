@@ -40,6 +40,8 @@ class SearchStateTest {
     /** "a search with nothing in it still names what was searched for" */
     @Test
     fun emptyNamesTheQuery() {
+        // "No results" alone leaves a reader wondering which query it means,
+        // which matters when the field still holds a half-typed correction.
         assertEquals("hello", SearchState.Empty("hello").query)
     }
 

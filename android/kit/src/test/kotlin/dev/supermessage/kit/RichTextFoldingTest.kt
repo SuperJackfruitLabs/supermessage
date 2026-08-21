@@ -22,6 +22,15 @@ class RichTextFoldingTest {
         // the nesting would lose the words inside it, which is exactly the
         // bug the Rust side had in a tight list.
         assertTrue(folded.runs.any { it.strong })
+        // The inner run ("c") is inside both the strong and the emphasis —
+        // the core's tree says the text is both, and union is the correct
+        // reading of it. (Swift's `AttributedString` assigns rather than
+        // unions here and keeps only the outer trait; that is a Swift-side
+        // gap this port deliberately does not carry over. See the KDoc on
+        // RichTextFolding.)
+        val inner = folded.runs.first { it.text == "c" }
+        assertTrue("expected \"c\" to be both strong and emphasised, was $inner",
+            inner.strong && inner.emphasis)
     }
 
     /** "a link keeps its destination" */

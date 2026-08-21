@@ -13,6 +13,18 @@ import uniffi.supermessage_core.RichInline
  * plain-data replacement: a flat string plus the run boundaries and styling
  * a renderer needs, with no toolkit behind either. `:app` maps this to
  * whatever its view layer wants later.
+ *
+ * **Nested styles compose.** `Strong { inlines: [Emphasis { ... }] }` means
+ * the enclosed text is bold *and* italic — that is what the core's tree
+ * says, and `emphasis`/`strong`/`code` are independent flags precisely so a
+ * doubly-nested run can carry more than one. This is a deliberate reading of
+ * the DTO, and it differs from the Swift original on purpose: Swift assigns
+ * `inlinePresentationIntent` outright over the whole appended range rather
+ * than unioning it, so a nested `Emphasis` gets overwritten by an
+ * enclosing `Strong` and only the outermost trait survives on iOS. That is a
+ * latent Swift-side bug, not a rule to preserve — "the Swift source is the
+ * specification" governs this port's *shape*, not its defects. See
+ * `RichTextFoldingTest.nestedInlinesFold`, which pins the union behaviour.
  */
 data class FoldedRun(
     val text: String,
