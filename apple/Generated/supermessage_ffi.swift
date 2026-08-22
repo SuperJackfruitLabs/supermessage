@@ -814,7 +814,7 @@ open class Core:
         return try! rustCall { uniffi_supermessage_ffi_fn_clone_core(self.pointer, $0) }
     }
     /**
-     * Build a core rooted at `data_dir`.
+     * Build a core rooted at `data_dir`, using the OS secret store.
      *
      * `data_dir` is the host's to choose — an app-support directory on macOS,
      * the app container on iOS. The core puts its stores under it and does
@@ -838,6 +838,22 @@ public convenience init(dataDir: String) {
         try! rustCall { uniffi_supermessage_ffi_fn_free_core(pointer, $0) }
     }
 
+    
+    /**
+     * Build a core whose secrets live in a store the host supplies.
+     *
+     * For platforms where the core has no usable store of its own. Android is
+     * the only one today: `KeyringStore` has no implementation there and
+     * fails every call, so a host that used [`Core::new`] could never sign in.
+     */
+public static func withSecretStore(dataDir: String, store: HostSecretStore) -> Core {
+    return try!  FfiConverterTypeCore.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_constructor_core_with_secret_store(
+        FfiConverterString.lower(dataDir),
+        FfiConverterCallbackInterfaceHostSecretStore.lower(store),$0
+    )
+})
+}
     
 
     
@@ -2666,6 +2682,176 @@ extension FfiConverterCallbackInterfaceEventSink : FfiConverter {
     }
 }
 
+
+
+
+/**
+ * A place to put secrets, implemented by the host.
+ *
+ * Synchronous, because the core calls it inline — see `SecretStore` in the
+ * core, whose signature this must satisfy through [`ForeignStore`]. A host
+ * backing this with an async store must bridge on its own side.
+ */
+public protocol HostSecretStore : AnyObject {
+    
+    /**
+     * The value for `key`, or `None` when nothing is stored under it.
+     *
+     * `None` is not an error and must not be reported as one: `restore()`
+     * reads a missing key as "first run" and sends the user to sign-in,
+     * which is the correct outcome when a stored value is unrecoverable.
+     */
+    func get(key: String) throws  -> String?
+    
+    func set(key: String, value: String) throws 
+    
+    func delete(key: String) throws 
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceHostSecretStore {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    static var vtable: UniffiVTableCallbackInterfaceHostSecretStore = UniffiVTableCallbackInterfaceHostSecretStore(
+        get: { (
+            uniffiHandle: UInt64,
+            key: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> String? in
+                guard let uniffiObj = try? FfiConverterCallbackInterfaceHostSecretStore.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.get(
+                     key: try FfiConverterString.lift(key)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionString.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeFfiError.lower
+            )
+        },
+        set: { (
+            uniffiHandle: UInt64,
+            key: RustBuffer,
+            value: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterCallbackInterfaceHostSecretStore.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.set(
+                     key: try FfiConverterString.lift(key),
+                     value: try FfiConverterString.lift(value)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeFfiError.lower
+            )
+        },
+        delete: { (
+            uniffiHandle: UInt64,
+            key: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterCallbackInterfaceHostSecretStore.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.delete(
+                     key: try FfiConverterString.lift(key)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeFfiError.lower
+            )
+        },
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            let result = try? FfiConverterCallbackInterfaceHostSecretStore.handleMap.remove(handle: uniffiHandle)
+            if result == nil {
+                print("Uniffi callback interface HostSecretStore: handle missing in uniffiFree")
+            }
+        }
+    )
+}
+
+private func uniffiCallbackInitHostSecretStore() {
+    uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(&UniffiCallbackInterfaceHostSecretStore.vtable)
+}
+
+// FfiConverter protocol for callback interfaces
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterCallbackInterfaceHostSecretStore {
+    fileprivate static var handleMap = UniffiHandleMap<HostSecretStore>()
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+extension FfiConverterCallbackInterfaceHostSecretStore : FfiConverter {
+    typealias SwiftType = HostSecretStore
+    typealias FfiType = UInt64
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func lift(_ handle: UInt64) throws -> SwiftType {
+        try handleMap.get(handle: handle)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func lower(_ v: SwiftType) -> UInt64 {
+        return handleMap.insert(obj: v)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func write(_ v: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(v))
+    }
+}
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -3330,14 +3516,27 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_toggle_reaction() != 6594) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_constructor_core_new() != 5076) {
+    if (uniffi_supermessage_ffi_checksum_constructor_core_new() != 35650) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_constructor_core_with_secret_store() != 63818) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_eventsink_on_event() != 32204) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_hostsecretstore_get() != 62557) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_hostsecretstore_set() != 32621) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_hostsecretstore_delete() != 38582) {
+        return InitializationResult.apiChecksumMismatch
+    }
 
     uniffiCallbackInitEventSink()
+    uniffiCallbackInitHostSecretStore()
     return InitializationResult.ok
 }()
 

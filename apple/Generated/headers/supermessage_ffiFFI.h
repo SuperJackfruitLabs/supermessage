@@ -258,12 +258,43 @@ typedef void (*UniffiCallbackInterfaceEventSinkMethod0)(uint64_t, RustBuffer, vo
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_HOST_SECRET_STORE_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_HOST_SECRET_STORE_METHOD0
+typedef void (*UniffiCallbackInterfaceHostSecretStoreMethod0)(uint64_t, RustBuffer, RustBuffer* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_HOST_SECRET_STORE_METHOD1
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_HOST_SECRET_STORE_METHOD1
+typedef void (*UniffiCallbackInterfaceHostSecretStoreMethod1)(uint64_t, RustBuffer, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_HOST_SECRET_STORE_METHOD2
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_HOST_SECRET_STORE_METHOD2
+typedef void (*UniffiCallbackInterfaceHostSecretStoreMethod2)(uint64_t, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_EVENT_SINK
 #define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_EVENT_SINK
 typedef struct UniffiVTableCallbackInterfaceEventSink {
     UniffiCallbackInterfaceEventSinkMethod0 _Nonnull onEvent;
     UniffiCallbackInterfaceFree _Nonnull uniffiFree;
 } UniffiVTableCallbackInterfaceEventSink;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_HOST_SECRET_STORE
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_HOST_SECRET_STORE
+typedef struct UniffiVTableCallbackInterfaceHostSecretStore {
+    UniffiCallbackInterfaceHostSecretStoreMethod0 _Nonnull get;
+    UniffiCallbackInterfaceHostSecretStoreMethod1 _Nonnull set;
+    UniffiCallbackInterfaceHostSecretStoreMethod2 _Nonnull delete;
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+} UniffiVTableCallbackInterfaceHostSecretStore;
 
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_CLONE_CORE
@@ -279,6 +310,11 @@ void uniffi_supermessage_ffi_fn_free_core(void*_Nonnull ptr, RustCallStatus *_No
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_CONSTRUCTOR_CORE_NEW
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_CONSTRUCTOR_CORE_NEW
 void*_Nonnull uniffi_supermessage_ffi_fn_constructor_core_new(RustBuffer data_dir, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_CONSTRUCTOR_CORE_WITH_SECRET_STORE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_CONSTRUCTOR_CORE_WITH_SECRET_STORE
+void*_Nonnull uniffi_supermessage_ffi_fn_constructor_core_with_secret_store(RustBuffer data_dir, uint64_t store, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ACCOUNT
@@ -469,6 +505,11 @@ int8_t uniffi_supermessage_ffi_fn_method_core_toggle_reaction(void*_Nonnull ptr,
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_EVENTSINK
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_EVENTSINK
 void uniffi_supermessage_ffi_fn_init_callback_vtable_eventsink(UniffiVTableCallbackInterfaceEventSink* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_HOSTSECRETSTORE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_HOSTSECRETSTORE
+void uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(UniffiVTableCallbackInterfaceHostSecretStore* _Nonnull vtable
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_COLLECT_MENTIONS
@@ -1067,9 +1108,33 @@ uint16_t uniffi_supermessage_ffi_checksum_constructor_core_new(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_CONSTRUCTOR_CORE_WITH_SECRET_STORE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_CONSTRUCTOR_CORE_WITH_SECRET_STORE
+uint16_t uniffi_supermessage_ffi_checksum_constructor_core_with_secret_store(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_EVENTSINK_ON_EVENT
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_EVENTSINK_ON_EVENT
 uint16_t uniffi_supermessage_ffi_checksum_method_eventsink_on_event(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_HOSTSECRETSTORE_GET
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_HOSTSECRETSTORE_GET
+uint16_t uniffi_supermessage_ffi_checksum_method_hostsecretstore_get(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_HOSTSECRETSTORE_SET
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_HOSTSECRETSTORE_SET
+uint16_t uniffi_supermessage_ffi_checksum_method_hostsecretstore_set(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_HOSTSECRETSTORE_DELETE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_HOSTSECRETSTORE_DELETE
+uint16_t uniffi_supermessage_ffi_checksum_method_hostsecretstore_delete(void
     
 );
 #endif
