@@ -11,16 +11,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_core.ItemView
+import uniffi.supermessage_core.ReactionDto
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RichInline
 import uniffi.supermessage_core.TimelineItemDto
@@ -38,13 +42,21 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 class TimelineTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun row(id: String, body: String, timestampMs: ULong): TimelineRowDto {
+    private fun row(
+        id: String,
+        body: String,
+        timestampMs: ULong,
+        canReplyOrReact: Boolean = true,
+        editable: Boolean = false,
+        isOwn: Boolean = false,
+        reactions: List<ReactionDto> = emptyList(),
+    ): TimelineRowDto {
         val item = TimelineItemDto(
             id = id, eventId = id, kind = "message", msgtype = "m.text", detail = null,
             sender = "@a:x", senderDisplayName = null, senderAvatar = null, body = body,
             formattedBody = null, media = null, customPayload = null, timestampMs = timestampMs,
-            isOwn = false, sendState = null, replyTo = null, edited = false,
-            reactions = emptyList(), readBy = emptyList(), editable = false,
+            isOwn = isOwn, sendState = null, replyTo = null, edited = false,
+            reactions = reactions, readBy = emptyList(), editable = editable,
         )
         return TimelineRowDto(
             item = item,
@@ -56,7 +68,7 @@ class TimelineTest {
             senderShort = "Sender",
             membershipVerb = null,
             replyQuote = null,
-            canReplyOrReact = true,
+            canReplyOrReact = canReplyOrReact,
             replyPreview = null,
         )
     }
@@ -351,5 +363,103 @@ class TimelineTest {
 
         compose.onNodeWithText("Ganesha joined the room").assertIsDisplayed()
         compose.onNodeWithText("Krishna left the room").assertIsDisplayed()
+    }
+
+    /**
+     * A long press on a row with something to offer (`canReplyOrReact`)
+     * reports that row — Task 6's wiring for starting a reply, the same
+     * layer `TimelineCollectionView.swift`'s own long-press context menu and
+     * swipe action live on, never `TimelineRowView`/`TimelineRow` itself.
+     */
+    @Test
+    fun aLongPressOnAReplyableRowReportsIt() {
+        var pressed: TimelineRowDto? = null
+        val fixed = listOf(row(id = "1", body = "hello", timestampMs = 1_000uL, canReplyOrReact = true))
+
+        compose.setContent {
+            Timeline(
+                rows = fixed,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+                onRowLongPress = { pressed = it },
+            )
+        }
+
+        compose.onNodeWithTag("row-1").performTouchInput { longClick() }
+        compose.waitForIdle()
+
+        assertEquals("1", pressed?.item?.id)
+    }
+
+    /**
+     * A row that cannot be replied to and cannot be edited gets no gesture
+     * at all — see `Timeline`'s own class doc for why the gesture's very
+     * *existence* is gated on those two flags, narrower than iOS's two-item
+     * menu that is built unconditionally and merely omits an item.
+     */
+    @Test
+    fun aRowWithNothingToOfferGetsNoLongPressGesture() {
+        var pressed: TimelineRowDto? = null
+        val fixed = listOf(
+            row(id = "1", body = "hello", timestampMs = 1_000uL, canReplyOrReact = false, editable = false),
+        )
+
+        compose.setContent {
+            Timeline(
+                rows = fixed,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+                onRowLongPress = { pressed = it },
+            )
+        }
+
+        compose.onNodeWithTag("row-1").performTouchInput { longClick() }
+        compose.waitForIdle()
+
+        assertNull(pressed)
+    }
+
+    /**
+     * Tapping an existing reaction chip reports which row it belongs to
+     * alongside the wire key — [Timeline] curries [TimelineRow]'s own
+     * `onReact: ((String) -> Unit)?` with the row, since [TimelineRow] has
+     * no notion of "which message is this from the caller's point of view."
+     */
+    @Test
+    fun tappingAReactionChipReportsTheRowAndKey() {
+        var reactedRow: TimelineRowDto? = null
+        var reactedKey: String? = null
+        val fixed = listOf(
+            row(
+                id = "1", body = "hello", timestampMs = 1_000uL,
+                reactions = listOf(
+                    ReactionDto(key = "👍", displayKey = "👍", count = 1u, byMe = false, senders = listOf("@a:x")),
+                ),
+            ),
+        )
+
+        compose.setContent {
+            Timeline(
+                rows = fixed,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+                onReact = { row, key -> reactedRow = row; reactedKey = key },
+            )
+        }
+
+        compose.onNodeWithTag("reaction-👍").performClick()
+        compose.waitForIdle()
+
+        assertEquals("1", reactedRow?.item?.id)
+        assertEquals("👍", reactedKey)
     }
 }

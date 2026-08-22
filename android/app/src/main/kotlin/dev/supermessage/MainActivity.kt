@@ -6,7 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -164,19 +166,138 @@ class MainActivity : ComponentActivity() {
                                 val liveTools by vm.session.live.tools.collectAsStateWithLifecycle()
                                 val liveFinished by vm.session.live.finished.collectAsStateWithLifecycle()
 
-                                Timeline(
-                                    rows = items,
-                                    typingLine = typingLine,
-                                    isPaginating = isPaginating,
-                                    canPaginate = canPaginate,
-                                    onPaginate = { scope.launch { vm.session.timeline.paginateBack() } },
-                                    onMarkRead = { scope.launch { vm.session.timeline.markRead() } },
-                                    liveAnswer = liveAnswer,
-                                    liveThought = liveThought,
-                                    liveTools = liveTools,
-                                    liveFinished = liveFinished,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                                // Reply/edit/attachment: reactive so a long
+                                // press elsewhere (Timeline's onRowLongPress,
+                                // below) or a picked photo shows up here the
+                                // moment the store records it.
+                                val replyTargets by vm.session.replies.targets.collectAsStateWithLifecycle()
+                                val editTargets by vm.session.edits.targets.collectAsStateWithLifecycle()
+                                val attachment by vm.session.staged.file.collectAsStateWithLifecycle()
+                                val editing = editTargets[currentRoomId]
+
+                                // The composer's own text, held here rather
+                                // than mirrored live off `DraftStore` — the
+                                // same shape `ComposerView.swift`'s `@State
+                                // private var text` takes, seeded once per
+                                // room (`remember(currentRoomId)` standing in
+                                // for that file's `.task(id: roomId)`) rather
+                                // than re-derived from the store on every
+                                // recomposition. That distinction is what
+                                // makes editing work at all: see
+                                // `onTextChange` below for why a live mirror
+                                // would fight it.
+                                var text by remember(currentRoomId) {
+                                    mutableStateOf(vm.session.drafts.draft(currentRoomId))
+                                }
+                                var sending by remember(currentRoomId) { mutableStateOf(false) }
+                                var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }
+
+                                Column(modifier = Modifier.fillMaxSize().testTag("pane-timeline")) {
+                                    Timeline(
+                                        rows = items,
+                                        typingLine = typingLine,
+                                        isPaginating = isPaginating,
+                                        canPaginate = canPaginate,
+                                        onPaginate = { scope.launch { vm.session.timeline.paginateBack() } },
+                                        onMarkRead = { scope.launch { vm.session.timeline.markRead() } },
+                                        liveAnswer = liveAnswer,
+                                        liveThought = liveThought,
+                                        liveTools = liveTools,
+                                        liveFinished = liveFinished,
+                                        onReact = { row, key ->
+                                            scope.launch {
+                                                vm.session.toggleReaction(row.item.eventId, key, currentRoomId)
+                                            }
+                                        },
+                                        onRowLongPress = { row ->
+                                            // Own + editable rewrites the
+                                            // message; anything else a long
+                                            // press has something to offer
+                                            // for is a reply — see Timeline's
+                                            // own class doc for why the
+                                            // gesture only exists at all when
+                                            // one of the two is true.
+                                            if (row.item.isOwn && row.item.editable) {
+                                                vm.session.edits.start(row, currentRoomId)
+                                            } else if (row.canReplyOrReact) {
+                                                vm.session.replies.start(row, currentRoomId)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    )
+
+                                    Composer(
+                                        text = text,
+                                        onTextChange = { next ->
+                                            text = next
+                                            // Not while editing: the composer
+                                            // is holding an existing message,
+                                            // and writing that over the draft
+                                            // would destroy whatever was
+                                            // being written before the edit
+                                            // began — the exact guard
+                                            // `ComposerView.swift`'s own
+                                            // `onChange(of: text)` carries.
+                                            if (editing == null) {
+                                                vm.session.drafts.set(next, currentRoomId)
+                                            }
+                                            scope.launch { vm.session.setTyping(next.isNotBlank(), currentRoomId) }
+                                        },
+                                        onSend = {
+                                            scope.launch {
+                                                sending = true
+                                                try {
+                                                    val currentEdit = editing
+                                                    if (currentEdit != null) {
+                                                        // The reader's text stays in the
+                                                        // composer when this fails — an
+                                                        // edit that vanished into an error
+                                                        // would have silently discarded
+                                                        // what they wrote.
+                                                        val ok = vm.session.edit(
+                                                            eventId = currentEdit.eventId,
+                                                            body = text,
+                                                            roomId = currentRoomId,
+                                                        )
+                                                        if (ok) {
+                                                            composerFailure = null
+                                                            vm.session.edits.cancel(currentRoomId)
+                                                            text = vm.session.drafts.draft(currentRoomId)
+                                                        } else {
+                                                            composerFailure = "Couldn't save that edit."
+                                                        }
+                                                    } else {
+                                                        val refusal = vm.session.send(text, currentRoomId)
+                                                        if (refusal == null) {
+                                                            composerFailure = null
+                                                            text = ""
+                                                            vm.session.drafts.clear(currentRoomId)
+                                                        } else {
+                                                            composerFailure = refusal
+                                                        }
+                                                    }
+                                                } finally {
+                                                    sending = false
+                                                }
+                                            }
+                                        },
+                                        sending = sending,
+                                        failure = composerFailure,
+                                        replyTo = replyTargets[currentRoomId],
+                                        onCancelReply = { vm.session.replies.cancel(currentRoomId) },
+                                        editing = editing,
+                                        onCancelEdit = { vm.session.edits.cancel(currentRoomId) },
+                                        attachment = attachment,
+                                        onAttach = { path ->
+                                            scope.launch {
+                                                val refusal = vm.session.staged.stage(path, currentRoomId)
+                                                if (refusal != null) composerFailure = refusal
+                                            }
+                                        },
+                                        onDiscardAttachment = { scope.launch { vm.session.staged.discard() } },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
                             }
                         },
                         signedOutContent = {

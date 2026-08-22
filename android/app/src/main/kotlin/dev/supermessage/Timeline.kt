@@ -1,6 +1,6 @@
 package dev.supermessage
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -107,11 +107,33 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * reversing the (shorter) result keeps the newest-first contract with one
  * less thing to reason about than reversing first would.
  *
- * ## What this does not do
+ * ## Starting a reply or an edit — this list's job, the way iOS's is
  *
- * No swipe-to-reply, no avatar cache: neither is in this composable's
- * signature, and inventing parameters for them here would be guessing at a
- * wiring this task was not given.
+ * `apple/Supermessage/Timeline/TimelineCollectionView.swift` starts a reply
+ * two ways — a leading swipe action, and a long-press context menu that also
+ * offers Edit — and both live on the *collection view*, never on
+ * `TimelineRowView` itself (whose own `onReply` closure sits unused,
+ * mirroring [TimelineRow]'s own "No onReply yet" note). This container is
+ * that same layer on Android: a long press on a row that has something to
+ * offer calls [onRowLongPress] with the row, and it is left to the caller
+ * (which holds [dev.supermessage.kit.stores.ReplyTarget] and
+ * [dev.supermessage.kit.stores.EditTarget]) to decide what a long press
+ * means. A row with neither `canReplyOrReact` nor `item.editable` gets no
+ * gesture at all, rather than a long press that silently does nothing —
+ * `TimelineCollectionView.swift`'s own guards (`row.canReplyOrReact`,
+ * `row.item.editable`) are read to decide *whether* a menu offers each
+ * action; this container's equivalent is *whether the gesture exists at
+ * all*, a narrower affordance than iOS's two-item menu, chosen because nothing
+ * here builds the menu surface iOS's `UIContextMenuConfiguration` gets for
+ * free. No swipe gesture, and no avatar cache: the former would fight this
+ * list's own vertical drag, the latter is a different task's wiring.
+ *
+ * ## Reacting
+ *
+ * [onReact] is [TimelineRow]'s own `onReact: ((String) -> Unit)?`, curried
+ * with *which* row here — [TimelineRow] itself has no idea which message it
+ * is drawing is "this one" from the caller's point of view, only this
+ * container does.
  */
 @Composable
 fun Timeline(
@@ -125,6 +147,8 @@ fun Timeline(
     liveThought: String? = null,
     liveTools: List<LiveStore.ToolCall> = emptyList(),
     liveFinished: Boolean = false,
+    onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
+    onRowLongPress: (row: TimelineRowDto) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
@@ -204,14 +228,30 @@ fun Timeline(
             .padding(horizontal = 16.dp)
             .testTag("row-${display.id}")
         when (display) {
-            is DisplayRow.Row ->
+            is DisplayRow.Row -> {
+                // No gesture at all when a long press would have nothing to
+                // do — see this file's class doc's "Starting a reply or an
+                // edit" section for why `canReplyOrReact`/`editable` gate
+                // the gesture's *existence* here, rather than the two-item
+                // menu iOS builds from the same two flags.
+                val row = display.row
+                val longPressable = row.canReplyOrReact || row.item.editable
                 TimelineRow(
-                    row = display.row,
+                    row = row,
                     now = Instant.now(),
-                    continuesRun = continuesRun[display.row.item.id] ?: false,
-                    attribution = if (singleSpeaker) display.row.senderShort else display.row.senderName,
-                    modifier = rowModifier,
+                    continuesRun = continuesRun[row.item.id] ?: false,
+                    attribution = if (singleSpeaker) row.senderShort else row.senderName,
+                    onReact = { key -> onReact(row, key) },
+                    modifier = if (longPressable) {
+                        rowModifier.combinedClickable(
+                            onClick = {},
+                            onLongClick = { onRowLongPress(row) },
+                        )
+                    } else {
+                        rowModifier
+                    },
                 )
+            }
 
             is DisplayRow.MembershipRun ->
                 SystemLine(text = display.text, modifier = rowModifier)
@@ -234,9 +274,17 @@ fun Timeline(
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
+                // Rule 4 (Task 1), made real rather than dead code: a
+                // downward drag over the scroll container this list actually
+                // is hides the IME. Placed ahead of the LazyColumn's own
+                // internal `scrollable` in this chain so its `nestedScroll`
+                // connection sees every drag as this list's parent, the same
+                // ordering `KeyboardDismissTest`'s own connection-level tests
+                // assume of `onPreScroll`.
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .dismissKeyboardOnDrag()
                     .testTag("timeline-list"),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
