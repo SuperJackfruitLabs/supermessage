@@ -3265,6 +3265,22 @@ public func collectMentions(text: String, members: [Mentionable]) -> [String] {
 })
 }
 /**
+ * The initial to show where there is no picture — one full code point.
+ *
+ * Exposed because a host otherwise writes `name[0]`, and that is a real bug in
+ * every host language this project has: Kotlin's `take(1)` and JS's `[0]` both
+ * count UTF-16 code units, so an emoji-initial name yields half a surrogate
+ * pair and renders as tofu. `room_identity`'s header records that exact defect
+ * shipping once already.
+ */
+public func displayInitial(name: String) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_display_initial(
+        FfiConverterString.lower(name),$0
+    )
+})
+}
+/**
  * Parse a matrix.to URL or a `matrix:` URI into what it addresses.
  *
  * A free function for the same reason as `rich_blocks_from_markdown`: it
@@ -3382,6 +3398,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.contractVersionMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_collect_mentions() != 57065) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_display_initial() != 43302) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094) {

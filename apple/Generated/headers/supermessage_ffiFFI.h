@@ -517,6 +517,11 @@ void uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(UniffiVTabl
 RustBuffer uniffi_supermessage_ffi_fn_func_collect_mentions(RustBuffer text, RustBuffer members, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DISPLAY_INITIAL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DISPLAY_INITIAL
+RustBuffer uniffi_supermessage_ffi_fn_func_display_initial(RustBuffer name, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PARSE_MATRIX_LINK
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PARSE_MATRIX_LINK
 RustBuffer uniffi_supermessage_ffi_fn_func_parse_matrix_link(RustBuffer href, RustCallStatus *_Nonnull out_status
@@ -835,6 +840,12 @@ void ffi_supermessage_ffi_rust_future_complete_void(uint64_t handle, RustCallSta
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_COLLECT_MENTIONS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_COLLECT_MENTIONS
 uint16_t uniffi_supermessage_ffi_checksum_func_collect_mentions(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_DISPLAY_INITIAL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_DISPLAY_INITIAL
+uint16_t uniffi_supermessage_ffi_checksum_func_display_initial(void
     
 );
 #endif
