@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
 
                     RootScaffold(
                         phase = phase,
-                        listPaneContent = { _, openDetail ->
+                        listPaneContent = { _, openDetail, openInfo ->
                             Roster(
                                 sections = sections,
                                 hiddenInvitations = hiddenInvitations,
@@ -119,6 +119,15 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { vm.session.open(roomId) }
                                     openDetail()
                                 },
+                                // A dead affordance since A1 (see RoomRow's own
+                                // KDoc): nothing ever passed a handler for it,
+                                // so tapping an avatar did nothing. This task
+                                // is what it was for — the roomId isn't
+                                // threaded any further yet because the info
+                                // pane itself is still RootScaffold's default
+                                // placeholder; a later panel task is what
+                                // gives it real content to be about.
+                                onOpenInfo = { openInfo() },
                                 onLoadAvatar = { roomId -> vm.session.avatars.load(roomId) },
                                 modifier = Modifier.fillMaxSize(),
                             )

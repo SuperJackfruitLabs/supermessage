@@ -183,7 +183,7 @@ class RootScaffoldTest {
         compose.setContent {
             Box(Modifier.requiredSize(411.dp, 800.dp).testTag(ShellTag)) {
                 RootScaffold(
-                    listPaneContent = { _, openDetail ->
+                    listPaneContent = { _, openDetail, _ ->
                         Box(
                             Modifier
                                 .fillMaxSize()
@@ -232,7 +232,7 @@ class RootScaffoldTest {
                     // has no way for the reappearing-roster assertion below
                     // to find it at all, the same tag the default
                     // listPaneContent this override replaces already carries.
-                    listPaneContent = { _, openDetail ->
+                    listPaneContent = { _, openDetail, _ ->
                         Box(Modifier.fillMaxSize().testTag("pane-roster")) {
                             Box(
                                 Modifier
@@ -281,7 +281,7 @@ class RootScaffoldTest {
         compose.setContent {
             Box(Modifier.requiredSize(840.dp, 800.dp).testTag(ShellTag)) {
                 RootScaffold(
-                    listPaneContent = { _, openDetail ->
+                    listPaneContent = { _, openDetail, _ ->
                         Box(
                             Modifier
                                 .fillMaxSize()
@@ -303,5 +303,55 @@ class RootScaffoldTest {
             "back was intercepted on a two-pane shell, where the roster is already visible",
             !compose.activity.onBackPressedDispatcher.hasEnabledCallbacks(),
         )
+    }
+
+    /**
+     * The iPad incident (issue #26), reproduced as a regression test rather
+     * than left as a comment: a room-info panel laid out off the side of a
+     * window it no longer fit in. Opens the info pane for real — via
+     * `listPaneContent`'s `openInfo` callback, the same way `openDetail` is
+     * driven by [tappingInTheListPaneOpensTheDetailPaneOnAPhone] — at a
+     * three-pane (1200dp) width, confirms it is actually on screen
+     * ([assertWithinShell], not `assertExists()`; see the class doc), then
+     * narrows below [ThreePaneWidth] to a two-pane (840dp) width and asserts
+     * it is gone.
+     *
+     * This is the test [RootScaffold]'s `LaunchedEffect(panes)` exists for.
+     * Before this task nothing could ever drive `currentDestination` to
+     * `Extra`, so that effect was dead code by its own admission; opening the
+     * pane through a real `openInfo()` call is what makes it load-bearing,
+     * and this is the test that would fail without it.
+     *
+     * Confirmed by deleting that `LaunchedEffect` and re-running this test:
+     * it failed (pane-info was still present after narrowing). Restored
+     * afterward — see the commit this test was added in for the exact
+     * failure output.
+     */
+    @Test
+    fun narrowingBelowThreePanesStrandsAnOpenInfoPane() {
+        var width by mutableStateOf(1200.dp)
+        compose.setContent {
+            Box(Modifier.requiredSize(width, 800.dp).testTag(ShellTag)) {
+                RootScaffold(
+                    listPaneContent = { _, _, openInfo ->
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .testTag("list-pane-open-info-target")
+                                .clickable(onClick = openInfo)
+                        )
+                    },
+                )
+            }
+        }
+
+        compose.onNodeWithTag("list-pane-open-info-target").performClick()
+        compose.waitForIdle()
+        assertWithinShell("pane-info")
+
+        width = 840.dp
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("pane-info").assertDoesNotExist()
     }
 }

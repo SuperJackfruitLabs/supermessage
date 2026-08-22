@@ -79,10 +79,20 @@ import kotlinx.coroutines.launch
  * "Timeline" placeholder exactly — same tag, same label — so
  * `RootScaffoldTest`'s five geometry tests, which call bare `RootScaffold()`
  * (or override only `listPaneContent`) and assert on `pane-timeline`'s
- * bounds, keep passing unmodified. The info pane stays a hardcoded
- * placeholder rather than a slot: nothing in this phase of the work
- * consumes it, and a slot with no real caller would be exactly the kind of
- * premature seam the parameter-list problem above already was.
+ * bounds, keep passing unmodified.
+ *
+ * [extraPaneContent] follows the same shape, added by this task alongside the
+ * `openInfo` callback threaded into [listPaneContent] — the third positional
+ * parameter, exactly the way [openDetail] was added to that same slot
+ * without breaking the geometry tests, which never override it. Its default
+ * reproduces the former hardcoded "Room info" placeholder exactly, same tag
+ * `pane-info`, same label, so every test that asserted on it before this
+ * task keeps passing unmodified. Wiring `openInfo` all the way to the
+ * roster's `onOpenInfo` is what makes it possible, for the first time, for
+ * `navigator.currentDestination` to actually become
+ * `ListDetailPaneScaffoldRole.Extra` — which is exactly what turns the
+ * `LaunchedEffect` below from dead code into a load-bearing guard. See its
+ * own comment for what that means.
  *
  * [onBackFromDetail] is this task's fix for the room-is-a-trap defect: on a
  * one-pane shell with the detail pane as the current destination, system
@@ -103,18 +113,23 @@ fun RootScaffold(
     modifier: Modifier = Modifier,
     phase: Session.Phase = Session.Phase.SIGNED_IN,
     signedOutContent: @Composable () -> Unit = {},
-    listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit) -> Unit = { shellWidth, _ ->
-        Pane("pane-roster", "Roster", shellWidth)
-    },
+    listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit, openInfo: () -> Unit) -> Unit =
+        { shellWidth, _, _ ->
+            Pane("pane-roster", "Roster", shellWidth)
+        },
     detailPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
         Pane("pane-timeline", "Timeline", shellWidth)
+    },
+    extraPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
+        Pane("pane-info", "Room info", shellWidth)
     },
     onBackFromDetail: () -> Unit = {},
 ) {
     when (phase) {
         Session.Phase.STARTING -> Starting(modifier)
         Session.Phase.SIGNED_OUT -> Box(modifier) { signedOutContent() }
-        Session.Phase.SIGNED_IN -> SignedIn(modifier, listPaneContent, detailPaneContent, onBackFromDetail)
+        Session.Phase.SIGNED_IN ->
+            SignedIn(modifier, listPaneContent, detailPaneContent, extraPaneContent, onBackFromDetail)
     }
 }
 
@@ -134,8 +149,9 @@ private fun Starting(modifier: Modifier = Modifier) {
 @Composable
 private fun SignedIn(
     modifier: Modifier = Modifier,
-    listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit) -> Unit,
+    listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit, openInfo: () -> Unit) -> Unit,
     detailPaneContent: @Composable (shellWidth: Dp) -> Unit,
+    extraPaneContent: @Composable (shellWidth: Dp) -> Unit,
     onBackFromDetail: () -> Unit = {},
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -172,16 +188,15 @@ private fun SignedIn(
         }
 
         // Rule 2: when the shell narrows past three panes, an open info pane
-        // must go away rather than be laid out where it no longer fits. This
-        // placeholder never calls navigateTo(Extra, ...), so currentDestination
-        // can never be Extra and this effect can never fire — verified by
-        // deleting it and re-running paneCountFollowsAWidthChangeDuringComposition,
-        // which still passed (that test's pane-count logic is driven by
-        // scaffoldValue, not by navigation state; see its own comment). No
-        // test exercises this block today, and none can until something
-        // calls navigateTo(Extra, ...). It stays because when that arrives,
-        // its absence would be the exact iOS fault: an opened pane stranded
-        // by a narrowing it was never told about.
+        // must go away rather than be laid out where it no longer fits. Until
+        // this task, nothing called navigateTo(Extra, ...), so
+        // currentDestination could never be Extra and this effect could never
+        // fire; now that listPaneContent's openInfo callback (below) does,
+        // it is load-bearing. Confirmed, not assumed: this file's own test,
+        // narrowingBelowThreePanesStrandsAnOpenInfoPane, opens the info pane
+        // at a three-pane width, narrows below ThreePaneWidth, and asserts
+        // pane-info is gone; deleting this block was observed to fail that
+        // test (see the commit message for the exact output), then restored.
         LaunchedEffect(panes) {
             if (panes < 3 && navigator.currentDestination?.pane == ListDetailPaneScaffoldRole.Extra) {
                 navigator.navigateBack()
@@ -205,13 +220,15 @@ private fun SignedIn(
             directive = navigator.scaffoldDirective,
             value = navigator.scaffoldValue,
             listPane = {
-                listPaneContent(shellWidth) {
-                    scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail) }
-                }
+                listPaneContent(
+                    shellWidth,
+                    { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail) } },
+                    { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Extra) } },
+                )
             },
             detailPane = { detailPaneContent(shellWidth) },
             extraPane = if (extraIsShown) {
-                { Pane("pane-info", "Room info", shellWidth) }
+                { extraPaneContent(shellWidth) }
             } else null,
         )
     }
