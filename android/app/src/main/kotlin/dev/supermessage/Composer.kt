@@ -1,5 +1,11 @@
 package dev.supermessage
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,14 +24,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.stores.EditTarget
 import dev.supermessage.kit.stores.ReplyTarget
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import uniffi.supermessage_ffi.StagedFile
 
 /**
  * Where a message is written, the shape iOS draws at
@@ -92,6 +106,43 @@ import dev.supermessage.kit.stores.ReplyTarget
  * roomId)` gets from its `.onChange(of: text)` guard. Nothing beyond this one
  * edit's round trip is kept — no draft store of this composable's own is
  * being smuggled in.
+ *
+ * ## Attachments — the one place iOS is not the reference
+ *
+ * `ComposerView.swift` reaches for `PhotosPickerItem`/`fileImporter`, both
+ * SwiftUI presentations with no Android counterpart worth imitating. Android's
+ * own contract is [androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia],
+ * launched from [rememberLauncherForActivityResult] right here — a platform
+ * API, not something [dev.supermessage.kit.stores.StagedAttachment] could be
+ * asked to know about.
+ *
+ * That launcher hands back a content [Uri], and
+ * [dev.supermessage.kit.stores.StagedAttachment.stage] takes a `path`, not a
+ * `Uri` — so [resolvePickedUri] copies the picked content into this app's
+ * cache directory and returns the resulting file's absolute path. That
+ * resolution happens *here*, in `:app`, rather than in `:kit` (which holds no
+ * Android types by design — see that module's build file) or in the core
+ * (which only ever reads a path it is handed, per `attachment_stage_path`'s
+ * own doc comment). The copy is named after the picker's own
+ * `OpenableColumns.DISPLAY_NAME` when one is available, which is why a staged
+ * photo shows a real name rather than a generated one — an improvement this
+ * task is free to make precisely because this corner has no iOS behaviour to
+ * match.
+ *
+ * [onAttach] is fired with that resolved path once the copy finishes,
+ * exactly the fire-and-forget shape [onSend]/[onCancelReply]/[onCancelEdit]
+ * already use: this composable resolves a platform value into a plain one
+ * and hands it up, it does not itself call
+ * [dev.supermessage.kit.stores.StagedAttachment.stage] — that call is made by
+ * whoever wires this callback to the real store (Task 6), the same
+ * boundary [text]/[onTextChange] already draws around `DraftStore`.
+ * [attachment] is the mirror of [replyTo]/[editing]: a plain snapshot handed
+ * in from outside, displayed by name in [AttachmentChip], with
+ * [onDiscardAttachment] as its cancel action. Actually sending a staged
+ * attachment — calling
+ * [dev.supermessage.kit.stores.StagedAttachment.send] — is no part of this
+ * file; see this task's own report for why that is Task 6's wiring rather
+ * than this one's.
  */
 @Composable
 fun Composer(
@@ -104,6 +155,9 @@ fun Composer(
     onCancelReply: () -> Unit = {},
     editing: EditTarget.Pending? = null,
     onCancelEdit: () -> Unit = {},
+    attachment: StagedFile? = null,
+    onAttach: (String) -> Unit = {},
+    onDiscardAttachment: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val canSend = text.isNotBlank()
@@ -118,6 +172,21 @@ fun Composer(
         onTextChange(current.body)
     }
 
+    // Resolves a picked content Uri to a path and hands it to [onAttach] —
+    // see this function's "Attachments" KDoc section for why that resolution
+    // lives here rather than in :kit or the core.
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val pickMedia = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val path = withContext(Dispatchers.IO) { resolvePickedUri(context, uri) }
+            if (path != null) onAttach(path)
+        }
+    }
+
     Column(modifier.fillMaxWidth()) {
         ReplyEditBanner(
             replyTo = replyTo,
@@ -129,6 +198,12 @@ fun Composer(
                 onCancelEdit()
             },
         )
+
+        // Below the reply/edit banner, above the failure line — the same
+        // slot `ComposerView.swift`'s AttachmentChip occupies.
+        if (attachment != null) {
+            AttachmentChip(staged = attachment, onDiscard = onDiscardAttachment)
+        }
 
         // Only when there is one to show — the placeholder this composable
         // relies on staying null (rather than an empty string) when nothing
@@ -152,6 +227,17 @@ fun Composer(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            TextButton(
+                onClick = {
+                    pickMedia.launch(
+                        PickVisualMediaRequest(mediaType = ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                    )
+                },
+                modifier = Modifier.testTag("composer-attach"),
+            ) {
+                Text("Attach")
+            }
+
             OutlinedTextField(
                 value = text,
                 onValueChange = onTextChange,
@@ -255,5 +341,80 @@ private fun ReplyEditBanner(
                 Text("Cancel")
             }
         }
+    }
+}
+
+/**
+ * The one file waiting to be sent, shown by name — the mirror of
+ * `ComposerView.swift`'s `AttachmentChip`. Display plus discard only, per
+ * this task's scope: nothing here calls
+ * [dev.supermessage.kit.stores.StagedAttachment.send], and [onDiscard]
+ * arrives as a plain callback the same way [onCancelReply]/[onCancelEdit] do
+ * — [Composer] does not reach for the store itself, so neither does this.
+ */
+@Composable
+private fun AttachmentChip(staged: StagedFile, onDiscard: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .testTag("composer-attachment-chip"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            staged.filename,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            modifier = Modifier.testTag("composer-attachment-name"),
+        )
+        TextButton(onClick = onDiscard, modifier = Modifier.testTag("composer-discard-attachment")) {
+            Text("Remove")
+        }
+    }
+}
+
+/**
+ * Copies a content [Uri] the photo picker handed back into this app's cache
+ * directory, and returns the resulting file's absolute path — what
+ * [dev.supermessage.kit.stores.StagedAttachment.stage] needs, since it reads
+ * a path rather than a `Uri` (see `attachment_stage_path`'s own doc comment:
+ * the core only ever opens a path it is given). Runs on the caller's
+ * dispatcher, so [Composer] hops to [kotlinx.coroutines.Dispatchers.IO]
+ * before calling this — copying bytes is not free-of-cost on the main
+ * thread.
+ *
+ * Named after the picker's own `OpenableColumns.DISPLAY_NAME` when the
+ * resolver can supply one, falling back to the `Uri`'s last path segment and
+ * then a generated name — real content usually has one, but nothing here
+ * assumes it does. `attachment_stage_path` derives `StagedFile.filename` from
+ * this copy's own name (`path.file_name()`), which is exactly why a
+ * meaningful name is worth resolving here rather than leaving the copy as an
+ * opaque generated one.
+ *
+ * `null` on any failure to open or read the source — a picker result that
+ * cannot be read is nothing to stage, not a crash.
+ */
+private fun resolvePickedUri(context: Context, uri: Uri): String? {
+    val displayName = queryDisplayName(context, uri)
+        ?: uri.lastPathSegment
+        ?: UUID.randomUUID().toString()
+    val destination = File(context.cacheDir, displayName)
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            destination.outputStream().use { output -> input.copyTo(output) }
+        } ?: return null
+        destination.absolutePath
+    } catch (error: java.io.IOException) {
+        null
+    }
+}
+
+/** The display name a content resolver offers for [uri], or `null` if it has none. */
+private fun queryDisplayName(context: Context, uri: Uri): String? {
+    val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+    return context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+        val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (column < 0 || !cursor.moveToFirst()) null else cursor.getString(column)
     }
 }

@@ -15,6 +15,7 @@ import dev.supermessage.kit.stores.ReplyTarget
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import uniffi.supermessage_ffi.StagedFile
 
 /**
  * The composer, the shape iOS draws at
@@ -149,5 +150,61 @@ class ComposerTest {
         compose.waitForIdle()
 
         assertEquals("half-written reply", value)
+    }
+
+    private fun stubAttachment() = StagedFile(
+        token = "t1",
+        filename = "vacation.jpg",
+        sizeBytes = 12_345uL,
+        mime = "image/jpeg",
+        width = null,
+        height = null,
+    )
+
+    /**
+     * A staged file is shown by name — the composable's half of Task 4's
+     * scope, display only. Picking is a platform picker
+     * ([androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia])
+     * this suite cannot drive headlessly (no compositor to render it
+     * deterministically, the same limitation `KeyboardDismissTest` already
+     * documented for the IME), so this passes the staged snapshot straight
+     * in rather than exercising the picker itself.
+     */
+    @Test
+    fun aStagedAttachmentIsShownByName() {
+        compose.setContent {
+            Composer(
+                text = "hey", onTextChange = {}, onSend = {},
+                attachment = stubAttachment(),
+            )
+        }
+
+        compose.onNodeWithTag("composer-attachment-chip").assertIsDisplayed()
+        compose.onNodeWithTag("composer-attachment-name").assertTextEquals("vacation.jpg")
+    }
+
+    /**
+     * Discarding removes the chip — [onDiscardAttachment] clears the
+     * caller's state, and the composable reflects that on the next
+     * recomposition, mirroring [cancellingAnEditRestoresThePriorDraft]'s
+     * pattern of driving external state through the callback rather than
+     * only counting calls.
+     */
+    @Test
+    fun discardingRemovesTheStagedAttachment() {
+        var attachment by mutableStateOf<StagedFile?>(stubAttachment())
+        compose.setContent {
+            Composer(
+                text = "hey", onTextChange = {}, onSend = {},
+                attachment = attachment,
+                onDiscardAttachment = { attachment = null },
+            )
+        }
+        compose.onNodeWithTag("composer-attachment-chip").assertIsDisplayed()
+
+        compose.onNodeWithTag("composer-discard-attachment").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("composer-attachment-chip").assertDoesNotExist()
     }
 }
