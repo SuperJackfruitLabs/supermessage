@@ -1,11 +1,15 @@
 package dev.supermessage
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_core.AccountDto
@@ -152,4 +156,37 @@ class AccountTest {
 
         compose.onNodeWithText("Ganesha").assertIsDisplayed()
     }
+
+    /** The text on the `account-initial` node, or `null` if it is not composed. */
+    private fun initialText(): String? {
+        val nodes = compose.onAllNodesWithTag("account-initial").fetchSemanticsNodes()
+        if (nodes.isEmpty()) return null
+        return nodes.first().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }
+    }
+
+    /**
+     * An emoji-initial account name renders the emoji, not half of it.
+     *
+     * `Account.kt` used to do `name.take(1).uppercase()`, and Kotlin's `take`
+     * counts UTF-16 code units — for an astral character that is the high half
+     * of a surrogate pair standing alone, which renders as tofu. It is the same
+     * defect `room_identity`'s header records shipping once already, when a
+     * Svelte view took `name[0]`.
+     *
+     * The fix was to export the core's code-point-aware rule rather than
+     * hand-roll a fifth re-derivation of something the core already decides.
+     */
+    @Test
+    fun anEmojiInitialRendersWholeRatherThanHalfASurrogate() {
+        panel(
+            account = {
+                AccountDto(userId = "@\uD83E\uDDE0lead:id.agentpod.dev", homeserver = "https://id.agentpod.dev")
+            },
+        )
+        compose.waitForIdle()
+
+        val initial = initialText()
+        assertEquals("\uD83E\uDDE0", initial)
+    }
+
 }

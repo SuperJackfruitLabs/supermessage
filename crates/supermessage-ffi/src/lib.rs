@@ -672,6 +672,18 @@ pub fn roster_state(
     supermessage_core::roster::state_for(&row, now_ms)
 }
 
+/// The initial to show where there is no picture — one full code point.
+///
+/// Exposed because a host otherwise writes `name[0]`, and that is a real bug in
+/// every host language this project has: Kotlin's `take(1)` and JS's `[0]` both
+/// count UTF-16 code units, so an emoji-initial name yields half a surrogate
+/// pair and renders as tofu. `room_identity`'s header records that exact defect
+/// shipping once already.
+#[uniffi::export]
+pub fn display_initial(name: String) -> String {
+    supermessage_core::room_identity::display_initial(&name)
+}
+
 /// How many invitations are being withheld, for a filter to admit to.
 #[uniffi::export]
 pub fn roster_hidden_invitations(

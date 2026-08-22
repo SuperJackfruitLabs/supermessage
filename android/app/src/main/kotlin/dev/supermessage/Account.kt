@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_ffi.displayInitial
 import uniffi.supermessage_ffi.peopleLabel
 
 /**
@@ -107,7 +108,19 @@ fun AccountPanel(
                 // A plain initial in place of a picture — this panel has no
                 // avatar to show, the same choice `AccountPanel.swift`'s own
                 // `initial` fallback makes for every reader.
-                Text(name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium)
+                //
+                // The initial comes from the core, not from `name.take(1)`.
+                // Kotlin's `take` counts UTF-16 code units, so an emoji-initial
+                // name yielded half a surrogate pair and rendered as tofu —
+                // the exact defect `room_identity`'s header records shipping
+                // once already. `displayInitial` is code-point-aware, and in
+                // Rust a `char` is a scalar value, so the hazard cannot be
+                // expressed there.
+                Text(
+                    displayInitial(name),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.testTag("account-initial"),
+                )
             }
 
             Column {

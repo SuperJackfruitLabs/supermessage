@@ -119,6 +119,7 @@ class TimelineTest {
             Box(Modifier.requiredSize(320.dp, 640.dp).testTag("timeline-shell")) {
                 Timeline(
                     rows = fixed,
+                    revision = 0uL,
                     typingLine = null,
                     isPaginating = false,
                     canPaginate = false,
@@ -296,6 +297,7 @@ class TimelineTest {
             Box(Modifier.requiredSize(320.dp, 300.dp)) {
                 Timeline(
                     rows = fixed,
+                    revision = 0uL,
                     typingLine = null,
                     isPaginating = false,
                     canPaginate = true,
@@ -327,6 +329,7 @@ class TimelineTest {
             Box(Modifier.requiredSize(320.dp, 300.dp)) {
                 Timeline(
                     rows = fixed,
+                    revision = 0uL,
                     typingLine = null,
                     isPaginating = false,
                     canPaginate = false,
@@ -351,6 +354,7 @@ class TimelineTest {
             Box(Modifier.requiredSize(320.dp, 300.dp)) {
                 Timeline(
                     rows = fixed,
+                    revision = 0uL,
                     typingLine = null,
                     isPaginating = false,
                     canPaginate = false,
@@ -379,6 +383,7 @@ class TimelineTest {
         compose.setContent {
             Timeline(
                 rows = emptyList(),
+                revision = 0uL,
                 typingLine = typingLine,
                 isPaginating = false,
                 canPaginate = false,
@@ -416,6 +421,7 @@ class TimelineTest {
         compose.setContent {
             Timeline(
                 rows = fixed,
+                revision = 0uL,
                 typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
@@ -446,6 +452,7 @@ class TimelineTest {
         compose.setContent {
             Timeline(
                 rows = fixed,
+                revision = 0uL,
                 typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
@@ -472,6 +479,7 @@ class TimelineTest {
         compose.setContent {
             Timeline(
                 rows = fixed,
+                revision = 0uL,
                 typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
@@ -503,6 +511,7 @@ class TimelineTest {
         compose.setContent {
             Timeline(
                 rows = fixed,
+                revision = 0uL,
                 typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
@@ -540,6 +549,7 @@ class TimelineTest {
         compose.setContent {
             Timeline(
                 rows = fixed,
+                revision = 0uL,
                 typingLine = null,
                 isPaginating = false,
                 canPaginate = false,

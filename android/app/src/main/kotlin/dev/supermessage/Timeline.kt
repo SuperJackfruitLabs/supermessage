@@ -18,6 +18,7 @@ import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -140,7 +141,7 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 @Composable
 fun Timeline(
     rows: List<TimelineRowDto>,
-    revision: ULong = 0uL,
+    revision: ULong,
     typingLine: String?,
     isPaginating: Boolean,
     canPaginate: Boolean,
@@ -204,16 +205,14 @@ fun Timeline(
     // composable recomposes many times a second while a live turn is being
     // written, and every one of those recompositions is an "unrelated"
     // event by Rule 2's own rule — nothing arrived. Keying on `revision`
-    // means the decision (and the bookkeeping below it) is computed exactly
-    // once per wholesale replacement of `items`, not once per recomposition
-    // that merely happens to follow one. `previousRowsHolder` is read and
-    // then overwritten inside that single `remember` block rather than via
-    // a `LaunchedEffect`: the decision has to be in hand in the very
-    // composition where the new rows appear, in time to hand
-    // `Modifier.animateItem()` to the row being inserted — an effect only
-    // learns of the change a frame late, past the point that modifier can
-    // still catch it. `isAtNewest` is already derived above, so away-ness
-    // costs nothing extra here.
+    // means the decision is computed exactly once per wholesale replacement
+    // of `items`, not once per recomposition that merely happens to follow
+    // one. The decision itself has to be in hand in the very composition
+    // where the new rows appear, in time to hand `Modifier.animateItem()`
+    // to the row being inserted — a `LaunchedEffect` only learns of the
+    // change a frame late, past the point that modifier can still catch it
+    // — so it stays a plain `remember(revision)` read. `isAtNewest` is
+    // already derived above, so away-ness costs nothing extra here.
     val previousRowsHolder = remember { mutableStateOf<List<TimelineRowDto>?>(null) }
     val animatesThisUpdate = remember(revision) {
         val before = previousRowsHolder.value
@@ -223,14 +222,27 @@ fun Timeline(
             val previousIds = before.mapTo(HashSet(before.size)) { it.item.id }
             rows.count { it.item.id !in previousIds }
         }
-        val decision = TimelineAnimation.animates(
+        TimelineAnimation.animates(
             arrived = arrived,
             had = before?.size ?: 0,
             hasApplied = before != null,
             wasAway = !isAtNewest,
         )
+    }
+
+    // The bookkeeping write is different from the decision above: it only
+    // has to be in place before the *next* revision bump, not in this same
+    // composition pass, so it does not share the timing requirement that
+    // keeps `animatesThisUpdate` a synchronous read. Writing it here too —
+    // inside the same `remember(revision)` block that just read it — would
+    // mutate state during composition that composition itself had just
+    // read, which forces Compose to schedule an extra recomposition to
+    // settle: one wasted frame per revision bump for no behavioural gain.
+    // `SideEffect` runs after this composition commits, which is still
+    // strictly before the next one starts, so `before` above is never wrong
+    // the next time `revision` changes.
+    SideEffect {
         previousRowsHolder.value = rows
-        decision
     }
 
     // `rememberUpdatedState` rather than keying `derivedStateOf` itself off

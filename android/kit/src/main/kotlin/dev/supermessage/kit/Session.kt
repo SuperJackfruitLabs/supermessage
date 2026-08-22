@@ -528,6 +528,11 @@ class Session(
      * name twice should return the reader to the conversation they had, not
      * leave a roster of identically named rooms with the history scattered
      * between them.
+     *
+     * When there is no existing room this falls through to [createRoom],
+     * which — on success — reconciles rooms and spaces via `load()` before
+     * returning. Reusing an existing room does not: only the create path
+     * does.
      */
     suspend fun openConversation(person: PersonDto): Outcome {
         val existing = try {
@@ -541,6 +546,14 @@ class Session(
         return createRoom(name = person.name, invite = listOf(person.userId))
     }
 
+    /**
+     * Create a room named [name], inviting [invite].
+     *
+     * On success this also calls `load()`, reconciling rooms and spaces —
+     * a side effect that is easy to miss because nothing in the return type
+     * says so: a caller reading only [Outcome] would not learn that the
+     * roster and space list were just re-seeded.
+     */
     suspend fun createRoom(name: String, invite: List<String>): Outcome = try {
         val roomId = client.createRoom(name = name, invite = invite, isDirect = invite.isNotEmpty())
         load()

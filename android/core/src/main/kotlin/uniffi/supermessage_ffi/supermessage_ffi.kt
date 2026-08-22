@@ -909,6 +909,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1017,6 +1019,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
     ): Unit
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_display_initial(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_parse_matrix_link(`href`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1146,6 +1150,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_checksum_func_collect_mentions(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_display_initial(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_parse_matrix_link(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_people_label(
@@ -1264,6 +1270,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_collect_mentions() != 57065.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_display_initial() != 43302.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094.toShort()) {
@@ -4843,6 +4852,24 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_collect_mentions(
         FfiConverterString.lower(`text`),FfiConverterSequenceTypeMentionable.lower(`members`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The initial to show where there is no picture — one full code point.
+         *
+         * Exposed because a host otherwise writes `name[0]`, and that is a real bug in
+         * every host language this project has: Kotlin's `take(1)` and JS's `[0]` both
+         * count UTF-16 code units, so an emoji-initial name yields half a surrogate
+         * pair and renders as tofu. `room_identity`'s header records that exact defect
+         * shipping once already.
+         */ fun `displayInitial`(`name`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_display_initial(
+        FfiConverterString.lower(`name`),_status)
 }
     )
     }

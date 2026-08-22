@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import java.time.Instant
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -134,5 +135,45 @@ class RosterTest {
         }
 
         compose.onNodeWithTag("hidden-invitations").assertDoesNotExist()
+    }
+
+    /**
+     * Tap-to-reveal is the only way an invitation can be reached at all —
+     * see `Roster`'s own KDoc on `onRevealInvitations`. This drives the
+     * round trip the same way `anArrivingRoomIsShownWithoutATouch` drives a
+     * roster update: the tap fires the callback, and the callback (standing
+     * in for `MainActivity`'s real `prefs.setShowsInvitations(true)`) is
+     * what actually changes `sections`/`hiddenInvitations` — `Roster` itself
+     * holds none of that state, per its own "parses nothing, decides
+     * nothing" rule.
+     */
+    @Test
+    fun tappingTheHiddenInvitationsBannerRevealsInvitations() {
+        var hiddenInvitations by mutableStateOf(1)
+        var sections by mutableStateOf(emptyList<RosterSection>())
+        var revealCalls = 0
+
+        compose.setContent {
+            Roster(
+                sections = sections,
+                hiddenInvitations = hiddenInvitations,
+                now = Instant.now(),
+                avatarUri = { null },
+                onRevealInvitations = {
+                    revealCalls++
+                    hiddenInvitations = 0
+                    sections = listOf(section(id = "invites", title = "Invitations", entryName = "Charlie"))
+                },
+            )
+        }
+
+        compose.onNodeWithText("Charlie").assertDoesNotExist()
+
+        compose.onNodeWithTag("hidden-invitations").performClick()
+        compose.waitForIdle()
+
+        assertTrue("tapping the banner should call onRevealInvitations exactly once", revealCalls == 1)
+        compose.onNodeWithTag("hidden-invitations").assertDoesNotExist()
+        compose.onNodeWithText("Charlie").assertIsDisplayed()
     }
 }
