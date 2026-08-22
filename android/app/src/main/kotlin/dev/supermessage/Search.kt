@@ -33,11 +33,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import dev.supermessage.kit.ErrorPresenter
 import dev.supermessage.kit.RelativeTime
 import dev.supermessage.kit.SearchState
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.SearchResultDto
+import uniffi.supermessage_ffi.FfiException
 
 /**
  * The room a search was opened from, so it can be offered as a narrower
@@ -57,11 +60,12 @@ data class SearchPanelScope(val roomId: String, val name: String)
  * request the core answers once, not a diff-driven stream, so this
  * composable holds its own `term`/[SearchState] rather than reading a
  * `StateFlow`. [search] stands in for `Session.search`, which already
- * swallows a `searchMessages` failure into an empty list (matching
- * `SearchPanel.swift`'s own `(try? await client.searchMessages(...)) ?? []`)
- * — so unlike [RoomInfoPanel] this file carries no separate failure state:
- * a refused search and a search with nothing look identical on both
- * platforms, by the same design, not by omission.
+ * calls [search] directly, in the same shape [RoomInfoPanel] documents on its
+ * own KDoc. `search` — `Session.search` in production — no longer swallows a
+ * `searchMessages` failure into an empty list; it lets it through, and this
+ * file is the one that catches it, the same way `RoomInfoPanel.reload` catches
+ * `loadInfo`'s. A refused search and a search with nothing are deliberately
+ * *not* the same state: see [SearchState.Failed].
  *
  * ## What this panel does not decide
  *
@@ -74,22 +78,23 @@ data class SearchPanelScope(val roomId: String, val name: String)
  * id), never a re-derivation of what a hit *is* or where it belongs in the
  * list.
  *
- * Three states a reader must be able to tell apart — the reason
+ * Four states a reader must be able to tell apart — the reason
  * [dev.supermessage.kit.SearchState] exists rather than a pair of booleans,
  * see its own KDoc — are exactly [SearchState.Searching] (in flight),
- * [SearchState.Empty] (ran, found nothing) and [SearchState.Found] (ran,
- * found something, in core order). [SearchState.Idle] and
- * [SearchState.Ready] cover what happens before a search has run at all.
+ * [SearchState.Empty] (ran, found nothing), [SearchState.Found] (ran, found
+ * something, in core order) and [SearchState.Failed] (ran, could not be
+ * answered at all). [SearchState.Idle] and [SearchState.Ready] cover what
+ * happens before a search has run at all.
  *
  * @param scope The room search was opened from, when it was opened from
  *   one. `null` offers no narrowing and every search is unscoped.
  * @param onOpen Opens the room a tapped result belongs to.
  * @param onClose Abandons the search — the panel's own way back, the same
  *   role `onClose` plays on [RoomInfoPanel].
- * @param search Runs a query, scoped to a room or not. Expected to already
- *   have turned a core failure into an empty list, the same contract
- *   `Session.search` already keeps — this file does not add a second
- *   failure path on top of it.
+ * @param search Runs a query, scoped to a room or not. May throw — this file
+ *   catches that itself and maps it through `ErrorPresenter` into
+ *   [SearchState.Failed], the same contract `Session.search` and
+ *   `RoomInfoPanel`'s `loadInfo` already keep.
  * @param roomName Names a result's room for display, `null` when this
  *   account has no cached name for it (the row falls back to the raw room
  *   id, never inventing one).
@@ -121,8 +126,16 @@ fun SearchPanel(
         val query = term.trim()
         if (query.isEmpty()) return
         state = SearchState.Searching(query)
-        val results = search(query, if (narrowed) scope?.roomId else null)
-        state = if (results.isEmpty()) SearchState.Empty(query) else SearchState.Found(results)
+        state = try {
+            val results = search(query, if (narrowed) scope?.roomId else null)
+            if (results.isEmpty()) SearchState.Empty(query) else SearchState.Found(results)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: FfiException) {
+            SearchState.Failed(query, ErrorPresenter.message(e))
+        } catch (e: Exception) {
+            SearchState.Failed(query, "Couldn't search.")
+        }
     }
 
     fun rerunIfAlreadyAsked() {
@@ -221,6 +234,17 @@ fun SearchPanel(
                         title = "No results",
                         detail = "Nothing found for \"${current.q}\".",
                         testTag = "search-empty",
+                    )
+
+                is SearchState.Failed ->
+                    // Distinct from search-empty on purpose: this is the
+                    // state that did not exist before this task, and its
+                    // absence was the whole defect — a refused search read
+                    // as "no results" instead of as a refusal.
+                    StatusMessage(
+                        title = "Couldn't search",
+                        detail = current.message,
+                        testTag = "search-failed",
                     )
 
                 is SearchState.Found ->

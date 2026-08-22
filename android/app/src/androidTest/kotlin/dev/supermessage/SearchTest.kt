@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_core.SearchResultDto
+import uniffi.supermessage_ffi.FfiException
 
 /**
  * [SearchPanel], the port of `apple/Supermessage/Panels/SearchPanel.swift`.
@@ -85,6 +86,34 @@ class SearchTest {
 
         compose.onNodeWithTag("search-empty").assertIsDisplayed()
         compose.onNodeWithText("Nothing found for \"nothing to find\".").assertIsDisplayed()
+        compose.onNodeWithTag("search-loading").assertDoesNotExist()
+        compose.onNodeWithTag("search-results").assertDoesNotExist()
+    }
+
+    /**
+     * The defect this task fixes: a search that fails must not render as
+     * "no results". `search` throwing is what a homeserver error, an
+     * expired token or a dropped connection looks like — before this task
+     * this panel had no way to tell that apart from `emptyList()`.
+     */
+    @Test
+    fun aFailedSearchIsNotAnEmptyOne() {
+        compose.setContent {
+            SearchPanel(
+                scope = null,
+                onOpen = {},
+                onClose = {},
+                search = { _, _ -> throw FfiException.Network("") },
+            )
+        }
+
+        compose.onNodeWithTag("search-field").performTextInput("nothing to find")
+        compose.onNodeWithTag("search-field").performImeAction()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("search-failed").assertIsDisplayed()
+        compose.onNodeWithText("Can't reach the homeserver.").assertIsDisplayed()
+        compose.onNodeWithTag("search-empty").assertDoesNotExist()
         compose.onNodeWithTag("search-loading").assertDoesNotExist()
         compose.onNodeWithTag("search-results").assertDoesNotExist()
     }
