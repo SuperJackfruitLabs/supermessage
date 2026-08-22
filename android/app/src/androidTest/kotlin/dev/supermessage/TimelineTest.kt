@@ -1,9 +1,7 @@
 package dev.supermessage
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -18,6 +16,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -144,53 +144,146 @@ class TimelineTest {
     }
 
     /**
-     * Rule 3, to the extent this composable's own signature can prove it: a
-     * genuine change to `rows` (the container's stand-in for a revision
-     * bump — `TimelineStore` only ever replaces `items` wholesale) is what
-     * moves the list, and a recomposition entirely unrelated to `rows`
-     * leaves what is already on screen untouched.
+     * Rule 3: `Timeline` keys its grouping and its mark-read effect off
+     * `revision`, not off diffing `rows` — see `Timeline.kt`'s own note by
+     * `continuesRun`/`singleSpeaker`/`displayRows` and the mark-read
+     * `LaunchedEffect` for why.
+     *
+     * The version of this test that predates this task passed against the
+     * defect it was named for: it asserted only that an unrelated
+     * recomposition does not move the list, which plain structural
+     * equality of `rows` also satisfies — a `remember(rows)` skips exactly
+     * as well as a `remember(revision)` does when nothing changed. It could
+     * not fail for the reason its name claimed.
+     *
+     * What actually distinguishes "keyed on revision" from "diffing rows"
+     * is the opposite case: a revision bump against a list that is
+     * *structurally unchanged* (a new object, `equals`-equal content — the
+     * one shape a rows-diff cannot tell from "nothing happened"). Grouping
+     * output is not a usable probe for that case: two equal lists group to
+     * an equal result either way, so nothing about a rendered row can
+     * distinguish "recomputed and got the same answer" from "skipped
+     * recomputing." The mark-read effect can, though — it is a
+     * `LaunchedEffect` that *restarts* (and so re-fires) whenever its key
+     * changes, whether or not the recomputed grouping differs from the
+     * last one. That restart is this task's answer to "is the distinction
+     * observable through the public surface": it is, and this is the seam
+     * that shows it, not the row content.
      */
     @Test
     fun theListFollowsRevisionRatherThanDiffingRows() {
-        var rows by mutableStateOf(listOf(row(id = "1", body = "first", timestampMs = 1_000uL)))
-        var unrelated by mutableStateOf(0)
+        // A fresh object each time, `equals`-equal in content every time —
+        // the shape that defeats a rows-only diff.
+        fun sameSingleRow() = listOf(row(id = "1", body = "first", timestampMs = 1_000uL))
+
+        var rows by mutableStateOf(sameSingleRow())
+        var revision by mutableStateOf(0uL)
+        var markReadCalls = 0
 
         compose.setContent {
-            Column {
-                // Recomposes on its own; proves an unrelated recomposition
-                // elsewhere in the tree does not disturb what Timeline
-                // already drew.
-                Text(
-                    "marker:$unrelated",
-                    modifier = Modifier.testTag("marker"),
-                )
-                Timeline(
-                    rows = rows,
-                    typingLine = null,
-                    isPaginating = false,
-                    canPaginate = false,
-                    onPaginate = {},
-                    onMarkRead = {},
-                )
-            }
+            Timeline(
+                rows = rows,
+                revision = revision,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = { markReadCalls++ },
+            )
         }
-
-        compose.onNodeWithText("first").assertIsDisplayed()
-        compose.onNodeWithTag("row-2").assertDoesNotExist()
-
-        unrelated++
         compose.waitForIdle()
-        compose.onNodeWithText("first").assertIsDisplayed()
-        compose.onNodeWithTag("row-2").assertDoesNotExist()
+        val afterOpen = markReadCalls
+        assertTrue("opening at the newest end should mark read", afterOpen > 0)
 
-        // A revision bump: `TimelineStore` replaces `items` wholesale, never
-        // patches it in place.
-        rows = listOf(
-            row(id = "1", body = "first", timestampMs = 1_000uL),
-            row(id = "2", body = "second", timestampMs = 2_000uL),
+        // A structurally identical list, no revision bump: `TimelineStore`
+        // never does this (revision cannot drift from `items`, by
+        // construction — see `TimelineStore.replaceItems`), but the
+        // container itself must not re-key on `rows` alone, or "diffing
+        // rows" and "reading revision" would be indistinguishable from
+        // here.
+        rows = sameSingleRow()
+        compose.waitForIdle()
+        assertEquals(
+            "an unchanged revision must not re-key, even against a new rows object",
+            afterOpen,
+            markReadCalls,
         )
+
+        // The distinguishing case: a revision bump against a list that is
+        // `equals`-equal to the one already on screen. A rows-diffing
+        // implementation sees nothing here at all; a revision-keyed one
+        // re-fires the mark-read effect regardless.
+        rows = sameSingleRow()
+        revision++
         compose.waitForIdle()
-        compose.onNodeWithTag("row-2").assertIsDisplayed()
+        assertTrue(
+            "a revision bump must re-key even against an equal rows list",
+            markReadCalls > afterOpen,
+        )
+    }
+
+    /** Reads `Timeline`'s own Rule 2 decision off its test-only marker node. */
+    private fun animationDecision(): String? =
+        compose.onNodeWithTag("timeline-animation-decision")
+            .fetchSemanticsNode()
+            .config
+            .getOrNull(SemanticsProperties.ContentDescription)
+            ?.firstOrNull()
+
+    /**
+     * Rule 2 (`TimelineAnimation.animates`): a handful of rows arriving into
+     * an already-applied, on-screen, not-scrolled-away list animates; a
+     * page of history landing at once does not.
+     *
+     * `TimelineAnimation` itself lived in `:kit` with six passing tests
+     * throughout this defect — nothing in `:app` ever called it, so nothing
+     * on the timeline animated. This test drives `Timeline` the way
+     * `MainActivity` does (through `rows`), not `TimelineAnimation` again.
+     *
+     * Whether `Modifier.animateItem()` actually plays is not something a
+     * Compose UI test can observe — there is no assertion for "did an
+     * animation spec run." What is asserted instead is the *decision*
+     * `Timeline` made for this update, exposed for exactly this purpose by
+     * a zero-size node whose `contentDescription` names it, the same
+     * "assert the decision, not the pixel" idiom `RootScaffoldTest` uses
+     * for geometry.
+     */
+    @Test
+    fun aHandfulOfArrivingRowsAnimatesAPageOfHistoryDoesNot() {
+        var rows by mutableStateOf(ascendingRows(3))
+        // `Timeline` latches Rule 2's decision on `revision`, not on `rows`
+        // itself — see `Timeline.kt`'s own note on why — so this test bumps
+        // both together, the way `TimelineStore.replaceItems` always does.
+        var revision by mutableStateOf(0uL)
+
+        compose.setContent {
+            Timeline(
+                rows = rows,
+                revision = revision,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+            )
+        }
+        compose.waitForIdle()
+
+        // The room's first fill is the room appearing, not an arrival.
+        assertEquals("static", animationDecision())
+
+        // One row arriving into an already-applied, on-screen list: the
+        // case Rule 2 exists for.
+        rows = rows + row(id = "4", body = "row 4", timestampMs = 4_000uL)
+        revision++
+        compose.waitForIdle()
+        assertEquals("animate", animationDecision())
+
+        // A page of history — twenty rows at once — is not an arrival.
+        rows = rows + (5..24).map { row(id = "$it", body = "row $it", timestampMs = it.toULong() * 1_000uL) }
+        revision++
+        compose.waitForIdle()
+        assertEquals("static", animationDecision())
     }
 
     /** Pagination fires when the reader reaches the older end, and not before. */

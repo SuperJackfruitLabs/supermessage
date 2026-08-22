@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -30,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.DisplayRow
+import dev.supermessage.kit.TimelineAnimation
 import dev.supermessage.kit.TimelineGrouping
 import dev.supermessage.kit.stores.LiveStore
 import java.time.Instant
@@ -138,6 +140,7 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 @Composable
 fun Timeline(
     rows: List<TimelineRowDto>,
+    revision: ULong = 0uL,
     typingLine: String?,
     isPaginating: Boolean,
     canPaginate: Boolean,
@@ -153,10 +156,20 @@ fun Timeline(
 ) {
     val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
 
-    // Walked in the order `rows` already arrives in — oldest first — because
-    // "the row above it" means the row before it in time, not before it in
-    // the inverted list this container displays.
-    val continuesRun = remember(rows) {
+    // Keyed on `revision`, not `rows` itself. `TimelineStore.revision` is
+    // bumped exactly once per wholesale replacement of `items` and nowhere
+    // else, so it answers "did the history actually change" in the
+    // constant time a `ULong` comparison costs — the whole reason it exists
+    // (see `TimelineStore.kt`'s own doc on it). Keying these three off
+    // `rows` instead pays a structural, element-by-element comparison of
+    // the entire list on every recomposition this container has, including
+    // the many-times-a-second ones a live turn's own answer/thought/tools
+    // cause while `rows` itself has not moved.
+    //
+    // Walked in the order `rows` already arrives in — oldest first —
+    // because "the row above it" means the row before it in time, not
+    // before it in the inverted list this container displays.
+    val continuesRun = remember(revision) {
         val out = HashMap<String, Boolean>(rows.size)
         var previous: TimelineRowDto? = null
         for (row in rows) {
@@ -165,14 +178,14 @@ fun Timeline(
         }
         out
     }
-    val singleSpeaker = remember(rows) { TimelineGrouping.hasSingleSpeaker(rows) }
+    val singleSpeaker = remember(revision) { TimelineGrouping.hasSingleSpeaker(rows) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
     // Collapse membership runs first — they are consecutive in the
     // chronological order `rows` already arrives in — then reverse. See the
     // class doc's "Feed order" and "Membership runs" sections.
-    val displayRows = remember(rows) { TimelineGrouping.collapseMembershipRuns(rows) }
+    val displayRows = remember(revision) { TimelineGrouping.collapseMembershipRuns(rows) }
     val newestFirst = displayRows.asReversed()
 
     // Exact, not a tuned threshold — `derivedStateOf` so scrolling a single
@@ -183,6 +196,41 @@ fun Timeline(
         derivedStateOf {
             listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
         }
+    }
+
+    // Rule 2 (`TimelineAnimation.animates`): animate an arrival, and nothing
+    // else. Latched by `revision`, the same key the grouping above uses and
+    // for the same reason `remember(rows)` would not do here: this
+    // composable recomposes many times a second while a live turn is being
+    // written, and every one of those recompositions is an "unrelated"
+    // event by Rule 2's own rule — nothing arrived. Keying on `revision`
+    // means the decision (and the bookkeeping below it) is computed exactly
+    // once per wholesale replacement of `items`, not once per recomposition
+    // that merely happens to follow one. `previousRowsHolder` is read and
+    // then overwritten inside that single `remember` block rather than via
+    // a `LaunchedEffect`: the decision has to be in hand in the very
+    // composition where the new rows appear, in time to hand
+    // `Modifier.animateItem()` to the row being inserted — an effect only
+    // learns of the change a frame late, past the point that modifier can
+    // still catch it. `isAtNewest` is already derived above, so away-ness
+    // costs nothing extra here.
+    val previousRowsHolder = remember { mutableStateOf<List<TimelineRowDto>?>(null) }
+    val animatesThisUpdate = remember(revision) {
+        val before = previousRowsHolder.value
+        val arrived = if (before == null) {
+            0
+        } else {
+            val previousIds = before.mapTo(HashSet(before.size)) { it.item.id }
+            rows.count { it.item.id !in previousIds }
+        }
+        val decision = TimelineAnimation.animates(
+            arrived = arrived,
+            had = before?.size ?: 0,
+            hasApplied = before != null,
+            wasAway = !isAtNewest,
+        )
+        previousRowsHolder.value = rows
+        decision
     }
 
     // `rememberUpdatedState` rather than keying `derivedStateOf` itself off
@@ -211,10 +259,14 @@ fun Timeline(
 
     // Marking read: the second of `TimelineView.swift`'s two triggers — "on
     // any history change while at the newest end", which this container can
-    // answer for itself from `rows` and `isAtNewest` alone. The first
+    // answer for itself from `revision` and `isAtNewest` alone. Keyed on
+    // `revision` rather than `newestFirst` for the same reason the three
+    // `remember`s above are: a revision bump is what "the history actually
+    // changed" means, constant-time to compare, and not something a
+    // structurally-equal-by-coincidence `newestFirst` could mask. The first
     // trigger, "on room change", is the caller's to wire: this composable is
     // never told which room it is showing.
-    LaunchedEffect(newestFirst, isAtNewest) {
+    LaunchedEffect(revision, isAtNewest) {
         if (isAtNewest) onMarkRead()
     }
 
@@ -222,8 +274,8 @@ fun Timeline(
     // Exhaustive over DisplayRow — no `else` — so a third variant added later
     // is a compile error here rather than a blank row.
     @Composable
-    fun HistoryRow(display: DisplayRow) {
-        val rowModifier = Modifier
+    fun HistoryRow(display: DisplayRow, itemModifier: Modifier = Modifier) {
+        val rowModifier = itemModifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .testTag("row-${display.id}")
@@ -270,6 +322,19 @@ fun Timeline(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
+        // A test seam for Rule 2, not a visible affordance: a zero-size node
+        // whose `contentDescription` names the decision this composition
+        // made, the same "geometry over existence, decision over pixel"
+        // idiom `RootScaffoldTest` uses for hidden panes. Whether
+        // `Modifier.animateItem()` actually plays is not something a Compose
+        // UI test can observe directly; this is what is asserted instead —
+        // see `TimelineTest`'s own note on why.
+        Box(
+            Modifier
+                .size(0.dp)
+                .testTag("timeline-animation-decision")
+                .semantics { contentDescription = if (animatesThisUpdate) "animate" else "static" },
+        )
         Column(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
@@ -300,11 +365,17 @@ fun Timeline(
                     // "the reasoning and the tool calls happened before the
                     // answer". The newest message stays at the very bottom.
                     val newest = newestFirst.first()
-                    item(key = newest.id) { HistoryRow(newest) }
+                    item(key = newest.id) {
+                        HistoryRow(newest, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                    }
                     item(key = "live-turn") { LiveTurnCell() }
-                    items(newestFirst.drop(1), key = { it.id }) { row -> HistoryRow(row) }
+                    items(newestFirst.drop(1), key = { it.id }) { row ->
+                        HistoryRow(row, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                    }
                 } else {
-                    items(newestFirst, key = { it.id }) { row -> HistoryRow(row) }
+                    items(newestFirst, key = { it.id }) { row ->
+                        HistoryRow(row, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                    }
                 }
                 if (isPaginating) {
                     item(key = "pagination-spinner") {

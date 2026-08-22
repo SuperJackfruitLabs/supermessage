@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_ffi.peopleLabel
 
 /**
  * Who you are signed in as, and the way out — the port of
@@ -177,16 +178,24 @@ fun AccountPanel(
 }
 
 /**
- * The local part of the Matrix id — `@rakesh:id.agentpod.dev` is a name and
- * an address, and only the first half is worth a headline. Mirrors
- * `AccountPanel.swift`'s own `name` computed property exactly, including its
- * fallback: `null` while still loading reads "Signed in", and an id this
- * app cannot parse (no `@`, no `:`) is shown whole rather than guessed at.
+ * The person behind the Matrix id — `@rakesh:id.agentpod.dev` is a name and
+ * an address, and only the first half is worth a headline.
+ *
+ * Delegates to [peopleLabel], which delegates to the core's own
+ * `display_name::user_label` — not a local reimplementation. The two have
+ * disagreed before: a hand-rolled substring between `@` and `:` reads
+ * `@_agentpod_ganesha:id.agentpod.dev` as `_agentpod_ganesha`, where
+ * `user_label` strips the bridge's leading-underscore namespace and answers
+ * `Ganesha`. `user_label` itself is not exported over FFI, but
+ * `peopleLabel(listOf(id))` is exactly it for a single id, and is this
+ * app's third occasion to reach for the core instead of re-deriving the
+ * rule locally (`people_label`, `decodeDataUri`, now this).
+ *
+ * `null` while still loading (or a swallowed failure — see [loadAccount]'s
+ * own doc) reads "Signed in" rather than guessing at a name; that fallback
+ * is this function's alone; everything else is the core's answer.
  */
 private fun accountName(account: AccountDto?): String {
     val id = account?.userId ?: return "Signed in"
-    if (!id.startsWith("@")) return id
-    val colon = id.indexOf(':')
-    if (colon < 0) return id
-    return id.substring(1, colon)
+    return peopleLabel(listOf(id))
 }

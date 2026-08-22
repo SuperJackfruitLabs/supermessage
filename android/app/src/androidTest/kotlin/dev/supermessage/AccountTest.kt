@@ -37,14 +37,21 @@ class AccountTest {
         }
     }
 
-    /** Exactly what `Session.account` returns — the local part of the id as a headline, the full id and homeserver beneath it. */
+    /**
+     * The headline is `peopleLabel`'s answer for the id, not the raw local
+     * part — `@rakesh:id.agentpod.dev` reads "Rakesh", title-cased the same
+     * way every other name in this app is (see `Account.kt`'s own
+     * `accountName` for why this delegates to the core rather than
+     * re-deriving the rule locally). The full id and homeserver beneath it
+     * are shown exactly as `Session.account` returned them.
+     */
     @Test
     fun theAccountShowsWhoIsSignedIn() {
         panel()
         compose.waitForIdle()
 
         compose.onNodeWithTag("account-name").assertIsDisplayed()
-        compose.onNodeWithText("rakesh").assertIsDisplayed()
+        compose.onNodeWithText("Rakesh").assertIsDisplayed()
         compose.onNodeWithText("@rakesh:id.agentpod.dev").assertIsDisplayed()
         compose.onNodeWithText("https://id.agentpod.dev").assertIsDisplayed()
     }
@@ -121,5 +128,28 @@ class AccountTest {
         compose.waitForIdle()
 
         compose.onNodeWithText("Signed in").assertIsDisplayed()
+    }
+
+    /**
+     * The third `user_label` reimplementation found on this branch
+     * (`people_label`, `decodeDataUri`, and — before this task — `Account.kt`'s
+     * own `accountName`, which read the substring between `@` and `:`
+     * verbatim). For a bridge's puppet the leading underscore is the entire
+     * signal that a segment is a namespace, not a person's name:
+     * `@_agentpod_ganesha:id.agentpod.dev` names Ganesha, not
+     * `_agentpod_ganesha`. `peopleLabel(listOf(id))` already gets this right
+     * today because it delegates to the core's own `display_name::user_label`
+     * — this test protects that delegation, not a local guess at the rule.
+     */
+    @Test
+    fun aBridgedAccountNameStripsTheNamespaceNotJustThePunctuation() {
+        panel(
+            account = {
+                AccountDto(userId = "@_agentpod_ganesha:id.agentpod.dev", homeserver = "https://id.agentpod.dev")
+            },
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Ganesha").assertIsDisplayed()
     }
 }

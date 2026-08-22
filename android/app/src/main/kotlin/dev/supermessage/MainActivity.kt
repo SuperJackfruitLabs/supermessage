@@ -284,6 +284,11 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                 }
             } else {
                 val items by session.timeline.items.collectAsStateWithLifecycle()
+                // `Timeline` keys its grouping and its mark-read effect off
+                // this rather than off `items` itself — see `Timeline.kt`'s
+                // own note on why a revision bump, not a structural diff of
+                // the whole list, is what "the history changed" means.
+                val revision by session.timeline.revision.collectAsStateWithLifecycle()
                 val isPaginating by session.timeline.isPaginating.collectAsStateWithLifecycle()
                 val canPaginate by session.timeline.canPaginate.collectAsStateWithLifecycle()
 
@@ -329,6 +334,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                 Column(modifier = Modifier.fillMaxSize().testTag("pane-timeline")) {
                     Timeline(
                         rows = items,
+                        revision = revision,
                         typingLine = typingLine,
                         isPaginating = isPaginating,
                         canPaginate = canPaginate,
