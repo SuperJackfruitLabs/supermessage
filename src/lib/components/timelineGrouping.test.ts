@@ -469,4 +469,29 @@ describe("shouldShift", () => {
     // the tail has to be held in place.
     expect(shouldShift(["$a:0", "$b:0", "$c:0"], ["$b:0", "$c:0", "$d:0"])).toBe(true);
   });
+
+  it("names one person once, however many times they changed membership", () => {
+    // Found on a real device: four membership events from one member rendered
+    // "Annapurna, Annapurna and 1 other updated their membership" — the same
+    // person named twice and counted toward "others".
+    const rows = groupTimelineItems([
+      membership("1", "updated their membership", "Annapurna"),
+      membership("2", "updated their membership", "Annapurna"),
+      membership("3", "updated their membership", "Annapurna"),
+      membership("4", "updated their membership", "Annapurna"),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ text: "Annapurna updated their membership" });
+  });
+
+  it("still counts distinct people when a name repeats mid-run", () => {
+    const rows = groupTimelineItems([
+      membership("1", "joined", "Annapurna"),
+      membership("2", "joined", "Ganesha"),
+      membership("3", "joined", "Krishna"),
+      membership("4", "joined", "Annapurna"),
+    ]);
+    expect(rows[0]).toMatchObject({ text: "Annapurna, Ganesha and 1 other joined the room" });
+  });
+
 });
