@@ -219,6 +219,31 @@ AVDs, portrait and landscape.
 `docs/superpowers/specs/2026-08-20-android-app-design.md` specs the module
 layout and `docs/superpowers/specs/2026-08-20-android-scaffold-design.md`
 specs the adaptive shell built on top of it; both are binding.
+### Changing the FFI surface changes **two** sets of checked-in bindings
+
+Add or alter anything in `supermessage-ffi` and both the Kotlin **and** the Swift
+bindings go stale. Both are committed; both are diffed by their own CI job. Regenerating
+one and not the other is a mistake that has been made twice on this repo, and it does not
+surface as a compile error — iOS fails its *runtime* checksum check
+(`uniffi_..._checksum_constructor_core_new() != <n>`), which reads like a mystery.
+
+**The Swift bindings can be regenerated on Linux**, even though the XCFramework cannot.
+`uniffi-bindgen` reads crate metadata, which is platform-independent, so the host `.so`
+works in place of the iOS library:
+
+```bash
+cargo build -p supermessage-ffi
+STAGE=$(mktemp -d)
+cargo run -q -p supermessage-ffi --bin uniffi-bindgen -- generate \
+    --library target/debug/libsupermessage_ffi.so --language swift --no-format --out-dir "$STAGE"
+mkdir -p "$STAGE/headers" && mv "$STAGE"/*.h "$STAGE/headers/"
+cat "$STAGE"/*.modulemap > "$STAGE/headers/module.modulemap" && rm -f "$STAGE"/*.modulemap
+rm -rf apple/Generated && cp -r "$STAGE" apple/Generated
+```
+
+Verified twice against a macOS CI run: the output is identical to what
+`build-xcframework.sh` produces there. `--no-format` is what keeps it reproducible.
+
 `scripts/build-android-libs.sh` builds the four ABIs and generates the
 Kotlin — the same `#[uniffi::export]` definitions that produce the Swift, so
 no new Rust is needed. The script runs green on this machine, unmodified:
