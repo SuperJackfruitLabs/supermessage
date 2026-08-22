@@ -7,7 +7,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onChildren
@@ -320,7 +322,12 @@ class TimelineRowTest {
             )
         }
         compose.onNodeWithText("✅", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("2", substring = true).assertIsDisplayed()
+        // Scoped to the reaction chip itself (not a bare substring match
+        // against the whole tree) — a single "2" elsewhere, such as this
+        // row's own timestamp text, must not satisfy this assertion. See
+        // this test's own history: `substring = true` on a lone digit
+        // matched CI's formatted "12:00" timestamp too.
+        compose.onNodeWithTag("reaction-✅").onChildren().filterToOne(hasText("2")).assertIsDisplayed()
         compose.onNodeWithText("Read by", substring = true).assertIsDisplayed()
     }
 

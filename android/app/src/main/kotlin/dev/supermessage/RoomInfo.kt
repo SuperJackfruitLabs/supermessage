@@ -189,7 +189,14 @@ fun RoomInfoPanel(
 
     if (showsLeaveConfirm) {
         AlertDialog(
-            modifier = Modifier.testTag("room-info-leave-confirm"),
+            // Named `-dialog`, not `-confirm`, so it cannot be mistaken for
+            // `room-info-leave-confirm-button` below — a near-collision that
+            // once made a CI-only failure hard to read. This tag exists for
+            // completeness; tests assert on content *inside* the dialog
+            // (its title, its buttons) rather than this wrapper, because an
+            // `AlertDialog` renders in its own window and `isDisplayed` on
+            // the wrapper node is not reliable across devices.
+            modifier = Modifier.testTag("room-info-leave-dialog"),
             onDismissRequest = { showsLeaveConfirm = false },
             title = { Text("Leave room?") },
             text = { Text("You will stop receiving messages from this room.") },

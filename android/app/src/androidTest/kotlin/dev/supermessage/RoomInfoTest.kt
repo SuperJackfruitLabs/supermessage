@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -214,7 +215,16 @@ class RoomInfoTest {
         compose.waitForIdle()
 
         assertEquals("tapping Leave must not itself leave", false, left)
-        compose.onNodeWithTag("room-info-leave-confirm").assertIsDisplayed()
+        // The confirmation is an `AlertDialog`, which renders in its own
+        // window — asserting `isDisplayed` on that wrapper node is not
+        // reliable across devices, and `waitForIdle` is not a documented
+        // guarantee that a separate window has finished attaching. Wait
+        // for, then assert on, content *inside* the dialog: its title and
+        // the button the reader actually taps.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("room-info-leave-confirm-button").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Leave room?").assertIsDisplayed()
 
         compose.onNodeWithTag("room-info-leave-confirm-button").performClick()
         compose.waitForIdle()
@@ -232,11 +242,19 @@ class RoomInfoTest {
 
         compose.onNodeWithTag("room-info-leave").performClick()
         compose.waitForIdle()
+        // Same reasoning as `leavingAsksBeforeItActs`: wait for the
+        // dialog's own content, inside its own window, rather than assume
+        // `waitForIdle` alone has it ready to query.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("room-info-leave-cancel").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("room-info-leave-cancel").performClick()
         compose.waitForIdle()
 
         assertEquals(false, left)
-        compose.onNodeWithTag("room-info-leave-confirm").assertDoesNotExist()
+        // Content inside the dialog, not the wrapper: its title is gone
+        // once the dialog itself is dismissed.
+        compose.onNodeWithText("Leave room?").assertDoesNotExist()
     }
 
     /** A failure to load is shown, not swallowed — and nothing crashes on it. */
