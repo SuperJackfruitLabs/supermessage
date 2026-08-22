@@ -41,7 +41,9 @@ impl SecretStore for ForeignStore {
     }
 
     fn set(&self, key: &str, value: &str) -> CoreResult<()> {
-        self.0.set(key.to_string(), value.to_string()).map_err(into_core_error)
+        self.0
+            .set(key.to_string(), value.to_string())
+            .map_err(into_core_error)
     }
 
     fn delete(&self, key: &str) -> CoreResult<()> {
@@ -104,7 +106,10 @@ mod tests {
     fn a_value_set_through_the_adapter_reads_back() {
         let store = ForeignStore(Box::new(FakeHost::default()));
         store.set("passphrase", "hunter2").unwrap();
-        assert_eq!(store.get("passphrase").unwrap(), Some("hunter2".to_string()));
+        assert_eq!(
+            store.get("passphrase").unwrap(),
+            Some("hunter2".to_string())
+        );
         store.delete("passphrase").unwrap();
         assert_eq!(store.get("passphrase").unwrap(), None);
     }
@@ -123,10 +128,30 @@ mod tests {
     #[test]
     fn each_error_variant_keeps_its_identity() {
         for (ffi, expect_variant) in [
-            (FfiError::Store { detail: "locked".into() }, "store"),
-            (FfiError::Auth { detail: "refused".into() }, "auth"),
-            (FfiError::Network { detail: "offline".into() }, "network"),
-            (FfiError::Protocol { detail: "garbled".into() }, "protocol"),
+            (
+                FfiError::Store {
+                    detail: "locked".into(),
+                },
+                "store",
+            ),
+            (
+                FfiError::Auth {
+                    detail: "refused".into(),
+                },
+                "auth",
+            ),
+            (
+                FfiError::Network {
+                    detail: "offline".into(),
+                },
+                "network",
+            ),
+            (
+                FfiError::Protocol {
+                    detail: "garbled".into(),
+                },
+                "protocol",
+            ),
         ] {
             let host = FakeHost::default();
             *host.fail_with.lock().unwrap() = Some(ffi);
@@ -147,10 +172,15 @@ mod tests {
     #[test]
     fn the_detail_text_survives() {
         let host = FakeHost::default();
-        *host.fail_with.lock().unwrap() =
-            Some(FfiError::Store { detail: "keystore key invalidated".into() });
+        *host.fail_with.lock().unwrap() = Some(FfiError::Store {
+            detail: "keystore key invalidated".into(),
+        });
         let store = ForeignStore(Box::new(host));
-        assert!(store.get("k").unwrap_err().to_string().contains("keystore key invalidated"));
+        assert!(store
+            .get("k")
+            .unwrap_err()
+            .to_string()
+            .contains("keystore key invalidated"));
     }
 
     /// A variant with no core twin still becomes a Store error rather than panicking.
