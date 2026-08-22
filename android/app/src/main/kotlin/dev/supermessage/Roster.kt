@@ -64,6 +64,7 @@ fun Roster(
     onOpenRoom: (roomId: String) -> Unit = {},
     onOpenInfo: (roomId: String) -> Unit = {},
     onLoadAvatar: suspend (roomId: String) -> Unit = {},
+    onRevealInvitations: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(modifier = modifier.testTag("roster")) {
@@ -71,6 +72,13 @@ fun Roster(
         // `RoomListView.swift`'s toolbar menu states out loud: hidden must
         // never mean gone silently, so a nonzero count always says so
         // somewhere on screen, not only in a menu a reader has to open.
+        //
+        // Tapping it is the whole reveal affordance: the only thing this
+        // banner is withholding is `showsInvitations` itself, and a banner
+        // that only ever *names* what it hides without a way to ask for it
+        // back would repeat the defect it exists to call out (see
+        // MainActivity's own `onRevealInvitations` KDoc for where this
+        // leads — `prefs.setShowsInvitations(true)`).
         if (hiddenInvitations > 0) {
             item(key = "hidden-invitations") {
                 Text(
@@ -83,6 +91,7 @@ fun Roster(
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable(onClickLabel = "Show invitations", onClick = onRevealInvitations)
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .testTag("hidden-invitations"),
                 )
