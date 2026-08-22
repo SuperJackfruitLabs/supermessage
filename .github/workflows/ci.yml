@@ -319,6 +319,11 @@ jobs:
           api-level: 36
           target: google_apis
           arch: x86_64
+          # Pinned so the device is reproducible. Without a profile the runner
+          # picks its own default, and two tests failed here that pass on a
+          # taller local screen — a height dependency nobody could reproduce
+          # because nobody knew what height CI was using.
+          profile: pixel_6
           avd-name: ci-avd-36
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
@@ -335,6 +340,11 @@ jobs:
           api-level: 36
           target: google_apis
           arch: x86_64
+          # Pinned so the device is reproducible. Without a profile the runner
+          # picks its own default, and two tests failed here that pass on a
+          # taller local screen — a height dependency nobody could reproduce
+          # because nobody knew what height CI was using.
+          profile: pixel_6
           avd-name: ci-avd-36
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none

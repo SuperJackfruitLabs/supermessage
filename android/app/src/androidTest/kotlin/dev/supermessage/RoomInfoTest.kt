@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -88,19 +89,19 @@ class RoomInfoTest {
         panel()
         compose.waitForIdle()
 
-        compose.onNodeWithText("Ops Room").assertIsDisplayed()
-        compose.onNodeWithText("Infra team").assertIsDisplayed()
-        compose.onNodeWithText("Where the pager goes").assertIsDisplayed()
-        compose.onNodeWithText("#ops:example.org").assertIsDisplayed()
-        compose.onNodeWithText("!room:example.org").assertIsDisplayed()
+        compose.onNodeWithText("Ops Room").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Infra team").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Where the pager goes").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("#ops:example.org").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("!room:example.org").performScrollTo().assertIsDisplayed()
 
         // Two others, so the plural header with the core's own count —
         // not `members.size`, which would read 2 (self already excluded).
-        compose.onNodeWithText("Members (3)").assertIsDisplayed()
-        compose.onNodeWithText("Alice").assertIsDisplayed()
+        compose.onNodeWithText("Members (3)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Alice").performScrollTo().assertIsDisplayed()
         // No display name: falls back to the raw id, never a name this
         // composable invents.
-        compose.onNodeWithText("@bob:example.org").assertIsDisplayed()
+        compose.onNodeWithText("@bob:example.org").performScrollTo().assertIsDisplayed()
 
         // This account is never in its own member list.
         compose.onNodeWithText("Me").assertDoesNotExist()
@@ -211,7 +212,12 @@ class RoomInfoTest {
         panel(onLeaveRoom = { left = true }, onClose = { closed = true })
         compose.waitForIdle()
 
-        compose.onNodeWithTag("room-info-leave").performClick()
+        // Scroll first: the panel is a `verticalScroll` column and Leave sits
+        // near its bottom, so whether it is on screen depends on the device's
+        // height. It is visible on a 2400px-tall phone and below the fold on
+        // CI's shorter default AVD, which is why these two tests passed locally
+        // and timed out there waiting for a dialog whose trigger was never hit.
+        compose.onNodeWithTag("room-info-leave").performScrollTo().performClick()
         compose.waitForIdle()
 
         assertEquals("tapping Leave must not itself leave", false, left)
@@ -240,7 +246,12 @@ class RoomInfoTest {
         panel(onLeaveRoom = { left = true })
         compose.waitForIdle()
 
-        compose.onNodeWithTag("room-info-leave").performClick()
+        // Scroll first: the panel is a `verticalScroll` column and Leave sits
+        // near its bottom, so whether it is on screen depends on the device's
+        // height. It is visible on a 2400px-tall phone and below the fold on
+        // CI's shorter default AVD, which is why these two tests passed locally
+        // and timed out there waiting for a dialog whose trigger was never hit.
+        compose.onNodeWithTag("room-info-leave").performScrollTo().performClick()
         compose.waitForIdle()
         // Same reasoning as `leavingAsksBeforeItActs`: wait for the
         // dialog's own content, inside its own window, rather than assume
