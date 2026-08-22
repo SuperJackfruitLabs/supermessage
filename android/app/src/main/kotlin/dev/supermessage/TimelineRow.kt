@@ -280,6 +280,13 @@ private fun MessageBlock(
         // the block tree still renders in full.
         val textColor =
             if (muted && !isOwn) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+        // Phase D's whole point (see Theme.kt's file doc): serif for what an
+        // agent wrote, sans for what the operator wrote. `row.item.isOwn` is
+        // already the sender distinction every other branch in this
+        // function reads — RichText itself makes no such decision, which is
+        // why it takes the resolved face as a parameter rather than reading
+        // `isOwn` on its own.
+        val bodyFontFamily = if (isOwn) SupermessageTheme.typography.own else SupermessageTheme.typography.body
         CompositionLocalProvider(LocalContentColor provides textColor) {
             Box(
                 modifier = Modifier
@@ -300,7 +307,7 @@ private fun MessageBlock(
                         }
                     },
             ) {
-                RichText(blocks = blocks)
+                RichText(blocks = blocks, fontFamily = bodyFontFamily)
             }
         }
 

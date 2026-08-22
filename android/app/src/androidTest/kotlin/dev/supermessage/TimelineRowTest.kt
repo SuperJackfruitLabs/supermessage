@@ -15,6 +15,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.width
 import java.time.Instant
@@ -100,6 +105,64 @@ class TimelineRowTest {
             canReplyOrReact = true,
             replyPreview = null,
         )
+    }
+
+    /**
+     * The [FontFamily] a real `Text` node actually laid its glyphs out
+     * with — read back via the `GetTextLayoutResult` semantics action every
+     * `Text` composable registers for accessibility, the same mechanism
+     * `ThemeTest`'s own `onTextLayout` hook exercises, but without adding a
+     * test-only parameter to production code: the action is already there
+     * on the real, unmodified [TimelineRow] tree.
+     */
+    private fun resolvedFontFamily(node: SemanticsNode): FontFamily? {
+        val results = mutableListOf<TextLayoutResult>()
+        node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(results)
+        return results.firstOrNull()?.layoutInput?.style?.fontFamily
+    }
+
+    /**
+     * Defect 2 (Task 5): `SupermessageTheme.typography.body` (serif, "what
+     * an agent wrote") and `.own` (sans, "what the operator wrote") were
+     * defined and unit-tested in `ThemeTest`, but nothing in the rendering
+     * path ever read them — every bubble rendered in whatever face
+     * `MaterialTheme.typography` defaulted to, identical for an agent's
+     * message and the reader's own. `ThemeTest.ownAndBodyAreDifferentFaces`
+     * passed the whole time it was broken, because it asserts the two
+     * tokens differ, not that any composable resolves to either of them.
+     *
+     * These two tests go through the real, unmodified [TimelineRow] →
+     * `MessageBlock` → `RichText` path, wrapped in the real
+     * [SupermessageTheme] (the way `MainActivity` wraps the whole app), and
+     * read the resolved face off the actual bubble text node —
+     * [resolvedFontFamily], not a copy of the theme's own assertion.
+     */
+    @Test
+    fun anAgentsMessageRendersInTheSerifFace() {
+        compose.setContent {
+            SupermessageTheme {
+                TimelineRow(
+                    row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("an agent wrote this")), isOwn = false),
+                    now = now,
+                )
+            }
+        }
+        val node = compose.onNodeWithText("an agent wrote this").fetchSemanticsNode()
+        assertEquals(FontFamily.Serif, resolvedFontFamily(node))
+    }
+
+    @Test
+    fun yourOwnMessageRendersInTheSansFace() {
+        compose.setContent {
+            SupermessageTheme {
+                TimelineRow(
+                    row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("the operator wrote this")), isOwn = true),
+                    now = now,
+                )
+            }
+        }
+        val node = compose.onNodeWithText("the operator wrote this").fetchSemanticsNode()
+        assertEquals(FontFamily.SansSerif, resolvedFontFamily(node))
     }
 
     @Test

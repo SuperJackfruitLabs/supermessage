@@ -265,9 +265,40 @@ private fun SignedIn(
             tertiary = PaneAdaptedValue.Hidden, // ListDetailPaneScaffoldRole.Extra
         )
 
+        // The one-pane case (Task 5's soft-lock defect): at
+        // `maxHorizontalPartitions = 1`, `navigator.scaffoldValue` grants
+        // Extra its own partition exactly the way it does at panes == 2 —
+        // *replacing* whichever of List/Detail was on screen, both of which
+        // degenerate to zero-size bounds. Unlike panes == 2, there is no
+        // second partition to fall back to here: the scaffold is left with
+        // Extra as its one Expanded role and no lambda to draw it (extraPane
+        // above is withheld below panes == 3), so nothing renders at all —
+        // a blank screen with an empty accessibility tree, reproduced twice
+        // via `uiautomator dump` on the device, with no back handler to
+        // recover it (BackHandler above only fires for Detail).
+        //
+        // `peekPreviousScaffoldValue()` is what a `navigateBack()` from here
+        // would resolve to: whichever of List or Detail was the current
+        // destination before `openInfo()` pushed Extra, Expanded, and Extra
+        // itself Hidden — never both List and Detail at once the way
+        // [twoPaneScaffoldValue] hardcodes, because at one partition only
+        // one of them was ever on screen to begin with. Substituting it here
+        // keeps that prior screen visible and real underneath the
+        // [ModalBottomSheet] below, the same relationship [twoPaneScaffoldValue]
+        // has with its own sheet.
+        val onePaneScaffoldValue = if (panes == 1 && infoRequested) {
+            navigator.peekPreviousScaffoldValue()
+        } else {
+            null
+        }
+
         ListDetailPaneScaffold(
             directive = navigator.scaffoldDirective,
-            value = if (panes == 2) twoPaneScaffoldValue else navigator.scaffoldValue,
+            value = when {
+                panes == 2 -> twoPaneScaffoldValue
+                onePaneScaffoldValue != null -> onePaneScaffoldValue
+                else -> navigator.scaffoldValue
+            },
             listPane = {
                 listPaneContent(
                     shellWidth,
@@ -284,16 +315,19 @@ private fun SignedIn(
             } else null,
         )
 
-        // The sheet itself: only at panes == 2, and only while info is
-        // actually requested — narrowing from three panes with info open
-        // does not reach here showing a sheet, because the LaunchedEffect
-        // above already calls navigateBack() first whenever panes drops
-        // below 3 with Extra as the current destination (that is
+        // The sheet itself: at any width below three panes — widened from
+        // `panes == 2` alone (Task 5's fix for the phone soft-lock: panes ==
+        // 1 has exactly the same "no partition for Extra" shape panes == 2
+        // does, just with one fewer partition to spare) — and only while
+        // info is actually requested. Narrowing from three panes with info
+        // open does not reach here showing a sheet, because the
+        // LaunchedEffect above already calls navigateBack() first whenever
+        // panes drops below 3 with Extra as the current destination (that is
         // [narrowingBelowThreePanesStrandsAnOpenInfoPane]'s scenario: an
         // open info pane collapsing away entirely, not reappearing as a
         // sheet). This branch only ever fires for a fresh openInfo() request
-        // made while already at a two-pane width.
-        if (panes == 2 && infoRequested) {
+        // made while already at a one- or two-pane width.
+        if (panes < 3 && infoRequested) {
             ModalBottomSheet(onDismissRequest = { scope.launch { navigator.navigateBack() } }) {
                 extraPaneContent(shellWidth) { scope.launch { navigator.navigateBack() } }
             }

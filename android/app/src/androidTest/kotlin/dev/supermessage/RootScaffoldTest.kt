@@ -384,6 +384,45 @@ class RootScaffoldTest {
      * either (it would have passed against today's replace-the-timeline
      * behaviour too).
      */
+    /**
+     * Defect 1 (soft-lock, Task 5): at `panes == 1`, the sheet fallback used
+     * to stop short at `panes == 2` — a phone-width shell asking for room
+     * info got neither an Extra partition (that only exists at `panes ==
+     * 3`) nor the sheet (gated to `panes == 2` alone), so
+     * `ListDetailPaneScaffold` was handed a scaffold value with Extra
+     * Expanded and no lambda to draw it: a blank screen with an empty
+     * accessibility tree, reproduced twice via `uiautomator dump` on the
+     * device, with no back handler to recover it.
+     *
+     * Mirrors [aTabletInPortraitShowsRoomInfoAsASheetOverBothPanes]'s shape
+     * at a phone width instead of a tablet's — geometry via
+     * [assertWithinShell], not `assertExists()`, for the same reason that
+     * test gives: a pane present in the tree at degenerate `Rect(0,0,0,0)`
+     * bounds would pass `assertExists()` and still be the bug.
+     */
+    @Test
+    fun aPhoneShowsRoomInfoAsASheetWhenRequested() {
+        compose.setContent {
+            Box(Modifier.requiredSize(411.dp, 800.dp).testTag(ShellTag)) {
+                RootScaffold(
+                    listPaneContent = { _, _, openInfo ->
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .testTag("list-pane-open-info-target")
+                                .clickable(onClick = openInfo)
+                        )
+                    },
+                )
+            }
+        }
+
+        compose.onNodeWithTag("list-pane-open-info-target").performClick()
+        compose.waitForIdle()
+
+        assertWithinShell("pane-info")
+    }
+
     @Test
     fun aTabletInPortraitShowsRoomInfoAsASheetOverBothPanes() {
         compose.setContent {

@@ -55,37 +55,55 @@ import uniffi.supermessage_core.RichTableRow
  * so a future core variant is a compile error here rather than a blank
  * render — the failure mode `ItemView::DateDivider` exists to prevent, after
  * a host missed it while it was only a comment.
+ *
+ * [fontFamily] is the face prose renders in — [SupermessageTheme.typography.body]
+ * (serif) by default, because most of what a `RichText` draws is what an
+ * agent wrote. [TimelineRow.kt]'s `MessageBlock` overrides it to
+ * [SupermessageTheme.typography.own] (sans) for the reader's own messages —
+ * see its own comment for why `row.item.isOwn` is what decides, not this
+ * file. Threaded through every recursive call ([BlockQuoteView],
+ * [ListBlockView]) so a quoted or nested block keeps the same face as its
+ * parent rather than reverting to the default; [TableView] and inline code
+ * spans are the two exceptions ([TableView] threads it too, in fact — the
+ * one true exception is `RichInline.Code`, which always takes
+ * [SupermessageTheme.typography.code] regardless of [fontFamily], because
+ * mono marks data, not authorship).
  */
 @Composable
-fun RichText(blocks: List<RichBlock>, modifier: Modifier = Modifier) {
+fun RichText(
+    blocks: List<RichBlock>,
+    modifier: Modifier = Modifier,
+    fontFamily: FontFamily = SupermessageTheme.typography.body,
+) {
+    val codeFontFamily = SupermessageTheme.typography.code
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        blocks.forEach { block -> RichBlockView(block) }
+        blocks.forEach { block -> RichBlockView(block, fontFamily, codeFontFamily) }
     }
 }
 
 @Composable
-private fun RichBlockView(block: RichBlock) {
+private fun RichBlockView(block: RichBlock, fontFamily: FontFamily, codeFontFamily: FontFamily) {
     when (block) {
         is RichBlock.Paragraph ->
-            Text(annotated(block.inlines))
+            Text(annotated(block.inlines, codeFontFamily), fontFamily = fontFamily)
 
         is RichBlock.Heading ->
-            Text(annotated(block.inlines), style = headingStyle(block.level))
+            Text(annotated(block.inlines, codeFontFamily), style = headingStyle(block.level), fontFamily = fontFamily)
 
         is RichBlock.CodeBlock ->
             CodeBlockView(block.text)
 
         is RichBlock.BlockQuote ->
-            BlockQuoteView(block.blocks)
+            BlockQuoteView(block.blocks, fontFamily)
 
         is RichBlock.ListBlock ->
-            ListBlockView(ordered = block.ordered, start = block.start, items = block.items)
+            ListBlockView(ordered = block.ordered, start = block.start, items = block.items, fontFamily = fontFamily)
 
         RichBlock.ThematicBreak ->
             HorizontalDivider()
 
         is RichBlock.Table ->
-            TableView(header = block.header, rows = block.rows)
+            TableView(header = block.header, rows = block.rows, fontFamily = fontFamily, codeFontFamily = codeFontFamily)
     }
 }
 
@@ -118,14 +136,14 @@ private fun CodeBlockView(text: String) {
     ) {
         Text(
             text,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = SupermessageTheme.typography.code,
             modifier = Modifier.padding(10.dp),
         )
     }
 }
 
 @Composable
-private fun BlockQuoteView(blocks: List<RichBlock>) {
+private fun BlockQuoteView(blocks: List<RichBlock>, fontFamily: FontFamily) {
     Row(
         modifier = Modifier.height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -136,17 +154,17 @@ private fun BlockQuoteView(blocks: List<RichBlock>) {
                 .width(2.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant),
         )
-        RichText(blocks = blocks)
+        RichText(blocks = blocks, fontFamily = fontFamily)
     }
 }
 
 @Composable
-private fun ListBlockView(ordered: Boolean, start: UInt, items: List<RichListItem>) {
+private fun ListBlockView(ordered: Boolean, start: UInt, items: List<RichListItem>, fontFamily: FontFamily) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEachIndexed { index, item ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (ordered) "${start + index.toUInt()}." else "•")
-                RichText(blocks = item.blocks)
+                Text(if (ordered) "${start + index.toUInt()}." else "•", fontFamily = fontFamily)
+                RichText(blocks = item.blocks, fontFamily = fontFamily)
             }
         }
     }
@@ -157,7 +175,12 @@ private fun ListBlockView(ordered: Boolean, start: UInt, items: List<RichListIte
  * column ends up horizontally scrollable as a whole.
  */
 @Composable
-private fun TableView(header: List<RichTableCell>, rows: List<RichTableRow>) {
+private fun TableView(
+    header: List<RichTableCell>,
+    rows: List<RichTableRow>,
+    fontFamily: FontFamily,
+    codeFontFamily: FontFamily,
+) {
     Column(
         modifier = Modifier
             .horizontalScroll(rememberScrollState())
@@ -167,26 +190,26 @@ private fun TableView(header: List<RichTableCell>, rows: List<RichTableRow>) {
         if (header.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 header.forEach { cell ->
-                    Text(annotated(cell.inlines), fontWeight = FontWeight.SemiBold)
+                    Text(annotated(cell.inlines, codeFontFamily), fontWeight = FontWeight.SemiBold, fontFamily = fontFamily)
                 }
             }
             HorizontalDivider()
         }
         rows.forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                row.cells.forEach { cell -> Text(annotated(cell.inlines)) }
+                row.cells.forEach { cell -> Text(annotated(cell.inlines, codeFontFamily), fontFamily = fontFamily) }
             }
         }
     }
 }
 
 /** Inline runs, folded into an [AnnotatedString]. Mirrors `RichTextFolding` on iOS. */
-private fun annotated(inlines: List<RichInline>): AnnotatedString = buildAnnotatedString {
-    appendInlines(inlines)
+private fun annotated(inlines: List<RichInline>, codeFontFamily: FontFamily): AnnotatedString = buildAnnotatedString {
+    appendInlines(inlines, codeFontFamily)
 }
 
-private fun AnnotatedString.Builder.appendInlines(inlines: List<RichInline>) {
-    inlines.forEach { inline -> appendInline(inline) }
+private fun AnnotatedString.Builder.appendInlines(inlines: List<RichInline>, codeFontFamily: FontFamily) {
+    inlines.forEach { inline -> appendInline(inline, codeFontFamily) }
 }
 
 /**
@@ -196,24 +219,24 @@ private fun AnnotatedString.Builder.appendInlines(inlines: List<RichInline>) {
  * for exactly this — a fold that stops at the first inline loses every word
  * after it.
  */
-private fun AnnotatedString.Builder.appendInline(inline: RichInline) {
+private fun AnnotatedString.Builder.appendInline(inline: RichInline, codeFontFamily: FontFamily) {
     when (inline) {
         is RichInline.Text ->
             append(inline.text)
 
         is RichInline.Emphasis ->
-            withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendInlines(inline.inlines) }
+            withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendInlines(inline.inlines, codeFontFamily) }
 
         is RichInline.Strong ->
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendInlines(inline.inlines) }
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendInlines(inline.inlines, codeFontFamily) }
 
         is RichInline.Code ->
-            withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(inline.text) }
+            withStyle(SpanStyle(fontFamily = codeFontFamily)) { append(inline.text) }
 
         is RichInline.Link ->
             withLink(LinkAnnotation.Url(inline.href)) {
                 withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) {
-                    appendInlines(inline.inlines)
+                    appendInlines(inline.inlines, codeFontFamily)
                 }
             }
 
