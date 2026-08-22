@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
@@ -108,6 +109,20 @@ import uniffi.supermessage_ffi.StagedFile
  * edit's round trip is kept — no draft store of this composable's own is
  * being smuggled in.
  *
+ * ## Clearing the keyboard (Defect B fix)
+ *
+ * [MainActivity] calls `enableEdgeToEdge()`, which draws this composable's
+ * `Column` behind the soft keyboard rather than leaving the system to
+ * reserve space for it — with nothing here compensating, a shown IME used to
+ * cover this composable entirely, including [OutlinedTextField] itself.
+ * [Modifier.imePadding] on that `Column` is the fix: it adds bottom padding
+ * equal to the IME's own height whenever one is shown, so this composable's
+ * content is pushed up to clear it rather than being covered by it. It
+ * belongs on the composable that needs to stay above the keyboard, not on
+ * some ancestor shared with content that has no such requirement — the
+ * roster header a few panes over has nothing to do with the IME and should
+ * not move because of it.
+ *
  * ## Attachments — the one place iOS is not the reference
  *
  * `ComposerView.swift` reaches for `PhotosPickerItem`/`fileImporter`, both
@@ -188,7 +203,7 @@ fun Composer(
         }
     }
 
-    Column(modifier.fillMaxWidth()) {
+    Column(modifier.fillMaxWidth().imePadding()) {
         ReplyEditBanner(
             replyTo = replyTo,
             onCancelReply = onCancelReply,

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -293,6 +294,29 @@ private fun SignedIn(
         }
 
         ListDetailPaneScaffold(
+            // Defect B fix: enableEdgeToEdge() (MainActivity.onCreate) draws
+            // this scaffold's content behind the status and navigation bars
+            // with nothing reserving space for them, so the roster header
+            // used to render at root y = 0 — under the status bar rather
+            // than below it. systemBarsPadding(), not safeDrawingPadding():
+            // safeDrawing additionally folds in the IME inset, which would
+            // pad this whole shell (roster header included) down every time
+            // the keyboard shows, on top of Composer.kt's own imePadding()
+            // fix for the composer specifically — a shell that bounces
+            // whenever the keyboard does, not a composer that clears it.
+            // systemBarsPadding() only ever reacts to the status/navigation
+            // bars, which is the actual defect here.
+            //
+            // Applied here — on ListDetailPaneScaffold's own modifier,
+            // inside the BoxWithConstraints above — rather than on that
+            // BoxWithConstraints itself: `shellWidth = maxWidth` is read
+            // from BoxWithConstraints directly, and RootScaffoldTest's
+            // pane-rule contracts (four geometry tests, the Phase C
+            // stranding test, the two-pane sheet test) depend on that being
+            // the shell's full forced width, not a width already shrunk by
+            // padding. A vertical-only inset shrinking the space handed to
+            // this scaffold does not touch that measurement at all.
+            modifier = Modifier.systemBarsPadding(),
             directive = navigator.scaffoldDirective,
             value = when {
                 panes == 2 -> twoPaneScaffoldValue
