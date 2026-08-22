@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,8 +73,17 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * so a test can pin a fixed instant instead of restating "today" itself).
  * Mirrors `apple/Supermessage/Timeline/TimelineRowView.swift`.
  *
- * No `onReply`/`onReact` in this phase: existing reactions and read receipts
- * are drawn, but changing them belongs to the composer Phase B adds.
+ * No `onReply` yet: unlike [onReact], nothing in this phase calls it, matching
+ * `TimelineRowView.swift`'s own unused parameter of the same name.
+ *
+ * [onReact] toggles the affordance that already renders — an existing
+ * reaction chip — rather than offering a picker for a new one. iOS's own
+ * comment on its row file is why: "two different quick reactions is two
+ * different apps" — the quick-reaction set desktop and iOS already agree on
+ * (`["✅", "👍", "❌", "👀"]`, `TimelineRowView.swift`) is a product decision
+ * already made, and a picker invented here would make this a third, different
+ * app. Actually calling the core's toggle belongs to Task 6, same split as
+ * attachments' stage/discard.
  */
 @Composable
 fun TimelineRow(
@@ -82,6 +92,7 @@ fun TimelineRow(
     continuesRun: Boolean = false,
     attribution: String = "",
     avatarUri: (userId: String) -> String? = { null },
+    onReact: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // "Who to name, already chosen ... Chosen by the list, which can see
@@ -98,6 +109,7 @@ fun TimelineRow(
                 blocks = view.blocks,
                 continuesRun = continuesRun,
                 avatarUri = avatarUri,
+                onReact = onReact,
                 modifier = modifier,
             )
 
@@ -230,6 +242,7 @@ private fun MessageBlock(
     blocks: List<RichBlock>,
     continuesRun: Boolean,
     avatarUri: (userId: String) -> String?,
+    onReact: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isOwn = row.item.isOwn
@@ -304,7 +317,7 @@ private fun MessageBlock(
         }
 
         if (row.item.reactions.isNotEmpty()) {
-            ReactionsRow(row.item.reactions)
+            ReactionsRow(row.item.reactions, onReact = onReact)
         }
     }
 }
@@ -347,7 +360,11 @@ private fun ReplyQuoteBlock(quote: ReplyQuoteView, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun ReactionsRow(reactions: List<ReactionDto>, modifier: Modifier = Modifier) {
+private fun ReactionsRow(
+    reactions: List<ReactionDto>,
+    onReact: ((String) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     Row(modifier = modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         reactions.forEach { reaction ->
             Row(
@@ -360,6 +377,22 @@ private fun ReactionsRow(reactions: List<ReactionDto>, modifier: Modifier = Modi
                             MaterialTheme.colorScheme.surfaceVariant
                         },
                     )
+                    // `key`, not `displayKey`: the wire value is what the
+                    // homeserver matches against what everyone else sent, and
+                    // reacting with the display form would land a *different*
+                    // reaction beside the one the reader meant to join.
+                    // `nil`/`null` `onReact` (no composer in context) leaves
+                    // the chip inert rather than clickable-but-a-no-op.
+                    .let {
+                        if (onReact != null) {
+                            it.clickable(onClickLabel = "React with ${reaction.displayKey}") {
+                                onReact(reaction.key)
+                            }
+                        } else {
+                            it
+                        }
+                    }
+                    .testTag("reaction-${reaction.key}")
                     .padding(horizontal = 6.dp, vertical = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {

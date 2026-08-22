@@ -12,9 +12,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.width
 import java.time.Instant
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -286,5 +288,97 @@ class TimelineRowTest {
         compose.onNodeWithText("Read by Ganesha").assertExists()
         compose.onAllNodesWithText("@_agentpod_ganesha:id.agentpod.dev", substring = true)
             .assertCountEquals(0)
+    }
+
+    /**
+     * Tapping a reaction chip this account has *not* reacted with yet asks
+     * [TimelineRow]'s `onReact` to add it — the "add" half of the toggle.
+     */
+    @Test
+    fun tappingANotYetMineReactionChipCallsOnReactToAddIt() {
+        val reacted = mutableListOf<String>()
+        compose.setContent {
+            TimelineRow(
+                row = row(
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("done")),
+                    reactions = listOf(
+                        ReactionDto(
+                            key = "✅",
+                            displayKey = "✅",
+                            count = 1u,
+                            byMe = false,
+                            senders = listOf("@a:example.org"),
+                        ),
+                    ),
+                ),
+                now = now,
+                onReact = { reacted += it },
+            )
+        }
+        compose.onNodeWithTag("reaction-✅").performClick()
+        assertEquals(listOf("✅"), reacted)
+    }
+
+    /**
+     * Tapping a chip this account *already* reacted with still calls
+     * `onReact` with the same key — the "remove" half of the toggle, and the
+     * one a UI that can only add would silently drop. Actually deciding
+     * add-vs-remove is the core's `toggleReaction` (Task 6 wires that); this
+     * row's job is only to ask the same way every time.
+     */
+    @Test
+    fun tappingAnAlreadyMineReactionChipCallsOnReactToRemoveIt() {
+        val reacted = mutableListOf<String>()
+        compose.setContent {
+            TimelineRow(
+                row = row(
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("done")),
+                    reactions = listOf(
+                        ReactionDto(
+                            key = "👍",
+                            displayKey = "👍",
+                            count = 1u,
+                            byMe = true,
+                            senders = listOf("@sender:example.org"),
+                        ),
+                    ),
+                ),
+                now = now,
+                onReact = { reacted += it },
+            )
+        }
+        compose.onNodeWithTag("reaction-👍").performClick()
+        assertEquals(listOf("👍"), reacted)
+    }
+
+    /**
+     * `onReact` carries the wire `key`, never the bounded `displayKey` — the
+     * same rule `ReactionsRow` follows for what it sends the homeserver via
+     * the core. A key/displayKey mismatch (bounded/truncated display form)
+     * would otherwise land a different reaction than the reader meant.
+     */
+    @Test
+    fun onReactReceivesTheWireKeyNotTheDisplayKey() {
+        var received: String? = null
+        compose.setContent {
+            TimelineRow(
+                row = row(
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("done")),
+                    reactions = listOf(
+                        ReactionDto(
+                            key = "long-custom-key-truncated-for-display",
+                            displayKey = "long…",
+                            count = 1u,
+                            byMe = false,
+                            senders = listOf("@a:example.org"),
+                        ),
+                    ),
+                ),
+                now = now,
+                onReact = { received = it },
+            )
+        }
+        compose.onNodeWithTag("reaction-long-custom-key-truncated-for-display").performClick()
+        assertEquals("long-custom-key-truncated-for-display", received)
     }
 }
