@@ -217,6 +217,179 @@ jobs:
             -scheme Supermessage \
             -destination "id=${{ steps.sim.outputs.udid }}"
 
+  android:
+    name: Android
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Four cross targets for cargo-ndk (see build-android-libs.sh's own
+          # header for why these four), no separate host target: rustup adds
+          # the runner's native triple by default alongside whatever `targets`
+          # names.
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-ndk
+        # cargo-ndk has no prebuilt-binary listing in taiki-e/install-action,
+        # so this falls back to cargo-binstall — still seconds, not the
+        # several minutes a `cargo install --locked` compile would cost.
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      - name: Point at the runner's prebuilt NDK
+        # ubuntu-24.04 images ship several side-by-side NDKs, one of them
+        # 29.0.14206865 — the exact version build-android-libs.sh's own
+        # missing-NDK error tells a human to install. Using the same one CI
+        # and a human get pointed at means a local repro of a CI failure is
+        # actually reproducing it.
+        run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Build the host core
+        # :kit's unit tests (RosterArrangementTest) load libsupermessage_ffi
+        # through JNA from target/debug on the *host* triple, not from any of
+        # the Android ABIs below — see :kit/build.gradle.kts. Skipping this
+        # would make CI take the `-Pkit.allowMissingHostCore=true` escape
+        # hatch, which turns the real test into a skip; the whole point of
+        # this job is to run the real one.
+        run: cargo build -p supermessage-ffi
+
+      - name: Build the Rust core for Android and generate the Kotlin bindings
+        # Four ABIs, ~15 minutes on a cold cache — see the script's own
+        # header comment for the full story (cargo-ndk, the NDK, the 16KB
+        # page size flag). Swatinem/rust-cache above makes a run against an
+        # unchanged Cargo.lock mostly a linker pass instead.
+        run: ./scripts/build-android-libs.sh
+
+      - name: The checked-in bindings match the Rust that generates them
+        # Android needs this even more than iOS's equivalent step does: the
+        # generated Kotlin under android/core/src/main/kotlin/uniffi is
+        # committed while the .so files that back it are gitignored (see
+        # that script's header), so a Rust change can land with stale Kotlin
+        # and the mismatch never shows up as a diff — only as a run-time
+        # UnsatisfiedLinkError or, worse, a field read in the wrong order, on
+        # whatever device happens to run it first.
+        run: |
+          if ! git diff --quiet -- android/core/src/main/kotlin/uniffi; then
+            echo "::error::android/core/src/main/kotlin/uniffi is stale — run ./scripts/build-android-libs.sh and commit the result"
+            git diff --stat -- android/core/src/main/kotlin/uniffi
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew :kit:testDebugUnitTest :app:testDebugUnitTest :core:testDebugUnitTest
+        working-directory: android
+
+      - name: Enable KVM
+        # The emulator needs hardware acceleration to be usable in CI at all;
+        # GitHub's runner has the /dev/kvm device node but the image's default
+        # udev rule leaves it root-only.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/avd/*/*
+          key: avd-api36-google_apis-x86_64-v1
+
+      - name: Create AVD and generate its snapshot for caching
+        # Only runs on a cache miss. A booted-and-snapshotted AVD is what the
+        # cache above actually stores; recreating it every run would spend
+        # several of the minutes this step exists to save.
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          # Pinned so the device is reproducible. Without a profile the runner
+          # picks its own default, and two tests failed here that pass on a
+          # taller local screen — a height dependency nobody could reproduce
+          # because nobody knew what height CI was using.
+          profile: pixel_6
+          avd-name: ci-avd-36
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+
+      - name: Instrumented tests
+        # API 36 to match this project's compileSdk. arch/target are x86_64
+        # + google_apis because the runner has no nested virtualization for
+        # an arm64 image — hardware acceleration needs the emulator's guest
+        # architecture to match the host's.
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          # Pinned so the device is reproducible. Without a profile the runner
+          # picks its own default, and two tests failed here that pass on a
+          # taller local screen — a height dependency nobody could reproduce
+          # because nobody knew what height CI was using.
+          profile: pixel_6
+          avd-name: ci-avd-36
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: cd android && ./gradlew :app:connectedDebugAndroidTest
+
+      - name: Report per-ABI APK sizes
+        # :app:connectedDebugAndroidTest above already assembles :app's own
+        # split APKs as a dependency of installing it on the emulator — see
+        # android/app/build.gradle.kts's `splits` block — so there is nothing
+        # left to build here, only to measure.
+        run: du -h android/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload arm64-v8a APK
+        # The maintainer's own test device (a OnePlus 8T) is arm64-v8a — the
+        # one of these five a human actually reaches for.
+        uses: actions/upload-artifact@v4
+        with:
+          name: supermessage-debug-arm64-v8a
+          path: android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: supermessage-debug-armeabi-v7a
+          path: android/app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
+
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: supermessage-debug-x86_64
+          path: android/app/build/outputs/apk/debug/app-x86_64-debug.apk
+
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: supermessage-debug-x86
+          path: android/app/build/outputs/apk/debug/app-x86-debug.apk
+
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: supermessage-debug-universal
+          path: android/app/build/outputs/apk/debug/app-universal-debug.apk
+
   licences:
     name: Dependency licences
     runs-on: ubuntu-24.04

@@ -182,14 +182,25 @@ pub fn parse_room_identity(raw_name: &str) -> RoomIdentity {
     finish(glyph.map(str::to_string), name, role)
 }
 
+/// The initial to show where there is no picture: one full **code point**,
+/// uppercased, or `"?"` for an empty name.
+///
+/// Extracted from [`finish`] so hosts can reach it for a *person* as well as a
+/// room. Android was rendering `name.take(1)` for an account avatar, and
+/// Kotlin's `take` counts UTF-16 code units — for an astral character that is
+/// half a surrogate pair, which is the tofu this module's own header describes.
+/// A `char` here is a scalar value, so the hazard cannot be expressed.
+pub fn display_initial(name: &str) -> String {
+    name.chars()
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>())
+        .unwrap_or_else(|| "?".to_string())
+}
+
 fn finish(glyph: Option<String>, name: String, role: Option<String>) -> RoomIdentity {
     let initial = match &glyph {
         Some(glyph) => glyph.clone(),
-        None => name
-            .chars()
-            .next()
-            .map(|c| c.to_uppercase().collect::<String>())
-            .unwrap_or_else(|| "?".to_string()),
+        None => display_initial(&name),
     };
     RoomIdentity {
         glyph,
@@ -351,6 +362,15 @@ mod tests {
         let (glyph, name, _) = parsed(&format!("{run} tail"));
         assert_eq!(glyph, None);
         assert_eq!(name, format!("{run} tail"));
+    }
+
+    #[test]
+    fn an_initial_is_one_code_point_not_one_code_unit() {
+        // The whole reason this is exported: a host doing `name[0]` in a
+        // UTF-16 language gets half a surrogate pair here and renders tofu.
+        assert_eq!(display_initial("\u{1F9E0}lead"), "\u{1F9E0}");
+        assert_eq!(display_initial("ganesha"), "G");
+        assert_eq!(display_initial(""), "?");
     }
 
     #[test]

@@ -8,9 +8,13 @@ val ThreePaneWidth: Dp = 1000.dp
 
 /**
  * Roster beside a timeline. Below [ThreePaneWidth] the info panel has no
- * pane to live in — RootScaffold withholds it entirely rather than squeeze
- * it in, and today that just means "not shown". A sheet over the two panes
- * is the intended future treatment, not something that exists yet.
+ * third partition to live in, so RootScaffold shows it as a sheet over the
+ * two panes instead of squeezing it into either one — see `SignedIn`'s
+ * `ModalBottomSheet` in RootScaffold.kt for where that lives. Before that
+ * sheet existed, "no partition" did not mean "not shown" the way this
+ * comment used to claim: ListDetailPaneScaffold satisfied a requested info
+ * pane at two panes by replacing the timeline outright, not by withholding
+ * it — reachable, just not the sheet the design called for.
  */
 val TwoPaneWidth: Dp = 600.dp
 

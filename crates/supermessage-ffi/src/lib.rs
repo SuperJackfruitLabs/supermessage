@@ -28,6 +28,7 @@ uniffi::setup_scaffolding!();
 pub mod diff;
 pub mod error;
 pub mod events;
+pub mod secrets;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -40,6 +41,7 @@ use supermessage_core::sync::ConnectionPayload as CoreConnection;
 pub use diff::{RoomDiffEnvelope, RoomDiffOp, TimelineDiffEnvelope, TimelineDiffOp};
 pub use error::FfiError;
 pub use events::{EventSink, FfiEvent};
+pub use secrets::HostSecretStore;
 
 /// What the host is told about the connection.
 ///
@@ -78,27 +80,24 @@ pub struct Core {
 
 #[uniffi::export]
 impl Core {
-    /// Build a core rooted at `data_dir`.
+    /// Build a core rooted at `data_dir`, using the OS secret store.
     ///
     /// `data_dir` is the host's to choose — an app-support directory on macOS,
     /// the app container on iOS. The core puts its stores under it and does
     /// not look outside it.
     #[uniffi::constructor]
     pub fn new(data_dir: String) -> Arc<Self> {
-        install_tracing();
+        Self::build(data_dir, Box::new(KeyringStore))
+    }
 
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("a multi-thread runtime must be constructible");
-
-        Arc::new(Self {
-            session: Arc::new(Session::new(
-                PathBuf::from(data_dir),
-                Box::new(KeyringStore),
-            )),
-            runtime,
-        })
+    /// Build a core whose secrets live in a store the host supplies.
+    ///
+    /// For platforms where the core has no usable store of its own. Android is
+    /// the only one today: `KeyringStore` has no implementation there and
+    /// fails every call, so a host that used [`Core::new`] could never sign in.
+    #[uniffi::constructor]
+    pub fn with_secret_store(data_dir: String, store: Box<dyn HostSecretStore>) -> Arc<Self> {
+        Self::build(data_dir, Box::new(crate::secrets::ForeignStore(store)))
     }
 
     /// Where the connection currently stands, without waiting for the next
@@ -495,6 +494,27 @@ impl Core {
     }
 }
 
+impl Core {
+    /// Shared by both constructors, so neither can drift from the other on
+    /// tracing setup or runtime construction.
+    fn build(
+        data_dir: String,
+        store: Box<dyn supermessage_core::secrets::SecretStore>,
+    ) -> Arc<Self> {
+        install_tracing();
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("a multi-thread runtime must be constructible");
+
+        Arc::new(Self {
+            session: Arc::new(Session::new(PathBuf::from(data_dir), store)),
+            runtime,
+        })
+    }
+}
+
 /// The room list as of one moment, and the sequence number it was taken at.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct RoomsSnapshot {
@@ -650,6 +670,18 @@ pub fn roster_state(
     now_ms: u64,
 ) -> supermessage_core::roster::AgentState {
     supermessage_core::roster::state_for(&row, now_ms)
+}
+
+/// The initial to show where there is no picture — one full code point.
+///
+/// Exposed because a host otherwise writes `name[0]`, and that is a real bug in
+/// every host language this project has: Kotlin's `take(1)` and JS's `[0]` both
+/// count UTF-16 code units, so an emoji-initial name yields half a surrogate
+/// pair and renders as tofu. `room_identity`'s header records that exact defect
+/// shipping once already.
+#[uniffi::export]
+pub fn display_initial(name: String) -> String {
+    supermessage_core::room_identity::display_initial(&name)
 }
 
 /// How many invitations are being withheld, for a filter to admit to.

@@ -318,6 +318,29 @@ class SessionTest {
     }
 
     /**
+     * "a search that fails is not a search that found nothing" — the
+     * defect this task fixes. `search` used to catch every exception and
+     * hand back `emptyList()`, so a homeserver error rendered identically
+     * to zero hits. It must now let the core's failure through — it is
+     * `SearchPanel`, not `Session`, that turns this into something a
+     * reader can tell apart from an empty list.
+     */
+    @Test
+    fun `search does not swallow a core failure into an empty list`() = runTest {
+        val fake = FakeCore(
+            searchMessagesResult = { _, _ -> throw FfiException.Network("connection refused") },
+        )
+        val session = sessionOf(fake, this)
+
+        try {
+            session.search("pager")
+            org.junit.Assert.fail("expected search to propagate the core's failure, not swallow it")
+        } catch (e: FfiException.Network) {
+            assertEquals("connection refused", e.detail)
+        }
+    }
+
+    /**
      * Exercises `opValues`, which the task notes has no direct test on
      * either platform even though `Session.swift:412` uses it via
      * `.flatMap(opValues)`. A message from someone typing clears their
@@ -420,6 +443,8 @@ class SessionTest {
         private val roomsSnapshotResult: () -> RoomsSnapshot = { RoomsSnapshot(seq = 0uL, rooms = emptyList()) },
         private val spacesListResult: () -> List<SpaceSummary> = { emptyList() },
         private val joinRoomResult: (String) -> Unit = {},
+        private val searchMessagesResult: (String, String?) -> List<SearchResultDto> =
+            { _, _ -> throw NotImplementedError() },
     ) : CoreInterface {
         var logoutCallCount = 0
             private set
@@ -467,7 +492,7 @@ class SessionTest {
         override fun roomInfo(roomId: String): RoomInfoDto = throw NotImplementedError()
         override fun roomInviter(roomId: String): String? = throw NotImplementedError()
         override fun searchMessages(term: String, roomId: String?): List<SearchResultDto> =
-            throw NotImplementedError()
+            searchMessagesResult(term, roomId)
         override fun sendMessage(roomId: String, body: String, mentions: List<String>): Unit =
             throw NotImplementedError()
         override fun sendReply(roomId: String, body: String, inReplyTo: String): Unit = throw NotImplementedError()

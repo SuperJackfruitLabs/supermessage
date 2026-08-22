@@ -478,14 +478,17 @@ class Session(
     /**
      * Search for [term], in [roomId] when one is given and across every
      * room this account can see otherwise.
+     *
+     * Unlike most of this file's read paths, a failure here is **not**
+     * swallowed: it is [roomInfo]'s own contract, not [people]'s or
+     * [account]'s. A homeserver error, an expired token or a dropped
+     * connection must not render as "no results" — the caller (`SearchPanel`
+     * on both platforms) is the one that can tell a reader apart from an
+     * empty list, and it does, by catching this and mapping it through
+     * `ErrorPresenter` into `SearchState.Failed`.
      */
-    suspend fun search(term: String, roomId: String? = null): List<SearchResultDto> = try {
+    suspend fun search(term: String, roomId: String? = null): List<SearchResultDto> =
         client.searchMessages(term = term, roomId = roomId)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        emptyList()
-    }
 
     sealed class Outcome {
         data class Success(val roomId: String) : Outcome()
@@ -525,6 +528,11 @@ class Session(
      * name twice should return the reader to the conversation they had, not
      * leave a roster of identically named rooms with the history scattered
      * between them.
+     *
+     * When there is no existing room this falls through to [createRoom],
+     * which — on success — reconciles rooms and spaces via `load()` before
+     * returning. Reusing an existing room does not: only the create path
+     * does.
      */
     suspend fun openConversation(person: PersonDto): Outcome {
         val existing = try {
@@ -538,6 +546,14 @@ class Session(
         return createRoom(name = person.name, invite = listOf(person.userId))
     }
 
+    /**
+     * Create a room named [name], inviting [invite].
+     *
+     * On success this also calls `load()`, reconciling rooms and spaces —
+     * a side effect that is easy to miss because nothing in the return type
+     * says so: a caller reading only [Outcome] would not learn that the
+     * roster and space list were just re-seeded.
+     */
     suspend fun createRoom(name: String, invite: List<String>): Outcome = try {
         val roomId = client.createRoom(name = name, invite = invite, isDirect = invite.isNotEmpty())
         load()
