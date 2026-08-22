@@ -38,7 +38,10 @@ use super::error::{CoreError, CoreResult};
 // Data Protection store below is necessary but not sufficient. Going straight
 // to `keyring_core` uses the store we registered; the two `Entry` types carry
 // the same methods, so the code below is identical either way.
-#[cfg(not(target_os = "ios"))]
+// Android's stub impl below uses none of this, and CI builds every target
+// with `-D warnings`. The existing `not(ios)` gate is true on Android, so it
+// was not enough on its own.
+#[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
 use keyring::{Entry as KeyEntry, Error as KeyError};
 #[cfg(target_os = "ios")]
 use keyring_core::{Entry as KeyEntry, Error as KeyError};
@@ -75,6 +78,7 @@ pub trait SecretStore: Send + Sync {
 /// rather than silently falling back to writing plaintext to disk.
 pub struct KeyringStore;
 
+#[cfg(not(target_os = "android"))]
 const SERVICE_NAME: &str = "dev.supermessage.app";
 
 /// Installs the credential store iOS needs, once.
@@ -107,7 +111,7 @@ fn ensure_store() -> CoreResult<()> {
         .map_err(|e| CoreError::Store(e.clone()))
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
 fn ensure_store() -> CoreResult<()> {
     Ok(())
 }
