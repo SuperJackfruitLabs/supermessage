@@ -125,7 +125,7 @@ fun RoomRow(
                     // The row's amber switch, and the only place this
                     // composable may use it: true means only ever "the
                     // operator owes someone an answer", never a severity.
-                    color = if (preview.pending) PendingAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (preview.pending) SupermessageTheme.colors.signal else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -242,15 +242,20 @@ private fun StateDot(state: AgentState) {
     )
 }
 
+/**
+ * `NEEDS_YOU` and `ACTIVE` reach for [SupermessageColorRoles.signal] and
+ * [SupermessageColorRoles.ok] respectively — the same two tokens, and the
+ * same rule, as the amber switch above: amber means only "the operator owes
+ * someone an answer", never used for anything else, and a working room is
+ * never amber (see `ok`'s own KDoc in `Theme.kt`).
+ */
+@Composable
 private fun dotColor(state: AgentState): Color = when (state) {
-    AgentState.NEEDS_YOU -> PendingAmber
-    AgentState.ACTIVE -> Color(0xFF34C759)
+    AgentState.NEEDS_YOU -> SupermessageTheme.colors.signal
+    AgentState.ACTIVE -> SupermessageTheme.colors.ok
     AgentState.IDLE -> Color.Gray.copy(alpha = 0.55f)
     AgentState.QUIET -> Color.Transparent
 }
-
-/** The row's one amber — reserved for "the operator owes someone an answer". */
-private val PendingAmber = Color(0xFFFF9500)
 
 /**
  * Decode the `data:` URI the core produced. No network, no URL loading — the

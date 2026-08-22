@@ -124,8 +124,9 @@ class DecisionCardTest {
     /**
      * A pending decision (amber, per the console spec's typography rule)
      * must be visually distinguishable from a settled event — nothing else
-     * on this card is entitled to that colour. See `DecisionAmber` in
-     * `DecisionCard.kt` and `RoomRow.kt`'s `PendingAmber` for the same rule.
+     * on this card is entitled to that colour. See
+     * `SupermessageColorRoles.signal` in `Theme.kt`, the one token both this
+     * card and `RoomRow.kt`'s state dot reach for, for the same rule.
      */
     @Test
     fun pendingDecisionIsDistinguishableFromSettled() {

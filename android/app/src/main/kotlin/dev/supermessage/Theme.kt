@@ -140,11 +140,11 @@ object SupermessageTheme {
 /**
  * Wraps [MaterialTheme] with this app's own semantic colours and faces.
  *
- * Only the roles are provided here — no composable in the app is
- * rewritten to use them yet. That adoption, including folding `RoomRow.kt`'s
- * `PendingAmber` and `DecisionCard.kt`'s `DecisionAmber` into
- * [SupermessageColorRoles.signal], is Task 2's job; this task exists only to
- * define the tokens and prove the face structure with tests.
+ * Task 2 is what adopts this — `MainActivity` now wraps its content in this
+ * composable rather than a bare `MaterialTheme`, and `RoomRow.kt`'s former
+ * `PendingAmber` and `DecisionCard.kt`'s former `DecisionAmber` are both gone,
+ * folded into the one [SupermessageColorRoles.signal] token they were always
+ * describing.
  */
 @Composable
 fun SupermessageTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {

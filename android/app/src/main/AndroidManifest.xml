@@ -14,14 +14,16 @@
 
     <!--
       Theme.Material3.DayNight.NoActionBar lives in com.google.android.material,
-      not a declared dependency here, so AAPT fails to resolve it. The framework
-      fallback below is light-only: a cold start under system dark mode shows a
-      white window until Compose paints its first frame. The SDK has no
-      dependency-free DayNight.NoActionBar sibling; reaching day/night without
-      the flash needs a custom styles.xml. Forward-looking placeholder, not
-      tied to a task number: real theming belongs with the real UI, built in
-      docs/superpowers/specs/2026-08-20-android-app-design.md's step 5
-      (roster/timeline) and step 6 (composer and the rest) — revisit there.
+      not a declared dependency here, so AAPT fails to resolve it — and that
+      dependency stays undeclared: this project has been bitten twice by an
+      AndroidX artifact declaring a minCompileSdk above this module's
+      compileSdk = 36. @style/Theme.Supermessage (app/src/main/res/values/
+      styles.xml, with a values-night twin) reaches day/night the
+      dependency-free way instead: the `-night` resource qualifier has
+      followed Configuration.uiMode since API 8, with no DayNight-named
+      theme class required. A cold start under system dark mode now gets the
+      dark windowBackground before Compose paints its first frame, rather
+      than the white one the old framework fallback always drew.
     -->
     <!--
       allowBackup=false: Auto Backup is on by default, and this app will hold
@@ -32,7 +34,7 @@
         android:label="Supermessage"
         android:supportsRtl="true"
         android:allowBackup="false"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.Supermessage">
         <!--
           configChanges suppresses activity recreation on rotation. This is
           load-bearing, not incidental: it is what makes spec §4.2 rule 2

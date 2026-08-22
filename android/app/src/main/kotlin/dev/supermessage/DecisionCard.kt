@@ -119,18 +119,19 @@ private fun RenderedCard(
     modifier: Modifier = Modifier,
 ) {
     // Amber marks a pending decision and nothing else on this card — see
-    // `DecisionAmber`'s own note below.
+    // `SupermessageColorRoles.signal`'s own note in `Theme.kt`.
     val pending = decision != null
+    val signal = SupermessageTheme.colors.signal
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (pending) DecisionAmber.copy(alpha = 0.10f) else Color.Transparent)
+            .background(if (pending) signal.copy(alpha = 0.10f) else Color.Transparent)
             .border(
                 width = 1.dp,
-                color = if (pending) DecisionAmber else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                color = if (pending) signal else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(8.dp),
             )
             .padding(12.dp)
@@ -232,9 +233,9 @@ private fun ReasoningDisclosure(reasoning: String, modifier: Modifier = Modifier
 
 /**
  * The prompt a pending decision asks, and the labels of the answers it
- * offers — read-only. **This is the only place in this file that may use
- * [DecisionAmber]**, because a pending decision is the one thing that colour
- * means.
+ * offers — read-only. Rendering this at all already implies `pending` in
+ * [RenderedCard] above, because a pending decision is the one thing
+ * [SupermessageColorRoles.signal] means.
  *
  * A2 reads; it does not answer. Answering means sending a Matrix event as
  * this account, which Phase B wires — a wrong shape here approves things, so
@@ -273,11 +274,3 @@ private fun DecisionPrompt(decision: CustomEventDecision, modifier: Modifier = M
         }
     }
 }
-
-/**
- * This card's one amber — reserved for "the operator owes someone an
- * answer", never a severity or a warning. A2 has no shared theme yet, so
- * this is its own named constant, exactly as `RoomRow.kt`'s `PendingAmber`
- * is its own; Phase D is expected to fold both into one theme token.
- */
-private val DecisionAmber = Color(0xFFFF9500)

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- See values/styles.xml's own note: same style name, dark half. -->
+    <style name="Theme.Supermessage" parent="@android:style/Theme.Material.NoActionBar">
+        <!--
+          Slate: matches SupermessageColorRoles.dark.ground in Theme.kt. Kept
+          in sync by hand, same caveat as the light half.
+        -->
+        <item name="android:windowBackground">#FF171B22</item>
+    </style>
+</resources>
