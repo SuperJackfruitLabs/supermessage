@@ -71,6 +71,27 @@ class MainActivity : ComponentActivity() {
                     var busy by remember { mutableStateOf(false) }
                     val scope = rememberCoroutineScope()
 
+                    // The room the info pane is about — set when a roster
+                    // row's avatar is tapped (RoomRow.kt's own onOpenInfo),
+                    // not derived from whichever room the timeline has open:
+                    // the two can differ, since opening the info pane never
+                    // opens the room itself. Cleared alongside the pane's own
+                    // "Done" tap so a widened shell does not show stale info
+                    // for a room nobody asked about again.
+                    var infoRoomId by remember { mutableStateOf<String?>(null) }
+
+                    // This account's own id, read once per sign-in — see
+                    // RoomInfoPanel's own KDoc for why it needs this at all
+                    // (excluding the reader from their own member list, the
+                    // one thing that panel decides for itself rather than
+                    // taking from the core).
+                    var accountUserId by remember { mutableStateOf<String?>(null) }
+                    LaunchedEffect(phase) {
+                        if (phase == Session.Phase.SIGNED_IN) {
+                            accountUserId = vm.session.account()?.userId
+                        }
+                    }
+
                     // The roster's own three remembered choices — see
                     // RosterPreferences for why each defaults the way it does.
                     val rosterView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
@@ -119,15 +140,16 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { vm.session.open(roomId) }
                                     openDetail()
                                 },
-                                // A dead affordance since A1 (see RoomRow's own
-                                // KDoc): nothing ever passed a handler for it,
-                                // so tapping an avatar did nothing. This task
-                                // is what it was for — the roomId isn't
-                                // threaded any further yet because the info
-                                // pane itself is still RootScaffold's default
-                                // placeholder; a later panel task is what
-                                // gives it real content to be about.
-                                onOpenInfo = { openInfo() },
+                                // A dead affordance from A1 until this task:
+                                // nothing threaded the tapped room any
+                                // further, because the info pane itself was
+                                // still RootScaffold's default placeholder.
+                                // `infoRoomId` is what `extraPaneContent`
+                                // below reads to know which room it is about.
+                                onOpenInfo = { roomId ->
+                                    infoRoomId = roomId
+                                    openInfo()
+                                },
                                 onLoadAvatar = { roomId -> vm.session.avatars.load(roomId) },
                                 modifier = Modifier.fillMaxSize(),
                             )
@@ -305,6 +327,30 @@ class MainActivity : ComponentActivity() {
                                         },
                                         onDiscardAttachment = { scope.launch { vm.session.staged.discard() } },
                                         modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        },
+                        extraPaneContent = { _, closeInfo ->
+                            val currentInfoRoomId = infoRoomId
+                            Box(Modifier.fillMaxSize().testTag("pane-info")) {
+                                if (currentInfoRoomId != null) {
+                                    RoomInfoPanel(
+                                        roomId = currentInfoRoomId,
+                                        accountUserId = accountUserId,
+                                        avatarUri = avatarCache[currentInfoRoomId],
+                                        onClose = {
+                                            infoRoomId = null
+                                            closeInfo()
+                                        },
+                                        loadInfo = { vm.session.roomInfo(currentInfoRoomId) },
+                                        onSetNotifications = { mode ->
+                                            vm.session.setNotifications(mode, currentInfoRoomId)
+                                        },
+                                        onSetPinned = { pinned ->
+                                            vm.session.setPinned(pinned, currentInfoRoomId)
+                                        },
+                                        onLeaveRoom = { vm.session.leaveRoom(currentInfoRoomId) },
                                     )
                                 }
                             }

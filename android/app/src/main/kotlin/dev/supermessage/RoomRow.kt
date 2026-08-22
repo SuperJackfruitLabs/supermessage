@@ -258,8 +258,19 @@ private val PendingAmber = Color(0xFFFF9500)
  *
  * Returns `null` on anything malformed — a bad avatar must not take the row
  * down — rather than throwing.
+ *
+ * `internal`, not `private`: [dev.supermessage.RoomInfoPanel]'s header avatar
+ * decodes the exact same `data:` URI shape from the exact same cache
+ * ([dev.supermessage.kit.stores.AvatarCache]), and a second copy of this
+ * parsing is how one of the two quietly regresses — the reason
+ * [dev.supermessage.kit.stores.AvatarCache]'s own KDoc gives for being one
+ * type rather than two. `TimelineRow.kt`'s own `SenderFace` used to carry a
+ * second, `private` copy of exactly this function (its own KDoc said so —
+ * "mirroring `RoomRow`'s `decodeDataUri()`"); widening this one to `internal`
+ * and deleting that copy is this task's fix for the very duplication its
+ * comment already named.
  */
-private fun String.decodeDataUri(): ImageBitmap? = try {
+internal fun String.decodeDataUri(): ImageBitmap? = try {
     val comma = indexOf(',')
     if (comma < 0) {
         null

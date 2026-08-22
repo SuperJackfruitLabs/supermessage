@@ -1,7 +1,5 @@
 package dev.supermessage
 
-import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,8 +29,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -518,21 +514,4 @@ private fun formatBytes(size: ULong): String {
         unitIndex++
     }
     return if (unitIndex == 0) "${value.toInt()} ${units[unitIndex]}" else "%.1f %s".format(value, units[unitIndex])
-}
-
-/**
- * Decode the `data:` URI a cache hands back. No network here — the bytes
- * already crossed the boundary. Returns `null` on anything malformed rather
- * than throwing, mirroring `RoomRow`'s `decodeDataUri()`.
- */
-private fun String.decodeDataUri(): ImageBitmap? = try {
-    val comma = indexOf(',')
-    if (comma < 0) {
-        null
-    } else {
-        val bytes = Base64.decode(substring(comma + 1), Base64.DEFAULT)
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-    }
-} catch (e: Exception) {
-    null
 }

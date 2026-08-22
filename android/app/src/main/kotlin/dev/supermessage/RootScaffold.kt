@@ -81,18 +81,28 @@ import kotlinx.coroutines.launch
  * (or override only `listPaneContent`) and assert on `pane-timeline`'s
  * bounds, keep passing unmodified.
  *
- * [extraPaneContent] follows the same shape, added by this task alongside the
- * `openInfo` callback threaded into [listPaneContent] — the third positional
- * parameter, exactly the way [openDetail] was added to that same slot
- * without breaking the geometry tests, which never override it. Its default
- * reproduces the former hardcoded "Room info" placeholder exactly, same tag
- * `pane-info`, same label, so every test that asserted on it before this
- * task keeps passing unmodified. Wiring `openInfo` all the way to the
- * roster's `onOpenInfo` is what makes it possible, for the first time, for
- * `navigator.currentDestination` to actually become
+ * [extraPaneContent] follows the same shape, added by the pane-rule task
+ * alongside the `openInfo` callback threaded into [listPaneContent] — the
+ * third positional parameter, exactly the way [openDetail] was added to that
+ * same slot without breaking the geometry tests, which never override it.
+ * Its default reproduces the former hardcoded "Room info" placeholder
+ * exactly, same tag `pane-info`, same label, so every test that asserted on
+ * it before that task keeps passing unmodified. Wiring `openInfo` all the way
+ * to the roster's `onOpenInfo` is what makes it possible, for the first time,
+ * for `navigator.currentDestination` to actually become
  * `ListDetailPaneScaffoldRole.Extra` — which is exactly what turns the
  * `LaunchedEffect` below from dead code into a load-bearing guard. See its
  * own comment for what that means.
+ *
+ * This task adds [extraPaneContent]'s own second parameter — a plain `() ->
+ * Unit` closer, not a third `openX` — the panel's own way back, the same
+ * role [onBackFromDetail] plays for the detail pane's system-back case but
+ * reached from an ordinary in-panel "Done" tap or a completed leave rather
+ * than the back button. `RoomInfoPanel` calls it without knowing whether
+ * what is on the other side is `navigator.navigateBack()`, this file's own
+ * placeholder `Pane`, or anything else — the same boundary [openDetail] and
+ * [openInfo] already draw. No existing test overrides [extraPaneContent], so
+ * widening its signature here changes nothing RootScaffoldTest asserts on.
  *
  * [onBackFromDetail] is this task's fix for the room-is-a-trap defect: on a
  * one-pane shell with the detail pane as the current destination, system
@@ -120,7 +130,7 @@ fun RootScaffold(
     detailPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
         Pane("pane-timeline", "Timeline", shellWidth)
     },
-    extraPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
+    extraPaneContent: @Composable (shellWidth: Dp, closeInfo: () -> Unit) -> Unit = { shellWidth, _ ->
         Pane("pane-info", "Room info", shellWidth)
     },
     onBackFromDetail: () -> Unit = {},
@@ -151,7 +161,7 @@ private fun SignedIn(
     modifier: Modifier = Modifier,
     listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit, openInfo: () -> Unit) -> Unit,
     detailPaneContent: @Composable (shellWidth: Dp) -> Unit,
-    extraPaneContent: @Composable (shellWidth: Dp) -> Unit,
+    extraPaneContent: @Composable (shellWidth: Dp, closeInfo: () -> Unit) -> Unit,
     onBackFromDetail: () -> Unit = {},
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -228,7 +238,7 @@ private fun SignedIn(
             },
             detailPane = { detailPaneContent(shellWidth) },
             extraPane = if (extraIsShown) {
-                { extraPaneContent(shellWidth) }
+                { extraPaneContent(shellWidth) { scope.launch { navigator.navigateBack() } } }
             } else null,
         )
     }
