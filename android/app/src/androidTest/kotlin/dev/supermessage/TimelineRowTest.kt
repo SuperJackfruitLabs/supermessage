@@ -9,10 +9,12 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.width
 import java.time.Instant
@@ -380,5 +382,61 @@ class TimelineRowTest {
         }
         compose.onNodeWithTag("reaction-long-custom-key-truncated-for-display").performClick()
         assertEquals("long-custom-key-truncated-for-display", received)
+    }
+
+    /**
+     * The gap Phase B left: existing reaction chips toggle, but nothing adds
+     * a reaction that is not already on the message. A long press on the
+     * "add reaction" affordance opens exactly the quick set iOS and desktop
+     * already agree on — `quickReactions`, verbatim from
+     * `TimelineRowView.swift:22` — not a set invented here.
+     */
+    @Test
+    fun longPressingAddReactionOffersExactlyTheQuickSet() {
+        compose.setContent {
+            TimelineRow(
+                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"))),
+                now = now,
+                onReact = {},
+            )
+        }
+        compose.onNodeWithTag("add-reaction").performTouchInput { longClick() }
+        quickReactions.forEach { emoji ->
+            compose.onNodeWithTag("quick-reaction-$emoji").assertIsDisplayed()
+        }
+    }
+
+    /** Tapping one of the offered quick reactions asks `onReact` to add it. */
+    @Test
+    fun tappingAnOfferedQuickReactionCallsOnReactWithItsKey() {
+        val reacted = mutableListOf<String>()
+        compose.setContent {
+            TimelineRow(
+                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"))),
+                now = now,
+                onReact = { reacted += it },
+            )
+        }
+        compose.onNodeWithTag("add-reaction").performTouchInput { longClick() }
+        compose.onNodeWithTag("quick-reaction-👀").performClick()
+        assertEquals(listOf("👀"), reacted)
+    }
+
+    /**
+     * A message the server has not acknowledged offers no way to react to
+     * it — mirrors iOS's own guard ("Nothing is offered against a message
+     * the server has not acknowledged... The core decides that").
+     */
+    @Test
+    fun aMessageThatCannotBeReactedToOffersNoAddAffordance() {
+        compose.setContent {
+            TimelineRow(
+                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi")))
+                    .let { it.copy(canReplyOrReact = false) },
+                now = now,
+                onReact = {},
+            )
+        }
+        compose.onNodeWithTag("add-reaction").assertDoesNotExist()
     }
 }

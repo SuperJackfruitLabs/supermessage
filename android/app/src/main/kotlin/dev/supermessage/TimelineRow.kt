@@ -3,6 +3,7 @@ package dev.supermessage
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +26,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +56,14 @@ import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 
 /**
+ * The reactions a long press on a message offers to add, verbatim from
+ * `TimelineRowView.swift:22`'s `quickReactions` — not a set invented here.
+ * That file's own comment is why this is not extended or reordered: "two
+ * different quick reactions is two different apps."
+ */
+val quickReactions = listOf("✅", "👍", "❌", "👀")
+
+/**
  * One timeline row, drawn from the decision the core made about it.
  *
  * The `when` below is over [ItemView] — `core::item_view`'s classification of
@@ -73,13 +85,15 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * `TimelineRowView.swift`'s own unused parameter of the same name.
  *
  * [onReact] toggles the affordance that already renders — an existing
- * reaction chip — rather than offering a picker for a new one. iOS's own
- * comment on its row file is why: "two different quick reactions is two
- * different apps" — the quick-reaction set desktop and iOS already agree on
- * (`["✅", "👍", "❌", "👀"]`, `TimelineRowView.swift`) is a product decision
- * already made, and a picker invented here would make this a third, different
- * app. Actually calling the core's toggle belongs to Task 6, same split as
- * attachments' stage/discard.
+ * reaction chip — and also fires from the "add reaction" affordance this row
+ * draws beside them ([AddReactionAffordance]), whose long press opens exactly
+ * [quickReactions] and nothing else. iOS reaches its own picker from a
+ * context menu on the timeline (`TimelineCollectionView.swift`); this row has
+ * no such menu surface (the timeline's own long press is already spoken for —
+ * see `Timeline.kt`'s `onRowLongPress` — reply or edit, never both at once,
+ * so extending it to a third, mutually-exclusive outcome does not fit), so
+ * the picker lives on its own small affordance instead. `canReplyOrReact`
+ * gates whether it renders at all, the same guard iOS's own menu entry reads.
  */
 @Composable
 fun TimelineRow(
@@ -312,8 +326,14 @@ private fun MessageBlock(
             )
         }
 
-        if (row.item.reactions.isNotEmpty()) {
-            ReactionsRow(row.item.reactions, onReact = onReact)
+        // The add-reaction affordance sits in the same row as any existing
+        // chips (never a row of its own) and needs `onReact` to have
+        // anywhere to send a tap, plus `canReplyOrReact` — the SDK's own
+        // guard for "there is an event to react to yet", the same one iOS
+        // reads before offering its context-menu entry.
+        val canAddReaction = onReact != null && row.canReplyOrReact
+        if (row.item.reactions.isNotEmpty() || canAddReaction) {
+            ReactionsRow(row.item.reactions, onReact = onReact, showAddAffordance = canAddReaction)
         }
     }
 }
@@ -359,6 +379,7 @@ private fun ReplyQuoteBlock(quote: ReplyQuoteView, modifier: Modifier = Modifier
 private fun ReactionsRow(
     reactions: List<ReactionDto>,
     onReact: ((String) -> Unit)? = null,
+    showAddAffordance: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier = modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -403,6 +424,67 @@ private fun ReactionsRow(
                         "${reaction.count}",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (reaction.byMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    )
+                }
+            }
+        }
+        if (showAddAffordance && onReact != null) {
+            AddReactionAffordance(onReact = onReact)
+        }
+    }
+}
+
+/**
+ * The affordance Phase B left out: existing reaction chips toggle
+ * ([ReactionsRow]), but nothing added a reaction that was not already on the
+ * message. A long press here opens exactly [quickReactions] — the same set
+ * `TimelineRowView.swift` and the desktop client already offer, chosen once
+ * for the reason that file's own comment gives, not reinvented per host.
+ *
+ * A dedicated small target, not a second long press over the row iOS reaches
+ * its picker from a context menu on — Android's row already spends its own
+ * long press on reply/edit ([Timeline]'s `onRowLongPress`), one or the other,
+ * never both from the same gesture. Nesting this affordance's own long press
+ * inside that row does not compete with it: Compose delivers a touch
+ * sequence to the innermost handler that claims it, so a press-and-hold that
+ * starts on this chip is consumed here and never reaches the row's.
+ */
+@Composable
+private fun AddReactionAffordance(onReact: (String) -> Unit, modifier: Modifier = Modifier) {
+    var pickerOpen by remember { mutableStateOf(false) }
+    Column(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .combinedClickable(
+                    onClickLabel = "Add a reaction",
+                    onClick = {},
+                    onLongClick = { pickerOpen = true },
+                )
+                .testTag("add-reaction")
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            Text("+", style = MaterialTheme.typography.labelSmall)
+        }
+        if (pickerOpen) {
+            Row(
+                modifier = Modifier.padding(top = 4.dp).testTag("reaction-picker"),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                quickReactions.forEach { emoji ->
+                    Text(
+                        emoji,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable(onClickLabel = "React with $emoji") {
+                                onReact(emoji)
+                                pickerOpen = false
+                            }
+                            .testTag("quick-reaction-$emoji")
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }
             }
