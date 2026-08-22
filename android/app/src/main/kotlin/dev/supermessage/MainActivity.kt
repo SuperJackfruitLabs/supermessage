@@ -5,13 +5,17 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
@@ -71,14 +76,17 @@ class MainActivity : ComponentActivity() {
                     var busy by remember { mutableStateOf(false) }
                     val scope = rememberCoroutineScope()
 
-                    // The room the info pane is about — set when a roster
-                    // row's avatar is tapped (RoomRow.kt's own onOpenInfo),
-                    // not derived from whichever room the timeline has open:
-                    // the two can differ, since opening the info pane never
-                    // opens the room itself. Cleared alongside the pane's own
-                    // "Done" tap so a widened shell does not show stale info
-                    // for a room nobody asked about again.
-                    var infoRoomId by remember { mutableStateOf<String?>(null) }
+                    // What the extra pane (see RootScaffold's own KDoc on
+                    // `extraPaneContent`) is currently showing — at most one
+                    // of room info, search or the account panel at a time,
+                    // since `ListDetailPaneScaffold` has exactly one Extra
+                    // slot. Room info is set when a roster row's avatar is
+                    // tapped (RoomRow.kt's own onOpenInfo); search and
+                    // account are reached from the two buttons above the
+                    // roster below. Cleared alongside each panel's own
+                    // "Done"/"Cancel" tap so a widened shell does not show a
+                    // stale panel nobody asked about again.
+                    var extraPanel by remember { mutableStateOf<ExtraPanel?>(null) }
 
                     // This account's own id, read once per sign-in — see
                     // RoomInfoPanel's own KDoc for why it needs this at all
@@ -128,31 +136,56 @@ class MainActivity : ComponentActivity() {
                     RootScaffold(
                         phase = phase,
                         listPaneContent = { _, openDetail, openInfo ->
-                            Roster(
-                                sections = sections,
-                                hiddenInvitations = hiddenInvitations,
-                                now = now,
-                                avatarUri = { roomId -> avatarCache[roomId] },
-                                showsState = showsState,
-                                hidesHost = rosterView == RosterChoice.MACHINE,
-                                onOpenRoom = { roomId ->
-                                    vm.session.rooms.select(roomId)
-                                    scope.launch { vm.session.open(roomId) }
-                                    openDetail()
-                                },
-                                // A dead affordance from A1 until this task:
-                                // nothing threaded the tapped room any
-                                // further, because the info pane itself was
-                                // still RootScaffold's default placeholder.
-                                // `infoRoomId` is what `extraPaneContent`
-                                // below reads to know which room it is about.
-                                onOpenInfo = { roomId ->
-                                    infoRoomId = roomId
-                                    openInfo()
-                                },
-                                onLoadAvatar = { roomId -> vm.session.avatars.load(roomId) },
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                            Column(Modifier.fillMaxSize()) {
+                                // Search and the account panel share the
+                                // Extra pane with room info, so both are
+                                // reached the same way room info already is:
+                                // set which panel `extraPaneContent` below
+                                // should show, then ask RootScaffold to open
+                                // it. Plain text buttons, not icons — this
+                                // app declares no material-icons-extended
+                                // dependency, and these two are the whole
+                                // affordance for now.
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    TextButton(
+                                        onClick = { extraPanel = ExtraPanel.Search; openInfo() },
+                                        modifier = Modifier.testTag("roster-open-search"),
+                                    ) { Text("Search") }
+                                    TextButton(
+                                        onClick = { extraPanel = ExtraPanel.Account; openInfo() },
+                                        modifier = Modifier.testTag("roster-open-account"),
+                                    ) { Text("Account") }
+                                }
+
+                                Roster(
+                                    sections = sections,
+                                    hiddenInvitations = hiddenInvitations,
+                                    now = now,
+                                    avatarUri = { roomId -> avatarCache[roomId] },
+                                    showsState = showsState,
+                                    hidesHost = rosterView == RosterChoice.MACHINE,
+                                    onOpenRoom = { roomId ->
+                                        vm.session.rooms.select(roomId)
+                                        scope.launch { vm.session.open(roomId) }
+                                        openDetail()
+                                    },
+                                    // A dead affordance from A1 until Task 2:
+                                    // nothing threaded the tapped room any
+                                    // further, because the info pane itself was
+                                    // still RootScaffold's default placeholder.
+                                    // `extraPanel` is what `extraPaneContent`
+                                    // below reads to know which room it is about.
+                                    onOpenInfo = { roomId ->
+                                        extraPanel = ExtraPanel.RoomInfo(roomId)
+                                        openInfo()
+                                    },
+                                    onLoadAvatar = { roomId -> vm.session.avatars.load(roomId) },
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                )
+                            }
                         },
                         detailPaneContent = { _ ->
                             // The room this pane is showing, reactively:
@@ -332,26 +365,58 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         extraPaneContent = { _, closeInfo ->
-                            val currentInfoRoomId = infoRoomId
                             Box(Modifier.fillMaxSize().testTag("pane-info")) {
-                                if (currentInfoRoomId != null) {
-                                    RoomInfoPanel(
-                                        roomId = currentInfoRoomId,
-                                        accountUserId = accountUserId,
-                                        avatarUri = avatarCache[currentInfoRoomId],
-                                        onClose = {
-                                            infoRoomId = null
-                                            closeInfo()
-                                        },
-                                        loadInfo = { vm.session.roomInfo(currentInfoRoomId) },
-                                        onSetNotifications = { mode ->
-                                            vm.session.setNotifications(mode, currentInfoRoomId)
-                                        },
-                                        onSetPinned = { pinned ->
-                                            vm.session.setPinned(pinned, currentInfoRoomId)
-                                        },
-                                        onLeaveRoom = { vm.session.leaveRoom(currentInfoRoomId) },
-                                    )
+                                // Exhaustive over ExtraPanel's own three
+                                // cases plus `null` (nothing asked for it
+                                // yet) — not a core sealed class, so an
+                                // `else` here would be fine, but there is
+                                // nothing this file wants to fold together.
+                                when (val panel = extraPanel) {
+                                    is ExtraPanel.RoomInfo ->
+                                        RoomInfoPanel(
+                                            roomId = panel.roomId,
+                                            accountUserId = accountUserId,
+                                            avatarUri = avatarCache[panel.roomId],
+                                            onClose = {
+                                                extraPanel = null
+                                                closeInfo()
+                                            },
+                                            loadInfo = { vm.session.roomInfo(panel.roomId) },
+                                            onSetNotifications = { mode ->
+                                                vm.session.setNotifications(mode, panel.roomId)
+                                            },
+                                            onSetPinned = { pinned ->
+                                                vm.session.setPinned(pinned, panel.roomId)
+                                            },
+                                            onLeaveRoom = { vm.session.leaveRoom(panel.roomId) },
+                                        )
+
+                                    ExtraPanel.Search ->
+                                        SearchPanel(
+                                            scope = null,
+                                            onOpen = { roomId ->
+                                                vm.session.rooms.select(roomId)
+                                                scope.launch { vm.session.open(roomId) }
+                                            },
+                                            onClose = {
+                                                extraPanel = null
+                                                closeInfo()
+                                            },
+                                            search = vm.session::search,
+                                            roomName = { roomId -> rooms.firstOrNull { it.room.id == roomId }?.room?.name },
+                                        )
+
+                                    ExtraPanel.Account ->
+                                        AccountPanel(
+                                            loadAccount = vm.session::account,
+                                            onSignOut = vm.session::signOut,
+                                            onClose = {
+                                                extraPanel = null
+                                                closeInfo()
+                                            },
+                                        )
+
+                                    null -> {}
                                 }
                             }
                         },
@@ -396,4 +461,16 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+/**
+ * Which of room info, search or the account panel `RootScaffold`'s single
+ * Extra pane is currently showing — `null` when none of the three was
+ * asked for. An app-level type, not a core sealed class: the `when` over it
+ * above may use `else` freely, though it does not.
+ */
+private sealed class ExtraPanel {
+    data class RoomInfo(val roomId: String) : ExtraPanel()
+    object Search : ExtraPanel()
+    object Account : ExtraPanel()
 }
