@@ -354,4 +354,57 @@ class RootScaffoldTest {
 
         compose.onNodeWithTag("pane-info").assertDoesNotExist()
     }
+
+    /**
+     * The gap PaneLayout.kt's own comment used to flag: below
+     * [ThreePaneWidth] there is no Extra partition for room info to live in
+     * as a third partition alongside the other two. Investigating that
+     * comment turned up a real behaviour worth pinning directly rather than
+     * assuming: `ListDetailPaneScaffold` at `maxHorizontalPartitions = 2`
+     * does not simply drop the request — it satisfies `navigateTo(Extra)` by
+     * *replacing* the detail (timeline) pane with it, the same way it would
+     * on a phone shell with one partition. Confirmed by probing bounds
+     * directly: at 840dp with info requested, `pane-info` lands at real,
+     * on-screen bounds while `pane-timeline` degenerates to
+     * `Rect(0,0,0,0)` — present in the tree, laid out nowhere.
+     *
+     * So the tap is not dead (the original hypothesis this task set out to
+     * check), but what happens is still not the treatment the spec
+     * describes — "roster | timeline, info as a bottom sheet"
+     * (`docs/superpowers/specs/2026-08-20-android-scaffold-design.md:181`) —
+     * because the timeline disappears rather than staying put underneath an
+     * overlay. This test asserts the actual spec: at a two-pane width with
+     * info requested, both `pane-timeline` and `pane-info` are on screen
+     * *at once* — proof info arrived as a sheet over the two panes, not in
+     * place of one of them. Requests info at a fresh two-pane (840dp) width
+     * — never having been at three panes first, which is
+     * [narrowingBelowThreePanesStrandsAnOpenInfoPane]'s scenario, not this
+     * one. Geometry via [assertWithinShell], not `assertExists()` — that
+     * would not have caught the iPad fault and would not catch this one
+     * either (it would have passed against today's replace-the-timeline
+     * behaviour too).
+     */
+    @Test
+    fun aTabletInPortraitShowsRoomInfoAsASheetOverBothPanes() {
+        compose.setContent {
+            Box(Modifier.requiredSize(840.dp, 800.dp).testTag(ShellTag)) {
+                RootScaffold(
+                    listPaneContent = { _, _, openInfo ->
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .testTag("list-pane-open-info-target")
+                                .clickable(onClick = openInfo)
+                        )
+                    },
+                )
+            }
+        }
+
+        compose.onNodeWithTag("list-pane-open-info-target").performClick()
+        compose.waitForIdle()
+
+        assertWithinShell("pane-info")
+        assertWithinShell("pane-timeline")
+    }
 }

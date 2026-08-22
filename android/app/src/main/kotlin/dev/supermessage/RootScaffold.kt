@@ -8,13 +8,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffold
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
 import androidx.compose.material3.adaptive.layout.PaneAdaptedValue
 import androidx.compose.material3.adaptive.layout.PaneScaffoldDirective
+import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldValue
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -155,7 +158,7 @@ private fun Starting(modifier: Modifier = Modifier) {
     }
 }
 
-@OptIn(ExperimentalMaterial3AdaptiveApi::class)
+@OptIn(ExperimentalMaterial3AdaptiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun SignedIn(
     modifier: Modifier = Modifier,
@@ -224,11 +227,47 @@ private fun SignedIn(
         // scaffoldValue, which is *derived from* `directive`, not from
         // `panes` a second time. That is what makes the Step 5 mutation
         // below observable: mutate the directive and this gate moves too.
+        //
+        // At panes == 2 this same scaffoldValue is *not* what decides
+        // whether info shows — see [twoPaneScaffoldValue] just below for
+        // why, and for the actual defect this investigation turned up
+        // (info was never unreachable at two panes; it replaced the
+        // timeline instead of sheeting over it).
         val extraIsShown = navigator.scaffoldValue[ListDetailPaneScaffoldRole.Extra] != PaneAdaptedValue.Hidden
+
+        // Whether the caller has asked for info right now, independent of
+        // pane count — `navigator.currentDestination` is the navigator's own
+        // state, unaffected by whatever `value` this file feeds the
+        // scaffold below.
+        val infoRequested = navigator.currentDestination?.pane == ListDetailPaneScaffoldRole.Extra
+
+        // The two-pane case, investigated rather than assumed: at
+        // `maxHorizontalPartitions = 2`, ListDetailPaneScaffold does not
+        // simply withhold a requested Extra destination the way "no room"
+        // suggests — calculateThreePaneScaffoldValue (the function behind
+        // navigator.scaffoldValue) instead grants Extra its own partition
+        // by *replacing* Detail, the timeline, which disappears to
+        // degenerate zero-size bounds. Confirmed by probing bounds directly
+        // at 840dp with info requested: pane-info real, pane-timeline
+        // Rect(0,0,0,0). Reachable, but not the "roster | timeline, info as
+        // a bottom sheet" treatment the spec (see PaneLayout.kt) describes.
+        //
+        // So at panes == 2 this file stops handing navigator.scaffoldValue
+        // to the scaffold at all and substitutes a value that always keeps
+        // List and Detail expanded and Extra hidden — the scaffold never
+        // sees Extra as a candidate partition here, regardless of
+        // `currentDestination`. Info is shown instead via the
+        // [ModalBottomSheet] below, layered over both panes rather than
+        // occupying either one's partition.
+        val twoPaneScaffoldValue = ThreePaneScaffoldValue(
+            primary = PaneAdaptedValue.Expanded, // ListDetailPaneScaffoldRole.Detail
+            secondary = PaneAdaptedValue.Expanded, // ListDetailPaneScaffoldRole.List
+            tertiary = PaneAdaptedValue.Hidden, // ListDetailPaneScaffoldRole.Extra
+        )
 
         ListDetailPaneScaffold(
             directive = navigator.scaffoldDirective,
-            value = navigator.scaffoldValue,
+            value = if (panes == 2) twoPaneScaffoldValue else navigator.scaffoldValue,
             listPane = {
                 listPaneContent(
                     shellWidth,
@@ -237,10 +276,28 @@ private fun SignedIn(
                 )
             },
             detailPane = { detailPaneContent(shellWidth) },
-            extraPane = if (extraIsShown) {
+            // panes == 3 only: at panes == 2 the value substitution above
+            // already keeps Extra out of the partition layout, and the sheet
+            // below is what shows info instead.
+            extraPane = if (panes == 3 && extraIsShown) {
                 { extraPaneContent(shellWidth) { scope.launch { navigator.navigateBack() } } }
             } else null,
         )
+
+        // The sheet itself: only at panes == 2, and only while info is
+        // actually requested — narrowing from three panes with info open
+        // does not reach here showing a sheet, because the LaunchedEffect
+        // above already calls navigateBack() first whenever panes drops
+        // below 3 with Extra as the current destination (that is
+        // [narrowingBelowThreePanesStrandsAnOpenInfoPane]'s scenario: an
+        // open info pane collapsing away entirely, not reappearing as a
+        // sheet). This branch only ever fires for a fresh openInfo() request
+        // made while already at a two-pane width.
+        if (panes == 2 && infoRequested) {
+            ModalBottomSheet(onDismissRequest = { scope.launch { navigator.navigateBack() } }) {
+                extraPaneContent(shellWidth) { scope.launch { navigator.navigateBack() } }
+            }
+        }
     }
 }
 
