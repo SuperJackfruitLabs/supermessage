@@ -300,6 +300,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         },
+                        onBackFromDetail = {
+                            // The verb RoomsStore.deselect() exists for: on a
+                            // phone the roster is the previous screen, not a
+                            // column beside the room, so nothing should stay
+                            // selected once system back has returned to it.
+                            vm.session.rooms.deselect()
+                        },
                         signedOutContent = {
                             LoginScreen(
                                 homeserver = homeserverField.value,

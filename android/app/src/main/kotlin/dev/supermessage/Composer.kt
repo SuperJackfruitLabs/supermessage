@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.stores.EditTarget
 import dev.supermessage.kit.stores.ReplyTarget
@@ -316,11 +317,20 @@ private fun ReplyEditBanner(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column {
+            // weight(1f) is what keeps "Cancel" below from starving: an
+            // unweighted Row measures its non-weighted children first and
+            // hands the *rest* of the row to the sole weighted child, so the
+            // button is sized off its own short text before this column ever
+            // sees the row's width — rather than the other way around, which
+            // is what left it almost nothing to render "Cancel" in with a
+            // long sender name.
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Replying to ${replyTo.sender}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag("composer-reply-sender"),
                 )
                 // Only when the core supplied one — an absent excerpt (a

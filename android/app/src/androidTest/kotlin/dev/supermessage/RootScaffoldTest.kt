@@ -1,5 +1,6 @@
 package dev.supermessage
 
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,10 +11,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -50,7 +52,13 @@ import org.junit.Test
  */
 class RootScaffoldTest {
 
-    @get:Rule val compose = createComposeRule()
+    // createAndroidComposeRule<ComponentActivity>(), not the bare
+    // createComposeRule() the other tests here were written against —
+    // functionally identical (createComposeRule() is exactly this call
+    // underneath), but with the concrete rule type exposed rather than the
+    // narrower ComposeContentTestRule interface, so `compose.activity` below
+    // is reachable. No existing test's behaviour changes.
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private companion object {
         const val ShellTag = "test-shell"
@@ -193,5 +201,107 @@ class RootScaffoldTest {
         // 411dp fits every device this suite runs on (see the class doc), so
         // assertIsDisplayed() here is meaningful and still device-independent.
         compose.onNodeWithTag("pane-timeline").assertIsDisplayed()
+    }
+
+    /**
+     * System back from an open detail pane on a one-pane (phone) shell
+     * returns to the roster, rather than exiting the app — the defect this
+     * task exists to fix. `RoomsStore.deselect()` is not reachable from this
+     * generic scaffold test (it lives in `:kit`, and `RootScaffold` never
+     * imports it — see the class doc on [onBackFromDetail]'s KDoc), so the
+     * caller-supplied callback stands in for it here, the same way
+     * [tappingInTheListPaneOpensTheDetailPaneOnAPhone] stands in for the
+     * roster with a plain tap target.
+     *
+     * Drives the press through the real
+     * [androidx.activity.ComponentActivity] back dispatcher
+     * ([compose]'s own activity — `createComposeRule()` launches one), not a
+     * fake in-test callback: that is what actually exercises the
+     * [androidx.activity.compose.BackHandler] registered inside
+     * `RootScaffold`, rather than merely calling a Kotlin lambda directly.
+     */
+    @Test
+    fun systemBackFromTheDetailPaneOnAPhoneReturnsToTheRoster() {
+        var backFired = 0
+        compose.setContent {
+            Box(Modifier.requiredSize(411.dp, 800.dp).testTag(ShellTag)) {
+                RootScaffold(
+                    // Tagged "pane-roster" on the outer content, not just
+                    // "list-pane-tap-target" on the clickable target inside
+                    // it — without that outer tag this stand-in list pane
+                    // has no way for the reappearing-roster assertion below
+                    // to find it at all, the same tag the default
+                    // listPaneContent this override replaces already carries.
+                    listPaneContent = { _, openDetail ->
+                        Box(Modifier.fillMaxSize().testTag("pane-roster")) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .testTag("list-pane-tap-target")
+                                    .clickable(onClick = openDetail)
+                            )
+                        }
+                    },
+                    onBackFromDetail = { backFired++ },
+                )
+            }
+        }
+
+        compose.onNodeWithTag("list-pane-tap-target").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("pane-timeline").assertIsDisplayed()
+
+        // Run on the UI thread rather than the instrumentation thread this
+        // test method itself runs on: OnBackPressedDispatcher expects to be
+        // driven from there, the same thread performClick()'s synthetic
+        // touch above was already dispatched on.
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+
+        assertEquals(1, backFired)
+        // Not assertDoesNotExist()-on-timeline-then-assertIsDisplayed()-on-
+        // roster alone: on a one-pane shell only the current destination's
+        // pane is actually laid out, so the roster reappearing here (rather
+        // than merely existing off-screen, the iPad fault this suite's own
+        // class doc warns about) is real evidence the app came back to it.
+        compose.onNodeWithTag("pane-roster").assertIsDisplayed()
+    }
+
+    /**
+     * The other half of the same defect: on a two-pane (or wider) shell the
+     * roster is already on screen beside the detail pane, so back must keep
+     * its default platform behaviour rather than being intercepted for no
+     * reason. Checked via [androidx.activity.OnBackPressedDispatcher.hasEnabledCallbacks],
+     * not by actually pressing back — pressing back here, correctly
+     * unhandled, would finish the underlying test activity, which is not a
+     * distinction this suite needs to survive to make its point.
+     */
+    @Test
+    fun systemBackDoesNotInterceptOnATwoPaneShell() {
+        compose.setContent {
+            Box(Modifier.requiredSize(840.dp, 800.dp).testTag(ShellTag)) {
+                RootScaffold(
+                    listPaneContent = { _, openDetail ->
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .testTag("list-pane-tap-target")
+                                .clickable(onClick = openDetail)
+                        )
+                    },
+                )
+            }
+        }
+
+        // Navigate to Detail exactly as the phone test does, so the only
+        // variable left between the two tests is pane count, not whether
+        // there is a current destination to intercept back from.
+        compose.onNodeWithTag("list-pane-tap-target").performClick()
+        compose.waitForIdle()
+
+        assertTrue(
+            "back was intercepted on a two-pane shell, where the roster is already visible",
+            !compose.activity.onBackPressedDispatcher.hasEnabledCallbacks(),
+        )
     }
 }

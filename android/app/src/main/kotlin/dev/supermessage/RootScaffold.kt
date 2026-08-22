@@ -1,5 +1,6 @@
 package dev.supermessage
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -82,6 +83,19 @@ import kotlinx.coroutines.launch
  * placeholder rather than a slot: nothing in this phase of the work
  * consumes it, and a slot with no real caller would be exactly the kind of
  * premature seam the parameter-list problem above already was.
+ *
+ * [onBackFromDetail] is this task's fix for the room-is-a-trap defect: on a
+ * one-pane shell with the detail pane as the current destination, system
+ * back is intercepted (see the [BackHandler] inside [SignedIn]) rather than
+ * exiting the app, and this callback fires alongside
+ * `navigator.navigateBack()` so the caller can clear whatever selection put
+ * the detail pane there — [dev.supermessage.kit.stores.RoomsStore.deselect]
+ * in `MainActivity`'s case. This file does not call `deselect()` itself: it
+ * does not know `RoomsStore` exists, the same boundary [listPaneContent] and
+ * [detailPaneContent] already draw around what fills each pane. Defaults to
+ * a no-op so every existing caller — `RootScaffoldTest`'s bare
+ * `RootScaffold()` among them — keeps compiling and keeps its prior
+ * behaviour.
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
@@ -95,11 +109,12 @@ fun RootScaffold(
     detailPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
         Pane("pane-timeline", "Timeline", shellWidth)
     },
+    onBackFromDetail: () -> Unit = {},
 ) {
     when (phase) {
         Session.Phase.STARTING -> Starting(modifier)
         Session.Phase.SIGNED_OUT -> Box(modifier) { signedOutContent() }
-        Session.Phase.SIGNED_IN -> SignedIn(modifier, listPaneContent, detailPaneContent)
+        Session.Phase.SIGNED_IN -> SignedIn(modifier, listPaneContent, detailPaneContent, onBackFromDetail)
     }
 }
 
@@ -121,6 +136,7 @@ private fun SignedIn(
     modifier: Modifier = Modifier,
     listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit) -> Unit,
     detailPaneContent: @Composable (shellWidth: Dp) -> Unit,
+    onBackFromDetail: () -> Unit = {},
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         // Captured into a local before the nested pane lambdas: their
@@ -137,6 +153,23 @@ private fun SignedIn(
         // navigateBack() call below) — a scope is what lets listPaneContent's
         // ordinary `() -> Unit` callback launch it.
         val scope = rememberCoroutineScope()
+
+        // The fix for "a room is a trap" (Task 7): on a one-pane shell with
+        // the detail pane as the current destination, the roster is not on
+        // screen beside it — it is the previous screen, off the back stack
+        // entirely unless this handler pops it back. On a two-pane-or-wider
+        // shell the roster is already visible next to the detail pane, so
+        // this must stay disabled there and let system back keep its default
+        // behaviour (RootScaffoldTest's two-/three-pane geometry tests don't
+        // exercise back at all, which is exactly why `panes == 1` has to be
+        // part of `enabled` rather than gating only on `currentDestination`).
+        BackHandler(
+            enabled = panes == 1 &&
+                navigator.currentDestination?.pane == ListDetailPaneScaffoldRole.Detail,
+        ) {
+            scope.launch { navigator.navigateBack() }
+            onBackFromDetail()
+        }
 
         // Rule 2: when the shell narrows past three panes, an open info pane
         // must go away rather than be laid out where it no longer fits. This

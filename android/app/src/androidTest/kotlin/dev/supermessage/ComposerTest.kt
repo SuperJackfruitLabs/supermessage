@@ -1,8 +1,11 @@
 package dev.supermessage
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -10,9 +13,11 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.stores.EditTarget
 import dev.supermessage.kit.stores.ReplyTarget
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_ffi.StagedFile
@@ -150,6 +155,61 @@ class ComposerTest {
         compose.waitForIdle()
 
         assertEquals("half-written reply", value)
+    }
+
+    /**
+     * A long sender name must not starve the Cancel button of the width (and,
+     * downstream of that, the height) it needs to lay out normally — geometry,
+     * not existence: the node exists either way, starved or not.
+     *
+     * [composer-attach] is the reference: an ordinary single-line
+     * [androidx.compose.material3.TextButton] elsewhere in this same
+     * composable, never touched by this banner's Row, so its width and height
+     * are what an unstarved text button in this exact theme looks like. An
+     * unweighted `Row` measures its non-weighted children in order, handing
+     * each the *remaining* width after the ones before it — so a name long
+     * enough to consume the row on its own leaves Cancel measured with
+     * (close to) zero width, and therefore zero height too, not a many-lines-
+     * tall button. Confirmed empirically: before this test's own fix landed,
+     * `cancelHeight` measured here was exactly `0f`, not merely "smaller."
+     */
+    @Test
+    fun theCancelButtonStaysOnOneLineWithALongSenderName() {
+        compose.setContent {
+            // Narrowed to 320dp so the long name below has no way to fit on
+            // one line regardless of the physical device's own width — the
+            // fault this test exists to catch depends on the name actually
+            // needing to wrap (or fully consume the row) rather than merely
+            // being long in characters.
+            Box(Modifier.width(320.dp)) {
+                Composer(
+                    text = "hey",
+                    onTextChange = {},
+                    onSend = {},
+                    replyTo = ReplyTarget.Pending(
+                        eventId = "e1",
+                        sender = "Alexandria Fitzgerald-Montgomery Wraithborne the Third " +
+                            "of Barsetshire-upon-Avonlea and its Environs",
+                        excerpt = null,
+                    ),
+                )
+            }
+        }
+
+        val cancelBounds = compose.onNodeWithTag("composer-cancel-reply").fetchSemanticsNode().boundsInRoot
+        val attachBounds = compose.onNodeWithTag("composer-attach").fetchSemanticsNode().boundsInRoot
+
+        // Close to the reference button's own size, not merely "not
+        // enormous": a starved button collapses toward zero on both axes,
+        // which a one-sided upper-bound-only check would miss entirely.
+        assertTrue(
+            "Cancel's width ${cancelBounds.width} starved far below the reference (${attachBounds.width})",
+            cancelBounds.width >= attachBounds.width * 0.6f,
+        )
+        assertTrue(
+            "Cancel's height ${cancelBounds.height} starved far below the reference (${attachBounds.height})",
+            cancelBounds.height >= attachBounds.height * 0.6f,
+        )
     }
 
     private fun stubAttachment() = StagedFile(
