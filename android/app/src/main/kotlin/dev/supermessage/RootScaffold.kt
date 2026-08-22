@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.CircularProgressIndicator
@@ -139,11 +140,39 @@ fun RootScaffold(
     },
     onBackFromDetail: () -> Unit = {},
 ) {
-    when (phase) {
-        Session.Phase.STARTING -> Starting(modifier)
-        Session.Phase.SIGNED_OUT -> Box(modifier) { signedOutContent() }
-        Session.Phase.SIGNED_IN ->
-            SignedIn(modifier, listPaneContent, detailPaneContent, extraPaneContent, onBackFromDetail)
+    // Fix 4's blocker 1: systemBarsPadding() used to live only on
+    // SignedIn's own ListDetailPaneScaffold (below), so STARTING and
+    // SIGNED_OUT drew under the status/navigation bars — enableEdgeToEdge()
+    // (MainActivity.onCreate) reserves them no space of its own. Applied
+    // here instead, once, above the phase branch: every phase shares this
+    // one Box, so no arm can be missed the way these two were the first
+    // time this was placed per-screen.
+    //
+    // Still safe for RootScaffoldTest's pane-rule contracts even though it
+    // now sits above SignedIn's own BoxWithConstraints (which reads
+    // shellWidth = maxWidth from its incoming constraints): systemBars is a
+    // vertical-only inset on every device/orientation this suite runs on
+    // (status bar top, navigation/gesture bar bottom, no left/right
+    // component), so it shrinks the height SignedIn's BoxWithConstraints
+    // measures, never the width — see SignedIn's own comment below for how
+    // that was confirmed, not assumed, the first time this padding was
+    // added.
+    Box(modifier.fillMaxSize().systemBarsPadding()) {
+        when (phase) {
+            Session.Phase.STARTING -> Starting()
+            Session.Phase.SIGNED_OUT ->
+                // imePadding() here, not just systemBarsPadding() above:
+                // LoginScreen's three-field column is centred, not scrolled,
+                // so without this the keyboard can cover it outright on the
+                // very first screen a new user sees. Scoped to this arm
+                // alone — SIGNED_IN deliberately does not get imePadding at
+                // this level; see SignedIn's own comment on why safeDrawing
+                // (systemBars + ime together) would make that shell bounce
+                // every time the keyboard does.
+                Box(Modifier.fillMaxSize().imePadding()) { signedOutContent() }
+            Session.Phase.SIGNED_IN ->
+                SignedIn(Modifier, listPaneContent, detailPaneContent, extraPaneContent, onBackFromDetail)
+        }
     }
 }
 
@@ -294,29 +323,35 @@ private fun SignedIn(
         }
 
         ListDetailPaneScaffold(
-            // Defect B fix: enableEdgeToEdge() (MainActivity.onCreate) draws
-            // this scaffold's content behind the status and navigation bars
-            // with nothing reserving space for them, so the roster header
-            // used to render at root y = 0 — under the status bar rather
-            // than below it. systemBarsPadding(), not safeDrawingPadding():
-            // safeDrawing additionally folds in the IME inset, which would
-            // pad this whole shell (roster header included) down every time
-            // the keyboard shows, on top of Composer.kt's own imePadding()
-            // fix for the composer specifically — a shell that bounces
-            // whenever the keyboard does, not a composer that clears it.
-            // systemBarsPadding() only ever reacts to the status/navigation
-            // bars, which is the actual defect here.
+            // Defect B fix, moved by fix 4: systemBarsPadding() used to live
+            // right here, on ListDetailPaneScaffold's own modifier — the
+            // per-screen placement that left STARTING and SIGNED_OUT with
+            // no padding at all (see RootScaffold's own comment above,
+            // where it now lives, once, for every phase). Bare Modifier
+            // here is deliberate, not an oversight: applying it a second
+            // time on top of the shared one above would double the inset.
             //
-            // Applied here — on ListDetailPaneScaffold's own modifier,
-            // inside the BoxWithConstraints above — rather than on that
-            // BoxWithConstraints itself: `shellWidth = maxWidth` is read
-            // from BoxWithConstraints directly, and RootScaffoldTest's
-            // pane-rule contracts (four geometry tests, the Phase C
-            // stranding test, the two-pane sheet test) depend on that being
-            // the shell's full forced width, not a width already shrunk by
-            // padding. A vertical-only inset shrinking the space handed to
-            // this scaffold does not touch that measurement at all.
-            modifier = Modifier.systemBarsPadding(),
+            // Still not safeDrawingPadding() up there: safeDrawing folds in
+            // the IME inset too, which would pad this whole shell (roster
+            // header included) down every time the keyboard shows, on top
+            // of Composer.kt's own imePadding() fix for the composer
+            // specifically — a shell that bounces whenever the keyboard
+            // does, not a composer that clears it. systemBarsPadding()
+            // only ever reacts to the status/navigation bars, which is the
+            // actual defect here.
+            //
+            // Moving the padding above this BoxWithConstraints (rather than
+            // leaving it here, inside it) is still safe for
+            // RootScaffoldTest's pane-rule contracts: `shellWidth =
+            // maxWidth` is read from BoxWithConstraints directly, and those
+            // contracts (four geometry tests, the Phase C stranding test,
+            // the two-pane sheet test) depend on that being the shell's
+            // full forced width, not a width already shrunk by padding. A
+            // vertical-only inset shrinking the space handed to this
+            // scaffold does not touch that measurement at all — true
+            // whether the inset is consumed just inside this
+            // BoxWithConstraints or just outside it.
+            modifier = Modifier,
             directive = navigator.scaffoldDirective,
             value = when {
                 panes == 2 -> twoPaneScaffoldValue

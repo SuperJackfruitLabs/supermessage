@@ -275,7 +275,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                     InvitationEmptyTimeline(modifier = Modifier.weight(1f).fillMaxWidth())
                     InvitationView(
                         roomId = currentRoomId,
-                        roomName = currentRow?.room?.name ?: currentRoomId,
+                        roomName = currentRow?.identity?.name ?: currentRoomId,
                         inviter = session::inviter,
                         joinRoom = session::joinRoom,
                         leaveRoom = session::leaveRoom,

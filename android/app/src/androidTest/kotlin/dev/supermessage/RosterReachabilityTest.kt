@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -72,13 +73,20 @@ class RosterReachabilityTest {
         return prefs
     }
 
-    private fun invitationRow(roomId: String = "!room:example.org", name: String = "Ops Room") = RoomRow(
+    // roomName and identityName default to the same string, so every
+    // existing call (`invitationRow()`) is unaffected — only
+    // [invitationNamesTheRoomTheWayTheRosterDoes] passes them apart.
+    private fun invitationRow(
+        roomId: String = "!room:example.org",
+        roomName: String = "Ops Room",
+        identityName: String = roomName,
+    ) = RoomRow(
         room = RoomSummary(
-            id = roomId, name = name, avatarUrl = null, unread = 0uL, lastMessage = null,
+            id = roomId, name = roomName, avatarUrl = null, unread = 0uL, lastMessage = null,
             lastMessageIsOwn = false, lastMessageNamesSender = false, lastEventType = null,
             lastActivityMs = null, runtime = null, membership = Membership.INVITED,
         ),
-        identity = RoomIdentity(glyph = null, name = name, role = null, initial = name.take(1)),
+        identity = RoomIdentity(glyph = null, name = identityName, role = null, initial = identityName.take(1)),
         preview = null,
         affordance = RoomAffordance.RESPOND_TO_INVITATION,
     )
@@ -159,6 +167,50 @@ class RosterReachabilityTest {
         compose.onNodeWithTag("invitation-decline").assertIsDisplayed()
         compose.onNodeWithTag("invitation-inviter").assertIsDisplayed()
         assertEquals(listOf("!room:example.org"), fake.roomInviterCalls)
+    }
+
+    /**
+     * Fix 4's own blocker: `MainActivity.kt` used to pass the invitation
+     * view raw `room.name` while every other site in the app —
+     * `RoomRow.kt:77`, `RoomInfo.kt:256`, `Roster.kt:114` — reads
+     * `identity.name` instead. This row is built with the two deliberately
+     * different (`roomName` lowercase, `identityName` the resolved display
+     * form) so a fix that reverts to `room.name` fails this test rather
+     * than passing it by coincidence — the shape of the defect fix 2's own
+     * device log caught: the roster said "Workspace", the invitation beside
+     * it said "invited to workspace.".
+     */
+    @Test
+    fun invitationNamesTheRoomTheWayTheRosterDoes() {
+        val fake = FakeCore(
+            roomsSnapshotResult = {
+                RoomsSnapshot(
+                    seq = 0uL,
+                    rooms = listOf(invitationRow(roomName = "workspace", identityName = "Workspace")),
+                )
+            },
+            roomInviterResult = { null },
+        )
+        val session = sessionOf(fake)
+        val prefs = preferences(showsInvitations = true)
+
+        compose.setContent {
+            Box(Modifier.requiredSize(411.dp, 800.dp).testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+
+        // The roster itself already reads identity.name (Roster.kt:114) —
+        // this is the row this test taps next, confirmed on screen under
+        // the identity-resolved name before the invitation view is asked to
+        // agree with it.
+        compose.onNodeWithText("Workspace").assertIsDisplayed()
+
+        compose.onNodeWithTag("roster-row").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("invitation-message").assertTextEquals("You have been invited to Workspace.")
     }
 
     /**
