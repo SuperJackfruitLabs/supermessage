@@ -1,6 +1,8 @@
 package dev.supermessage
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -10,6 +12,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import dev.supermessage.kit.CoreClient
@@ -108,7 +111,12 @@ class RosterReachabilityTest {
         val prefs = preferences()
 
         compose.setContent {
-            Box(Modifier.requiredSize(411.dp, 800.dp).testTag("test-shell")) {
+            // Width is required — it is what `paneCountFor` reads, so a phone
+            // shell must be a phone width. Height follows the device: a
+            // `requiredSize(_, 800.dp)` box is taller than a short screen and
+            // gets clipped by the window, which puts roster rows off-screen
+            // where no amount of `performScrollTo` reaches them.
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
                 AppRoot(session = session, prefs = prefs)
             }
         }
@@ -148,7 +156,12 @@ class RosterReachabilityTest {
         val prefs = preferences(showsInvitations = true)
 
         compose.setContent {
-            Box(Modifier.requiredSize(411.dp, 800.dp).testTag("test-shell")) {
+            // Width is required — it is what `paneCountFor` reads, so a phone
+            // shell must be a phone width. Height follows the device: a
+            // `requiredSize(_, 800.dp)` box is taller than a short screen and
+            // gets clipped by the window, which puts roster rows off-screen
+            // where no amount of `performScrollTo` reaches them.
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
                 AppRoot(session = session, prefs = prefs)
             }
         }
@@ -157,7 +170,11 @@ class RosterReachabilityTest {
         // The badge the roster already renders for this row (Roster.kt /
         // RoomRow.kt), proving the row reached the screen at all before it
         // is tapped.
-        compose.onNodeWithText("Ops Room").assertIsDisplayed()
+                // Scroll first: the roster is a LazyColumn, so whether a given row is
+        // on screen depends on the device's height. These two passed on a
+        // 2400px phone and failed at 1280px — the same layout-luck dependency
+        // that cost three CI round-trips in RoomInfoTest.
+        compose.onNodeWithText("Ops Room").performScrollTo().assertIsDisplayed()
 
         compose.onNodeWithTag("roster-row").performClick()
         compose.waitForIdle()
@@ -195,7 +212,12 @@ class RosterReachabilityTest {
         val prefs = preferences(showsInvitations = true)
 
         compose.setContent {
-            Box(Modifier.requiredSize(411.dp, 800.dp).testTag("test-shell")) {
+            // Width is required — it is what `paneCountFor` reads, so a phone
+            // shell must be a phone width. Height follows the device: a
+            // `requiredSize(_, 800.dp)` box is taller than a short screen and
+            // gets clipped by the window, which puts roster rows off-screen
+            // where no amount of `performScrollTo` reaches them.
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
                 AppRoot(session = session, prefs = prefs)
             }
         }
@@ -205,7 +227,11 @@ class RosterReachabilityTest {
         // this is the row this test taps next, confirmed on screen under
         // the identity-resolved name before the invitation view is asked to
         // agree with it.
-        compose.onNodeWithText("Workspace").assertIsDisplayed()
+                // Scroll first: the roster is a LazyColumn, so whether a given row is
+        // on screen depends on the device's height. These two passed on a
+        // 2400px phone and failed at 1280px — the same layout-luck dependency
+        // that cost three CI round-trips in RoomInfoTest.
+        compose.onNodeWithText("Workspace").performScrollTo().assertIsDisplayed()
 
         compose.onNodeWithTag("roster-row").performClick()
         compose.waitForIdle()

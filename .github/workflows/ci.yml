@@ -307,7 +307,12 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/avd/*/*
-          key: avd-api36-google_apis-x86_64-v1
+          # The profile is part of the key. It was not, and pinning
+          # `profile: pixel_6` therefore did nothing for a whole run: the cache
+          # hit restored an AVD built with the runner's default profile and the
+          # create step was skipped. A cache key that omits an input silently
+          # ignores changes to it.
+          key: avd-api36-google_apis-x86_64-pixel_6-v2
 
       - name: Create AVD and generate its snapshot for caching
         # Only runs on a cache miss. A booted-and-snapshotted AVD is what the

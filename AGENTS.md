@@ -219,6 +219,36 @@ AVDs, portrait and landscape.
 `docs/superpowers/specs/2026-08-20-android-app-design.md` specs the module
 layout and `docs/superpowers/specs/2026-08-20-android-scaffold-design.md`
 specs the adaptive shell built on top of it; both are binding.
+### Instrumented tests must be run under CI's conditions, not this machine's
+
+Three device differences have each cost a CI round-trip on this repo, and all three were
+findable locally:
+
+| | local default | CI |
+|---|---|---|
+| timezone | Asia/Kolkata | UTC |
+| screen | 1080x2400 | pinned `pixel_6`, previously unpinned |
+| clipping | tall enough to hide the bug | not |
+
+`scripts/android-ci-parity.sh` sets the emulator to CI's timezone and geometry. **Run it,
+then run the suite twice — once at pixel_6 height and once at `wm size 1080x1280`.** A test
+that only passes at one height is asserting on layout luck, and this repo has produced six
+of them.
+
+Two traps behind those failures, both worth knowing:
+
+- **`onNodeWithText("2", substring = true)`** matched one node here and two on CI, because
+  the timezone changed how a fixture timestamp rendered. A single-character substring
+  matcher is almost always this bug waiting to happen.
+- **`Box(Modifier.requiredSize(w, 800.dp))`** as a test shell is *taller than a short
+  device*, so its content is clipped by the window and `performScrollTo` cannot reach it.
+  Require the **width** — that is what `paneCountFor` reads — and let height follow the
+  device.
+
+And note the AVD cache key must contain every input that shapes the AVD. It did not contain
+the profile, so pinning `profile: pixel_6` was silently ignored for a whole run: the cache
+hit restored the old device and the create step was skipped.
+
 ### Changing the FFI surface changes **two** sets of checked-in bindings
 
 Add or alter anything in `supermessage-ffi` and both the Kotlin **and** the Swift
