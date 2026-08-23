@@ -86,7 +86,11 @@ class SessionTest {
 
         session.signIn(homeserver = "https://x.example", username = "u", password = "wrong")
 
-        assertEquals("Signed out. Sign in again to continue.", session.failure.value)
+        // The homeserver's reason, not a generic "signed out" — this test used
+        // to assert the latter, which meant a wrong password was reported to
+        // someone standing at the sign-in screen as though their session had
+        // expired.
+        assertEquals("bad password", session.failure.value)
         assertEquals(
             "a failed sign-in must leave the reader on the login screen, not strand them",
             Session.Phase.SIGNED_OUT,

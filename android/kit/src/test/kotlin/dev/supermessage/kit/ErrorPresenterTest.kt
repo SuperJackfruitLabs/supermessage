@@ -1,5 +1,6 @@
 package dev.supermessage.kit
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -65,5 +66,20 @@ class ErrorPresenterTest {
         // It happens on every cold start before sync comes up.
         assertFalse(ErrorPresenter.isWorthSurfacing(FfiException.NotReady()))
         assertTrue(ErrorPresenter.isWorthSurfacing(FfiException.Network("m")))
+    }
+
+    /** An Auth failure with no detail still reads as a session expiry. */
+    @Test
+    fun anAuthFailureWithoutDetailKeepsTheSignedOutWording() {
+        assertEquals(
+            "Signed out. Sign in again to continue.",
+            ErrorPresenter.message(FfiException.Auth("")),
+        )
+    }
+
+    /** With a detail, the homeserver's own reason is what the reader sees. */
+    @Test
+    fun anAuthFailureWithDetailShowsTheReason() {
+        assertEquals("Invalid password", ErrorPresenter.message(FfiException.Auth("Invalid password")))
     }
 }

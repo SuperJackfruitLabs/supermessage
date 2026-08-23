@@ -9,8 +9,16 @@ import SupermessageFFI
 public enum ErrorPresenter {
     public static func message(for error: FfiError) -> String {
         switch error {
-        case .Auth:
-            return "Signed out. Sign in again to continue."
+        case let .Auth(detail):
+            // `Auth` carries two very different situations — the core's own
+            // doc says so: "Credentials were refused, or the session is no
+            // longer valid." The second reads fine as "Signed out"; the first
+            // is someone standing at the sign-in screen being told they were
+            // signed out, which explains nothing and is not even true.
+            //
+            // So show the homeserver's own words when it gave any, exactly as
+            // `.Network` below does and for the same reason.
+            return detail.isEmpty ? "Signed out. Sign in again to continue." : detail
         case let .Network(detail):
             // The homeserver's own words when it has any: "connection refused"
             // tells an operator more than "something went wrong" ever will.

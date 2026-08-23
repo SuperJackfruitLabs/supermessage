@@ -18,7 +18,19 @@ import uniffi.supermessage_ffi.FfiException
  */
 object ErrorPresenter {
     fun message(error: FfiException): String = when (error) {
-        is FfiException.Auth -> "Signed out. Sign in again to continue."
+        is FfiException.Auth ->
+            // `Auth` carries two very different situations — the core's own
+            // doc says so: "Credentials were refused, or the session is no
+            // longer valid." The second reads fine as "Signed out"; the first
+            // is someone standing at the sign-in screen being told they were
+            // signed out, which explains nothing and is not even true.
+            //
+            // So show the homeserver's own words when it gave any, exactly as
+            // the `Network` branch below does and for the same reason. A
+            // refused password says "Invalid password"; a deactivated account
+            // says so; rate limiting says so. Discarding that left the one
+            // screen where a reason matters most with no reason at all.
+            if (error.detail.isEmpty()) "Signed out. Sign in again to continue." else error.detail
 
         is FfiException.Network ->
             // The homeserver's own words when it has any: "connection
