@@ -85,6 +85,15 @@ struct SearchPanel: View {
         case let .empty(query):
             ContentUnavailableView.search(text: query)
 
+        case let .failed(_, message):
+            // Distinct from `.empty` on purpose: this is the state that did
+            // not exist before this task, and its absence was the whole
+            // defect — a refused search read as "no results" instead of as a
+            // refusal.
+            ContentUnavailableView(
+                "Couldn't search", systemImage: "exclamationmark.triangle",
+                description: Text(message))
+
         case let .found(results):
             List(results, id: \.eventId) { result in
                 Button {
@@ -113,8 +122,14 @@ struct SearchPanel: View {
         let query = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         state = .searching(query)
-        let results = await session.search(query, in: narrowed ? scope?.roomId : nil)
-        state = results.isEmpty ? .empty(query) : .found(results)
+        do {
+            let results = try await session.search(query, in: narrowed ? scope?.roomId : nil)
+            state = results.isEmpty ? .empty(query) : .found(results)
+        } catch let error as FfiError {
+            state = .failed(query: query, message: ErrorPresenter.message(for: error))
+        } catch {
+            state = .failed(query: query, message: "Couldn't search.")
+        }
     }
 }
 

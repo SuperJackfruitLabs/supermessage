@@ -265,8 +265,15 @@ public final class Session {
 
     /// Search for `term`, in `roomId` when one is given and across every room
     /// this account can see otherwise.
-    public func search(_ term: String, in roomId: String? = nil) async -> [SearchResultDto] {
-        (try? await client.searchMessages(term: term, roomId: roomId)) ?? []
+    ///
+    /// Unlike most of this file's read paths, a failure here is not
+    /// swallowed — the same contract `roomInfo` above already keeps. A
+    /// homeserver error, an expired token or a dropped connection must not
+    /// render as "no results": it is `SearchPanel`, not this function, that
+    /// can tell a reader apart from an empty list, and it does, by catching
+    /// this and mapping it through `ErrorPresenter` into `SearchState.failed`.
+    public func search(_ term: String, in roomId: String? = nil) async throws -> [SearchResultDto] {
+        try await client.searchMessages(term: term, roomId: roomId)
     }
 
     public enum Outcome {

@@ -53,4 +53,33 @@ class SearchStateTest {
         assertEquals("hello", SearchState.Searching("hello").query)
         assertNotEquals(SearchState.Searching("hello"), SearchState.Ready("hello"))
     }
+
+    /**
+     * "a search that fails is not a search that found nothing" — the bug
+     * this task fixes. `Failed` has to be distinguishable from `Empty`,
+     * not just a message bolted onto it, or a reader is right back to not
+     * being able to tell a refusal from zero hits.
+     */
+    @Test
+    fun failedIsNotEmpty() {
+        assertNotEquals(
+            SearchState.Empty("hello"),
+            SearchState.Failed("hello", "Can't reach the homeserver."),
+        )
+    }
+
+    /** "a failure still names what was searched for" — same reason `Empty` does. */
+    @Test
+    fun failedNamesTheQueryAndCarriesTheMessage() {
+        val failed = SearchState.Failed("hello", "Can't reach the homeserver.")
+        assertEquals("hello", failed.query)
+        assertEquals("Can't reach the homeserver.", failed.message)
+    }
+
+    /** "editing after a failure still leaves the field to correct" — a failure is not `Found`, so it does not stick. */
+    @Test
+    fun typingAfterAFailureMovesOnToReady() {
+        val failed = SearchState.Failed("hello", "Can't reach the homeserver.")
+        assertEquals(SearchState.Ready("hell"), failed.typed("hell"))
+    }
 }

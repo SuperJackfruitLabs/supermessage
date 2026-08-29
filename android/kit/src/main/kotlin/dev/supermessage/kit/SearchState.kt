@@ -31,6 +31,15 @@ sealed class SearchState {
     data class Empty(val q: String) : SearchState()
 
     /**
+     * Ran, and could not be answered — a homeserver error, an expired
+     * token, a dropped connection. [message] is already the sentence a
+     * reader should see (see `ErrorPresenter`), not a raw exception: this
+     * is the state that did not exist either, the reason a refused search
+     * used to render identically to one that genuinely found nothing.
+     */
+    data class Failed(val q: String, val message: String) : SearchState()
+
+    /**
      * What typing does, from wherever we are.
      *
      * Deliberately keeps results on screen while the query is being edited:
@@ -50,6 +59,7 @@ sealed class SearchState {
             is Ready -> q
             is Searching -> q
             is Empty -> q
+            is Failed -> q
             is Found -> ""
         }
 }

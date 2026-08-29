@@ -46,4 +46,33 @@ struct SearchStateTests {
         #expect(SearchState.searching("hello").query == "hello")
         #expect(SearchState.searching("hello") != SearchState.ready("hello"))
     }
+
+    @Test("a search that fails is not a search that found nothing")
+    func failedIsNotEmpty() {
+        // The defect this task fixes. `Failed` has to be distinguishable from
+        // `Empty`, not just a message bolted onto it, or a reader is right
+        // back to not being able to tell a refusal from zero hits.
+        #expect(
+            SearchState.empty("hello")
+                != SearchState.failed(query: "hello", message: "Can't reach the homeserver."))
+    }
+
+    @Test("a failure still names what was searched for")
+    func failedNamesTheQueryAndCarriesTheMessage() {
+        let failed = SearchState.failed(query: "hello", message: "Can't reach the homeserver.")
+        #expect(failed.query == "hello")
+        if case let .failed(_, message) = failed {
+            #expect(message == "Can't reach the homeserver.")
+        } else {
+            Issue.record("expected .failed")
+        }
+    }
+
+    @Test("editing after a failure still leaves the field to correct")
+    func typingAfterAFailureMovesOnToReady() {
+        // A failure is not `.found`, so it does not stick the way a
+        // non-empty result list does.
+        let failed = SearchState.failed(query: "hello", message: "Can't reach the homeserver.")
+        #expect(failed.typed("hell") == .ready("hell"))
+    }
 }

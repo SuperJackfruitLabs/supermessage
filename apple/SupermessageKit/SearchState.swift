@@ -21,6 +21,12 @@ public enum SearchState: Equatable, Sendable {
     /// Ran, and there is nothing. Names the query, because "no results" alone
     /// leaves a reader wondering which query it means.
     case empty(String)
+    /// Ran, and could not be answered — a homeserver error, an expired token,
+    /// a dropped connection. `message` is already the sentence a reader
+    /// should see (see `ErrorPresenter`), not a raw `Error`: this is the state
+    /// that did not exist either, the reason a refused search used to render
+    /// identically to one that genuinely found nothing.
+    case failed(query: String, message: String)
 
     /// What typing does, from wherever we are.
     ///
@@ -38,6 +44,7 @@ public enum SearchState: Equatable, Sendable {
         switch self {
         case .idle: return ""
         case let .ready(q), let .searching(q), let .empty(q): return q
+        case let .failed(q, _): return q
         case .found: return ""
         }
     }

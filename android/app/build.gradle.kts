@@ -24,6 +24,29 @@ android {
 
     buildFeatures { compose = true }
 
+    // The debug APK bundled all four ABIs' copies of libsupermessage_ffi.so
+    // (matrix-sdk's dependency tree, ~100MB per ABI unstripped) into one
+    // 595MB file. Splitting gives each ABI its own APK — the one a tester
+    // installs carries only the .so it can actually run — while the
+    // universal APK is kept too, since dropping it costs nothing but a
+    // slightly longer `assembleDebug` and it is still the only option for an
+    // ABI nobody thought to name here.
+    //
+    // No per-ABI versionCode override (the usual companion to this block,
+    // via applicationVariants.all { outputs... }): that scheme exists so the
+    // Play Store can tell a device which of several same-versionCode APKs to
+    // serve. This project does not publish to Play — a human picks the
+    // right file by name and sideloads it — so the extra build-script
+    // complexity would have no reader.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = true
+        }
+    }
+
     // No explicit sourceSet wiring: AGP 9's built-in Kotlin support
     // auto-discovers src/main/kotlin, src/test/kotlin and src/androidTest/kotlin
     // (this repo's AGP 9.3.1). The old AndroidSourceSet.kotlin.srcDir()
@@ -50,8 +73,16 @@ dependencies {
     implementation(libs.adaptive)
     implementation(libs.adaptive.layout)
     implementation(libs.adaptive.navigation)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.datastore.preferences)
 
     testImplementation(libs.junit)
+    // SessionViewModelTest drives suspend functions via runTest — kotlinx's
+    // own test dispatcher, not this repo's real Dispatchers.IO. :kit exposes
+    // kotlinx-coroutines-core transitively (its api dependency), but not the
+    // test artifact, so :app needs its own like :kit's test source does.
+    testImplementation(libs.kotlinx.coroutines.test)
 
     androidTestImplementation(libs.androidx.test.junit)
     // androidx.test.ext:junit 1.2.1 no longer pulls in androidx.test:runner

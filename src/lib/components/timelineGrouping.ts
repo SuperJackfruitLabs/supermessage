@@ -171,7 +171,13 @@ function groupText(rows: TimelineRow[]): string {
   // apart; the names come from `senderName`, which resolves display name ->
   // sender id -> placeholder the same way every other attribution does.
   const verb = rows[0]!.membershipVerb ?? "updated their membership";
-  const names = rows.map((row) => row.senderName);
+  // DISTINCT senders, not one name per event. A run is consecutive items
+  // sharing a verb, and one member can produce several of them: a real room
+  // rendered "Annapurna, Annapurna and 1 other updated their membership",
+  // naming the same person twice and counting her toward "others". Found on
+  // Android, where the ported copy of this function had inherited the same
+  // defect; fixed there first.
+  const names = [...new Set(rows.map((row) => row.senderName))];
   if (names.length <= MAX_NAMED) {
     return `${joinNames(names)} ${verb}`;
   }
