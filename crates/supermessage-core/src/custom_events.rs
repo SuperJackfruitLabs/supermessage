@@ -1943,7 +1943,7 @@ mod gate_tests {
             "schema_version": 1,
             "board_id": "brd_7c1f",
             "card_id": "crd_9a22",
-            "gate_id": "gat_4e8b",
+            "gate_id": "gate_4e8b",
             "stage_key": "review",
             "return_stage_key": "code",
             "card_title": "Add OAuth login",
@@ -2118,7 +2118,7 @@ mod gate_tests {
             .expect("a gate is a decision");
         assert_eq!(
             decision.subject.as_deref(),
-            Some("gat_4e8b"),
+            Some("gate_4e8b"),
             "without this a host can draw the buttons and has nothing to name when it answers"
         );
     }
@@ -2141,7 +2141,7 @@ mod gate_tests {
         // pass every renderer test and fail only in the host.
         match resolve_custom_event(default_registry(), Some(GATE_EVENT_TYPE), Some(&gate(ALL_THREE())), None) {
             CustomEventView::Rendered { decision: Some(d), .. } => {
-                assert_eq!(d.subject.as_deref(), Some("gat_4e8b"));
+                assert_eq!(d.subject.as_deref(), Some("gate_4e8b"));
             }
             other => panic!("expected a rendered gate, got {other:?}"),
         }

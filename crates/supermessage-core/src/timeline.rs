@@ -5292,7 +5292,7 @@ mod gate_decision_tests {
     #[test]
     fn carries_every_field_the_bridge_resolves_on() {
         let content = gate_decision_content(
-            "gat_4e8b",
+            "gate_4e8b",
             "approve",
             None,
             GATE_EVENT,
@@ -5302,13 +5302,13 @@ mod gate_decision_tests {
         assert_eq!(content["body"], "Approved — Ship the OAuth change to staging?");
         assert_eq!(content["schema_version"], 1);
         assert_eq!(content["suite_event_type"], GATE_DECISION_SUITE_TYPE);
-        assert_eq!(content["gate_id"], "gat_4e8b");
+        assert_eq!(content["gate_id"], "gate_4e8b");
         assert_eq!(content["option_id"], "approve");
     }
 
     #[test]
     fn relates_by_reference_and_never_by_reply() {
-        let content = gate_decision_content("gat_4e8b", "approve", None, GATE_EVENT, "Approved");
+        let content = gate_decision_content("gate_4e8b", "approve", None, GATE_EVENT, "Approved");
         assert_eq!(content["m.relates_to"]["rel_type"], "m.reference");
         assert_eq!(content["m.relates_to"]["event_id"], GATE_EVENT);
         assert!(
@@ -5320,14 +5320,14 @@ mod gate_decision_tests {
 
     #[test]
     fn omits_a_comment_that_was_never_written() {
-        let content = gate_decision_content("gat_4e8b", "approve", None, GATE_EVENT, "Approved");
+        let content = gate_decision_content("gate_4e8b", "approve", None, GATE_EVENT, "Approved");
         assert!(content.get("comment").is_none());
     }
 
     #[test]
     fn omits_a_comment_that_is_only_whitespace() {
         let content =
-            gate_decision_content("gat_4e8b", "request_changes", Some("   \n "), GATE_EVENT, "…");
+            gate_decision_content("gate_4e8b", "request_changes", Some("   \n "), GATE_EVENT, "…");
         assert!(
             content.get("comment").is_none(),
             "kaambaan merges a comment into the card's handoff as feedback; \
@@ -5338,7 +5338,7 @@ mod gate_decision_tests {
     #[test]
     fn carries_the_feedback_that_becomes_the_reworks_context() {
         let content = gate_decision_content(
-            "gat_4e8b",
+            "gate_4e8b",
             "request_changes",
             Some("Add a test for the refresh-token path first."),
             GATE_EVENT,
@@ -5383,7 +5383,7 @@ mod gate_decision_tests {
     #[tokio::test]
     async fn refuses_an_option_kaambaan_could_not_resolve() {
         let err = FocusedTimeline::default()
-            .send_gate_decision("!r:x", "gat_4e8b", "ship_it", None, GATE_EVENT, "Shipped")
+            .send_gate_decision("!r:x", "gate_4e8b", "ship_it", None, GATE_EVENT, "Shipped")
             .await
             .expect_err("an unknown option must not reach the room");
         assert!(
@@ -5406,7 +5406,7 @@ mod gate_decision_tests {
         // The guards run first on purpose: a bad option id is the caller's bug
         // and should say so, not surface as "no room is focused".
         let err = FocusedTimeline::default()
-            .send_gate_decision("!r:x", "gat_4e8b", "nope", None, GATE_EVENT, "…")
+            .send_gate_decision("!r:x", "gate_4e8b", "nope", None, GATE_EVENT, "…")
             .await
             .expect_err("must refuse");
         assert!(!matches!(err, CoreError::NotReady));
@@ -5416,7 +5416,7 @@ mod gate_decision_tests {
     async fn accepts_all_three_of_kaambaans_decisions() {
         for option in ["approve", "request_changes", "reject"] {
             let err = FocusedTimeline::default()
-                .send_gate_decision("!r:x", "gat_4e8b", option, None, GATE_EVENT, "…")
+                .send_gate_decision("!r:x", "gate_4e8b", option, None, GATE_EVENT, "…")
                 .await
                 .expect_err("no room is focused in a unit test");
             assert!(
