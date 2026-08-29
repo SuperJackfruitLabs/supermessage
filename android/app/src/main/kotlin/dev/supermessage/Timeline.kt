@@ -152,6 +152,7 @@ fun Timeline(
     liveTools: List<LiveStore.ToolCall> = emptyList(),
     liveFinished: Boolean = false,
     onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
+    onDecide: (row: TimelineRowDto, answer: GateAnswer) -> Unit = { _, _ -> },
     onRowLongPress: (row: TimelineRowDto) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -306,6 +307,7 @@ fun Timeline(
                     continuesRun = continuesRun[row.item.id] ?: false,
                     attribution = if (singleSpeaker) row.senderShort else row.senderName,
                     onReact = { key -> onReact(row, key) },
+                    onDecide = { answer -> onDecide(row, answer) },
                     modifier = if (longPressable) {
                         rowModifier.combinedClickable(
                             onClick = {},

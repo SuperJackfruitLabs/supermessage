@@ -189,6 +189,32 @@ public final class Session {
         _ = try? await client.toggleReaction(roomId: roomId, eventId: eventId, key: key)
     }
 
+    /// Answer a kaambaan approval gate.
+    ///
+    /// Takes the **event** id for the same reason `toggleReaction` does: the
+    /// decision references the gate event, and a gate the homeserver has not
+    /// acknowledged has no id to reference. `nil` means something raced, and
+    /// doing nothing is the honest answer — an approval sent against an id the
+    /// homeserver never issued would resolve nothing while looking like it had.
+    ///
+    /// Returns whether it landed, so the card can stay answerable rather than
+    /// leaving a reader believing they approved something.
+    @discardableResult
+    public func answerGate(
+        _ eventId: String?, gateId: String, optionId: String, comment: String?,
+        prompt: String, in roomId: String
+    ) async -> Bool {
+        guard let eventId else { return false }
+        do {
+            try await client.sendGateDecision(
+                roomId: roomId, gateId: gateId, optionId: optionId, comment: comment,
+                inReplyTo: eventId, prompt: prompt)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Rewrite a message this account sent.
     ///
     /// Takes the **event** id for the same reason `toggleReaction` does: an

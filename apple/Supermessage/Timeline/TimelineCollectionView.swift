@@ -215,7 +215,8 @@ struct TimelineCollectionView: UIViewRepresentable {
                             media: self.session.media,
                             faces: self.session.faces,
                             onReply: { self.startReply(found.row) },
-                            onReact: { key in self.react(found.row, key) }
+                            onReact: { key in self.react(found.row, key) },
+                            onDecide: { answer in self.decide(found.row, answer) }
                         )
                             // Turn the row back the right way up. Applied to
                             // the content rather than to `cell.contentView`,
@@ -508,6 +509,20 @@ struct TimelineCollectionView: UIViewRepresentable {
         fileprivate func react(_ row: TimelineRow, _ key: String) {
             guard let roomId = timeline.roomId else { return }
             Task { await session.toggleReaction(row.item.eventId, key: key, in: roomId) }
+        }
+
+        /// Answer a decision on a suite event.
+        ///
+        /// The event id is the gate's own, which the decision references; the
+        /// card supplies what it resolves. Both are needed and neither side
+        /// has both, which is why this meets in the middle here.
+        fileprivate func decide(_ row: TimelineRow, _ answer: GateAnswer) {
+            guard let roomId = timeline.roomId else { return }
+            Task {
+                await session.answerGate(
+                    row.item.eventId, gateId: answer.subject, optionId: answer.optionId,
+                    comment: answer.comment, prompt: answer.prompt, in: roomId)
+            }
         }
 
         /// Long press a message to act on it.

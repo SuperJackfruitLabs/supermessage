@@ -141,6 +141,18 @@ pub struct CustomEventDecisionOption {
 pub struct CustomEventDecision {
     pub prompt: String,
     pub options: Vec<CustomEventDecisionOption>,
+    /// What this decision resolves, handed back verbatim when the reader
+    /// answers — a kaambaan `gate_id` today.
+    ///
+    /// Without it a host can draw the buttons and has nothing to name when it
+    /// sends the answer. The alternative was for the host to reach past this
+    /// type into the raw payload for one field, which would make every host a
+    /// second parser of untrusted JSON — the exact duplication this module
+    /// moved into the core to prevent.
+    ///
+    /// `Option`, because not every decision has one: a permission request is
+    /// identified by the event it arrived on and needs no separate subject.
+    pub subject: Option<String>,
 }
 
 /// What a renderer returns.
@@ -314,6 +326,9 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
     Some(CustomEventDecision {
         prompt: bound_text(&decision.prompt, FIELD_VALUE_MAX_CHARS),
         options,
+        // Not bounded, for the same reason an option id is not: it is an
+        // identifier handed back verbatim, and a truncated one names nothing.
+        subject: decision.subject,
     })
 }
 
@@ -675,6 +690,7 @@ impl CustomEventRenderer for PermissionRequestRenderer {
             decision: Some(CustomEventDecision {
                 prompt: format!("Allow {title}?"),
                 options,
+                subject: None,
             }),
         }
     }
@@ -726,7 +742,7 @@ impl CustomEventRenderer for GateRenderer {
         // `gate_id` is what resolution keys on. Without it every button on this
         // card would be unpressable, and a card that looks answerable and is
         // not is worse than one that plainly is not.
-        let Some(_gate_id) = safe_string_field(content, "gate_id", FIELD_VALUE_MAX_CHARS) else {
+        let Some(gate_id) = safe_string_field(content, "gate_id", FIELD_VALUE_MAX_CHARS) else {
             return CustomEventRenderResult::default();
         };
         let Some(card_title) = safe_string_field(content, "card_title", FIELD_VALUE_MAX_CHARS)
@@ -783,6 +799,7 @@ impl CustomEventRenderer for GateRenderer {
                 prompt: safe_string_field(content, "prompt", FIELD_VALUE_MAX_CHARS)
                     .unwrap_or_else(|| format!("Approve \"{card_title}\"?")),
                 options,
+                subject: Some(gate_id),
             }),
         }
     }
@@ -1236,12 +1253,14 @@ mod tests {
         let registry = with_decision(CustomEventDecision {
             prompt: "Allow restart?".into(),
             options: vec![option("allow", "Allow"), option("deny", "Deny")],
+            subject: None,
         });
         assert_eq!(
             decision_from(&registry),
             Some(CustomEventDecision {
                 prompt: "Allow restart?".into(),
                 options: vec![option("allow", "Allow"), option("deny", "Deny")],
+                subject: None,
             })
         );
     }
@@ -1251,6 +1270,7 @@ mod tests {
         let registry = with_decision(CustomEventDecision {
             prompt: "P".repeat(FIELD_VALUE_MAX_CHARS + 50),
             options: vec![option("id", &"L".repeat(FIELD_LABEL_MAX_CHARS + 50))],
+            subject: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.prompt.chars().count(), FIELD_VALUE_MAX_CHARS + 1);
@@ -1268,6 +1288,7 @@ mod tests {
         let registry = with_decision(CustomEventDecision {
             prompt: "Allow?".into(),
             options: vec![option(&long_id, "Allow")],
+            subject: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options[0].id, long_id);
@@ -1280,6 +1301,7 @@ mod tests {
         let registry = with_decision(CustomEventDecision {
             prompt: "Allow?".into(),
             options,
+            subject: None,
         });
         assert_eq!(
             decision_from(&registry).expect("a decision").options.len(),
@@ -1297,6 +1319,7 @@ mod tests {
         let registry = with_decision(CustomEventDecision {
             prompt: "Allow?".into(),
             options,
+            subject: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options.len(), 2);
@@ -1313,6 +1336,7 @@ mod tests {
                 option("allow", "Allow"),
                 option("no-label", ""),
             ],
+            subject: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options, vec![option("allow", "Allow")]);
@@ -1323,6 +1347,7 @@ mod tests {
         let registry = with_decision(CustomEventDecision {
             prompt: "Allow?".into(),
             options: vec![option("", ""), option("", "")],
+            subject: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -1332,6 +1357,7 @@ mod tests {
         let registry = with_decision(CustomEventDecision {
             prompt: "Allow?".into(),
             options: vec![],
+            subject: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -2082,6 +2108,43 @@ mod gate_tests {
                 text: "Approval needed — \"Add OAuth login\".".into()
             }
         );
+    }
+
+    #[test]
+    fn carries_the_gate_id_as_the_decisions_subject() {
+        let decision = GateRenderer
+            .render(&gate(ALL_THREE()), None)
+            .decision
+            .expect("a gate is a decision");
+        assert_eq!(
+            decision.subject.as_deref(),
+            Some("gat_4e8b"),
+            "without this a host can draw the buttons and has nothing to name when it answers"
+        );
+    }
+
+    #[test]
+    fn a_permission_request_needs_no_subject() {
+        // It is identified by the event it arrived on. Asserted so that
+        // `subject` staying optional is a decision rather than an oversight.
+        let content = json!({ "title": "run apt-get install python3", "options": [{ "name": "Allow once" }] });
+        let decision = PermissionRequestRenderer
+            .render(&content, None)
+            .decision
+            .expect("a permission request is a decision");
+        assert!(decision.subject.is_none());
+    }
+
+    #[test]
+    fn the_subject_survives_the_bounding_pass() {
+        // `bound_decision` rebuilds the struct; a field dropped there would
+        // pass every renderer test and fail only in the host.
+        match resolve_custom_event(default_registry(), Some(GATE_EVENT_TYPE), Some(&gate(ALL_THREE())), None) {
+            CustomEventView::Rendered { decision: Some(d), .. } => {
+                assert_eq!(d.subject.as_deref(), Some("gat_4e8b"));
+            }
+            other => panic!("expected a rendered gate, got {other:?}"),
+        }
     }
 
     #[test]

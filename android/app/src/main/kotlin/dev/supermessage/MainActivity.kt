@@ -349,6 +349,21 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                                 session.toggleReaction(row.item.eventId, key, currentRoomId)
                             }
                         },
+                        // The event id is the gate's own, which the decision
+                        // references; the card supplies what it resolves.
+                        // Both are needed and neither side has both.
+                        onDecide = { row, answer ->
+                            scope.launch {
+                                session.answerGate(
+                                    eventId = row.item.eventId,
+                                    gateId = answer.subject,
+                                    optionId = answer.optionId,
+                                    comment = answer.comment,
+                                    prompt = answer.prompt,
+                                    roomId = currentRoomId,
+                                )
+                            }
+                        },
                         onRowLongPress = { row ->
                             // Own + editable rewrites the
                             // message; anything else a long

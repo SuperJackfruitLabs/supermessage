@@ -222,6 +222,24 @@ public actor CoreClient {
         try await run { try $0.toggleReaction(roomId: roomId, eventId: eventId, key: key) }
     }
 
+    /// Answer a kaambaan approval gate.
+    ///
+    /// `optionId` must be one of `approve`, `request_changes`, `reject`; the
+    /// core refuses anything else before it reaches the room. `prompt` is the
+    /// gate's question, not the finished sentence — the line left in the room
+    /// is derived in Rust so this platform and Android cannot word the durable
+    /// record differently.
+    public func sendGateDecision(
+        roomId: String, gateId: String, optionId: String, comment: String?,
+        inReplyTo: String, prompt: String
+    ) async throws {
+        try await run {
+            try $0.sendGateDecision(
+                roomId: roomId, gateId: gateId, optionId: optionId, comment: comment,
+                inReplyTo: inReplyTo, prompt: prompt)
+        }
+    }
+
     public func setTyping(roomId: String, typing: Bool) async throws {
         try await run { try $0.setTyping(roomId: roomId, typing: typing) }
     }

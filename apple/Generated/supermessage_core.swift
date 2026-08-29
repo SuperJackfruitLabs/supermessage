@@ -601,12 +601,40 @@ public func FfiConverterTypeAccountDto_lower(_ value: AccountDto) -> RustBuffer 
 public struct CustomEventDecision {
     public var prompt: String
     public var options: [CustomEventDecisionOption]
+    /**
+     * What this decision resolves, handed back verbatim when the reader
+     * answers — a kaambaan `gate_id` today.
+     *
+     * Without it a host can draw the buttons and has nothing to name when it
+     * sends the answer. The alternative was for the host to reach past this
+     * type into the raw payload for one field, which would make every host a
+     * second parser of untrusted JSON — the exact duplication this module
+     * moved into the core to prevent.
+     *
+     * `Option`, because not every decision has one: a permission request is
+     * identified by the event it arrived on and needs no separate subject.
+     */
+    public var subject: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(prompt: String, options: [CustomEventDecisionOption]) {
+    public init(prompt: String, options: [CustomEventDecisionOption], 
+        /**
+         * What this decision resolves, handed back verbatim when the reader
+         * answers — a kaambaan `gate_id` today.
+         *
+         * Without it a host can draw the buttons and has nothing to name when it
+         * sends the answer. The alternative was for the host to reach past this
+         * type into the raw payload for one field, which would make every host a
+         * second parser of untrusted JSON — the exact duplication this module
+         * moved into the core to prevent.
+         *
+         * `Option`, because not every decision has one: a permission request is
+         * identified by the event it arrived on and needs no separate subject.
+         */subject: String?) {
         self.prompt = prompt
         self.options = options
+        self.subject = subject
     }
 }
 
@@ -620,12 +648,16 @@ extension CustomEventDecision: Equatable, Hashable {
         if lhs.options != rhs.options {
             return false
         }
+        if lhs.subject != rhs.subject {
+            return false
+        }
         return true
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(prompt)
         hasher.combine(options)
+        hasher.combine(subject)
     }
 }
 
@@ -638,13 +670,15 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
         return
             try CustomEventDecision(
                 prompt: FfiConverterString.read(from: &buf), 
-                options: FfiConverterSequenceTypeCustomEventDecisionOption.read(from: &buf)
+                options: FfiConverterSequenceTypeCustomEventDecisionOption.read(from: &buf), 
+                subject: FfiConverterOptionString.read(from: &buf)
         )
     }
 
     public static func write(_ value: CustomEventDecision, into buf: inout [UInt8]) {
         FfiConverterString.write(value.prompt, into: &buf)
         FfiConverterSequenceTypeCustomEventDecisionOption.write(value.options, into: &buf)
+        FfiConverterOptionString.write(value.subject, into: &buf)
     }
 }
 

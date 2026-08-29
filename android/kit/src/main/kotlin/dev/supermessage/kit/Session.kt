@@ -376,6 +376,44 @@ class Session(
      * means something raced, and doing nothing is the honest answer rather
      * than sending against an id the homeserver never issued.
      */
+    /**
+     * Answer a Kaambaan approval gate.
+     *
+     * Takes the **event** id for the same reason [toggleReaction] does: the
+     * decision references the gate event, and a gate the homeserver has not
+     * acknowledged has no id to reference. `null` means something raced, and
+     * doing nothing is the honest answer — an approval sent against an id the
+     * homeserver never issued would resolve nothing while looking like it had.
+     *
+     * Returns whether it landed, so the card can stay answerable rather than
+     * leaving a reader believing they approved something.
+     */
+    suspend fun answerGate(
+        eventId: String?,
+        gateId: String,
+        optionId: String,
+        comment: String?,
+        prompt: String,
+        roomId: String,
+    ): Boolean {
+        if (eventId == null) return false
+        return try {
+            client.sendGateDecision(
+                roomId = roomId,
+                gateId = gateId,
+                optionId = optionId,
+                comment = comment,
+                inReplyTo = eventId,
+                prompt = prompt,
+            )
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun toggleReaction(eventId: String?, key: String, roomId: String) {
         if (eventId == null) return
         try {

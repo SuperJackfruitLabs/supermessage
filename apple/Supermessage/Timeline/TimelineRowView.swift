@@ -36,6 +36,11 @@ struct TimelineRowView: View {
     var onReply: (() -> Void)?
     /// Add or remove one of this account's reactions.
     var onReact: ((String) -> Void)?
+    /// Answering a decision on a suite event. Separate from `onReact` because
+    /// a reaction annotates an event and a decision resolves something on
+    /// another plane — the row cannot supply the latter's subject, so the card
+    /// hands it back up.
+    var onDecide: ((GateAnswer) -> Void)?
 
     private var item: TimelineItemDto { row.item }
 
@@ -109,7 +114,8 @@ struct TimelineRowView: View {
 
         case let .customEvent(view, label, eventType):
             CustomEventCard(
-                view: view, label: label, eventType: eventType, senderName: named)
+                view: view, label: label, eventType: eventType, senderName: named,
+                onDecide: onDecide)
 
         case .none:
             EmptyView()

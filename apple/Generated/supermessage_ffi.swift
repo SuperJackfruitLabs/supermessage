@@ -694,6 +694,30 @@ public protocol CoreProtocol : AnyObject {
     func searchMessages(term: String, roomId: String?) throws  -> [SearchResultDto]
     
     /**
+     * Answer a kaambaan approval gate.
+     *
+     * `option_id` must be one of `approve`, `request_changes` or
+     * `reject` — kaambaan's `GateDecision`, and the only values its
+     * resolution endpoint accepts. Anything else is refused here rather
+     * than reaching the room, so a mistake surfaces as an error the host
+     * can show instead of a tap that silently does nothing.
+     *
+     * `in_reply_to` is the gate event's own id: the decision references it,
+     * and the Application Service refuses a decision whose `gate_id` and
+     * reference disagree.
+     *
+     * `comment` is the feedback kaambaan merges into the card's handoff on
+     * `request_changes`, so the rework carries the reviewer's reasoning.
+     * Pass `None` for the other two — a host should only prompt for it on
+     * that option.
+     *
+     * `prompt` is the gate's own question, not the finished sentence. The
+     * line left in the room is derived in the core so iOS and Android
+     * cannot word the durable record differently.
+     */
+    func sendGateDecision(roomId: String, gateId: String, optionId: String, comment: String?, inReplyTo: String, prompt: String) throws 
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -1180,6 +1204,40 @@ open func searchMessages(term: String, roomId: String?)throws  -> [SearchResultD
         FfiConverterOptionString.lower(roomId),$0
     )
 })
+}
+    
+    /**
+     * Answer a kaambaan approval gate.
+     *
+     * `option_id` must be one of `approve`, `request_changes` or
+     * `reject` — kaambaan's `GateDecision`, and the only values its
+     * resolution endpoint accepts. Anything else is refused here rather
+     * than reaching the room, so a mistake surfaces as an error the host
+     * can show instead of a tap that silently does nothing.
+     *
+     * `in_reply_to` is the gate event's own id: the decision references it,
+     * and the Application Service refuses a decision whose `gate_id` and
+     * reference disagree.
+     *
+     * `comment` is the feedback kaambaan merges into the card's handoff on
+     * `request_changes`, so the rework carries the reviewer's reasoning.
+     * Pass `None` for the other two — a host should only prompt for it on
+     * that option.
+     *
+     * `prompt` is the gate's own question, not the finished sentence. The
+     * line left in the room is derived in the core so iOS and Android
+     * cannot word the durable record differently.
+     */
+open func sendGateDecision(roomId: String, gateId: String, optionId: String, comment: String?, inReplyTo: String, prompt: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_gate_decision(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(gateId),
+        FfiConverterString.lower(optionId),
+        FfiConverterOptionString.lower(comment),
+        FfiConverterString.lower(inReplyTo),
+        FfiConverterString.lower(prompt),$0
+    )
+}
 }
     
     /**
@@ -3500,6 +3558,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_search_messages() != 28627) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 12791) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384) {

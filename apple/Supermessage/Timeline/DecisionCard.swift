@@ -16,6 +16,9 @@ struct CustomEventCard: View {
     let label: String
     let eventType: String
     let senderName: String
+    /// Answering a decision. `nil` in contexts that only display — a preview,
+    /// or a row whose event the homeserver has not acknowledged yet.
+    var onDecide: ((GateAnswer) -> Void)?
 
     var body: some View {
         switch view {
@@ -103,7 +106,7 @@ struct CustomEventCard: View {
             }
 
             if let decision {
-                DecisionButtons(decision: decision)
+                DecisionButtons(decision: decision, onDecide: onDecide)
             }
         }
         .padding(12)
@@ -127,32 +130,83 @@ struct CustomEventCard: View {
 /// defect — see the console spec and `Theme.signal`'s own note.
 private struct DecisionButtons: View {
     let decision: CustomEventDecision
+    var onDecide: ((GateAnswer) -> Void)?
+
+    /// The option awaiting a comment, if one is. Only `request_changes` ever
+    /// sets this: approve and reject are decisions, and request-changes is
+    /// feedback that becomes the rework's context — kaambaan merges it into
+    /// the card's handoff, so an empty one costs the next agent the reason.
+    @State private var commenting: CustomEventDecisionOption?
+    @State private var comment = ""
+
+    /// Answerable only when the renderer named what this decision resolves and
+    /// someone is listening. A button that cannot resolve anything must not
+    /// look pressable — the failure would otherwise surface as a tap that did
+    /// nothing, by which point the reader believes they have approved.
+    private var answerable: Bool { decision.subject != nil && onDecide != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(decision.prompt).font(.system(.callout, weight: .semibold))
             HStack(spacing: 8) {
                 ForEach(Array(decision.options.enumerated()), id: \.offset) { index, option in
-                    Button(option.label) {
-                        // Deliberately inert in this build, exactly as on the
-                        // desktop. Answering means *sending a Matrix event* as
-                        // this account — not an HTTP call to a gate — because
-                        // the suite's separation-of-duties check refuses a
-                        // decision whose author it cannot attribute. Wiring it
-                        // to anything else would be the wrong shape, and a
-                        // wrong shape here approves things.
-                        //
-                        // `option.id` is what gets sent, verbatim, and it
-                        // carries the option's *name* rather than its
-                        // machine id: the room transcript is a shared human
-                        // record.
-                        _ = option.id
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(index == 0 ? Theme.signal : Color.secondary)
-                    .disabled(true)
+                    Button(option.label) { tapped(option) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(index == 0 ? Theme.signal : Color.secondary)
+                        .disabled(!answerable)
                 }
             }
         }
+        .alert(
+            "Request changes",
+            isPresented: Binding(
+                get: { commenting != nil },
+                set: { if !$0 { commenting = nil; comment = "" } })
+        ) {
+            TextField("What needs changing?", text: $comment)
+            Button("Cancel", role: .cancel) { commenting = nil; comment = "" }
+            Button("Send") {
+                if let option = commenting { send(option, comment: comment) }
+                commenting = nil
+                comment = ""
+            }
+        } message: {
+            Text("This goes back to the agent as the reason, so it can pick the work up again.")
+        }
     }
+
+    private func tapped(_ option: CustomEventDecisionOption) {
+        guard answerable else { return }
+        if option.id == GateAnswer.requestChanges {
+            commenting = option
+        } else {
+            send(option, comment: nil)
+        }
+    }
+
+    private func send(_ option: CustomEventDecisionOption, comment: String?) {
+        guard let subject = decision.subject else { return }
+        let trimmed = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
+        onDecide?(
+            GateAnswer(
+                subject: subject,
+                optionId: option.id,
+                comment: (trimmed?.isEmpty ?? true) ? nil : trimmed,
+                prompt: decision.prompt))
+    }
+}
+
+/// One answer to a decision, on its way out of the card.
+///
+/// Carries `subject` — what the decision resolves, a kaambaan `gate_id` today —
+/// because the card is the only place that knows it: the renderer read it out
+/// of the payload, and the row above has only an event id.
+struct GateAnswer {
+    /// kaambaan's only option id that expects a comment.
+    static let requestChanges = "request_changes"
+
+    let subject: String
+    let optionId: String
+    let comment: String?
+    let prompt: String
 }
