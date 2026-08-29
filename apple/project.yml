@@ -32,7 +32,13 @@ options:
 
 settings:
   base:
-    DEVELOPMENT_TEAM: 9DC6VWV9X4
+    # Super Jackfruit Labs (OPC) Private Limited, not the personal team.
+    # The personal team issues SEVEN-DAY provisioning profiles: an install made
+    # on 2026-08-29 expired on 2026-09-05, and the only symptom is an app that
+    # silently stops launching a week later — nothing points back to this line.
+    # The organisation membership issues one-year profiles, and is what makes
+    # TestFlight available at all.
+    DEVELOPMENT_TEAM: N2QQPW2BRJ
     SWIFT_VERSION: "6.0"
     # Every target, not just the app: a framework and a test bundle are both
     # code-signed on iOS and both refuse to sign without one.
