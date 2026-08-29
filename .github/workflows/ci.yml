@@ -19,8 +19,80 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  # Which halves of the tree a change actually touched.
+  #
+  # Every job below used to run on every PR. A SwiftUI-only change waited on the
+  # Android job building the Rust tree for four ABIs and booting an emulator,
+  # which has taken between 26 and 65 minutes on its successful runs. The
+  # `concurrency` block above already exists to stop this project burning
+  # Actions minutes; this is the other half of that.
+  #
+  # A `changes` job with per-job `if:` rather than `paths:` on the trigger,
+  # deliberately. Workflow-level `paths:` skips the whole run, and a required
+  # check that never runs sits "pending" forever — so the moment `main` gains
+  # branch protection, that shape blocks every merge it filters. A job skipped
+  # by `if:` reports as skipped, which satisfies a required check.
+  #
+  # Every filter includes this workflow file: a change to the rules must be
+  # validated by the rules it changes.
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      rust: ${{ steps.filter.outputs.rust }}
+      ios: ${{ steps.filter.outputs.ios }}
+      android: ${{ steps.filter.outputs.android }}
+      licences: ${{ steps.filter.outputs.licences }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            workflow: &workflow
+              - '.github/workflows/ci.yml'
+            core: &core
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            frontend:
+              - *workflow
+              - 'src/**'
+              - 'static/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'svelte.config.js'
+              - 'vite.config.js'
+              - 'tsconfig.json'
+            rust:
+              - *workflow
+              - *core
+              - 'src-tauri/**'
+            # The mobile clients link the Rust core, so a core change has to
+            # rebuild them even when no platform file moved.
+            ios:
+              - *workflow
+              - *core
+              - 'apple/**'
+              - 'scripts/build-xcframework.sh'
+            android:
+              - *workflow
+              - *core
+              - 'android/**'
+              - 'scripts/build-android-libs.sh'
+              - 'scripts/android-*.sh'
+            licences:
+              - *workflow
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'src-tauri/Cargo.toml'
+
   frontend:
     name: Frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +121,8 @@ jobs:
 
   rust:
     name: Rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -117,6 +191,8 @@ jobs:
 
   ios:
     name: iOS
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     # macOS runners are 10x the minute cost of Linux ones on private repos.
     # This one is public, so the job is free — but it is also the reason to
     # keep it lean: it builds the core in `dev`, not `release`.
@@ -219,6 +295,8 @@ jobs:
 
   android:
     name: Android
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -397,6 +475,8 @@ jobs:
 
   licences:
     name: Dependency licences
+    needs: changes
+    if: needs.changes.outputs.licences == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
