@@ -50,10 +50,14 @@ extension RichBlock {
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
 
         case let .blockQuote(blocks):
-            HStack(alignment: .top, spacing: 10) {
-                Rectangle().fill(.tertiary).frame(width: 2)
-                RichTextView(blocks: blocks)
-            }
+            // Overlay rather than an HStack sibling — see ReplyQuote in
+            // TimelineRowView for why a bare `Rectangle` stretches a row.
+            RichTextView(blocks: blocks)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 12)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(.tertiary).frame(width: 2)
+                }
 
         case let .listBlock(ordered, start, items):
             VStack(alignment: .leading, spacing: 6) {

@@ -78,6 +78,51 @@ pub struct Core {
     runtime: tokio::runtime::Runtime,
 }
 
+impl Core {
+    /// Run a future to completion on a thread whose stack this crate controls.
+    ///
+    /// `Runtime::block_on` drives the future on the **calling** thread, and the
+    /// callers here are host threads. On iOS that is a GCD dispatch worker with
+    /// a 512 KB stack, which is not enough: on 2026-08-29 opening a room
+    /// crashed with `EXC_BAD_ACCESS (code=2)` inside
+    /// `imbl::Vector<TimelineEvent>::promote_front`, faulting on its own
+    /// stack-probe loop — which is what hitting a guard page looks like.
+    ///
+    /// That these types are enormous is already recorded at the top of this
+    /// file: `recursion_limit` is raised there because computing
+    /// `Timeline::subscribe`'s layout overflows *rustc*. A type that large at
+    /// compile time is a large frame at run time.
+    ///
+    /// A scoped thread rather than `Runtime::spawn`: spawn requires `'static`
+    /// and every call below borrows `self.session`. The cost is one thread per
+    /// call, which is nothing beside the network and SQLite work each of these
+    /// already does.
+    ///
+    /// Applied to EVERY blocking call rather than the few known to go deep.
+    /// Which of them recurses is a property of the Matrix SDK's types, not of
+    /// this file, so a list here would be wrong the moment those change — and
+    /// the failure it prevents is a hard crash with no Rust-level error.
+    fn block<F>(&self, fut: F) -> F::Output
+    where
+        F: std::future::Future + Send,
+        F::Output: Send,
+    {
+        /// Eight megabytes: the main thread's budget on Apple platforms, and
+        /// sixteen times what a dispatch worker gets.
+        const CORE_STACK_BYTES: usize = 8 * 1024 * 1024;
+
+        std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .name("supermessage-core".to_owned())
+                .stack_size(CORE_STACK_BYTES)
+                .spawn_scoped(scope, || self.runtime.block_on(fut))
+                .expect("a core worker thread must be spawnable")
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        })
+    }
+}
+
 #[uniffi::export]
 impl Core {
     /// Build a core rooted at `data_dir`, using the OS secret store.
@@ -104,9 +149,7 @@ impl Core {
     /// transition. A host that has just launched needs this to render
     /// something truthful before any event arrives.
     pub fn connection_state(&self) -> ConnectionState {
-        self.runtime
-            .block_on(self.session.connection_state())
-            .into()
+        self.block(self.session.connection_state()).into()
     }
 
     /// Sign in and start syncing, reporting progress through `sink`.
@@ -121,12 +164,10 @@ impl Core {
         sink: Box<dyn EventSink>,
     ) -> Result<(), FfiError> {
         let sink: Arc<dyn CoreSink> = Arc::new(events::HostSink(sink));
-        self.runtime.block_on(self.session.login_and_start(
-            &homeserver,
-            &username,
-            &password,
-            sink,
-        ))?;
+        self.block(
+            self.session
+                .login_and_start(&homeserver, &username, &password, sink),
+        )?;
         Ok(())
     }
 
@@ -137,9 +178,7 @@ impl Core {
     /// error.
     pub fn restore_session(&self, sink: Box<dyn EventSink>) -> Result<bool, FfiError> {
         let sink: Arc<dyn CoreSink> = Arc::new(events::HostSink(sink));
-        Ok(self
-            .runtime
-            .block_on(self.session.restore_and_start(sink))?)
+        Ok(self.block(self.session.restore_and_start(sink))?)
     }
 
     /// Every room this account is in, with the sequence number the snapshot
@@ -155,7 +194,7 @@ impl Core {
     /// sequence numbers, and a host that applies one older than its snapshot
     /// would move rows that have already moved.
     pub fn rooms_snapshot(&self) -> Result<RoomsSnapshot, FfiError> {
-        let (seq, rooms) = self.runtime.block_on(self.session.rooms_snapshot())?;
+        let (seq, rooms) = self.block(self.session.rooms_snapshot())?;
         Ok(RoomsSnapshot { seq, rooms })
     }
 
@@ -171,15 +210,14 @@ impl Core {
         sink: Box<dyn EventSink>,
     ) -> Result<(), FfiError> {
         let sink: Arc<dyn CoreSink> = Arc::new(events::HostSink(sink));
-        self.runtime
-            .block_on(self.session.subscribe_timeline(&room_id, sink))?;
+        self.block(self.session.subscribe_timeline(&room_id, sink))?;
         Ok(())
     }
 
     /// Load older messages. `true` means the start of the room was reached and
     /// there is nothing more to ask for.
     pub fn timeline_paginate_back(&self, room_id: String, count: u16) -> Result<bool, FfiError> {
-        Ok(self.runtime.block_on(
+        Ok(self.block(
             self.session
                 .focused_timeline()
                 .paginate_back(&room_id, count),
@@ -190,9 +228,7 @@ impl Core {
     /// items. A host that has just subscribed uses this rather than waiting
     /// for a diff that may not come until something changes.
     pub fn timeline_resync(&self) -> Result<TimelineSnapshot, FfiError> {
-        let (room_id, seq, items) = self
-            .runtime
-            .block_on(self.session.focused_timeline().snapshot())?;
+        let (room_id, seq, items) = self.block(self.session.focused_timeline().snapshot())?;
         Ok(TimelineSnapshot {
             room_id,
             seq,
@@ -202,8 +238,7 @@ impl Core {
 
     /// Mark the room read up to its latest event.
     pub fn mark_room_read(&self, room_id: String) -> Result<(), FfiError> {
-        self.runtime
-            .block_on(self.session.focused_timeline().mark_read(&room_id))?;
+        self.block(self.session.focused_timeline().mark_read(&room_id))?;
         Ok(())
     }
 
@@ -220,7 +255,7 @@ impl Core {
         body: String,
         mentions: Vec<String>,
     ) -> Result<(), FfiError> {
-        self.runtime.block_on(
+        self.block(
             self.session
                 .focused_timeline()
                 .send_text(&room_id, &body, &mentions),
@@ -235,12 +270,11 @@ impl Core {
         body: String,
         in_reply_to: String,
     ) -> Result<(), FfiError> {
-        self.runtime
-            .block_on(
-                self.session
-                    .focused_timeline()
-                    .send_reply(&room_id, &body, &in_reply_to),
-            )?;
+        self.block(
+            self.session
+                .focused_timeline()
+                .send_reply(&room_id, &body, &in_reply_to),
+        )?;
         Ok(())
     }
 
@@ -251,16 +285,14 @@ impl Core {
         room_id: String,
         mode: supermessage_core::room_info::NotificationMode,
     ) -> Result<(), FfiError> {
-        self.runtime
-            .block_on(self.session.set_room_notification_mode(&room_id, mode))?;
+        self.block(self.session.set_room_notification_mode(&room_id, mode))?;
         Ok(())
     }
 
     /// Pin or unpin a room — the `m.favourite` tag, so it travels between
     /// clients.
     pub fn set_room_pinned(&self, room_id: String, pinned: bool) -> Result<(), FfiError> {
-        self.runtime
-            .block_on(self.session.set_room_pinned(&room_id, pinned))?;
+        self.block(self.session.set_room_pinned(&room_id, pinned))?;
         Ok(())
     }
 
@@ -271,7 +303,7 @@ impl Core {
         event_id: String,
         body: String,
     ) -> Result<(), FfiError> {
-        self.runtime.block_on(
+        self.block(
             self.session
                 .focused_timeline()
                 .edit_text(&room_id, &event_id, &body),
@@ -282,8 +314,7 @@ impl Core {
     /// Delete a message — a Matrix redaction, which is permanent and visible
     /// to the whole room.
     pub fn delete_message(&self, room_id: String, event_id: String) -> Result<(), FfiError> {
-        self.runtime
-            .block_on(self.session.focused_timeline().redact(&room_id, &event_id))?;
+        self.block(self.session.focused_timeline().redact(&room_id, &event_id))?;
         Ok(())
     }
 
@@ -294,7 +325,7 @@ impl Core {
         event_id: String,
         key: String,
     ) -> Result<bool, FfiError> {
-        Ok(self.runtime.block_on(
+        Ok(self.block(
             self.session
                 .focused_timeline()
                 .toggle_reaction(&room_id, &event_id, &key),
@@ -303,20 +334,19 @@ impl Core {
 
     /// Tell the room whether this account is typing.
     pub fn set_typing(&self, room_id: String, typing: bool) -> Result<(), FfiError> {
-        self.runtime
-            .block_on(self.session.focused_timeline().set_typing(&room_id, typing))?;
+        self.block(self.session.focused_timeline().set_typing(&room_id, typing))?;
         Ok(())
     }
 
     /// Accept an invitation, or join a room already known by id.
     pub fn join_room(&self, room_id: String) -> Result<(), FfiError> {
-        self.runtime.block_on(self.session.join_room(&room_id))?;
+        self.block(self.session.join_room(&room_id))?;
         Ok(())
     }
 
     /// Leave a room. It disappears from the roster on the next diff.
     pub fn leave_room(&self, room_id: String) -> Result<(), FfiError> {
-        self.runtime.block_on(self.session.leave_room(&room_id))?;
+        self.block(self.session.leave_room(&room_id))?;
         Ok(())
     }
 
@@ -330,42 +360,33 @@ impl Core {
         invite: Vec<String>,
         is_direct: bool,
     ) -> Result<String, FfiError> {
-        Ok(self
-            .runtime
-            .block_on(self.session.create_room(&name, &invite, is_direct))?)
+        Ok(self.block(self.session.create_room(&name, &invite, is_direct))?)
     }
 
     /// Join by alias (`#room:server`) or id, returning the id joined.
     pub fn join_room_by_alias(&self, alias_or_id: String) -> Result<String, FfiError> {
-        Ok(self
-            .runtime
-            .block_on(self.session.join_room_by_alias(&alias_or_id))?)
+        Ok(self.block(self.session.join_room_by_alias(&alias_or_id))?)
     }
 
     /// Invite someone to a room.
     pub fn invite_user(&self, room_id: String, user_id: String) -> Result<(), FfiError> {
-        self.runtime
-            .block_on(self.session.invite_user(&room_id, &user_id))?;
+        self.block(self.session.invite_user(&room_id, &user_id))?;
         Ok(())
     }
 
     /// A room's avatar as a `data:` URI, if it has one.
     pub fn room_avatar(&self, room_id: String) -> Result<Option<String>, FfiError> {
-        Ok(self.runtime.block_on(self.session.room_avatar(&room_id))?)
+        Ok(self.block(self.session.room_avatar(&room_id))?)
     }
 
     /// A room's avatar at its original size, for viewing the picture itself.
     pub fn room_avatar_full(&self, room_id: String) -> Result<Option<String>, FfiError> {
-        Ok(self
-            .runtime
-            .block_on(self.session.room_avatar_full(&room_id))?)
+        Ok(self.block(self.session.room_avatar_full(&room_id))?)
     }
 
     /// A member's avatar as a `data:` URI, given its `mxc:` URI.
     pub fn member_avatar(&self, mxc_uri: String) -> Result<Option<String>, FfiError> {
-        Ok(self
-            .runtime
-            .block_on(self.session.member_avatar(&mxc_uri))?)
+        Ok(self.block(self.session.member_avatar(&mxc_uri))?)
     }
 
     /// An event's media as a `data:` URI, fetched and decrypted.
@@ -377,7 +398,7 @@ impl Core {
     /// own answer to the same question and needs no file picker crossing the
     /// FFI.
     pub fn media_fetch(&self, event_id: String) -> Result<Option<String>, FfiError> {
-        Ok(self.runtime.block_on(self.session.media_fetch(&event_id))?)
+        Ok(self.block(self.session.media_fetch(&event_id))?)
     }
 
     /// Stage a file the host has already chosen.
@@ -391,7 +412,7 @@ impl Core {
         path: String,
     ) -> Result<StagedFile, FfiError> {
         let staged = self.session.staged_attachments();
-        let meta = self.runtime.block_on(async {
+        let meta = self.block(async {
             let client = self.session.require_client().await?;
             supermessage_core::attachments::stage_path(
                 &client,
@@ -413,14 +434,13 @@ impl Core {
     pub fn attachment_send(&self, room_id: String, token: String) -> Result<(), FfiError> {
         let staged = self.session.staged_attachments();
         let focused = self.session.focused_timeline();
-        self.runtime
-            .block_on(supermessage_core::attachments::send_staged(
-                &self.session,
-                &focused,
-                &staged,
-                &room_id,
-                &token,
-            ))?;
+        self.block(supermessage_core::attachments::send_staged(
+            &self.session,
+            &focused,
+            &staged,
+            &room_id,
+            &token,
+        ))?;
         Ok(())
     }
 
@@ -431,7 +451,7 @@ impl Core {
 
     /// The spaces this account is in, for the roster's rail.
     pub fn spaces_list(&self) -> Result<Vec<supermessage_core::spaces::SpaceSummary>, FfiError> {
-        Ok(self.runtime.block_on(self.session.spaces_list())?)
+        Ok(self.block(self.session.spaces_list())?)
     }
 
     /// Filter the room list to a space, or `None` to clear the filter.
@@ -439,8 +459,7 @@ impl Core {
     /// The filter lives in the core, not the host: the next room-list diff
     /// reflects it, so both hosts see the same rooms for the same selection.
     pub fn space_select(&self, space_id: Option<String>) -> Result<(), FfiError> {
-        self.runtime
-            .block_on(self.session.select_space(space_id.as_deref()))?;
+        self.block(self.session.select_space(space_id.as_deref()))?;
         Ok(())
     }
 
@@ -451,22 +470,18 @@ impl Core {
         term: String,
         room_id: Option<String>,
     ) -> Result<Vec<supermessage_core::search::SearchResultDto>, FfiError> {
-        Ok(self
-            .runtime
-            .block_on(self.session.search_messages(&term, room_id.as_deref()))?)
+        Ok(self.block(self.session.search_messages(&term, room_id.as_deref()))?)
     }
 
     /// Everyone this account shares a room with — the new-conversation
     /// screen's directory. See `core::people`.
     pub fn known_people(&self) -> Result<Vec<supermessage_core::people::PersonDto>, FfiError> {
-        Ok(self.runtime.block_on(self.session.known_people())?)
+        Ok(self.block(self.session.known_people())?)
     }
 
     /// The room this account already shares with `user_id` alone, if any.
     pub fn direct_room_with(&self, user_id: String) -> Result<Option<String>, FfiError> {
-        Ok(self
-            .runtime
-            .block_on(self.session.direct_room_with(&user_id))?)
+        Ok(self.block(self.session.direct_room_with(&user_id))?)
     }
 
     /// Everything the info panel shows about a room.
@@ -474,22 +489,22 @@ impl Core {
         &self,
         room_id: String,
     ) -> Result<supermessage_core::room_info::RoomInfoDto, FfiError> {
-        Ok(self.runtime.block_on(self.session.room_info(&room_id))?)
+        Ok(self.block(self.session.room_info(&room_id))?)
     }
 
     /// Who invited this account to a room, or `None`.
     pub fn room_inviter(&self, room_id: String) -> Result<Option<String>, FfiError> {
-        Ok(self.runtime.block_on(self.session.room_inviter(&room_id))?)
+        Ok(self.block(self.session.room_inviter(&room_id))?)
     }
 
     /// Who this app is signed in as, and where.
     pub fn account(&self) -> Result<supermessage_core::dto::AccountDto, FfiError> {
-        Ok(self.runtime.block_on(self.session.account())?)
+        Ok(self.block(self.session.account())?)
     }
 
     /// Sign out and wipe the local stores.
     pub fn logout(&self) -> Result<(), FfiError> {
-        self.runtime.block_on(self.session.logout())?;
+        self.block(self.session.logout())?;
         Ok(())
     }
 }

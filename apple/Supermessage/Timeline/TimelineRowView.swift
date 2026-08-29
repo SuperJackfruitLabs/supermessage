@@ -216,8 +216,16 @@ private struct ReplyQuote: View {
     let quote: ReplyQuoteView
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Rectangle().fill(Theme.accent.opacity(0.6)).frame(width: 2)
+        // The rule is an overlay, not a sibling in the HStack. `Rectangle` is a
+        // `Shape` and so is infinitely flexible on BOTH axes; pinning only its
+        // width leaves it free to take every point of height the row is
+        // offered. Inside a self-sizing `UIHostingConfiguration` cell that is
+        // the whole proposed height, so a one-line quote rendered several lines
+        // tall and the body below it was squeezed until it truncated with an
+        // ellipsis — a message arriving complete and displaying cut off.
+        // An overlay is measured against its content, so the rule can only ever
+        // be exactly as tall as the quote it marks.
+        Group {
             switch quote {
             case .unavailable:
                 // The core folds Unavailable/Pending/Error together, so this is
@@ -239,6 +247,11 @@ private struct ReplyQuote: View {
                     }
                 }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 10)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Theme.accent.opacity(0.6)).frame(width: 2)
         }
         .padding(.vertical, 2)
     }
