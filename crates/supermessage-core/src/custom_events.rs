@@ -680,9 +680,117 @@ impl CustomEventRenderer for PermissionRequestRenderer {
     }
 }
 
+/// A kaambaan approval gate a reader can answer — `dev.kaambaan.gate.v1`.
+///
+/// **The option `id` is a `GateDecision`, not a free-form name.** This is the
+/// one place a gate differs from a permission request, which hands back an
+/// option's *name* because the hub's matcher accepts any of three spellings.
+/// kaambaan's `resolveGate` accepts exactly `approve | request_changes |
+/// reject` and nothing else, so an id outside that set draws a button that is
+/// refused the moment it is pressed. `charter` →
+/// `decisions/2026-08-30-a-gate-closes-over-chat.md` records this as the one
+/// correction to kaambaan#34 that would otherwise have failed at runtime: the
+/// proposal there has ids mirroring a `select` signal's free-form semantics.
+///
+/// Unknown ids are dropped rather than renamed. A gate offering only ids this
+/// renderer does not know therefore renders as a *description with no
+/// decision* — which is the honest outcome, because every button it could
+/// draw would be a lie.
+///
+/// As with `dev.agentpod.permission.v1`, the event is sent beside an ordinary
+/// prose message carrying the same question, so a client that never renders
+/// this is exactly as able to follow the room as it was.
+pub const GATE_EVENT_TYPE: &str = "dev.kaambaan.gate.v1";
+
+/// The only option ids kaambaan resolves against — its `GateDecision` union,
+/// mirrored here and pinned by `fixtures/ecosystem-identity/matrix_gate_events.json`
+/// in AgentPod, which both repos validate against.
+pub const GATE_OPTION_IDS: [&str; 3] = ["approve", "request_changes", "reject"];
+
+pub struct GateRenderer;
+
+impl CustomEventRenderer for GateRenderer {
+    fn event_type(&self) -> &str {
+        GATE_EVENT_TYPE
+    }
+
+    fn label(&self) -> &str {
+        "Approval"
+    }
+
+    fn max_known_schema_version(&self) -> f64 {
+        1.0
+    }
+
+    fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
+        // `gate_id` is what resolution keys on. Without it every button on this
+        // card would be unpressable, and a card that looks answerable and is
+        // not is worse than one that plainly is not.
+        let Some(_gate_id) = safe_string_field(content, "gate_id", FIELD_VALUE_MAX_CHARS) else {
+            return CustomEventRenderResult::default();
+        };
+        let Some(card_title) = safe_string_field(content, "card_title", FIELD_VALUE_MAX_CHARS)
+        else {
+            return CustomEventRenderResult::default();
+        };
+
+        let mut fields = vec![CustomEventField {
+            label: "Card".into(),
+            value: card_title.clone(),
+        }];
+        if let Some(stage) = safe_string_field(content, "stage_key", FIELD_LABEL_MAX_CHARS) {
+            fields.push(CustomEventField {
+                label: "Stage".into(),
+                value: stage,
+            });
+        }
+
+        let mut options: Vec<CustomEventDecisionOption> = Vec::new();
+        let mut duplicated = false;
+        if let Some(raw) = content.get("options").and_then(Value::as_array) {
+            for entry in raw {
+                let Some(id) = safe_string_field(entry, "id", FIELD_LABEL_MAX_CHARS) else {
+                    continue;
+                };
+                if !GATE_OPTION_IDS.contains(&id.as_str()) {
+                    continue;
+                }
+                if options.iter().any(|o| o.id == id) {
+                    // Resolution is by id, so two entries sharing one id are
+                    // ambiguous no matter how differently they are labelled.
+                    // Keeping the first would silently pick for the reader.
+                    duplicated = true;
+                    break;
+                }
+                let label = safe_string_field(entry, "label", FIELD_LABEL_MAX_CHARS)
+                    .unwrap_or_else(|| id.clone());
+                options.push(CustomEventDecisionOption { id, label });
+            }
+        }
+
+        if duplicated || options.is_empty() {
+            return CustomEventRenderResult {
+                fields,
+                reasoning: None,
+                decision: None,
+            };
+        }
+
+        CustomEventRenderResult {
+            fields,
+            reasoning: None,
+            decision: Some(CustomEventDecision {
+                prompt: safe_string_field(content, "prompt", FIELD_VALUE_MAX_CHARS)
+                    .unwrap_or_else(|| format!("Approve \"{card_title}\"?")),
+                options,
+            }),
+        }
+    }
+}
+
 /// The registry hosts render through in production.
 ///
-/// Built once. Register a real renderer here once Kaambaan's schemas land.
+/// Built once. Kaambaan's gate schema landed 2026-08-30; see `GateRenderer`.
 pub fn default_registry() -> &'static CustomEventRegistry {
     static REGISTRY: std::sync::OnceLock<CustomEventRegistry> = std::sync::OnceLock::new();
     REGISTRY.get_or_init(|| {
@@ -690,6 +798,7 @@ pub fn default_registry() -> &'static CustomEventRegistry {
         registry.register(Box::new(DemoNoteRenderer));
         registry.register(Box::new(TurnActivityRenderer));
         registry.register(Box::new(PermissionRequestRenderer));
+        registry.register(Box::new(GateRenderer));
         registry
     })
 }
@@ -1725,19 +1834,20 @@ mod tests {
     }
 
     #[test]
-    fn the_default_registry_carries_all_three_shipped_renderers() {
+    fn the_default_registry_carries_all_shipped_renderers() {
         let registry = default_registry();
         for event_type in [
             DEMO_NOTE_EVENT_TYPE,
             TURN_ACTIVITY_EVENT_TYPE,
             PERMISSION_REQUEST_EVENT_TYPE,
+            GATE_EVENT_TYPE,
         ] {
             assert!(
                 registry.get(event_type).is_some(),
                 "{event_type} is not registered"
             );
         }
-        assert_eq!(registry.len(), 3);
+        assert_eq!(registry.len(), 4);
     }
 }
 
@@ -1780,5 +1890,204 @@ mod tool_title_tests {
             tool_title("Read the deployment runbook"),
             "Read the deployment runbook"
         );
+    }
+}
+
+/// The gate renderer, checked against the shared corpus.
+///
+/// These cases mirror `fixtures/ecosystem-identity/matrix_gate_events.json` in
+/// AgentPod. They are hand-written rather than loaded, which is the same
+/// arrangement kaambaan uses: the corpus is plain JSON depending on no type
+/// from any repo, and each repo reimplements against it. A published package
+/// would couple three release cadences to hold one contract.
+///
+/// The negative cases are the point. A renderer that draws a button which
+/// cannot resolve anything is worse than one that draws no button, because the
+/// failure only surfaces when someone presses it — and by then they believe
+/// they have approved something.
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn gate(options: Value) -> Value {
+        json!({
+            "msgtype": "m.text",
+            "body": "Approval needed — \"Add OAuth login\" at stage `review`.",
+            "schema_version": 1,
+            "board_id": "brd_7c1f",
+            "card_id": "crd_9a22",
+            "gate_id": "gat_4e8b",
+            "stage_key": "review",
+            "return_stage_key": "code",
+            "card_title": "Add OAuth login",
+            "produced_by": "agt_31d0",
+            "prompt": "Ship the OAuth change to staging?",
+            "options": options,
+        })
+    }
+
+    const ALL_THREE: fn() -> Value = || {
+        json!([
+            { "id": "approve", "label": "Approve" },
+            { "id": "request_changes", "label": "Request changes" },
+            { "id": "reject", "label": "Reject" }
+        ])
+    };
+
+    #[test]
+    fn renders_the_prompt_and_every_option_kaambaan_accepts() {
+        let result = GateRenderer.render(&gate(ALL_THREE()), None);
+        let decision = result.decision.expect("a gate is a decision");
+        assert_eq!(decision.prompt, "Ship the OAuth change to staging?");
+        assert_eq!(
+            decision.options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+            ["approve", "request_changes", "reject"]
+        );
+        assert_eq!(decision.options[1].label, "Request changes");
+    }
+
+    #[test]
+    fn shows_the_card_and_stage_as_rows() {
+        let result = GateRenderer.render(&gate(ALL_THREE()), None);
+        let rows: Vec<(&str, &str)> = result
+            .fields
+            .iter()
+            .map(|f| (f.label.as_str(), f.value.as_str()))
+            .collect();
+        assert_eq!(rows, [("Card", "Add OAuth login"), ("Stage", "review")]);
+    }
+
+    #[test]
+    fn drops_an_option_id_kaambaan_would_refuse() {
+        let result = GateRenderer.render(
+            &gate(json!([
+                { "id": "approve", "label": "Approve" },
+                { "id": "ship_it", "label": "Ship it" }
+            ])),
+            None,
+        );
+        let decision = result.decision.expect("the valid option still stands");
+        assert_eq!(
+            decision.options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+            ["approve"],
+            "an id outside GateDecision draws a button that cannot resolve"
+        );
+    }
+
+    #[test]
+    fn offers_no_decision_when_every_option_is_unknown() {
+        let result = GateRenderer.render(&gate(json!([{ "id": "ship_it", "label": "Ship it" }])), None);
+        assert!(
+            result.decision.is_none(),
+            "every button would have been a lie; describe the gate instead"
+        );
+        assert!(!result.fields.is_empty(), "still describes what is waiting");
+    }
+
+    #[test]
+    fn offers_no_decision_on_duplicate_option_ids() {
+        let result = GateRenderer.render(
+            &gate(json!([
+                { "id": "approve", "label": "Approve" },
+                { "id": "approve", "label": "Approve again" }
+            ])),
+            None,
+        );
+        assert!(
+            result.decision.is_none(),
+            "resolution is by id, so a duplicate is ambiguous — picking the first would choose for the reader"
+        );
+    }
+
+    #[test]
+    fn offers_no_decision_when_options_are_empty() {
+        let result = GateRenderer.render(&gate(json!([])), None);
+        assert!(result.decision.is_none());
+    }
+
+    #[test]
+    fn refuses_to_render_at_all_without_a_gate_id() {
+        let mut content = gate(ALL_THREE());
+        content.as_object_mut().unwrap().remove("gate_id");
+        let result = GateRenderer.render(&content, None);
+        assert!(
+            result.fields.is_empty() && result.decision.is_none(),
+            "nothing on this card could be resolved, so it must fall back rather than render"
+        );
+    }
+
+    #[test]
+    fn refuses_to_render_at_all_without_a_card_title() {
+        let mut content = gate(ALL_THREE());
+        content.as_object_mut().unwrap().remove("card_title");
+        assert!(GateRenderer.render(&content, None).fields.is_empty());
+    }
+
+    #[test]
+    fn a_non_string_option_id_is_ignored_rather_than_coerced() {
+        let result = GateRenderer.render(
+            &gate(json!([{ "id": 1, "label": "One" }, { "id": "reject", "label": "No" }])),
+            None,
+        );
+        let decision = result.decision.expect("the string option survives");
+        assert_eq!(decision.options.len(), 1);
+        assert_eq!(decision.options[0].id, "reject");
+    }
+
+    #[test]
+    fn falls_back_to_the_id_when_an_option_carries_no_label() {
+        let result = GateRenderer.render(&gate(json!([{ "id": "approve" }])), None);
+        let decision = result.decision.expect("a labelless option is still answerable");
+        assert_eq!(decision.options[0].label, "approve");
+    }
+
+    #[test]
+    fn names_the_card_in_the_prompt_when_the_gate_carries_none() {
+        let mut content = gate(ALL_THREE());
+        content.as_object_mut().unwrap().remove("prompt");
+        let decision = GateRenderer.render(&content, None).decision.expect("still answerable");
+        assert_eq!(decision.prompt, "Approve \"Add OAuth login\"?");
+    }
+
+    #[test]
+    fn a_newer_schema_version_still_renders_and_is_flagged() {
+        let mut content = gate(ALL_THREE());
+        let obj = content.as_object_mut().unwrap();
+        obj.insert("schema_version".into(), json!(2));
+        obj.insert("a_field_from_the_future".into(), json!("ignored, not fatal"));
+
+        match resolve_custom_event(default_registry(), Some(GATE_EVENT_TYPE), Some(&content), None) {
+            CustomEventView::Rendered { newer_version, decision, .. } => {
+                assert!(newer_version, "the reader should be told they may see a partial view");
+                assert!(decision.is_some(), "additive changes must not cost the buttons");
+            }
+            other => panic!("expected a rendered gate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unrenderable_gate_falls_back_to_its_body() {
+        let mut content = gate(ALL_THREE());
+        content.as_object_mut().unwrap().remove("gate_id");
+        let view = resolve_custom_event(
+            default_registry(),
+            Some(GATE_EVENT_TYPE),
+            Some(&content),
+            Some("Approval needed — \"Add OAuth login\"."),
+        );
+        assert_eq!(
+            view,
+            CustomEventView::FallbackBody {
+                text: "Approval needed — \"Add OAuth login\".".into()
+            }
+        );
+    }
+
+    #[test]
+    fn the_option_ids_are_exactly_kaambaans_gate_decision_union() {
+        // If this fails, kaambaan widened GateDecision and the fixture, the hub
+        // and this renderer all need the same change in the same release.
+        assert_eq!(GATE_OPTION_IDS, ["approve", "request_changes", "reject"]);
     }
 }
