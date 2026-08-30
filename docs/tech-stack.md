@@ -68,7 +68,27 @@ Rules:
 
    **The decision is to evaluate the wider Rust-native UI field before committing to any of it**, GPUI included. One shipping example answers "can this carry an app"; it does not answer "is this the right one". What remains true of GPUI regardless: it is pre-1.0 and its own README warns of frequent breaking changes.
 
-   Two things that would settle it either way: a candidate reaching 1.0 with a published cadence, or the Svelte layer beginning to *disagree* with the core about what to draw — the same drift argument that moved the custom-event registry into Rust in the first place.
+   **The field, surveyed 2026-08-30.** Three gates in order, because each one settles part of the question without needing an opinion.
+
+   *Licence*, the same hard rule that removed Flutter and trixnity. **Slint is out**: `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` — none of those is MIT/Apache/BSD, and the royalty-free variant is a bespoke licence, not a permissive one. iced, egui, dioxus, floem, freya and makepad are MIT or MIT-OR-Apache; xilem and gpui are Apache-2.0.
+
+   *Does it actually remove the webview?* **Dioxus desktop is `wry` — a webview** — and `dioxus-native` (Blitz + Vello) is documented as experimental and not recommended for use. That does not eliminate Dioxus, it re-files it: the Rust runs natively and drives the DOM, so it deletes the TypeScript and the 39 commands while keeping a webview as the renderer. It is the *middle* option, not a native one.
+
+   *Is it alive?* Recent-download counts and last publish, from crates.io: egui `0.36.1` Aug 2026 (5,068,777) · dioxus `0.8.0-alpha.1` (877,359) · iced `0.14.0` Dec 2025 (682,151) · gpui `0.2.2` Oct 2025 (131,589) · floem `0.2.0` **Nov 2024** (20,662) · freya `0.5.0-rc.4` (5,193) · xilem `0.4.0` (2,068) · makepad `0.1.0` **2019**, a placeholder — the real project is git-only. floem and makepad fail on liveness; xilem and freya are too early to carry a shipping client, though xilem is the one to re-check.
+
+   **What the survey actually turned up — and it applies to every native option, GPUI included.** [AccessKit](https://github.com/AccessKit/accesskit), which is how Rust GUI toolkits reach screen readers on all three desktop platforms, says of its released platform adapters: *"They don't yet support rich text or hypertext."* GPUI is not an exception to this — `gpui`'s own `Cargo.toml` carries `accesskit.workspace = true`. So does iced, via `iced_winit`.
+
+   For this client that is not a footnote. The product premise recorded above is a **reading surface rather than a chat log**, because agents write at length — rich text and links are the content. A webview gets rich-text and hypertext accessibility for free by being HTML; today no Rust-native path can.
+
+   **So the open question is not which framework.** It is: *is losing rich-text screen-reader support an acceptable price for removing the webview?* Three coherent answers, none yet chosen:
+
+   - **Keep the webview, drop the TypeScript — Dioxus.** Delivers most of what reopening this was for (UI in Rust, view-models consumed directly, no IPC serialisation, ~18k lines deleted) and keeps rich-text accessibility. Lowest risk. Against it: stable desktop is still a webview, so the renderer objection is unaddressed, and `0.8` is alpha.
+   - **Go native — GPUI.** The best text engine in the field by a distance, built by a text-editor company, and the only candidate with in-house evidence. Accepts the accessibility regression.
+   - **Wait** — for AccessKit rich text, or for a candidate to reach 1.0.
+
+   **egui is ruled out on fit despite dominating the download counts.** Immediate mode fights everything a reading surface needs: selection across scrollback, virtualised inverted lists, rich text, inline tables and images. Excellent for tools; this is not one.
+
+   Three things would settle it either way: AccessKit's platform adapters gaining rich text and hypertext, which removes the only objection that applies to all of them at once; a candidate reaching 1.0 with a published cadence; or the Svelte layer beginning to *disagree* with the core about what to draw — the same drift argument that moved the custom-event registry into Rust in the first place.
 
    Not in the charter, deliberately. A framework is how one product works, and the charter holds agreements between products.
 
