@@ -88,7 +88,7 @@ Rules:
 
    **egui is ruled out on fit despite dominating the download counts.** Immediate mode fights everything a reading surface needs: selection across scrollback, virtualised inverted lists, rich text, inline tables and images. Excellent for tools; this is not one.
 
-   Three things would settle it either way: AccessKit's platform adapters gaining rich text and hypertext, which removes the only objection that applies to all of them at once; a candidate reaching 1.0 with a published cadence; or the Svelte layer beginning to *disagree* with the core about what to draw — the same drift argument that moved the custom-event registry into Rust in the first place.
+   Three things would settle it either way: AccessKit's platform adapters gaining rich text and hypertext, which removes the only objection that applies to all of them at once (tracked in [#41](https://github.com/SuperJackfruitLabs/supermessage/issues/41)); a candidate reaching 1.0 with a published cadence; or the Svelte layer beginning to *disagree* with the core about what to draw — the same drift argument that moved the custom-event registry into Rust in the first place.
 
    Not in the charter, deliberately. A framework is how one product works, and the charter holds agreements between products.
 
