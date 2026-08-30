@@ -809,7 +809,8 @@ impl CustomEventRenderer for GateRenderer {
     }
 
     fn max_known_schema_version(&self) -> f64 {
-        1.0
+        // 2 adds `handoff_summary`. See `render`.
+        2.0
     }
 
     fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
@@ -869,7 +870,17 @@ impl CustomEventRenderer for GateRenderer {
 
         CustomEventRenderResult {
             fields,
-            reasoning: None,
+            // What the reviewer is being asked to approve.
+            //
+            // In `reasoning` rather than a field row, and the distinction is
+            // the point: a row is a label and 300 characters, and a handoff is
+            // neither. It is also collapsed by default, which is right — the
+            // prompt is the conclusion, the work is the context.
+            //
+            // A gate without it renders exactly as before. Until
+            // schema_version 2 every gate asked a reviewer to approve work the
+            // card did not show them (#37).
+            reasoning: safe_string_field(content, "handoff_summary", REASONING_MAX_CHARS),
             link: safe_link(content, "deep_link"),
             decision: Some(CustomEventDecision {
                 prompt: safe_string_field(content, "prompt", FIELD_VALUE_MAX_CHARS)
@@ -2175,7 +2186,9 @@ mod gate_tests {
     fn a_newer_schema_version_still_renders_and_is_flagged() {
         let mut content = gate(ALL_THREE());
         let obj = content.as_object_mut().unwrap();
-        obj.insert("schema_version".into(), json!(2));
+        // 3, not 2: schema_version 2 is a version this renderer now knows,
+        // because it is where handoff_summary arrived.
+        obj.insert("schema_version".into(), json!(3));
         obj.insert(
             "a_field_from_the_future".into(),
             json!("ignored, not fatal"),
@@ -2221,6 +2234,62 @@ mod gate_tests {
                 text: "Approval needed — \"Add OAuth login\".".into()
             }
         );
+    }
+
+    #[test]
+    fn shows_the_work_the_reviewer_is_approving() {
+        // supermessage#37. Before schema_version 2 a gate showed a card title
+        // and no work, so the only way to read what you were approving was to
+        // leave for the board.
+        let mut content = gate(ALL_THREE());
+        content.as_object_mut().unwrap().insert(
+            "handoff_summary".into(),
+            json!("Added the OAuth routes and a test for the refresh-token path."),
+        );
+        assert_eq!(
+            GateRenderer.render(&content, None).reasoning.as_deref(),
+            Some("Added the OAuth routes and a test for the refresh-token path.")
+        );
+    }
+
+    #[test]
+    fn a_gate_without_the_work_still_renders_its_buttons() {
+        // A board that predates schema_version 2 sends no summary, and that
+        // must cost the reader nothing but the summary.
+        let result = GateRenderer.render(&gate(ALL_THREE()), None);
+        assert!(result.reasoning.is_none());
+        assert!(result.decision.is_some());
+    }
+
+    #[test]
+    fn refuses_a_handoff_summary_that_is_not_text() {
+        // It is displayed prose. An object here would be rendered by whatever
+        // a host does with a non-string, which is the coercion every renderer
+        // in this module refuses.
+        let mut content = gate(ALL_THREE());
+        content
+            .as_object_mut()
+            .unwrap()
+            .insert("handoff_summary".into(), json!({ "summary": "nested" }));
+        assert!(GateRenderer.render(&content, None).reasoning.is_none());
+    }
+
+    #[test]
+    fn a_v2_gate_is_not_flagged_as_newer_than_this_renderer() {
+        let mut content = gate(ALL_THREE());
+        content
+            .as_object_mut()
+            .unwrap()
+            .insert("schema_version".into(), json!(2));
+        match resolve_custom_event(
+            default_registry(),
+            Some(GATE_EVENT_TYPE),
+            Some(&content),
+            None,
+        ) {
+            CustomEventView::Rendered { newer_version, .. } => assert!(!newer_version),
+            other => panic!("expected a rendered gate, got {other:?}"),
+        }
     }
 
     #[test]
