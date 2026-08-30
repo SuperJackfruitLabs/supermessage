@@ -103,7 +103,7 @@ fun TimelineRow(
     attribution: String = "",
     avatarUri: (userId: String) -> String? = { null },
     onReact: ((String) -> Unit)? = null,
-    onDecide: ((GateAnswer) -> Unit)? = null,
+    onDecide: (suspend (GateAnswer) -> Boolean)? = null,
     modifier: Modifier = Modifier,
 ) {
     // "Who to name, already chosen ... Chosen by the list, which can see

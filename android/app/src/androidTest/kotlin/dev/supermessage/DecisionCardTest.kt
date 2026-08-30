@@ -43,6 +43,7 @@ class DecisionCardTest {
                         reasoning = null,
                         newerVersion = false,
                         decision = null,
+                        link = null,
                     ),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
@@ -73,6 +74,7 @@ class DecisionCardTest {
                     reasoning = null,
                     newerVersion = false,
                     decision = null,
+                    link = null,
                 ),
                 label = "Station status",
                 eventType = "dev.supermessage.station.v1",
@@ -88,12 +90,12 @@ class DecisionCardTest {
         compose.setContent {
             Column {
                 DecisionCard(
-                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = true, decision = null),
+                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = true, decision = null, link = null),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
                 )
                 DecisionCard(
-                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null),
+                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null),
                     label = "Turn2",
                     eventType = "dev.agentpod.turn.v1",
                 )
@@ -111,6 +113,7 @@ class DecisionCardTest {
                     reasoning = "because the gateway was flapping",
                     newerVersion = false,
                     decision = null,
+                    link = null,
                 ),
                 label = "Turn",
                 eventType = "dev.agentpod.turn.v1",
@@ -145,12 +148,13 @@ class DecisionCardTest {
                             // A permission request is identified by the event it arrived on.
                             subject = null,
                         ),
+                        link = null,
                     ),
                     label = "Permission",
                     eventType = "dev.agentpod.permission.v1",
                 )
                 DecisionCard(
-                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null),
+                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
                 )
@@ -176,6 +180,7 @@ class DecisionCardTest {
                         // A permission request is identified by the event it arrived on.
                         subject = null,
                     ),
+                    link = null,
                 ),
                 label = "Permission",
                 eventType = "dev.agentpod.permission.v1",
@@ -208,6 +213,7 @@ class DecisionCardTest {
                         // A permission request is identified by the event it arrived on.
                         subject = null,
                     ),
+                    link = null,
                 ),
                 label = "Permission",
                 eventType = "dev.agentpod.permission.v1",
@@ -227,7 +233,7 @@ class DecisionCardTest {
         val safeEventType = "…gent.turn.v1"
         compose.setContent {
             DecisionCard(
-                view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null),
+                view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null),
                 label = "Turn",
                 eventType = safeEventType,
             )

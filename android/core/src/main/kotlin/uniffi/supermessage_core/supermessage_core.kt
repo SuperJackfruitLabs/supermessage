@@ -2925,7 +2925,12 @@ sealed class CustomEventView {
          * variant can carry one: the other two mean no renderer produced
          * anything, so nothing could have set a decision.
          */
-        val `decision`: CustomEventDecision?) : CustomEventView() {
+        val `decision`: CustomEventDecision?, 
+        /**
+         * A validated `https://` URL the host may open. See
+         * [`CustomEventRenderResult::link`] and [`safe_link`].
+         */
+        val `link`: kotlin.String?) : CustomEventView() {
         companion object
     }
     
@@ -2963,6 +2968,7 @@ public object FfiConverterTypeCustomEventView : FfiConverterRustBuffer<CustomEve
                 FfiConverterOptionalString.read(buf),
                 FfiConverterBoolean.read(buf),
                 FfiConverterOptionalTypeCustomEventDecision.read(buf),
+                FfiConverterOptionalString.read(buf),
                 )
             2 -> CustomEventView.FallbackBody(
                 FfiConverterString.read(buf),
@@ -2983,6 +2989,7 @@ public object FfiConverterTypeCustomEventView : FfiConverterRustBuffer<CustomEve
                 + FfiConverterOptionalString.allocationSize(value.`reasoning`)
                 + FfiConverterBoolean.allocationSize(value.`newerVersion`)
                 + FfiConverterOptionalTypeCustomEventDecision.allocationSize(value.`decision`)
+                + FfiConverterOptionalString.allocationSize(value.`link`)
             )
         }
         is CustomEventView.FallbackBody -> {
@@ -3009,6 +3016,7 @@ public object FfiConverterTypeCustomEventView : FfiConverterRustBuffer<CustomEve
                 FfiConverterOptionalString.write(value.`reasoning`, buf)
                 FfiConverterBoolean.write(value.`newerVersion`, buf)
                 FfiConverterOptionalTypeCustomEventDecision.write(value.`decision`, buf)
+                FfiConverterOptionalString.write(value.`link`, buf)
                 Unit
             }
             is CustomEventView.FallbackBody -> {

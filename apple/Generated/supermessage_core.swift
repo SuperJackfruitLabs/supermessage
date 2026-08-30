@@ -4139,7 +4139,11 @@ public enum CustomEventView {
          * "no decision" from "this variant has no such field". Only this
          * variant can carry one: the other two mean no renderer produced
          * anything, so nothing could have set a decision.
-         */decision: CustomEventDecision?
+         */decision: CustomEventDecision?, 
+        /**
+         * A validated `https://` URL the host may open. See
+         * [`CustomEventRenderResult::link`] and [`safe_link`].
+         */link: String?
     )
     /**
      * No renderer produced anything, but the event carried a plain-text
@@ -4166,7 +4170,7 @@ public struct FfiConverterTypeCustomEventView: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .rendered(fields: try FfiConverterSequenceTypeCustomEventField.read(from: &buf), reasoning: try FfiConverterOptionString.read(from: &buf), newerVersion: try FfiConverterBool.read(from: &buf), decision: try FfiConverterOptionTypeCustomEventDecision.read(from: &buf)
+        case 1: return .rendered(fields: try FfiConverterSequenceTypeCustomEventField.read(from: &buf), reasoning: try FfiConverterOptionString.read(from: &buf), newerVersion: try FfiConverterBool.read(from: &buf), decision: try FfiConverterOptionTypeCustomEventDecision.read(from: &buf), link: try FfiConverterOptionString.read(from: &buf)
         )
         
         case 2: return .fallbackBody(text: try FfiConverterString.read(from: &buf)
@@ -4183,12 +4187,13 @@ public struct FfiConverterTypeCustomEventView: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .rendered(fields,reasoning,newerVersion,decision):
+        case let .rendered(fields,reasoning,newerVersion,decision,link):
             writeInt(&buf, Int32(1))
             FfiConverterSequenceTypeCustomEventField.write(fields, into: &buf)
             FfiConverterOptionString.write(reasoning, into: &buf)
             FfiConverterBool.write(newerVersion, into: &buf)
             FfiConverterOptionTypeCustomEventDecision.write(decision, into: &buf)
+            FfiConverterOptionString.write(link, into: &buf)
             
         
         case let .fallbackBody(text):

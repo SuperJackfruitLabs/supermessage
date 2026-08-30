@@ -18,14 +18,14 @@ struct CustomEventCard: View {
     let senderName: String
     /// Answering a decision. `nil` in contexts that only display — a preview,
     /// or a row whose event the homeserver has not acknowledged yet.
-    var onDecide: ((GateAnswer) -> Void)?
+    var onDecide: ((GateAnswer) async -> Bool)?
 
     var body: some View {
         switch view {
-        case let .rendered(fields, reasoning, newerVersion, decision):
+        case let .rendered(fields, reasoning, newerVersion, decision, link):
             card(
                 fields: fields, reasoning: reasoning, newerVersion: newerVersion,
-                decision: decision)
+                decision: decision, link: link)
 
         case let .fallbackBody(text):
             // A type nothing here can render, but which carried a plain-text
@@ -51,7 +51,7 @@ struct CustomEventCard: View {
     @ViewBuilder
     private func card(
         fields: [CustomEventField], reasoning: String?, newerVersion: Bool,
-        decision: CustomEventDecision?
+        decision: CustomEventDecision?, link: String?
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -105,6 +105,27 @@ struct CustomEventCard: View {
                 }
             }
 
+            // The one thing on this card that is not text.
+            //
+            // `link` arrived through `core::custom_events::safe_link`, which
+            // accepts `https://` and printable ASCII and nothing else — so this
+            // is the only place a payload may become somewhere a tap can go.
+            // Before it existed the deep link was printed at the reader as
+            // characters to retype, which looks like an affordance and is not.
+            //
+            // "the card", and it really is the card: kaambaan/#47 made cards
+            // addressable. This label said "Open on the board" for a day while
+            // pointing at an address that 404d, then "Open the board" while
+            // pointing at the app root. A label must not promise what the other
+            // end cannot keep — which is why it moved twice rather than once.
+            if let link, let url = URL(string: link) {
+                Link(destination: url) {
+                    Label("Open the card", systemImage: "arrow.up.forward.square")
+                        .font(.footnote)
+                }
+                .padding(.top, 2)
+            }
+
             if let decision {
                 DecisionButtons(decision: decision, onDecide: onDecide)
             }
@@ -130,7 +151,7 @@ struct CustomEventCard: View {
 /// defect — see the console spec and `Theme.signal`'s own note.
 private struct DecisionButtons: View {
     let decision: CustomEventDecision
-    var onDecide: ((GateAnswer) -> Void)?
+    var onDecide: ((GateAnswer) async -> Bool)?
 
     /// The option awaiting a comment, if one is. Only `request_changes` ever
     /// sets this: approve and reject are decisions, and request-changes is
@@ -138,6 +159,24 @@ private struct DecisionButtons: View {
     /// the card's handoff, so an empty one costs the next agent the reason.
     @State private var commenting: CustomEventDecisionOption?
     @State private var comment = ""
+
+    /// The option this reader chose, once it has actually landed.
+    ///
+    /// A gate is answered **once**. Leaving three live buttons after an answer
+    /// invites a second tap that kaambaan refuses with GATE_NOT_PENDING — a
+    /// round trip whose only outcome is a message explaining that nothing
+    /// happened. Worse, it reads as though the first tap failed.
+    ///
+    /// Set only after the send succeeds, never optimistically: a card that
+    /// says "Approved" when the send did not land is the one wrong answer
+    /// here, because the reader stops trying.
+    ///
+    /// Per-device and per-view. It does not survive a scroll far enough to
+    /// recycle the row, and the room still holds a gate event that looks
+    /// pending — closing that properly means the bridge saying so in the room
+    /// after it resolves, which is a separate change.
+    @State private var answered: CustomEventDecisionOption?
+    @State private var sending = false
 
     /// Answerable only when the renderer named what this decision resolves and
     /// someone is listening. A button that cannot resolve anything must not
@@ -148,12 +187,20 @@ private struct DecisionButtons: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(decision.prompt).font(.system(.callout, weight: .semibold))
-            HStack(spacing: 8) {
-                ForEach(Array(decision.options.enumerated()), id: \.offset) { index, option in
-                    Button(option.label) { tapped(option) }
-                        .buttonStyle(.borderedProminent)
-                        .tint(index == 0 ? Theme.signal : Color.secondary)
-                        .disabled(!answerable)
+
+            if let answered {
+                // What was chosen, not a row of buttons that would refuse.
+                Label(answered.label, systemImage: "checkmark.circle.fill")
+                    .font(.system(.callout, weight: .semibold))
+                    .foregroundStyle(Theme.signal)
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(Array(decision.options.enumerated()), id: \.offset) { index, option in
+                        Button(option.label) { tapped(option) }
+                            .buttonStyle(.borderedProminent)
+                            .tint(index == 0 ? Theme.signal : Color.secondary)
+                            .disabled(!answerable || sending)
+                    }
                 }
             }
         }
@@ -185,14 +232,20 @@ private struct DecisionButtons: View {
     }
 
     private func send(_ option: CustomEventDecisionOption, comment: String?) {
-        guard let subject = decision.subject else { return }
+        guard let subject = decision.subject, let onDecide else { return }
         let trimmed = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
-        onDecide?(
-            GateAnswer(
-                subject: subject,
-                optionId: option.id,
-                comment: (trimmed?.isEmpty ?? true) ? nil : trimmed,
-                prompt: decision.prompt))
+        let answer = GateAnswer(
+            subject: subject,
+            optionId: option.id,
+            comment: (trimmed?.isEmpty ?? true) ? nil : trimmed,
+            prompt: decision.prompt)
+        sending = true
+        Task {
+            let landed = await onDecide(answer)
+            sending = false
+            // Only on success. See `answered`.
+            if landed { answered = option }
+        }
     }
 }
 

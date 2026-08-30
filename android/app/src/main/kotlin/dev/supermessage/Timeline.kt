@@ -152,7 +152,7 @@ fun Timeline(
     liveTools: List<LiveStore.ToolCall> = emptyList(),
     liveFinished: Boolean = false,
     onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
-    onDecide: (row: TimelineRowDto, answer: GateAnswer) -> Unit = { _, _ -> },
+    onDecide: suspend (row: TimelineRowDto, answer: GateAnswer) -> Boolean = { _, _ -> false },
     onRowLongPress: (row: TimelineRowDto) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
