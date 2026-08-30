@@ -352,17 +352,18 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                         // The event id is the gate's own, which the decision
                         // references; the card supplies what it resolves.
                         // Both are needed and neither side has both.
+                        // Returns whether the answer landed, so the card can
+                        // stop offering the choice — and keep offering it when
+                        // the send failed.
                         onDecide = { row, answer ->
-                            scope.launch {
-                                session.answerGate(
-                                    eventId = row.item.eventId,
-                                    gateId = answer.subject,
-                                    optionId = answer.optionId,
-                                    comment = answer.comment,
-                                    prompt = answer.prompt,
-                                    roomId = currentRoomId,
-                                )
-                            }
+                            session.answerGate(
+                                eventId = row.item.eventId,
+                                gateId = answer.subject,
+                                optionId = answer.optionId,
+                                comment = answer.comment,
+                                prompt = answer.prompt,
+                                roomId = currentRoomId,
+                            )
                         },
                         onRowLongPress = { row ->
                             // Own + editable rewrites the

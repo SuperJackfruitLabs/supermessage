@@ -216,7 +216,7 @@ struct TimelineCollectionView: UIViewRepresentable {
                             faces: self.session.faces,
                             onReply: { self.startReply(found.row) },
                             onReact: { key in self.react(found.row, key) },
-                            onDecide: { answer in self.decide(found.row, answer) }
+                            onDecide: { answer in await self.decide(found.row, answer) }
                         )
                             // Turn the row back the right way up. Applied to
                             // the content rather than to `cell.contentView`,
@@ -516,13 +516,14 @@ struct TimelineCollectionView: UIViewRepresentable {
         /// The event id is the gate's own, which the decision references; the
         /// card supplies what it resolves. Both are needed and neither side
         /// has both, which is why this meets in the middle here.
-        fileprivate func decide(_ row: TimelineRow, _ answer: GateAnswer) {
-            guard let roomId = timeline.roomId else { return }
-            Task {
-                await session.answerGate(
-                    row.item.eventId, gateId: answer.subject, optionId: answer.optionId,
-                    comment: answer.comment, prompt: answer.prompt, in: roomId)
-            }
+        /// Returns whether the answer landed, so the card can stop offering
+        /// the choice — and keep offering it when the send failed.
+        @discardableResult
+        fileprivate func decide(_ row: TimelineRow, _ answer: GateAnswer) async -> Bool {
+            guard let roomId = timeline.roomId else { return false }
+            return await session.answerGate(
+                row.item.eventId, gateId: answer.subject, optionId: answer.optionId,
+                comment: answer.comment, prompt: answer.prompt, in: roomId)
         }
 
         /// Long press a message to act on it.

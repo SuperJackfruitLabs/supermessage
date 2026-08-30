@@ -163,6 +163,18 @@ pub struct CustomEventRenderResult {
     /// an unrecognised type.
     pub fields: Vec<CustomEventField>,
     pub decision: Option<CustomEventDecision>,
+    /// A URL the card may offer as a tappable affordance.
+    ///
+    /// **The one exception to "everything a renderer returns is text"**, and it
+    /// is narrow on purpose. `safe_link` is the only way to set it: it accepts
+    /// `https://` and nothing else, so `javascript:`, `data:`, `file:` and a
+    /// bare `//host` cannot reach a host as something to open. A renderer
+    /// cannot hand back an unvalidated string here without going through it.
+    ///
+    /// Without this the `deep_link` a gate carries is decoration — a URL
+    /// printed at a reader who then has to retype it. That is worse than not
+    /// sending it, because it looks like an affordance and is not.
+    pub link: Option<String>,
     /// Long-form prose the card carries beside its rows — an agent's
     /// reasoning, today.
     ///
@@ -196,6 +208,9 @@ pub enum CustomEventView {
         /// variant can carry one: the other two mean no renderer produced
         /// anything, so nothing could have set a decision.
         decision: Option<CustomEventDecision>,
+        /// A validated `https://` URL the host may open. See
+        /// [`CustomEventRenderResult::link`] and [`safe_link`].
+        link: Option<String>,
     },
     /// No renderer produced anything, but the event carried a plain-text
     /// `body` fallback, as Matrix convention asks of a custom event.
@@ -332,6 +347,60 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
     })
 }
 
+/// The longest URL a card will carry.
+///
+/// Generous — a board deep link with ids in it is already ~60 characters — and
+/// bounded anyway, because this one is handed to a host to *open* rather than
+/// to draw, and an unbounded value there is a different class of problem.
+const LINK_MAX_CHARS: usize = 2048;
+
+/// Read `content[key]` as a URL a host may safely open, or `None`.
+///
+/// **`https://` only.** Not a style preference: `javascript:` is the classic
+/// way a rendered link becomes code execution, `data:` smuggles a document
+/// into a URL bar, `file:` reaches the device, and a protocol-relative
+/// `//host/path` inherits whatever scheme the opener assumes. A reader tapping
+/// something a card drew must not be able to land on any of those.
+///
+/// `http://` is refused too. Every URL this suite emits is https, so accepting
+/// plaintext would only ever admit something that did not come from us.
+pub fn safe_link(content: &Value, key: &str) -> Option<String> {
+    let raw = content.get(key)?.as_str()?.trim();
+    if raw.len() > LINK_MAX_CHARS || !raw.is_char_boundary(raw.len()) {
+        return None;
+    }
+    // Case-insensitive: `HTTPS://` is the same scheme, and a check that missed
+    // it would be a check that could be walked around by shouting.
+    let lower = raw.to_ascii_lowercase();
+    if !lower.starts_with("https://") {
+        return None;
+    }
+    // A scheme and nothing else is not a destination.
+    if raw.len() <= "https://".len() {
+        return None;
+    }
+    // ASCII graphic only — every printable ASCII character except space.
+    //
+    // Stricter than "no control characters and no whitespace", which is what
+    // this checked first and which a test caught as insufficient:
+    // `char::is_control` is Unicode category **Cc**, so `U+202E` RIGHT-TO-LEFT
+    // OVERRIDE is not a control character by that definition and went straight
+    // through. That codepoint is the classic way a link'"'"'s displayed text is made
+    // to disagree with where it goes, and it is exactly the class of thing this
+    // function exists to stop.
+    //
+    // Rather than enumerate the format characters that matter — Cf has dozens,
+    // and homoglyphs are a separate problem again — this requires the whole URL
+    // to be printable ASCII. A suite deep link is percent-encoded ASCII
+    // already, so nothing legitimate is lost, and the rule is one a reader can
+    // check by eye. An internationalised domain would be refused; when one
+    // needs to work, it arrives punycoded or this rule is revisited on purpose.
+    if !raw.chars().all(|c| c.is_ascii_graphic()) {
+        return None;
+    }
+    Some(raw.to_string())
+}
+
 /// Read `content[key]` as a string, one level deep, bounded.
 ///
 /// The shape every renderer copies. `None` when `content` is not an object,
@@ -386,6 +455,7 @@ pub fn resolve_custom_event(
                 reasoning: bound_reasoning(result.reasoning),
                 newer_version,
                 decision: bound_decision(result.decision),
+                link: result.link,
             };
         }
     }
@@ -437,6 +507,7 @@ impl CustomEventRenderer for DemoNoteRenderer {
                     value: title,
                 }],
                 reasoning: None,
+        link: None,
                 decision: None,
             },
             None => CustomEventRenderResult::default(),
@@ -614,6 +685,7 @@ impl CustomEventRenderer for TurnActivityRenderer {
         CustomEventRenderResult {
             fields,
             reasoning,
+            link: None,
             decision: None,
         }
     }
@@ -681,12 +753,14 @@ impl CustomEventRenderer for PermissionRequestRenderer {
             return CustomEventRenderResult {
                 fields,
                 reasoning: None,
+        link: None,
                 decision: None,
             };
         }
         CustomEventRenderResult {
             fields,
             reasoning: None,
+        link: None,
             decision: Some(CustomEventDecision {
                 prompt: format!("Allow {title}?"),
                 options,
@@ -788,6 +862,7 @@ impl CustomEventRenderer for GateRenderer {
             return CustomEventRenderResult {
                 fields,
                 reasoning: None,
+                link: None,
                 decision: None,
             };
         }
@@ -795,6 +870,7 @@ impl CustomEventRenderer for GateRenderer {
         CustomEventRenderResult {
             fields,
             reasoning: None,
+            link: safe_link(content, "deep_link"),
             decision: Some(CustomEventDecision {
                 prompt: safe_string_field(content, "prompt", FIELD_VALUE_MAX_CHARS)
                     .unwrap_or_else(|| format!("Approve \"{card_title}\"?")),
@@ -895,6 +971,7 @@ mod tests {
                         value: title,
                     }],
                     reasoning: None,
+            link: None,
                     decision: None,
                 },
                 None => CustomEventRenderResult::default(),
@@ -934,6 +1011,7 @@ mod tests {
                 reasoning: None,
                 newer_version: false,
                 decision: None,
+                link: None,
             }
         );
     }
@@ -1516,6 +1594,7 @@ mod tests {
                 reasoning: None,
                 newer_version: false,
                 decision: None,
+                link: None,
             },
             "the shipped demo renderer must stay decision-free"
         );
@@ -2183,6 +2262,108 @@ mod gate_tests {
                 decision: Some(d), ..
             } => {
                 assert_eq!(d.subject.as_deref(), Some("gate_4e8b"));
+            }
+            other => panic!("expected a rendered gate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn carries_the_boards_deep_link_when_it_is_safe() {
+        let mut content = gate(ALL_THREE());
+        content.as_object_mut().unwrap().insert(
+            "deep_link".into(),
+            json!("https://kaambaan.dev/b/brd_7c1f/c/crd_9a22"),
+        );
+        assert_eq!(
+            GateRenderer.render(&content, None).link.as_deref(),
+            Some("https://kaambaan.dev/b/brd_7c1f/c/crd_9a22")
+        );
+    }
+
+    #[test]
+    fn refuses_every_scheme_that_is_not_https() {
+        // The whole reason this validator exists. `javascript:` is how a
+        // rendered link becomes code execution, `data:` smuggles a document
+        // into a URL bar, `file:` reaches the device, and `//host` inherits
+        // whatever scheme the opener assumes.
+        for hostile in [
+            "javascript:alert(1)",
+            "JavaScript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "file:///etc/passwd",
+            "//evil.example/path",
+            "http://kaambaan.dev/b/x",
+            "https://",
+            "",
+        ] {
+            let mut content = gate(ALL_THREE());
+            content
+                .as_object_mut()
+                .unwrap()
+                .insert("deep_link".into(), json!(hostile));
+            assert_eq!(
+                GateRenderer.render(&content, None).link,
+                None,
+                "{hostile} must not reach a host as something to open"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_https_however_it_is_capitalised() {
+        let mut content = gate(ALL_THREE());
+        content
+            .as_object_mut()
+            .unwrap()
+            .insert("deep_link".into(), json!("HTTPS://kaambaan.dev/b/x"));
+        assert!(
+            GateRenderer.render(&content, None).link.is_some(),
+            "a check that can be walked around by shouting is not a check"
+        );
+    }
+
+    #[test]
+    fn refuses_a_url_carrying_control_characters_or_whitespace() {
+        // How a link's displayed text is made to disagree with where it goes.
+        for sneaky in [
+            "https://kaambaan.dev/\u{202e}evil",
+            "https://kaambaan.dev/a b",
+            "https://kaambaan.dev/a\nb",
+        ] {
+            let mut content = gate(ALL_THREE());
+            content
+                .as_object_mut()
+                .unwrap()
+                .insert("deep_link".into(), json!(sneaky));
+            assert_eq!(GateRenderer.render(&content, None).link, None, "{sneaky:?}");
+        }
+    }
+
+    #[test]
+    fn refuses_an_absurdly_long_url() {
+        let mut content = gate(ALL_THREE());
+        content.as_object_mut().unwrap().insert(
+            "deep_link".into(),
+            json!(format!("https://kaambaan.dev/{}", "a".repeat(4000))),
+        );
+        assert_eq!(GateRenderer.render(&content, None).link, None);
+    }
+
+    #[test]
+    fn a_gate_without_a_deep_link_offers_none() {
+        assert_eq!(GateRenderer.render(&gate(ALL_THREE()), None).link, None);
+    }
+
+    #[test]
+    fn the_link_survives_the_bounding_pass() {
+        let mut content = gate(ALL_THREE());
+        content
+            .as_object_mut()
+            .unwrap()
+            .insert("deep_link".into(), json!("https://kaambaan.dev/b/x"));
+        match resolve_custom_event(default_registry(), Some(GATE_EVENT_TYPE), Some(&content), None) {
+            CustomEventView::Rendered { link, .. } => {
+                assert_eq!(link.as_deref(), Some("https://kaambaan.dev/b/x"));
             }
             other => panic!("expected a rendered gate, got {other:?}"),
         }

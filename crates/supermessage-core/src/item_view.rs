@@ -1180,6 +1180,7 @@ mod tests {
                     reasoning: None,
                     newer_version: false,
                     decision: None,
+                    link: None,
                 }
             }
         );

@@ -40,7 +40,7 @@ struct TimelineRowView: View {
     /// a reaction annotates an event and a decision resolves something on
     /// another plane — the row cannot supply the latter's subject, so the card
     /// hands it back up.
-    var onDecide: ((GateAnswer) -> Void)?
+    var onDecide: ((GateAnswer) async -> Bool)?
 
     private var item: TimelineItemDto { row.item }
 

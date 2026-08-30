@@ -17,6 +17,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,11 +26,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventField
 import uniffi.supermessage_core.CustomEventView
@@ -79,6 +82,7 @@ fun DecisionCard(
                 reasoning = view.reasoning,
                 newerVersion = view.newerVersion,
                 decision = view.decision,
+                link = view.link,
                 modifier = modifier,
                 onDecide = onDecide,
             )
@@ -121,8 +125,9 @@ private fun RenderedCard(
     reasoning: String?,
     newerVersion: Boolean,
     decision: CustomEventDecision?,
+    link: String? = null,
     modifier: Modifier = Modifier,
-    onDecide: ((GateAnswer) -> Unit)? = null,
+    onDecide: (suspend (GateAnswer) -> Boolean)? = null,
 ) {
     // Amber marks a pending decision and nothing else on this card — see
     // `SupermessageColorRoles.signal`'s own note in `Theme.kt`.
@@ -199,6 +204,25 @@ private fun RenderedCard(
             ReasoningDisclosure(reasoning)
         }
 
+        // The one thing on this card that is not text.
+        //
+        // `link` came through `core::custom_events::safe_link`, which accepts
+        // `https://` and printable ASCII and nothing else — so this is the only
+        // place a payload may become somewhere a tap can go. Before it existed
+        // the deep link was printed at the reader as characters to retype,
+        // which looks like an affordance and is not.
+        if (link != null) {
+            val uriHandler = LocalUriHandler.current
+            Text(
+                "Open the card",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable(onClickLabel = "Open the card") { uriHandler.openUri(link) }
+                    .testTag("decision-link"),
+            )
+        }
+
         if (decision != null) {
             DecisionPrompt(decision, onDecide = onDecide)
         }
@@ -255,29 +279,49 @@ private fun ReasoningDisclosure(reasoning: String, modifier: Modifier = Modifier
 private fun DecisionPrompt(
     decision: CustomEventDecision,
     modifier: Modifier = Modifier,
-    onDecide: ((GateAnswer) -> Unit)? = null,
+    onDecide: (suspend (GateAnswer) -> Boolean)? = null,
 ) {
     val subject = decision.subject
-    val answerable = subject != null && onDecide != null
+    val answerable = subject != null && onDecide != null && !sending
 
     // The option awaiting a comment, if one is. Only `request_changes` ever
     // sets this: approve and reject are decisions, and request-changes is
     // feedback that becomes the rework's context — Kaambaan merges it into the
     // card's handoff, so an empty one costs the next agent the reason.
-    var commenting by remember { mutableStateOf<String?>(null) }
+    var commenting by remember { mutableStateOf<Pair<String, String>?>(null) }
     var comment by remember { mutableStateOf("") }
 
-    fun send(optionId: String, text: String?) {
+    // The option this reader chose, once it has actually landed.
+    //
+    // A gate is answered once. Leaving three live buttons after an answer
+    // invites a second tap that Kaambaan refuses with GATE_NOT_PENDING — a
+    // round trip whose only outcome is a message saying nothing happened, and
+    // which reads as though the first tap failed.
+    //
+    // Set only after the send succeeds, never optimistically: a card claiming
+    // "Approved" when the send did not land is the one wrong answer here,
+    // because the reader stops trying.
+    var answered by remember { mutableStateOf<String?>(null) }
+    var sending by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun send(optionId: String, label: String, text: String?) {
         val gate = subject ?: return
+        val handler = onDecide ?: return
         val trimmed = text?.trim()
-        onDecide?.invoke(
-            GateAnswer(
-                subject = gate,
-                optionId = optionId,
-                comment = if (trimmed.isNullOrEmpty()) null else trimmed,
-                prompt = decision.prompt,
-            ),
-        )
+        sending = true
+        scope.launch {
+            val landed = handler(
+                GateAnswer(
+                    subject = gate,
+                    optionId = optionId,
+                    comment = if (trimmed.isNullOrEmpty()) null else trimmed,
+                    prompt = decision.prompt,
+                ),
+            )
+            sending = false
+            if (landed) answered = label
+        }
     }
 
     Column(
@@ -288,6 +332,16 @@ private fun DecisionPrompt(
             decision.prompt,
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
         )
+        val chosen = answered
+        if (chosen != null) {
+            // What was chosen, not a row of buttons that would refuse.
+            Text(
+                "\u2713 " + chosen,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = SupermessageTheme.colors.signal,
+                modifier = Modifier.testTag("decision-answered"),
+            )
+        } else {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             decision.options.forEach { option ->
                 val base = Modifier
@@ -304,9 +358,9 @@ private fun DecisionPrompt(
                         if (answerable) {
                             base.clickable(onClickLabel = option.label) {
                                 if (option.id == GateAnswer.REQUEST_CHANGES) {
-                                    commenting = option.id
+                                    commenting = option.id to option.label
                                 } else {
-                                    send(option.id, null)
+                                    send(option.id, option.label, null)
                                 }
                             }
                         } else {
@@ -317,6 +371,7 @@ private fun DecisionPrompt(
                         .testTag("decision-option"),
                 )
             }
+        }
         }
     }
 
@@ -342,7 +397,7 @@ private fun DecisionPrompt(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        send(pendingOption, comment)
+                        send(pendingOption.first, pendingOption.second, comment)
                         commenting = null
                         comment = ""
                     },
