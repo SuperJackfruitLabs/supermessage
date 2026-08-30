@@ -1,12 +1,21 @@
 //! The seam between "a user is logged in" and how they proved it.
 //!
-//! `AuthProvider` exists so a second implementation (native OIDC, once
-//! `id.agentpod.dev` deploys matrix-authentication-service) is additive
-//! rather than a rewrite of session restore, token refresh, and the login UI.
-//! Only [`password::PasswordAuth`] exists today: the target homeserver
-//! (Synapse 1.152.0) advertises `m.login.password` only — no SSO, no native
-//! OIDC (`/_matrix/client/v1/auth_metadata` and the MSC2965 unstable path
-//! both 404).
+//! `AuthProvider` exists so a second implementation is additive rather than a
+//! rewrite of session restore, token refresh, and the login UI. Only
+//! [`password::PasswordAuth`] exists today.
+//!
+//! **It is not waiting on matrix-authentication-service.** This docstring used
+//! to say a second provider arrived "once `id.agentpod.dev` deploys
+//! matrix-authentication-service". MAS is a Synapse-family component and the
+//! homeserver is tuwunel — swapped 2026-08-16, because Synapse is AGPLv3 and
+//! this suite requires Apache/MIT. MAS is not coming
+//! (`charter → decisions/2026-08-30-matrix-identity-without-mas.md`).
+//!
+//! What the seam is actually for is still open: the server advertises
+//! `m.login.token` with `get_login_token: true`, so the suite's own issuer may
+//! be able to mint a Matrix login and close the last identity silo. Unverified,
+//! and a probe in the spike that gates the Organization plane. Until then
+//! password login is the login path, not debt.
 
 use async_trait::async_trait;
 use matrix_sdk::Client;
