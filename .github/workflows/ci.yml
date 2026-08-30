@@ -298,6 +298,15 @@ jobs:
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
+    env:
+      # One ABI on a pull request, four on main.
+      #
+      # Job-level rather than step-level because BOTH halves have to agree:
+      # `build-android-libs.sh` reads it to decide what to cross-compile, and
+      # :core's `checkJniLibs` reads it to decide what to require. Setting it on
+      # only the build step is how the first attempt failed — Gradle went on
+      # demanding four ABIs of a build that had deliberately produced one.
+      ANDROID_ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a armeabi-v7a x86_64 x86' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -395,9 +404,7 @@ jobs:
         # If that trade ever looks wrong, the honest fix is a release workflow
         # that builds all four and assembles an artifact — which does not exist
         # today, and is why the device-capable build ended up in PR CI at all.
-        run: ANDROID_ABIS="$ABIS" ./scripts/build-android-libs.sh
-        env:
-          ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a armeabi-v7a x86_64 x86' }}
+        run: ./scripts/build-android-libs.sh
 
       - name: Enable KVM
         # The emulator needs hardware acceleration to be usable in CI at all;

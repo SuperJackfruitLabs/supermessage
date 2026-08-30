@@ -54,7 +54,22 @@ dependencies {
 // check it assembles a valid APK that dies on the first call into Core with
 // UnsatisfiedLinkError — a run-time failure far from its cause. Turning that
 // into a build error with the command in it is the whole point.
-val abis = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+// Overridable by the same `ANDROID_ABIS` that `scripts/build-android-libs.sh`
+// takes, so a build that deliberately produced one ABI is checked for one
+// rather than failed for three it never asked for. CI on a pull request does
+// exactly that: the emulator is x86_64, no artifact is uploaded, and the other
+// three cost thirteen minutes to satisfy a check rather than a consumer.
+//
+// The DEFAULT stays all four, because the reader this guard exists for is
+// someone on a fresh clone who has built nothing — and telling them they are
+// fine when three ABIs are missing would give back the UnsatisfiedLinkError
+// this whole task exists to prevent.
+val abis: List<String> =
+    (System.getenv("ANDROID_ABIS")
+        ?: project.findProperty("android.abis") as String?
+        ?: "arm64-v8a armeabi-v7a x86_64 x86")
+        .split(Regex("[,\\s]+"))
+        .filter { it.isNotBlank() }
 
 val checkJniLibs by tasks.registering {
     val jniDir = layout.projectDirectory.dir("src/main/jniLibs")
@@ -66,10 +81,17 @@ val checkJniLibs by tasks.registering {
             """
             |android/core/src/main/jniLibs is missing: ${missing.joinToString(", ")}
             |
+            |Expected: ${abis.joinToString(", ")}
+            |
             |The .so files are gitignored — run this once per checkout:
             |
             |  export ANDROID_NDK_HOME="${'$'}HOME/Android/Sdk/ndk/29.0.14206865"
             |  ./scripts/build-android-libs.sh
+            |
+            |Building a subset is fine as long as both halves agree:
+            |
+            |  ANDROID_ABIS="x86_64" ./scripts/build-android-libs.sh
+            |  ANDROID_ABIS="x86_64" ./gradlew ...
             """.trimMargin()
         }
     }
