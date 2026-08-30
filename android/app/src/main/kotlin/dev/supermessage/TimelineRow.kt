@@ -121,7 +121,6 @@ fun TimelineRow(
                 continuesRun = continuesRun,
                 avatarUri = avatarUri,
                 onReact = onReact,
-                onDecide = onDecide,
                 modifier = modifier,
             )
 

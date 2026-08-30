@@ -219,6 +219,14 @@ class SpacesStoreTest {
             throw NotImplementedError()
         override fun sendReply(roomId: String, body: String, inReplyTo: String): Unit =
             throw NotImplementedError()
+        override fun sendGateDecision(
+            roomId: String,
+            gateId: String,
+            optionId: String,
+            comment: String?,
+            inReplyTo: String,
+            prompt: String,
+        ): Unit = throw NotImplementedError()
         override fun setRoomNotifications(roomId: String, mode: NotificationMode): Unit =
             throw NotImplementedError()
         override fun setRoomPinned(roomId: String, pinned: Boolean): Unit = throw NotImplementedError()
