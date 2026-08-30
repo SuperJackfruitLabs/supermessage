@@ -142,6 +142,8 @@ class DecisionCardTest {
                             options = listOf(
                                 CustomEventDecisionOption(label = "Approve", id = "approve-restart-hermes-gateway"),
                             ),
+                            // A permission request is identified by the event it arrived on.
+                            subject = null,
                         ),
                     ),
                     label = "Permission",
@@ -171,6 +173,8 @@ class DecisionCardTest {
                             CustomEventDecisionOption(label = "Approve", id = "approve-restart-hermes-gateway"),
                             CustomEventDecisionOption(label = "Deny", id = "deny-restart-hermes-gateway"),
                         ),
+                        // A permission request is identified by the event it arrived on.
+                        subject = null,
                     ),
                 ),
                 label = "Permission",
@@ -201,6 +205,8 @@ class DecisionCardTest {
                     decision = CustomEventDecision(
                         prompt = "Restart the Hermes gateway?",
                         options = listOf(CustomEventDecisionOption(label = "Approve", id = id)),
+                        // A permission request is identified by the event it arrived on.
+                        subject = null,
                     ),
                 ),
                 label = "Permission",
