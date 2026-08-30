@@ -469,7 +469,27 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest
+          # Uninstall before installing.
+          #
+          # The AVD is restored from a cache, and a debug keystore is generated
+          # fresh on each runner unless one is checked in — this repo does not
+          # check one in. So a snapshot that ever captured an installed
+          # dev.supermessage carries an APK signed by a keystore no later run
+          # has, and every install after that fails with
+          # INSTALL_FAILED_UPDATE_INCOMPATIBLE ("signatures do not match").
+          #
+          # It is a poisoned cache rather than a broken change, and it survives
+          # until the cache key moves — which is a manual step nobody remembers
+          # in the moment, because the error names signatures and points at the
+          # app. Uninstalling first makes the job idempotent against whatever
+          # the snapshot happens to hold.
+          #
+          # `|| true`: the package is absent on a clean AVD, and adb treats
+          # uninstalling something that was never there as a failure.
+          script: |
+            adb uninstall dev.supermessage || true
+            adb uninstall dev.supermessage.test || true
+            cd android && ./gradlew :app:connectedDebugAndroidTest
 
       - name: Report per-ABI APK sizes
         # :app:connectedDebugAndroidTest above already assembles :app's own
