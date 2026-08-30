@@ -507,7 +507,7 @@ impl CustomEventRenderer for DemoNoteRenderer {
                     value: title,
                 }],
                 reasoning: None,
-        link: None,
+                link: None,
                 decision: None,
             },
             None => CustomEventRenderResult::default(),
@@ -753,14 +753,14 @@ impl CustomEventRenderer for PermissionRequestRenderer {
             return CustomEventRenderResult {
                 fields,
                 reasoning: None,
-        link: None,
+                link: None,
                 decision: None,
             };
         }
         CustomEventRenderResult {
             fields,
             reasoning: None,
-        link: None,
+            link: None,
             decision: Some(CustomEventDecision {
                 prompt: format!("Allow {title}?"),
                 options,
@@ -971,7 +971,7 @@ mod tests {
                         value: title,
                     }],
                     reasoning: None,
-            link: None,
+                    link: None,
                     decision: None,
                 },
                 None => CustomEventRenderResult::default(),
@@ -2361,7 +2361,12 @@ mod gate_tests {
             .as_object_mut()
             .unwrap()
             .insert("deep_link".into(), json!("https://kaambaan.dev/b/x"));
-        match resolve_custom_event(default_registry(), Some(GATE_EVENT_TYPE), Some(&content), None) {
+        match resolve_custom_event(
+            default_registry(),
+            Some(GATE_EVENT_TYPE),
+            Some(&content),
+            None,
+        ) {
             CustomEventView::Rendered { link, .. } => {
                 assert_eq!(link.as_deref(), Some("https://kaambaan.dev/b/x"));
             }
