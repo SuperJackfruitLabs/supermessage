@@ -44,6 +44,21 @@ settings:
     # code-signed on iOS and both refuse to sign without one.
     GENERATE_INFOPLIST_FILE: YES
 
+    # The version, which this project carried nowhere until now.
+    #
+    # `GENERATE_INFOPLIST_FILE: YES` synthesises an Info.plist, and it writes
+    # only the keys it is given — so with neither of these set the built app had
+    # no CFBundleShortVersionString and no CFBundleVersion at all. Every other
+    # platform in this repo has been bumped together for ten releases while iOS
+    # silently shipped versionless, which is also the first blocker in #35: App
+    # Store Connect rejects an upload with no version, and rejects a build
+    # number it has seen before.
+    #
+    # MARKETING_VERSION is the human one and tracks package.json. CURRENT_PROJECT_VERSION
+    # is the build number, which must increase on every upload and never resets.
+    MARKETING_VERSION: 0.0.11
+    CURRENT_PROJECT_VERSION: 2
+
 targets:
   SupermessageFFI:
     type: framework

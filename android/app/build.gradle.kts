@@ -17,8 +17,8 @@ android {
         applicationId = "dev.supermessage"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.0.10"
+        versionCode = 2
+        versionName = "0.0.11"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

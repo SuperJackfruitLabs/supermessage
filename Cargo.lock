@@ -6521,7 +6521,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "supermessage"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6555,7 +6555,7 @@ dependencies = [
 
 [[package]]
 name = "supermessage-core"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "apple-native-keyring-store",
  "async-trait",
@@ -6588,7 +6588,7 @@ dependencies = [
 
 [[package]]
 name = "supermessage-ffi"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "async-trait",
  "supermessage-core",
