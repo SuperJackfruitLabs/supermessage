@@ -71,7 +71,7 @@ fun DecisionCard(
     label: String,
     eventType: String,
     modifier: Modifier = Modifier,
-    onDecide: ((GateAnswer) -> Unit)? = null,
+    onDecide: (suspend (GateAnswer) -> Boolean)? = null,
 ) {
     when (view) {
         is CustomEventView.Rendered ->
@@ -282,7 +282,6 @@ private fun DecisionPrompt(
     onDecide: (suspend (GateAnswer) -> Boolean)? = null,
 ) {
     val subject = decision.subject
-    val answerable = subject != null && onDecide != null && !sending
 
     // The option awaiting a comment, if one is. Only `request_changes` ever
     // sets this: approve and reject are decisions, and request-changes is
@@ -304,6 +303,11 @@ private fun DecisionPrompt(
     var answered by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // Declared after `sending`, which it reads. A gate is answerable when the
+    // renderer named what it resolves, someone is listening, and no send is
+    // already in flight.
+    val answerable = subject != null && onDecide != null && !sending
 
     fun send(optionId: String, label: String, text: String?) {
         val gate = subject ?: return
