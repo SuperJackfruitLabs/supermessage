@@ -103,6 +103,7 @@ fun TimelineRow(
     attribution: String = "",
     avatarUri: (userId: String) -> String? = { null },
     onReact: ((String) -> Unit)? = null,
+    onDecide: ((GateAnswer) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // "Who to name, already chosen ... Chosen by the list, which can see
@@ -170,6 +171,7 @@ fun TimelineRow(
                 label = view.label,
                 eventType = view.eventType,
                 modifier = modifier,
+                onDecide = onDecide,
             )
 
         // Deliberately nothing. A row for this would still occupy layout

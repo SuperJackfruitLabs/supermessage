@@ -911,6 +911,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -992,6 +994,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_search_messages(`ptr`: Pointer,`term`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_message(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`mentions`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_reply(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1218,6 +1222,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_search_messages(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_message(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_reply(
@@ -1372,6 +1378,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_search_messages() != 28627.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 12791.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384.toShort()) {
@@ -1963,6 +1972,30 @@ public interface CoreInterface {
      * room this account can see otherwise.
      */
     fun `searchMessages`(`term`: kotlin.String, `roomId`: kotlin.String?): List<SearchResultDto>
+    
+    /**
+     * Answer a kaambaan approval gate.
+     *
+     * `option_id` must be one of `approve`, `request_changes` or
+     * `reject` — kaambaan's `GateDecision`, and the only values its
+     * resolution endpoint accepts. Anything else is refused here rather
+     * than reaching the room, so a mistake surfaces as an error the host
+     * can show instead of a tap that silently does nothing.
+     *
+     * `in_reply_to` is the gate event's own id: the decision references it,
+     * and the Application Service refuses a decision whose `gate_id` and
+     * reference disagree.
+     *
+     * `comment` is the feedback kaambaan merges into the card's handoff on
+     * `request_changes`, so the rework carries the reviewer's reasoning.
+     * Pass `None` for the other two — a host should only prompt for it on
+     * that option.
+     *
+     * `prompt` is the gate's own question, not the finished sentence. The
+     * line left in the room is derived in the core so iOS and Android
+     * cannot word the durable record differently.
+     */
+    fun `sendGateDecision`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
     
     /**
      * Send a plain-text message to the focused room.
@@ -2587,6 +2620,40 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     }
     )
     }
+    
+
+    
+    /**
+     * Answer a kaambaan approval gate.
+     *
+     * `option_id` must be one of `approve`, `request_changes` or
+     * `reject` — kaambaan's `GateDecision`, and the only values its
+     * resolution endpoint accepts. Anything else is refused here rather
+     * than reaching the room, so a mistake surfaces as an error the host
+     * can show instead of a tap that silently does nothing.
+     *
+     * `in_reply_to` is the gate event's own id: the decision references it,
+     * and the Application Service refuses a decision whose `gate_id` and
+     * reference disagree.
+     *
+     * `comment` is the feedback kaambaan merges into the card's handoff on
+     * `request_changes`, so the rework carries the reviewer's reasoning.
+     * Pass `None` for the other two — a host should only prompt for it on
+     * that option.
+     *
+     * `prompt` is the gate's own question, not the finished sentence. The
+     * line left in the room is derived in the core so iOS and Android
+     * cannot word the durable record differently.
+     */
+    @Throws(FfiException::class)override fun `sendGateDecision`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_decision(
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`gateId`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),FfiConverterString.lower(`prompt`),_status)
+}
+    }
+    
     
 
     

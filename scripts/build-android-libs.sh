@@ -28,6 +28,11 @@
 #                     x86_64-linux-android i686-linux-android
 #
 # Usage:  ./scripts/build-android-libs.sh [--debug]
+#         ANDROID_ABIS="x86_64" ./scripts/build-android-libs.sh   # one ABI
+#
+# To regenerate ONLY the Kotlin bindings — after changing the FFI surface on a
+# machine with no NDK — use `./scripts/generate-kotlin-bindings.sh` instead.
+# It needs neither the NDK nor cargo-ndk.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -42,7 +47,14 @@ fi
 # Four ABIs, because Play requires 64-bit and the 32-bit pair still covers
 # devices in the field. `x86_64` is the emulator on an Intel host; `i686` is
 # rarer but costs little to carry.
-ABIS=(arm64-v8a armeabi-v7a x86_64 x86)
+#
+# Overridable, because most callers do not need all four. CI on a pull request
+# wants only the emulator's ABI: it runs instrumented tests on an x86_64 device
+# and builds no artifact, so the other three are thirteen minutes spent on
+# libraries nothing in that job loads. A push to main still builds all four.
+#
+#   ANDROID_ABIS="x86_64" ./scripts/build-android-libs.sh
+read -ra ABIS <<< "${ANDROID_ABIS:-arm64-v8a armeabi-v7a x86_64 x86}"
 
 JNI_LIBS=android/core/src/main/jniLibs
 GENERATED=android/core/src/main/kotlin
@@ -68,31 +80,19 @@ echo "==> building ${#ABIS[@]} ABIs ($PROFILE)"
 cargo ndk -o "$JNI_LIBS" $(printf -- '-t %s ' "${ABIS[@]}") \
     build -p supermessage-ffi --lib $PROFILE_FLAG
 
-# Generate from the built library rather than from source, so the Kotlin cannot
-# describe a surface the binary does not have. Staged and swapped in at the
-# end: deleting the checked-in bindings first means any failure here leaves the
-# tree with none at all.
-echo "==> generating Kotlin bindings"
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
-
-HOST_LIB="target/aarch64-linux-android/$( [ "$PROFILE" = release ] && echo release || echo debug )/libsupermessage_ffi.so"
-cargo run -q -p supermessage-ffi --bin uniffi-bindgen -- generate \
-    --library "$HOST_LIB" \
-    --language kotlin \
-    --out-dir "$STAGE"
-
-# Narrowed to uniffi/, not the whole of $GENERATED: android/core/src/main/kotlin
-# is :core's real auto-discovered source root (AGP 9's built-in Kotlin
-# support), so wiping it outright would also take out any non-generated
-# Kotlin ever added there. uniffi-bindgen's --out-dir writes exactly one
-# top-level entry, uniffi/, so that is the only thing swapped.
-GENERATED_UNIFFI="$GENERATED/uniffi"
-rm -rf "$GENERATED_UNIFFI"
-mkdir -p "$GENERATED"
-mv "$STAGE/uniffi" "$GENERATED_UNIFFI"
-rm -rf "$STAGE"
-trap - EXIT
+# Delegated, so there is exactly one generator.
+#
+# It reads a HOST build rather than one of the ABIs above, which is not a
+# shortcut: UniFFI emits Kotlin from the library's exported metadata, not from
+# its machine code, so the output is identical either way — verified by
+# regenerating from both and diffing. Reading the host build is what lets the
+# same script work on a machine with no NDK, and lets CI check staleness before
+# paying for the cross-compile rather than after.
+#
+# It also means this script no longer generates different Kotlin depending on
+# which ABIs it was asked for: `ANDROID_ABIS="x86_64"` used to leave the
+# aarch64 library it read from missing entirely.
+./scripts/generate-kotlin-bindings.sh
 
 echo
 echo "built  $JNI_LIBS/<abi>/libsupermessage_ffi.so"

@@ -278,6 +278,46 @@ impl Core {
         Ok(())
     }
 
+    /// Answer a kaambaan approval gate.
+    ///
+    /// `option_id` must be one of `approve`, `request_changes` or
+    /// `reject` — kaambaan's `GateDecision`, and the only values its
+    /// resolution endpoint accepts. Anything else is refused here rather
+    /// than reaching the room, so a mistake surfaces as an error the host
+    /// can show instead of a tap that silently does nothing.
+    ///
+    /// `in_reply_to` is the gate event's own id: the decision references it,
+    /// and the Application Service refuses a decision whose `gate_id` and
+    /// reference disagree.
+    ///
+    /// `comment` is the feedback kaambaan merges into the card's handoff on
+    /// `request_changes`, so the rework carries the reviewer's reasoning.
+    /// Pass `None` for the other two — a host should only prompt for it on
+    /// that option.
+    ///
+    /// `prompt` is the gate's own question, not the finished sentence. The
+    /// line left in the room is derived in the core so iOS and Android
+    /// cannot word the durable record differently.
+    pub fn send_gate_decision(
+        &self,
+        room_id: String,
+        gate_id: String,
+        option_id: String,
+        comment: Option<String>,
+        in_reply_to: String,
+        prompt: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.focused_timeline().send_gate_decision(
+            &room_id,
+            &gate_id,
+            &option_id,
+            comment.as_deref(),
+            &in_reply_to,
+            &prompt,
+        ))?;
+        Ok(())
+    }
+
     /// Set how loudly a room may interrupt. `Default` unsets the room's own
     /// rule so the account default applies again.
     pub fn set_room_notifications(

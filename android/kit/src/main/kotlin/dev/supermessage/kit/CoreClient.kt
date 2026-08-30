@@ -193,6 +193,26 @@ class CoreClient(
     suspend fun toggleReaction(roomId: String, eventId: String, key: String): Boolean =
         run { it.toggleReaction(roomId, eventId, key) }
 
+    /**
+     * Answer a Kaambaan approval gate.
+     *
+     * `optionId` must be one of `approve`, `request_changes`, `reject`; the
+     * core refuses anything else before it reaches the room. `prompt` is the
+     * gate's question, not the finished sentence — the line left in the room
+     * is derived in Rust so this platform and iOS cannot word the durable
+     * record differently.
+     */
+    suspend fun sendGateDecision(
+        roomId: String,
+        gateId: String,
+        optionId: String,
+        comment: String?,
+        inReplyTo: String,
+        prompt: String,
+    ) {
+        run { it.sendGateDecision(roomId, gateId, optionId, comment, inReplyTo, prompt) }
+    }
+
     suspend fun setTyping(roomId: String, typing: Boolean) {
         run { it.setTyping(roomId, typing) }
     }

@@ -728,6 +728,77 @@ fn custom_message_payload(
     (payload, body)
 }
 
+/// The sentence a decision leaves in the room.
+///
+/// Derived from `option_id` rather than from the option's label, because a
+/// label is free text chosen per board ("Ship it", "Looks good", "LGTM") and
+/// the room transcript should read the same whoever configured the gate. It is
+/// derived in the core rather than on each platform for the same reason the
+/// renderer lives here: two hand-written copies of a sentence agree only by
+/// convention, and this one is the durable record of who approved what.
+///
+/// Past tense, because by the time anyone reads it the decision is made.
+pub(crate) fn gate_decision_body(option_id: &str, prompt: &str) -> String {
+    let verb = match option_id {
+        "approve" => "Approved",
+        "request_changes" => "Requested changes",
+        "reject" => "Rejected",
+        // Unreachable through `send_gate_decision`, which refuses an unknown
+        // option before this runs. Spelled out anyway so a future option added
+        // to GATE_OPTION_IDS without a verb here produces a readable line
+        // rather than a panic or an empty one.
+        other => other,
+    };
+    let prompt = prompt.trim();
+    if prompt.is_empty() {
+        verb.to_string()
+    } else {
+        format!("{verb} — {prompt}")
+    }
+}
+
+/// The suite type of a gate decision.
+///
+/// Carried in `content`, not in the Matrix event type, because the event is an
+/// ordinary `m.room.message` — see [`FocusedTimeline::send_gate_decision`].
+pub const GATE_DECISION_SUITE_TYPE: &str = "dev.kaambaan.gate.decision.v1";
+
+/// Builds a decision's `content`.
+///
+/// Split out from the send so the wire shape can be asserted without a
+/// homeserver: this is the half that has to agree with two other codebases,
+/// and it is pinned by `fixtures/ecosystem-identity/matrix_gate_events.json`
+/// in AgentPod.
+///
+/// `comment` is omitted entirely when absent rather than sent as `null` — a
+/// key that is present and null and a key that is missing are the same thing
+/// to every reader here, and the shorter one is easier to read in a room's
+/// raw event view.
+pub(crate) fn gate_decision_content(
+    gate_id: &str,
+    option_id: &str,
+    comment: Option<&str>,
+    in_reply_to: &str,
+    body: &str,
+) -> serde_json::Value {
+    let mut content = serde_json::json!({
+        "msgtype": "m.text",
+        "body": body,
+        "schema_version": 1,
+        "suite_event_type": GATE_DECISION_SUITE_TYPE,
+        "gate_id": gate_id,
+        "option_id": option_id,
+        "m.relates_to": {
+            "rel_type": "m.reference",
+            "event_id": in_reply_to,
+        },
+    });
+    if let Some(comment) = comment.filter(|c| !c.trim().is_empty()) {
+        content["comment"] = serde_json::Value::String(comment.to_string());
+    }
+    content
+}
+
 /// The event filter every room's `Timeline` is built with
 /// ([`FocusedTimeline::subscribe`]) — `matrix_sdk_ui`'s own
 /// [`default_event_filter`] plus one addition: an event whose content ruma
@@ -2148,6 +2219,68 @@ impl FocusedTimeline {
         let content = RoomMessageEventContentWithoutRelation::text_markdown(body);
         timeline
             .send_reply(content, event_id)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Answers a kaambaan approval gate.
+    ///
+    /// Sent as an ordinary `m.room.message` carrying its structured fields
+    /// alongside, rather than as a custom event type — the reverse of the
+    /// gate itself, and deliberately so. A gate needs a renderer, because it
+    /// is a question with buttons; a decision needs none, because it is a
+    /// sentence. Sending it as a message means it reads correctly in every
+    /// client including this one, with no renderer, no registry entry, and
+    /// no risk of a reader seeing their own answer twice — once as prose and
+    /// once as a card.
+    ///
+    /// `m.relates_to` is an `m.reference`, never `m.in_reply_to`: a reply
+    /// relation is a rendering hint any client sets when quoting, so treating
+    /// it as a decision binding would let an ordinary quoted reply resolve a
+    /// gate. The Application Service refuses a decision whose `gate_id` and
+    /// reference disagree — both are carried precisely so they can be
+    /// cross-checked.
+    ///
+    /// The sentence left in the room is derived from `option_id` and the
+    /// gate's `prompt` — see [`gate_decision_body`]. The caller passes the
+    /// prompt, never the finished line, so no platform can word the durable
+    /// record differently from another.
+    ///
+    /// `option_id` is validated here rather than only at the far end. The
+    /// bridge would refuse an unknown id anyway, but silently: the reader
+    /// would see their tap land as a message and the gate stay open, with
+    /// nothing to explain why.
+    pub async fn send_gate_decision(
+        &self,
+        room_id: &str,
+        gate_id: &str,
+        option_id: &str,
+        comment: Option<&str>,
+        in_reply_to: &str,
+        prompt: &str,
+    ) -> CoreResult<()> {
+        if !crate::custom_events::GATE_OPTION_IDS.contains(&option_id) {
+            return Err(CoreError::Protocol(format!(
+                "not a gate decision: {option_id}"
+            )));
+        }
+        if gate_id.is_empty() {
+            return Err(CoreError::Protocol("a decision needs a gate".into()));
+        }
+        let event_id =
+            EventId::parse(in_reply_to).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let timeline = self.active_timeline_for(room_id)?;
+        let content = gate_decision_content(
+            gate_id,
+            option_id,
+            comment,
+            event_id.as_str(),
+            &gate_decision_body(option_id, prompt),
+        );
+        timeline
+            .room()
+            .send_raw("m.room.message", content)
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))?;
         Ok(())
@@ -5138,5 +5271,167 @@ mod tests {
     #[test]
     fn project_typing_users_is_empty_for_no_typers() {
         assert!(project_typing_users(&[]).is_empty());
+    }
+}
+
+/// The wire shape of a gate decision.
+///
+/// This is the half of `send_gate_decision` that three codebases have to agree
+/// on — the board that opens the gate, the Application Service that resolves
+/// it, and this client that sends the answer. A rename here is a gate that
+/// silently never resolves, which reads to the person who tapped as a button
+/// that did nothing. Pinned by
+/// `fixtures/ecosystem-identity/matrix_gate_events.json` in AgentPod.
+#[cfg(test)]
+mod gate_decision_tests {
+    use super::*;
+
+    const GATE_EVENT: &str = "$gateEventId";
+
+    #[test]
+    fn carries_every_field_the_bridge_resolves_on() {
+        let content = gate_decision_content(
+            "gate_4e8b",
+            "approve",
+            None,
+            GATE_EVENT,
+            "Approved — Ship the OAuth change to staging?",
+        );
+        assert_eq!(content["msgtype"], "m.text");
+        assert_eq!(
+            content["body"],
+            "Approved — Ship the OAuth change to staging?"
+        );
+        assert_eq!(content["schema_version"], 1);
+        assert_eq!(content["suite_event_type"], GATE_DECISION_SUITE_TYPE);
+        assert_eq!(content["gate_id"], "gate_4e8b");
+        assert_eq!(content["option_id"], "approve");
+    }
+
+    #[test]
+    fn relates_by_reference_and_never_by_reply() {
+        let content = gate_decision_content("gate_4e8b", "approve", None, GATE_EVENT, "Approved");
+        assert_eq!(content["m.relates_to"]["rel_type"], "m.reference");
+        assert_eq!(content["m.relates_to"]["event_id"], GATE_EVENT);
+        assert!(
+            content["m.relates_to"]["m.in_reply_to"].is_null(),
+            "a reply relation is a rendering hint every client sets when quoting — \
+             binding a decision to it would let an ordinary quoted reply resolve a gate"
+        );
+    }
+
+    #[test]
+    fn omits_a_comment_that_was_never_written() {
+        let content = gate_decision_content("gate_4e8b", "approve", None, GATE_EVENT, "Approved");
+        assert!(content.get("comment").is_none());
+    }
+
+    #[test]
+    fn omits_a_comment_that_is_only_whitespace() {
+        let content = gate_decision_content(
+            "gate_4e8b",
+            "request_changes",
+            Some("   \n "),
+            GATE_EVENT,
+            "…",
+        );
+        assert!(
+            content.get("comment").is_none(),
+            "kaambaan merges a comment into the card's handoff as feedback; \
+             blank feedback is worse than none"
+        );
+    }
+
+    #[test]
+    fn carries_the_feedback_that_becomes_the_reworks_context() {
+        let content = gate_decision_content(
+            "gate_4e8b",
+            "request_changes",
+            Some("Add a test for the refresh-token path first."),
+            GATE_EVENT,
+            "Requested changes",
+        );
+        assert_eq!(
+            content["comment"],
+            "Add a test for the refresh-token path first."
+        );
+    }
+
+    #[test]
+    fn reads_as_a_sentence_in_the_past_tense() {
+        assert_eq!(
+            gate_decision_body("approve", "Ship the OAuth change to staging?"),
+            "Approved — Ship the OAuth change to staging?"
+        );
+        assert_eq!(
+            gate_decision_body("request_changes", "Ship it?"),
+            "Requested changes — Ship it?"
+        );
+        assert_eq!(
+            gate_decision_body("reject", "Ship it?"),
+            "Rejected — Ship it?"
+        );
+    }
+
+    #[test]
+    fn stands_alone_when_the_gate_carried_no_prompt() {
+        assert_eq!(gate_decision_body("approve", "   "), "Approved");
+    }
+
+    #[test]
+    fn does_not_take_its_wording_from_a_board_configurable_label() {
+        // Two boards labelling approve as "Ship it" and "LGTM" must still leave
+        // the same sentence behind, because this is the durable record.
+        assert_eq!(
+            gate_decision_body("approve", "Deploy?"),
+            gate_decision_body("approve", "Deploy?")
+        );
+        assert!(gate_decision_body("approve", "Deploy?").starts_with("Approved"));
+    }
+
+    #[tokio::test]
+    async fn refuses_an_option_kaambaan_could_not_resolve() {
+        let err = FocusedTimeline::default()
+            .send_gate_decision("!r:x", "gate_4e8b", "ship_it", None, GATE_EVENT, "Shipped")
+            .await
+            .expect_err("an unknown option must not reach the room");
+        assert!(
+            matches!(&err, CoreError::Protocol(m) if m.contains("ship_it")),
+            "the reader has to be told why their tap did nothing; got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn refuses_a_decision_that_names_no_gate() {
+        let err = FocusedTimeline::default()
+            .send_gate_decision("!r:x", "", "approve", None, GATE_EVENT, "Approved")
+            .await
+            .expect_err("a decision with no gate resolves nothing");
+        assert!(matches!(err, CoreError::Protocol(_)));
+    }
+
+    #[tokio::test]
+    async fn checks_the_option_before_it_needs_a_focused_room() {
+        // The guards run first on purpose: a bad option id is the caller's bug
+        // and should say so, not surface as "no room is focused".
+        let err = FocusedTimeline::default()
+            .send_gate_decision("!r:x", "gate_4e8b", "nope", None, GATE_EVENT, "…")
+            .await
+            .expect_err("must refuse");
+        assert!(!matches!(err, CoreError::NotReady));
+    }
+
+    #[tokio::test]
+    async fn accepts_all_three_of_kaambaans_decisions() {
+        for option in ["approve", "request_changes", "reject"] {
+            let err = FocusedTimeline::default()
+                .send_gate_decision("!r:x", "gate_4e8b", option, None, GATE_EVENT, "…")
+                .await
+                .expect_err("no room is focused in a unit test");
+            assert!(
+                matches!(err, CoreError::NotReady | CoreError::RoomChanged { .. }),
+                "{option} must pass the guards and fail only for want of a room; got {err:?}"
+            );
+        }
     }
 }

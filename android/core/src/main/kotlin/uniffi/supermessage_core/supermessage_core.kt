@@ -1103,7 +1103,21 @@ public object FfiConverterTypeAccountDto: FfiConverterRustBuffer<AccountDto> {
  */
 data class CustomEventDecision (
     var `prompt`: kotlin.String, 
-    var `options`: List<CustomEventDecisionOption>
+    var `options`: List<CustomEventDecisionOption>, 
+    /**
+     * What this decision resolves, handed back verbatim when the reader
+     * answers — a kaambaan `gate_id` today.
+     *
+     * Without it a host can draw the buttons and has nothing to name when it
+     * sends the answer. The alternative was for the host to reach past this
+     * type into the raw payload for one field, which would make every host a
+     * second parser of untrusted JSON — the exact duplication this module
+     * moved into the core to prevent.
+     *
+     * `Option`, because not every decision has one: a permission request is
+     * identified by the event it arrived on and needs no separate subject.
+     */
+    var `subject`: kotlin.String?
 ) {
     
     companion object
@@ -1117,17 +1131,20 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
         return CustomEventDecision(
             FfiConverterString.read(buf),
             FfiConverterSequenceTypeCustomEventDecisionOption.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
     override fun allocationSize(value: CustomEventDecision) = (
             FfiConverterString.allocationSize(value.`prompt`) +
-            FfiConverterSequenceTypeCustomEventDecisionOption.allocationSize(value.`options`)
+            FfiConverterSequenceTypeCustomEventDecisionOption.allocationSize(value.`options`) +
+            FfiConverterOptionalString.allocationSize(value.`subject`)
     )
 
     override fun write(value: CustomEventDecision, buf: ByteBuffer) {
             FfiConverterString.write(value.`prompt`, buf)
             FfiConverterSequenceTypeCustomEventDecisionOption.write(value.`options`, buf)
+            FfiConverterOptionalString.write(value.`subject`, buf)
     }
 }
 

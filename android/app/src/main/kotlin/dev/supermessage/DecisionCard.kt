@@ -11,8 +11,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +68,7 @@ fun DecisionCard(
     label: String,
     eventType: String,
     modifier: Modifier = Modifier,
+    onDecide: ((GateAnswer) -> Unit)? = null,
 ) {
     when (view) {
         is CustomEventView.Rendered ->
@@ -76,6 +80,7 @@ fun DecisionCard(
                 newerVersion = view.newerVersion,
                 decision = view.decision,
                 modifier = modifier,
+                onDecide = onDecide,
             )
 
         // A type nothing here can render, but which carried a plain-text
@@ -117,6 +122,7 @@ private fun RenderedCard(
     newerVersion: Boolean,
     decision: CustomEventDecision?,
     modifier: Modifier = Modifier,
+    onDecide: ((GateAnswer) -> Unit)? = null,
 ) {
     // Amber marks a pending decision and nothing else on this card — see
     // `SupermessageColorRoles.signal`'s own note in `Theme.kt`.
@@ -194,7 +200,7 @@ private fun RenderedCard(
         }
 
         if (decision != null) {
-            DecisionPrompt(decision)
+            DecisionPrompt(decision, onDecide = onDecide)
         }
     }
 }
@@ -232,20 +238,48 @@ private fun ReasoningDisclosure(reasoning: String, modifier: Modifier = Modifier
 }
 
 /**
- * The prompt a pending decision asks, and the labels of the answers it
- * offers — read-only. Rendering this at all already implies `pending` in
- * [RenderedCard] above, because a pending decision is the one thing
- * [SupermessageColorRoles.signal] means.
+ * The prompt a pending decision asks, and the answers it offers.
  *
- * A2 reads; it does not answer. Answering means sending a Matrix event as
- * this account, which Phase B wires — a wrong shape here approves things, so
- * these are rendered as plainly non-interactive labels rather than as
- * buttons that merely do nothing when tapped: a disabled button still
- * affords a tap, and this surface must not claim an affordance it does not
- * have.
+ * Answering means sending a Matrix event as this account, never an HTTP call
+ * to a gate: the suite's separation-of-duties check refuses a decision whose
+ * author it cannot attribute, so the sender has to be the person. That is what
+ * [GateAnswer] carries up to a caller holding a session.
+ *
+ * When there is nothing to answer with — no `subject` from the renderer, or no
+ * [onDecide] in this context — the options render as **plainly
+ * non-interactive labels rather than as disabled buttons**. A disabled button
+ * still affords a tap, and this surface must not claim an affordance it does
+ * not have; a wrong shape here approves things.
  */
 @Composable
-private fun DecisionPrompt(decision: CustomEventDecision, modifier: Modifier = Modifier) {
+private fun DecisionPrompt(
+    decision: CustomEventDecision,
+    modifier: Modifier = Modifier,
+    onDecide: ((GateAnswer) -> Unit)? = null,
+) {
+    val subject = decision.subject
+    val answerable = subject != null && onDecide != null
+
+    // The option awaiting a comment, if one is. Only `request_changes` ever
+    // sets this: approve and reject are decisions, and request-changes is
+    // feedback that becomes the rework's context — Kaambaan merges it into the
+    // card's handoff, so an empty one costs the next agent the reason.
+    var commenting by remember { mutableStateOf<String?>(null) }
+    var comment by remember { mutableStateOf("") }
+
+    fun send(optionId: String, text: String?) {
+        val gate = subject ?: return
+        val trimmed = text?.trim()
+        onDecide?.invoke(
+            GateAnswer(
+                subject = gate,
+                optionId = optionId,
+                comment = if (trimmed.isNullOrEmpty()) null else trimmed,
+                prompt = decision.prompt,
+            ),
+        )
+    }
+
     Column(
         modifier = modifier.testTag("decision-pending"),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -256,21 +290,88 @@ private fun DecisionPrompt(decision: CustomEventDecision, modifier: Modifier = M
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             decision.options.forEach { option ->
+                val base = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
                 Text(
-                    // `option.label` only. `option.id` is an identifier
-                    // handed back verbatim when the reader answers, never
-                    // rendered — see `CustomEventDecisionOption`'s own doc —
-                    // and it is read nowhere in this function.
+                    // `option.label` only. `option.id` is an identifier handed
+                    // back verbatim when the reader answers, never rendered —
+                    // see `CustomEventDecisionOption`'s own doc.
                     option.label,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                    modifier = (
+                        if (answerable) {
+                            base.clickable(onClickLabel = option.label) {
+                                if (option.id == GateAnswer.REQUEST_CHANGES) {
+                                    commenting = option.id
+                                } else {
+                                    send(option.id, null)
+                                }
+                            }
+                        } else {
+                            base
+                        }
+                        )
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                         .testTag("decision-option"),
                 )
             }
         }
+    }
+
+    val pendingOption = commenting
+    if (pendingOption != null) {
+        AlertDialog(
+            onDismissRequest = { commenting = null; comment = "" },
+            title = { Text("Request changes") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "This goes back to the agent as the reason, so it can pick the work up again.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = comment,
+                        onValueChange = { comment = it },
+                        label = { Text("What needs changing?") },
+                        modifier = Modifier.fillMaxWidth().testTag("decision-comment"),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        send(pendingOption, comment)
+                        commenting = null
+                        comment = ""
+                    },
+                    modifier = Modifier.testTag("decision-comment-send"),
+                ) { Text("Send") }
+            },
+            dismissButton = {
+                TextButton(onClick = { commenting = null; comment = "" }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/**
+ * One answer to a decision, on its way out of the card.
+ *
+ * Carries [subject] — what the decision resolves, a Kaambaan `gate_id` today —
+ * because the card is the only place that knows it: the renderer read it out of
+ * the payload, and the row above has only an event id. Both are needed to
+ * answer and neither side has both.
+ */
+data class GateAnswer(
+    val subject: String,
+    val optionId: String,
+    val comment: String?,
+    val prompt: String,
+) {
+    companion object {
+        /** Kaambaan's only option id that expects a comment. */
+        const val REQUEST_CHANGES = "request_changes"
     }
 }

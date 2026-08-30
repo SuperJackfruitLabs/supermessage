@@ -298,6 +298,15 @@ jobs:
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
+    env:
+      # One ABI on a pull request, four on main.
+      #
+      # Job-level rather than step-level because BOTH halves have to agree:
+      # `build-android-libs.sh` reads it to decide what to cross-compile, and
+      # :core's `checkJniLibs` reads it to decide what to require. Setting it on
+      # only the build step is how the first attempt failed — Gradle went on
+      # demanding four ABIs of a build that had deliberately produced one.
+      ANDROID_ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a armeabi-v7a x86_64 x86' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -327,6 +336,15 @@ jobs:
         # actually reproducing it.
         run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
 
+      # ── Everything that needs only a host build comes first ───────────────
+      #
+      # The order below is deliberate and was paid for. These steps used to sit
+      # behind the four-ABI cross-compile, so a stale binding or a Kotlin
+      # compile error — neither of which involves an Android ABI — took fifteen
+      # minutes to report instead of two. Nothing here loads an `.so` for a
+      # device: :kit's unit tests go through JNA to the *host* library, and the
+      # bindings are generated from exported metadata rather than machine code.
+
       - name: Build the host core
         # :kit's unit tests (RosterArrangementTest) load libsupermessage_ffi
         # through JNA from target/debug on the *host* triple, not from any of
@@ -336,12 +354,13 @@ jobs:
         # this job is to run the real one.
         run: cargo build -p supermessage-ffi
 
-      - name: Build the Rust core for Android and generate the Kotlin bindings
-        # Four ABIs, ~15 minutes on a cold cache — see the script's own
-        # header comment for the full story (cargo-ndk, the NDK, the 16KB
-        # page size flag). Swatinem/rust-cache above makes a run against an
-        # unchanged Cargo.lock mostly a linker pass instead.
-        run: ./scripts/build-android-libs.sh
+      - name: Generate the Kotlin bindings from the host library
+        # No NDK involved. UniFFI emits Kotlin from the library's exported
+        # metadata, so a host build produces the same bindings a cross-compiled
+        # one does — which is what lets this run here rather than after the
+        # cross-compile, and what lets a contributor with no NDK keep the
+        # checked-in bindings current at all.
+        run: ./scripts/generate-kotlin-bindings.sh
 
       - name: The checked-in bindings match the Rust that generates them
         # Android needs this even more than iOS's equivalent step does: the
@@ -353,7 +372,7 @@ jobs:
         # whatever device happens to run it first.
         run: |
           if ! git diff --quiet -- android/core/src/main/kotlin/uniffi; then
-            echo "::error::android/core/src/main/kotlin/uniffi is stale — run ./scripts/build-android-libs.sh and commit the result"
+            echo "::error::android/core/src/main/kotlin/uniffi is stale — run ./scripts/generate-kotlin-bindings.sh and commit the result"
             git diff --stat -- android/core/src/main/kotlin/uniffi
             exit 1
           fi
@@ -366,8 +385,26 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Unit tests
+        # Before the cross-compile: these are JVM tests, and the only native
+        # library any of them touches is the host one built above.
         run: ./gradlew :kit:testDebugUnitTest :app:testDebugUnitTest :core:testDebugUnitTest
         working-directory: android
+
+      # ── Now the expensive part, and only the ABIs this run will load ───────
+
+      - name: Build the Rust core for Android
+        # One ABI on a pull request, four on main.
+        #
+        # The instrumented tests below run on an x86_64 emulator and this job
+        # builds no shippable artifact, so arm64-v8a, armeabi-v7a and x86 are
+        # thirteen minutes spent on libraries nothing here loads. They are still
+        # built on main, where the cost buys real coverage of the targets a
+        # device actually uses.
+        #
+        # If that trade ever looks wrong, the honest fix is a release workflow
+        # that builds all four and assembles an artifact — which does not exist
+        # today, and is why the device-capable build ended up in PR CI at all.
+        run: ./scripts/build-android-libs.sh
 
       - name: Enable KVM
         # The emulator needs hardware acceleration to be usable in CI at all;
@@ -432,42 +469,85 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest
+          # Uninstall before installing.
+          #
+          # The AVD is restored from a cache, and a debug keystore is generated
+          # fresh on each runner unless one is checked in — this repo does not
+          # check one in. So a snapshot that ever captured an installed
+          # dev.supermessage carries an APK signed by a keystore no later run
+          # has, and every install after that fails with
+          # INSTALL_FAILED_UPDATE_INCOMPATIBLE ("signatures do not match").
+          #
+          # It is a poisoned cache rather than a broken change, and it survives
+          # until the cache key moves — which is a manual step nobody remembers
+          # in the moment, because the error names signatures and points at the
+          # app. Uninstalling first makes the job idempotent against whatever
+          # the snapshot happens to hold.
+          #
+          # `|| true`: the package is absent on a clean AVD, and adb treats
+          # uninstalling something that was never there as a failure.
+          script: |
+            adb uninstall dev.supermessage || true
+            adb uninstall dev.supermessage.test || true
+            cd android && ./gradlew :app:connectedDebugAndroidTest
 
       - name: Report per-ABI APK sizes
         # :app:connectedDebugAndroidTest above already assembles :app's own
         # split APKs as a dependency of installing it on the emulator — see
         # android/app/build.gradle.kts's `splits` block — so there is nothing
-        # left to build here, only to measure.
+        # left to build here, only to measure. On a pull request that is one
+        # split rather than five, because only one ABI was built.
         run: du -h android/app/build/outputs/apk/debug/*.apk
+
+      # ── Installable artifacts, on main only ───────────────────────────────
+      #
+      # These are a convenience: the maintainer's own test device is arm64-v8a,
+      # and grabbing a debug APK from a run beats building one. On a pull
+      # request that convenience costs thirteen minutes of cross-compiling —
+      # the four ABIs exist ONLY to produce these uploads, since the emulator
+      # needs one and the tests need none.
+      #
+      # So they move to main, where the cost buys something durable. A PR that
+      # genuinely needs an on-device build can re-run this job from a branch
+      # push, or the trade can be revisited if it starts biting.
+      #
+      # The honest longer-term fix is a release workflow that builds all four
+      # and assembles a signed artifact. There isn't one — `release.yml` builds
+      # no Android at all today — which is exactly why a device-capable build
+      # ended up living in pull-request CI.
 
       - name: Upload arm64-v8a APK
         # The maintainer's own test device (a OnePlus 8T) is arm64-v8a — the
         # one of these five a human actually reaches for.
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: supermessage-debug-arm64-v8a
           path: android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 
       - name: Upload armeabi-v7a APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: supermessage-debug-armeabi-v7a
           path: android/app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
 
       - name: Upload x86_64 APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: supermessage-debug-x86_64
           path: android/app/build/outputs/apk/debug/app-x86_64-debug.apk
 
       - name: Upload x86 APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: supermessage-debug-x86
           path: android/app/build/outputs/apk/debug/app-x86-debug.apk
 
       - name: Upload universal APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: supermessage-debug-universal

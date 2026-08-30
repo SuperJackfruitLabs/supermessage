@@ -447,6 +447,11 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_rooms_snapshot(void*_Nonnull p
 RustBuffer uniffi_supermessage_ffi_fn_method_core_search_messages(void*_Nonnull ptr, RustBuffer term, RustBuffer room_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_GATE_DECISION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_GATE_DECISION
+void uniffi_supermessage_ffi_fn_method_core_send_gate_decision(void*_Nonnull ptr, RustBuffer room_id, RustBuffer gate_id, RustBuffer option_id, RustBuffer comment, RustBuffer in_reply_to, RustBuffer prompt, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
 void uniffi_supermessage_ffi_fn_method_core_send_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer body, RustBuffer mentions, RustCallStatus *_Nonnull out_status
@@ -1044,6 +1049,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_rooms_snapshot(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEARCH_MESSAGES
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEARCH_MESSAGES
 uint16_t uniffi_supermessage_ffi_checksum_method_core_search_messages(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(void
     
 );
 #endif
