@@ -728,7 +728,6 @@ fn custom_message_payload(
     (payload, body)
 }
 
-
 /// The sentence a decision leaves in the room.
 ///
 /// Derived from `option_id` rather than from the option's label, because a
@@ -5299,7 +5298,10 @@ mod gate_decision_tests {
             "Approved — Ship the OAuth change to staging?",
         );
         assert_eq!(content["msgtype"], "m.text");
-        assert_eq!(content["body"], "Approved — Ship the OAuth change to staging?");
+        assert_eq!(
+            content["body"],
+            "Approved — Ship the OAuth change to staging?"
+        );
         assert_eq!(content["schema_version"], 1);
         assert_eq!(content["suite_event_type"], GATE_DECISION_SUITE_TYPE);
         assert_eq!(content["gate_id"], "gate_4e8b");
@@ -5326,8 +5328,13 @@ mod gate_decision_tests {
 
     #[test]
     fn omits_a_comment_that_is_only_whitespace() {
-        let content =
-            gate_decision_content("gate_4e8b", "request_changes", Some("   \n "), GATE_EVENT, "…");
+        let content = gate_decision_content(
+            "gate_4e8b",
+            "request_changes",
+            Some("   \n "),
+            GATE_EVENT,
+            "…",
+        );
         assert!(
             content.get("comment").is_none(),
             "kaambaan merges a comment into the card's handoff as feedback; \
@@ -5350,7 +5357,6 @@ mod gate_decision_tests {
         );
     }
 
-
     #[test]
     fn reads_as_a_sentence_in_the_past_tense() {
         assert_eq!(
@@ -5361,7 +5367,10 @@ mod gate_decision_tests {
             gate_decision_body("request_changes", "Ship it?"),
             "Requested changes — Ship it?"
         );
-        assert_eq!(gate_decision_body("reject", "Ship it?"), "Rejected — Ship it?");
+        assert_eq!(
+            gate_decision_body("reject", "Ship it?"),
+            "Rejected — Ship it?"
+        );
     }
 
     #[test]

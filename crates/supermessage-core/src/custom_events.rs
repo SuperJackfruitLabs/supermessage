@@ -1967,7 +1967,11 @@ mod gate_tests {
         let decision = result.decision.expect("a gate is a decision");
         assert_eq!(decision.prompt, "Ship the OAuth change to staging?");
         assert_eq!(
-            decision.options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+            decision
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
             ["approve", "request_changes", "reject"]
         );
         assert_eq!(decision.options[1].label, "Request changes");
@@ -1995,7 +1999,11 @@ mod gate_tests {
         );
         let decision = result.decision.expect("the valid option still stands");
         assert_eq!(
-            decision.options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+            decision
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
             ["approve"],
             "an id outside GateDecision draws a button that cannot resolve"
         );
@@ -2003,7 +2011,10 @@ mod gate_tests {
 
     #[test]
     fn offers_no_decision_when_every_option_is_unknown() {
-        let result = GateRenderer.render(&gate(json!([{ "id": "ship_it", "label": "Ship it" }])), None);
+        let result = GateRenderer.render(
+            &gate(json!([{ "id": "ship_it", "label": "Ship it" }])),
+            None,
+        );
         assert!(
             result.decision.is_none(),
             "every button would have been a lie; describe the gate instead"
@@ -2064,7 +2075,9 @@ mod gate_tests {
     #[test]
     fn falls_back_to_the_id_when_an_option_carries_no_label() {
         let result = GateRenderer.render(&gate(json!([{ "id": "approve" }])), None);
-        let decision = result.decision.expect("a labelless option is still answerable");
+        let decision = result
+            .decision
+            .expect("a labelless option is still answerable");
         assert_eq!(decision.options[0].label, "approve");
     }
 
@@ -2072,7 +2085,10 @@ mod gate_tests {
     fn names_the_card_in_the_prompt_when_the_gate_carries_none() {
         let mut content = gate(ALL_THREE());
         content.as_object_mut().unwrap().remove("prompt");
-        let decision = GateRenderer.render(&content, None).decision.expect("still answerable");
+        let decision = GateRenderer
+            .render(&content, None)
+            .decision
+            .expect("still answerable");
         assert_eq!(decision.prompt, "Approve \"Add OAuth login\"?");
     }
 
@@ -2081,12 +2097,30 @@ mod gate_tests {
         let mut content = gate(ALL_THREE());
         let obj = content.as_object_mut().unwrap();
         obj.insert("schema_version".into(), json!(2));
-        obj.insert("a_field_from_the_future".into(), json!("ignored, not fatal"));
+        obj.insert(
+            "a_field_from_the_future".into(),
+            json!("ignored, not fatal"),
+        );
 
-        match resolve_custom_event(default_registry(), Some(GATE_EVENT_TYPE), Some(&content), None) {
-            CustomEventView::Rendered { newer_version, decision, .. } => {
-                assert!(newer_version, "the reader should be told they may see a partial view");
-                assert!(decision.is_some(), "additive changes must not cost the buttons");
+        match resolve_custom_event(
+            default_registry(),
+            Some(GATE_EVENT_TYPE),
+            Some(&content),
+            None,
+        ) {
+            CustomEventView::Rendered {
+                newer_version,
+                decision,
+                ..
+            } => {
+                assert!(
+                    newer_version,
+                    "the reader should be told they may see a partial view"
+                );
+                assert!(
+                    decision.is_some(),
+                    "additive changes must not cost the buttons"
+                );
             }
             other => panic!("expected a rendered gate, got {other:?}"),
         }
@@ -2139,8 +2173,15 @@ mod gate_tests {
     fn the_subject_survives_the_bounding_pass() {
         // `bound_decision` rebuilds the struct; a field dropped there would
         // pass every renderer test and fail only in the host.
-        match resolve_custom_event(default_registry(), Some(GATE_EVENT_TYPE), Some(&gate(ALL_THREE())), None) {
-            CustomEventView::Rendered { decision: Some(d), .. } => {
+        match resolve_custom_event(
+            default_registry(),
+            Some(GATE_EVENT_TYPE),
+            Some(&gate(ALL_THREE())),
+            None,
+        ) {
+            CustomEventView::Rendered {
+                decision: Some(d), ..
+            } => {
                 assert_eq!(d.subject.as_deref(), Some("gate_4e8b"));
             }
             other => panic!("expected a rendered gate, got {other:?}"),
