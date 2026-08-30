@@ -60,7 +60,19 @@ Rules:
 2. **matrix-rust-sdk in the core, not a JS SDK in the webview.** matrix-js-sdk works in webviews but lacks sliding sync on mobile-grade quality and duplicates what the Rust SDK does better; direct crate use means zero FFI glue.
 3. **Svelte over React** for the desktop app. tauri-plugin-matrix-svelte is an existing reference for the exact bridge; GitButler proves Svelte scales on Tauri. (This decision originally leaned partly on Framework7 Svelte being first-class; that reason is gone, the conclusion is not.)
 4. **~~Framework7 as mobile skin.~~** Superseded — see below.
-5. **Per-OS desktop skins, not a "desktop UI kit".** No credible native-look web kits exist (Fluent UI React is React-only and Fluent≠WinUI; no maintained macOS HIG kit). Polished Tauri apps (GitButler, Cinny) hand-roll tokens over headless components + native chrome. Linux: import [libadwaita's documented CSS variables](https://github.com/GNOME/libadwaita/blob/main/doc/css-variables.md).
+5. **Desktop UI framework — reopened 2026-08-30, not settled.** Decisions 1 and 3 above rest on a premise that has expired: Tauri was "the only stack pairing a top-tier permissively-licensed SDK with one codebase for **5 targets**". iOS became a native SwiftUI app on 19 August and Android is Jetpack Compose, so the webview now unifies **three** desktop targets it does not need a webview to unify.
+
+   What makes it worth reopening rather than leaving alone is what this document already says two sections up: the webview is "a dumb renderer", and since the view-model migration *every decision about what to draw* resolves in Rust. Desktop is therefore ~18,200 lines of TypeScript and 39 Tauri commands rendering `TimelineRow`/`RoomRow` values the core has already computed.
+
+   [GPUI](https://www.gpui.rs) is the obvious candidate and the licence clears (Apache-2.0, unlike the AGPL options that removed Flutter and trixnity). The two objections that were doing real work have both been answered by [supermd](https://github.com/SuperJackfruitLabs/supermd), which is a shipping GPUI application in this org: **no in-house experience** — there is now a hybrid-WYSIWYG editor with tree-sitter highlighting, native mermaid rendering and a plugin system — and **you would be pinning a git SHA of someone else's editor** — supermd depends on the *published* `gpui = "0.2.2"` and has cut thirteen releases across macOS, Linux and Windows on it.
+
+   **The decision is to evaluate the wider Rust-native UI field before committing to any of it**, GPUI included. One shipping example answers "can this carry an app"; it does not answer "is this the right one". What remains true of GPUI regardless: it is pre-1.0 and its own README warns of frequent breaking changes.
+
+   Two things that would settle it either way: a candidate reaching 1.0 with a published cadence, or the Svelte layer beginning to *disagree* with the core about what to draw — the same drift argument that moved the custom-event registry into Rust in the first place.
+
+   Not in the charter, deliberately. A framework is how one product works, and the charter holds agreements between products.
+
+6. **Per-OS desktop skins, not a "desktop UI kit".** No credible native-look web kits exist (Fluent UI React is React-only and Fluent≠WinUI; no maintained macOS HIG kit). Polished Tauri apps (GitButler, Cinny) hand-roll tokens over headless components + native chrome. Linux: import [libadwaita's documented CSS variables](https://github.com/GNOME/libadwaita/blob/main/doc/css-variables.md).
 
 ## Matrix protocol choices
 
