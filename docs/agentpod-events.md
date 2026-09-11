@@ -1,7 +1,15 @@
 # AgentPod events: what supermessage consumes
 
-**Status:** contract, Aug 2026. Written against what the client actually reads,
-not against what either side plans to send.
+**Status:** contract, Aug 2026; event names corrected 2026-09-12. Written against
+what the client actually reads, not against what either side plans to send.
+
+The correction: this file named the live channel `dev.agentpod.live` and the
+reasoning channel `dev.agentpod.thought`. Neither string exists on either side.
+Both implementations have always agreed on `dev.agentpod.stream.delta` and
+`dev.agentpod.thought.delta` — verified against `core::live` here and against
+`apps/hub/src/services/matrix-as/` in agentpod. `text` and `done` are *fields*
+on those events, not event subtypes, which is how the wrong names read as
+plausible.
 **Audience:** whoever changes what AgentPod emits, and whoever changes what this
 client renders.
 
@@ -14,9 +22,13 @@ There are two of them, and the difference between them is the whole point.
 ## 1. The live channel — to-device, and therefore temporary
 
 Three to-device event types carry a turn while it is being written:
-`dev.agentpod.live` (the answer), `dev.agentpod.thought` (the reasoning), and
-`dev.agentpod.tool.update` (each tool call as it moves). See
+`dev.agentpod.stream.delta` (the answer), `dev.agentpod.thought.delta` (the
+reasoning), and `dev.agentpod.tool.update` (each tool call as it moves). See
 `core::live` for the wire structs and the ordering rules.
+
+Each carries `room_id`, `session_id` and a monotonic `seq`. A new turn restarts
+at `seq: 1`, which is what distinguishes a fresh answer from more of the last
+one.
 
 **Nothing here is room history.** To-device messages are not stored on the
 homeserver, are not paginated, and are not visible to any other client or to
@@ -28,8 +40,8 @@ What the client does with it:
 
 | Field | Effect |
 |---|---|
-| `dev.agentpod.live.text` / `.done` | The answer, revealed by `StreamingText` at a paced rate rather than as it arrives. `done` drains the buffer and drops the streamed copy — the real message is landing on the timeline and says it better. |
-| `dev.agentpod.thought.text` | The reasoning, in a collapsed disclosure. **Kept after `done`** until the next turn starts, because a record that vanishes when the answer appears is one nobody has had time to read. |
+| `dev.agentpod.stream.delta` — `text`, `done` | The answer, revealed by `StreamingText` at a paced rate rather than as it arrives. `done` drains the buffer and drops the streamed copy — the real message is landing on the timeline and says it better. |
+| `dev.agentpod.thought.delta` — `text`, `done` | The reasoning, in a collapsed disclosure. **Kept after `done`** until the next turn starts, because a record that vanishes when the answer appears is one nobody has had time to read. |
 | `dev.agentpod.tool.update` | One row per `tool_call_id`, merged on later reports. |
 
 ### Tool calls: two fields AgentPod does not send yet

@@ -1,7 +1,13 @@
 # supermessage — Tech Stack & Architecture
 
-**Status:** Decided (Aug 2026), pre-implementation.
-**Next input pending:** product vision & target audience (will refine requirements).
+**Status:** Decided (Aug 2026) and **built** — the stack below is what the code uses, not
+what was planned. As of 2026-09-12 the tree carries ~25k lines of Rust across `src-tauri/`
+and `crates/`, ~18k lines of Svelte and TypeScript under `src/`, and 681 Rust tests. The
+"pre-implementation" this line used to claim stopped being true some time ago.
+
+Every dependency in the table was re-checked against `package.json`, `src-tauri/Cargo.toml`
+and the workspace manifests on 2026-09-12 and matches — Tauri 2, matrix-sdk 0.18, Svelte 5,
+Tailwind 4, Bits UI 2, virtua.
 
 supermessage is a cross-platform Matrix chat client targeting **iOS, Android, Windows, macOS, and Linux from a single codebase**.
 
