@@ -1,5 +1,7 @@
 # M0 — The Spine: Design
 
+> **Correction, 2026-08-30. Nothing below is edited.** This document names `id.agentpod.dev` as Synapse and treats native OIDC as waiting on matrix-authentication-service. The homeserver was swapped to tuwunel on 2026-08-16 (Synapse is AGPLv3; this suite requires Apache/MIT) and MAS — a Synapse-family component — is not part of the suite at all. See `charter → decisions/2026-08-30-matrix-identity-without-mas.md`. Password login is the login path, not debt awaiting a migration.
+
 **Status:** Approved, pending implementation plan.
 **Date:** 2026-08-13.
 **Scope:** Log in to a real account on `id.agentpod.dev`, sync it, render the room list and a room timeline, send and receive plaintext messages.

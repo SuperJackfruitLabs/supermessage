@@ -1,9 +1,11 @@
 //! Password login: the only [`AuthProvider`] implementation today.
 //!
-//! The target homeserver (`id.agentpod.dev`, Synapse 1.152.0) advertises
-//! only `m.login.password` — no SSO, no native OIDC. Native OIDC remains the
-//! long-term intent but requires deploying matrix-authentication-service
-//! first, so this is what actually logs users in for now.
+//! The target homeserver (`id.agentpod.dev`) runs **tuwunel** and advertises
+//! `m.login.application_service`, `m.login.token` and `m.login.password` — no
+//! SSO, no native OIDC. This is not a stopgap awaiting
+//! matrix-authentication-service: MAS is Synapse-family, the homeserver is not
+//! Synapse, and it is not coming
+//! (`charter → decisions/2026-08-30-matrix-identity-without-mas.md`).
 
 use async_trait::async_trait;
 use matrix_sdk::store::RoomLoadSettings;

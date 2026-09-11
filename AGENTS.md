@@ -79,12 +79,19 @@ android/             — the native Android app (Gradle, over the Rust core via 
 
 ## Matrix protocol choices
 
-- **Auth:** `m.login.password` is the **only** flow available today —
-  `id.agentpod.dev` (Synapse 1.152.0) advertises no SSO or OIDC, and both
+- **Auth:** `m.login.password` is the **only** flow available today, and is the
+  login path rather than a stopgap. `id.agentpod.dev` runs **tuwunel**, not
+  Synapse — swapped 2026-08-16 because Synapse is AGPLv3 and this suite requires
+  Apache/MIT. It advertises `m.login.application_service`, `m.login.token`
+  (`get_login_token: true`) and `m.login.password`; both
   `/_matrix/client/v1/auth_metadata` and the MSC2965 unstable path return 404.
-  Native OIDC (MSC3861) remains the intended target but requires deploying
-  matrix-authentication-service first. The client implements password login
-  behind an `AuthProvider` trait so OIDC is additive.
+  **matrix-authentication-service is not coming** — it is a Synapse-family
+  component and the premise that required it died with the homeserver swap
+  (`charter → decisions/2026-08-30-matrix-identity-without-mas.md`). So native
+  OIDC is not "blocked on a deployment"; it is not on the roadmap. The
+  `AuthProvider` trait stays, because how a human's Matrix login relates to the
+  suite's issuer is an open charter question — `m.login.token` is the candidate
+  and is unverified.
 - **Sync:** Simplified Sliding Sync (MSC4186) via the SDK's SyncService; `/sync` v3 fallback for older servers.
 - **E2EE:** SDK crypto (vodozemac): cross-signing, SSSS key backup, emoji/SAS device verification. Never hand-roll crypto.
 - **Media:** authenticated media endpoints (spec ≥1.11).

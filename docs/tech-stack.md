@@ -1,7 +1,13 @@
 # supermessage — Tech Stack & Architecture
 
-**Status:** Decided (Aug 2026), pre-implementation.
-**Next input pending:** product vision & target audience (will refine requirements).
+**Status:** Decided (Aug 2026) and **built** — the stack below is what the code uses, not
+what was planned. As of 2026-09-12 the tree carries ~25k lines of Rust across `src-tauri/`
+and `crates/`, ~18k lines of Svelte and TypeScript under `src/`, and 681 Rust tests. The
+"pre-implementation" this line used to claim stopped being true some time ago.
+
+Every dependency in the table was re-checked against `package.json`, `src-tauri/Cargo.toml`
+and the workspace manifests on 2026-09-12 and matches — Tauri 2, matrix-sdk 0.18, Svelte 5,
+Tailwind 4, Bits UI 2, virtua.
 
 supermessage is a cross-platform Matrix chat client targeting **iOS, Android, Windows, macOS, and Linux from a single codebase**.
 
@@ -96,7 +102,7 @@ Rules:
 
 ## Matrix protocol choices
 
-- **Auth:** `m.login.password` is the only flow available today — `id.agentpod.dev` (Synapse 1.152.0) advertises no SSO or OIDC, and both `/_matrix/client/v1/auth_metadata` and the MSC2965 unstable path return 404. Native OIDC (MSC3861) remains the intended target but requires deploying matrix-authentication-service first. The client implements password login behind an `AuthProvider` trait so OIDC is additive. Guide: [areweoidcyet.com](https://areweoidcyet.com/).
+- **Auth:** `m.login.password` is the only flow available today, and is the login path rather than a stopgap. `id.agentpod.dev` runs **tuwunel**, not Synapse — swapped 2026-08-16 because Synapse is AGPLv3 and this suite requires Apache/MIT. It advertises `m.login.application_service`, `m.login.token` (`get_login_token: true`) and `m.login.password`; both `/_matrix/client/v1/auth_metadata` and the MSC2965 unstable path return 404. **matrix-authentication-service is not coming** — it is Synapse-family, and the premise requiring it died with the homeserver swap (`charter → decisions/2026-08-30-matrix-identity-without-mas.md`). Native OIDC is therefore not blocked on a deployment; it is not on the roadmap. The `AuthProvider` trait stays because how a Matrix login relates to the suite's issuer is an open charter question — `m.login.token` is the candidate and is unverified.
 - **Sync:** Simplified Sliding Sync (MSC4186) via the SDK's SyncService (native in Synapse ≥1.114; `org.matrix.simplified_msc3575` advertised on `id.agentpod.dev`); `/sync` v3 fallback for older servers.
 - **E2EE:** SDK crypto (vodozemac). Cross-signing, SSSS key backup, emoji/SAS device verification. Never hand-roll crypto.
 - **Media:** authenticated media endpoints (spec ≥1.11; available on `id.agentpod.dev`).
