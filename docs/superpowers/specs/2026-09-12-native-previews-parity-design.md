@@ -50,7 +50,9 @@ and the inventory in full. §6 is honest about the boundary.
 ## 3. Decisions
 
 1. **All 32 surfaces get a preview**, per-platform states rather than
-   mirrors of P2a's named scenarios.
+   mirrors of P2a's named scenarios. **This requires an injection seam that
+   does not exist yet** — see §4.0, added after the first pass at planning
+   found that 11 of the 18 iOS views cannot be constructed at all.
 2. **iOS first, Android second**, so the pattern is proven where it can be
    compiled before it is applied where it cannot.
 3. **Previews are excluded from release builds** — `#if DEBUG` on iOS, a
@@ -61,6 +63,49 @@ and the inventory in full. §6 is honest about the boundary.
    one; see §5 for why that follows from decision 1.
 
 ## 4. The work
+
+### 4.0 The seam that has to exist first
+
+An earlier draft of this spec assumed 18 iOS previews were a matter of
+writing 18 `#Preview` blocks. They are not. **Eleven of the eighteen views
+take `session: Session`**, and `Session.init(client: CoreClient)` needs a
+`CoreClient` — a concrete class of 38 public methods that constructs a
+`Core` FFI object in its initialiser. There is no seam to substitute, and
+even `SupermessageKitTests` does not stub it: those tests build a real
+`CoreClient(dataDirectory:)` and reach internals through
+`@testable import`, which the app target cannot do.
+
+| | Count | Views |
+|---|---|---|
+| Previewable from plain values | 6 | `DecisionCard`, `LiveTurnView`, `RichTextView`, `RoomRowView`, `SpacePillStrip`, `StreamingTextView` |
+| Needs the two caches | 1 | `TimelineRowView` |
+| Needs a live `Session` | 11 | `RootView`, `RoomListView`, `SearchPanel`, `NewRoomPanel`, `RoomInfoPanel`, `AccountPanel`, `InvitationView`, `ComposerView`, `LoginView`, `TimelineView`, `TimelineCollectionView` |
+
+**Narrow per-store protocols** are the route taken, of four considered:
+
+- *One 38-method protocol over all of `CoreClient`* — opens the boundary
+  `AGENTS.md` protects. "No `Core` call on a cooperative thread" is
+  enforced today by `CoreClient` putting every call on a `DispatchQueue`,
+  and a wide protocol lets an implementation skip that.
+- *A `previewing()` `CoreClient`* — one file, no call-site churn, but it
+  makes `core` optional and adds 38 nil branches to the FFI boundary, which
+  is the worst place in the codebase to add them.
+- *Refactor the 11 views to take view-models, as P2a did for the web* — the
+  better end state and where `AGENTS.md` rule 1 points, but a project of
+  P2a's size and heavily overlapping P6. Not blocked by doing this first.
+- **Narrow per-store protocols** — one small protocol per store, each
+  carrying only what that store calls; `CoreClient` conforms to all of
+  them; `Session` takes them. **This is the shape the web side already
+  has**: `AvatarCacheDeps` and `RoomsStoreDeps` are exactly this, and P1
+  recorded that the web stores are injectable factories. iOS never got the
+  same treatment; this gives it the same one.
+
+**To verify first, not assume:** the protocols must be `Sendable` under
+`SWIFT_STRICT_CONCURRENCY: complete`, and `AGENTS.md` records that UniFFI
+0.28's output is not `Sendable`-clean — which is why `SupermessageFFI` is
+quarantined at Swift 5. The protocols sit at the `CoreClient` level, which
+is the quarantine layer rather than inside it, so this should hold. It is
+the first task's check.
 
 ### 4.1 iOS — 18 previews
 
@@ -174,6 +219,11 @@ plausible outcome here and would not be detected.
 - **Does `compose-ui-tooling` actually render these previews?** Adding the
   dependency is necessary; whether each `@Preview` renders something useful
   is unknown until someone opens Android Studio.
+- **Should the 11 `Session`-taking views be refactored to view-models?**
+  That is route D in §4.0 and the better end state — it would remove the
+  need for any protocol in the views, make iOS testable the way the web
+  now is, and follow `AGENTS.md` rule 1. It is declined here only on size,
+  not on merit, and the per-store protocols do not block it.
 - **Should the native previews later be re-pointed at P2a's named states?**
   That is what would make the parity inventory mechanical. Declined here;
   worth revisiting once there is a way to look at the previews, because
