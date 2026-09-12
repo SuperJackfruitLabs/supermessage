@@ -54,7 +54,7 @@ public final class AvatarCache {
     }
 
     /// Room avatars, keyed by room id.
-    public convenience init(client: CoreClient, countLimit: Int = 200) {
+    public convenience init(client: any AvatarFetching, countLimit: Int = 200) {
         self.init(countLimit: countLimit) { roomId in
             guard let uri = try? await client.roomAvatar(roomId: roomId), !uri.isEmpty else {
                 return nil
@@ -68,7 +68,7 @@ public final class AvatarCache {
     /// Keyed by the URI rather than the user id on purpose: two members with
     /// the same picture share one entry, and a member who changes their
     /// picture gets a new key rather than a stale hit.
-    public static func forMembers(client: CoreClient, countLimit: Int = 200) -> AvatarCache {
+    public static func forMembers(client: any AvatarFetching, countLimit: Int = 200) -> AvatarCache {
         AvatarCache(countLimit: countLimit) { mxcUri in
             guard let uri = try? await client.memberAvatar(mxcUri: mxcUri), !uri.isEmpty else {
                 return nil

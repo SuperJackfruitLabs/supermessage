@@ -15,9 +15,9 @@ public final class SpacesStore {
     public private(set) var selectedId: String?
     public private(set) var failure: String?
 
-    private let client: CoreClient
+    private let client: any SpaceSelecting
 
-    public init(client: CoreClient) {
+    public init(client: any SpaceSelecting) {
         self.client = client
     }
 

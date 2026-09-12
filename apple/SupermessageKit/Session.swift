@@ -44,11 +44,11 @@ public final class Session {
     public let edits = EditTarget()
     public let staged: StagedAttachment
 
-    private let client: CoreClient
+    private let client: any SessionClient
     private let pump = EventPump()
     private var drainTask: Task<Void, Never>?
 
-    public init(client: CoreClient) {
+    public init(client: any SessionClient) {
         self.client = client
         rooms = RoomsStore(client: client)
         spaces = SpacesStore(client: client)
