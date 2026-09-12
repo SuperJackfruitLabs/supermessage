@@ -272,6 +272,69 @@ class TypeEmissionTests(unittest.TestCase):
         self.assertIn('val body = FontFamily.Serif', kt)
         self.assertIn('val bodyOwn = FontFamily.SansSerif', kt)
 
+class ImportTests(unittest.TestCase):
+    """Every symbol the generated code references must be imported.
+
+    This exists because it already happened. Adding the type block to the
+    Kotlin emitter introduced `FontFamily` without its import, the whole
+    Python suite stayed green, and CI failed with seven `Unresolved
+    reference 'FontFamily'` errors — because there is no Kotlin compiler on
+    the machine the emitter is written on. A generator that emits code for
+    platforms you cannot build has to typecheck its own output at least
+    this much.
+    """
+
+    #: symbol -> the import that must be present if the symbol is used.
+    KOTLIN = {
+        "Color(": "androidx.compose.ui.graphics.Color",
+        "FontFamily.": "androidx.compose.ui.text.font.FontFamily",
+        ".dp": "androidx.compose.ui.unit.dp",
+        "@Immutable": "androidx.compose.runtime.Immutable",
+    }
+
+    def test_kotlin_imports_everything_it_references(self):
+        from scripts.tokens.emit_kotlin import emit_kotlin
+
+        kt = emit_kotlin(load(SOURCE))
+        header, body = kt.split("/** The sixteen colour roles", 1)
+        for symbol, module in self.KOTLIN.items():
+            if symbol in code_only(body):
+                with self.subTest(symbol=symbol):
+                    self.assertIn(
+                        f"import {module}",
+                        header,
+                        f"the Kotlin uses {symbol} but does not import {module}",
+                    )
+
+    def test_kotlin_has_no_unused_imports(self):
+        # The mirror failure: Kotlin warns rather than errors on these, so
+        # they rot silently. Task 5 left `Color` imported in Theme.kt after
+        # the data class moved out.
+        from scripts.tokens.emit_kotlin import emit_kotlin
+
+        kt = emit_kotlin(load(SOURCE))
+        header, body = kt.split("/** The sixteen colour roles", 1)
+        for symbol, module in self.KOTLIN.items():
+            if f"import {module}" in header:
+                with self.subTest(symbol=symbol):
+                    self.assertIn(
+                        symbol,
+                        code_only(body),
+                        f"the Kotlin imports {module} but never uses {symbol}",
+                    )
+
+    def test_swift_imports_swiftui(self):
+        from scripts.tokens.emit_swift import emit_swift
+
+        swift = emit_swift(load(SOURCE))
+        self.assertIn("import SwiftUI", swift)
+        # Color, Font and CGFloat all come from SwiftUI (via CoreGraphics);
+        # there is no second module to forget, which is why Swift did not
+        # break the way Kotlin did.
+        for symbol in ("Color(", "Font.system(", "CGFloat"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, code_only(swift))
+
 
 if __name__ == "__main__":
     unittest.main()

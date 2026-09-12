@@ -5,6 +5,7 @@ package dev.supermessage
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
 /** The sixteen colour roles, one value each. */
