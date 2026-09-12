@@ -55,14 +55,54 @@ def composite(base_hex: str, over_rgba: tuple[int, int, int, float]) -> str:
 
 
 def luminance_drop(base_hex: str, scrim_css: str) -> float:
-    """How many times darker `base` becomes once the scrim is over it.
+    """How many times darker one flat colour becomes under the scrim.
 
-    A proxy for the spec's measurement, which was the mean luminance of a
-    whole composited screenshot region. This checks the wash against the
-    ground alone; the screenshot check is a separate, manual verification.
+    A building block for `region_luminance_drop`, and not the right check
+    for a scrim on its own — see that function for why.
     """
     veiled = composite(base_hex, parse_rgba(scrim_css))
     veiled_luminance = relative_luminance(veiled)
     if veiled_luminance == 0:
         return float("inf")
     return relative_luminance(base_hex) / veiled_luminance
+
+
+#: What fraction of a veiled region is text rather than ground. A roster is
+#: mostly ground. The exact figure barely matters — see the test that pins
+#: how little the verdict moves across 5%–40%.
+TEXT_FRACTION = 0.15
+
+
+def region_luminance_drop(
+    ground_hex: str,
+    content_hex: str,
+    scrim_css: str,
+    text_fraction: float = TEXT_FRACTION,
+) -> float:
+    """How much light a veiled *region* loses — the spec's own instrument.
+
+    Measuring one flat colour is not enough, and each theme fails that
+    check in the opposite direction:
+
+    - The light scrim IS `content` (the ramp's dark end used as a wash), so
+      it drops the ground 3.02x and the text 1.00x.
+    - The dark scrim IS `surface-sunken` (the ramp's floor), so it drops
+      the text 9.53x and the ground 1.00x.
+
+    Either single-surface measurement therefore reports "paints nothing"
+    for a scrim that works fine. A region is ground plus the text on it,
+    which is what the spec measured: "the mean luminance of the whole
+    roster region, screenshot composited to canvas, panel shut vs
+    scrimmed."
+    """
+    scrim = parse_rgba(scrim_css)
+    ground, text = 1 - text_fraction, text_fraction
+
+    before = ground * relative_luminance(ground_hex) + text * relative_luminance(
+        content_hex
+    )
+    after = ground * relative_luminance(
+        composite(ground_hex, scrim)
+    ) + text * relative_luminance(composite(content_hex, scrim))
+
+    return float("inf") if after == 0 else before / after
