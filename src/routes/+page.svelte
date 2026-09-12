@@ -21,6 +21,10 @@
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
   import { connectionStore } from "$lib/stores/connection.svelte";
+  // Owned here rather than inside the indicators, so those stay components a
+  // story can hand a fixture to. See the P2a design's §5.
+  import { liveStore } from "$lib/stores/live.svelte";
+  import { typingStore } from "$lib/stores/typing.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { railEntries } from "$lib/components/spacesRailView";
   import type { ConnectionState } from "$lib/ipc";
@@ -349,6 +353,29 @@
    * inert element is a no-op, so the focus call has to happen after Svelte
    * has flushed the DOM update that takes `inert` back off.
    */
+  /**
+   * Responding to the selected room's invitation.
+   *
+   * Named functions rather than inline closures, and the `null` guard is
+   * real rather than a `!`. The template's narrowing of
+   * `roomsStore.selectedId` does not reach inside a closure — the closure
+   * runs later, by which time the selection may be anything at all.
+   * svelte-check caught exactly that when these were arrow functions at the
+   * call site, which is the kind of thing 23 new prop interfaces are going
+   * to keep producing.
+   */
+  async function acceptSelectedInvitation(): Promise<void> {
+    const id = roomsStore.selectedId;
+    if (id === null) return;
+    await roomsStore.acceptInvitation(id);
+  }
+
+  async function declineSelectedInvitation(): Promise<void> {
+    const id = roomsStore.selectedId;
+    if (id === null) return;
+    await roomsStore.declineInvitation(id);
+  }
+
   async function closeRoomInfo(): Promise<void> {
     const restoreFocus = panelIsModal;
     showRoomInfo = false;
@@ -923,7 +950,7 @@
             the agent produced them in, and the order a reader reconstructs
             them in. Collapsed unless asked for; see `AgentReasoning.svelte`.
           -->
-          <AgentReasoning roomId={roomsStore.selectedId} />
+          <AgentReasoning streaming={liveStore.thought(roomsStore.selectedId)} />
           <!--
             The answer as it is written, between the timeline and the typing
             line: closest to where it will land, and outside the virtual list
@@ -938,8 +965,11 @@
             the durable record of a turn's work lands in the room as a card when
             the turn ends, and this only answers "right now".
           -->
-          <LiveActivity roomId={roomsStore.selectedId} />
-          <TypingIndicator />
+          <LiveActivity
+            tools={liveStore.tools(roomsStore.selectedId)}
+            thinking={liveStore.thought(roomsStore.selectedId)}
+          />
+          <TypingIndicator users={typingStore.users} />
           <!--
             The composer is for rooms this account is *in*. An invitation gets
             Accept / Decline in the same place instead (issue #1), and a room
@@ -949,8 +979,9 @@
           -->
           {#if (roomsStore.selectedAffordance ?? "compose") === "respondToInvitation"}
             <InvitationPanel
-              roomId={roomsStore.selectedId}
               roomName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
+              onAccept={acceptSelectedInvitation}
+              onDecline={declineSelectedInvitation}
             />
           {:else if (roomsStore.selectedAffordance ?? "compose") === "compose"}
             <Composer roomId={roomsStore.selectedId} />

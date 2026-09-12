@@ -28,10 +28,24 @@
   // (see `Composer.svelte`) it has no second channel that would let the
   // rank move up without saying something it does not mean.
 
-  import { typingStore } from "$lib/stores/typing.svelte";
+  import type { TypingUser } from "$lib/ipc";
   import { typingIndicatorText } from "./typingView";
 
-  const text = $derived(typingIndicatorText(typingStore.users));
+  /**
+   * Who is typing, passed in rather than read from `typingStore`.
+   *
+   * The names, not the sentence: `typingIndicatorText` is a tested pure
+   * module and composing the line is this component's job. Passing the
+   * finished string instead would move a presentation decision up into the
+   * route for no gain.
+   */
+  export interface Props {
+    users: TypingUser[];
+  }
+
+  let { users }: Props = $props();
+
+  const text = $derived(typingIndicatorText(users));
 </script>
 
 <!--

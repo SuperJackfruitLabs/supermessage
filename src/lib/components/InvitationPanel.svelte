@@ -19,10 +19,24 @@
   // an invitation that vanished before the join landed, and came back if it
   // failed, would be worse than one that waits.
 
-  import { roomsStore } from "$lib/stores/rooms.svelte";
   import { invitationPrompt } from "./invitationView";
 
-  let { roomId, roomName }: { roomId: string; roomName: string } = $props();
+  /**
+   * The invitation, and what to do about it.
+   *
+   * `roomsStore.acceptInvitation` / `declineInvitation` become callbacks.
+   * Everything this component decides stays here: the in-flight guard so
+   * neither button can be pressed twice, and the failure message — a
+   * refused join is exactly the case where silence is worst, because the
+   * invitation stays on screen either way.
+   */
+  export interface Props {
+    roomName: string;
+    onAccept: () => Promise<void>;
+    onDecline: () => Promise<void>;
+  }
+
+  let { roomName, onAccept, onDecline }: Props = $props();
 
   /** Set while a join/leave is in flight, so neither button can be pressed twice. */
   let busy = $state(false);
@@ -40,8 +54,8 @@
     busy = true;
     failure = null;
     try {
-      if (action === "accept") await roomsStore.acceptInvitation(roomId);
-      else await roomsStore.declineInvitation(roomId);
+      if (action === "accept") await onAccept();
+      else await onDecline();
     } catch (err) {
       failure =
         action === "accept"
