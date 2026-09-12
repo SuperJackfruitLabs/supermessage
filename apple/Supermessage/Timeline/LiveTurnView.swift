@@ -180,3 +180,37 @@ private struct Detail: View {
         }
     }
 }
+
+#if DEBUG
+// A turn in flight: a thought, three tools with one failed, and an answer
+// arriving.
+//
+// None of this is history. It is not persisted, not paginated, and a device
+// that was asleep never sees it — which is exactly why it is worth a still
+// frame. In a running app these states are gone in seconds, so this is the
+// only way to look at the failed-tool row at all.
+#Preview("Mid-turn") {
+    PreviewGround { LiveTurnView(live: PreviewFixtures.liveStore(), writerName: "Atlas") }
+}
+
+// Thinking, with nothing to show yet.
+//
+// The first thing a reader sees after sending, and the state most likely to
+// have been drawn once and never looked at again.
+#Preview("Thinking only") {
+    PreviewGround {
+        LiveTurnView(
+            live: PreviewFixtures.liveStore(thinking: true, answering: false, tools: false),
+            writerName: "Atlas")
+    }
+}
+
+// Answering with no thought and no tools: a plain reply streaming in.
+#Preview("Answering only") {
+    PreviewGround {
+        LiveTurnView(
+            live: PreviewFixtures.liveStore(thinking: false, answering: true, tools: false),
+            writerName: "Atlas")
+    }
+}
+#endif

@@ -82,3 +82,26 @@ private struct ArrivingGlyphs: TextRenderer, Animatable {
         }
     }
 }
+
+#if DEBUG
+// Mid-arrival: the last 18 characters are still fading in.
+//
+// A still frame of an animation is a weak preview by nature — what it can
+// show is the boundary, which is the thing most likely to be wrong: `settled`
+// is `count - revealed`, so an off-by-one here reads as the newest word
+// flickering on every tick.
+#Preview("Arriving") {
+    PreviewGround {
+        StreamingTextView(
+            text: "It is sorted by pending first, then by last activity.", revealed: 18)
+    }
+}
+
+// Nothing new: what the reader looks at for all but the last moment of a turn.
+#Preview("Settled") {
+    PreviewGround {
+        StreamingTextView(
+            text: "It is sorted by pending first, then by last activity.", revealed: 0)
+    }
+}
+#endif

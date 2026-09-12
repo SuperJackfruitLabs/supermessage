@@ -754,6 +754,27 @@ enum PreviewFixtures {
 /// with an `await`. This renders its content immediately and lets
 /// `@Observable` update it when the seed lands, which is the same sequence the
 /// real app goes through on launch.
+/// A preview backdrop on the app's own ground.
+///
+/// Not decoration: most of these components are transparent and draw only
+/// their own text, so on Xcode's white canvas a `content`-on-`surface`
+/// pairing is being judged against a ground the app never uses. `Theme` also
+/// resolves **paper** for light rather than a plain white — that is the
+/// design language's "paper is what light means on a phone" — so a preview
+/// without this is the one appearance the product does not have.
+struct PreviewGround<Content: View>: View {
+    var width: CGFloat? = nil
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .frame(width: width)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface)
+    }
+}
+
 struct PreviewSeeded<Content: View>: View {
     let seed: @MainActor () async -> Void
     @ViewBuilder var content: Content
