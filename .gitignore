@@ -72,3 +72,6 @@ scripts/dom-baseline/*.json
 
 # Storybook build output.
 storybook-static/
+
+# Rendered previews, never committed — see scripts/snapshot-previews.sh.
+.snapshots/

@@ -59,6 +59,24 @@ settings:
     MARKETING_VERSION: 0.0.11
     CURRENT_PROJECT_VERSION: 2
 
+packages:
+  # Renders every `#Preview` in the app to a PNG, from a test target, with no
+  # test code per preview.
+  #
+  # **Test-only, and that is load-bearing.** It is linked to
+  # `SupermessagePreviewTests` and to nothing else. The package also ships a
+  # `PreviewGallery` product that would give an on-device browser, and it is
+  # deliberately not used: that one links to the *app* target, so it would be
+  # in a release build, and `scripts/tests/test_ios_preview_leak.sh` exists to
+  # say that preview machinery is not.
+  #
+  # MIT, and maintained by Sentry since it acquired Emerge Tools in 2025. The
+  # hosted product renders the same previews as a service; this is the half
+  # that needs no account and uploads nothing.
+  SnapshotPreviews:
+    url: https://github.com/EmergeTools/SnapshotPreviews
+    exactVersion: 0.18.0
+
 targets:
   SupermessageFFI:
     type: framework
@@ -123,6 +141,35 @@ targets:
       - target: SupermessageKit
       - target: SupermessageFFI
 
+  # Renders the app's previews to PNGs. No test functions: the package
+  # enumerates every `#Preview` in the host app and adds one test per preview
+  # at run time.
+  #
+  # A **unit** test bundle rather than a UI one, because it has to run inside
+  # the app's own process to reach the preview registry — a UI test drives the
+  # app from outside and could not see it. That is also why it is hosted by
+  # `Supermessage` rather than standing alone.
+  #
+  # Its own scheme, below. `SupermessageUITests` shares the `Supermessage`
+  # scheme and needs a signed-in session against a real homeserver, so putting
+  # this beside it would make it unrunnable on CI for reasons that have
+  # nothing to do with previews.
+  SupermessagePreviewTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [SupermessagePreviewTests]
+    dependencies:
+      - target: Supermessage
+      - package: SnapshotPreviews
+        product: SnapshottingTests
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Supermessage.app/Supermessage"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        # The previews are `#if DEBUG`, so a release build of this target
+        # would find nothing to render. Stated rather than assumed.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+
 schemes:
   SupermessageKit:
     build:
@@ -139,3 +186,20 @@ schemes:
     test:
       targets: [SupermessageUITests]
     run: {}
+  PreviewSnapshots:
+    build:
+      targets:
+        Supermessage: all
+        SupermessagePreviewTests: [test]
+    test:
+      targets: [SupermessagePreviewTests]
+      environmentVariables:
+        # The package's own flag, mirroring the variable Xcode sets in a
+        # preview. Nothing reads it yet; it is here so that the first preview
+        # which wants to know it is being snapshotted — to skip an animation,
+        # say — has the answer without a scheme change.
+        SNAPSHOTS_RUNNING_FOR_PREVIEWS: "1"
+        # Where the PNGs go. Overridden by `scripts/snapshot-previews.sh`;
+        # without it the images are attachments inside the .xcresult, which
+        # is exactly the format nobody can look at.
+        TEST_RUNNER_SNAPSHOTS_EXPORT_DIR: "$(SRCROOT)/../.snapshots"
