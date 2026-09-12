@@ -295,6 +295,7 @@
   import DispatchCard from "./timeline/DispatchCard.svelte";
   import LogLine from "./timeline/LogLine.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
+  import UnreadMarker from "./timeline/UnreadMarker.svelte";
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
   import ReplyQuote from "./timeline/ReplyQuote.svelte";
   import SeenMarker from "./timeline/SeenMarker.svelte";
@@ -1555,11 +1556,7 @@
                   rather than the signal colour: this is navigation, not a
                   decision waiting on you (spec §3 reserves amber for that).
                 -->
-                <div class="flex items-center gap-3 py-2" data-testid="unread-marker">
-                  <span class="h-px flex-1 bg-accent/40"></span>
-                  <span class="font-mono text-meta uppercase tracking-wide text-accent">New</span>
-                  <span class="h-px flex-1 bg-accent/40"></span>
-                </div>
+                <UnreadMarker />
               {:else if view.render === "system"}
                 <!-- Membership lines, room creation, encryption enabled, room
                      replaced — see `logLine` for why this row looks the way
