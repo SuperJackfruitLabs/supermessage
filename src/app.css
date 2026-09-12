@@ -26,61 +26,6 @@
  *
  * Rules: docs/design-language.md. Source: design/tokens.toml.
  */
-@theme {
-  /* System font stack. On iOS, -apple-system also carries Dynamic Type.
-   * Also the documented one-token revert path if the serif body experiment
-   * (spec §4) fails: swap --font-sans's value back to var(--font-system). */
-  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
-    "Segoe UI", Roboto, Cantarell, "Noto Sans", Ubuntu, sans-serif;
-
-  /* Bundled typefaces — CSP is default-src 'self', so nothing is fetched
-   * from a CDN. Chrome/UI/own messages: sans. Peer message bodies: serif.
-   * Data, labels, sigils, timestamps: mono. */
-  --font-sans: "IBM Plex Sans Variable", var(--font-system);
-  --font-serif: "Source Serif 4 Variable", Georgia, serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-
-  /* Type scale (spec §4). Letter-spacing and weight are set as theme
-   * sub-properties per token so call sites only repeat the family
-   * (font-sans/font-serif/font-mono) and, for --text-label, `uppercase` —
-   * Tailwind v4's @theme has no text-transform convention. --text-ui is
-   * deliberately left without a fixed weight: the spec calls for
-   * "Sans 400/500" depending on call site. */
-  --text-label: 0.625rem; /* 10px */
-  --text-label--line-height: 1.2;
-  --text-label--letter-spacing: 0.08em;
-  --text-label--font-weight: 500;
-
-  --text-meta: 0.65625rem; /* 10.5px */
-  --text-meta--line-height: 1.3;
-  --text-meta--font-weight: 400;
-
-  --text-ui: 0.8125rem; /* 13px */
-  --text-ui--line-height: 1.4;
-
-  --text-ui-lg: 0.9375rem; /* 15px */
-  --text-ui-lg--line-height: 1.4;
-  --text-ui-lg--font-weight: 600;
-
-  /* The one rank that is not text. A 64px avatar circle needs a glyph sized
-   * to the circle, and before this existed the room-info panel's fallback
-   * initial took `--text-ui-lg` — the largest rank the scale owned — so a
-   * 64px circle held a 15px letter and read as broken. Sized to the avatar,
-   * not to a reading rank, which is why it sits apart from the scale above
-   * rather than extending it: nothing else should reach for this. */
-  --text-avatar: 1.5rem; /* 24px, for a 64px circle */
-  --text-avatar--line-height: 1;
-  --text-avatar--font-weight: 500;
-
-  --text-body: 0.9375rem; /* 15px */
-  --text-body--line-height: 1.62;
-  --text-body--font-weight: 400;
-
-  --text-body-own: 0.875rem; /* 14px */
-  --text-body-own--line-height: 1.5;
-  --text-body-own--font-weight: 400;
-}
-
 @layer base {
   :root {
     /* Safe areas — paired with viewport-fit=cover in app.html. */

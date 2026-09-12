@@ -10,6 +10,32 @@ SOURCE = REPO / "design" / "tokens.toml"
 GOLDEN = Path(__file__).parent / "golden"
 
 
+def code_only(source: str) -> str:
+    """Strip comments, so a guard inspects code rather than prose.
+
+    These emitters document the traps they avoid — the Swift says
+    "Font.system(size:) does not scale", the Kotlin says "a hardcoded .sp
+    would ignore it". A naive `assertNotIn` then fires on the explanation
+    and not on any real defect, which is how a guard ends up being deleted
+    for crying wolf.
+    """
+    out, in_block = [], False
+    for line in source.splitlines():
+        stripped = line.strip()
+        if in_block:
+            if "*/" in stripped:
+                in_block = False
+            continue
+        if stripped.startswith("/*"):
+            in_block = "*/" not in stripped
+            continue
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+
 class AppCssTests(unittest.TestCase):
     def setUp(self):
         self.css = emit_app_css(load(SOURCE))
@@ -76,8 +102,9 @@ class SwiftTests(unittest.TestCase):
         # Dynamic Type is the thing a naive generator destroys here. iOS
         # gets text scaling free because Theme.swift asks for a text
         # STYLE; emitting a size would silently take it away.
-        self.assertNotIn("Font.system(size:", self.swift)
-        self.assertNotIn(".font(.system(size:", self.swift)
+        code = code_only(self.swift)
+        self.assertNotIn("Font.system(size:", code)
+        self.assertNotIn(".font(.system(size:", code)
 
     def test_the_scrim_carries_its_alpha(self):
         self.assertIn("opacity: 0.45", self.swift)
@@ -124,7 +151,7 @@ class KotlinTests(unittest.TestCase):
     def test_no_sp_sizes_leak_in(self):
         # Android's equivalent of the Dynamic Type trap: a hardcoded sp
         # value ignores the reader's font-size setting.
-        self.assertNotIn(".sp", self.kt)
+        self.assertNotIn(".sp", code_only(self.kt))
 
     def test_role_names_match_the_swift_emitter(self):
         """The clearLayers/clearFullLayers bug, pinned.
@@ -196,6 +223,54 @@ class MarketingTests(unittest.TestCase):
 
     def test_docs_matches_the_golden_file(self):
         self.assertEqual(self.docs, (GOLDEN / "docs-tokens.css").read_text())
+
+class TypeEmissionTests(unittest.TestCase):
+    """The Dynamic Type trap, guarded on both native platforms."""
+
+    def test_css_emits_the_scale_with_its_sub_properties(self):
+        css = emit_app_css(load(SOURCE))
+        self.assertIn("--text-body: 0.9375rem", css)
+        self.assertIn("--text-body--line-height: 1.62", css)
+        self.assertIn("--text-label--letter-spacing: 0.08em", css)
+
+    def test_css_emits_the_three_families(self):
+        css = emit_app_css(load(SOURCE))
+        for family in ("--font-sans:", "--font-serif:", "--font-mono:"):
+            with self.subTest(family=family):
+                self.assertIn(family, css)
+
+    def test_swift_emits_text_styles_not_sizes(self):
+        from scripts.tokens.emit_swift import emit_swift
+
+        swift = emit_swift(load(SOURCE))
+        self.assertIn("Font.system(.body, design: .serif)", swift)
+        self.assertIn("Font.system(.footnote)", swift)
+        self.assertNotIn("Font.system(size:", code_only(swift))
+
+    def test_swift_maps_families_to_designs(self):
+        from scripts.tokens.emit_swift import emit_swift
+
+        swift = emit_swift(load(SOURCE))
+        self.assertIn("design: .monospaced", swift)   # mono roles
+        self.assertIn("design: .serif", swift)        # body
+
+    def test_kotlin_emits_type_scale_names_not_sp(self):
+        from scripts.tokens.emit_kotlin import emit_kotlin
+
+        kt = emit_kotlin(load(SOURCE))
+        self.assertIn("bodyLarge", kt)
+        self.assertNotIn(".sp", code_only(kt))
+
+    def test_the_structural_rule_survives_into_every_target(self):
+        """serif for the agent, sans for the operator — on all three."""
+        from scripts.tokens.emit_kotlin import emit_kotlin
+        from scripts.tokens.emit_swift import emit_swift
+
+        swift, kt = emit_swift(load(SOURCE)), emit_kotlin(load(SOURCE))
+        self.assertIn("static let body = Font.system(.body, design: .serif)", swift)
+        self.assertIn("static let bodyOwn = Font.system(.body)", swift)
+        self.assertIn('val body = FontFamily.Serif', kt)
+        self.assertIn('val bodyOwn = FontFamily.SansSerif', kt)
 
 
 if __name__ == "__main__":

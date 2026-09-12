@@ -121,6 +121,48 @@ class ValidationTests(unittest.TestCase):
         with self.assertRaises(TokenError):
             validate(broken)
 
+class TypeTests(unittest.TestCase):
+    def test_every_role_has_a_family_and_all_three_expressions(self):
+        for name, role in load(SOURCE).type.items():
+            with self.subTest(role=name):
+                self.assertIn(role.family, ("sans", "serif", "mono"))
+                self.assertIn("size", role.web)
+                self.assertTrue(role.ios)
+                self.assertTrue(role.android)
+
+    def test_a_numeric_native_expression_is_an_error(self):
+        """The one place a naive generator does real damage.
+
+        A number here becomes a fixed point size in Theme.swift, and every
+        iOS user loses Dynamic Type. It would look correct to whoever made
+        the change, which is exactly why it has to fail loudly.
+        """
+        broken = copy.deepcopy(raw())
+        broken["type"]["body"]["ios"] = 15
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("Dynamic Type", str(caught.exception))
+
+    def test_a_numeric_android_expression_is_also_an_error(self):
+        broken = copy.deepcopy(raw())
+        broken["type"]["body"]["android"] = 15
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("type.body.android", str(caught.exception))
+
+    def test_an_unknown_family_is_an_error(self):
+        broken = copy.deepcopy(raw())
+        broken["type"]["body"]["family"] = "cursive"
+        with self.assertRaises(TokenError):
+            validate(broken)
+
+    def test_body_is_serif_and_body_own_is_sans(self):
+        # The structural rule the whole language rests on: serif is what an
+        # agent wrote, sans is what the operator wrote.
+        types = load(SOURCE).type
+        self.assertEqual(types["body"].family, "serif")
+        self.assertEqual(types["body-own"].family, "sans")
+
 
 if __name__ == "__main__":
     unittest.main()

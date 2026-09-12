@@ -116,3 +116,28 @@ object GeneratedThemeTokens {
         scrim = Color(0x7322192E),
     )
 }
+
+/**
+ * The type ranks: a face, and the Material type-scale name that
+ * carries the size.
+ *
+ * The size is a NAME rather than a number so it scales with the
+ * reader's font-size setting. A hardcoded `.sp` here would ignore it,
+ * and would look correct to whoever wrote it.
+ */
+object ThemeType {
+    val label = FontFamily.Monospace
+    const val labelStyle = "labelSmall"
+    val meta = FontFamily.Monospace
+    const val metaStyle = "labelMedium"
+    val ui = FontFamily.SansSerif
+    const val uiStyle = "bodySmall"
+    val uiLg = FontFamily.SansSerif
+    const val uiLgStyle = "titleSmall"
+    val avatar = FontFamily.SansSerif
+    const val avatarStyle = "headlineSmall"
+    val body = FontFamily.Serif
+    const val bodyStyle = "bodyLarge"
+    val bodyOwn = FontFamily.SansSerif
+    const val bodyOwnStyle = "bodyMedium"
+}

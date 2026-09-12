@@ -23,6 +23,13 @@ ROLES: tuple[str, ...] = (
 )
 
 
+FAMILIES: tuple[str, ...] = ("sans", "serif", "mono")
+
+TYPE_ROLES: tuple[str, ...] = (
+    "label", "meta", "ui", "ui-lg", "avatar", "body", "body-own",
+)
+
+
 class TokenError(Exception):
     """A contract in design/tokens.toml is not satisfied."""
 
@@ -35,8 +42,24 @@ class Appearance:
 
 
 @dataclass(frozen=True)
+class TypeRole:
+    """One rank, expressed for each platform.
+
+    `web` is a size; `ios` and `android` are text *style names*. That
+    asymmetry is the point — see `validate`.
+    """
+
+    name: str
+    family: str
+    web: dict
+    ios: str
+    android: str
+
+
+@dataclass(frozen=True)
 class Tokens:
     appearances: dict[str, Appearance]
+    type: dict[str, TypeRole] = field(default_factory=dict)
 
 
 def validate(data: dict) -> None:
@@ -96,6 +119,28 @@ def validate(data: dict) -> None:
                         f"contrast.region_luminance_drop.)"
                     )
 
+    _validate_type(data)
+
+
+def _validate_type(data: dict) -> None:
+    for name, spec in data.get("type", {}).items():
+        if spec.get("family") not in FAMILIES:
+            raise TokenError(
+                f"type.{name}.family must be one of {FAMILIES}, got "
+                f"{spec.get('family')!r}"
+            )
+        if "size" not in spec.get("web", {}):
+            raise TokenError(f"type.{name}.web needs a size")
+        for platform in ("ios", "android"):
+            if not isinstance(spec.get(platform), str):
+                raise TokenError(
+                    f"type.{name}.{platform} must be a text-style NAME, not "
+                    f"{spec.get(platform)!r}. A number here is emitted as a "
+                    f"fixed size and silently costs every native user their "
+                    f"Dynamic Type / font-scale setting — and the app still "
+                    f"looks right to whoever made the change."
+                )
+
 
 def _comments(path: Path) -> dict[str, dict[str, str]]:
     """Collect the comment block immediately above each role assignment.
@@ -133,6 +178,16 @@ def load(path: Path) -> Tokens:
     validate(data)
     comments = _comments(path)
     return Tokens(
+        type={
+            name: TypeRole(
+                name=name,
+                family=spec["family"],
+                web=spec["web"],
+                ios=spec["ios"],
+                android=spec["android"],
+            )
+            for name, spec in data.get("type", {}).items()
+        },
         appearances={
             name: Appearance(
                 name=name,

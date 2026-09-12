@@ -43,6 +43,36 @@
    * it against `content` alone would report 1.00x for a wash that works.
    */
   --color-scrim: rgb(34 28 56 / 0.45);
+
+  /* System stack. On iOS, -apple-system also carries Dynamic Type. */
+  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Roboto, Cantarell, "Noto Sans", Ubuntu, sans-serif;
+  --font-sans: "IBM Plex Sans Variable", var(--font-system);
+  --font-serif: "Source Serif 4 Variable", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type scale. Bundled faces, because the app's CSP is
+   * default-src 'self' and nothing may be fetched from a CDN. */
+  --text-label: 0.625rem;
+  --text-label--line-height: 1.2;
+  --text-label--font-weight: 500;
+  --text-label--letter-spacing: 0.08em;
+  --text-meta: 0.65625rem;
+  --text-meta--line-height: 1.3;
+  --text-meta--font-weight: 400;
+  --text-ui: 0.8125rem;
+  --text-ui--line-height: 1.4;
+  --text-ui-lg: 0.9375rem;
+  --text-ui-lg--line-height: 1.4;
+  --text-ui-lg--font-weight: 600;
+  --text-avatar: 1.5rem;
+  --text-avatar--line-height: 1.0;
+  --text-avatar--font-weight: 500;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.62;
+  --text-body--font-weight: 400;
+  --text-body-own: 0.875rem;
+  --text-body-own--line-height: 1.5;
+  --text-body-own--font-weight: 400;
 }
 
 @layer theme {

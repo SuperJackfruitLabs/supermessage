@@ -102,3 +102,18 @@ enum ThemeTokens {
         scrim: Color(.sRGB, red: 0.1333, green: 0.0980, blue: 0.1804, opacity: 0.45)
     )
 }
+
+/// The type ranks.
+///
+/// Every one is a text *style*, never a size. `Font.system(.body)`
+/// scales with the reader's Dynamic Type setting; `Font.system(size:)`
+/// does not, and the difference is invisible to whoever writes it.
+enum ThemeType {
+    static let label = Font.system(.caption2, design: .monospaced)
+    static let meta = Font.system(.caption, design: .monospaced)
+    static let ui = Font.system(.footnote)
+    static let uiLg = Font.system(.subheadline)
+    static let avatar = Font.system(.title2)
+    static let body = Font.system(.body, design: .serif)
+    static let bodyOwn = Font.system(.body)
+}

@@ -4,7 +4,18 @@ syntax, not because they share a file.
 
 import textwrap
 
-from .model import ROLES, Appearance, Tokens
+from .model import ROLES, TYPE_ROLES, Appearance, Tokens
+
+FAMILY_STACKS = {
+    "sans": '"IBM Plex Sans Variable", var(--font-system)',
+    "serif": '"Source Serif 4 Variable", Georgia, serif',
+    "mono": '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+}
+
+SYSTEM_STACK = (
+    "-apple-system, BlinkMacSystemFont, \"Segoe UI Variable Text\", "
+    "\"Segoe UI\", Roboto, Cantarell, \"Noto Sans\", Ubuntu, sans-serif"
+)
 
 HEADER = """\
 /*
@@ -30,6 +41,39 @@ def _block(appearance: Appearance, indent: str) -> str:
     return "".join(out)
 
 
+def _type_block(tokens: Tokens, indent: str) -> str:
+    """The type scale, as Tailwind v4 theme keys.
+
+    Letter-spacing and weight ride as `--text-<role>--*` sub-properties so a
+    call site only has to name the family and, for the label rank,
+    `uppercase` — Tailwind has no text-transform convention.
+    """
+    out = [
+        f"\n{indent}/* System stack. On iOS, -apple-system also carries Dynamic Type. */\n",
+        f'{indent}--font-system: {SYSTEM_STACK};\n',
+    ]
+    for family, stack in FAMILY_STACKS.items():
+        out.append(f"{indent}--font-{family}: {stack};\n")
+
+    out.append(
+        f"\n{indent}/* Type scale. Bundled faces, because the app's CSP is\n"
+        f"{indent} * default-src 'self' and nothing may be fetched from a CDN. */\n"
+    )
+    for name in TYPE_ROLES:
+        role = tokens.type[name]
+        web = role.web
+        out.append(f"{indent}--text-{name}: {web['size']};\n")
+        if "line_height" in web:
+            out.append(f"{indent}--text-{name}--line-height: {web['line_height']};\n")
+        if "weight" in web:
+            out.append(f"{indent}--text-{name}--font-weight: {web['weight']};\n")
+        if "letter_spacing" in web:
+            out.append(
+                f"{indent}--text-{name}--letter-spacing: {web['letter_spacing']};\n"
+            )
+    return "".join(out)
+
+
 def emit_app_css(tokens: Tokens) -> str:
     """The desktop app.
 
@@ -42,6 +86,7 @@ def emit_app_css(tokens: Tokens) -> str:
         HEADER
         + "\n@theme {\n"
         + _block(tokens.appearances["light"], "  ")
+        + _type_block(tokens, "  ")
         + "}\n"
         + "\n@layer theme {\n"
         + "  @media (prefers-color-scheme: dark) {\n"
