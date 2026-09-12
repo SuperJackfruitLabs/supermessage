@@ -1,8 +1,33 @@
 # Parity gap analysis
 
-**Status:** Assessment, 14 Aug 2026. Written against commit `b7a1278` on `main`.
-**Question it answers:** where does supermessage stand against other Matrix clients, and what would it take to close the gap?
+**Status:** Assessment, 14 Aug 2026, written against commit `b7a1278` on `main`. **It is a
+record of that day and has not been updated** — the convention in `docs/README.md` is that a
+dated assessment is never edited to look current. The drift note below is the exception, because
+a reader needs to know how far it has moved before trusting a number in it.
+
+**Question it answers:** where did supermessage stand against other Matrix clients on 14 Aug
+2026, and what would it have taken to close the gap?
 **Audience:** the maintainer deciding what to build next quarter.
+
+> ## Drift note — measured 2026-09-12
+>
+> The load-bearing premise of this document is that "the command list is a hard ceiling on what
+> this client can do", and that the ceiling was **seventeen** commands. It is now **39**. Every
+> gap below that was attributed to a missing command should be re-checked before it is believed.
+>
+> | The document says | Measured 2026-09-12 |
+> |---|---|
+> | 17 Tauri commands registered | **39** |
+> | Six components in `src/lib/components/` | **16** `.svelte` components, plus ~20 sibling modules |
+> | 186 Rust tests, 311 frontend | **681 Rust tests**, 35 frontend test files |
+> | `last_message_is_own` and `last_event_type` do not exist in `core/dto.rs` | `last_message_is_own` **exists** |
+> | Paths under `src-tauri/src/core/` | The core is now the `crates/supermessage-core` crate; that path is gone |
+>
+> The section-20 row on SSO/OIDC was separately corrected on 2026-08-30 and is current.
+>
+> What this document is still good for: the *shape* of the comparison against other clients, and
+> the reasoning about what parity costs. What it is no longer good for: any specific count, path,
+> or "not implemented" claim.
 
 ## How this was determined
 
