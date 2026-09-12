@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.tokens.emit_css import emit_app_css  # noqa: E402
+from scripts.tokens.emit_swift import emit_swift  # noqa: E402
 from scripts.tokens.model import TokenError, load  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
@@ -24,7 +25,14 @@ def main() -> int:
         print(f"design/tokens.toml is invalid:\n  {error}", file=sys.stderr)
         return 1
 
-    outputs = {REPO / "src" / "lib" / "tokens.css": emit_app_css(tokens)}
+    outputs = {
+        REPO / "src" / "lib" / "tokens.css": emit_app_css(tokens),
+        REPO
+        / "apple"
+        / "Supermessage"
+        / "Generated"
+        / "ThemeTokens.swift": emit_swift(tokens),
+    }
 
     for path, content in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
