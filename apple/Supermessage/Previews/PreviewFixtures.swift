@@ -278,13 +278,20 @@ enum PreviewFixtures {
 
     /// A 104-character run with no break in it.
     ///
+    /// It was 96 and the comment said 104, which the Android half of this
+    /// project caught: `DebugSourceSetTest` asserts the length is over 100
+    /// and the same value failed there. There is no equivalent check on
+    /// this side — these fixtures live in the app target, which has no test
+    /// target that runs in CI — so the numbers in these comments are
+    /// verified on Android or not at all.
+    ///
     /// The guard being exercised is the bubble's own width limit. The web
     /// story for this rendered 1147px wide on its first attempt while
     /// claiming to show the guard holding, which is worse than having no
     /// story at all — so this one is worth actually looking at.
     static var unbreakable: TimelineRow {
         let value =
-            "aGVsbG8gdGhpcyBpcyBub3QgYSByZWFsIHRva2VuIGJ1dCBpdCBpcyBhYm91dCB0aGUgcmlnaHQgbGVuZ3RoIHRvIGh1cnQ="
+            "dGhpcyBpcyBub3QgYSByZWFsIHRva2VuIGJ1dCBpdCBpcyBsb25nIGVub3VnaCB0byBicmVhayBhIHBob25lIHdpZHRoIGxheW91dA=="
         return row(
             item(id: "$long", body: value),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: value)])]))
@@ -425,7 +432,7 @@ enum PreviewFixtures {
             reasoning: nil, newerVersion: true, decision: nil, link: nil)
     }
 
-    /// One field whose value is a 96-character unbroken run.
+    /// One field whose value is a 71-character unbroken run.
     ///
     /// Every value on a card is arbitrary JSON from anyone who can send to
     /// the room, so this is the shape that finds a missing wrap guard.

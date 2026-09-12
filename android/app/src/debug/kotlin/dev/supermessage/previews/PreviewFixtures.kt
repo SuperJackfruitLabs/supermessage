@@ -157,6 +157,13 @@ object PreviewFixtures {
     /**
      * A 104-character run with no break in it.
      *
+     * **It was 96, and the comment said 104.** `DebugSourceSetTest` asserts
+     * the length is over 100 and failed on the first CI run — which is the
+     * whole reason that test exists: a fixture whose name or comment has
+     * drifted from its value is worse than no fixture, because the preview
+     * built on it demonstrates the wrong thing convincingly. The iOS half
+     * carried the same wrong number and no test that could notice.
+     *
      * The web story for the same guard rendered 1147px wide on its first
      * attempt while claiming to show the guard holding, which is worse than
      * having no story at all.
@@ -164,8 +171,8 @@ object PreviewFixtures {
     val unbreakable: TimelineRowDto
         get() {
             val value =
-                "aGVsbG8gdGhpcyBpcyBub3QgYSByZWFsIHRva2VuIGJ1dCBpdCBpcyBhYm91dCB0aGUg" +
-                    "cmlnaHQgbGVuZ3RoIHRvIGh1cnQ="
+                "dGhpcyBpcyBub3QgYSByZWFsIHRva2VuIGJ1dCBpdCBpcyBsb25nIGVub3VnaCB0by" +
+                    "BicmVhayBhIHBob25lIHdpZHRoIGxheW91dA=="
             return row(item("\$long", body = value), ItemView.Bubble(false, paragraph(value)))
         }
 
@@ -305,7 +312,7 @@ object PreviewFixtures {
             reasoning = null, newerVersion = true, decision = null, link = null,
         )
 
-    /** One field whose value is a 64-character unbroken run. */
+    /** One field whose value is a 71-character unbroken run. */
     val cardLongValue: CustomEventView
         get() = CustomEventView.Rendered(
             fields = listOf(
