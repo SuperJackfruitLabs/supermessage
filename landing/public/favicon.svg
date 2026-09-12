@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="supermessage">
+  <!-- One bubble, two speakers: a filled dot and an open ring. The room holds
+       a person and a machine on the same line, which is the whole product. -->
+  <rect width="32" height="32" rx="7" fill="#3b2f63"/>
+  <path d="M7 9.5h18a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H14l-5 4v-4H7a2.5 2.5 0 0 1-2.5-2.5v-7A2.5 2.5 0 0 1 7 9.5Z" fill="#ffffff"/>
+  <circle cx="12.5" cy="15.5" r="2.1" fill="#3b2f63"/>
+  <circle cx="19.5" cy="15.5" r="2.1" fill="none" stroke="#8b7fd4" stroke-width="1.7"/>
+</svg>
