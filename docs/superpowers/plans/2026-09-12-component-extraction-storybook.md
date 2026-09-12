@@ -405,10 +405,21 @@ Expected: `(os)` → `#fdfcff` (or `#1f1838` if the OS is dark), `light` → `#f
 
 Then set the browser to prefer dark and repeat: `light` must still report `#fdfcff`. That is the guard doing its job, and it is the half that would silently not work.
 
-- [ ] **Step 7: Mutation-prove the guard**
+- [ ] **Step 7: Mutation-prove the ORDER, not the guard**
 
-Remove `:not([data-appearance])` from the emitter, regenerate, and repeat Step 6's dark-OS check.
-Expected: `light` reports `#1f1838` — the explicit choice loses. Restore, regenerate.
+Removing `:not([data-appearance])` changes nothing — an attribute selector
+and `:root` share specificity (0,1,0), so the explicit blocks win by coming
+later. Measured. The guard is order-independent insurance, not the mechanism.
+
+So mutate the mechanism: make the emitter emit an explicit block *before*
+the media query, **verify the order actually changed in the generated CSS**,
+then run the test.
+
+Expected: `test_an_explicit_choice_beats_the_os` FAILS, naming the byte
+offsets. Restore and regenerate.
+
+Verifying the mutation landed is not optional here: a first attempt at this
+swap failed silently, the suite stayed green, and that green proved nothing.
 
 - [ ] **Step 8: Commit**
 

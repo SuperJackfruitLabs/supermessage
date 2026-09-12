@@ -249,8 +249,12 @@ as well:
 [data-appearance="paper"] { … }
 ```
 
-The `:not([data-appearance])` guard makes an explicit choice beat the OS in
-both directions. One emitter change and a golden refresh, for three returns:
+Order is what makes an explicit choice beat the OS, not the guard. An
+attribute selector and `:root` share specificity (0,1,0), so the explicit
+blocks win by being emitted afterwards — measured in a dark-set browser,
+removing the guard changes nothing. The guard is kept as order-independent
+insurance, and the *order* is what the test asserts. One emitter change and
+a golden refresh, for three returns:
 Storybook gets a working light/dark/paper toolbar; the application gains the
 user-facing appearance chooser P1's §6.1 explicitly deferred as "available
 later"; and forcing light on a dark machine becomes possible, which it is

@@ -128,17 +128,41 @@ def emit_app_css(tokens: Tokens) -> str:
         + _scale_block(tokens, "  ")
         + "}\n"
         + "\n@layer theme {\n"
+        + "  /*\n"
+        + "   * The OS's choice, but only when nothing has been chosen\n"
+        + "   * explicitly.\n"
+        + "   *\n"
+        + "   * The :not() guard is belt-and-braces, not load-bearing: an\n"
+        + "   * attribute selector and :root have the same specificity\n"
+        + "   * (0,1,0), and the explicit blocks below are emitted after this\n"
+        + "   * one, so source order already gives them precedence. Measured:\n"
+        + "   * removing the guard changes nothing in a dark-set browser.\n"
+        + "   *\n"
+        + "   * It is kept because it makes that precedence independent of\n"
+        + "   * emission order — reorder the blocks below and the behaviour\n"
+        + "   * survives. The order is what the test asserts.\n"
+        + "   */\n"
         + "  @media (prefers-color-scheme: dark) {\n"
-        + "    :root {\n"
+        + "    :root:not([data-appearance]) {\n"
         + _block(tokens.appearances["dark"], "      ")
         + "    }\n"
         + "  }\n"
         + "\n"
-        + '  /*\n   * Paper is what "light" means on a phone. Nothing selects it on\n'
-        + "   * desktop; the binding lives in each native theme.\n   */\n"
-        + '  [data-appearance="paper"] {\n'
-        + _block(tokens.appearances["paper"], "    ")
-        + "  }\n"
+        + "  /*\n"
+        + "   * An explicit choice, in all three directions.\n"
+        + "   *\n"
+        + '   * `paper` is what "light" means on a phone, and nothing selects\n'
+        + "   * it on desktop — the binding lives in each native theme. The\n"
+        + "   * other two exist so a story catalogue, and later a user\n"
+        + "   * preference, can override the OS either way. A catalogue that\n"
+        + "   * cannot switch appearances cannot do the job it exists for.\n"
+        + "   */\n"
+        + "".join(
+            f'  [data-appearance="{name}"] {{\n'
+            + _block(tokens.appearances[name], "    ")
+            + "  }\n"
+            for name in ("light", "dark", "paper")
+        )
         + "}\n"
     )
 
