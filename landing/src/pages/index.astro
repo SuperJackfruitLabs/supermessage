@@ -1,0 +1,471 @@
+---
+// The landing page for supermessage.dev.
+//
+// Design notes, so the next person changing this knows what is deliberate:
+//
+// The hero is a room transcript, not a headline over a gradient. The one thing
+// that makes this client different is that an agent's turn, its request for
+// permission, and a gate waiting on a human all arrive IN the conversation — so
+// the hero shows that sequence rather than describing it. Every event type label
+// in it is a real one the core renders (`custom_events.rs`), and the roster words
+// are the four `AgentState::word` produces. If those change, this page is wrong.
+//
+// Amber is used for exactly one thing: the item that is waiting on a person.
+// Spending the only warm colour on "needs you" is the whole point of the palette.
+//
+// Single-theme on purpose. It is a marketing page with one intended look, so
+// every colour is painted explicitly rather than inherited.
+const events = [
+  { type: 'dev.agentpod.turn.v1', label: 'Turn' },
+  { type: 'dev.agentpod.permission.v1', label: 'Permission' },
+  { type: 'dev.kaambaan.gate.v1', label: 'Approval' },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>supermessage — chat where your agents are in the room</title>
+    <meta
+      name="description"
+      content="A Matrix client where the agents you work with are participants, not a panel. In development for iOS, Android, Windows, macOS and Linux."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    />
+    <style>
+      :root {
+        --ink: #151129;
+        --raised: #211a3d;
+        --raised-2: #2b2350;
+        --line: #382f5e;
+        --text: #f4f2fb;
+        --muted: #a29bc4;
+        --violet: #9d8ff0;
+        --amber: #e8a33d;
+        --display: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+        --body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+      }
+
+      * { box-sizing: border-box; }
+
+      /* Light, for a visitor whose system asks for it.
+       *
+       * The docs site follows the reader's preference — Starlight does that by default and
+       * documentation read in daylight should stay legible. This page used to be dark only,
+       * which meant a visitor on a light system saw a dark landing page and then LIGHT docs:
+       * exactly the mismatch that shared colours were supposed to remove.
+       *
+       * These are the same values as `docs-site/src/styles/theme.css`'s light block, so the
+       * two sites agree in both directions rather than only in the dark. */
+      @media (prefers-color-scheme: light) {
+        :root {
+          --ink: hsl(253, 60%, 99%);
+          --raised: hsl(252, 38%, 95%);
+          --raised-2: hsl(252, 28%, 86%);
+          --line: hsl(252, 24%, 82%);
+          --text: hsl(252, 32%, 13%);
+          --muted: hsl(252, 18%, 36%);
+          --violet: hsl(252, 58%, 52%);
+          --amber: hsl(33, 72%, 38%);
+        }
+        /* The two chips that sit ON a colour need their own foreground in light: the accent
+           and amber both darken, so dark-on-light text would vanish into them. */
+        .btn-primary { color: #fbfaff; }
+        .opt.yes { color: #fbfaff; }
+      }
+
+      body {
+        margin: 0;
+        background: var(--ink);
+        color: var(--text);
+        font-family: var(--body);
+        font-size: 17px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+      /* ── status bar ─────────────────────────────────────────────── */
+      .status {
+        background: var(--raised);
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .status .wrap {
+        display: flex; gap: 10px; align-items: center;
+        padding-top: 11px; padding-bottom: 11px; flex-wrap: wrap;
+      }
+      .dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--amber); flex: none;
+      }
+      .status strong { color: var(--text); font-weight: 600; }
+
+      /* ── masthead ───────────────────────────────────────────────── */
+      header.mast .wrap {
+        display: flex; align-items: center; justify-content: space-between;
+        padding-top: 26px; padding-bottom: 26px; gap: 20px;
+      }
+      .brand {
+        font-family: var(--display);
+        font-weight: 800; font-size: 21px; letter-spacing: -0.02em;
+      }
+      .brand span { color: var(--violet); }
+      nav { display: flex; gap: 22px; font-size: 15px; }
+      nav a { color: var(--muted); text-decoration: none; }
+      nav a:hover, nav a:focus-visible { color: var(--text); }
+
+      /* ── hero ───────────────────────────────────────────────────── */
+      .hero .wrap {
+        display: grid; grid-template-columns: 1fr 1fr;
+        gap: 64px; align-items: center;
+        padding-top: 56px; padding-bottom: 88px;
+      }
+      h1 {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: clamp(2.4rem, 5vw, 3.9rem);
+        line-height: 1.04;
+        letter-spacing: -0.035em;
+        margin: 0 0 22px;
+        text-wrap: balance;
+      }
+      h1 em { font-style: normal; color: var(--violet); }
+      .lede {
+        font-size: 1.16rem; color: var(--muted);
+        margin: 0 0 32px; max-width: 30em;
+      }
+      .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+      .btn {
+        display: inline-block; padding: 13px 22px; border-radius: 9px;
+        font-weight: 600; font-size: 15px; text-decoration: none;
+        border: 1px solid transparent;
+      }
+      .btn-primary { background: var(--violet); color: #1a1433; }
+      .btn-primary:hover { background: #b2a6f6; }
+      .btn-ghost { border-color: var(--line); color: var(--text); }
+      .btn-ghost:hover { border-color: var(--violet); }
+
+      /* ── the transcript: this page's signature ──────────────────── */
+      .room {
+        background: var(--raised);
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        overflow: hidden;
+      }
+      .room-head {
+        display: flex; align-items: center; gap: 9px;
+        padding: 13px 16px; border-bottom: 1px solid var(--line);
+        font-size: 14px; color: var(--muted);
+      }
+      .room-head b { color: var(--text); font-weight: 600; }
+      .pill {
+        margin-left: auto; font-family: var(--mono); font-size: 11px;
+        color: var(--amber); border: 1px solid var(--amber);
+        border-radius: 999px; padding: 2px 9px;
+      }
+      .msgs { padding: 16px; display: flex; flex-direction: column; gap: 13px; }
+      .msg { display: flex; flex-direction: column; gap: 4px; }
+      .who { font-size: 13px; color: var(--muted); }
+      .who b { color: var(--text); font-weight: 600; }
+      .bubble {
+        background: var(--raised-2); border-radius: 11px;
+        padding: 10px 13px; font-size: 15px;
+      }
+
+      /* a suite event, as the client renders one */
+      .card {
+        border: 1px solid var(--line); border-left: 3px solid var(--violet);
+        border-radius: 9px; background: var(--raised-2); padding: 11px 13px;
+      }
+      .card.awaiting { border-left-color: var(--amber); }
+      .etype {
+        font-family: var(--mono); font-size: 11px; color: var(--muted);
+        display: block; margin-bottom: 7px;
+      }
+      .field { display: flex; gap: 8px; font-size: 14.5px; margin-bottom: 3px; }
+      .field .k { color: var(--muted); flex: none; min-width: 4.6em; }
+      .opts { display: flex; gap: 8px; margin-top: 10px; }
+      .opt {
+        font-size: 13px; font-weight: 600; padding: 6px 13px;
+        border-radius: 7px; border: 1px solid var(--line); color: var(--text);
+      }
+      .opt.yes { background: var(--amber); color: #2a1c05; border-color: var(--amber); }
+      .fallback {
+        font-size: 12.5px; color: var(--muted);
+        border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px;
+        font-style: italic;
+      }
+
+      /* ── sections ───────────────────────────────────────────────── */
+      section.band { border-top: 1px solid var(--line); }
+      section.band .wrap { padding-top: 72px; padding-bottom: 72px; }
+      h2 {
+        font-family: var(--display); font-weight: 600;
+        font-size: clamp(1.6rem, 3vw, 2.1rem); letter-spacing: -0.025em;
+        margin: 0 0 14px; text-wrap: balance;
+      }
+      .sub { color: var(--muted); margin: 0 0 40px; max-width: 62ch; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+      .cell h3 {
+        font-family: var(--display); font-size: 1.13rem; font-weight: 600;
+        margin: 0 0 8px; letter-spacing: -0.015em;
+      }
+      .cell p { margin: 0; color: var(--muted); font-size: 15.5px; }
+
+      /* roster states */
+      .states { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
+      .states li {
+        display: flex; gap: 16px; align-items: baseline;
+        padding: 15px 0; border-bottom: 1px solid var(--line);
+      }
+      .states li:first-child { border-top: 1px solid var(--line); }
+      .states .word {
+        font-family: var(--mono); font-size: 13px; color: var(--violet);
+        flex: none; min-width: 9em;
+      }
+      .states li:first-child .word { color: var(--amber); }
+      .states .what { color: var(--muted); font-size: 15.5px; }
+      .caveat {
+        margin-top: 26px; padding: 15px 17px; border-radius: 9px;
+        background: var(--raised); border: 1px solid var(--line);
+        font-size: 15px; color: var(--muted);
+      }
+      .caveat b { color: var(--text); font-weight: 600; }
+
+      .platforms {
+        display: flex; gap: 10px; flex-wrap: wrap; list-style: none;
+        margin: 0; padding: 0;
+      }
+      .platforms li {
+        font-family: var(--mono); font-size: 13px; color: var(--text);
+        border: 1px solid var(--line); border-radius: 7px; padding: 7px 14px;
+        background: var(--raised);
+      }
+
+      footer { border-top: 1px solid var(--line); }
+      footer .wrap {
+        display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+        padding-top: 34px; padding-bottom: 46px;
+        font-size: 14.5px; color: var(--muted);
+      }
+      footer a { color: var(--muted); }
+      footer a:hover { color: var(--text); }
+      .fnav { display: flex; gap: 20px; flex-wrap: wrap; }
+
+      @media (max-width: 860px) {
+        .hero .wrap { grid-template-columns: 1fr; gap: 44px; padding-bottom: 60px; }
+        .grid { grid-template-columns: 1fr; gap: 30px; }
+        .states li { flex-direction: column; gap: 3px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { transition: none !important; animation: none !important; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="status">
+      <div class="wrap">
+        <span class="dot" aria-hidden="true"></span>
+        <span><strong>In development.</strong> There is no public build yet — no download, no
+        waitlist. The documentation is written and open while the client is built.</span>
+      </div>
+    </div>
+
+    <header class="mast">
+      <div class="wrap">
+        <div class="brand">super<span>message</span></div>
+        <nav>
+          <a href="https://docs.supermessage.dev">Docs</a>
+          <a href="https://github.com/SuperJackfruitLabs/supermessage">Source</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="hero">
+      <div class="wrap">
+        <div>
+          <h1>Chat where your agents are <em>in the room</em>.</h1>
+          <p class="lede">
+            supermessage is a Matrix client built for teams whose colleagues include machines. An
+            agent's work, the permission it needs, and the decision waiting on you all arrive in
+            the conversation — in order, next to what everyone else said.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="https://docs.supermessage.dev">Read the docs</a>
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/SuperJackfruitLabs/supermessage">View the source</a>
+          </div>
+        </div>
+
+        <!-- The signature element. See the design note at the top of this file. -->
+        <div class="room" role="img"
+          aria-label="A room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, with Approve and Decline options; and a kaambaan card waits for an approval.">
+          <div class="room-head">
+            <b>#billing-migration</b>
+            <span>3 people · 2 agents</span>
+            <span class="pill">needs you</span>
+          </div>
+          <div class="msgs">
+            <div class="msg">
+              <div class="who"><b>Priya</b></div>
+              <div class="bubble">Where did the migration get to?</div>
+            </div>
+
+            <div class="msg">
+              <div class="who"><b>coder-kai</b> · agent</div>
+              <div class="card">
+                <span class="etype">{events[0].type}</span>
+                <div class="field"><span class="k">Did</span><span
+                  >Rewrote 14 call sites, ran the suite — 556 pass</span></div>
+                <div class="fallback">Element shows: “coder-kai: rewrote 14 call sites, 556
+                  tests pass.”</div>
+              </div>
+            </div>
+
+            <div class="msg">
+              <div class="who"><b>coder-kai</b> · agent</div>
+              <div class="card awaiting">
+                <span class="etype">{events[1].type}</span>
+                <div class="field"><span class="k">Wants to</span><span
+                  >Run the migration against staging</span></div>
+                <div class="opts">
+                  <span class="opt yes">Approve</span>
+                  <span class="opt">Decline</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="msg">
+              <div class="who"><b>kaambaan</b></div>
+              <div class="card awaiting">
+                <span class="etype">{events[2].type}</span>
+                <div class="field"><span class="k">Card</span><span>Billing migration</span></div>
+                <div class="field"><span class="k">Stage</span><span>Awaiting review</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="band">
+      <div class="wrap">
+        <h2>Participants, not a panel</h2>
+        <p class="sub">
+          Most tools put an agent in a sidebar — a chat box bolted onto an app, separate from the
+          conversation your team is actually having. This puts it in the room, and gives each kind
+          of event a shape you can read at a glance.
+        </p>
+        <div class="grid">
+          <div class="cell">
+            <h3>Turns</h3>
+            <p>What an agent did during one stretch of work. Live output streams while it writes;
+              the durable record is the message that lands when it finishes.</p>
+          </div>
+          <div class="cell">
+            <h3>Permission</h3>
+            <p>An agent asking before it acts. You answer in the room, and the answer stays
+              attached — so the record of who decided what lives where it was decided.</p>
+          </div>
+          <div class="cell">
+            <h3>Approval gates</h3>
+            <p>Work does not simply continue because an agent thinks it should. A gate is a card
+              that has reached a point a person has to answer.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <h2>A roster that knows what is waiting on you</h2>
+        <p class="sub">
+          A room of agents fills up faster than a room of people, and “most recent first” stops
+          helping quickly. Sort by what owes you an answer, or group by the machine an agent runs
+          on.
+        </p>
+        <ul class="states">
+          <li><span class="word">needs you</span><span class="what">Owes you an answer</span></li>
+          <li><span class="word">active</span><span class="what">Spoke recently enough to
+            count</span></li>
+          <li><span class="word">idle</span><span class="what">Nothing lately, but within living
+            memory</span></li>
+          <li><span class="word">quiet</span><span class="what">Silent long enough that its
+            absence is the fact</span></li>
+        </ul>
+        <p class="caveat">
+          <b>This is not a health check.</b> None of those four says whether a process is running —
+          each is a statement about when the room last spoke, or about what it said. Whether the
+          machine is actually up is a different question, and a different tool answers it.
+        </p>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <h2>It does not stop being Matrix</h2>
+        <p class="sub">
+          A constraint the project holds itself to, not a side effect. Every custom event carries a
+          plain-text fallback body, so the same rooms stay usable from Element, Cinny, or anything
+          else. Nothing here locks a room, a homeserver, or the people in it to this client.
+        </p>
+        <div class="grid">
+          <div class="cell">
+            <h3>Encrypted by default</h3>
+            <p>End-to-end encryption through the Matrix Rust SDK and vodozemac. A plaintext-only
+              client in 2026 was never an option.</p>
+          </div>
+          <div class="cell">
+            <h3>Your homeserver</h3>
+            <p>Point it anywhere. supermessage is a client — it keeps no central store of its
+              own.</p>
+          </div>
+          <div class="cell">
+            <h3>One core, many screens</h3>
+            <p>A Rust core decides what a timeline item is and how it should read. Each platform
+              renders that decision instead of re-deriving it.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <h2>Five platforms, one codebase</h2>
+        <p class="sub">
+          Mobile and desktop are equally weighted, and the UI is meant to feel native on each —
+          not a web page in a shell.
+        </p>
+        <ul class="platforms">
+          <li>iOS</li><li>Android</li><li>macOS</li><li>Windows</li><li>Linux</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <span>supermessage · in development · MIT</span>
+        <span class="fnav">
+          <a href="https://docs.supermessage.dev">Documentation</a>
+          <a href="https://github.com/SuperJackfruitLabs/supermessage">GitHub</a>
+          <a href="https://docs.agentpod.dev">AgentPod</a>
+          <a href="https://docs.kaambaan.dev">kaambaan</a>
+        </span>
+      </div>
+    </footer>
+  </body>
+</html>
