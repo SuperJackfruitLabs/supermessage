@@ -69,8 +69,8 @@ and the inventory in full. §6 is honest about the boundary.
 An earlier draft of this spec assumed 18 iOS previews were a matter of
 writing 18 `#Preview` blocks. They are not. **Eleven of the eighteen views
 take `session: Session`**, and `Session.init(client: CoreClient)` needs a
-`CoreClient` — a concrete class of 38 public methods that constructs a
-`Core` FFI object in its initialiser. There is no seam to substitute, and
+`CoreClient` — an actor of 38 public methods that constructs a `Core` FFI
+object in its initialiser. There is no seam to substitute, and
 even `SupermessageKitTests` does not stub it: those tests build a real
 `CoreClient(dataDirectory:)` and reach internals through
 `@testable import`, which the app target cannot do.
@@ -100,12 +100,25 @@ even `SupermessageKitTests` does not stub it: those tests build a real
   recorded that the web stores are injectable factories. iOS never got the
   same treatment; this gives it the same one.
 
-**To verify first, not assume:** the protocols must be `Sendable` under
-`SWIFT_STRICT_CONCURRENCY: complete`, and `AGENTS.md` records that UniFFI
-0.28's output is not `Sendable`-clean — which is why `SupermessageFFI` is
-quarantined at Swift 5. The protocols sit at the `CoreClient` level, which
-is the quarantine layer rather than inside it, so this should hold. It is
-the first task's check.
+**Verified before anything was built on it, not assumed.** The protocols
+have to be `Sendable` under `SWIFT_STRICT_CONCURRENCY: complete`, and
+`AGENTS.md` records that UniFFI 0.28's output is not `Sendable`-clean —
+which is why `SupermessageFFI` is quarantined at Swift 5. A two-method
+`AvatarFetching: Sendable`, with `extension CoreClient: AvatarFetching {}`,
+compiles. Two things make it hold, and only one of them was the expected
+one:
+
+- `CoreClient` is an **actor**, so it is implicitly `Sendable` and the
+  retroactive-conformance problem this file was braced for does not arise
+  at this layer at all. The `Sendable` question is really about the *stub*
+  conformers a preview supplies, which must be `Sendable` on their own.
+- **Every requirement must be `async`.** An actor's members are
+  actor-isolated and cannot satisfy a synchronous requirement; declaring
+  one `nonisolated` to fit would put a blocking call back on the caller's
+  thread, which is the exact hazard `CoreClient` exists to prevent. So
+  `async` is not a style choice here — it is the only signature both
+  conformers can honestly meet, and a store that wants a synchronous
+  accessor cannot have one through this seam.
 
 ### 4.1 iOS — 18 previews
 
