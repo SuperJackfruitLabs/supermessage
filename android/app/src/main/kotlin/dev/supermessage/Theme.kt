@@ -8,85 +8,37 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 
 /**
- * The palette and type ramp, ported in structure (not in hex) from
- * `apple/Supermessage/Theme.swift` — see
- * `docs/superpowers/specs/2026-08-13-console-design.md` for the source
- * spec.
+ * The type ramp, and the bridge from this app's colour roles into Material.
  *
- * The identity that travels between platforms is **structural**, not any
- * particular typeface or colour literal: serif for what an agent wrote,
- * sans for what the operator wrote, mono for data and sigils, and one
- * colour reserved for one meaning. iOS ties its faces to the system
- * (`.serif` resolves to New York, `.monospaced` to SF Mono) so that Dynamic
- * Type comes free; Android's equivalent is Compose's own generic
- * [FontFamily.Serif] / [FontFamily.SansSerif] / [FontFamily.Monospace] —
- * resolved by the platform, nothing bundled, same reasoning.
+ * **The colour values are not here.** They live in `design/tokens.toml` and
+ * arrive as [GeneratedThemeTokens], emitted by
+ * `scripts/generate-tokens.py`. They used to be written out here, and
+ * separately in `apple/Supermessage/Theme.swift` and `src/app.css`, each
+ * re-derived by eye from `docs/superpowers/specs/2026-08-13-console-design.md`
+ * — by 2026-09 none of the three agreed, down to amber being three
+ * different ambers and this file's dark accent being a different *hue* from
+ * its own light one. See `docs/design-language.md` for the rules and
+ * `docs/superpowers/specs/2026-09-12-design-language-tokens-design.md` for
+ * why it is generated.
  *
- * Android has its own dynamic-colour story (Material You), so unlike the
- * faces, the seven semantic colour roles below are **not** transcriptions
- * of iOS's literals — Task 2, which adopts this theme across the app, is
- * free to layer dynamic colour on top of these roles later. What must not
- * drift is the set of roles themselves: `ground`, `sunken`, `hairline`,
- * `accent`, `signal`, `danger`, `ok`, each defined for both light and dark.
+ * The identity that travels between platforms is **structural**: serif for
+ * what an agent wrote, sans for what the operator wrote, mono for data and
+ * sigils, and one colour reserved for one meaning. iOS ties its faces to
+ * the system (`.serif` resolves to New York, `.monospaced` to SF Mono) so
+ * that Dynamic Type comes free; Android's equivalent is Compose's own
+ * generic [FontFamily.Serif] / [FontFamily.SansSerif] /
+ * [FontFamily.Monospace] — resolved by the platform, nothing bundled, same
+ * reasoning.
+ *
+ * There are now **sixteen** roles rather than seven, and they are the same
+ * sixteen on every platform. The nine that are new here are the three text
+ * ranks, `surface-raised`, `border-strong`, `accent-content`,
+ * `accent-soft`, `signal-soft` and `scrim` — most of which this app has
+ * been doing without, falling through to Material defaults instead.
  */
-
-/** The seven semantic colour roles, defined once per appearance. */
-@Immutable
-data class SupermessageColorRoles(
-    /** The page itself. */
-    val ground: Color,
-    /** Behind a chip, a segmented control, an avatar with no picture. */
-    val sunken: Color,
-    /** Hairlines and dividers. */
-    val hairline: Color,
-    /** The chrome hue. Selection, focus, the send affordance, own bubbles. */
-    val accent: Color,
-    /**
-     * Amber, and it means exactly one thing: the operator owes someone an
-     * answer. It appears on a pending decision and nowhere else — not on
-     * unread badges, not on hover, not on a warning. Reach for [danger] or
-     * [accent] instead if what you are drawing is not a decision.
-     */
-    val signal: Color,
-    val danger: Color,
-    /** A room that is working. Never amber — this is good news. */
-    val ok: Color,
-) {
-    companion object {
-        /**
-         * Paper: a warm, light ground that reads as a record of what was
-         * done.
-         */
-        val light = SupermessageColorRoles(
-            ground = Color(0xFFF6F4EF),
-            sunken = Color(0xFFE7E4DB),
-            hairline = Color(0xFFDDD9CF),
-            accent = Color(0xFF3F4BB0),
-            signal = Color(0xFFA8660A),
-            danger = Color(0xFFC63E3E),
-            ok = Color(0xFF2F7D5B),
-        )
-
-        /**
-         * Slate: a cool, low-contrast dark for a console glanced at fifty
-         * times a day. Accent steps back rather than brightening, so that
-         * amber — the one reserved signal — carries.
-         */
-        val dark = SupermessageColorRoles(
-            ground = Color(0xFF171B22),
-            sunken = Color(0xFF232A35),
-            hairline = Color(0xFF26303C),
-            accent = Color(0xFF7FB4D8),
-            signal = Color(0xFFE8A02E),
-            danger = Color(0xFFE0A0A0),
-            ok = Color(0xFF5FBB92),
-        )
-    }
-}
 
 /** The three faces, structural rather than decorative — see the file doc. */
 @Immutable
@@ -112,7 +64,8 @@ object SupermessageThemeFonts {
     val code: FontFamily = FontFamily.Monospace
 }
 
-private val LocalSupermessageColors = staticCompositionLocalOf { SupermessageColorRoles.light }
+private val LocalSupermessageColors =
+    staticCompositionLocalOf { GeneratedThemeTokens.paper }
 private val LocalSupermessageTypography = staticCompositionLocalOf {
     SupermessageTypography(
         body = SupermessageThemeFonts.body,
@@ -148,31 +101,67 @@ object SupermessageTheme {
  */
 @Composable
 fun SupermessageTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    val colors = if (darkTheme) SupermessageColorRoles.dark else SupermessageColorRoles.light
+    // Android binds `paper` to light: paper is what "light" means on a
+    // phone. The third appearance is not a user setting, which is why there
+    // is nothing to read here beyond the system's own dark flag.
+    val colors = if (darkTheme) GeneratedThemeTokens.dark else GeneratedThemeTokens.paper
     val typography = SupermessageTypography(
         body = SupermessageThemeFonts.body,
         own = SupermessageThemeFonts.own,
         code = SupermessageThemeFonts.code,
     )
+    // The bridge, and it does more work than it looks like.
+    //
+    // Ninety colour reads across this app go through
+    // `MaterialTheme.colorScheme`, and only five reach for
+    // `SupermessageTheme.colors` directly. So whatever is mapped here is,
+    // in practice, what the app is painted with — and until now the three
+    // text roles were not mapped at all, which is why Android has been
+    // rendering body text in Material's default grey rather than in this
+    // palette's `content`.
+    //
+    // Mapping onBackground / onSurface / onSurfaceVariant is therefore the
+    // cheapest way to get the three-rank hierarchy onto this platform, and
+    // the reason it arrives in P1 rather than waiting for P6's proper
+    // adoption pass.
+    //
+    // Named arguments throughout, and that is not style: `darkColorScheme`
+    // takes some thirty parameters and its third positional is
+    // `primaryContainer`, not `surface`. Passing this list positionally
+    // compiles and mis-maps the whole palette.
     val colorScheme = if (darkTheme) {
         darkColorScheme(
             primary = colors.accent,
-            background = colors.ground,
-            surface = colors.ground,
-            surfaceVariant = colors.sunken,
-            outline = colors.hairline,
-            outlineVariant = colors.hairline,
+            onPrimary = colors.accentContent,
+            primaryContainer = colors.accentSoft,
+            onPrimaryContainer = colors.content,
+            background = colors.surface,
+            onBackground = colors.content,
+            surface = colors.surface,
+            onSurface = colors.content,
+            surfaceVariant = colors.surfaceSunken,
+            onSurfaceVariant = colors.contentMuted,
+            outline = colors.border,
+            outlineVariant = colors.borderStrong,
             error = colors.danger,
+            scrim = colors.scrim,
         )
     } else {
         lightColorScheme(
             primary = colors.accent,
-            background = colors.ground,
-            surface = colors.ground,
-            surfaceVariant = colors.sunken,
-            outline = colors.hairline,
-            outlineVariant = colors.hairline,
+            onPrimary = colors.accentContent,
+            primaryContainer = colors.accentSoft,
+            onPrimaryContainer = colors.content,
+            background = colors.surface,
+            onBackground = colors.content,
+            surface = colors.surface,
+            onSurface = colors.content,
+            surfaceVariant = colors.surfaceSunken,
+            onSurfaceVariant = colors.contentMuted,
+            outline = colors.border,
+            outlineVariant = colors.borderStrong,
             error = colors.danger,
+            scrim = colors.scrim,
         )
     }
 

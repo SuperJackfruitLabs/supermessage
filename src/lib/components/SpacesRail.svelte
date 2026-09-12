@@ -113,7 +113,7 @@
             src={avatar}
             alt=""
             aria-hidden="true"
-            class="h-8 w-8 rounded-full object-cover {entry.pending
+            class="h-8 w-8 rounded-pill object-cover {entry.pending
               ? 'border border-dashed border-accent opacity-70'
               : ''}"
             onerror={() => avatarCache.markFailed(entry.spaceId ?? "")}
@@ -127,7 +127,7 @@
             room, and the silhouette says so before the label is read.
           -->
           <span
-            class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface-raised font-mono text-label text-content-muted uppercase"
+            class="flex h-8 w-8 items-center justify-center rounded-card border border-border bg-surface-raised font-mono text-label text-content-muted uppercase"
             aria-hidden="true"
           >
             {entry.initial}
@@ -142,7 +142,7 @@
             do their work).
           -->
           <span
-            class="flex h-8 w-8 items-center justify-center rounded-full text-ui font-medium {entry.pending
+            class="flex h-8 w-8 items-center justify-center rounded-pill text-ui font-medium {entry.pending
               ? 'border border-dashed border-accent bg-transparent text-accent'
               : 'bg-surface-raised text-content'}"
             aria-hidden="true"

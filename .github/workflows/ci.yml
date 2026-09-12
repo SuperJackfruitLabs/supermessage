@@ -44,6 +44,7 @@ jobs:
       ios: ${{ steps.filter.outputs.ios }}
       android: ${{ steps.filter.outputs.android }}
       licences: ${{ steps.filter.outputs.licences }}
+      tokens: ${{ steps.filter.outputs.tokens }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -83,11 +84,59 @@ jobs:
               - 'android/**'
               - 'scripts/build-android-libs.sh'
               - 'scripts/android-*.sh'
+            # The generated outputs are listed alongside the sources, so a
+            # hand-edited generated file triggers the job that catches it.
+            tokens:
+              - *workflow
+              - 'design/tokens.toml'
+              - 'scripts/tokens/**'
+              - 'scripts/tests/**'
+              - 'scripts/generate-tokens.py'
+              - 'src/lib/tokens.css'
+              - 'apple/Supermessage/Generated/ThemeTokens.swift'
+              - 'android/app/src/main/kotlin/dev/supermessage/GeneratedThemeTokens.kt'
+              - 'landing/src/styles/tokens.css'
+              - 'docs-site/src/styles/tokens.css'
             licences:
               - *workflow
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'src-tauri/Cargo.toml'
+
+  tokens:
+    name: Design tokens
+    needs: changes
+    if: needs.changes.outputs.tokens == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: The contrast contracts hold, and the emitters agree
+        # Includes the deliberate breakages: a role missing from one
+        # appearance, a faint that clears the reading surface and fails the
+        # roster behind it, an amber at the text floor rather than the label
+        # floor, a depth step collapsed and a depth step gaping, a scrim that
+        # paints nothing, and a fixed point size that would cost every native
+        # user their Dynamic Type.
+        run: python3 -m unittest discover -s scripts/tests -t . -v
+
+      - name: Regenerate every target
+        run: python3 scripts/generate-tokens.py
+
+      - name: The checked-in tokens match the source that generates them
+        # Five surfaces read these files and NONE of them would fail to build
+        # against a stale one — the app would simply render last week's
+        # palette. That is how three themes drifted apart without anybody
+        # noticing, so the diff is the gate.
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::Generated design tokens are stale — run python3 scripts/generate-tokens.py and commit the result"
+            git diff --stat
+            exit 1
+          fi
 
   frontend:
     name: Frontend

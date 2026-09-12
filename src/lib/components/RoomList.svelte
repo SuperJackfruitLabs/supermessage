@@ -340,12 +340,12 @@
             src={avatar}
             alt=""
             aria-hidden="true"
-            class="h-8 w-8 shrink-0 self-center rounded-full object-cover"
+            class="h-8 w-8 shrink-0 self-center rounded-pill object-cover"
             onerror={() => avatarCache.markFailed(room.id)}
           />
         {:else}
           <span
-            class="flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
+            class="flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-pill bg-surface-raised text-ui font-medium text-content"
             aria-hidden="true"
           >
             {identity.initial}
@@ -371,7 +371,7 @@
               is not a reason to move everything either.
             -->
             <span
-              class="h-1.5 w-1.5 shrink-0 rounded-full {stateClass(entry.state)}"
+              class="h-1.5 w-1.5 shrink-0 rounded-pill {stateClass(entry.state)}"
               aria-hidden="true"
             ></span>
             <span class="min-w-0 flex-1 truncate text-ui font-medium text-content"
@@ -386,7 +386,7 @@
                 the filled accent pill is the unread number's.
               -->
               <span
-                class="shrink-0 rounded-full border border-accent px-1.5 py-0.5 font-mono text-meta text-accent"
+                class="shrink-0 rounded-pill border border-accent px-1.5 py-0.5 font-mono text-meta text-accent"
               >
                 Invitation
               </span>
@@ -402,7 +402,7 @@
                 worded reading of the same number where it isn't.
               -->
               <span
-                class="shrink-0 rounded-full bg-accent px-1.5 py-0.5 font-mono text-meta text-accent-content"
+                class="shrink-0 rounded-pill bg-accent px-1.5 py-0.5 font-mono text-meta text-accent-content"
               >
                 {room.unread}
               </span>

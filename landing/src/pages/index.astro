@@ -20,6 +20,8 @@ const events = [
   { type: 'dev.agentpod.permission.v1', label: 'Permission' },
   { type: 'dev.kaambaan.gate.v1', label: 'Approval' },
 ];
+
+import '../styles/tokens.css';
 ---
 
 <!doctype html>
@@ -41,14 +43,6 @@ const events = [
     />
     <style>
       :root {
-        --ink: #151129;
-        --raised: #211a3d;
-        --raised-2: #2b2350;
-        --line: #382f5e;
-        --text: #f4f2fb;
-        --muted: #a29bc4;
-        --violet: #9d8ff0;
-        --amber: #e8a33d;
         --display: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
         --body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
@@ -65,27 +59,21 @@ const events = [
        *
        * These are the same values as `docs-site/src/styles/theme.css`'s light block, so the
        * two sites agree in both directions rather than only in the dark. */
-      @media (prefers-color-scheme: light) {
-        :root {
-          --ink: hsl(253, 60%, 99%);
-          --raised: hsl(252, 38%, 95%);
-          --raised-2: hsl(252, 28%, 86%);
-          --line: hsl(252, 24%, 82%);
-          --text: hsl(252, 32%, 13%);
-          --muted: hsl(252, 18%, 36%);
-          --violet: hsl(252, 58%, 52%);
-          --amber: hsl(33, 72%, 38%);
-        }
-        /* The two chips that sit ON a colour need their own foreground in light: the accent
-           and amber both darken, so dark-on-light text would vanish into them. */
-        .btn-primary { color: #fbfaff; }
-        .opt.yes { color: #fbfaff; }
-      }
+      /* The light palette itself now arrives from ../styles/tokens.css,
+         generated from design/tokens.toml — this page no longer keeps its
+         own copy, and no longer approximates it in hsl(). What stays is the
+         one thing that is a rule rather than a value: the two chips that sit
+         ON a colour need their own foreground, because the accent and the
+         amber both darken in light and dark-on-light text would vanish into
+         them. `--color-accent-content` is exactly that role, so it needs no
+         media query at all. */
+      .btn-primary { color: var(--color-accent-content); }
+      .opt.yes { color: var(--color-accent-content); }
 
       body {
         margin: 0;
-        background: var(--ink);
-        color: var(--text);
+        background: var(--color-surface-sunken);
+        color: var(--color-content);
         font-family: var(--body);
         font-size: 17px;
         line-height: 1.6;
@@ -96,10 +84,10 @@ const events = [
 
       /* ── status bar ─────────────────────────────────────────────── */
       .status {
-        background: var(--raised);
-        border-bottom: 1px solid var(--line);
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
         font-size: 14px;
-        color: var(--muted);
+        color: var(--color-content-muted);
       }
       .status .wrap {
         display: flex; gap: 10px; align-items: center;
@@ -107,9 +95,9 @@ const events = [
       }
       .dot {
         width: 7px; height: 7px; border-radius: 50%;
-        background: var(--amber); flex: none;
+        background: var(--color-signal); flex: none;
       }
-      .status strong { color: var(--text); font-weight: 600; }
+      .status strong { color: var(--color-content); font-weight: 600; }
 
       /* ── masthead ───────────────────────────────────────────────── */
       header.mast .wrap {
@@ -120,10 +108,10 @@ const events = [
         font-family: var(--display);
         font-weight: 800; font-size: 21px; letter-spacing: -0.02em;
       }
-      .brand span { color: var(--violet); }
+      .brand span { color: var(--color-accent); }
       nav { display: flex; gap: 22px; font-size: 15px; }
-      nav a { color: var(--muted); text-decoration: none; }
-      nav a:hover, nav a:focus-visible { color: var(--text); }
+      nav a { color: var(--color-content-muted); text-decoration: none; }
+      nav a:hover, nav a:focus-visible { color: var(--color-content); }
 
       /* ── hero ───────────────────────────────────────────────────── */
       .hero .wrap {
@@ -140,9 +128,9 @@ const events = [
         margin: 0 0 22px;
         text-wrap: balance;
       }
-      h1 em { font-style: normal; color: var(--violet); }
+      h1 em { font-style: normal; color: var(--color-accent); }
       .lede {
-        font-size: 1.16rem; color: var(--muted);
+        font-size: 1.16rem; color: var(--color-content-muted);
         margin: 0 0 32px; max-width: 30em;
       }
       .actions { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -151,116 +139,116 @@ const events = [
         font-weight: 600; font-size: 15px; text-decoration: none;
         border: 1px solid transparent;
       }
-      .btn-primary { background: var(--violet); color: #1a1433; }
-      .btn-primary:hover { background: #b2a6f6; }
-      .btn-ghost { border-color: var(--line); color: var(--text); }
-      .btn-ghost:hover { border-color: var(--violet); }
+      .btn-primary { background: var(--color-accent); color: var(--color-accent-content); }
+      .btn-primary:hover { background: var(--color-accent-soft); }
+      .btn-ghost { border-color: var(--color-border); color: var(--color-content); }
+      .btn-ghost:hover { border-color: var(--color-accent); }
 
       /* ── the transcript: this page's signature ──────────────────── */
       .room {
-        background: var(--raised);
-        border: 1px solid var(--line);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
         border-radius: 15px;
         overflow: hidden;
       }
       .room-head {
         display: flex; align-items: center; gap: 9px;
-        padding: 13px 16px; border-bottom: 1px solid var(--line);
-        font-size: 14px; color: var(--muted);
+        padding: 13px 16px; border-bottom: 1px solid var(--color-border);
+        font-size: 14px; color: var(--color-content-muted);
       }
-      .room-head b { color: var(--text); font-weight: 600; }
+      .room-head b { color: var(--color-content); font-weight: 600; }
       .pill {
         margin-left: auto; font-family: var(--mono); font-size: 11px;
-        color: var(--amber); border: 1px solid var(--amber);
+        color: var(--color-signal); border: 1px solid var(--color-signal);
         border-radius: 999px; padding: 2px 9px;
       }
       .msgs { padding: 16px; display: flex; flex-direction: column; gap: 13px; }
       .msg { display: flex; flex-direction: column; gap: 4px; }
-      .who { font-size: 13px; color: var(--muted); }
-      .who b { color: var(--text); font-weight: 600; }
+      .who { font-size: 13px; color: var(--color-content-muted); }
+      .who b { color: var(--color-content); font-weight: 600; }
       .bubble {
-        background: var(--raised-2); border-radius: 11px;
+        background: var(--color-surface-raised); border-radius: 11px;
         padding: 10px 13px; font-size: 15px;
       }
 
       /* a suite event, as the client renders one */
       .card {
-        border: 1px solid var(--line); border-left: 3px solid var(--violet);
-        border-radius: 9px; background: var(--raised-2); padding: 11px 13px;
+        border: 1px solid var(--color-border); border-left: 3px solid var(--color-accent);
+        border-radius: 9px; background: var(--color-surface-raised); padding: 11px 13px;
       }
-      .card.awaiting { border-left-color: var(--amber); }
+      .card.awaiting { border-left-color: var(--color-signal); }
       .etype {
-        font-family: var(--mono); font-size: 11px; color: var(--muted);
+        font-family: var(--mono); font-size: 11px; color: var(--color-content-muted);
         display: block; margin-bottom: 7px;
       }
       .field { display: flex; gap: 8px; font-size: 14.5px; margin-bottom: 3px; }
-      .field .k { color: var(--muted); flex: none; min-width: 4.6em; }
+      .field .k { color: var(--color-content-muted); flex: none; min-width: 4.6em; }
       .opts { display: flex; gap: 8px; margin-top: 10px; }
       .opt {
         font-size: 13px; font-weight: 600; padding: 6px 13px;
-        border-radius: 7px; border: 1px solid var(--line); color: var(--text);
+        border-radius: 7px; border: 1px solid var(--color-border); color: var(--color-content);
       }
-      .opt.yes { background: var(--amber); color: #2a1c05; border-color: var(--amber); }
+      .opt.yes { background: var(--color-signal); color: var(--color-signal-soft); border-color: var(--color-signal); }
       .fallback {
-        font-size: 12.5px; color: var(--muted);
-        border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px;
+        font-size: 12.5px; color: var(--color-content-muted);
+        border-top: 1px dashed var(--color-border); margin-top: 10px; padding-top: 8px;
         font-style: italic;
       }
 
       /* ── sections ───────────────────────────────────────────────── */
-      section.band { border-top: 1px solid var(--line); }
+      section.band { border-top: 1px solid var(--color-border); }
       section.band .wrap { padding-top: 72px; padding-bottom: 72px; }
       h2 {
         font-family: var(--display); font-weight: 600;
         font-size: clamp(1.6rem, 3vw, 2.1rem); letter-spacing: -0.025em;
         margin: 0 0 14px; text-wrap: balance;
       }
-      .sub { color: var(--muted); margin: 0 0 40px; max-width: 62ch; }
+      .sub { color: var(--color-content-muted); margin: 0 0 40px; max-width: 62ch; }
       .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
       .cell h3 {
         font-family: var(--display); font-size: 1.13rem; font-weight: 600;
         margin: 0 0 8px; letter-spacing: -0.015em;
       }
-      .cell p { margin: 0; color: var(--muted); font-size: 15.5px; }
+      .cell p { margin: 0; color: var(--color-content-muted); font-size: 15.5px; }
 
       /* roster states */
       .states { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
       .states li {
         display: flex; gap: 16px; align-items: baseline;
-        padding: 15px 0; border-bottom: 1px solid var(--line);
+        padding: 15px 0; border-bottom: 1px solid var(--color-border);
       }
-      .states li:first-child { border-top: 1px solid var(--line); }
+      .states li:first-child { border-top: 1px solid var(--color-border); }
       .states .word {
-        font-family: var(--mono); font-size: 13px; color: var(--violet);
+        font-family: var(--mono); font-size: 13px; color: var(--color-accent);
         flex: none; min-width: 9em;
       }
-      .states li:first-child .word { color: var(--amber); }
-      .states .what { color: var(--muted); font-size: 15.5px; }
+      .states li:first-child .word { color: var(--color-signal); }
+      .states .what { color: var(--color-content-muted); font-size: 15.5px; }
       .caveat {
         margin-top: 26px; padding: 15px 17px; border-radius: 9px;
-        background: var(--raised); border: 1px solid var(--line);
-        font-size: 15px; color: var(--muted);
+        background: var(--color-surface); border: 1px solid var(--color-border);
+        font-size: 15px; color: var(--color-content-muted);
       }
-      .caveat b { color: var(--text); font-weight: 600; }
+      .caveat b { color: var(--color-content); font-weight: 600; }
 
       .platforms {
         display: flex; gap: 10px; flex-wrap: wrap; list-style: none;
         margin: 0; padding: 0;
       }
       .platforms li {
-        font-family: var(--mono); font-size: 13px; color: var(--text);
-        border: 1px solid var(--line); border-radius: 7px; padding: 7px 14px;
-        background: var(--raised);
+        font-family: var(--mono); font-size: 13px; color: var(--color-content);
+        border: 1px solid var(--color-border); border-radius: 7px; padding: 7px 14px;
+        background: var(--color-surface);
       }
 
-      footer { border-top: 1px solid var(--line); }
+      footer { border-top: 1px solid var(--color-border); }
       footer .wrap {
         display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
         padding-top: 34px; padding-bottom: 46px;
-        font-size: 14.5px; color: var(--muted);
+        font-size: 14.5px; color: var(--color-content-muted);
       }
-      footer a { color: var(--muted); }
-      footer a:hover { color: var(--text); }
+      footer a { color: var(--color-content-muted); }
+      footer a:hover { color: var(--color-content); }
       .fnav { display: flex; gap: 20px; flex-wrap: wrap; }
 
       @media (max-width: 860px) {

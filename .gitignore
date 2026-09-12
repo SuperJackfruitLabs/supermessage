@@ -60,3 +60,7 @@ android/local.properties
 # Kotlin compiler daemon session state, keyed to this machine. Same story as
 # android/.gradle/ above.
 android/.kotlin/
+
+# Python bytecode from the token generator and its tests.
+__pycache__/
+*.pyc

@@ -60,7 +60,7 @@
       type="button"
       disabled={busy}
       onclick={() => void respond("accept")}
-      class="rounded-md bg-accent px-3 py-1.5 text-ui font-medium text-accent-content transition-colors hover:opacity-90 disabled:opacity-50"
+      class="rounded-control bg-accent px-3 py-1.5 text-ui font-medium text-accent-content transition-colors hover:opacity-90 disabled:opacity-50"
     >
       Accept
     </button>
@@ -68,7 +68,7 @@
       type="button"
       disabled={busy}
       onclick={() => void respond("decline")}
-      class="rounded-md border border-border px-3 py-1.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content disabled:opacity-50"
+      class="rounded-control border border-border px-3 py-1.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content disabled:opacity-50"
     >
       Decline
     </button>

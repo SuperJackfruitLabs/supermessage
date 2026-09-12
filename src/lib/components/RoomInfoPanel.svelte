@@ -178,7 +178,7 @@
       type="button"
       onclick={onClose}
       aria-label="Close room info"
-      class="rounded-md p-1 text-content-muted transition-colors hover:bg-surface hover:text-content"
+      class="rounded-control p-1 text-content-muted transition-colors hover:bg-surface hover:text-content"
     >
       ✕
     </button>
@@ -198,12 +198,12 @@
           src={avatar}
           alt=""
           aria-hidden="true"
-          class="h-16 w-16 shrink-0 rounded-full object-cover"
+          class="h-16 w-16 shrink-0 rounded-pill object-cover"
           onerror={() => avatarCache.markFailed(currentRoomId)}
         />
       {:else}
         <span
-          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-raised text-avatar text-content"
+          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-pill bg-surface-raised text-avatar text-content"
           aria-hidden="true"
         >
           {identity.initial}
@@ -214,7 +214,7 @@
       </p>
       {#if identity.role !== null}
         <span
-          class="shrink-0 truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+          class="shrink-0 truncate rounded-pill border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
         >
           {identity.role}
         </span>
@@ -291,7 +291,7 @@
         <button
           type="button"
           onclick={copyRoomId}
-          class="shrink-0 rounded-md border border-border px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
+          class="shrink-0 rounded-control border border-border px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
         >
           {copied ? "Copied" : "Copy"}
         </button>
@@ -312,12 +312,12 @@
                 src={memberAvatar}
                 alt=""
                 aria-hidden="true"
-                class="h-8 w-8 shrink-0 rounded-full object-cover"
+                class="h-8 w-8 shrink-0 rounded-pill object-cover"
                 onerror={() => member.avatarUrl && memberAvatarCache.markFailed(member.avatarUrl)}
               />
             {:else}
               <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-pill bg-surface-raised text-ui font-medium text-content"
                 aria-hidden="true"
               >
                 {initial(memberDisplayName(member))}

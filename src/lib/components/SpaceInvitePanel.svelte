@@ -62,7 +62,7 @@
   <button
     type="button"
     aria-label="Close"
-    class="absolute inset-0 bg-black/40"
+    class="absolute inset-0 bg-scrim"
     onclick={onClose}
   ></button>
 
@@ -70,7 +70,7 @@
     role="dialog"
     tabindex="-1"
     aria-label="Invitation to a space"
-    class="relative z-10 flex w-full max-w-md flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-lg"
+    class="relative z-10 flex w-full max-w-md flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-overlay"
     onkeydown={(e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     }}
@@ -92,7 +92,7 @@
         type="button"
         disabled={busy}
         onclick={() => void respond("accept")}
-        class="rounded-md bg-accent px-3 py-1.5 text-ui font-medium text-accent-content transition-colors hover:opacity-90 disabled:opacity-50"
+        class="rounded-control bg-accent px-3 py-1.5 text-ui font-medium text-accent-content transition-colors hover:opacity-90 disabled:opacity-50"
       >
         Accept
       </button>
@@ -100,7 +100,7 @@
         type="button"
         disabled={busy}
         onclick={() => void respond("decline")}
-        class="rounded-md border border-border px-3 py-1.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content disabled:opacity-50"
+        class="rounded-control border border-border px-3 py-1.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content disabled:opacity-50"
       >
         Decline
       </button>

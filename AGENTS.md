@@ -33,7 +33,15 @@ docs/positioning.md  — suite context, boundaries (hard rules), near-term wedge
 package.json         — frontend manifest (pnpm)
 svelte.config.js     — SvelteKit, adapter-static, SPA mode
 vite.config.js       — Vite + Tailwind v4 plugin; fixed port 1420 for Tauri
-src/app.css          — Tailwind v4 design tokens + behavior-budget base rules
+design/tokens.toml   — THE design source: 16 colour roles x 3 appearances, plus
+                       type, radius, elevation, motion and layout. Generated into
+                       five targets; NEVER edit a generated file, CI diffs them.
+docs/design-language.md — the rules the tokens cannot carry (what amber means,
+                       serif vs sans, which radius is which). Supersedes the
+                       2026-08-13 console-design spec as authority.
+scripts/generate-tokens.py — the generator; scripts/tokens/ is its package
+src/app.css          — behaviour only: safe areas, user-select, motion budget
+src/lib/tokens.css   — generated, do not edit
 src/routes/          — Svelte 5 routes (currently the M0 placeholder screen)
 src-tauri/           — the Rust core and Tauri config
   src/lib.rs         — app setup, tracing, command registration
@@ -107,6 +115,9 @@ pnpm tauri dev               # run the desktop app (Vite on :1420 + Rust core)
 pnpm tauri build             # production desktop bundle
 pnpm check                   # svelte-check (TypeScript + Svelte diagnostics)
 pnpm build                   # frontend only -> build/
+
+python3 scripts/generate-tokens.py                    # regenerate all five token targets
+python3 -m unittest discover -s scripts/tests -t .    # the token contracts
 
 cd src-tauri
 cargo check                  # fast Rust typecheck

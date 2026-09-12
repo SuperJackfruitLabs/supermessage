@@ -1,5 +1,17 @@
 # supermessage visual design — "Operator console, editorial reading"
 
+> **Superseded as authority by [`docs/design-language.md`](../../design-language.md)
+> on 2026-09-12.** This document remains the record of how the language was
+> arrived at, and most of the reasoning in the current one came from here. But
+> it is desktop-web shaped, and being a document three codebases read and
+> re-derived by eye is the failure `design/tokens.toml` exists to fix — by
+> 2026-09 there were three palettes, three ambers, and a mobile dark accent
+> that was not the same hue as its own light accent.
+>
+> For current values read the TOML. For current rules read the design
+> language. For why any of it is the way it is, read on.
+
+
 **Status:** Decided (13 Aug 2026). Binding authority for the design pass.
 **Companions:** [positioning.md](../../positioning.md), [tech-stack.md](../../tech-stack.md), [matrix-events.md](../../matrix-events.md).
 

@@ -70,7 +70,7 @@ class StylesTest {
         assertNotEquals(light, dark)
     }
 
-    /** The light half stays paper — matches `SupermessageColorRoles.light.ground`. */
+    /** The light half stays paper — matches `GeneratedThemeTokens.paper.surface`. */
     @Test
     fun lightConfigurationWindowBackgroundIsPaper() {
         assertEquals(0xFFF6F4EF.toInt(), windowBackground(Configuration.UI_MODE_NIGHT_NO))
