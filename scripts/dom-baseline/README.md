@@ -124,3 +124,33 @@ the page and cannot import them. If either changes in
 computed either side, so a mismatch between the two would compare values
 that were never comparable. That duplication is the one sharp edge in this
 setup.
+
+## Re-baselining, and the one time it has happened
+
+A baseline can go void without anything being wrong with the code. When it
+does, **recapture and record why** — a comparison against a void baseline
+is worse than none, because it reports either a failure nobody caused or a
+pass nobody earned.
+
+### 2026-09-12, after Task 5 — the roster only
+
+- **Observed:** roster 32,071 → 31,835 bytes, `<p>: 1 → 0`. Room pane
+  byte-identical (`0a4d32bbf16001`), and the room pane is where three of the
+  four components that task converted actually render.
+- **Cause:** the roster's "No rooms yet." empty-section message. It was
+  rendering when the Task 1 baseline was taken — visible in that capture's
+  `innerText` — and was not rendering afterwards. One `<p>`, 236 bytes.
+  Account state, not code.
+- **Proof it was not the refactor**, checked rather than assumed: the roster
+  is `SpacesRail` + `aside(RoomList)`. Task 5 changed neither, and
+  `git diff HEAD~1 HEAD -- src/routes/+page.svelte` contains no line
+  mentioning `SpacesRail`, `RoomList`, `roster`, `aside` or `shrink-0`. All
+  four converted components render in the header or the room pane.
+- **Action:** the roster baseline was recaptured from the post-task-5 state.
+  The original is kept as `before-task1.roster.json` rather than deleted, so
+  the re-baselining is auditable.
+
+The lesson for later tasks: an empty-state message that depends on how the
+account's rooms happen to be grouped is a poor thing for a baseline to rest
+on. If the roster diff moves again by a couple of hundred bytes and one
+element, check for this before suspecting the code.
