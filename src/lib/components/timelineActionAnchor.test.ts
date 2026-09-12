@@ -24,7 +24,28 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
-const TIMELINE = fileURLToPath(new URL("./Timeline.svelte", import.meta.url));
+/**
+ * The two halves of the contract now live in different files.
+ *
+ * The bar moved to `timeline/MessageActions.svelte`; the wrappers that host
+ * it are still in `Timeline.svelte` and in the leaves the timeline renders.
+ * So the positioning is asserted where the bar is, and the `group`/`relative`
+ * pairing is asserted across **every** component that declares a `group`
+ * wrapper — checking only `Timeline.svelte` would now miss a wrapper in a
+ * leaf, which is precisely the gap that let the dispatch card's bar escape.
+ */
+const BAR = fileURLToPath(new URL("./timeline/MessageActions.svelte", import.meta.url));
+
+const HOSTS = [
+  "./Timeline.svelte",
+  "./timeline/DispatchCard.svelte",
+  "./timeline/DispatchCardFrame.svelte",
+  "./timeline/ReactionsRow.svelte",
+  "./timeline/MessageActions.svelte",
+  "./timeline/LogLine.svelte",
+  "./timeline/SeenMarker.svelte",
+  "./timeline/ReplyQuote.svelte",
+].map((rel) => fileURLToPath(new URL(rel, import.meta.url)));
 
 /** Every `class="group…"` attribute in the file, as written. */
 function groupClassAttrs(source: string): string[] {
@@ -38,13 +59,15 @@ describe("hover action bars are anchored to their row", () => {
   test("the action bar is positioned, so its host must be too", () => {
     // If the bar stops being absolutely positioned, the invariant below is no
     // longer the thing keeping it in place, and this test should be revisited.
-    expect(readFileSync(TIMELINE, "utf8")).toContain("absolute top-full");
+    expect(readFileSync(BAR, "utf8")).toContain("absolute top-full");
   });
 
-  test("every group wrapper declares relative", () => {
-    const attrs = groupClassAttrs(readFileSync(TIMELINE, "utf8"));
+  test("every group wrapper declares relative, in every host", () => {
+    const attrs = HOSTS.flatMap((file) => groupClassAttrs(readFileSync(file, "utf8")));
 
-    // Guard the guard: a vacuous pass would protect nothing.
+    // Guard the guard: a vacuous pass would protect nothing. If the bar's
+    // reveal mechanism ever stops using `group`, this drops to zero and the
+    // test says so rather than passing silently.
     expect(attrs.length).toBeGreaterThan(0);
 
     expect(attrs.filter((a) => !/\brelative\b/.test(a))).toEqual([]);
