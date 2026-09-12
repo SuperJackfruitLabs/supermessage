@@ -60,6 +60,7 @@ jobs:
             frontend:
               - *workflow
               - 'src/**'
+              - '.storybook/**'
               - 'static/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -167,6 +168,22 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Fixtures are not in the bundle
+        # Nothing in application code imports $lib/fixtures, so Vite
+        # tree-shakes it — but "so it should" is a belief. The marker exists
+        # to make it a check. Mutation-proven: rendering the marker in a
+        # route makes this exit 1 and name the chunk. Note that merely
+        # *importing* it is not enough to reproduce a leak, because an
+        # unused binding is shaken out — which is why the first attempt at
+        # that proof passed and meant nothing.
+        run: node scripts/tests/test_fixture_leak.mjs
+
+      - name: The story catalogue builds
+        # A story referencing a prop that no longer exists should be a red
+        # build, not a surprise next time someone opens the catalogue. Same
+        # reasoning as the design-token drift gate.
+        run: pnpm storybook:build
 
   rust:
     name: Rust
