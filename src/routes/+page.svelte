@@ -37,6 +37,7 @@
   import LiveTurn from "$lib/components/LiveTurn.svelte";
   import LiveActivity from "$lib/components/LiveActivity.svelte";
   import Composer from "$lib/components/Composer.svelte";
+  import EmptyRoomState from "$lib/components/layout/EmptyRoomState.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
   import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
@@ -1029,9 +1030,7 @@
             <Composer roomId={roomsStore.selectedId} />
           {/if}
         {:else}
-          <div class="flex flex-1 items-center justify-center">
-            <p class="text-ui text-content-muted">Choose a room from the roster.</p>
-          </div>
+          <EmptyRoomState />
         {/if}
         {#if showDropState}
           <!--
