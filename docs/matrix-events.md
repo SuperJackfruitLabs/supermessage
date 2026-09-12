@@ -1,7 +1,41 @@
 # Matrix events: what supermessage must handle
 
-**Status:** Inventory and dispositions, drafted Aug 2026 after M0's first run against a real account.
-**Why now:** the timeline renders `Unsupported event (m.room.name)` as a visible line in real rooms. That is one symptom of a structural gap, not a one-off.
+**Status:** A plan from Aug 2026 that has since been **largely executed**. Audited against the
+code on 2026-09-12; the dispositions below are kept as the record of what was decided, and this
+header says what is now true. Read the tables as "what we said we would do", not as a to-do list.
+
+**The premise is historical.** This document opens by saying the timeline renders
+`Unsupported event (m.room.name)` as a visible line. It does not any more, and the refactor
+argued for in "The structural problem" is the one that fixed it. `core::item_view` is where the
+decision now lives — start there, not here, for what actually renders.
+
+**What the audit found built** (each verified in the code, not inferred):
+
+| Section | Row | Now |
+|---|---|---|
+| A | The DTO discriminant this doc proposes | `classify_content` returns 13 kinds — `message`, `sticker`, `poll`, `redacted`, `unableToDecrypt`, `customMessage`, `liveLocation`, `membership`, `profileChange`, `state`, `failedToParse`, `callInvite`, `rtcNotification` |
+| A | `m.notice` de-emphasised (M1) | `ItemView::Bubble { muted: true }` |
+| A | `m.emote` (M1) | `ItemView::Emote` |
+| A | Media msgtypes (M2) | `ItemView::Image` and `ItemView::MediaFile`; `m.image` `m.file` `m.audio` `m.video` `m.location` all matched |
+| A | Formatted HTML body (M1) | `formatted_html_body`, rendered as rich blocks |
+| A | Replies (M2) | `reply_to_dto`, with `reply_parent_label` for parents that cannot be quoted |
+| A | Edits (M2) | `edited` on the DTO |
+| A | Reactions (M2) | `reaction_entries` / `project_reactions` |
+| B | Membership lines, collapsed (M1) | `ItemView::System`, with run-collapsing in `timelineGrouping.ts` |
+| B | Profile changes suppressed (M1) | `ItemView::None` |
+| C | State suppressed unless it matters (M1) | `state_view` renders **only** `m.room.create`, `m.room.encryption`, `m.room.tombstone`; everything else is `ItemView::None` — exactly the rule this section asks for |
+| E | Read marker (M2) | `ItemView::UnreadMarker` |
+| F | Typing (M2) | `TypingIndicator.svelte` |
+| F | Read receipts (M2) | `read_receipts()` with `TimelineReadReceiptTracking::MessageLikeEvents` |
+| G | Suite events (M1) | `ItemView::CustomEvent`, and see `docs/agentpod-events.md` for the two channels that actually ship |
+
+**Not audited, and therefore not claimed either way:** the M4 rows (polls, power levels, pinned
+events, policy rules, VoIP), `m.direct` DM detection, `m.push_rules`, and key verification. Their
+milestones are as written; nobody has checked them recently.
+
+One stale pointer worth fixing where it is: several comments in `core::timeline` and
+`timelineGrouping.ts` cite a `timelineItemView.ts` / `viewFor` that does not exist. That logic
+moved into Rust as `core::item_view`.
 
 ## The structural problem
 

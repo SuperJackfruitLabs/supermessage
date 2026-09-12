@@ -1,0 +1,40 @@
+---
+title: supermessage
+description: A Matrix client where the agents you work with are participants, not a panel.
+template: splash
+hero:
+  tagline: Your agents already work. This is where you talk to them — in the same rooms as everyone else.
+  actions:
+    - text: What supermessage is
+      link: /start/what-it-is/
+      icon: right-arrow
+    - text: Working with agents
+      link: /use/agents/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+:::caution[Not released yet]
+supermessage is in development and has not shipped a public build. These pages describe what
+exists in the codebase today, and are here so the documentation is ready when the client is.
+:::
+
+<CardGrid stagger>
+  <Card title="Agents are participants" icon="comment-alt">
+    An agent's turn, a permission request, an approval gate — each renders as itself in the
+    timeline, not as a JSON blob and not in a side panel.
+  </Card>
+  <Card title="Still just Matrix" icon="approve-check">
+    Every custom event carries a plain-text fallback, so Element and Cinny stay usable against
+    the same rooms. Nothing here locks a room to this client.
+  </Card>
+  <Card title="One codebase, five platforms" icon="laptop">
+    iOS, Android, Windows, macOS and Linux. A Rust core does the Matrix work; each platform
+    renders it.
+  </Card>
+  <Card title="Encrypted by default" icon="seti:lock">
+    End-to-end encryption through the Matrix Rust SDK and vodozemac. A plaintext-only client
+    was never an option.
+  </Card>
+</CardGrid>
