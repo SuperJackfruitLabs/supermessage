@@ -64,3 +64,7 @@ android/.kotlin/
 # Python bytecode from the token generator and its tests.
 __pycache__/
 *.pyc
+
+# DOM baseline captures: machine- and account-specific, and they contain real
+# message content from whatever account was logged in. Never commit these.
+scripts/dom-baseline/*.html
