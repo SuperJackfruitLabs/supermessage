@@ -1,0 +1,140 @@
+# The design language, as one source.
+#
+# Generated into five targets by scripts/generate-tokens.py. Do not edit any
+# generated file; edit this one and regenerate. CI fails on drift.
+#
+# Every colour carries the contrast contract it must satisfy, and the
+# generator asserts all of them before writing a byte. That is what makes the
+# accessibility floor a build failure rather than a comment — which is what
+# it was, in three separate themes, until 2026-09-12.
+#
+# Three literals are inherited from the marketing site so the product and the
+# site are recognisably one thing: #151129 (ink), #9d8ff0 (violet), #e8a33d
+# (amber). Every other value is solved to a contrast target.
+#
+# Design: docs/superpowers/specs/2026-09-12-design-language-tokens-design.md
+# Rules:  docs/design-language.md
+
+[meta]
+roles = [
+  "surface", "surface-sunken", "surface-raised",
+  "border", "border-strong",
+  "content", "content-muted", "content-faint",
+  "accent", "accent-content", "accent-soft",
+  "signal", "signal-soft",
+  "danger", "ok", "scrim",
+]
+
+# ---------------------------------------------------------------- light ----
+# Desktop and web, when the OS asks for light.
+
+[appearance.light.color]
+surface = { value = "#fdfcff" }
+
+# The sheet-on-field step: the reading column over the roster, header and
+# composer. The whole three-level depth story rests on it, and it is what
+# silently broke in the previous dark theme at 1.035 — less than half the
+# step, and effectively subliminal across 1050px of field.
+surface-sunken = { value = "#f3f2f9", contrast = [
+  { against = "surface", min = 1.05, max = 1.13 },
+] }
+
+surface-raised = { value = "#fafafd" }
+border = { value = "#e0deea" }
+border-strong = { value = "#c3bfd4" }
+content = { value = "#221c38", contrast = [{ against = "surface", min = 12.0 }] }
+content-muted = { value = "#50496d", contrast = [{ against = "surface", min = 7.0 }] }
+
+# The bottom rung is the whole ramp's constraint. It must clear the floor on
+# all three grounds, not just the reading surface — the earlier cool-slate
+# attempt passed on `surface` and measured 2.92:1 on `surface-sunken`.
+content-faint = { value = "#70688f", contrast = [
+  { against = "surface", min = 4.5 },
+  { against = "surface-sunken", min = 4.5 },
+  { against = "surface-raised", min = 4.5 },
+] }
+
+accent = { value = "#5b43d4" }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#ebe7fb", contrast = [{ against = "content", min = 4.5 }] }
+
+# Amber, and it means exactly one thing: the reader owes someone an answer.
+# 6.0 rather than 4.5 because it carries the 10px AWAITING YOUR DECISION
+# label — the smallest text in the app, on the one element that must not be
+# missed.
+signal = { value = "#814904", contrast = [{ against = "signal-soft", min = 6.0 }] }
+signal-soft = { value = "#fcf3e4" }
+
+danger = { value = "#b4222a", contrast = [{ against = "surface", min = 4.5 }] }
+ok = { value = "#1d7c59", contrast = [{ against = "surface", min = 4.5 }] }
+
+# Not a fifth hue and not a new rank — the ramp's dark end used as a wash.
+# Checked as a region drop (ground plus the text on it), never as a WCAG
+# ratio and never against one surface: this scrim IS `content`, so measuring
+# it against `content` alone would report 1.00x for a wash that works.
+scrim = { value = "rgb(34 28 56 / 0.45)", drop = { min = 2.5 } }   # measures 3.01x
+
+# ----------------------------------------------------------------- dark ----
+# Every platform, when the OS asks for dark. Anchored on the landing page's
+# own ink so arriving from the site does not feel like leaving it.
+
+[appearance.dark.color]
+surface = { value = "#1f1838" }
+surface-sunken = { value = "#151129", contrast = [
+  { against = "surface", min = 1.05, max = 1.13 },
+] }
+surface-raised = { value = "#251f41" }
+border = { value = "#383254" }
+border-strong = { value = "#534a75" }
+content = { value = "#f4f2fb", contrast = [{ against = "surface", min = 12.0 }] }
+content-muted = { value = "#c6c2d8", contrast = [{ against = "surface", min = 7.0 }] }
+
+# In dark the worst ground is `surface-raised`, not `surface-sunken` — the
+# ramp runs the other way. Listing all three is what makes that automatic
+# rather than something a reader has to notice.
+content-faint = { value = "#8e86ab", contrast = [
+  { against = "surface", min = 4.5 },
+  { against = "surface-sunken", min = 4.5 },
+  { against = "surface-raised", min = 4.5 },
+] }
+
+accent = { value = "#9d8ff0" }
+accent-content = { value = "#1a1433", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#2b224f", contrast = [{ against = "content", min = 4.5 }] }
+signal = { value = "#e8a33d", contrast = [{ against = "signal-soft", min = 6.0 }] }
+signal-soft = { value = "#332919" }
+danger = { value = "#ed6e74", contrast = [{ against = "surface", min = 4.5 }] }
+ok = { value = "#70cdab", contrast = [{ against = "surface", min = 4.5 }] }
+
+# A dark theme scrims by going darker still, at a higher alpha, because the
+# ground is already near the ramp's floor. Essentially all of a dark region's
+# light is its text, which is what this wash takes away — and why measuring
+# it against the ground alone reports 1.00x.
+scrim = { value = "rgb(21 17 41 / 0.70)", drop = { min = 2.5 } }   # measures 6.95x
+
+# ---------------------------------------------------------------- paper ----
+# What "light" means on a phone. Same roles, same accent, warm ground.
+
+[appearance.paper.color]
+surface = { value = "#faf8f3" }
+surface-sunken = { value = "#f2eee6", contrast = [
+  { against = "surface", min = 1.05, max = 1.13 },
+] }
+surface-raised = { value = "#f7f6f1" }
+border = { value = "#e1dbcd" }
+border-strong = { value = "#c5bea8" }
+content = { value = "#22192e", contrast = [{ against = "surface", min = 12.0 }] }
+content-muted = { value = "#51475e", contrast = [{ against = "surface", min = 7.0 }] }
+content-faint = { value = "#726681", contrast = [
+  { against = "surface", min = 4.5 },
+  { against = "surface-sunken", min = 4.5 },
+  { against = "surface-raised", min = 4.5 },
+] }
+accent = { value = "#5b43d4" }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#ebe7fb", contrast = [{ against = "content", min = 4.5 }] }
+signal = { value = "#814904", contrast = [{ against = "signal-soft", min = 6.0 }] }
+signal-soft = { value = "#f7edda" }
+danger = { value = "#b4222a", contrast = [{ against = "surface", min = 4.5 }] }
+ok = { value = "#1d7c59", contrast = [{ against = "surface", min = 4.5 }] }
+scrim = { value = "rgb(34 25 46 / 0.45)", drop = { min = 2.5 } }   # measures 3.07x
