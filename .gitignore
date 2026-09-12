@@ -68,3 +68,4 @@ __pycache__/
 # DOM baseline captures: machine- and account-specific, and they contain real
 # message content from whatever account was logged in. Never commit these.
 scripts/dom-baseline/*.html
+scripts/dom-baseline/*.json
