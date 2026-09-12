@@ -3,7 +3,6 @@ package dev.supermessage
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.font.FontFamily
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
@@ -85,21 +84,49 @@ class ThemeTest {
     }
 
     /**
-     * Every semantic colour role is defined for both appearances, and dark
-     * is not merely light copied over — see `Theme.swift`'s own MARK:
-     * Colour, "two palettes, one per appearance, rather than one palette
-     * adapted."
+     * The appearance this app binds to light is **paper**, and it is a real
+     * appearance rather than dark recoloured: every one of the sixteen
+     * roles differs.
+     *
+     * Written out rather than reflected over, and that is deliberate twice.
+     * `KClass.members` needs kotlin-reflect, which is not on Android and
+     * throws at run time rather than failing to compile. And the previous
+     * version of this test named *seven* roles by hand, so the nine added
+     * when the palette moved to design/tokens.toml would have gone
+     * unchecked while the test kept passing — the exact shape AGENTS.md
+     * warns about. Completeness itself is enforced where it belongs, by the
+     * generator, which refuses to emit an appearance missing a role.
      */
     @Test
-    fun lightAndDarkPalettesAreDistinctPerRole() {
-        val light = SupermessageColorRoles.light
-        val dark = SupermessageColorRoles.dark
-        assertNotEquals(light.ground, dark.ground)
-        assertNotEquals(light.sunken, dark.sunken)
-        assertNotEquals(light.hairline, dark.hairline)
-        assertNotEquals(light.accent, dark.accent)
-        assertNotEquals(light.signal, dark.signal)
-        assertNotEquals(light.danger, dark.danger)
-        assertNotEquals(light.ok, dark.ok)
+    fun paperAndDarkPalettesAreDistinctInEveryRole() {
+        val paper = GeneratedThemeTokens.paper
+        val dark = GeneratedThemeTokens.dark
+        assertNotEquals("surface", paper.surface, dark.surface)
+        assertNotEquals("surfaceSunken", paper.surfaceSunken, dark.surfaceSunken)
+        assertNotEquals("surfaceRaised", paper.surfaceRaised, dark.surfaceRaised)
+        assertNotEquals("border", paper.border, dark.border)
+        assertNotEquals("borderStrong", paper.borderStrong, dark.borderStrong)
+        assertNotEquals("content", paper.content, dark.content)
+        assertNotEquals("contentMuted", paper.contentMuted, dark.contentMuted)
+        assertNotEquals("contentFaint", paper.contentFaint, dark.contentFaint)
+        assertNotEquals("accent", paper.accent, dark.accent)
+        assertNotEquals("accentContent", paper.accentContent, dark.accentContent)
+        assertNotEquals("accentSoft", paper.accentSoft, dark.accentSoft)
+        assertNotEquals("signal", paper.signal, dark.signal)
+        assertNotEquals("signalSoft", paper.signalSoft, dark.signalSoft)
+        assertNotEquals("danger", paper.danger, dark.danger)
+        assertNotEquals("ok", paper.ok, dark.ok)
+        assertNotEquals("scrim", paper.scrim, dark.scrim)
+    }
+
+    /**
+     * The binding: `paper` is what light means on a phone, so the composable
+     * reaches for it rather than for the palette named `light` — which
+     * exists for desktop and must never appear on Android.
+     */
+    @Test
+    fun lightOnAndroidMeansPaper() {
+        assertNotEquals(
+            GeneratedThemeTokens.light.surface, GeneratedThemeTokens.paper.surface)
     }
 }
