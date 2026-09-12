@@ -154,3 +154,51 @@ The lesson for later tasks: an empty-state message that depends on how the
 account's rooms happen to be grouped is a poor thing for a baseline to rest
 on. If the roster diff moves again by a couple of hundred bytes and one
 element, check for this before suspecting the code.
+
+
+## The live-account problem, and what replaced the global baseline
+
+**A single global baseline against a live Matrix account does not work.** It
+drifted twice in two tasks, both times for reasons unrelated to any code:
+
+1. After Task 5 — the roster's "No rooms yet." empty-section message stopped
+   rendering. 236 bytes, one `<p>`.
+2. After Task 6 — real messages arrived in the room the baseline used. Its
+   date dividers went from `1 SEP 2026` to `11 SEP 2026` and `12 SEP 2026`,
+   and an agent's state changed from `quiet` to `active`, which the roster
+   renders into its `aria-label`s.
+
+Neither is a defect. Both make the comparison void, and a void comparison is
+worse than none: it reports either a failure nobody caused or a pass nobody
+earned.
+
+### What to do instead
+
+**Capture a before/after PAIR per task, minutes apart, in one session.**
+Capture `before-task-N`, apply the change, capture `after-task-N`, compare
+those two. That bounds content drift to the length of the task instead of
+the length of the project. The global `before` labels are kept for history
+but are not a gate.
+
+### And the static half: `scripts/markup-shape.mjs`
+
+For a props-down conversion there is a narrower question that needs no app
+at all: did the markup's *shape* change, or only the expressions inside it?
+
+```bash
+node scripts/markup-shape.mjs HEAD~1 src/lib/components/Foo.svelte
+```
+
+It compares every tag, attribute name, class literal and piece of static
+text across two git revs, ignoring the contents of `{...}` — because
+changing those IS the conversion. If the shape is identical, the rendered
+DOM cannot differ except through the values now arriving by prop.
+
+Mutation-proven in three directions, each a change the extraction could
+plausibly make by accident: a renamed class (`shadow-overlay` →
+`shadow-lg`, which is the shape of the token renames), a changed element
+(`<p>` → `<div>`), and altered static text. All three fail it.
+
+It is weaker than a DOM diff — it cannot see a conditional that now
+evaluates differently — and stronger than nothing, which is what the live
+account left.

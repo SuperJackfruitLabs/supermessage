@@ -12,12 +12,26 @@
   // the right conversation is most of the distance, and pretending to jump
   // and landing at the bottom would be worse than not offering it.
 
-  import { roomsStore } from "$lib/stores/rooms.svelte";
-  import { searchMessages, type SearchResult } from "$lib/ipc";
+  import type { RoomRow, SearchResult } from "$lib/ipc";
   import { projectSearchResults } from "./searchView";
   import { relativeTime } from "./roomIdentity";
 
-  let { onClose }: { onClose: () => void } = $props();
+  /**
+   * Searching, and opening what it finds.
+   *
+   * `searchMessages` was an IPC call from here and is a callback now — which
+   * is what lets a story exercise the empty, failed and populated states
+   * without a Tauri host behind it. `rooms` arrives as a view-model because
+   * `projectSearchResults` needs it to name the room a hit came from.
+   */
+  export interface Props {
+    rooms: RoomRow[];
+    onSearch: (term: string) => Promise<SearchResult[]>;
+    onOpenRoom: (roomId: string) => void;
+    onClose: () => void;
+  }
+
+  let { rooms, onSearch, onOpenRoom, onClose }: Props = $props();
 
   let term = $state("");
   let results = $state<SearchResult[]>([]);
@@ -27,7 +41,7 @@
   /** Whether a search has run at all, which is what "no results" depends on. */
   let searched = $state(false);
 
-  const views = $derived(projectSearchResults(results, roomsStore.rooms));
+  const views = $derived(projectSearchResults(results, rooms));
   const now = Date.now();
 
   function focusOnMount(node: HTMLInputElement) {
@@ -46,7 +60,7 @@
     searching = true;
     failure = null;
     try {
-      results = await searchMessages(term);
+      results = await onSearch(term);
       searched = true;
     } catch (err) {
       results = [];
@@ -57,7 +71,7 @@
   }
 
   function open(roomId: string): void {
-    roomsStore.select(roomId);
+    onOpenRoom(roomId);
     onClose();
   }
 </script>

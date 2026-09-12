@@ -18,14 +18,23 @@
   // joined. Declining goes the same way through leave. The dialog closes only
   // once the call has come back, so a failure has somewhere to be shown.
 
-  import { roomsStore } from "$lib/stores/rooms.svelte";
   import { invitationPrompt } from "./invitationView";
 
-  let {
-    spaceId,
-    label,
-    onClose,
-  }: { spaceId: string; label: string; onClose: () => void } = $props();
+  /**
+   * The space invitation, and what to do about it.
+   *
+   * `spaceId` is gone: it existed only to pass to
+   * `roomsStore.acceptInvitation` / `declineInvitation`, which are callbacks
+   * now. The panel never needed the id for anything it draws.
+   */
+  export interface Props {
+    label: string;
+    onAccept: () => Promise<void>;
+    onDecline: () => Promise<void>;
+    onClose: () => void;
+  }
+
+  let { label, onAccept, onDecline, onClose }: Props = $props();
 
   /** Set while a join/leave is in flight, so neither button can be pressed twice. */
   let busy = $state(false);
@@ -44,8 +53,8 @@
     busy = true;
     failure = null;
     try {
-      if (action === "accept") await roomsStore.acceptInvitation(spaceId);
-      else await roomsStore.declineInvitation(spaceId);
+      if (action === "accept") await onAccept();
+      else await onDecline();
       onClose();
     } catch (err) {
       failure =

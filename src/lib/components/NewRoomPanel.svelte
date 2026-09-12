@@ -10,9 +10,6 @@
   // exact shapes, and a request built from a typo comes back as an opaque
   // homeserver error rather than "that is not a user id".
 
-  import { createRoom, joinRoomByAlias } from "$lib/ipc";
-  import { roomsStore } from "$lib/stores/rooms.svelte";
-  import { spacesStore } from "$lib/stores/spaces.svelte";
   import {
     creationProblem,
     isRoomTarget,
@@ -20,7 +17,25 @@
     shouldBeDirect,
   } from "./roomCreation";
 
-  let { onClose }: { onClose: () => void } = $props();
+  /**
+   * Creating or joining, and what to do once it worked.
+   *
+   * `createRoom` / `joinRoomByAlias` were IPC calls made from here; they are
+   * callbacks now, which is what lets a story exercise this panel without a
+   * Tauri host behind it. `onOpened` is the old `finish` minus `onClose`:
+   * re-read the rail, then select the new room. Both halves matter — joining
+   * by alias is one of the ways a space arrives, and a space that appeared
+   * while this panel was open would otherwise be invisible until the next
+   * launch.
+   */
+  export interface Props {
+    onCreate: (name: string, invitees: string[], direct: boolean) => Promise<string>;
+    onJoin: (alias: string) => Promise<string>;
+    onOpened: (roomId: string) => Promise<void>;
+    onClose: () => void;
+  }
+
+  let { onCreate, onJoin, onOpened, onClose }: Props = $props();
 
   let mode = $state<"create" | "join">("create");
   let name = $state("");
@@ -44,8 +59,7 @@
    * otherwise be invisible until the next launch.
    */
   async function finish(roomId: string): Promise<void> {
-    await spacesStore.load().catch(() => {});
-    roomsStore.select(roomId);
+    await onOpened(roomId);
     onClose();
   }
 
@@ -59,13 +73,13 @@
           failure = problem.message;
           return;
         }
-        await finish(await createRoom(name, invitees, shouldBeDirect(invitees)));
+        await finish(await onCreate(name, invitees, shouldBeDirect(invitees)));
       } else {
         if (!isRoomTarget(target)) {
           failure = "That is not a room. They look like #missions:id.agentpod.dev.";
           return;
         }
-        await finish(await joinRoomByAlias(target));
+        await finish(await onJoin(target));
       }
     } catch (err) {
       failure = err instanceof Error ? err.message : String(err);

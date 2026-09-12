@@ -20,6 +20,7 @@
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
+  import { createRoom, joinRoomByAlias, searchMessages } from "$lib/ipc";
   import { connectionStore } from "$lib/stores/connection.svelte";
   // Owned here rather than inside the indicators, so those stay components a
   // story can hand a fixture to. See the P2a design's §5.
@@ -376,6 +377,40 @@
     await roomsStore.declineInvitation(id);
   }
 
+  /**
+   * The spaces rail's avatars, resolved here rather than inside the rail.
+   *
+   * The rail used to hold its own `createAvatarCache()`. It takes resolved
+   * values now, so the cache lives with the component that owns the data —
+   * and the cache's own rule comes with it: `get` is called for **every**
+   * entry rather than only those whose `avatarUrl` is set, because that
+   * field is only populated in some cases and gating on it would silently
+   * skip exactly the spaces that need resolving.
+   */
+  const spaceAvatars = createAvatarCache();
+
+  const railAvatars = $derived.by(() => {
+    const out: Record<string, string | null> = {};
+    for (const space of spacesStore.spaces) {
+      out[space.id] = spaceAvatars.get(space.id);
+    }
+    return out;
+  });
+
+  /**
+   * Opens a room that has just been created or joined.
+   *
+   * Both halves matter. The rail is re-read because joining by alias is one
+   * of the ways a space arrives, and a space that appeared while the panel
+   * was open would otherwise stay invisible until the next launch. Then the
+   * room is selected. This was `NewRoomPanel`'s own `finish`, minus the
+   * close — which the panel still owns, because it owns its own dismissal.
+   */
+  async function openNewlyReachableRoom(roomId: string): Promise<void> {
+    await spacesStore.load().catch(() => {});
+    roomsStore.select(roomId);
+  }
+
   async function closeRoomInfo(): Promise<void> {
     const restoreFocus = panelIsModal;
     showRoomInfo = false;
@@ -656,7 +691,14 @@
         style={rosterGroupInsets}
         inert={panelIsModal}
       >
-        <SpacesRail onInvitation={(spaceId) => (spaceInviteId = spaceId)} />
+        <SpacesRail
+          spaces={spacesStore.spaces}
+          selectedId={spacesStore.selectedId}
+          avatars={railAvatars}
+          onSelect={(spaceId) => void spacesStore.select(spaceId)}
+          onInvitation={(spaceId) => (spaceInviteId = spaceId)}
+          onAvatarFailed={(spaceId) => spaceAvatars.markFailed(spaceId)}
+        />
         <aside
           class="flex {narrow
             ? 'min-w-0 flex-1'
@@ -1085,17 +1127,28 @@
 {/if}
 
 {#if searchOpen}
-  <SearchPanel onClose={() => (searchOpen = false)} />
+  <SearchPanel
+    rooms={roomsStore.rooms}
+    onSearch={searchMessages}
+    onOpenRoom={(roomId) => roomsStore.select(roomId)}
+    onClose={() => (searchOpen = false)}
+  />
 {/if}
 
 {#if spaceInvite !== null}
   <SpaceInvitePanel
-    spaceId={spaceInvite.id}
     label={spaceInvite.identity.name}
+    onAccept={() => roomsStore.acceptInvitation(spaceInvite.id)}
+    onDecline={() => roomsStore.declineInvitation(spaceInvite.id)}
     onClose={() => (spaceInviteId = null)}
   />
 {/if}
 
 {#if newRoomOpen}
-  <NewRoomPanel onClose={() => (newRoomOpen = false)} />
+  <NewRoomPanel
+    onCreate={createRoom}
+    onJoin={joinRoomByAlias}
+    onOpened={openNewlyReachableRoom}
+    onClose={() => (newRoomOpen = false)}
+  />
 {/if}

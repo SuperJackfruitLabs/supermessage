@@ -24,4 +24,6 @@ export const FIXTURE_MARKER = "__supermessage_fixture_marker_do_not_ship__";
 
 export * from "./connection";
 export * from "./live";
+export * from "./rooms";
+export * from "./spaces";
 export * from "./timeline";
