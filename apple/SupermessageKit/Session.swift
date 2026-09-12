@@ -63,6 +63,31 @@ public final class Session {
         self.init(client: CoreClient(dataDirectory: CoreClient.dataDirectory()))
     }
 
+#if DEBUG
+    /// A session with no core behind it, for previews.
+    ///
+    /// **Why `phase` is a parameter and not something the preview sets
+    /// afterwards.** It is `private(set)`, and deliberately so: the only
+    /// things allowed to move it are `start()` and `signIn`, which is what
+    /// stops a screen from declaring itself signed in. A preview needs a
+    /// signed-in session without either of those having run, so it says which
+    /// phase it wants at construction and nothing gains a public setter.
+    ///
+    /// **This does not call `start()`, and must not.** There is no core to
+    /// restore from, and `.starting` is itself a state worth previewing —
+    /// `RootView` shows a `ProgressView` in it, which is a real screen a
+    /// reader sees on a cold launch and has never been looked at outside the
+    /// app.
+    ///
+    /// `#if DEBUG`, so it is absent from a release build of the framework.
+    /// `scripts/tests/test_ios_preview_leak.sh` is what proves that rather
+    /// than trusting it.
+    public convenience init(previewClient: any SessionClient, phase: Phase) {
+        self.init(client: previewClient)
+        self.phase = phase
+    }
+#endif
+
     /// Restore a stored session, if there is one.
     ///
     /// Credentials live in the iOS Data Protection keychain, which the core
