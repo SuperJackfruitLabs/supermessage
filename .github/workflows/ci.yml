@@ -359,6 +359,18 @@ jobs:
             -scheme Supermessage \
             -destination "id=${{ steps.sim.outputs.udid }}"
 
+      - name: Previews and their fixtures stay out of Release
+        # A Release build plus a grep, which is the native counterpart of
+        # `test_fixture_leak.mjs`. What it can prove is bounded and the
+        # script's own header says how: it catches a fixture *reachable from
+        # shipped code*, because an ungated fixture nothing references is
+        # stripped by the optimiser and leaves no string behind.
+        #
+        # Worth the extra Release build on a free runner: `#if DEBUG` is the
+        # only thing standing between a preview stub and a shipped binary,
+        # and this is what makes that a check rather than a belief.
+        run: ./scripts/tests/test_ios_preview_leak.sh
+
   android:
     name: Android
     needs: changes
