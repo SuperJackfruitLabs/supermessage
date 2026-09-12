@@ -83,6 +83,38 @@ def _type_block(tokens: Tokens) -> str:
     return "".join(lines)
 
 
+def _metrics_block(tokens: Tokens) -> str:
+    radius = tokens.scale["radius"]
+    overlay = tokens.scale["elevation"]["overlay"]["ios"]
+    layout = tokens.scale["layout"]
+    lines = [
+        "\n/// Radius, elevation and layout, in points.\n",
+        "///\n",
+        "/// The pane breakpoints are computed from the pane widths rather\n",
+        "/// than written down. RootView.swift's own threeColumnWidth is a\n",
+        "/// separate, hardcoded 1000 — see the design's open questions.\n",
+        "enum Metrics {\n",
+    ]
+    for name, value in radius.items():
+        points = "0" if value == "0" else value.replace("px", "")
+        if name == "pill":
+            lines.append(f"    static let radius{name.capitalize()}: CGFloat = .infinity\n")
+        else:
+            lines.append(f"    static let radius{name.capitalize()}: CGFloat = {points}\n")
+    lines.append(
+        f"    static let overlayShadowRadius: CGFloat = {overlay['radius']}\n"
+        f"    static let overlayShadowY: CGFloat = {overlay['y']}\n"
+    )
+    for name, value in layout.items():
+        lines.append(f"    static let {name}Width: CGFloat = {value}\n")
+    for name, value in tokens.breakpoints.items():
+        head, *rest = name.split("-")
+        camel = head + "".join(part.capitalize() for part in rest)
+        lines.append(f"    static let {camel}: CGFloat = {value}\n")
+    lines.append("}\n")
+    return "".join(lines)
+
+
 def emit_swift(tokens: Tokens) -> str:
     light = tokens.appearances["light"]
     members = "".join(
@@ -107,4 +139,5 @@ def emit_swift(tokens: Tokens) -> str:
         + _palette(tokens.appearances["paper"])
         + "}\n"
         + _type_block(tokens)
+        + _metrics_block(tokens)
     )

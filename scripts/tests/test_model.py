@@ -4,7 +4,14 @@ import unittest
 from pathlib import Path
 
 from scripts.tokens.contrast import contrast_ratio
-from scripts.tokens.model import ROLES, TokenError, Tokens, load, validate
+from scripts.tokens.model import (
+    ROLES,
+    TokenError,
+    Tokens,
+    breakpoints_for,
+    load,
+    validate,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "design" / "tokens.toml"
@@ -162,6 +169,52 @@ class TypeTests(unittest.TestCase):
         types = load(SOURCE).type
         self.assertEqual(types["body"].family, "serif")
         self.assertEqual(types["body-own"].family, "sans")
+
+class LayoutTests(unittest.TestCase):
+    def test_the_breakpoint_is_computed_not_read(self):
+        tokens = load(SOURCE)
+        layout = tokens.scale["layout"]
+        self.assertEqual(
+            tokens.breakpoints["panel-column"],
+            layout["roster"] + layout["panel"] + layout["sheet"],
+        )
+        self.assertEqual(tokens.breakpoints["panel-column"], 1238)
+
+    def test_the_rail_variant_adds_the_rail(self):
+        tokens = load(SOURCE)
+        self.assertEqual(
+            tokens.breakpoints["panel-column-with-rail"],
+            tokens.breakpoints["panel-column"] + tokens.scale["layout"]["rail"],
+        )
+        self.assertEqual(tokens.breakpoints["panel-column-with-rail"], 1293)
+
+    def test_widening_the_roster_moves_the_breakpoint(self):
+        """The entire point of deriving it.
+
+        If this passes against a hardcoded 1238 then the derivation is
+        decorative and the comment in +page.svelte was right to be a
+        comment.
+        """
+        broken = copy.deepcopy(raw())
+        broken["layout"]["roster"] = 304
+        self.assertEqual(breakpoints_for(broken)["panel-column"], 1254)
+        self.assertEqual(breakpoints_for(broken)["panel-column-with-rail"], 1309)
+
+
+class ScaleTests(unittest.TestCase):
+    def test_radius_roles_are_the_four_named_ones(self):
+        self.assertEqual(
+            sorted(load(SOURCE).scale["radius"]),
+            ["card", "control", "pill", "sharp"],
+        )
+
+    def test_there_is_exactly_one_elevation(self):
+        # Depth is the surface ramp. Shadow means one thing only.
+        self.assertEqual(list(load(SOURCE).scale["elevation"]), ["overlay"])
+
+    def test_motion_has_two_durations_and_one_easing(self):
+        motion = load(SOURCE).scale["motion"]
+        self.assertEqual(sorted(motion), ["easing", "quick", "settle"])
 
 
 if __name__ == "__main__":

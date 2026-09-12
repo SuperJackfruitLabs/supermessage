@@ -195,3 +195,50 @@ family = "sans"
 ios = "body"
 android = "bodyMedium"
 web = { size = "0.875rem", line_height = 1.5, weight = 400 }
+
+# --------------------------------------------------------------- radius ----
+# Named by role, not by size. `rounded-md` cannot be wrong because it says
+# nothing; `radius-control` can. Values are the ones already in use, so this
+# renames rather than redesigns.
+
+[radius]
+control = "6px"    # buttons, inputs, chips
+card = "8px"       # the dispatch card, panels
+pill = "9999px"    # avatars, badges
+sharp = "0"        # full-bleed rows, dividers
+
+# ------------------------------------------------------------ elevation ----
+# Depth is the three-level surface ramp plus a hairline. Shadow means exactly
+# one thing: floating over the scrim. Web had six ad-hoc Tailwind shadows and
+# native had none at all, so a modal on iOS and Android sat on the page with
+# nothing lifting it off.
+
+[elevation.overlay]
+web = "0 8px 24px rgb(0 0 0 / 0.18)"
+ios = { radius = 12, y = 4 }
+android = "8dp"
+
+# --------------------------------------------------------------- motion ----
+# Almost none, deliberately. These three are the budget, not an invitation:
+# whether a transition is added at all is still a design question. The point
+# is that before this the reduced-motion block was the ONLY motion policy, so
+# anything anyone added was unbudgeted.
+
+[motion]
+quick = "120ms"
+settle = "200ms"
+easing = "cubic-bezier(0.2, 0, 0, 1)"
+
+# --------------------------------------------------------------- layout ----
+# The pane widths, and the breakpoints DERIVED from them.
+#
+# +page.svelte carried the arithmetic 1238 = 288 + 320 + 630 in a comment and
+# then wrote 1238 as a bare literal ten times, with 1293 alongside it. Change
+# the roster width and the breakpoint was silently wrong in ten places while
+# the comment still claimed it was derived. The comment is now the code.
+
+[layout]
+roster = 288    # the room list
+panel = 320     # the room-info panel when it is a third column
+sheet = 630     # the reading surface's own designed width
+rail = 55       # the spaces rail, when it is showing

@@ -73,6 +73,31 @@
   --text-body-own: 0.875rem;
   --text-body-own--line-height: 1.5;
   --text-body-own--font-weight: 400;
+
+  /* Radius, named by role. `rounded-md` cannot be wrong because
+   * it says nothing; `rounded-control` can. */
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-pill: 9999px;
+  --radius-sharp: 0;
+
+  /* Depth is the surface ramp plus a hairline. Shadow means one
+   * thing only: floating over the scrim. */
+  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.18);
+
+  /* Almost none, deliberately — but nameable, so anything added
+   * is inside a budget. */
+  --duration-quick: 120ms;
+  --duration-settle: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Pane widths, and the breakpoints derived from them. */
+  --layout-roster: 288px;
+  --layout-panel: 320px;
+  --layout-sheet: 630px;
+  --layout-rail: 55px;
+  --breakpoint-panel-column: 1238px;
+  --breakpoint-panel-column-with-rail: 1293px;
 }
 
 @layer theme {

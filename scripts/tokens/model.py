@@ -60,6 +60,8 @@ class TypeRole:
 class Tokens:
     appearances: dict[str, Appearance]
     type: dict[str, TypeRole] = field(default_factory=dict)
+    scale: dict[str, dict] = field(default_factory=dict)
+    breakpoints: dict[str, int] = field(default_factory=dict)
 
 
 def validate(data: dict) -> None:
@@ -121,6 +123,27 @@ def validate(data: dict) -> None:
 
     _validate_type(data)
 
+    for required in ("radius", "elevation", "motion", "layout"):
+        if required not in data:
+            raise TokenError(f"design/tokens.toml has no [{required}] table")
+
+
+def breakpoints_for(data: dict) -> dict[str, int]:
+    """Derive the pane breakpoints from the pane widths.
+
+    `+page.svelte` documented this arithmetic — 1238 = 288 (roster) + 320
+    (panel) + 630 (sheet) — and then hardcoded its result ten times, with
+    1293 alongside it. Computing it is what stops the comment and the code
+    drifting: widen the roster and the breakpoint follows, instead of the
+    comment quietly becoming a lie.
+    """
+    layout = data["layout"]
+    base = layout["roster"] + layout["panel"] + layout["sheet"]
+    return {
+        "panel-column": base,
+        "panel-column-with-rail": base + layout["rail"],
+    }
+
 
 def _validate_type(data: dict) -> None:
     for name, spec in data.get("type", {}).items():
@@ -178,6 +201,11 @@ def load(path: Path) -> Tokens:
     validate(data)
     comments = _comments(path)
     return Tokens(
+        scale={
+            name: data[name]
+            for name in ("radius", "elevation", "motion", "layout")
+        },
+        breakpoints=breakpoints_for(data),
         type={
             name: TypeRole(
                 name=name,

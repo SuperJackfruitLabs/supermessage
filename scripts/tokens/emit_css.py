@@ -74,6 +74,44 @@ def _type_block(tokens: Tokens, indent: str) -> str:
     return "".join(out)
 
 
+def _scale_block(tokens: Tokens, indent: str) -> str:
+    """Radius, elevation, motion, and the layout constants.
+
+    The breakpoints are emitted as values *computed* from the pane widths
+    above them, not as literals. That is the whole reason they are here:
+    `+page.svelte` used to carry `1238` ten times over a comment explaining
+    how it was derived.
+    """
+    out = [
+        f"\n{indent}/* Radius, named by role. `rounded-md` cannot be wrong because\n"
+        f"{indent} * it says nothing; `rounded-control` can. */\n"
+    ]
+    for name, value in tokens.scale["radius"].items():
+        out.append(f"{indent}--radius-{name}: {value};\n")
+
+    out.append(
+        f"\n{indent}/* Depth is the surface ramp plus a hairline. Shadow means one\n"
+        f"{indent} * thing only: floating over the scrim. */\n"
+        f'{indent}--shadow-overlay: {tokens.scale["elevation"]["overlay"]["web"]};\n'
+    )
+
+    motion = tokens.scale["motion"]
+    out.append(
+        f"\n{indent}/* Almost none, deliberately — but nameable, so anything added\n"
+        f"{indent} * is inside a budget. */\n"
+        f'{indent}--duration-quick: {motion["quick"]};\n'
+        f'{indent}--duration-settle: {motion["settle"]};\n'
+        f'{indent}--ease-standard: {motion["easing"]};\n'
+    )
+
+    out.append(f"\n{indent}/* Pane widths, and the breakpoints derived from them. */\n")
+    for name, value in tokens.scale["layout"].items():
+        out.append(f"{indent}--layout-{name}: {value}px;\n")
+    for name, value in tokens.breakpoints.items():
+        out.append(f"{indent}--breakpoint-{name}: {value}px;\n")
+    return "".join(out)
+
+
 def emit_app_css(tokens: Tokens) -> str:
     """The desktop app.
 
@@ -87,6 +125,7 @@ def emit_app_css(tokens: Tokens) -> str:
         + "\n@theme {\n"
         + _block(tokens.appearances["light"], "  ")
         + _type_block(tokens, "  ")
+        + _scale_block(tokens, "  ")
         + "}\n"
         + "\n@layer theme {\n"
         + "  @media (prefers-color-scheme: dark) {\n"

@@ -26,6 +26,7 @@ package dev.supermessage
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 """
 
 
@@ -82,6 +83,34 @@ def _type_block(tokens: Tokens) -> str:
     return "".join(lines)
 
 
+def _metrics_block(tokens: Tokens) -> str:
+    radius = tokens.scale["radius"]
+    layout = tokens.scale["layout"]
+    overlay = tokens.scale["elevation"]["overlay"]["android"]
+    lines = [
+        "\n/**\n",
+        " * Radius, elevation and layout, in dp.\n",
+        " *\n",
+        " * The pane breakpoints are computed from the pane widths rather than\n",
+        " * written down. RootScaffold measures its own width instead — see the\n",
+        " * design's open questions on the three platforms disagreeing here.\n",
+        " */\n",
+        "object Metrics {\n",
+    ]
+    for name, value in radius.items():
+        points = "0" if value == "0" else value.replace("px", "")
+        lines.append(f"    val radius{name.capitalize()} = {points}.dp\n")
+    lines.append(f'    val overlayElevation = {overlay.replace("dp", "")}.dp\n')
+    for name, value in layout.items():
+        lines.append(f"    val {name}Width = {value}.dp\n")
+    for name, value in tokens.breakpoints.items():
+        head, *rest = name.split("-")
+        camel = head + "".join(part.capitalize() for part in rest)
+        lines.append(f"    val {camel} = {value}.dp\n")
+    lines.append("}\n")
+    return "".join(lines)
+
+
 def emit_kotlin(tokens: Tokens) -> str:
     light = tokens.appearances["light"]
     members = "".join(
@@ -110,4 +139,5 @@ def emit_kotlin(tokens: Tokens) -> str:
         + _palette(tokens.appearances["paper"])
         + "}\n"
         + _type_block(tokens)
+        + _metrics_block(tokens)
     )

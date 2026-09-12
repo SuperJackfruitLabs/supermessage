@@ -117,3 +117,23 @@ enum ThemeType {
     static let body = Font.system(.body, design: .serif)
     static let bodyOwn = Font.system(.body)
 }
+
+/// Radius, elevation and layout, in points.
+///
+/// The pane breakpoints are computed from the pane widths rather
+/// than written down. RootView.swift's own threeColumnWidth is a
+/// separate, hardcoded 1000 — see the design's open questions.
+enum Metrics {
+    static let radiusControl: CGFloat = 6
+    static let radiusCard: CGFloat = 8
+    static let radiusPill: CGFloat = .infinity
+    static let radiusSharp: CGFloat = 0
+    static let overlayShadowRadius: CGFloat = 12
+    static let overlayShadowY: CGFloat = 4
+    static let rosterWidth: CGFloat = 288
+    static let panelWidth: CGFloat = 320
+    static let sheetWidth: CGFloat = 630
+    static let railWidth: CGFloat = 55
+    static let panelColumn: CGFloat = 1238
+    static let panelColumnWithRail: CGFloat = 1293
+}

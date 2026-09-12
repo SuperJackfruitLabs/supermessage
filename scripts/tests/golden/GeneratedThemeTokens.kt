@@ -5,6 +5,7 @@ package dev.supermessage
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 /** The sixteen colour roles, one value each. */
 @Immutable
@@ -140,4 +141,25 @@ object ThemeType {
     const val bodyStyle = "bodyLarge"
     val bodyOwn = FontFamily.SansSerif
     const val bodyOwnStyle = "bodyMedium"
+}
+
+/**
+ * Radius, elevation and layout, in dp.
+ *
+ * The pane breakpoints are computed from the pane widths rather than
+ * written down. RootScaffold measures its own width instead — see the
+ * design's open questions on the three platforms disagreeing here.
+ */
+object Metrics {
+    val radiusControl = 6.dp
+    val radiusCard = 8.dp
+    val radiusPill = 9999.dp
+    val radiusSharp = 0.dp
+    val overlayElevation = 8.dp
+    val rosterWidth = 288.dp
+    val panelWidth = 320.dp
+    val sheetWidth = 630.dp
+    val railWidth = 55.dp
+    val panelColumn = 1238.dp
+    val panelColumnWithRail = 1293.dp
 }
