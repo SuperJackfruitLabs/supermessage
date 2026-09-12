@@ -1,0 +1,50 @@
+---
+/**
+ * The wordmark, two-tone — `super` in the text colour, `message` in the accent.
+ *
+ * This exists only so the docs header matches the landing page's brand exactly.
+ * Starlight renders the title as a single text node, and CSS cannot colour half
+ * of one, so the split has to happen in markup.
+ *
+ * It deliberately keeps everything the stock component does: the same link target,
+ * the same `.site-title sl-flex` classes so Starlight's own styles and this site's
+ * display-font rule still apply, and `translate="no"` so a browser's page
+ * translation does not rewrite a product name.
+ *
+ * The split is computed rather than hardcoded, so a title change in
+ * astro.config.mjs cannot leave a wordmark here saying something else.
+ */
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+
+const SPLIT_AT = 'super';
+const head = siteTitle.startsWith(SPLIT_AT) ? SPLIT_AT : '';
+const tail = head ? siteTitle.slice(head.length) : siteTitle;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+  <span translate="no">{head}<span class="accent">{tail}</span></span>
+</a>
+
+<style>
+  /* Replacing the component also discards the styles Starlight scoped to it, which is
+     easy to miss: the first build of this override rendered an UNDERLINED wordmark,
+     because `text-decoration: none` lived in the file that was replaced. The block
+     below restores the stock component's own rules, with only `color` changed. */
+  .site-title {
+    align-items: center;
+    gap: var(--sl-nav-gap);
+    font-size: var(--sl-text-h4);
+    /* 800 to match the landing page brand; the stock component used 600. */
+    font-weight: 800;
+    color: var(--sl-color-white);
+    text-decoration: none;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  span {
+    overflow: hidden;
+  }
+  .accent {
+    color: var(--sl-color-text-accent);
+  }
+</style>

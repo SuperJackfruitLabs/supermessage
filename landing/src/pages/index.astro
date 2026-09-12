@@ -56,6 +56,32 @@ const events = [
 
       * { box-sizing: border-box; }
 
+      /* Light, for a visitor whose system asks for it.
+       *
+       * The docs site follows the reader's preference — Starlight does that by default and
+       * documentation read in daylight should stay legible. This page used to be dark only,
+       * which meant a visitor on a light system saw a dark landing page and then LIGHT docs:
+       * exactly the mismatch that shared colours were supposed to remove.
+       *
+       * These are the same values as `docs-site/src/styles/theme.css`'s light block, so the
+       * two sites agree in both directions rather than only in the dark. */
+      @media (prefers-color-scheme: light) {
+        :root {
+          --ink: hsl(253, 60%, 99%);
+          --raised: hsl(252, 38%, 95%);
+          --raised-2: hsl(252, 28%, 86%);
+          --line: hsl(252, 24%, 82%);
+          --text: hsl(252, 32%, 13%);
+          --muted: hsl(252, 18%, 36%);
+          --violet: hsl(252, 58%, 52%);
+          --amber: hsl(33, 72%, 38%);
+        }
+        /* The two chips that sit ON a colour need their own foreground in light: the accent
+           and amber both darken, so dark-on-light text would vanish into them. */
+        .btn-primary { color: #fbfaff; }
+        .opt.yes { color: #fbfaff; }
+      }
+
       body {
         margin: 0;
         background: var(--ink);

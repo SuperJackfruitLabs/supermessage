@@ -10,6 +10,29 @@ export default defineConfig({
       description:
         'A Matrix client where the agents you work with are participants, not a panel. ' +
         'Docs for using it across five platforms.',
+      // Two-tone wordmark, matching the landing page's brand exactly.
+      components: { SiteTitle: './src/components/SiteTitle.astro' },
+      // Shared with the landing page — see src/styles/theme.css.
+      customCss: ['./src/styles/theme.css'],
+      head: [
+        {
+          tag: 'link',
+          attrs: { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        },
+        {
+          tag: 'link',
+          attrs: { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true },
+        },
+        {
+          tag: 'link',
+          attrs: {
+            rel: 'stylesheet',
+            href:
+              'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800' +
+              '&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap',
+          },
+        },
+      ],
       social: [
         {
           icon: 'github',
