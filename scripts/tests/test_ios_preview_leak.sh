@@ -61,6 +61,44 @@ xcodebuild build \
 APP="$DERIVED/Build/Products/Release-iphoneos/Supermessage.app"
 [ -d "$APP" ] || { echo "FAIL: no Release .app at $APP"; exit 1; }
 
+# ── The positive control ──────────────────────────────────────────────────
+#
+# Grepping for an absence proves nothing unless the same grep can find a
+# presence. This gate passed three deliberately leaked builds in a row before
+# the `grep -c` bug below was found, and nothing in it could tell that apart
+# from "no leak". So a Debug build is scanned first, and the marker had
+# better be there.
+echo "Building for Debug, as the positive control…"
+xcodebuild build \
+  -project Supermessage.xcodeproj \
+  -scheme Supermessage \
+  -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath "$DERIVED" \
+  CODE_SIGNING_ALLOWED=NO \
+  -quiet
+
+DEBUG_APP="$DERIVED/Build/Products/Debug-iphoneos/Supermessage.app"
+[ -d "$DEBUG_APP" ] || { echo "FAIL: no Debug .app at $DEBUG_APP"; exit 1; }
+
+control=0
+while IFS= read -r -d '' binary; do
+  file "$binary" | grep -q "Mach-O" || continue
+  found=$(strings -a "$binary" | grep -cF -e "$MARKER" -e "$CANARY" || true)
+  control=$((control + found))
+done < <(find "$DEBUG_APP" -type f -print0)
+
+if [ "$control" -eq 0 ]; then
+  echo "FAIL: the marker is not in the Debug build either."
+  echo
+  echo "That failing matters more than a leak would. Either the previews are"
+  echo "not being compiled at all — in which case they are dead files — or"
+  echo "this script's grep does not work, in which case its verdict on the"
+  echo "Release build means nothing."
+  exit 1
+fi
+echo "Positive control: the marker appears $control time(s) in Debug."
+
 scanned=0
 hits=()
 while IFS= read -r -d '' binary; do

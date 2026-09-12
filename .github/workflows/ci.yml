@@ -468,6 +468,19 @@ jobs:
         run: ./gradlew :kit:testDebugUnitTest :app:testDebugUnitTest :core:testDebugUnitTest
         working-directory: android
 
+      - name: Previews stay out of the release variant
+        # Compiles both variants and looks for the fixture marker in the
+        # classes each one produced — no APK, so no JNI libraries for ABIs
+        # this run did not build and no signing config this project does not
+        # have.
+        #
+        # It checks the *debug* classes contain the marker before believing
+        # the release ones do not. That positive control is the half that
+        # earns its keep: the iOS counterpart passed three deliberately
+        # leaked builds before a `grep -q` under `pipefail` was found to be
+        # turning every match into a failure.
+        run: ./scripts/tests/test_android_preview_leak.sh
+
       # ── Now the expensive part, and only the ABIs this run will load ───────
 
       - name: Build the Rust core for Android
