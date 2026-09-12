@@ -292,6 +292,7 @@
   import { shouldRepin, shouldSettleAtBottom } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
+  import DispatchCard from "./timeline/DispatchCard.svelte";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -1816,198 +1817,13 @@
                   -->
                   <div class="flex justify-start pt-8">
                     <div class="group relative min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
-                      <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
-                        <!--
-                          Header: what the card is left, the timestamp right,
-                          a hairline beneath. The *name* the renderer gives
-                          this kind of event ("Turn", "Permission") rather
-                          than `view.eventType` — a reader should not have to
-                          parse `dev.agentpod.turn.v1` to learn they are
-                          looking at a turn. The schema address stays in the
-                          `title`, for a card nothing recognises and for
-                          anyone diagnosing one; `displayEventType` truncated
-                          it from the *left* for exactly that case, and still
-                          does.
-                        -->
-                        <div
-                          class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
-                        >
-                          <span
-                            class="min-w-0 flex-1 text-label uppercase break-words"
-                            title={view.eventType}
-                          >
-                            {view.label}
-                          </span>
-                          <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
-                        </div>
-                        {#if view.view.status === "rendered"}
-                          <!--
-                            A real `<dl>`: these rows are label/value pairs,
-                            and a screen reader should read them as such
-                            rather than as a run of unrelated lines. Keyed by
-                            index, not `field.label` — a renderer's fields are
-                            trusted (registered application code, not an array
-                            read straight off the payload), but a duplicate
-                            label is still possible and shouldn't be able to
-                            confuse Svelte's keyed reconciliation.
-
-                            A two-column *grid*, not a flex row per pair, and
-                            the label track is `max-content` rather than the
-                            fixed `9ch` this first shipped with. Both halves
-                            of that are corrections found by rendering:
-
-                            - A fixed `9ch` is narrower than most real labels,
-                              and `overflow-wrap` then breaks them mid-word —
-                              `REQUEST`/`ED BY`, and at the 60-char bound a
-                              twelve-line syllable ladder. `min-w-[9ch]` keeps
-                              the spec's column rank for a short label like
-                              `NOTE`; `max-w-[16ch]` bounds it; between them
-                              an ordinary multi-word label wraps at its spaces
-                              and only a single over-long *word* still breaks,
-                              which is `break-words`' (`overflow-wrap:
-                              break-word`, not `anywhere`) last resort doing
-                              what it should.
-                            - A `max-content` track clamped by those two
-                              widths sizes to the longest label *in this card*
-                              and applies to every row, so the values still
-                              line up in one column. Per-row flex would let
-                              each row pick its own label width and the grid
-                              would stop being a grid.
-
-                            `ch` resolves against the element's own font, so
-                            the two caps are on the `dt`, which is the mono
-                            one — 9ch of mono, as the spec means it, not 9ch
-                            of the serif the card is set in.
-                          -->
-                          <dl
-                            class="selectable m-0 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 px-3 py-2"
-                          >
-                            {#each view.view.fields as field, i (i)}
-                              <dt
-                                class="min-w-[9ch] max-w-[16ch] font-mono text-label uppercase break-words text-content-muted"
-                              >
-                                {field.label}
-                              </dt>
-                              <dd class="m-0 min-w-0 break-words">{field.value}</dd>
-                            {/each}
-                          </dl>
-                          {#if view.view.reasoning}
-                            <!--
-                              How the agent reached this, when it said.
-                              Collapsed: it is context, not the conclusion,
-                              and an operator scanning a room wants the
-                              conclusion first.
-
-                              A `<details>` rather than a scripted toggle —
-                              the element already is a disclosure, keyboard
-                              operable and announced as one, and re-building
-                              that in Svelte would only be a worse version.
-                            -->
-                            <details class="border-t border-border px-3 py-2">
-                              <summary
-                                class="cursor-pointer font-mono text-label uppercase text-content-muted"
-                              >
-                                Reasoning
-                              </summary>
-                              <p
-                                class="selectable mt-2 mb-0 break-words whitespace-pre-wrap text-meta text-content-muted"
-                              >
-                                {view.view.reasoning}
-                              </p>
-                            </details>
-                          {/if}
-                          {#if view.view.newerVersion}
-                            <!--
-                              Mono and emphatically *not* amber: this is a
-                              note, not a decision, and amber is reserved
-                              (spec §3). Not italic either — no mono italic is
-                              bundled (spec §6.3).
-
-                              `--color-content-muted`, not `faint`, and that
-                              is a measured floor rather than a preference:
-                              `faint` on `--color-surface-raised` is 4.16:1
-                              in dark, under the 4.5:1 bar, because the card's
-                              ground is *raised* off the surface the rest of
-                              the log's faint rows sit on. `muted` on the same
-                              ground is 8.21:1.
-                            -->
-                            <p class="px-3 pb-2 font-mono text-meta text-content-muted">
-                              Shown from a newer version of this event
-                            </p>
-                          {/if}
-                        {:else}
-                          <!-- status === "fallbackBody": the plain-text
-                               `content.body` Matrix convention puts on every
-                               suite custom event, for a type this build has
-                               no renderer for. Serif, no field grid (spec
-                               §7) — it is prose, not data. -->
-                          <p class="selectable px-3 py-2 whitespace-pre-wrap break-words">
-                            {view.view.text}
-                          </p>
-                        {/if}
-                        {#if decision}
-                          <!--
-                            UNREACHABLE IN THIS BUILD — do not go looking for
-                            these buttons in the running app. No shipped
-                            renderer sets `CustomEventRenderResult.decision`
-                            (`core::custom_events` "Decisions"; the demo renderer
-                            never does, and a unit test holds it that way), so
-                            `core::custom_events::resolve_custom_event` returns `decision: null` for
-                            every real event and this block never executes.
-                            That is spec §7.1's requirement — "do not ship a
-                            visible button that does nothing" — and the reason
-                            `onDecide` is inert. Kaambaan's permission-request
-                            renderer plus its gate-resolution REST call
-                            (`docs/positioning.md`, wedge #3) are what make
-                            this live; the slot is covered by unit tests
-                            against a fixture renderer so it ships proven
-                            rather than speculative.
-
-                            Everything here is bounded and validated by
-                            `boundDecision` before it arrives: the prompt is a
-                            string capped at 300 chars, and there are at most
-                            four options, each with a string `id` and a string
-                            `label` capped at 60. A malformed decision is
-                            `null` by then, so this block cannot render a
-                            half-built control.
-                          -->
-                          <div class="border-t border-border px-3 py-2">
-                            <p class="selectable break-words">{decision.prompt}</p>
-                            <!--
-                              The only amber in the application (spec §7.1),
-                              alongside this card's left edge and ground. It
-                              says the operator owes someone an answer.
-                            -->
-                            <p class="mt-2 font-mono text-label uppercase text-signal">
-                              Awaiting your decision
-                            </p>
-                            <div class="mt-1.5 flex flex-wrap gap-2">
-                              <!--
-                                Keyed by index, not `option.id`, and for a
-                                sharper reason than the field grid above:
-                                `boundDecision` guarantees each `id` is a
-                                string, but nothing makes two options' ids
-                                *distinct* — a renderer echoing a payload
-                                could easily produce two `"approve"`s, and a
-                                duplicate key is a Svelte runtime error
-                                (`each_key_duplicate`) that would take the
-                                whole timeline render down. The id is still
-                                what `onDecide` receives; it is never a key
-                                and never reaches the DOM.
-                              -->
-                              {#each decision.options as option, i (i)}
-                                <button
-                                  type="button"
-                                  onclick={() => onDecide(item.id, option.id)}
-                                  class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised"
-                                >
-                                  {option.label}
-                                </button>
-                              {/each}
-                            </div>
-                          </div>
-                        {/if}
-                      </div>
+                      <DispatchCard
+                        {view}
+                        {decision}
+                        {item}
+                        {onDecide}
+                        {formatTime}
+                      />
                       <!--
                         Outside the bordered object, not inside it: the card
                         is the dispatch, and these are this reader's
@@ -2108,65 +1924,7 @@
     }
   }
 
-  /*
-   * The dispatch card's frame (spec §7) — the timeline's only bordered
-   * object, and the only place `--color-signal` (amber) appears anywhere in
-   * this application (spec §3).
-   *
-   * **Two border ranks, and the difference between them is the whole
-   * device.** A 1px `--color-border` hairline on three sides, a 2px
-   * `--color-border-strong` edge on the left (spec §7). The first
-   * implementation used `border-strong` on all four sides, and rendering it
-   * is what exposed the mistake: the left edge was then the same colour as
-   * its neighbours and merely one pixel wider — invisible at any normal
-   * viewing distance. That left the card's signature device existing *only*
-   * on the pending variant, which no shipped renderer can currently
-   * produce, so everything a user could actually see had no signature at
-   * all. The edge has to read as a rank in the ordinary state, so that
-   * going amber changes an edge's **meaning** rather than conjuring an edge
-   * from nothing.
-   *
-   * This matters more in light than the token table suggests:
-   * `--color-surface-raised` on `--color-surface` measures 1.03:1, so in
-   * light mode the card has, for practical purposes, no ground — only its
-   * frame. The frame is what makes it an object there.
-   *
-   * Written here rather than as Tailwind utilities for one specific
-   * reason: the card sets `border-color` on three sides and a *different*
-   * `border-left-color` on the fourth. As utilities those are two rules of
-   * equal specificity, so which one wins depends on the order Tailwind
-   * happens to emit `border-color` and `border-left-color` in — not on the
-   * order they appear in the class attribute, which is what a reader would
-   * naturally assume. One rule, with the left edge stated after the
-   * shorthand, is unambiguous. It also lets the pending swap be a single
-   * named state rather than four interleaved conditionals.
-   *
-   * `--color-signal-soft` is the pending ground and `--color-signal` the
-   * pending edge; both are tokens, no literal colours (spec §3). The 100ms
-   * transition is the whole motion budget this element gets (spec §8) and
-   * is covered by `app.css`'s `prefers-reduced-motion` opt-out.
-   */
-  .dispatch-card {
-    border: 1px solid var(--color-border);
-    border-left: 2px solid var(--color-border-strong);
-    /* `--radius-card`, which is 8px, not the 6px this element carried
-       before the scales existed. Two pixels, and taken deliberately: the
-       role is called `card` because this is the thing it is named for, and
-       a signature element quietly using the control radius is how the four
-       ad-hoc radii happened in the first place. */
-    border-radius: var(--radius-card);
-    background-color: var(--color-surface-raised);
-    transition:
-      background-color var(--duration-quick),
-      border-color var(--duration-quick);
-  }
-
-  .dispatch-card-pending {
-    border-left-color: var(--color-signal);
-    background-color: var(--color-signal-soft);
-  }
-
-  /*
+    /*
    * The "mine" reaction chip's fill — see `reactionsRow`'s comment for why
    * this is here rather than a `bg-accent/15` utility. The short version:
    * one snippet, four possible grounds, and a translucent fill takes its
