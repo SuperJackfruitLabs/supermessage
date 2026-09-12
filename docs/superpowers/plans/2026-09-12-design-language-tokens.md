@@ -17,7 +17,7 @@
 - **Three appearances:** `light`, `dark`, `paper`. Desktop and web bind `light` ↔ `dark`; iOS and Android bind `paper` ↔ `dark`. No appearance picker.
 - **Contrast floors, asserted before any file is written:** `content-faint` ≥ 4.5 against `surface`, `surface-sunken` *and* `surface-raised`; `accent-content` ≥ 4.5 on `accent`; `signal` ≥ 6.0 on `signal-soft`; `danger` and `ok` ≥ 4.5 on `surface`.
 - **Depth band:** `surface : surface-sunken` contrast must fall within 1.05–1.13.
-- **Scrim is checked as a luminance drop, never a WCAG ratio.** A ratio's `+0.05` flare term reports 1.10:1 for a region that visibly lost half its light.
+- **Scrim is checked as a REGION luminance drop, never a WCAG ratio and never against a single surface.** A ratio's `+0.05` flare term reports 1.10:1 for a region that visibly lost half its light. And each theme's scrim is built from the ramp end that contrasts with what is behind it, so a single-surface check reports 1.00x for a working scrim — light's scrim *is* `content`, dark's *is* `surface-sunken`. Measure ground plus the text on it. Floor: 2.5x in every appearance.
 - **Dynamic Type must not be flattened.** Type roles emit a rem size for web and a platform *text style* for iOS and Android. Emitting a fixed point size on native is a defect.
 - **Generated files carry their rationale.** TOML comments are emitted as comments in each target.
 - **Amber (`signal`) means a pending decision and nothing else.** Any other use is a review defect.
@@ -103,7 +103,7 @@ Named here because a reader will otherwise assume it does.
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `relative_luminance(hex: str) -> float`, `contrast_ratio(a: str, b: str) -> float`, `parse_rgba(css: str) -> tuple[int, int, int, float]`, `composite(base_hex: str, over_rgba: tuple[int,int,int,float]) -> str`, `luminance_drop(base_hex: str, scrim_css: str) -> float`. All hex inputs are `#rrggbb`, lowercase.
+- Produces: `relative_luminance(hex: str) -> float`, `contrast_ratio(a: str, b: str) -> float`, `parse_rgba(css: str) -> tuple[int, int, int, float]`, `composite(base_hex: str, over_rgba: tuple[int,int,int,float]) -> str`, `luminance_drop(base_hex: str, scrim_css: str) -> float`, `region_luminance_drop(ground_hex: str, content_hex: str, scrim_css: str, text_fraction: float = 0.15) -> float`. All hex inputs are `#rrggbb`, lowercase. **`region_luminance_drop` is the one the scrim contract uses**; `luminance_drop` is its single-colour building block and is not a valid scrim check on its own.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -366,7 +366,7 @@ ok = { value = "#1d7c59", contrast = [{ against = "surface", min = 4.5 }] }
 
 # Not a fifth hue and not a new rank — the ramp's dark end used as a wash.
 # Checked as a luminance drop, never a ratio.
-scrim = { value = "rgb(34 28 56 / 0.45)", drop = { over = "surface-sunken", min = 3.0 } }
+scrim = { value = "rgb(34 28 56 / 0.45)", drop = { min = 2.5 } }   # measures 3.01x
 
 # ----------------------------------------------------------------- dark ----
 # Every platform, when the OS asks for dark. Anchored on the landing page's
@@ -404,7 +404,7 @@ ok = { value = "#70cdab", contrast = [{ against = "surface", min = 4.5 }] }
 # ground is already near the ramp's floor. It cannot reach light's 3.2x and
 # should not try: matching it exactly would take an alpha near 0.95, which
 # erases the region rather than veiling it.
-scrim = { value = "rgb(21 17 41 / 0.70)", drop = { over = "surface-sunken", min = 2.0 } }
+scrim = { value = "rgb(21 17 41 / 0.70)", drop = { min = 2.5 } }   # measures 6.95x
 
 # ---------------------------------------------------------------- paper ----
 # What "light" means on a phone. Same roles, same accent, warm ground.
@@ -431,7 +431,7 @@ signal = { value = "#814904", contrast = [{ against = "signal-soft", min = 6.0 }
 signal-soft = { value = "#f7edda" }
 danger = { value = "#b4222a", contrast = [{ against = "surface", min = 4.5 }] }
 ok = { value = "#1d7c59", contrast = [{ against = "surface", min = 4.5 }] }
-scrim = { value = "rgb(34 25 46 / 0.45)", drop = { over = "surface-sunken", min = 3.0 } }
+scrim = { value = "rgb(34 25 46 / 0.45)", drop = { min = 2.5 } }   # measures 3.07x
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -560,7 +560,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .contrast import contrast_ratio, luminance_drop
+from .contrast import contrast_ratio, region_luminance_drop
 
 ROLES: tuple[str, ...] = (
     "surface", "surface-sunken", "surface-raised",
@@ -634,14 +634,19 @@ def validate(data: dict) -> None:
 
             drop_rule = spec.get("drop")
             if drop_rule:
-                ground = colors[drop_rule["over"]]
-                actual = luminance_drop(ground, colors[role])
+                # Ground plus the text on it. Not a single surface: each
+                # theme's scrim IS one of the two, so a single-surface
+                # check reports 1.00x for a scrim that works.
+                actual = region_luminance_drop(
+                    colors["surface-sunken"], colors["content"], colors[role]
+                )
                 if actual < drop_rule["min"]:
                     raise TokenError(
-                        f"{name}.{role} veils {drop_rule['over']} by only "
+                        f"{name}.{role} veils its region by only "
                         f"{actual:.2f}x; the contract requires "
-                        f"{drop_rule['min']}x. (Checked as a luminance drop, "
-                        f"not a WCAG ratio — see contrast.luminance_drop.)"
+                        f"{drop_rule['min']}x. (Region mean, not a WCAG "
+                        f"ratio and not a single surface — see "
+                        f"contrast.region_luminance_drop.)"
                     )
 
 
