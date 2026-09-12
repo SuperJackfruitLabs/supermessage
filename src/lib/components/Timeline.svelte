@@ -293,6 +293,10 @@
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
   import DispatchCard from "./timeline/DispatchCard.svelte";
+  import LogLine from "./timeline/LogLine.svelte";
+  import ReactionsRow from "./timeline/ReactionsRow.svelte";
+  import ReplyQuote from "./timeline/ReplyQuote.svelte";
+  import SeenMarker from "./timeline/SeenMarker.svelte";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -948,163 +952,6 @@
   }
 </script>
 
-{#snippet replyQuote(quote: ReplyQuoteView | null, isOwn: boolean)}
-  {#if quote}
-    <!--
-      A 2px rail rather than a filled inset, matching the composer's
-      "REPLYING TO" strip (spec §6.4) so the same relationship reads the
-      same way in both places. No own/peer colour split any more: the own
-      bubble is `--color-accent-soft` with `--color-content` text, not the
-      accent fill it used to be, so `--color-content-muted` on
-      `--color-border` is legible on either ground — the old
-      `accent-content` pair would have been near-invisible on both.
-    -->
-    <div class="mb-1.5 border-l-2 border-border pl-2 text-content-muted">
-      {#if quote.state === "available"}
-        <!--
-          `truncate` alone here (no `break-words`): `truncate` is
-          `white-space: nowrap` + `text-overflow: ellipsis` + `overflow:
-          hidden`, which never wraps in the first place, so `break-words`
-          (a wrapping rule) was dead weight on this line — see this file's
-          top-of-script doc comment for why `break-words` *does* matter,
-          genuinely, on the two lines below that actually allow wrapping.
-        -->
-        <p class="truncate font-mono text-label uppercase">{quote.sender}</p>
-        {#if quote.excerpt}
-          <!-- `quote.excerpt` is already truncated in the core
-               (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) — `break-words`
-               here guards against a long space-free run within that bound,
-               not the length itself. See this file's top-of-script doc
-               comment. -->
-          <p class="mt-0.5 line-clamp-2 font-serif text-ui break-words">{quote.excerpt}</p>
-        {:else if quote.label}
-          <!-- The parent loaded but had nothing to quote (redacted, a
-               sticker, a poll, undecryptable, ...) — `quote.label` is the
-               same short classification text `core::timeline::
-               reply_parent_label` computes for it, so this reads with the
-               vocabulary `core::item_view::view_for`'s own placeholders already use. Fixes
-               the review finding that this used to render as a bare sender
-               name with no indication why. -->
-          <!-- Mono, and *not* italic: these two lines share the placeholder
-               vocabulary, and no mono italic is bundled — see this file's
-               top-of-script doc comment and spec §6.3.
-
-               `faint` only on a peer block; `muted` inside an own bubble.
-               The faint rank is defined against the *reading surface*
-               (spec §3 checks it there and nowhere else) and it does not
-               survive a tinted ground: composited over
-               `--color-accent-soft` it measures **4.26:1 light / 3.52:1
-               dark**, under the 4.5:1 floor §9 sets, while `muted` on the
-               same ground is 7.07 / 6.95. The rank the own bubble gets for
-               its secondary text is therefore `muted`, and the same swap
-               is made on the two other faint-on-`accent-soft` lines (the
-               `edited` marker and the image placeholder below). Measured
-               by compositing the layer stack in a canvas — the numbers a
-               token-pair calculator gives for `faint` on `surface` (4.92)
-               do not describe this ground at all. -->
-          <p
-            class="mt-0.5 font-mono text-meta break-words {isOwn
-              ? 'text-content-muted'
-              : 'text-content-faint'}"
-          >
-            {quote.label}
-          </p>
-        {/if}
-      {:else}
-        <p
-          class="font-mono text-meta break-words {isOwn
-            ? 'text-content-muted'
-            : 'text-content-faint'}"
-        >
-          Original message unavailable
-        </p>
-      {/if}
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet reactionsRow(item: TimelineItem, interactive: boolean, alignEnd: boolean = item.isOwn)}
-  <!--
-    `alignEnd` defaults to `item.isOwn` — an own bubble's affordances hang
-    off its right edge — but it is a *parameter*, not a read of `isOwn`,
-    because one caller genuinely differs: the dispatch card is left-aligned
-    regardless of sender (spec §7), so its rows must be too. See the card's
-    call sites. Do not "simplify" this back to `item.isOwn`: `isOwn` is
-    account-scoped (`event.sender() == own_user` in the core), so any other
-    session signed in as this account can produce an own custom event, and
-    a right-hanging row under a left-anchored card is then reachable, not
-    hypothetical.
-
-    This row renders *outside* the message container, on the sheet ground,
-    tucked under the container's bottom edge — see `messageBlock`. A
-    reaction is chrome that acts on a message, not part of it, and this
-    file already refuses to mix the two anywhere else. Positive offsets
-    rather than a negative one that would overlap the container's edge:
-    an overlap only reads as "tucked into the corner" against a container
-    that *has* a visible corner, and of the three that call this, only the
-    own bubble does — a peer block and the space under a dispatch card
-    would just get a chip sitting too close to the text above it.
-  -->
-  {#if item.reactions.length > 0}
-    <div class="mt-1.5 flex flex-wrap gap-1 {alignEnd ? 'justify-end' : ''}">
-      {#each item.reactions as reaction (reaction.key)}
-        {@const chipClass = reaction.byMe
-          ? "reaction-chip-mine border-accent font-medium text-accent"
-          : "border-border bg-surface-sunken text-content-muted hover:border-border-strong hover:text-content"}
-        <!--
-          `displayReactionKey` caps a reaction key's rendered length (a key
-          is arbitrary sender-controlled text, not necessarily one emoji);
-          `break-words` guards the chip itself against a long run within
-          that cap, same reasoning as the reply excerpt above. `byMe` gets a
-          visually distinct style so a reader can tell at a glance which
-          chips they've already added to. A real `<button>`, not a `<span>`
-          with a click handler, so it's keyboard-operable with an accessible
-          name on its own — `aria-pressed` mirrors `byMe` for the same
-          reason a toggle button conventionally exposes its own state.
-          Clicking never mutates `item.reactions` itself; see this file's
-          top-of-script doc comment.
-
-          `font-sans` explicitly: a chip is chrome, and it sits inside a
-          message block that sets `font-serif` (peer) on itself so its
-          `ch`-based measure resolves in the reading face.
-
-          The "mine" fill is `.reaction-chip-mine` (in the style block at
-          the foot of this file) rather than a `bg-accent/15` utility, and
-          that is a contrast fix. A translucent fill composites against
-          whatever happens to be behind it, and this one snippet renders on
-          **four** different grounds: `--color-surface` (a peer block),
-          `--color-accent-soft` (an own bubble), `--color-surface-raised`
-          (a dispatch card) and `--color-signal-soft` (a pending one). The
-          tint measured 5.55:1 on the first and 4.26:1 on the second, and
-          the fix that branched on `item.isOwn` still left the two card
-          grounds unmeasured — where they came in at 5.00:1 resting and
-          4.53:1 on hover, under the 5.0:1 bar. Branching per ground does
-          not scale and is how this was missed twice. `.reaction-chip-mine`
-          instead paints the accent tint over its *own* opaque
-          `--color-surface`, so the chip's contrast is a single number on
-          every ground it can ever land on, present or future.
-
-          Numbers are composited by the browser, not modelled: Tailwind
-          emits `/15` as `color-mix(in oklab, … , transparent)`, so
-          anything that reads `getComputedStyle().backgroundColor` and
-          expects `rgba()` silently measures the wrong ground. Paint the
-          layer stack into a canvas and read the pixel back.
-        -->
-        <button
-          type="button"
-          disabled={!interactive}
-          onclick={() => handleToggleReaction(item.eventId, reaction.key)}
-          aria-pressed={reaction.byMe}
-          aria-label={`${reaction.displayKey}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
-          class="rounded-pill border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
-        >
-          {reaction.displayKey} {reaction.count}
-        </button>
-      {/each}
-    </div>
-  {/if}
-{/snippet}
-
 {#snippet messageActions(row: ItemRow, alignEnd: boolean = row.item.isOwn)}
   {@const item = row.item}
   {@const interactive = row.canReplyOrReact}
@@ -1190,65 +1037,6 @@
       </button>
     </div>
   {/if}
-{/snippet}
-
-{#snippet seenMarker(item: TimelineItem, alignEnd: boolean = item.isOwn)}
-  <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter.
-
-
-    "Seen"/"Seen by N" — the reader's own latest message only, per
-    `TimelineItemDto::read_by`'s doc comment (`core::dto`): no per-message
-    avatar stack, and never shown on anyone else's message. `lastOwnMessageId`
-    (top-of-script) is what scopes this to "the last own item" rather than
-    every item's own `read_by` being rendered — the check here only needs to
-    confirm this specific item is that one and that at least one other
-    member has actually read it yet.
-  -->
-  {#if item.id === lastOwnMessageId && item.readBy.length > 0}
-    <!--
-      `--color-content-muted`, not the `accent-content/70` this used to
-      carry: that value only ever made sense against the accent-*filled*
-      own bubble it sat on. The own bubble is now `--color-accent-soft`
-      with `--color-content` text, and white-at-70% on that ground is
-      effectively invisible. Mono, because a read receipt is data.
-    -->
-    <p class="mt-1 font-mono text-meta text-content-muted {alignEnd ? 'text-right' : 'text-left'}">
-      {item.readBy.length === 1 ? "Seen" : `Seen by ${item.readBy.length}`}
-    </p>
-  {/if}
-{/snippet}
-
-{#snippet logLine(text: string)}
-  <!--
-    The quiet machine log: membership changes (grouped or not), room
-    creation, encryption enabled, room replaced, and every placeholder for
-    something this build cannot render yet. All of these are the same row —
-    centred, mono `--text-meta`, `--color-content-faint` — and they were
-    three verbatim copies of this markup before this snippet existed.
-    Keeping them literally identical is the point, not an accident: a
-    collapsed membership run must read no differently from an ungrouped
-    one, and a placeholder must read as part of the same log rather than as
-    a failed message. Mono means machine (spec §5.3), and no mono rank is
-    ever italic (spec §6.3) — `font-synthesis: none` plus no bundled mono
-    italic would render an italic upright anyway.
-
-    `min-w-0` + `max-w` + `break-words`, the same three-part guard every
-    other sender-controlled string in this file carries. These strings are
-    not app-authored constants: a system line is built from
-    `attributedName`, which is the sender's own *unbounded* display name,
-    and a placeholder interpolates a sender-controlled `msgtype`/`detail`.
-    Before the guard, a single 5000-character display name pushed the
-    scroller's own `scrollWidth` to 16515px against a 1563px column.
-    `break-words` alone is not enough — `overflow-wrap: break-word` does
-    not reduce an element's min-content size, so a flex item's automatic
-    minimum size still holds the row open until `min-w-0` lets it shrink.
-  -->
-  <div class="flex justify-center py-2">
-    <span
-      class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
-      >{text}</span
-    >
-  </div>
 {/snippet}
 
 {#snippet messageBlock(row: ItemRow, content: Snippet)}
@@ -1371,9 +1159,9 @@
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
-        {@render replyQuote(row.replyQuote, item.isOwn)}
+        <ReplyQuote quote={row.replyQuote} isOwn={item.isOwn} />
         {@render content()}
-        {@render seenMarker(item)}
+        <SeenMarker item={item} {lastOwnMessageId} alignEnd={item.isOwn} />
         {#if item.isOwn}
           {@const failed = item.sendState === "sendingFailed"}
           {@const sending = item.sendState === "notSentYet"}
@@ -1410,7 +1198,7 @@
         {/if}
       </div>
     </div>
-    {@render reactionsRow(item, row.canReplyOrReact)}
+    <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} onToggle={handleToggleReaction} />
     {@render messageActions(row)}
   </div>
 {/snippet}
@@ -1563,7 +1351,7 @@
               `system` line, because it renders through the same `logLine`
               snippet rather than a copy of its markup.
             -->
-            {@render logLine(row.text)}
+            <LogLine text={row.text} />
           {:else}
             {@const item = row.item}
             {@const continuesRun = row.continuesRun}
@@ -1800,7 +1588,7 @@
                     same `logLine` snippet — see there for the wrap guard and
                     why every row in that log is deliberately identical.
                   -->
-                  {@render logLine(view.view.text)}
+                  <LogLine text={view.view.text} />
                 {:else}
                   {@const decision =
                     view.view.status === "rendered" ? view.view.decision : null}
@@ -1841,9 +1629,9 @@
                         `seenMarker`. Left the default and these rows would
                         hang off the right edge of a left-anchored card.
                       -->
-                      {@render reactionsRow(item, row.canReplyOrReact, false)}
+                      <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={false} onToggle={handleToggleReaction} />
                       {@render messageActions(row, false)}
-                      {@render seenMarker(item, false)}
+                      <SeenMarker item={item} {lastOwnMessageId} alignEnd={false} />
                     </div>
                   </div>
                 {/if}
@@ -1862,7 +1650,7 @@
                 <!-- Membership lines, room creation, encryption enabled, room
                      replaced — see `logLine` for why this row looks the way
                      it does and what its wrap guard is protecting. -->
-                {@render logLine(view.text)}
+                <LogLine text={view.text} />
               {:else if view.render === "placeholder"}
                 <!--
                   Anything the reader must be told about but this build can't
@@ -1873,7 +1661,7 @@
                   `core::item_view`. Rendered as the same log row as a
                   system line, deliberately: see `logLine`.
                 -->
-                {@render logLine(view.text)}
+                <LogLine text={view.text} />
               <!-- view.render === "none": deliberately silent, see `core::item_view`. -->
             {/if}
           {/if}
@@ -1924,40 +1712,7 @@
     }
   }
 
-    /*
-   * The "mine" reaction chip's fill — see `reactionsRow`'s comment for why
-   * this is here rather than a `bg-accent/15` utility. The short version:
-   * one snippet, four possible grounds, and a translucent fill takes its
-   * contrast from whichever one it lands on.
-   *
-   * The trick is one line: an opaque `background-color` with the accent
-   * tint painted over it as a `background-image`. `background-image` sits
-   * *above* `background-color` on the same element, so the tint composites
-   * against `--color-surface` here and never against the ground behind the
-   * chip — the chip stops caring what it is sitting on. A `linear-gradient`
-   * between two identical colour stops is the standard way to express "a
-   * flat layer" as an image; there is no gradient in it.
-   *
-   * Tokens only, no literal colours (spec §3), and the tint percentages
-   * are the measured ones: 15% resting and 20% on hover give accent text
-   * 5.60:1 / 5.16:1 in light and 5.55:1 / 5.02:1 in dark, on every ground.
-   */
-  .reaction-chip-mine {
-    background-color: var(--color-surface);
-    background-image: linear-gradient(
-      color-mix(in oklab, var(--color-accent) 15%, transparent),
-      color-mix(in oklab, var(--color-accent) 15%, transparent)
-    );
-  }
-
-  .reaction-chip-mine:hover {
-    background-image: linear-gradient(
-      color-mix(in oklab, var(--color-accent) 20%, transparent),
-      color-mix(in oklab, var(--color-accent) 20%, transparent)
-    );
-  }
-
-  /*
+      /*
    * Typography for `{@html item.formattedBody}` content (see this file's
    * top-of-script doc comment for the sanitisation guarantees that make
    * rendering it safe at all). `:global(...)` throughout, deliberately: the
