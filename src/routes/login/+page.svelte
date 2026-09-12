@@ -59,7 +59,7 @@
   class="flex min-h-dvh flex-col items-center justify-center overflow-y-auto bg-surface-sunken p-6"
   style="padding-top: calc(1.5rem + var(--inset-top)); padding-bottom: calc(1.5rem + var(--inset-bottom));"
 >
-  <div class="w-full max-w-sm rounded-xl border border-border bg-surface-raised p-8 shadow-sm">
+  <div class="w-full max-w-sm rounded-card border border-border bg-surface-raised p-8">
     <div class="mb-6 text-center">
       <h1 class="text-xl font-semibold tracking-tight">Sign in</h1>
       <p class="mt-1 text-sm text-content-muted">Connect to your Matrix homeserver</p>
@@ -74,7 +74,7 @@
           autocomplete="url"
           bind:value={homeserver}
           disabled={submitting}
-          class="rounded-md border border-border bg-surface px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
+          class="rounded-control border border-border bg-surface px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
         />
       </div>
 
@@ -86,7 +86,7 @@
           autocomplete="username"
           bind:value={username}
           disabled={submitting}
-          class="rounded-md border border-border bg-surface px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
+          class="rounded-control border border-border bg-surface px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
         />
       </div>
 
@@ -98,7 +98,7 @@
           autocomplete="current-password"
           bind:value={password}
           disabled={submitting}
-          class="rounded-md border border-border bg-surface px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
+          class="rounded-control border border-border bg-surface px-3 py-2 text-sm text-content outline-none focus:border-accent disabled:opacity-60"
         />
       </div>
 
@@ -115,7 +115,7 @@
       <button
         type="submit"
         disabled={!canSubmit}
-        class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-opacity disabled:opacity-60"
+        class="rounded-control bg-accent px-4 py-2 text-sm font-medium text-accent-content transition-opacity disabled:opacity-60"
       >
         {submitting ? "Signing in…" : "Sign in"}
       </button>

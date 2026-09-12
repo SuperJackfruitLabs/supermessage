@@ -708,7 +708,7 @@
         type="button"
         onclick={removeStaged}
         aria-label="Remove attachment"
-        class="shrink-0 rounded-md border border-border-strong px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
+        class="shrink-0 rounded-control border border-border-strong px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
       >
         Remove
       </button>
@@ -759,7 +759,7 @@
       reading surface must not move while somebody types a name.
     -->
     <ul
-      class="absolute bottom-full left-2 z-30 mb-1 max-h-56 w-72 overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-lg"
+      class="absolute bottom-full left-2 z-30 mb-1 max-h-56 w-72 overflow-y-auto rounded-control border border-border bg-surface py-1 shadow-overlay"
       role="listbox"
       aria-label="Mention a member"
     >
@@ -792,12 +792,12 @@
     disabled={staging}
     aria-label="Attach a file"
     title="Attach a file — or drop one on the window"
-    class="flex shrink-0 items-center justify-center rounded-md px-2.5 py-2 font-mono text-ui-lg text-content-muted transition-colors hover:bg-surface hover:text-content disabled:text-content-faint disabled:hover:bg-transparent"
+    class="flex shrink-0 items-center justify-center rounded-control px-2.5 py-2 font-mono text-ui-lg text-content-muted transition-colors hover:bg-surface hover:text-content disabled:text-content-faint disabled:hover:bg-transparent"
   >
     <span aria-hidden="true">+</span>
   </button>
   <div
-    class="flex min-w-0 flex-1 items-end gap-1.5 rounded-md px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
+    class="flex min-w-0 flex-1 items-end gap-1.5 rounded-control px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
   >
     <span class="shrink-0 pb-1.5 font-mono text-content-faint" aria-hidden="true">›</span>
     <textarea
@@ -854,7 +854,7 @@
     type="button"
     onclick={send}
     disabled={!canSend}
-    class="flex shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:border-border disabled:bg-transparent disabled:text-content-muted"
+    class="flex shrink-0 items-center gap-1.5 rounded-control border border-transparent bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:border-border disabled:bg-transparent disabled:text-content-muted"
   >
     <!--
       The label names its object whenever there is one. This is half of the

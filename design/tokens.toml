@@ -209,9 +209,13 @@ sharp = "0"        # full-bleed rows, dividers
 
 # ------------------------------------------------------------ elevation ----
 # Depth is the three-level surface ramp plus a hairline. Shadow means exactly
-# one thing: floating over the scrim. Web had six ad-hoc Tailwind shadows and
-# native had none at all, so a modal on iOS and Android sat on the page with
-# nothing lifting it off.
+# one thing: floating ABOVE the page plane — a modal over its scrim, or a
+# popover over content. Anything that is part of the page, however raised,
+# uses the ramp instead; the login card lost its shadow on that rule.
+#
+# Web had six ad-hoc Tailwind shadows at three sizes and native had none at
+# all, so a modal on iOS and Android sat on the page with nothing lifting it
+# off.
 
 [elevation.overlay]
 web = "0 8px 24px rgb(0 0 0 / 0.18)"
@@ -241,4 +245,10 @@ easing = "cubic-bezier(0.2, 0, 0, 1)"
 roster = 288    # the room list
 panel = 320     # the room-info panel when it is a third column
 sheet = 630     # the reading surface's own designed width
-rail = 55       # the spaces rail, when it is showing
+# 56, not 55, and it was 55 in this file's first draft — an invented value
+# that nobody had checked against SpacesRail.svelte, which is `w-14`. The
+# derived with-rail breakpoint would have come out at 1293 instead of 1294,
+# the panel would have taken a column one pixel early, and the sheet would
+# have sat at 629px against its designed 630. Exactly the class of quiet
+# wrongness this whole file exists to stop, introduced by the file itself.
+rail = 56       # the spaces rail, when it is showing

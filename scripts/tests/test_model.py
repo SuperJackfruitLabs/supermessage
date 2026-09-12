@@ -186,7 +186,7 @@ class LayoutTests(unittest.TestCase):
             tokens.breakpoints["panel-column-with-rail"],
             tokens.breakpoints["panel-column"] + tokens.scale["layout"]["rail"],
         )
-        self.assertEqual(tokens.breakpoints["panel-column-with-rail"], 1293)
+        self.assertEqual(tokens.breakpoints["panel-column-with-rail"], 1294)
 
     def test_widening_the_roster_moves_the_breakpoint(self):
         """The entire point of deriving it.
@@ -198,7 +198,7 @@ class LayoutTests(unittest.TestCase):
         broken = copy.deepcopy(raw())
         broken["layout"]["roster"] = 304
         self.assertEqual(breakpoints_for(broken)["panel-column"], 1254)
-        self.assertEqual(breakpoints_for(broken)["panel-column-with-rail"], 1309)
+        self.assertEqual(breakpoints_for(broken)["panel-column-with-rail"], 1310)
 
 
 class ScaleTests(unittest.TestCase):

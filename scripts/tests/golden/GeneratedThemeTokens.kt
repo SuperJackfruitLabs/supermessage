@@ -159,7 +159,7 @@ object Metrics {
     val rosterWidth = 288.dp
     val panelWidth = 320.dp
     val sheetWidth = 630.dp
-    val railWidth = 55.dp
+    val railWidth = 56.dp
     val panelColumn = 1238.dp
-    val panelColumnWithRail = 1293.dp
+    val panelColumnWithRail = 1294.dp
 }

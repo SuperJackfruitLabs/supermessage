@@ -1095,7 +1095,7 @@
           onclick={() => handleToggleReaction(item.eventId, reaction.key)}
           aria-pressed={reaction.byMe}
           aria-label={`${reaction.displayKey}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
-          class="rounded-full border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
+          class="rounded-pill border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
         >
           {reaction.displayKey} {reaction.count}
         </button>
@@ -1340,7 +1340,7 @@
     <div class="flex {item.isOwn ? 'justify-end' : 'justify-start'}">
       <div
         class="flex min-w-0 flex-col text-content {item.isOwn
-          ? 'max-w-[52ch] rounded-md bg-accent-soft px-3 py-2 font-sans text-body-own'
+          ? 'max-w-[52ch] rounded-control bg-accent-soft px-3 py-2 font-sans text-body-own'
           : 'max-w-[68ch] font-serif text-body'}"
       >
         {#if !item.isOwn && (!continuesRun || item.edited)}
@@ -1426,7 +1426,7 @@
       <button
         type="button"
         onclick={jumpToUnread}
-        class="pointer-events-auto rounded-full border border-accent/40 bg-surface px-3 py-1 text-ui text-accent shadow-sm transition-colors hover:bg-surface-raised"
+        class="pointer-events-auto rounded-pill border border-accent/40 bg-surface px-3 py-1 text-ui text-accent shadow-overlay transition-colors hover:bg-surface-raised"
       >
         Jump to unread
       </button>
@@ -1698,7 +1698,7 @@
                     <img
                       {src}
                       alt={view.alt}
-                      class="block rounded-md object-cover"
+                      class="block rounded-control object-cover"
                       style={imageBoxStyle(view.width, view.height)}
                       onerror={() => mediaCache.markFailed(item.eventId ?? "")}
                     />
@@ -1707,7 +1707,7 @@
                          loaded <img> above will occupy — see this file's
                          top-of-script doc comment. -->
                     <div
-                      class="animate-pulse rounded-md bg-surface-sunken"
+                      class="animate-pulse rounded-control bg-surface-sunken"
                       style={imageBoxStyle(view.width, view.height)}
                     ></div>
                   {/if}
@@ -1732,7 +1732,7 @@
                 {#snippet mediaFileContent()}
                   <div class="selectable flex items-center gap-2">
                     <span
-                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md font-mono text-ui font-medium text-content-muted {item.isOwn
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-control font-mono text-ui font-medium text-content-muted {item.isOwn
                         ? 'bg-surface'
                         : 'bg-surface-sunken'}"
                       aria-hidden="true"
@@ -2090,7 +2090,7 @@
    * The fade is decoration over a state that is already correct.
    */
   .fade-in {
-    animation: fade-in 140ms ease-out both;
+    animation: fade-in var(--duration-quick) var(--ease-standard) both;
   }
 
   @keyframes fade-in {
@@ -2149,11 +2149,16 @@
   .dispatch-card {
     border: 1px solid var(--color-border);
     border-left: 2px solid var(--color-border-strong);
-    border-radius: 6px;
+    /* `--radius-card`, which is 8px, not the 6px this element carried
+       before the scales existed. Two pixels, and taken deliberately: the
+       role is called `card` because this is the thing it is named for, and
+       a signature element quietly using the control radius is how the four
+       ad-hoc radii happened in the first place. */
+    border-radius: var(--radius-card);
     background-color: var(--color-surface-raised);
     transition:
-      background-color 100ms,
-      border-color 100ms;
+      background-color var(--duration-quick),
+      border-color var(--duration-quick);
   }
 
   .dispatch-card-pending {
@@ -2566,6 +2571,10 @@
     font-weight: 500;
   }
 
+  /* The two `em` radii below are deliberately NOT `--radius-control`.
+     A code span's corner should scale with the text it wraps — this is
+     rendered message content at whatever size the reader has chosen, not
+     chrome at a fixed rank. The radius scale is for chrome. */
   :global(.message-html code) {
     font-family: var(--font-mono);
     font-size: 0.85em;

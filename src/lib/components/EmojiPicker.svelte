@@ -40,7 +40,7 @@
   <button
     type="button"
     aria-label="Close the emoji picker"
-    class="absolute inset-0 bg-black/40"
+    class="absolute inset-0 bg-scrim"
     onclick={onClose}
   ></button>
 
@@ -54,7 +54,7 @@
     role="dialog"
     tabindex="-1"
     aria-label="Pick a reaction"
-    class="relative z-10 flex max-h-[70vh] w-full max-w-md flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-lg"
+    class="relative z-10 flex max-h-[70vh] w-full max-w-md flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-overlay"
     onkeydown={(e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     }}
@@ -65,7 +65,7 @@
       type="text"
       placeholder="Search reactions…"
       aria-label="Search reactions"
-      class="w-full rounded-md border border-border bg-surface-sunken px-3 py-2 text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
+      class="w-full rounded-control border border-border bg-surface-sunken px-3 py-2 text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
     />
 
     {#if results.length === 0}

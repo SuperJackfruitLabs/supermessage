@@ -96,9 +96,27 @@
    * `spaces_list` lands — see `panelOverlay` below, which picks between
    * them.
    */
-  const PANEL_OVERLAY_QUERY = "(max-width: 1237.98px)";
-  const PANEL_OVERLAY_WITH_RAIL_QUERY = "(max-width: 1293.98px)";
-  const ROSTER_COLLAPSE_QUERY = "(max-width: 639.98px)";
+  /**
+   * Read from the generated tokens rather than written down.
+   *
+   * The arithmetic above is now `design/tokens.toml`'s, not this comment's:
+   * `--breakpoint-panel-column` is emitted as roster + panel + sheet, and
+   * the with-rail variant adds the rail. Widen the roster there and both
+   * thresholds follow. That matters more than it sounds — the rail was
+   * recorded as 55px in the token source's first draft, and only writing
+   * this line caught it against `SpacesRail.svelte`'s `w-14`.
+   *
+   * The `- 0.02` is applied here rather than baked into the token because
+   * it is a media-query artefact, not a layout constant: "below 1238px" has
+   * to mean "not 1237.5px too", and `1237.98px` closes that gap at exactly
+   * the place `min-width: 1238px` starts.
+   */
+  const belowToken = (name: string) => {
+    const raw = getComputedStyle(document.documentElement)
+      .getPropertyValue(`--breakpoint-${name}`)
+      .trim();
+    return `(max-width: ${parseFloat(raw) - 0.02}px)`;
+  };
 
   /** Whether the spaces rail is rendering — the same question
    * `SpacesRail.svelte` asks, through the same function, so the two can
@@ -450,9 +468,14 @@
   // only a synchronous callback's return value is used as the unmount
   // teardown — an `async` one returns a promise Svelte will not call.
   onMount(() => {
-    const overlayQuery = window.matchMedia(PANEL_OVERLAY_QUERY);
-    const railOverlayQuery = window.matchMedia(PANEL_OVERLAY_WITH_RAIL_QUERY);
-    const collapseQuery = window.matchMedia(ROSTER_COLLAPSE_QUERY);
+    const overlayQuery = window.matchMedia(belowToken("panel-column"));
+    const railOverlayQuery = window.matchMedia(
+      belowToken("panel-column-with-rail"),
+    );
+    // 640 is a plain Tailwind breakpoint, not a derived one: it is where
+    // the roster and the room pane stop fitting side by side at all,
+    // which is a different question from where the panel fits.
+    const collapseQuery = window.matchMedia("(max-width: 639.98px)");
 
     function applyCollapse(matches: boolean): void {
       // On the transition *into* the collapsed layout, land on whatever the
@@ -621,7 +644,7 @@
             <button
               type="button"
               onclick={() => (newRoomOpen = true)}
-              class="w-full rounded-md border border-border px-3 py-1.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
+              class="w-full rounded-control border border-border px-3 py-1.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
             >
               New conversation
             </button>
@@ -651,7 +674,7 @@
               type="button"
               onclick={signOut}
               disabled={signingOut}
-              class="w-full rounded-md px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
+              class="w-full rounded-control px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
             >
               {signingOut ? "Signing out…" : "Sign out"}
             </button>
@@ -760,7 +783,7 @@
                 <button
                   type="button"
                   onclick={backToRoster}
-                  class="-ml-1 flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
+                  class="-ml-1 flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
                 >
                   <span aria-hidden="true" class="font-mono">‹</span>
                   Rooms
@@ -771,12 +794,12 @@
                   src={headerAvatar}
                   alt=""
                   aria-hidden="true"
-                  class="h-6 w-6 shrink-0 rounded-full object-cover"
+                  class="h-6 w-6 shrink-0 rounded-pill object-cover"
                   onerror={() => headerAvatarCache.markFailed(roomsStore.selectedId ?? "")}
                 />
               {:else}
                 <span
-                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ui font-medium text-content"
+                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-pill bg-surface-raised text-ui font-medium text-content"
                   aria-hidden="true"
                 >
                   {selectedIdentity.initial}
@@ -818,7 +841,7 @@
                   reaching the connection dot.
                 -->
                 <span
-                  class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-full border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+                  class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-pill border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
                 >
                   {selectedIdentity.role}
                 </span>
@@ -835,7 +858,7 @@
               <span class="flex items-center gap-1.5" role="status">
                 <span
                   aria-hidden="true"
-                  class="h-2 w-2 rounded-full {connectionStore.state === 'live'
+                  class="h-2 w-2 rounded-pill {connectionStore.state === 'live'
                     ? 'bg-content-muted'
                     : connectionStore.state === 'error'
                       ? 'border border-danger'
@@ -875,7 +898,7 @@
                 type="button"
                 onclick={() => (searchOpen = true)}
                 aria-label="Search messages"
-                class="shrink-0 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content"
+                class="shrink-0 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content"
               >
                 Search
               </button>
@@ -884,7 +907,7 @@
                 bind:this={infoButton}
                 onclick={() => (showRoomInfo ? void closeRoomInfo() : (showRoomInfo = true))}
                 aria-pressed={showRoomInfo}
-                class="shrink-0 rounded-md px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content {showRoomInfo
+                class="shrink-0 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content {showRoomInfo
                   ? 'bg-surface text-content'
                   : ''}"
               >
@@ -956,7 +979,7 @@
             aria-hidden="true"
           >
             <p
-              class="rounded-full border border-accent bg-surface-raised px-3 py-1 font-mono text-label text-accent uppercase"
+              class="rounded-pill border border-accent bg-surface-raised px-3 py-1 font-mono text-label text-accent uppercase"
             >
               Drop to attach
             </p>

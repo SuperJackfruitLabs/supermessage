@@ -133,7 +133,7 @@ enum Metrics {
     static let rosterWidth: CGFloat = 288
     static let panelWidth: CGFloat = 320
     static let sheetWidth: CGFloat = 630
-    static let railWidth: CGFloat = 55
+    static let railWidth: CGFloat = 56
     static let panelColumn: CGFloat = 1238
-    static let panelColumnWithRail: CGFloat = 1293
+    static let panelColumnWithRail: CGFloat = 1294
 }

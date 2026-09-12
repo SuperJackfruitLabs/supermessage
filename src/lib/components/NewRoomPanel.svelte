@@ -79,7 +79,7 @@
   <button
     type="button"
     aria-label="Close"
-    class="absolute inset-0 bg-black/40"
+    class="absolute inset-0 bg-scrim"
     onclick={onClose}
   ></button>
 
@@ -87,7 +87,7 @@
     role="dialog"
     tabindex="-1"
     aria-label="Start a conversation"
-    class="relative z-10 flex w-full max-w-md flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-lg"
+    class="relative z-10 flex w-full max-w-md flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-overlay"
     onkeydown={(e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     }}
@@ -102,7 +102,7 @@
             mode = value as "create" | "join";
             failure = null;
           }}
-          class="rounded-md px-3 py-1.5 text-ui font-medium transition-colors {mode === value
+          class="rounded-control px-3 py-1.5 text-ui font-medium transition-colors {mode === value
             ? 'bg-surface-sunken text-content'
             : 'text-content-muted hover:bg-surface-sunken/60'}"
         >
@@ -126,7 +126,7 @@
             bind:value={name}
             type="text"
             placeholder="Q4 rollout"
-            class="rounded-md border border-border bg-surface-sunken px-3 py-2 text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
+            class="rounded-control border border-border bg-surface-sunken px-3 py-2 text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
           />
         </label>
         <label class="flex flex-col gap-1">
@@ -135,7 +135,7 @@
             bind:value={inviteText}
             type="text"
             placeholder="@agent_echo:id.agentpod.dev, @ana:id.agentpod.dev"
-            class="rounded-md border border-border bg-surface-sunken px-3 py-2 text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
+            class="rounded-control border border-border bg-surface-sunken px-3 py-2 text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
           />
           <!--
             Said before it happens, not discovered afterwards: which half of a
@@ -156,7 +156,7 @@
             bind:value={target}
             type="text"
             placeholder="#agentpod_missions:id.agentpod.dev"
-            class="rounded-md border border-border bg-surface-sunken px-3 py-2 font-mono text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
+            class="rounded-control border border-border bg-surface-sunken px-3 py-2 font-mono text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
           />
         </label>
       {/if}
@@ -169,14 +169,14 @@
         <button
           type="button"
           onclick={onClose}
-          class="rounded-md border border-border px-3 py-1.5 text-ui text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+          class="rounded-control border border-border px-3 py-1.5 text-ui text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={busy}
-          class="rounded-md bg-accent px-3 py-1.5 text-ui font-medium text-accent-content transition-opacity hover:opacity-90 disabled:opacity-50"
+          class="rounded-control bg-accent px-3 py-1.5 text-ui font-medium text-accent-content transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           {busy ? "Working…" : mode === "create" ? "Create" : "Join"}
         </button>

@@ -95,9 +95,9 @@
   --layout-roster: 288px;
   --layout-panel: 320px;
   --layout-sheet: 630px;
-  --layout-rail: 55px;
+  --layout-rail: 56px;
   --breakpoint-panel-column: 1238px;
-  --breakpoint-panel-column-with-rail: 1293px;
+  --breakpoint-panel-column-with-rail: 1294px;
 }
 
 @layer theme {

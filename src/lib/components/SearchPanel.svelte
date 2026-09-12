@@ -66,7 +66,7 @@
   <button
     type="button"
     aria-label="Close search"
-    class="absolute inset-0 bg-black/40"
+    class="absolute inset-0 bg-scrim"
     onclick={onClose}
   ></button>
 
@@ -74,7 +74,7 @@
     role="dialog"
     tabindex="-1"
     aria-label="Search messages"
-    class="relative z-10 flex max-h-[70vh] w-full max-w-2xl flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-lg"
+    class="relative z-10 flex max-h-[70vh] w-full max-w-2xl flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-overlay"
     onkeydown={(e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     }}
@@ -92,12 +92,12 @@
         type="search"
         placeholder="Search messages…"
         aria-label="Search messages"
-        class="w-full rounded-md border border-border bg-surface-sunken px-3 py-2 text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
+        class="w-full rounded-control border border-border bg-surface-sunken px-3 py-2 text-ui text-content placeholder:text-content-faint focus:border-accent focus:outline-none"
       />
       <button
         type="submit"
         disabled={searching || term.trim() === ""}
-        class="shrink-0 rounded-md bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-opacity hover:opacity-90 disabled:opacity-50"
+        class="shrink-0 rounded-control bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-opacity hover:opacity-90 disabled:opacity-50"
       >
         {searching ? "Searching…" : "Search"}
       </button>
@@ -121,7 +121,7 @@
             <button
               type="button"
               onclick={() => open(view.roomId)}
-              class="w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-surface-sunken"
+              class="w-full rounded-control px-3 py-2 text-left transition-colors hover:bg-surface-sunken"
             >
               <span class="flex items-baseline justify-between gap-2">
                 <span class="truncate font-sans text-ui font-medium text-content">
