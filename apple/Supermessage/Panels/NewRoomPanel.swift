@@ -234,3 +234,20 @@ private struct ProgressRow: View {
         }
     }
 }
+
+#if DEBUG
+// The people this account knows, including one with no display name yet.
+//
+// That last row falls back to the raw `@9247e5a1b3c4:id.agentpod.dev`, which
+// is both real and the longest thing the row will ever have to hold. An agent
+// that has not published a profile looks exactly like this.
+#Preview("Known people") {
+    NewRoomPanel(session: PreviewFixtures.session(), onOpen: { _ in }, onClose: {})
+}
+
+// An account that knows nobody, which is where the "join by address" route
+// stops being an alternative and becomes the only way forward.
+#Preview("Nobody yet") {
+    NewRoomPanel(session: PreviewFixtures.session(.empty), onOpen: { _ in }, onClose: {})
+}
+#endif

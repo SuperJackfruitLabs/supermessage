@@ -237,6 +237,22 @@ enum PreviewFixtures {
     }
 
     /// `m.notice`, which is what most agent output in this org actually uses.
+    /// A message carrying a `replyPreview`, so it can be the parent of one.
+    ///
+    /// `replyPreview` is a snapshot of this item's own body for the
+    /// composer's "Replying to …" row. It is `nil` on most fixtures here
+    /// because it is `nil` on most real items — a media message with no
+    /// caption has nothing to preview.
+    static var replyParent: TimelineRow {
+        row(
+            item(id: "$m1", sender: "@rakesh:example.org",
+                 body: "Should the contrast contract list every ground?", isOwn: true),
+            view: .bubble(muted: false, blocks: [.paragraph(inlines: [
+                .text(text: "Should the contrast contract list every ground?")])]),
+            senderName: "Rakesh", senderShort: "Rakesh",
+            replyPreview: "Should the contrast contract list every ground?")
+    }
+
     static var noticed: TimelineRow {
         row(
             item(id: "$m2", body: "pnpm check passed in 41s.", msgtype: "m.notice"),

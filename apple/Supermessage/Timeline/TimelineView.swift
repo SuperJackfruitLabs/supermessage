@@ -97,3 +97,22 @@ struct TimelineView: View {
             }
     }
 }
+
+#if DEBUG
+// A room's history, in the collection view that actually draws it.
+//
+// `TimelineView` is thin by design — everything that used to be here is now
+// `TimelineCollectionView` — so this preview is mostly a test of that seam:
+// whether the read marker, the jump-to-newest affordance and the list agree
+// about where the newest end is.
+#Preview("A conversation") {
+    let session = PreviewFixtures.session()
+    return TimelineView(session: session, timeline: session.timeline)
+}
+
+// A room with nothing in it yet.
+#Preview("Empty room") {
+    let session = PreviewFixtures.session(.empty)
+    return TimelineView(session: session, timeline: session.timeline)
+}
+#endif

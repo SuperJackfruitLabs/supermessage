@@ -9,8 +9,20 @@ import SwiftUI
 /// showing the login form during it would flash a sign-in screen at someone
 /// who is already signed in.
 struct RootView: View {
-    @State private var session = Session()
+    @State private var session: Session
     @Environment(\.scenePhase) private var scenePhase
+
+    /// The session this app runs on, injectable only so that this view can be
+    /// previewed at all.
+    ///
+    /// It was `@State private var session = Session()`, which builds a
+    /// `CoreClient` and therefore a `Core` — so the one screen that decides
+    /// which of the three phases a reader lands in could not be looked at
+    /// outside a signed-in build. The default keeps `SupermessageApp`'s call
+    /// site unchanged and keeps the real app's behaviour identical.
+    init(session: Session = Session()) {
+        _session = State(initialValue: session)
+    }
 
     var body: some View {
         Group {
@@ -349,3 +361,63 @@ private struct RoomHeader: View {
         }
     }
 }
+
+#if DEBUG
+// The whole app, signed in, at a phone's width.
+//
+// This is the frame that shows whether the pieces agree: the roster's state
+// words beside the timeline's attribution, the connection bar's intrusion,
+// the header's own state word against the row's. Each of those has a preview
+// of its own; none of them shows the composition.
+#Preview("Signed in") {
+    RootView(session: PreviewFixtures.session())
+}
+
+// A signed-in session whose sync has failed.
+//
+// `ConnectionBar` is shown only when the state is `isWorthShowing`, so in
+// every other preview here it is absent. The failure state carries a message
+// from the core, and the question is whether a long one pushes the roster
+// down or truncates.
+#Preview("Sync failed") {
+    RootView(session: PreviewFixtures.session(connection: "error"))
+}
+
+// Signed out, which is `LoginView`.
+#Preview("Signed out") {
+    RootView(session: PreviewFixtures.session(phase: .signedOut))
+}
+
+// A furnished account with an empty roster — a new sign-in that has synced
+// and genuinely has nothing yet.
+//
+// Not a rare state: it is the first thing every new reader sees, and the one
+// most likely to have been drawn once and never looked at again.
+#Preview("Nothing yet") {
+    RootView(session: PreviewFixtures.session(.empty))
+}
+
+// `.starting`, which is a `ProgressView` — and a frame that is genuinely hard
+// to catch.
+//
+// Even here it is transient: `RootView`'s own `.task` sees `.starting` and
+// calls `start()`, the stub answers `false` immediately, and the phase moves
+// to `.signedOut`. So this preview shows the cold-launch frame for about as
+// long as the real app does, which is honest but not much use for looking at
+// it. Worth having anyway, because it is the one preview that exercises the
+// phase transition rather than a phase.
+#Preview("Starting") {
+    RootView(session: PreviewFixtures.session(phase: .starting))
+}
+
+// The iPad arrangement, where the roster sits beside the timeline and room
+// info slides in as an inspector rather than covering it.
+//
+// `SignedInView`'s sidebar visibility is `.all` rather than `.automatic`
+// precisely because the automatic default hid the roster on an iPad in
+// portrait — the app opened on an empty detail pane with the roster behind a
+// toggle nobody had reason to look for. This is where that would be caught.
+#Preview("iPad", traits: .fixedLayout(width: 1024, height: 768)) {
+    SignedInView(session: PreviewFixtures.session())
+}
+#endif

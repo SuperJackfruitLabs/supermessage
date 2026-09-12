@@ -71,3 +71,16 @@ struct LoginView: View {
         await session.signIn(homeserver: homeserver, username: username, password: password)
     }
 }
+
+#if DEBUG
+#Preview {
+    LoginView(session: PreviewFixtures.session(phase: .signedOut))
+}
+
+// Dark, because this is the first screen anyone sees and the only one they
+// see before the palette has any content to be judged against.
+#Preview("Dark") {
+    LoginView(session: PreviewFixtures.session(phase: .signedOut))
+        .preferredColorScheme(.dark)
+}
+#endif

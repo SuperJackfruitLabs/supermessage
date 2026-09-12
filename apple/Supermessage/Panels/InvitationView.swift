@@ -78,3 +78,22 @@ struct InvitationEmptyTimeline: View {
             description: Text("Accept the invitation to see this room's messages."))
     }
 }
+
+#if DEBUG
+// An invitation, with its inviter resolved.
+//
+// The stub answers `@krishna:example.org` for `roomInviter`, which is the
+// interesting case rather than a display name: an invitation from someone
+// whose profile this account has never seen is the common one, and the raw id
+// is what the reader is asked to make a decision about.
+#Preview("Invitation") {
+    InvitationView(
+        session: PreviewFixtures.session(), roomId: "!estate:example.org",
+        roomName: "Estate Planning")
+}
+
+// The empty timeline behind an invitation — a room the reader cannot read yet.
+#Preview("Empty timeline") {
+    InvitationEmptyTimeline()
+}
+#endif

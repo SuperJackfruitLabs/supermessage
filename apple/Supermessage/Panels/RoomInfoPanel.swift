@@ -368,3 +368,17 @@ private struct AvatarViewer: View {
         committedOffset = .zero
     }
 }
+
+#if DEBUG
+// A room with everything filled in: a topic, an alias, a runtime, three
+// members and a pin.
+//
+// The runtime line — `claude-code on foundry` — is the suite's own fact about
+// a room, and this is the only screen that shows it in full. The avatar is
+// `nil` from the stub, so the identity's initial on a tinted disc is what
+// renders, which is what most rooms in this product actually show.
+#Preview("Furnished") {
+    RoomInfoPanel(
+        session: PreviewFixtures.session(), roomId: PreviewFixtures.roomId, onClose: {})
+}
+#endif
