@@ -1,4 +1,4 @@
-import type { Membership, RoomIdentity, RoomRow, RoomSummary } from "$lib/ipc";
+import type { Membership, RoomIdentity, RoomMember, RoomRow, RoomSummary } from "$lib/ipc";
 
 /**
  * Roster view-models.
@@ -106,3 +106,58 @@ export const rosterLongName: RoomRow = roomRow({
     lastActivityMs: 1_700_000_000_000,
   }),
 });
+
+// ───────────────────────── room info ─────────────────────────
+
+export function member(overrides: Partial<RoomMember> = {}): RoomMember {
+  return {
+    userId: "@atlas:id.agentpod.dev",
+    displayName: "Atlas",
+    avatarUrl: null,
+    ...overrides,
+  };
+}
+
+export const memberHuman = member({ userId: "@rakesh:id.agentpod.dev", displayName: "Rakesh" });
+
+/** An agent, whose display name carries the suite's role convention. */
+export const memberAgent = member({
+  userId: "@atlas:id.agentpod.dev",
+  displayName: "Atlas (OpenClaw on Ashram)",
+});
+
+/**
+ * No display name at all, so the row falls back to the id.
+ *
+ * `memberDisplayName` owns that fallback; this is the fixture that shows it.
+ */
+export const memberWithoutName = member({
+  userId: "@9247e5a1b3c4f8e2:id.agentpod.dev",
+  displayName: null,
+});
+
+/**
+ * A display name that is one long unbroken run.
+ *
+ * The member row uses `break-words` rather than `truncate` precisely for
+ * this: a name is sender-controlled free text, and `truncate` would hide it
+ * outright rather than let a reader see it wrap.
+ */
+export const memberLongName = member({
+  userId: "@long:id.agentpod.dev",
+  displayName: "wss://bridge.agentpod.dev/v1/sessions/" + "a".repeat(70),
+});
+
+/** The room identity the info panel's 64px header draws. */
+export const roomIdentityPlain: RoomIdentity = identity("Research");
+
+export const roomIdentityWithRole: RoomIdentity = {
+  glyph: null,
+  name: "Atlas",
+  role: "OPENCLAW @ ASHRAM",
+  initial: "A",
+};
+
+export const roomIdentityLongName: RoomIdentity = identity(
+  "Rakeshs-MacBook-Pro.local — station events and run transcripts",
+);
