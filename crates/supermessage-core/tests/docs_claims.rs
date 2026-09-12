@@ -34,11 +34,16 @@ fn read(rel: &str) -> String {
 /// Every `.md`/`.mdx` page of the published site, as (relative path, contents).
 fn pages() -> Vec<(String, String)> {
     fn walk(dir: &Path, prefix: &str, out: &mut Vec<(String, String)>) {
-        let entries = fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+        let entries =
+            fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
         for entry in entries {
             let entry = entry.expect("dir entry");
             let name = entry.file_name().to_string_lossy().to_string();
-            let rel = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
+            let rel = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
             if entry.file_type().expect("file type").is_dir() {
                 walk(&entry.path(), &rel, out);
             } else if name.ends_with(".md") || name.ends_with(".mdx") {
@@ -47,7 +52,11 @@ fn pages() -> Vec<(String, String)> {
         }
     }
     let mut out = Vec::new();
-    walk(&repo_root().join("docs-site/src/content/docs"), "", &mut out);
+    walk(
+        &repo_root().join("docs-site/src/content/docs"),
+        "",
+        &mut out,
+    );
     out
 }
 
@@ -65,7 +74,10 @@ fn every_page_has_a_title_and_description() {
         let end = text[3..].find("\n---").expect("frontmatter terminator") + 3;
         let front = &text[3..end];
         assert!(front.contains("title:"), "{file} frontmatter has no title");
-        assert!(front.contains("description:"), "{file} frontmatter has no description");
+        assert!(
+            front.contains("description:"),
+            "{file} frontmatter has no description"
+        );
     }
 }
 
@@ -81,7 +93,11 @@ fn every_suite_event_type_named_is_one_the_core_renders() {
             rest[..rest.find('"').expect("closing quote")].to_string()
         })
         .collect();
-    assert!(known.len() >= 3, "found only {} event types in custom_events.rs", known.len());
+    assert!(
+        known.len() >= 3,
+        "found only {} event types in custom_events.rs",
+        known.len()
+    );
 
     for (file, text) in pages() {
         let mut from = 0;
@@ -94,7 +110,9 @@ fn every_suite_event_type_named_is_one_the_core_renders() {
             let name = text[start..end].trim_end_matches('.');
             // Only suite event types look like `dev.<vendor>.<thing>.v<N>`; a bare `dev.` in
             // prose or a hostname such as `docs.agentpod.dev` must not be treated as one.
-            if name.matches('.').count() >= 3 && name.rsplit('.').next().is_some_and(|v| v.starts_with('v')) {
+            if name.matches('.').count() >= 3
+                && name.rsplit('.').next().is_some_and(|v| v.starts_with('v'))
+            {
                 assert!(
                     known.iter().any(|k| k == name),
                     "{file} names suite event `{name}`, which no renderer in custom_events.rs handles"
