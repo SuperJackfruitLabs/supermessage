@@ -587,7 +587,7 @@
   </main>
 {:else if restored}
   <div class="flex h-dvh flex-col bg-surface" style="padding-top: var(--inset-top); padding-bottom: var(--inset-bottom);">
-    <ConnectionBanner />
+    <ConnectionBanner state={connectionStore.state} message={connectionStore.message} />
     <!--
       `relative`: the containing block an overlaying `RoomInfoPanel`
       positions against below 840px. It is the pane row, not the whole app

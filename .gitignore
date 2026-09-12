@@ -69,3 +69,6 @@ __pycache__/
 # message content from whatever account was logged in. Never commit these.
 scripts/dom-baseline/*.html
 scripts/dom-baseline/*.json
+
+# Storybook build output.
+storybook-static/
