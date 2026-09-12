@@ -149,6 +149,54 @@ class KotlinTests(unittest.TestCase):
             self.kt, (GOLDEN / "GeneratedThemeTokens.kt").read_text()
         )
 
+class MarketingTests(unittest.TestCase):
+    def setUp(self):
+        from scripts.tokens.emit_css import emit_docs_css, emit_landing_css
+
+        self.landing = emit_landing_css(load(SOURCE))
+        self.docs = emit_docs_css(load(SOURCE))
+
+    def test_landing_uses_the_same_role_names_as_the_app(self):
+        for role in ROLES:
+            with self.subTest(role=role):
+                self.assertIn(f"--color-{role}:", self.landing)
+
+    def test_landing_no_longer_invents_its_own_names(self):
+        """Two names for one thing is how the product and the site were free
+        to drift. --ink, --violet and --amber are gone."""
+        for legacy in ("--ink:", "--violet:", "--amber:", "--raised:", "--line:"):
+            with self.subTest(legacy=legacy):
+                self.assertNotIn(legacy, self.landing)
+
+    def test_docs_uses_html_root_for_specificity(self):
+        """Astro bundles this file before Starlight's props.css, so at equal
+        specificity every value here would do nothing — with a build that
+        succeeds and a page that looks untouched. html:root is (0,0,1,1)
+        against Starlight's (0,0,1,0)."""
+        self.assertIn("html:root {", self.docs)
+        self.assertNotIn("\n:root {", self.docs)
+
+    def test_the_three_marketing_literals_survive(self):
+        # The whole reason the product adopted this hue.
+        for literal in ("#151129", "#9d8ff0", "#e8a33d"):
+            with self.subTest(literal=literal):
+                self.assertIn(literal, self.landing)
+                self.assertIn(literal, self.docs)
+
+    def test_dark_is_the_default_on_the_marketing_surfaces(self):
+        # The landing page commits to a dark look; the app follows the OS.
+        first_block = self.landing.split("@media")[0]
+        self.assertIn("#151129", first_block)
+        self.assertNotIn("#fdfcff", first_block)
+
+    def test_landing_matches_the_golden_file(self):
+        self.assertEqual(
+            self.landing, (GOLDEN / "landing-tokens.css").read_text()
+        )
+
+    def test_docs_matches_the_golden_file(self):
+        self.assertEqual(self.docs, (GOLDEN / "docs-tokens.css").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

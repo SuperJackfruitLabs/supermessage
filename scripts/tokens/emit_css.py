@@ -57,3 +57,48 @@ def emit_app_css(tokens: Tokens) -> str:
         + "  }\n"
         + "}\n"
     )
+
+
+def emit_landing_css(tokens: Tokens) -> str:
+    """The landing page.
+
+    Dark is its default rather than the OS's choice: it is a single
+    marketing page and it commits to one look. Light is kept for a visitor
+    whose system asks for it.
+    """
+    return (
+        HEADER
+        + "\n:root {\n"
+        + _block(tokens.appearances["dark"], "  ")
+        + "}\n"
+        + "\n@media (prefers-color-scheme: light) {\n"
+        + "  :root {\n"
+        + _block(tokens.appearances["light"], "    ")
+        + "  }\n"
+        + "}\n"
+    )
+
+
+def emit_docs_css(tokens: Tokens) -> str:
+    """The docs site.
+
+    `html:root` rather than `:root`, and it is load-bearing. Astro bundled
+    this file BEFORE Starlight's own props.css, so at equal specificity
+    Starlight's defaults won and every value here did nothing — with a build
+    that succeeded and a page that looked untouched. `html:root` is (0,0,1,1)
+    against `:root`'s (0,0,1,0), so the override holds whatever order the
+    bundler picks.
+
+    Both themes are kept deliberately. Documentation is read at a desk in
+    daylight and in bed at midnight, and a docs site that ignores the
+    reader's preference is choosing a mood over legibility.
+    """
+    return (
+        HEADER
+        + "\nhtml:root {\n"
+        + _block(tokens.appearances["dark"], "  ")
+        + "}\n"
+        + "\nhtml:root[data-theme='light'] {\n"
+        + _block(tokens.appearances["light"], "  ")
+        + "}\n"
+    )

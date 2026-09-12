@@ -10,7 +10,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.tokens.emit_css import emit_app_css  # noqa: E402
+from scripts.tokens.emit_css import (  # noqa: E402
+    emit_app_css,
+    emit_docs_css,
+    emit_landing_css,
+)
 from scripts.tokens.emit_kotlin import emit_kotlin  # noqa: E402
 from scripts.tokens.emit_swift import emit_swift  # noqa: E402
 from scripts.tokens.model import TokenError, load  # noqa: E402
@@ -42,6 +46,16 @@ def main() -> int:
         / "dev"
         / "supermessage"
         / "GeneratedThemeTokens.kt": emit_kotlin(tokens),
+        REPO
+        / "landing"
+        / "src"
+        / "styles"
+        / "tokens.css": emit_landing_css(tokens),
+        REPO
+        / "docs-site"
+        / "src"
+        / "styles"
+        / "tokens.css": emit_docs_css(tokens),
     }
 
     for path, content in outputs.items():
