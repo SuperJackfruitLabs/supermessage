@@ -39,7 +39,7 @@ grep -rho "@Preview" android/app/src/debug | wc -l
 | Catalogue tool | Storybook 10.6 | Xcode previews | Compose previews |
 | Where the catalogue lives | beside the component | beside the view | **a separate source set** |
 | Anything renders it here | yes, in a browser | no | no |
-| Anything renders it in CI | no | **yes** — 40 PNGs per run | **yes** — 24 test files, plus 11 PNGs |
+| Anything renders it in CI | no | **yes** — 40 PNGs per run | **yes** — 24 test files, plus **all 48** as PNGs |
 | Injection seam | view-models as props (P2a) | 11 protocols (P2b) | **never needed one** |
 
 Three rows in that table are the substance of this document.
@@ -147,14 +147,17 @@ previews has been rendered by anyone.
 
 ## 5. What this document cannot tell you
 
-- **Whether most native previews render.** This is no longer wholly unknown,
-  and what is known is mixed. On iOS 40 of the 52 are rendered to PNGs on
-  every run of `scripts/snapshot-previews.sh`, and looking at them found a
-  real product defect within minutes. But rendering is not verifying: any
-  panel that loads through a `.task` captures its *loading* frame, and
-  `RoomInfoPanel` is a bare spinner in its own snapshot. On Android only the
-  11 rule-carrying frames are captured, by `PreviewCaptureTest`; the other 37
-  previews have still never been looked at by anyone.
+- **Whether most native previews render.** No longer unknown, and the answer
+  favours the platform that had nothing a week ago. **Android renders all 48**
+  — Roborazzi and Robolectric on the JVM, no emulator — and Robolectric drives
+  pending work to completion before the frame is taken, so panels that load
+  asynchronously show their content. **iOS renders 40 of 52**, and rendering
+  is not verifying there: any panel loading through a `.task` captures its
+  *loading* frame, and `RoomInfoPanel` is a bare spinner in its own snapshot.
+
+  So the more trustworthy set is Android's, which inverts the assumption this
+  arc began with — that iOS was the platform worth investing in because
+  Android already had instrumented tests.
 - **Whether two platforms' versions of a state look alike.** §3 says both have
   a decision card with six previews. It does not say the two cards agree, and
   no tool here can.

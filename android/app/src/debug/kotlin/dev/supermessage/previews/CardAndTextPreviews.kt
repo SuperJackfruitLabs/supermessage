@@ -47,7 +47,7 @@ internal fun CardAnswered() {
 
 @Preview(name = "Card, with reasoning", showBackground = true, heightDp = 320)
 @Composable
-private fun CardWithReasoning() {
+internal fun CardWithReasoning() {
     PreviewGround {
         DecisionCard(
             view = PreviewFixtures.cardWithReasoning,
@@ -87,7 +87,7 @@ internal fun CardLongValue() {
  */
 @Preview(name = "Card, fallback chain", showBackground = true, heightDp = 640)
 @Composable
-private fun CardFallbackChain() {
+internal fun CardFallbackChain() {
     PreviewGround {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             DecisionCard(
@@ -155,7 +155,7 @@ internal fun RichTextEveryBlock() {
  */
 @Preview(name = "Rich text, wide code", showBackground = true, widthDp = 360)
 @Composable
-private fun RichTextWideCode() {
+internal fun RichTextWideCode() {
     PreviewGround(width = 360.dp) {
         RichText(blocks = PreviewFixtures.wideCode)
     }
@@ -171,7 +171,7 @@ private fun RichTextWideCode() {
  */
 @Preview(name = "Live turn, mid-turn", showBackground = true, heightDp = 420)
 @Composable
-private fun LiveTurnMidTurn() {
+internal fun LiveTurnMidTurn() {
     PreviewGround {
         LiveTurn(
             answer = PreviewFixtures.LIVE_ANSWER,
@@ -189,7 +189,7 @@ private fun LiveTurnMidTurn() {
  */
 @Preview(name = "Live turn, thinking", showBackground = true, heightDp = 200)
 @Composable
-private fun LiveTurnThinking() {
+internal fun LiveTurnThinking() {
     PreviewGround {
         LiveTurn(
             answer = null,
@@ -203,7 +203,7 @@ private fun LiveTurnThinking() {
 /** A finished turn, which is what the composable has to stop showing. */
 @Preview(name = "Live turn, finished", showBackground = true, heightDp = 200)
 @Composable
-private fun LiveTurnFinished() {
+internal fun LiveTurnFinished() {
     PreviewGround {
         LiveTurn(
             answer = PreviewFixtures.LIVE_ANSWER,

@@ -72,7 +72,7 @@ internal fun RoomRowStatesDark() {
  */
 @Preview(name = "Roster rows, plain", showBackground = true, heightDp = 220)
 @Composable
-private fun RoomRowWithoutState() {
+internal fun RoomRowWithoutState() {
     PreviewGround {
         androidx.compose.foundation.layout.Column {
             RoomRow(
@@ -109,7 +109,7 @@ internal fun RosterFurnished() {
  */
 @Preview(name = "Roster, invitations hidden", showBackground = true, heightDp = 620)
 @Composable
-private fun RosterWithHiddenInvitations() {
+internal fun RosterWithHiddenInvitations() {
     PreviewGround {
         Roster(
             sections = PreviewFixtures.rosterSections,
@@ -128,7 +128,7 @@ private fun RosterWithHiddenInvitations() {
  */
 @Preview(name = "Roster, nothing yet", showBackground = true, heightDp = 320)
 @Composable
-private fun RosterEmpty() {
+internal fun RosterEmpty() {
     PreviewGround {
         Roster(
             sections = emptyList(),

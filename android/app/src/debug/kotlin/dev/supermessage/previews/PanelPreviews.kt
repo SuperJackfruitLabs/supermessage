@@ -40,7 +40,7 @@ private val NOW: Instant = Instant.ofEpochMilli(1_757_700_120_000L)
 /** The composer at rest. */
 @Preview(name = "Composer, empty", showBackground = true, heightDp = 140)
 @Composable
-private fun ComposerEmpty() {
+internal fun ComposerEmpty() {
     PreviewGround {
         Composer(text = "", onTextChange = {}, onSend = {})
     }
@@ -49,7 +49,7 @@ private fun ComposerEmpty() {
 /** Mid-sentence, and sending. */
 @Preview(name = "Composer, sending", showBackground = true, heightDp = 140)
 @Composable
-private fun ComposerSending() {
+internal fun ComposerSending() {
     PreviewGround {
         Composer(
             text = "Rebasing now, the token diff should come out empty.",
@@ -70,7 +70,7 @@ private fun ComposerSending() {
  */
 @Preview(name = "Composer, replying", showBackground = true, heightDp = 180)
 @Composable
-private fun ComposerReplying() {
+internal fun ComposerReplying() {
     PreviewGround {
         Composer(
             text = "",
@@ -93,7 +93,7 @@ private fun ComposerReplying() {
  */
 @Preview(name = "Composer, editing", showBackground = true, heightDp = 180)
 @Composable
-private fun ComposerEditing() {
+internal fun ComposerEditing() {
     PreviewGround {
         Composer(
             text = "Rebased onto main and the token diff is empty now.",
@@ -110,7 +110,7 @@ private fun ComposerEditing() {
 /** An attachment staged, with a filename longer than its room. */
 @Preview(name = "Composer, attachment", showBackground = true, heightDp = 200)
 @Composable
-private fun ComposerAttachment() {
+internal fun ComposerAttachment() {
     PreviewGround {
         Composer(
             text = "",
@@ -131,7 +131,7 @@ private fun ComposerAttachment() {
 /** A send that failed, which is the one composer state carrying `danger`. */
 @Preview(name = "Composer, failed", showBackground = true, heightDp = 180)
 @Composable
-private fun ComposerFailed() {
+internal fun ComposerFailed() {
     PreviewGround {
         Composer(
             text = "Merging it.",
@@ -145,7 +145,7 @@ private fun ComposerFailed() {
 /** The first screen anyone sees. */
 @Preview(name = "Login", showBackground = true, heightDp = 640)
 @Composable
-private fun Login() {
+internal fun Login() {
     PreviewGround {
         LoginScreen(
             homeserver = "https://matrix.example.org",
@@ -166,7 +166,7 @@ private fun Login() {
  */
 @Preview(name = "Login, refused, dark", showBackground = true, heightDp = 640)
 @Composable
-private fun LoginRefusedDark() {
+internal fun LoginRefusedDark() {
     PreviewGround(dark = true) {
         LoginScreen(
             homeserver = "https://matrix.example.org",
@@ -181,7 +181,7 @@ private fun LoginRefusedDark() {
 /** The account, which is two facts and a way out. */
 @Preview(name = "Account", showBackground = true, heightDp = 420)
 @Composable
-private fun Account() {
+internal fun Account() {
     PreviewGround {
         AccountPanel(
             loadAccount = {
@@ -206,7 +206,7 @@ private fun Account() {
  */
 @Preview(name = "Room info", showBackground = true, heightDp = 900)
 @Composable
-private fun RoomInfo() {
+internal fun RoomInfo() {
     PreviewGround {
         RoomInfoPanel(
             roomId = PreviewFixtures.ROOM_ID,
@@ -229,7 +229,7 @@ private fun RoomInfo() {
  */
 @Preview(name = "Search, scoped", showBackground = true, heightDp = 640)
 @Composable
-private fun SearchScoped() {
+internal fun SearchScoped() {
     PreviewGround {
         SearchPanel(
             scope = SearchPanelScope(PreviewFixtures.ROOM_ID, "Atlas"),
@@ -250,7 +250,7 @@ private fun SearchScoped() {
  */
 @Preview(name = "Search, unscoped", showBackground = true, heightDp = 640)
 @Composable
-private fun SearchUnscoped() {
+internal fun SearchUnscoped() {
     PreviewGround {
         SearchPanel(
             scope = null,
@@ -271,7 +271,7 @@ private fun SearchUnscoped() {
  */
 @Preview(name = "New room", showBackground = true, heightDp = 700)
 @Composable
-private fun NewRoom() {
+internal fun NewRoom() {
     PreviewGround {
         NewRoomPanel(
             onOpen = {},
@@ -289,7 +289,7 @@ private fun NewRoom() {
  */
 @Preview(name = "New room, nobody yet", showBackground = true, heightDp = 480)
 @Composable
-private fun NewRoomEmpty() {
+internal fun NewRoomEmpty() {
     PreviewGround {
         NewRoomPanel(
             onOpen = {},
@@ -310,7 +310,7 @@ private fun NewRoomEmpty() {
  */
 @Preview(name = "Invitation", showBackground = true, heightDp = 480)
 @Composable
-private fun Invitation() {
+internal fun Invitation() {
     PreviewGround {
         InvitationView(
             roomId = "!estate:example.org",
@@ -325,7 +325,7 @@ private fun Invitation() {
 /** The empty timeline behind an invitation — a room not readable yet. */
 @Preview(name = "Invitation, empty timeline", showBackground = true, heightDp = 320)
 @Composable
-private fun InvitationEmpty() {
+internal fun InvitationEmpty() {
     PreviewGround {
         InvitationEmptyTimeline()
     }
@@ -341,7 +341,7 @@ private fun InvitationEmpty() {
  */
 @Preview(name = "Shell, signed in", showBackground = true, widthDp = 411, heightDp = 891)
 @Composable
-private fun ShellSignedIn() {
+internal fun ShellSignedIn() {
     PreviewGround {
         RootScaffold(phase = Session.Phase.SIGNED_IN)
     }
@@ -353,7 +353,7 @@ private fun ShellSignedIn() {
  */
 @Preview(name = "Shell, starting", showBackground = true, widthDp = 411, heightDp = 891)
 @Composable
-private fun ShellStarting() {
+internal fun ShellStarting() {
     PreviewGround {
         RootScaffold(phase = Session.Phase.STARTING)
     }
@@ -370,7 +370,7 @@ private fun ShellStarting() {
  */
 @Preview(name = "Shell, tablet", showBackground = true, widthDp = 1024, heightDp = 768)
 @Composable
-private fun ShellTablet() {
+internal fun ShellTablet() {
     PreviewGround {
         RootScaffold(phase = Session.Phase.SIGNED_IN)
     }

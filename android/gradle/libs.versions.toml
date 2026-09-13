@@ -26,6 +26,11 @@ kotlinxCoroutines = "1.11.0"
 # fixed compileSdk=36. Do not bump without raising compileSdk first.
 lifecycle = "2.10.0"
 datastorePreferences = "1.2.1"
+roborazzi = "1.74.0"
+composablePreviewScanner = "0.9.3"
+# 4.16 is the first Robolectric with SDK 36; nothing past 4.15.1 is published,
+# so previews render at API 35 via @Config.
+robolectric = "4.15.1"
 
 [libraries]
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
@@ -56,6 +61,11 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastorePreferences" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
+roborazzi-preview-scanner = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose-preview-scanner-support", version.ref = "roborazzi" }
+composable-preview-scanner = { group = "io.github.sergio-sastre.ComposablePreviewScanner", name = "android", version.ref = "composablePreviewScanner" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -64,3 +74,4 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 # this repo's AGP 9.3.1 is a hard configuration error (AGP 9.0+ has built-in
 # Kotlin support). See :core's, :kit's, and :app's build.gradle.kts.
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }

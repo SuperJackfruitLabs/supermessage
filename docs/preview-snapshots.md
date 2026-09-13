@@ -1,11 +1,49 @@
-# Looking at the iOS previews
+# Looking at the native previews
 
 **Written 2026-09-13.** Follows P2b, which wrote 52 iOS previews and rendered
 none of them.
 
 ```bash
-./scripts/snapshot-previews.sh          # → .snapshots/index.html
+./scripts/snapshot-previews.sh          # iOS   → .snapshots/index.html
+cd android && ./gradlew :app:testDebugUnitTest \
+  --tests '*PreviewScreenshotTest*' -Proborazzi.test.record=true
+                                        # Android → app/build/outputs/preview-captures/
 ```
+
+| | Rendered | Of | How |
+|---|---|---|---|
+| iOS | 40 | 52 | `SnapshotPreviews` on a simulator |
+| Android | **48** | 48 | Roborazzi + Robolectric, **no emulator** |
+
+## Android renders all of them, and waits
+
+Roborazzi draws every `@Preview` on the JVM through Robolectric in `NATIVE`
+graphics mode, and `ComposablePreviewScanner` finds them by scanning the
+classpath — so there is no list to fall behind the previews it describes.
+About two minutes for all 48, and no device.
+
+**Robolectric publishes nothing past 4.15.1 and SDK 36 support lands in
+4.16, so these render at API 35** — one level below this project's
+`compileSdk`. Worth knowing when reading a frame.
+
+Two things had to give way, and both are recorded because they are the sort
+of thing that looks arbitrary later:
+
+- **The scanner cannot see `private` previews.** All 48 preview functions are
+  `internal` for that reason, not by style preference. With them private it
+  found eleven — the ones already opened up for something else — and silently
+  reported success.
+- **Three previews needed `:kit`'s JNA bootstrap.** `AccountPanel`'s and
+  `NewRoomPanel`'s reach a type whose class initialiser loads the core, and on
+  a host JVM `Native.load` wants `libjnidispatch.jnilib` as a classpath
+  resource — which `:core`'s `jna@aar` does not carry, because an AAR packages
+  native code as Android jniLibs. `:kit`'s build file had already hit this and
+  says so at length; `:app` now mirrors it.
+
+**Android's frames are more trustworthy than iOS's.** Robolectric drives
+pending work to completion before the frame is taken, so `AccountPanel` and
+`NewRoomPanel` render their *content* here. The same two screens snapshot as
+loading states on iOS.
 
 ## What this is
 
