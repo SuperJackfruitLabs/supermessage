@@ -163,6 +163,26 @@ tasks.withType<Test>().configureEach {
     // it runs everywhere, always, and gates every pull request.
     maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
 
+    // Coroutine debug mode off, and it is worth an order of magnitude.
+    //
+    // kotlinx.coroutines turns it on under tests, and it renames the thread
+    // on **every dispatch** so a stack trace can say `@coroutine#1`. That is
+    // a native call. A Compose animation dispatches per simulated frame, and
+    // Robolectric's clock has no real delay between frames — so a preview
+    // showing a spinner pays `Thread.setNativeName` millions of times.
+    //
+    // Measured on `ComposerSending`, which shows a CircularProgressIndicator:
+    // **2 hours 18 minutes with it on, about 90 seconds with it off.** The
+    // other pathological cost in that loop is Robolectric's own
+    // ShadowDisplayEventReceiver doing a `Class.forName` per vsync, which is
+    // not ours to fix — but it is affordable once this one is gone.
+    //
+    // The previews in NEVER_SETTLES stay excluded regardless: a spinner has
+    // no canonical frame. What this changes is the blast radius of getting
+    // that list wrong — with debug off, such a preview fails in ninety
+    // seconds with an idle timeout instead of burning a CI job for hours.
+    systemProperty("kotlinx.coroutines.debug", "off")
+
     systemProperty(
         "jna.library.path",
         layout.projectDirectory.dir("../../target/debug").asFile.absolutePath,
