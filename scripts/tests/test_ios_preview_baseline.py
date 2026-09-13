@@ -82,7 +82,10 @@ def pixels_differ(a: pathlib.Path, b: pathlib.Path) -> tuple[int, int]:
 def main(rendered_dir: str) -> int:
     rendered = pathlib.Path(rendered_dir)
     actual = {p.name: p for p in rendered.glob("*.png") if p.name not in UNSTABLE}
-    expected = {p.name: p for p in REFERENCES.glob("*.png")}
+    # UNSTABLE is filtered from **both** sides. Filtering only the rendered
+    # side made every unstable frame read as "gone", because the baseline
+    # still held a reference the comparison would never look at.
+    expected = {p.name: p for p in REFERENCES.glob("*.png") if p.name not in UNSTABLE}
 
     if not expected:
         print(f"FAIL: no baseline in {REFERENCES}.")
@@ -121,4 +124,10 @@ def main(rendered_dir: str) -> int:
 
 
 if __name__ == "__main__":
+    # `--unstable` lets the recording script ask which frames are not
+    # references, so it does not copy them in and leave the next verify
+    # reporting seven ghosts.
+    if len(sys.argv) > 1 and sys.argv[1] == "--unstable":
+        print("\n".join(sorted(UNSTABLE)))
+        sys.exit(0)
     sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else str(ROOT / ".snapshots")))

@@ -62,6 +62,11 @@ if [ "$RECORD" = yes ]; then
   mkdir -p "$REFERENCES"
   rm -f "$REFERENCES"/*.png
   cp "$OUT"/*.png "$REFERENCES"/
+  # The unstable frames are rendered but are not references — copying them in
+  # leaves the next verify reporting them as "gone", because the comparison
+  # skips them on the rendered side.
+  python3 "$ROOT/scripts/tests/test_ios_preview_baseline.py" --unstable \
+    | while read -r name; do rm -f "$REFERENCES/$name"; done
   echo "RECORDED: $count previews are the new baseline."
   echo "Look at them before committing: open $OUT/index.html"
   exit 0
