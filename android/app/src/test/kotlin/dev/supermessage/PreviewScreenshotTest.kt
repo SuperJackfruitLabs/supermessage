@@ -52,7 +52,7 @@ class PreviewScreenshotTest(
          * symptom is a run that never finishes rather than one that fails,
          * which is why this list carries its reasons.
          */
-        private val NEVER_SETTLES = setOf(
+        internal val NEVER_SETTLES = setOf(
             "ComposerSending",      // sending = true
             "ShellStarting",        // Session.Phase.STARTING
             "Account",              // spinner until loadAccount resolves
