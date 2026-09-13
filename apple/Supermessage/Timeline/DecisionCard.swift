@@ -42,7 +42,7 @@ struct CustomEventCard: View {
             // unrenderable item gets.
             Text(text)
                 .metaFace()
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.contentFaint)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 6)
         }
@@ -62,14 +62,14 @@ struct CustomEventCard: View {
                 Text(label)
                     .metaFace()
                     .textCase(.uppercase)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.contentMuted)
                     .accessibilityLabel("\(label), \(eventType)")
                 Spacer()
                 if newerVersion {
                     // Rendered best-effort against a newer minor schema. Said
                     // quietly rather than hidden, so a reader knows there may
                     // be more to this event than is shown.
-                    Text("newer version").metaFace().foregroundStyle(.tertiary)
+                    Text("newer version").metaFace().foregroundStyle(Theme.contentFaint)
                 }
             }
 
@@ -78,7 +78,7 @@ struct CustomEventCard: View {
                     Text(field.label)
                         .metaFace()
                         .textCase(.uppercase)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.contentMuted)
                         .frame(width: 84, alignment: .leading)
                     Text(field.value).font(.callout)
                 }
@@ -96,12 +96,12 @@ struct CustomEventCard: View {
                 DisclosureGroup {
                     Text(reasoning)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.contentMuted)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 2)
                 } label: {
-                    Text("Reasoning").metaFace().foregroundStyle(.secondary)
+                    Text("Reasoning").metaFace().foregroundStyle(Theme.contentMuted)
                 }
             }
 
@@ -137,7 +137,7 @@ struct CustomEventCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(decision == nil ? Color.secondary.opacity(0.35) : Theme.signal, lineWidth: 1)
+                .stroke(decision == nil ? Theme.border : Theme.signal, lineWidth: 1)
         )
         .padding(.vertical, 6)
     }
@@ -198,7 +198,7 @@ private struct DecisionButtons: View {
                     ForEach(Array(decision.options.enumerated()), id: \.offset) { index, option in
                         Button(option.label) { tapped(option) }
                             .buttonStyle(.borderedProminent)
-                            .tint(index == 0 ? Theme.signal : Color.secondary)
+                            .tint(index == 0 ? Theme.signal : Theme.contentMuted)
                             .disabled(!answerable || sending)
                     }
                 }

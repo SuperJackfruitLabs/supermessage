@@ -30,7 +30,7 @@ struct AccountPanel: View {
                             if let account {
                                 Text(account.userId)
                                     .metaFace()
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.contentMuted)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }

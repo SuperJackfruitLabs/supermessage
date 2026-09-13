@@ -64,7 +64,7 @@ struct SpacePillStrip: View {
                 if let count {
                     Text("\(count)")
                         .monospacedDigit()
-                        .foregroundStyle(isSelected ? Theme.accent : .secondary)
+                        .foregroundStyle(isSelected ? Theme.accent : Theme.contentMuted)
                 }
                 if isInvitation {
                     // An invitation is not a filter — the account cannot see
@@ -79,7 +79,7 @@ struct SpacePillStrip: View {
             .background(isSelected ? Theme.accent.opacity(0.14) : Color.clear, in: Capsule())
             .overlay(
                 Capsule().stroke(
-                    isSelected ? Theme.accent : Color.secondary.opacity(0.4),
+                    isSelected ? Theme.accent : Theme.border,
                     lineWidth: isSelected ? 1.5 : 1))
         }
         .buttonStyle(.plain)

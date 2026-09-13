@@ -111,18 +111,18 @@ private struct PersonRow: View {
                 Circle().fill(Theme.surfaceRaised)
                 Image(systemName: person.runtime == nil ? "person.fill" : "cpu")
                     .imageScale(.small)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.contentMuted)
             }
             .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(person.name).foregroundStyle(.primary)
+                Text(person.name).foregroundStyle(Theme.content)
                 // The runtime where there is one, the address where there is
                 // not. Both answer "which one is this" — an agent by the
                 // machine it runs on, a person by where their account lives.
                 Text(subtitle)
                     .metaFace()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.contentMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -137,7 +137,7 @@ private struct PersonRow: View {
             } else {
                 Image(systemName: "chevron.right")
                     .imageScale(.small)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.contentFaint)
             }
         }
         .contentShape(Rectangle())
@@ -230,7 +230,7 @@ private struct ProgressRow: View {
     var body: some View {
         HStack(spacing: 10) {
             ProgressView()
-            Text(label).metaFace().foregroundStyle(.secondary)
+            Text(label).metaFace().foregroundStyle(Theme.contentMuted)
         }
     }
 }

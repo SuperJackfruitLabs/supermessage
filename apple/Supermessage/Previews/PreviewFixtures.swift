@@ -828,7 +828,7 @@ extension View {
     /// `PreviewGround` applies this too, so a component preview and a panel
     /// preview agree.
     func previewChrome() -> some View {
-        tint(Theme.accent)
+        tint(Theme.accent).foregroundStyle(Theme.content)
     }
 }
 

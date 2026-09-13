@@ -71,7 +71,7 @@ struct TimelineView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .frame(width: 36, height: 36)
                             .background(.regularMaterial, in: Circle())
-                            .overlay(Circle().stroke(.secondary.opacity(0.25), lineWidth: 1))
+                            .overlay(Circle().stroke(Theme.border, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     // Clear of the conversation rather than on top of it: at
@@ -88,7 +88,7 @@ struct TimelineView: View {
                 if let line = session.typing.line {
                     Text(line)
                         .metaFace()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.contentMuted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)

@@ -186,9 +186,9 @@ private struct SectionHeader: View {
         HStack(spacing: 6) {
             Text(title)
                 .metaFace()
-                .foregroundStyle(attention ? Theme.signal : .secondary)
+                .foregroundStyle(attention ? Theme.signal : Theme.contentMuted)
             if let detail {
-                Text(detail).metaFace().foregroundStyle(.tertiary).textCase(nil)
+                Text(detail).metaFace().foregroundStyle(Theme.contentFaint).textCase(nil)
             }
         }
     }
@@ -210,10 +210,10 @@ private struct RosterSettings: View {
                         Button { view = option.rawValue } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(option.title).foregroundStyle(.primary)
+                                    Text(option.title).foregroundStyle(Theme.content)
                                     Text(blurb(for: option))
                                         .metaFace()
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Theme.contentMuted)
                                 }
                                 Spacer()
                                 if view == option.rawValue {
@@ -233,7 +233,7 @@ private struct RosterSettings: View {
                                     ? "1 pending" : "\(invitationCount) pending"
                             )
                             .metaFace()
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.contentMuted)
                         }
                     }
                     Toggle(isOn: $showsState) {
@@ -241,7 +241,7 @@ private struct RosterSettings: View {
                             Text("Agent state")
                             Text("the dot and its word")
                                 .metaFace()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.contentMuted)
                         }
                     }
                 }

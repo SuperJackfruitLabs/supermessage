@@ -27,7 +27,7 @@ struct InvitationView: View {
                 if let inviter {
                     Text("from \(inviter)")
                         .metaFace()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.contentMuted)
                 }
             }
 

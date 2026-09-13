@@ -73,7 +73,7 @@ struct TimelineRowView: View {
             // rather than something they said.
             Text("\(named) \(item.body ?? "")")
                 .font(Theme.body.italic())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.contentMuted)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 6)
 
@@ -89,7 +89,7 @@ struct TimelineRowView: View {
                 Text(Self.day(item.timestampMs))
                     .metaFace()
                     .textCase(.uppercase)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.contentMuted)
                     .fixedSize()
                 VStack { Divider() }
             }
@@ -157,7 +157,7 @@ private struct MessageBlock: View {
                         mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces)
                     Text(named).nameFace()
                     if let timestamp = row.item.timestampMs {
-                        Text(Self.time(timestamp)).metaFace().foregroundStyle(.tertiary)
+                        Text(Self.time(timestamp)).metaFace().foregroundStyle(Theme.contentFaint)
                     }
                 }
             }
@@ -171,7 +171,7 @@ private struct MessageBlock: View {
                 // markdown, because "you type, they write": a stray asterisk
                 // must not change what you appear to have said.
                 .font(isOwn ? Theme.own : Theme.body)
-                .foregroundStyle(muted && !isOwn ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .foregroundStyle(muted && !isOwn ? AnyShapeStyle(Theme.contentMuted) : AnyShapeStyle(Theme.content))
                 .padding(isOwn ? 10 : 0)
                 .background(isOwn ? Theme.accent.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 12))
 
@@ -194,7 +194,7 @@ private struct MessageBlock: View {
                 .metaFace()
                 // Failure is the one state that may speak up. Everything else
                 // here is a quiet timestamp.
-                .foregroundStyle(sendState == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(sendState == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.contentFaint))
             }
 
             // Only under your own messages, and only where a receipt
@@ -205,7 +205,7 @@ private struct MessageBlock: View {
             if isOwn, !row.item.readBy.isEmpty {
                 Text("Read by \(peopleLabel(userIds: row.item.readBy))")
                     .metaFace()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.contentFaint)
             }
 
             if !row.item.reactions.isEmpty {
@@ -247,7 +247,7 @@ private struct ReplyQuote: View {
                 // than an empty quote or a spinner that will never resolve.
                 Text("Original message unavailable")
                     .metaFace()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.contentFaint)
             case let .available(sender, excerpt, label):
                 VStack(alignment: .leading, spacing: 1) {
                     Text(sender).metaFace().textCase(.uppercase)
@@ -257,7 +257,7 @@ private struct ReplyQuote: View {
                         // A ready parent with nothing to quote — redacted, a
                         // sticker, undecryptable. The label says which, in the
                         // same words a top-level item of that kind would use.
-                        Text(label).font(.footnote).foregroundStyle(.tertiary)
+                        Text(label).font(.footnote).foregroundStyle(Theme.contentFaint)
                     }
                 }
             }
@@ -304,7 +304,7 @@ private struct ReactionRow: View {
         .popover(item: $asking) { query in
             VStack(alignment: .leading, spacing: 4) {
                 Text(query.reaction.displayKey).font(.title3)
-                Text(who(query.reaction)).metaFace().foregroundStyle(.secondary)
+                Text(who(query.reaction)).metaFace().foregroundStyle(Theme.contentMuted)
             }
             .padding(12)
             // Without this a popover on iPhone arrives as a half-height
@@ -330,7 +330,7 @@ private struct ReactionRow: View {
                 Text("\(reaction.count)")
                     .metaFace()
                     .monospacedDigit()
-                    .foregroundStyle(reaction.byMe ? Theme.accent : .secondary)
+                    .foregroundStyle(reaction.byMe ? Theme.accent : Theme.contentMuted)
             }
         }
         .padding(.horizontal, 6)
@@ -340,7 +340,7 @@ private struct ReactionRow: View {
         // message read as a toolbar. Only the reader's own reaction is drawn
         // with an edge, because that is the one distinction a chip must make.
         .background(
-            reaction.byMe ? Theme.accent.opacity(0.16) : Color.secondary.opacity(0.10),
+            reaction.byMe ? Theme.accent.opacity(0.16) : Theme.surfaceRaised,
             in: Capsule())
         .overlay(
             Capsule().strokeBorder(
@@ -403,7 +403,7 @@ struct SystemLine: View {
     var body: some View {
         Text(text)
             .metaFace()
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(Theme.contentFaint)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 6)
     }
@@ -443,7 +443,7 @@ private struct ImageRow: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 } else {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(.quaternary)
+                        .fill(Theme.surfaceRaised)
                         // The box is reserved from the sender's reported
                         // dimensions *before* any bytes are asked for, so the
                         // list does not reflow when they land.
@@ -453,7 +453,7 @@ private struct ImageRow: View {
                             // still arriving and one that cannot be shown are
                             // different states and read differently.
                             if failed {
-                                Image(systemName: "photo").foregroundStyle(.secondary)
+                                Image(systemName: "photo").foregroundStyle(Theme.contentMuted)
                             } else {
                                 ProgressView()
                             }
@@ -482,11 +482,11 @@ private struct MediaFileRow: View {
             Image(systemName: icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(filename).font(.subheadline).lineLimit(1)
-                Text(caption).metaFace().foregroundStyle(.secondary)
+                Text(caption).metaFace().foregroundStyle(Theme.contentMuted)
             }
         }
         .padding(10)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 8))
         .padding(.vertical, 6)
     }
 

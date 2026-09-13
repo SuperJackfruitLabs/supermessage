@@ -35,7 +35,7 @@ struct LiveTurnView: View {
                     // is no longer true.
                     Text(live.finished ? "last turn" : "writing…")
                         .metaFace()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.contentMuted)
                     if !live.finished {
                         ProgressView().controlSize(.mini)
                     }
@@ -45,11 +45,11 @@ struct LiveTurnView: View {
                     DisclosureGroup(isExpanded: $showsThought) {
                         Text(thought)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.contentMuted)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } label: {
-                        Text("Reasoning").metaFace().foregroundStyle(.secondary)
+                        Text("Reasoning").metaFace().foregroundStyle(Theme.contentMuted)
                     }
                 }
 
@@ -132,16 +132,16 @@ private struct ToolRow: View {
             Image(systemName: icon).imageScale(.small)
             Text(tool.title).metaFace().lineLimit(1)
             if let kind = tool.kind {
-                Text(kind).metaFace().foregroundStyle(.tertiary)
+                Text(kind).metaFace().foregroundStyle(Theme.contentFaint)
             }
             Spacer(minLength: 4)
             Text(tool.status)
                 .metaFace()
                 .foregroundStyle(
                     tool.status == "failed"
-                        ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.tertiary))
+                        ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.contentFaint))
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Theme.contentMuted)
     }
 
     /// The status, as a glyph. A list of a dozen identical gears says only
@@ -171,10 +171,10 @@ private struct Detail: View {
             Text(label)
                 .metaFace()
                 .textCase(.uppercase)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.contentFaint)
             Text(text)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.contentMuted)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

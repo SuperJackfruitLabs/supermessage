@@ -59,7 +59,7 @@ struct RoomInfoPanel: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(info.identity.name).font(.headline)
                                     if let role = info.identity.role {
-                                        Text(role).metaFace().foregroundStyle(.secondary)
+                                        Text(role).metaFace().foregroundStyle(Theme.contentMuted)
                                     }
                                 }
                             }
@@ -238,7 +238,7 @@ private struct MemberRow: View {
                 // server and keep the padding.
                 Text(member.userId)
                     .metaFace()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.contentMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
