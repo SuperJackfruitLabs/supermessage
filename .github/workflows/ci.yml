@@ -359,6 +359,26 @@ jobs:
             -scheme Supermessage \
             -destination "id=${{ steps.sim.outputs.udid }}"
 
+      - name: The previews still look like the baseline
+        # 33 of the 40 rendered frames, compared pixel by pixel against
+        # apple/SupermessagePreviewTests/previews. The other seven race — see
+        # UNSTABLE in the comparison script, which was written from five
+        # renders rather than from reasoning.
+        #
+        # SnapshotPreviews has no verify mode, so the comparison is ours.
+        # Worth the sixty lines: without it, repainting iOS text has nothing
+        # behind it but someone looking at forty images.
+        run: ./scripts/snapshot-previews.sh
+
+      - name: Upload the rendered previews
+        # On failure, because that is when someone needs to look at them.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-preview-frames
+          path: .snapshots/
+          if-no-files-found: ignore
+
       - name: Previews and their fixtures stay out of Release
         # A Release build plus a grep, which is the native counterpart of
         # `test_fixture_leak.mjs`. What it can prove is bounded and the

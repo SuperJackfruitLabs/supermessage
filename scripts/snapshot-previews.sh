@@ -14,7 +14,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RECORD=no
+if [ "${1:-}" = "--record" ]; then RECORD=yes; shift; fi
 OUT="${1:-$ROOT/.snapshots}"
+REFERENCES="$ROOT/apple/SupermessagePreviewTests/previews"
 DERIVED="${TMPDIR:-/tmp}/supermessage-snapshots"
 
 cd "$ROOT/apple"
@@ -54,5 +57,17 @@ if [ "$count" -eq 0 ]; then
 fi
 
 python3 "$ROOT/scripts/snapshot-index.py" "$OUT"
-echo "PASS: $count previews rendered."
-echo "open $OUT/index.html"
+
+if [ "$RECORD" = yes ]; then
+  mkdir -p "$REFERENCES"
+  rm -f "$REFERENCES"/*.png
+  cp "$OUT"/*.png "$REFERENCES"/
+  echo "RECORDED: $count previews are the new baseline."
+  echo "Look at them before committing: open $OUT/index.html"
+  exit 0
+fi
+
+# Verify by default, for the reason Android's gradle.properties gives: a
+# capture-by-default gate rewrites its own baseline to match whatever the
+# code now does, and agrees with every regression.
+python3 "$ROOT/scripts/tests/test_ios_preview_baseline.py" "$OUT"

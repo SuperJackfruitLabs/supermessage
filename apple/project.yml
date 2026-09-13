@@ -198,6 +198,15 @@ schemes:
         # preview. Nothing reads it yet; it is here so that the first preview
         # which wants to know it is being snapshotted — to skip an animation,
         # say — has the answer without a scheme change.
+        # UTC, so a rendered clock does not depend on where the machine is.
+        #
+        # Android's baseline failed its first CI run on exactly this: six
+        # frames differed by `11:30 PM` against `6:00 PM`, because the
+        # recording machine is IST and the runner is UTC. `TimelineRowView`
+        # formats an absolute `timestampMs` through the default zone, the
+        # same as its Compose counterpart, so the same fix applies before the
+        # same failure rather than after it.
+        TZ: "UTC"
         SNAPSHOTS_RUNNING_FOR_PREVIEWS: "1"
         # Where the PNGs go. Overridden by `scripts/snapshot-previews.sh`;
         # without it the images are attachments inside the .xcresult, which
