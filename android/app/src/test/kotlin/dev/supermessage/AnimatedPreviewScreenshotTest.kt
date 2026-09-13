@@ -3,6 +3,7 @@ package dev.supermessage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
+import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +52,11 @@ class AnimatedPreviewScreenshotTest(
     private val preview: ComposablePreview<AndroidPreviewInfo>,
 ) {
     companion object {
+        /** Same reason as [PreviewScreenshotTest]: `Account` is in this set. */
+        @BeforeClass
+        @JvmStatic
+        fun ensureHostCoreIsBuilt() = HostCore.ensureBuilt()
+
         @JvmStatic
         @ParameterizedRobolectricTestRunner.Parameters
         fun previews(): List<ComposablePreview<AndroidPreviewInfo>> =

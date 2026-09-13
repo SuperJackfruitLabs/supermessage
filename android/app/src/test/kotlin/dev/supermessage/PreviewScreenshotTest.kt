@@ -4,6 +4,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import sergio.sastre.composable.preview.scanner.android.AndroidComposablePreviewScanner
 import sergio.sastre.composable.preview.scanner.android.AndroidPreviewInfo
 import sergio.sastre.composable.preview.scanner.core.preview.ComposablePreview
+import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.ParameterizedRobolectricTestRunner
@@ -62,6 +63,10 @@ class PreviewScreenshotTest(
             "TimelineLive",         // a live turn arriving
             "TimelinePaginating",   // isPaginating = true
         )
+
+        @BeforeClass
+        @JvmStatic
+        fun ensureHostCoreIsBuilt() = HostCore.ensureBuilt()
 
         @JvmStatic
         @ParameterizedRobolectricTestRunner.Parameters

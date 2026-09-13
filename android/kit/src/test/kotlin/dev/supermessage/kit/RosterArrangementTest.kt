@@ -64,7 +64,13 @@ class RosterArrangementTest {
         @JvmStatic
         fun ensureHostCoreIsBuilt() {
             val dir = System.getProperty("jna.library.path")
-            val hostLib = File(dir, "libsupermessage_ffi.so")
+            // Both extensions: Cargo writes a `.dylib` on macOS and a `.so`
+            // on Linux, and looking only for the latter made this guard fail
+            // on a Mac even with the core built.
+            val hostLib = listOf("libsupermessage_ffi.dylib", "libsupermessage_ffi.so")
+                .map { File(dir, it) }
+                .firstOrNull { it.exists() }
+                ?: File(dir, "libsupermessage_ffi.<dylib|so>")
             val allowMissing = System.getProperty("kit.allowMissingHostCore").toBoolean()
             if (hostLib.exists()) return
             if (allowMissing) {
