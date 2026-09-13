@@ -146,7 +146,7 @@ private struct ResultRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             ZStack {
-                Circle().fill(.quaternary)
+                Circle().fill(Theme.surfaceRaised)
                 if let avatarURI, let image = RoomRowView.image(from: avatarURI) {
                     image.resizable().scaledToFill().clipShape(Circle())
                 } else {

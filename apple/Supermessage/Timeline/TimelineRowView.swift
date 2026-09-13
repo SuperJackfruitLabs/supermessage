@@ -365,7 +365,7 @@ private struct SenderFace: View {
             {
                 image.resizable().scaledToFill()
             } else {
-                Circle().fill(.quaternary)
+                Circle().fill(Theme.surfaceRaised)
                 Text(letter).font(.system(size: 10, weight: .medium))
             }
         }

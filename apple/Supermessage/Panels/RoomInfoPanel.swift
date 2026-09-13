@@ -34,7 +34,7 @@ struct RoomInfoPanel: View {
                                     showsAvatar = true
                                 } label: {
                                     ZStack {
-                                        Circle().fill(.quaternary)
+                                        Circle().fill(Theme.surfaceRaised)
                                         if let avatarURI,
                                             let image = RoomRowView.image(from: avatarURI)
                                         {

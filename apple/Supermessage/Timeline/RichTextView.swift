@@ -47,7 +47,7 @@ extension RichBlock {
                     .textSelection(.enabled)
                     .padding(10)
             }
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+            .background(Theme.surfaceSunken, in: RoundedRectangle(cornerRadius: 6))
 
         case let .blockQuote(blocks):
             // Overlay rather than an HStack sibling — see ReplyQuote in
@@ -56,7 +56,7 @@ extension RichBlock {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) {
-                    Rectangle().fill(.tertiary).frame(width: 2)
+                    Rectangle().fill(Theme.border).frame(width: 2)
                 }
 
         case let .listBlock(ordered, start, items):

@@ -20,7 +20,7 @@ struct AccountPanel: View {
                 Section {
                     HStack(spacing: 12) {
                         ZStack {
-                            Circle().fill(.quaternary)
+                            Circle().fill(Theme.surfaceRaised)
                             Text(initial).font(.headline)
                         }
                         .frame(width: 44, height: 44)

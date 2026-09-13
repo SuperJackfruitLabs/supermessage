@@ -108,7 +108,7 @@ private struct PersonRow: View {
     var body: some View {
         HStack(spacing: 10) {
             ZStack {
-                Circle().fill(.quaternary)
+                Circle().fill(Theme.surfaceRaised)
                 Image(systemName: person.runtime == nil ? "person.fill" : "cpu")
                     .imageScale(.small)
                     .foregroundStyle(.secondary)

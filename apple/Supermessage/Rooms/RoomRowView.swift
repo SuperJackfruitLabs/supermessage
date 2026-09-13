@@ -127,7 +127,7 @@ struct RoomRowView: View {
     /// have fixed once.
     @ViewBuilder private var avatar: some View {
         ZStack {
-            Circle().fill(.quaternary)
+            Circle().fill(Theme.surfaceRaised)
             if let avatarURI, let image = Self.image(from: avatarURI) {
                 image.resizable().scaledToFill().clipShape(Circle())
             } else {
