@@ -135,6 +135,17 @@ fun SupermessageTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Comp
             onPrimary = colors.accentContent,
             primaryContainer = colors.accentSoft,
             onPrimaryContainer = colors.content,
+            // Mapped because they are used and were not: `ScopeChip` draws
+            // its selected state from `secondaryContainer`, so without these
+            // two lines one chip in the search panel took Material's own
+            // defaults rather than anything in design/tokens.toml.
+            //
+            // `accentSoft` under `content` is not a choice made here. That
+            // pairing is what the palette already asserts — `accent-soft`
+            // carries `contrast = [{ against = "content", min = 4.5 }]`, and
+            // the generator fails the build if it stops holding.
+            secondaryContainer = colors.accentSoft,
+            onSecondaryContainer = colors.content,
             background = colors.surface,
             onBackground = colors.content,
             surface = colors.surface,
@@ -152,6 +163,17 @@ fun SupermessageTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Comp
             onPrimary = colors.accentContent,
             primaryContainer = colors.accentSoft,
             onPrimaryContainer = colors.content,
+            // Mapped because they are used and were not: `ScopeChip` draws
+            // its selected state from `secondaryContainer`, so without these
+            // two lines one chip in the search panel took Material's own
+            // defaults rather than anything in design/tokens.toml.
+            //
+            // `accentSoft` under `content` is not a choice made here. That
+            // pairing is what the palette already asserts — `accent-soft`
+            // carries `contrast = [{ against = "content", min = 4.5 }]`, and
+            // the generator fails the build if it stops holding.
+            secondaryContainer = colors.accentSoft,
+            onSecondaryContainer = colors.content,
             background = colors.surface,
             onBackground = colors.content,
             surface = colors.surface,
