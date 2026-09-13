@@ -39,9 +39,27 @@ use supermessage_core::room_identity::parse_room_identity;
 fn roster_identities() {
     let cases = [
         // raw name,                 glyph,       name,              role,          initial
-        ("⌘ Kaambaan — Delivery", Some("⌘"), "Kaambaan", Some("Delivery"), "⌘"),
-        ("✳ Atlas — Platform", Some("✳"), "Atlas", Some("Platform"), "✳"),
-        ("✒ Quill — Writing", Some("✒"), "Quill", Some("Writing"), "✒"),
+        (
+            "⌘ Kaambaan — Delivery",
+            Some("⌘"),
+            "Kaambaan",
+            Some("Delivery"),
+            "⌘",
+        ),
+        (
+            "✳ Atlas — Platform",
+            Some("✳"),
+            "Atlas",
+            Some("Platform"),
+            "✳",
+        ),
+        (
+            "✒ Quill — Writing",
+            Some("✒"),
+            "Quill",
+            Some("Writing"),
+            "✒",
+        ),
         ("Estate Planning", None, "Estate Planning", None, "E"),
         // Humanised: a machine-written name is not shown verbatim.
         ("matrix-rust-sdk", None, "Matrix Rust Sdk", None, "M"),
