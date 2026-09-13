@@ -101,8 +101,22 @@
 }
 
 @layer theme {
+  /*
+   * The OS's choice, but only when nothing has been chosen
+   * explicitly.
+   *
+   * The :not() guard is belt-and-braces, not load-bearing: an
+   * attribute selector and :root have the same specificity
+   * (0,1,0), and the explicit blocks below are emitted after this
+   * one, so source order already gives them precedence. Measured:
+   * removing the guard changes nothing in a dark-set browser.
+   *
+   * It is kept because it makes that precedence independent of
+   * emission order — reorder the blocks below and the behaviour
+   * survives. The order is what the test asserts.
+   */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-appearance]) {
       --color-surface: #1f1838;
       --color-surface-sunken: #151129;
       --color-surface-raised: #251f41;
@@ -134,9 +148,86 @@
   }
 
   /*
-   * Paper is what "light" means on a phone. Nothing selects it on
-   * desktop; the binding lives in each native theme.
+   * An explicit choice, in all three directions.
+   *
+   * `paper` is what "light" means on a phone, and nothing selects
+   * it on desktop — the binding lives in each native theme. The
+   * other two exist so a story catalogue, and later a user
+   * preference, can override the OS either way. A catalogue that
+   * cannot switch appearances cannot do the job it exists for.
    */
+  [data-appearance="light"] {
+    --color-surface: #fdfcff;
+    /*
+     * The sheet-on-field step: the reading column over the roster, header and
+     * composer. The whole three-level depth story rests on it, and it is what
+     * silently broke in the previous dark theme at 1.035 — less than half the
+     * step, and effectively subliminal across 1050px of field.
+     */
+    --color-surface-sunken: #f3f2f9;
+    --color-surface-raised: #fafafd;
+    --color-border: #e0deea;
+    --color-border-strong: #c3bfd4;
+    --color-content: #221c38;
+    --color-content-muted: #50496d;
+    /*
+     * The bottom rung is the whole ramp's constraint. It must clear the floor
+     * on all three grounds, not just the reading surface — the earlier cool-
+     * slate attempt passed on `surface` and measured 2.92:1 on `surface-
+     * sunken`.
+     */
+    --color-content-faint: #70688f;
+    --color-accent: #5b43d4;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #ebe7fb;
+    /*
+     * Amber, and it means exactly one thing: the reader owes someone an
+     * answer. 6.0 rather than 4.5 because it carries the 10px AWAITING YOUR
+     * DECISION label — the smallest text in the app, on the one element that
+     * must not be missed.
+     */
+    --color-signal: #814904;
+    --color-signal-soft: #fcf3e4;
+    --color-danger: #b4222a;
+    --color-ok: #1d7c59;
+    /*
+     * Not a fifth hue and not a new rank — the ramp's dark end used as a wash.
+     * Checked as a region drop (ground plus the text on it), never as a WCAG
+     * ratio and never against one surface: this scrim IS `content`, so
+     * measuring it against `content` alone would report 1.00x for a wash that
+     * works.
+     */
+    --color-scrim: rgb(34 28 56 / 0.45);
+  }
+  [data-appearance="dark"] {
+    --color-surface: #1f1838;
+    --color-surface-sunken: #151129;
+    --color-surface-raised: #251f41;
+    --color-border: #383254;
+    --color-border-strong: #534a75;
+    --color-content: #f4f2fb;
+    --color-content-muted: #c6c2d8;
+    /*
+     * In dark the worst ground is `surface-raised`, not `surface-sunken` — the
+     * ramp runs the other way. Listing all three is what makes that automatic
+     * rather than something a reader has to notice.
+     */
+    --color-content-faint: #8e86ab;
+    --color-accent: #9d8ff0;
+    --color-accent-content: #1a1433;
+    --color-accent-soft: #2b224f;
+    --color-signal: #e8a33d;
+    --color-signal-soft: #332919;
+    --color-danger: #ed6e74;
+    --color-ok: #70cdab;
+    /*
+     * A dark theme scrims by going darker still, at a higher alpha, because
+     * the ground is already near the ramp's floor. Essentially all of a dark
+     * region's light is its text, which is what this wash takes away — and why
+     * measuring it against the ground alone reports 1.00x.
+     */
+    --color-scrim: rgb(21 17 41 / 0.70);
+  }
   [data-appearance="paper"] {
     --color-surface: #faf8f3;
     --color-surface-sunken: #f2eee6;

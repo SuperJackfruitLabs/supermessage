@@ -335,6 +335,81 @@ class ImportTests(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, code_only(swift))
 
+class AppearanceSelectorTests(unittest.TestCase):
+    """Every appearance must be explicitly selectable.
+
+    tokens.css reached dark only through a prefers-color-scheme media query,
+    so a catalogue could switch to paper but needed the OS theme changed to
+    show dark — and on a dark-set machine, light was unreachable entirely.
+
+    Faking the theme in Storybook's own CSS was the alternative, and it
+    would mean the catalogue showing something the app cannot produce.
+    """
+
+    def setUp(self):
+        self.css = emit_app_css(load(SOURCE))
+
+    def test_all_three_are_attribute_selectable(self):
+        for name in ("light", "dark", "paper"):
+            with self.subTest(name=name):
+                self.assertIn(f'[data-appearance="{name}"]', self.css)
+
+    def test_an_explicit_choice_beats_the_os(self):
+        """Asserted as ORDER, because order is the actual mechanism.
+
+        An earlier version of this test checked that the string
+        ":root:not([data-appearance])" appeared, and called that proof. It
+        was not: measured in a dark-set browser, removing the guard changes
+        nothing, because an attribute selector and :root share specificity
+        (0,1,0) and the explicit blocks are emitted afterwards. The
+        substring assertion would have passed against a stylesheet whose
+        explicit blocks came FIRST and therefore lost.
+
+        So this asserts the ordering, and separately that the guard is
+        present as order-independent insurance.
+        """
+        media_at = self.css.index("@media (prefers-color-scheme: dark)")
+        for name in ("light", "dark", "paper"):
+            with self.subTest(name=name):
+                self.assertGreater(
+                    self.css.index(f'[data-appearance="{name}"]'),
+                    media_at,
+                    "an explicit appearance block must come after the media "
+                    "query, or equal specificity makes the OS win",
+                )
+
+    def test_the_guard_is_present_as_order_independent_insurance(self):
+        # Not load-bearing today — see the test above — but it is what keeps
+        # the behaviour if the blocks are ever reordered.
+        self.assertIn(":root:not([data-appearance])", self.css)
+
+    def test_light_is_still_the_bare_default(self):
+        # A page that sets no attribute and asks for no scheme must still
+        # have a complete palette.
+        root = self.css.split("@layer theme")[0]
+        for role in ROLES:
+            with self.subTest(role=role):
+                self.assertIn(f"--color-{role}:", root)
+
+    def test_each_appearance_block_is_complete(self):
+        # A partial override inherits the rest from light, which is exactly
+        # how a half-applied theme happens and it looks like a palette bug
+        # rather than a missing declaration.
+        for name in ("light", "dark", "paper"):
+            block = self.css.split(f'[data-appearance="{name}"] {{')[1]
+            block = block[: block.index("\n  }")]
+            for role in ROLES:
+                with self.subTest(name=name, role=role):
+                    self.assertIn(f"--color-{role}:", block)
+
+    def test_the_explicit_blocks_carry_their_own_appearances_values(self):
+        tokens = load(SOURCE)
+        for name in ("light", "dark", "paper"):
+            block = self.css.split(f'[data-appearance="{name}"] {{')[1]
+            block = block[: block.index("\n  }")]
+            with self.subTest(name=name):
+                self.assertIn(tokens.appearances[name].colors["surface"], block)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -44,7 +44,12 @@
   import { roomInfo, type RoomInfo } from "$lib/ipc";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
-  import { initial, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
+  // `memberDisplayName` is still used here for sorting, and `splitSigil` for
+  // the room's aliases — the member row took its own copies of both for the
+  // name it draws.
+  import { memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
+  import MemberRow from "./roster/MemberRow.svelte";
+  import RoomIdentityHeader from "./roster/RoomIdentityHeader.svelte";
 
   /**
    * `modal` is set only in the overlay geometry (`+page.svelte`'s
@@ -192,34 +197,11 @@
     {@const currentRoomId = info.roomId}
     {@const avatar = avatarCache.get(currentRoomId)}
     {@const identity = info.identity}
-    <div class="flex flex-col items-center gap-2 border-b border-border px-4 py-5">
-      {#if avatar}
-        <img
-          src={avatar}
-          alt=""
-          aria-hidden="true"
-          class="h-16 w-16 shrink-0 rounded-pill object-cover"
-          onerror={() => avatarCache.markFailed(currentRoomId)}
-        />
-      {:else}
-        <span
-          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-pill bg-surface-raised text-avatar text-content"
-          aria-hidden="true"
-        >
-          {identity.initial}
-        </span>
-      {/if}
-      <p class="selectable max-w-full text-center text-ui-lg break-words text-content">
-        {identity.name}
-      </p>
-      {#if identity.role !== null}
-        <span
-          class="shrink-0 truncate rounded-pill border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
-        >
-          {identity.role}
-        </span>
-      {/if}
-    </div>
+    <RoomIdentityHeader
+      identity={info.identity}
+      avatarUrl={avatarCache.get(currentRoomId)}
+      onAvatarFailed={() => avatarCache.markFailed(currentRoomId)}
+    />
 
     {#if info.topic}
       <div class="border-b border-border px-4 py-3">
@@ -305,46 +287,11 @@
       </h3>
       <ul class="flex flex-col gap-2">
         {#each sortedMembers as member (member.userId)}
-          {@const memberAvatar = member.avatarUrl ? memberAvatarCache.get(member.avatarUrl) : null}
-          <li class="flex items-center gap-2">
-            {#if memberAvatar}
-              <img
-                src={memberAvatar}
-                alt=""
-                aria-hidden="true"
-                class="h-8 w-8 shrink-0 rounded-pill object-cover"
-                onerror={() => member.avatarUrl && memberAvatarCache.markFailed(member.avatarUrl)}
-              />
-            {:else}
-              <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-pill bg-surface-raised text-ui font-medium text-content"
-                aria-hidden="true"
-              >
-                {initial(memberDisplayName(member))}
-              </span>
-            {/if}
-            <span class="min-w-0 flex-1">
-              <!--
-                `break-words`, not `truncate`: a member's display name is
-                sender-controlled free text, and this codebase has already
-                shipped the "long unbroken run widens its container" bug
-                twice (see Timeline.svelte's top-of-script doc comment) —
-                `truncate` (nowrap + ellipsis) would also just hide a long
-                name outright rather than let the reader see it wrap.
-              -->
-              <span class="selectable block font-sans text-ui text-content break-words">
-                {memberDisplayName(member)}
-              </span>
-              {#if member.displayName}
-                {@const parsedMember = splitSigil(member.userId)}
-                <span class="selectable block font-mono text-meta break-words">
-                  <span class="text-content-faint">{parsedMember.sigil}</span><span
-                    class="text-content-muted">{parsedMember.rest}</span
-                  >
-                </span>
-              {/if}
-            </span>
-          </li>
+          <MemberRow
+            {member}
+            avatarUrl={member.avatarUrl ? memberAvatarCache.get(member.avatarUrl) : null}
+            onAvatarFailed={() => member.avatarUrl && memberAvatarCache.markFailed(member.avatarUrl)}
+          />
         {/each}
       </ul>
     </div>

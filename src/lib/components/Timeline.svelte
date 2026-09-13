@@ -292,6 +292,13 @@
   import { shouldRepin, shouldSettleAtBottom } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
+  import DispatchCard from "./timeline/DispatchCard.svelte";
+  import LogLine from "./timeline/LogLine.svelte";
+  import MessageActions from "./timeline/MessageActions.svelte";
+  import UnreadMarker from "./timeline/UnreadMarker.svelte";
+  import ReactionsRow from "./timeline/ReactionsRow.svelte";
+  import ReplyQuote from "./timeline/ReplyQuote.svelte";
+  import SeenMarker from "./timeline/SeenMarker.svelte";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -947,309 +954,6 @@
   }
 </script>
 
-{#snippet replyQuote(quote: ReplyQuoteView | null, isOwn: boolean)}
-  {#if quote}
-    <!--
-      A 2px rail rather than a filled inset, matching the composer's
-      "REPLYING TO" strip (spec §6.4) so the same relationship reads the
-      same way in both places. No own/peer colour split any more: the own
-      bubble is `--color-accent-soft` with `--color-content` text, not the
-      accent fill it used to be, so `--color-content-muted` on
-      `--color-border` is legible on either ground — the old
-      `accent-content` pair would have been near-invisible on both.
-    -->
-    <div class="mb-1.5 border-l-2 border-border pl-2 text-content-muted">
-      {#if quote.state === "available"}
-        <!--
-          `truncate` alone here (no `break-words`): `truncate` is
-          `white-space: nowrap` + `text-overflow: ellipsis` + `overflow:
-          hidden`, which never wraps in the first place, so `break-words`
-          (a wrapping rule) was dead weight on this line — see this file's
-          top-of-script doc comment for why `break-words` *does* matter,
-          genuinely, on the two lines below that actually allow wrapping.
-        -->
-        <p class="truncate font-mono text-label uppercase">{quote.sender}</p>
-        {#if quote.excerpt}
-          <!-- `quote.excerpt` is already truncated in the core
-               (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) — `break-words`
-               here guards against a long space-free run within that bound,
-               not the length itself. See this file's top-of-script doc
-               comment. -->
-          <p class="mt-0.5 line-clamp-2 font-serif text-ui break-words">{quote.excerpt}</p>
-        {:else if quote.label}
-          <!-- The parent loaded but had nothing to quote (redacted, a
-               sticker, a poll, undecryptable, ...) — `quote.label` is the
-               same short classification text `core::timeline::
-               reply_parent_label` computes for it, so this reads with the
-               vocabulary `core::item_view::view_for`'s own placeholders already use. Fixes
-               the review finding that this used to render as a bare sender
-               name with no indication why. -->
-          <!-- Mono, and *not* italic: these two lines share the placeholder
-               vocabulary, and no mono italic is bundled — see this file's
-               top-of-script doc comment and spec §6.3.
-
-               `faint` only on a peer block; `muted` inside an own bubble.
-               The faint rank is defined against the *reading surface*
-               (spec §3 checks it there and nowhere else) and it does not
-               survive a tinted ground: composited over
-               `--color-accent-soft` it measures **4.26:1 light / 3.52:1
-               dark**, under the 4.5:1 floor §9 sets, while `muted` on the
-               same ground is 7.07 / 6.95. The rank the own bubble gets for
-               its secondary text is therefore `muted`, and the same swap
-               is made on the two other faint-on-`accent-soft` lines (the
-               `edited` marker and the image placeholder below). Measured
-               by compositing the layer stack in a canvas — the numbers a
-               token-pair calculator gives for `faint` on `surface` (4.92)
-               do not describe this ground at all. -->
-          <p
-            class="mt-0.5 font-mono text-meta break-words {isOwn
-              ? 'text-content-muted'
-              : 'text-content-faint'}"
-          >
-            {quote.label}
-          </p>
-        {/if}
-      {:else}
-        <p
-          class="font-mono text-meta break-words {isOwn
-            ? 'text-content-muted'
-            : 'text-content-faint'}"
-        >
-          Original message unavailable
-        </p>
-      {/if}
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet reactionsRow(item: TimelineItem, interactive: boolean, alignEnd: boolean = item.isOwn)}
-  <!--
-    `alignEnd` defaults to `item.isOwn` — an own bubble's affordances hang
-    off its right edge — but it is a *parameter*, not a read of `isOwn`,
-    because one caller genuinely differs: the dispatch card is left-aligned
-    regardless of sender (spec §7), so its rows must be too. See the card's
-    call sites. Do not "simplify" this back to `item.isOwn`: `isOwn` is
-    account-scoped (`event.sender() == own_user` in the core), so any other
-    session signed in as this account can produce an own custom event, and
-    a right-hanging row under a left-anchored card is then reachable, not
-    hypothetical.
-
-    This row renders *outside* the message container, on the sheet ground,
-    tucked under the container's bottom edge — see `messageBlock`. A
-    reaction is chrome that acts on a message, not part of it, and this
-    file already refuses to mix the two anywhere else. Positive offsets
-    rather than a negative one that would overlap the container's edge:
-    an overlap only reads as "tucked into the corner" against a container
-    that *has* a visible corner, and of the three that call this, only the
-    own bubble does — a peer block and the space under a dispatch card
-    would just get a chip sitting too close to the text above it.
-  -->
-  {#if item.reactions.length > 0}
-    <div class="mt-1.5 flex flex-wrap gap-1 {alignEnd ? 'justify-end' : ''}">
-      {#each item.reactions as reaction (reaction.key)}
-        {@const chipClass = reaction.byMe
-          ? "reaction-chip-mine border-accent font-medium text-accent"
-          : "border-border bg-surface-sunken text-content-muted hover:border-border-strong hover:text-content"}
-        <!--
-          `displayReactionKey` caps a reaction key's rendered length (a key
-          is arbitrary sender-controlled text, not necessarily one emoji);
-          `break-words` guards the chip itself against a long run within
-          that cap, same reasoning as the reply excerpt above. `byMe` gets a
-          visually distinct style so a reader can tell at a glance which
-          chips they've already added to. A real `<button>`, not a `<span>`
-          with a click handler, so it's keyboard-operable with an accessible
-          name on its own — `aria-pressed` mirrors `byMe` for the same
-          reason a toggle button conventionally exposes its own state.
-          Clicking never mutates `item.reactions` itself; see this file's
-          top-of-script doc comment.
-
-          `font-sans` explicitly: a chip is chrome, and it sits inside a
-          message block that sets `font-serif` (peer) on itself so its
-          `ch`-based measure resolves in the reading face.
-
-          The "mine" fill is `.reaction-chip-mine` (in the style block at
-          the foot of this file) rather than a `bg-accent/15` utility, and
-          that is a contrast fix. A translucent fill composites against
-          whatever happens to be behind it, and this one snippet renders on
-          **four** different grounds: `--color-surface` (a peer block),
-          `--color-accent-soft` (an own bubble), `--color-surface-raised`
-          (a dispatch card) and `--color-signal-soft` (a pending one). The
-          tint measured 5.55:1 on the first and 4.26:1 on the second, and
-          the fix that branched on `item.isOwn` still left the two card
-          grounds unmeasured — where they came in at 5.00:1 resting and
-          4.53:1 on hover, under the 5.0:1 bar. Branching per ground does
-          not scale and is how this was missed twice. `.reaction-chip-mine`
-          instead paints the accent tint over its *own* opaque
-          `--color-surface`, so the chip's contrast is a single number on
-          every ground it can ever land on, present or future.
-
-          Numbers are composited by the browser, not modelled: Tailwind
-          emits `/15` as `color-mix(in oklab, … , transparent)`, so
-          anything that reads `getComputedStyle().backgroundColor` and
-          expects `rgba()` silently measures the wrong ground. Paint the
-          layer stack into a canvas and read the pixel back.
-        -->
-        <button
-          type="button"
-          disabled={!interactive}
-          onclick={() => handleToggleReaction(item.eventId, reaction.key)}
-          aria-pressed={reaction.byMe}
-          aria-label={`${reaction.displayKey}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
-          class="rounded-pill border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
-        >
-          {reaction.displayKey} {reaction.count}
-        </button>
-      {/each}
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet messageActions(row: ItemRow, alignEnd: boolean = row.item.isOwn)}
-  {@const item = row.item}
-  {@const interactive = row.canReplyOrReact}
-  <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter. -->
-  {#if interactive}
-    <!--
-      Chrome, not content — no `.selectable` here (see this file's
-      top-of-script comment on user-select discipline), and rendered
-      outside the message container on the sheet ground for the same
-      reason `reactionsRow` is; see its comment and `messageBlock`'s.
-
-      Faded out until the *row* is hovered or one of these buttons has
-      focus (`focus-within`, not `hover` alone), so tabbing through the
-      timeline still reaches every button — opacity, never `display:
-      none`, keeps them in the tab order the whole time. The `group` that
-      drives that hover is on `messageBlock`'s outermost row precisely so
-      that it encloses this detached element: on the container, the
-      pointer would leave the group the instant it reached the row being
-      revealed. `flex-wrap` so six quick reactions plus "Reply" never
-      force the row wider than the reading column.
-
-      The negative margin pulls the outermost button's own padding back so
-      the row aligns optically with the message container's edge rather
-      than sitting indented from it — left edge for a peer block or a
-      dispatch card, right edge for an own bubble. `font-sans` for the
-      same reason the reaction chips carry it: this is chrome, and the
-      column it now sits directly on is set in the reading serif.
-
-      **It is positioned, not laid out**, and that is worth the extra
-      mechanism. In normal flow this row reserved 26px on *every* message
-      forever — measured in the running app on 2026-08-17: a one-line
-      message came to 142px, of which 54px was the bubble and 88px was
-      chrome, 26 of it this row sitting at `opacity: 0`. Reserving space
-      was what kept the layout from jumping on hover; overlaying the gap
-      below the block achieves the same thing for nothing, because that
-      gap is the next message's top padding and is empty by construction.
-
-      `pointer-events-none` until revealed so an invisible row cannot eat
-      a click meant for the message underneath it, and `top-full` rather
-      than a fixed offset so it always sits immediately beneath its own
-      block whatever that block contains.
-
-      **It has to fit the gap it overlays**, and that was measured, not
-      guessed: with `mt-1` it ended 6px past where the next message's first
-      line begins, so hovering one message painted its controls over the
-      text of the next. No margin, and the gap below (`pt-6` on the block
-      that follows) is 24px against this row's 22px.
-    -->
-    <div
-      class="pointer-events-none absolute top-full right-0 left-0 z-10 flex flex-wrap items-center gap-0.5 font-sans opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 {alignEnd
-        ? '-mr-1.5 justify-end'
-        : '-ml-1.5'}"
-    >
-      <button
-        type="button"
-        onclick={() => startReply(row)}
-        class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
-      >
-        Reply
-      </button>
-      {#each QUICK_REACTIONS as emoji (emoji)}
-        <button
-          type="button"
-          onclick={() => handleToggleReaction(item.eventId, emoji)}
-          aria-label={`React with ${emoji}`}
-          class="rounded px-1 py-0.5 text-ui transition-colors hover:bg-surface-sunken"
-        >
-          {emoji}
-        </button>
-      {/each}
-      <!--
-        The six above stay the fast path — one click, no panel. This is for
-        everything else, which used to be reachable only if somebody else in
-        the room had already reacted with it.
-      -->
-      <button
-        type="button"
-        onclick={() => (pickingReactionFor = item.id)}
-        aria-label="React with another emoji"
-        class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
-      >
-        +
-      </button>
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet seenMarker(item: TimelineItem, alignEnd: boolean = item.isOwn)}
-  <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter.
-
-
-    "Seen"/"Seen by N" — the reader's own latest message only, per
-    `TimelineItemDto::read_by`'s doc comment (`core::dto`): no per-message
-    avatar stack, and never shown on anyone else's message. `lastOwnMessageId`
-    (top-of-script) is what scopes this to "the last own item" rather than
-    every item's own `read_by` being rendered — the check here only needs to
-    confirm this specific item is that one and that at least one other
-    member has actually read it yet.
-  -->
-  {#if item.id === lastOwnMessageId && item.readBy.length > 0}
-    <!--
-      `--color-content-muted`, not the `accent-content/70` this used to
-      carry: that value only ever made sense against the accent-*filled*
-      own bubble it sat on. The own bubble is now `--color-accent-soft`
-      with `--color-content` text, and white-at-70% on that ground is
-      effectively invisible. Mono, because a read receipt is data.
-    -->
-    <p class="mt-1 font-mono text-meta text-content-muted {alignEnd ? 'text-right' : 'text-left'}">
-      {item.readBy.length === 1 ? "Seen" : `Seen by ${item.readBy.length}`}
-    </p>
-  {/if}
-{/snippet}
-
-{#snippet logLine(text: string)}
-  <!--
-    The quiet machine log: membership changes (grouped or not), room
-    creation, encryption enabled, room replaced, and every placeholder for
-    something this build cannot render yet. All of these are the same row —
-    centred, mono `--text-meta`, `--color-content-faint` — and they were
-    three verbatim copies of this markup before this snippet existed.
-    Keeping them literally identical is the point, not an accident: a
-    collapsed membership run must read no differently from an ungrouped
-    one, and a placeholder must read as part of the same log rather than as
-    a failed message. Mono means machine (spec §5.3), and no mono rank is
-    ever italic (spec §6.3) — `font-synthesis: none` plus no bundled mono
-    italic would render an italic upright anyway.
-
-    `min-w-0` + `max-w` + `break-words`, the same three-part guard every
-    other sender-controlled string in this file carries. These strings are
-    not app-authored constants: a system line is built from
-    `attributedName`, which is the sender's own *unbounded* display name,
-    and a placeholder interpolates a sender-controlled `msgtype`/`detail`.
-    Before the guard, a single 5000-character display name pushed the
-    scroller's own `scrollWidth` to 16515px against a 1563px column.
-    `break-words` alone is not enough — `overflow-wrap: break-word` does
-    not reduce an element's min-content size, so a flex item's automatic
-    minimum size still holds the row open until `min-w-0` lets it shrink.
-  -->
-  <div class="flex justify-center py-2">
-    <span
-      class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
-      >{text}</span
-    >
-  </div>
-{/snippet}
-
 {#snippet messageBlock(row: ItemRow, content: Snippet)}
   {@const item = row.item}
   {@const continuesRun = row.continuesRun}
@@ -1370,9 +1074,9 @@
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
-        {@render replyQuote(row.replyQuote, item.isOwn)}
+        <ReplyQuote quote={row.replyQuote} isOwn={item.isOwn} />
         {@render content()}
-        {@render seenMarker(item)}
+        <SeenMarker item={item} {lastOwnMessageId} alignEnd={item.isOwn} />
         {#if item.isOwn}
           {@const failed = item.sendState === "sendingFailed"}
           {@const sending = item.sendState === "notSentYet"}
@@ -1409,8 +1113,8 @@
         {/if}
       </div>
     </div>
-    {@render reactionsRow(item, row.canReplyOrReact)}
-    {@render messageActions(row)}
+    <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} onToggle={handleToggleReaction} />
+    <MessageActions row={row} alignEnd={row.item.isOwn} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} />
   </div>
 {/snippet}
 
@@ -1562,7 +1266,7 @@
               `system` line, because it renders through the same `logLine`
               snippet rather than a copy of its markup.
             -->
-            {@render logLine(row.text)}
+            <LogLine text={row.text} />
           {:else}
             {@const item = row.item}
             {@const continuesRun = row.continuesRun}
@@ -1799,7 +1503,7 @@
                     same `logLine` snippet — see there for the wrap guard and
                     why every row in that log is deliberately identical.
                   -->
-                  {@render logLine(view.view.text)}
+                  <LogLine text={view.view.text} />
                 {:else}
                   {@const decision =
                     view.view.status === "rendered" ? view.view.decision : null}
@@ -1816,198 +1520,13 @@
                   -->
                   <div class="flex justify-start pt-8">
                     <div class="group relative min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
-                      <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
-                        <!--
-                          Header: what the card is left, the timestamp right,
-                          a hairline beneath. The *name* the renderer gives
-                          this kind of event ("Turn", "Permission") rather
-                          than `view.eventType` — a reader should not have to
-                          parse `dev.agentpod.turn.v1` to learn they are
-                          looking at a turn. The schema address stays in the
-                          `title`, for a card nothing recognises and for
-                          anyone diagnosing one; `displayEventType` truncated
-                          it from the *left* for exactly that case, and still
-                          does.
-                        -->
-                        <div
-                          class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
-                        >
-                          <span
-                            class="min-w-0 flex-1 text-label uppercase break-words"
-                            title={view.eventType}
-                          >
-                            {view.label}
-                          </span>
-                          <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
-                        </div>
-                        {#if view.view.status === "rendered"}
-                          <!--
-                            A real `<dl>`: these rows are label/value pairs,
-                            and a screen reader should read them as such
-                            rather than as a run of unrelated lines. Keyed by
-                            index, not `field.label` — a renderer's fields are
-                            trusted (registered application code, not an array
-                            read straight off the payload), but a duplicate
-                            label is still possible and shouldn't be able to
-                            confuse Svelte's keyed reconciliation.
-
-                            A two-column *grid*, not a flex row per pair, and
-                            the label track is `max-content` rather than the
-                            fixed `9ch` this first shipped with. Both halves
-                            of that are corrections found by rendering:
-
-                            - A fixed `9ch` is narrower than most real labels,
-                              and `overflow-wrap` then breaks them mid-word —
-                              `REQUEST`/`ED BY`, and at the 60-char bound a
-                              twelve-line syllable ladder. `min-w-[9ch]` keeps
-                              the spec's column rank for a short label like
-                              `NOTE`; `max-w-[16ch]` bounds it; between them
-                              an ordinary multi-word label wraps at its spaces
-                              and only a single over-long *word* still breaks,
-                              which is `break-words`' (`overflow-wrap:
-                              break-word`, not `anywhere`) last resort doing
-                              what it should.
-                            - A `max-content` track clamped by those two
-                              widths sizes to the longest label *in this card*
-                              and applies to every row, so the values still
-                              line up in one column. Per-row flex would let
-                              each row pick its own label width and the grid
-                              would stop being a grid.
-
-                            `ch` resolves against the element's own font, so
-                            the two caps are on the `dt`, which is the mono
-                            one — 9ch of mono, as the spec means it, not 9ch
-                            of the serif the card is set in.
-                          -->
-                          <dl
-                            class="selectable m-0 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 px-3 py-2"
-                          >
-                            {#each view.view.fields as field, i (i)}
-                              <dt
-                                class="min-w-[9ch] max-w-[16ch] font-mono text-label uppercase break-words text-content-muted"
-                              >
-                                {field.label}
-                              </dt>
-                              <dd class="m-0 min-w-0 break-words">{field.value}</dd>
-                            {/each}
-                          </dl>
-                          {#if view.view.reasoning}
-                            <!--
-                              How the agent reached this, when it said.
-                              Collapsed: it is context, not the conclusion,
-                              and an operator scanning a room wants the
-                              conclusion first.
-
-                              A `<details>` rather than a scripted toggle —
-                              the element already is a disclosure, keyboard
-                              operable and announced as one, and re-building
-                              that in Svelte would only be a worse version.
-                            -->
-                            <details class="border-t border-border px-3 py-2">
-                              <summary
-                                class="cursor-pointer font-mono text-label uppercase text-content-muted"
-                              >
-                                Reasoning
-                              </summary>
-                              <p
-                                class="selectable mt-2 mb-0 break-words whitespace-pre-wrap text-meta text-content-muted"
-                              >
-                                {view.view.reasoning}
-                              </p>
-                            </details>
-                          {/if}
-                          {#if view.view.newerVersion}
-                            <!--
-                              Mono and emphatically *not* amber: this is a
-                              note, not a decision, and amber is reserved
-                              (spec §3). Not italic either — no mono italic is
-                              bundled (spec §6.3).
-
-                              `--color-content-muted`, not `faint`, and that
-                              is a measured floor rather than a preference:
-                              `faint` on `--color-surface-raised` is 4.16:1
-                              in dark, under the 4.5:1 bar, because the card's
-                              ground is *raised* off the surface the rest of
-                              the log's faint rows sit on. `muted` on the same
-                              ground is 8.21:1.
-                            -->
-                            <p class="px-3 pb-2 font-mono text-meta text-content-muted">
-                              Shown from a newer version of this event
-                            </p>
-                          {/if}
-                        {:else}
-                          <!-- status === "fallbackBody": the plain-text
-                               `content.body` Matrix convention puts on every
-                               suite custom event, for a type this build has
-                               no renderer for. Serif, no field grid (spec
-                               §7) — it is prose, not data. -->
-                          <p class="selectable px-3 py-2 whitespace-pre-wrap break-words">
-                            {view.view.text}
-                          </p>
-                        {/if}
-                        {#if decision}
-                          <!--
-                            UNREACHABLE IN THIS BUILD — do not go looking for
-                            these buttons in the running app. No shipped
-                            renderer sets `CustomEventRenderResult.decision`
-                            (`core::custom_events` "Decisions"; the demo renderer
-                            never does, and a unit test holds it that way), so
-                            `core::custom_events::resolve_custom_event` returns `decision: null` for
-                            every real event and this block never executes.
-                            That is spec §7.1's requirement — "do not ship a
-                            visible button that does nothing" — and the reason
-                            `onDecide` is inert. Kaambaan's permission-request
-                            renderer plus its gate-resolution REST call
-                            (`docs/positioning.md`, wedge #3) are what make
-                            this live; the slot is covered by unit tests
-                            against a fixture renderer so it ships proven
-                            rather than speculative.
-
-                            Everything here is bounded and validated by
-                            `boundDecision` before it arrives: the prompt is a
-                            string capped at 300 chars, and there are at most
-                            four options, each with a string `id` and a string
-                            `label` capped at 60. A malformed decision is
-                            `null` by then, so this block cannot render a
-                            half-built control.
-                          -->
-                          <div class="border-t border-border px-3 py-2">
-                            <p class="selectable break-words">{decision.prompt}</p>
-                            <!--
-                              The only amber in the application (spec §7.1),
-                              alongside this card's left edge and ground. It
-                              says the operator owes someone an answer.
-                            -->
-                            <p class="mt-2 font-mono text-label uppercase text-signal">
-                              Awaiting your decision
-                            </p>
-                            <div class="mt-1.5 flex flex-wrap gap-2">
-                              <!--
-                                Keyed by index, not `option.id`, and for a
-                                sharper reason than the field grid above:
-                                `boundDecision` guarantees each `id` is a
-                                string, but nothing makes two options' ids
-                                *distinct* — a renderer echoing a payload
-                                could easily produce two `"approve"`s, and a
-                                duplicate key is a Svelte runtime error
-                                (`each_key_duplicate`) that would take the
-                                whole timeline render down. The id is still
-                                what `onDecide` receives; it is never a key
-                                and never reaches the DOM.
-                              -->
-                              {#each decision.options as option, i (i)}
-                                <button
-                                  type="button"
-                                  onclick={() => onDecide(item.id, option.id)}
-                                  class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised"
-                                >
-                                  {option.label}
-                                </button>
-                              {/each}
-                            </div>
-                          </div>
-                        {/if}
-                      </div>
+                      <DispatchCard
+                        {view}
+                        {decision}
+                        {item}
+                        {onDecide}
+                        {formatTime}
+                      />
                       <!--
                         Outside the bordered object, not inside it: the card
                         is the dispatch, and these are this reader's
@@ -2025,9 +1544,9 @@
                         `seenMarker`. Left the default and these rows would
                         hang off the right edge of a left-anchored card.
                       -->
-                      {@render reactionsRow(item, row.canReplyOrReact, false)}
-                      {@render messageActions(row, false)}
-                      {@render seenMarker(item, false)}
+                      <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={false} onToggle={handleToggleReaction} />
+                      <MessageActions row={row} alignEnd={false} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} />
+                      <SeenMarker item={item} {lastOwnMessageId} alignEnd={false} />
                     </div>
                   </div>
                 {/if}
@@ -2037,16 +1556,12 @@
                   rather than the signal colour: this is navigation, not a
                   decision waiting on you (spec §3 reserves amber for that).
                 -->
-                <div class="flex items-center gap-3 py-2" data-testid="unread-marker">
-                  <span class="h-px flex-1 bg-accent/40"></span>
-                  <span class="font-mono text-meta uppercase tracking-wide text-accent">New</span>
-                  <span class="h-px flex-1 bg-accent/40"></span>
-                </div>
+                <UnreadMarker />
               {:else if view.render === "system"}
                 <!-- Membership lines, room creation, encryption enabled, room
                      replaced — see `logLine` for why this row looks the way
                      it does and what its wrap guard is protecting. -->
-                {@render logLine(view.text)}
+                <LogLine text={view.text} />
               {:else if view.render === "placeholder"}
                 <!--
                   Anything the reader must be told about but this build can't
@@ -2057,7 +1572,7 @@
                   `core::item_view`. Rendered as the same log row as a
                   system line, deliberately: see `logLine`.
                 -->
-                {@render logLine(view.text)}
+                <LogLine text={view.text} />
               <!-- view.render === "none": deliberately silent, see `core::item_view`. -->
             {/if}
           {/if}
@@ -2108,98 +1623,7 @@
     }
   }
 
-  /*
-   * The dispatch card's frame (spec §7) — the timeline's only bordered
-   * object, and the only place `--color-signal` (amber) appears anywhere in
-   * this application (spec §3).
-   *
-   * **Two border ranks, and the difference between them is the whole
-   * device.** A 1px `--color-border` hairline on three sides, a 2px
-   * `--color-border-strong` edge on the left (spec §7). The first
-   * implementation used `border-strong` on all four sides, and rendering it
-   * is what exposed the mistake: the left edge was then the same colour as
-   * its neighbours and merely one pixel wider — invisible at any normal
-   * viewing distance. That left the card's signature device existing *only*
-   * on the pending variant, which no shipped renderer can currently
-   * produce, so everything a user could actually see had no signature at
-   * all. The edge has to read as a rank in the ordinary state, so that
-   * going amber changes an edge's **meaning** rather than conjuring an edge
-   * from nothing.
-   *
-   * This matters more in light than the token table suggests:
-   * `--color-surface-raised` on `--color-surface` measures 1.03:1, so in
-   * light mode the card has, for practical purposes, no ground — only its
-   * frame. The frame is what makes it an object there.
-   *
-   * Written here rather than as Tailwind utilities for one specific
-   * reason: the card sets `border-color` on three sides and a *different*
-   * `border-left-color` on the fourth. As utilities those are two rules of
-   * equal specificity, so which one wins depends on the order Tailwind
-   * happens to emit `border-color` and `border-left-color` in — not on the
-   * order they appear in the class attribute, which is what a reader would
-   * naturally assume. One rule, with the left edge stated after the
-   * shorthand, is unambiguous. It also lets the pending swap be a single
-   * named state rather than four interleaved conditionals.
-   *
-   * `--color-signal-soft` is the pending ground and `--color-signal` the
-   * pending edge; both are tokens, no literal colours (spec §3). The 100ms
-   * transition is the whole motion budget this element gets (spec §8) and
-   * is covered by `app.css`'s `prefers-reduced-motion` opt-out.
-   */
-  .dispatch-card {
-    border: 1px solid var(--color-border);
-    border-left: 2px solid var(--color-border-strong);
-    /* `--radius-card`, which is 8px, not the 6px this element carried
-       before the scales existed. Two pixels, and taken deliberately: the
-       role is called `card` because this is the thing it is named for, and
-       a signature element quietly using the control radius is how the four
-       ad-hoc radii happened in the first place. */
-    border-radius: var(--radius-card);
-    background-color: var(--color-surface-raised);
-    transition:
-      background-color var(--duration-quick),
-      border-color var(--duration-quick);
-  }
-
-  .dispatch-card-pending {
-    border-left-color: var(--color-signal);
-    background-color: var(--color-signal-soft);
-  }
-
-  /*
-   * The "mine" reaction chip's fill — see `reactionsRow`'s comment for why
-   * this is here rather than a `bg-accent/15` utility. The short version:
-   * one snippet, four possible grounds, and a translucent fill takes its
-   * contrast from whichever one it lands on.
-   *
-   * The trick is one line: an opaque `background-color` with the accent
-   * tint painted over it as a `background-image`. `background-image` sits
-   * *above* `background-color` on the same element, so the tint composites
-   * against `--color-surface` here and never against the ground behind the
-   * chip — the chip stops caring what it is sitting on. A `linear-gradient`
-   * between two identical colour stops is the standard way to express "a
-   * flat layer" as an image; there is no gradient in it.
-   *
-   * Tokens only, no literal colours (spec §3), and the tint percentages
-   * are the measured ones: 15% resting and 20% on hover give accent text
-   * 5.60:1 / 5.16:1 in light and 5.55:1 / 5.02:1 in dark, on every ground.
-   */
-  .reaction-chip-mine {
-    background-color: var(--color-surface);
-    background-image: linear-gradient(
-      color-mix(in oklab, var(--color-accent) 15%, transparent),
-      color-mix(in oklab, var(--color-accent) 15%, transparent)
-    );
-  }
-
-  .reaction-chip-mine:hover {
-    background-image: linear-gradient(
-      color-mix(in oklab, var(--color-accent) 20%, transparent),
-      color-mix(in oklab, var(--color-accent) 20%, transparent)
-    );
-  }
-
-  /*
+      /*
    * Typography for `{@html item.formattedBody}` content (see this file's
    * top-of-script doc comment for the sanitisation guarantees that make
    * rendering it safe at all). `:global(...)` throughout, deliberately: the

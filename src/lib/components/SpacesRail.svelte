@@ -42,11 +42,23 @@
   // roster to until it is accepted, so clicking one asks the page to offer
   // Accept / Decline instead.
 
-  import { spacesStore } from "$lib/stores/spaces.svelte";
-  import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
+  import type { SpaceSummary } from "$lib/ipc";
   import { railEntries } from "./spacesRailView";
 
-  interface Props {
+  export interface Props {
+    spaces: SpaceSummary[];
+    selectedId: string | null;
+    /**
+     * Resolved avatars, keyed by space id — a value, not the cache.
+     *
+     * The rail used to hold its own `createAvatarCache()`. Resolving in the
+     * route instead keeps this component a function of plain data, which is
+     * what makes a story a literal. The cache's own rule travels with the
+     * caller: it is asked for **every** entry rather than only those whose
+     * `avatarUrl` is set, because that field is only populated in some cases.
+     */
+    avatars: Record<string, string | null>;
+    onSelect: (spaceId: string | null) => void;
     /**
      * Called with the space id when a pending entry is clicked — the page
      * opens the invitation panel. Required rather than optional: a rail that
@@ -54,17 +66,18 @@
      * fixing, one surface further in.
      */
     onInvitation: (spaceId: string) => void;
+    /** An avatar that failed to load, so the caller can stop retrying it. */
+    onAvatarFailed: (spaceId: string) => void;
   }
 
-  const { onInvitation }: Props = $props();
+  const { spaces, selectedId, avatars, onSelect, onInvitation, onAvatarFailed }: Props =
+    $props();
 
   // The same per-component cache the roster and the room header each keep
   // (see `avatarCache.svelte.ts`): keyed by room id, fetched lazily, and
   // called for **every** entry rather than only those whose `avatarUrl` is
   // set. A space is a room, so `room_avatar` resolves it the same way.
-  const avatarCache = createAvatarCache();
-
-  const entries = $derived(railEntries(spacesStore.spaces));
+  const entries = $derived(railEntries(spaces));
 </script>
 
 {#if entries.length > 0}
@@ -81,8 +94,8 @@
     <!-- Keyed on the space id; the empty string stands in for "All rooms",
          which no room id can collide with (every one starts with `!`). -->
     {#each entries as entry (entry.spaceId ?? "")}
-      {@const selected = entry.spaceId === spacesStore.selectedId}
-      {@const avatar = entry.spaceId === null ? null : avatarCache.get(entry.spaceId)}
+      {@const selected = entry.spaceId === selectedId}
+      {@const avatar = entry.spaceId === null ? null : (avatars[entry.spaceId] ?? null)}
       <!--
         `pr-[2px]` against the 2px left border, so the circle sits on the
         strip's optical centre rather than 1px right of it — the same
@@ -100,7 +113,7 @@
         onclick={() =>
           entry.pending && entry.spaceId !== null
             ? onInvitation(entry.spaceId)
-            : void spacesStore.select(entry.spaceId)}
+            : onSelect(entry.spaceId)}
         aria-current={selected ? "true" : undefined}
         aria-label={entry.label}
         title={entry.label}
@@ -116,7 +129,7 @@
             class="h-8 w-8 rounded-pill object-cover {entry.pending
               ? 'border border-dashed border-accent opacity-70'
               : ''}"
-            onerror={() => avatarCache.markFailed(entry.spaceId ?? "")}
+            onerror={() => onAvatarFailed(entry.spaceId ?? "")}
           />
         {:else if entry.spaceId === null}
           <!--

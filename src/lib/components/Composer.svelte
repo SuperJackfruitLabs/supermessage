@@ -70,6 +70,9 @@
   // names its object either way.
 
   import { onDestroy, onMount, tick } from "svelte";
+  import MentionMenu from "./composer/MentionMenu.svelte";
+  import ReplyBanner from "./composer/ReplyBanner.svelte";
+  import StagedAttachmentChip from "./composer/StagedAttachmentChip.svelte";
   import { roomInfo } from "$lib/ipc";
   import { applyMention, findMentionQuery, matchMentions, mentionLabel } from "./mentions";
   // `collectMentions` is the core's: it produces the `m.mentions` that goes on
@@ -613,26 +616,11 @@
   independently bordered bars.
 -->
 {#if replyTarget}
-  <div class="shrink-0 border-l-2 border-l-accent bg-surface-sunken px-4 py-2">
-    <div class="mx-auto flex w-full max-w-[72ch] items-start gap-2">
-    <div class="min-w-0 flex-1">
-      <p class="truncate font-mono text-label text-content-muted uppercase">
-        Replying to {replyTarget.sender}
-      </p>
-      {#if replyTarget.excerpt}
-        <p class="mt-0.5 truncate font-serif text-meta text-content-muted">{replyTarget.excerpt}</p>
-      {/if}
-    </div>
-    <button
-      type="button"
-      onclick={cancelReply}
-      aria-label="Cancel reply"
-      class="shrink-0 rounded px-1.5 py-0.5 text-content-muted transition-colors hover:bg-surface hover:text-content"
-    >
-      ✕
-    </button>
-    </div>
-  </div>
+  <ReplyBanner
+    sender={replyTarget.sender}
+    excerpt={replyTarget.excerpt}
+    onCancel={cancelReply}
+  />
 {/if}
 {#if failure}
   <div class="shrink-0 bg-surface-sunken px-4 py-2">
@@ -681,39 +669,12 @@
     lives, and returns `null` when there is nothing to disambiguate.
   -->
   {@const caveat = sendCaveat(trimmed !== "", replyTarget !== null)}
-  <div class="shrink-0 border-l-2 border-l-accent bg-accent-soft px-4 py-2">
-    <div class="mx-auto flex w-full max-w-[72ch] items-start gap-3">
-      <div class="min-w-0 flex-1">
-        <!--
-          The eyebrow takes `--color-accent`, and that is the measurement
-          that made it: on the composer tray the strip's own ground carries
-          the "look here" alone, and `--color-accent-soft` over
-          `--color-surface-sunken` is **1.059:1 in light** against 1.395:1
-          in dark — weaker than the 1.090:1 sheet-on-field step the whole
-          depth story rests on (spec §3), i.e. subliminal in exactly the
-          theme most people use. An accent eyebrow is a second channel that
-          does not depend on that step surviving, and it measures 6.10:1
-          light / 5.46:1 dark on this ground. Amber would be louder and is
-          forbidden: `--color-signal` means the operator owes someone an
-          answer (§3), and they owe this one only to themselves.
-        -->
-        <p class="font-mono text-label text-accent uppercase">Attached</p>
-        <p class="truncate text-ui font-medium text-content" title={view.filename}>{view.filename}</p>
-        <p class="mt-0.5 truncate font-mono text-meta text-content-muted">{view.summary}</p>
-        {#if caveat}
-          <p class="mt-1 text-ui text-content-muted">{caveat}</p>
-        {/if}
-      </div>
-      <button
-        type="button"
-        onclick={removeStaged}
-        aria-label="Remove attachment"
-        class="shrink-0 rounded-control border border-border-strong px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
-      >
-        Remove
-      </button>
-    </div>
-  </div>
+  <StagedAttachmentChip
+    filename={view.filename}
+    summary={view.summary}
+    {caveat}
+    onRemove={removeStaged}
+  />
 {/if}
 <!--
   The strip's ground runs edge to edge, but its contents sit in the same
@@ -758,33 +719,11 @@
       Absolute so it cannot push the timeline as it grows and shrinks — the
       reading surface must not move while somebody types a name.
     -->
-    <ul
-      class="absolute bottom-full left-2 z-30 mb-1 max-h-56 w-72 overflow-y-auto rounded-control border border-border bg-surface py-1 shadow-overlay"
-      role="listbox"
-      aria-label="Mention a member"
-    >
-      {#each mentionMatches as member, index (member.userId)}
-        <li>
-          <button
-            type="button"
-            role="option"
-            aria-selected={index === mentionCursor}
-            onclick={() => chooseMention(member)}
-            class="flex w-full items-baseline gap-2 px-3 py-1.5 text-left transition-colors {index ===
-            mentionCursor
-              ? 'bg-surface-sunken'
-              : 'hover:bg-surface-sunken'}"
-          >
-            <span class="truncate font-sans text-ui text-content">{mentionLabel(member)}</span>
-            {#if member.displayName !== null}
-              <span class="truncate font-mono text-meta text-content-faint">
-                {member.userId}
-              </span>
-            {/if}
-          </button>
-        </li>
-      {/each}
-    </ul>
+    <MentionMenu
+      matches={mentionMatches}
+      activeIndex={mentionCursor}
+      onPick={chooseMention}
+    />
   {/if}
   <button
     type="button"

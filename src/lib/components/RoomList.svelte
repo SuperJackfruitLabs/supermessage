@@ -43,7 +43,9 @@
 
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
-  import { relativeTime } from "./roomIdentity";
+  import ArrangementMenu from "./roster/ArrangementMenu.svelte";
+  import RoomRow from "./roster/RoomRow.svelte";
+  import RosterSectionHeading from "./roster/RosterSectionHeading.svelte";
   import {
     rosterSections,
     type AgentState,
@@ -115,36 +117,6 @@
 
   const sortedRooms = $derived(sections.flatMap((section) => section.rows));
 
-  /**
-   * The dot's colour, in the vocabulary the console reserves: amber for what
-   * is owed, accent for what is alive, a faint mark for what is merely quiet,
-   * and nothing at all for silence — absence is not a state worth a mark.
-   */
-  function stateClass(state: AgentState): string {
-    switch (state) {
-      case "needsYou":
-        return "bg-signal";
-      case "active":
-        return "bg-accent";
-      case "idle":
-        return "bg-content-faint";
-      case "quiet":
-        return "bg-transparent";
-    }
-  }
-
-  function stateWord(state: AgentState): string {
-    switch (state) {
-      case "needsYou":
-        return "needs you";
-      case "active":
-        return "active";
-      case "idle":
-        return "idle";
-      case "quiet":
-        return "quiet";
-    }
-  }
 
   // Recency threshold for spec §6.1's muted-vs-faint split on the "· 4m"
   // time: rooms active within the last 5 minutes render their time in
@@ -167,68 +139,6 @@
     return Date.now();
   });
 
-  /**
-   * The row's accessible name: parsed name, role, unread count, and — only
-   * when a decision is pending — the fixed string `Approval needed`, in
-   * that order. Set explicitly as the button's own `aria-label` rather than
-   * left to the default descendant-concatenation algorithm. Two reasons:
-   * the visual "·" between role and time would otherwise be read literally
-   * (e.g. "middle dot") by some screen readers, and the unread badge sits
-   * to the right of the name in the DOM/markup for layout reasons, which
-   * would otherwise interleave it ahead of the role. The relative-time
-   * label ("4m") is left out on purpose: it's supplementary and changes on
-   * every re-render, not identifying information worth repeating on every
-   * row for a screen reader user.
-   *
-   * **The message preview is deliberately not in here, and the pending
-   * marker deliberately is.** The line this draws is *state, not content*
-   * — the same line the unread count already sits on the right side of:
-   *
-   * - The preview text changes on **every message**, so putting it in the
-   *   accessible name makes the row's *identity* churn. An `aria-label` is
-   *   what the row *is*, and a name that is different every time the user
-   *   arrows past it is a worse name; on a focused row, some assistive
-   *   technologies re-announce a changed name outright, turning a busy
-   *   fleet into interruptions. It would also make every row's
-   *   announcement up to a hundred characters longer, which is the
-   *   opposite of what roster navigation is for. The preview is
-   *   supplementary detail about the room's contents, and the room's
-   *   contents are what selecting the row is *for* — the timeline is where
-   *   they belong, in full, with senders and timestamps attached.
-   * - `Approval needed` is none of that. It is a fixed string, it does not
-   *   change as messages arrive, and it is the row's most consequential
-   *   state — and because an explicit `aria-label` replaces the button's
-   *   whole subtree for name computation, leaving it out would make the
-   *   amber row carry its meaning in colour and in replaced-away text
-   *   only. That is the one thing an accessible name must not do. It is
-   *   included for exactly the reason the unread count is, and it is
-   *   unreachable in production today for the reasons
-   *   `core::room_preview`'s decision-bearing types documents.
-   */
-  function rowAriaLabel(
-    name: string,
-    role: string | null,
-    unread: number,
-    pendingDecision: boolean,
-    invited: boolean,
-    state: AgentState,
-  ): string {
-    const parts = [name];
-    // Right after the name, because it changes what the row *is*: an
-    // invitation is not a conversation yet, and a reader who learns that last
-    // has already formed the wrong idea of the row.
-    if (invited) parts.push("Invitation");
-    if (role !== null) parts.push(role);
-    if (unread > 0) parts.push(`${unread} unread`);
-    if (pendingDecision) parts.push("Approval needed");
-    // The dot is `aria-hidden`, and an explicit `aria-label` replaces the
-    // button's whole subtree — so without this the state would exist in
-    // colour only, which is the one thing an accessible name must not do.
-    // `needsYou` is already carried by "Approval needed" above, and saying
-    // it twice is noise.
-    if (state !== "needsYou") parts.push(stateWord(state));
-    return parts.join(", ");
-  }
 </script>
 
 <!--
@@ -239,31 +149,7 @@
   for why a virtualized list must never have it.
 -->
 <nav aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
-  <!--
-    The arrangement switcher. Sticky rather than scrolling away: on a desktop
-    the roster column is always on screen, so the control that decides what
-    it *is* should be too — unlike the phone, where the same control lives in
-    the toolbar because there is no column to spare.
-  -->
-  <div
-    role="radiogroup"
-    aria-label="Roster arrangement"
-    class="sticky top-0 z-10 flex gap-1 border-b border-border bg-surface px-3 py-2"
-  >
-    {#each [{ id: "recent", label: "Recent" }, { id: "waiting", label: "Waiting" }, { id: "machine", label: "Machine" }] as option (option.id)}
-      <button
-        type="button"
-        role="radio"
-        aria-checked={view === option.id}
-        onclick={() => (view = option.id as RosterView)}
-        class="flex-1 rounded px-2 py-1 text-label transition-colors {view === option.id
-          ? 'bg-surface-raised text-content'
-          : 'text-content-muted hover:text-content'}"
-      >
-        {option.label}
-      </button>
-    {/each}
-  </div>
+  <ArrangementMenu {view} onChange={(next) => (view = next)} />
 
   <!--
     The list reorders itself constantly — it is sorted by last activity, so
@@ -278,196 +164,22 @@
   {:else}
     {#each sections as section (section.id)}
       {#if section.title}
-        <!--
-          Named only when something sits above or beside it. A lone section
-          on a quiet fleet gets no heading — "Everything else" above the
-          whole roster labels the absence of a section. The core decides
-          that, not this markup.
-        -->
-        <h2
-          class="flex items-baseline gap-2 px-4 pt-3 pb-1 text-label uppercase
-            {section.attention ? 'text-signal' : 'text-content-faint'}"
-        >
-          <span class="min-w-0 truncate">{section.title}</span>
-          {#if section.detail}
-            <span class="shrink-0 font-mono text-meta normal-case">{section.detail}</span>
-          {/if}
-        </h2>
+        <RosterSectionHeading
+          title={section.title}
+          detail={section.detail}
+          attention={section.attention}
+        />
       {/if}
       {#each section.rows as entry (entry.row.room.id)}
-        {@const row = entry.row}
-      <!--
-        The row arrives with its name already split, its preview already
-        composed and its affordance already chosen — the core decided all
-        three, so iOS and this app cannot disagree about any of them. Only
-        `time` is still derived here, because it reads a clock and has to
-        re-evaluate as `now` ticks.
-      -->
-      {@const room = row.room}
-      {@const identity = row.identity}
-      {@const preview = row.preview}
-      {@const selected = room.id === roomsStore.selectedId}
-      {@const avatar = avatarCache.get(room.id)}
-      {@const time = relativeTime(room.lastActivityMs, now)}
-      {@const recent = room.lastActivityMs !== null && now - room.lastActivityMs < RECENT_MS}
-      <!--
-        Each of the two lines below the name asks its own question — see
-        this component's doc comment on why there is no shared "show the
-        rest of the row" flag any more.
-      -->
-      {@const showRoleTime = identity.role !== null || time !== null}
-      {@const invited = row.affordance === "respondToInvitation"}
-      <button
-        type="button"
-        onclick={() => chooseRoom(room.id)}
-        aria-current={selected ? "true" : undefined}
-        aria-label={rowAriaLabel(
-          identity.name,
-          identity.role,
-          room.unread,
-          preview?.pending ?? false,
-          invited,
-          entry.state,
-        )}
-        class="flex gap-3 border-l-2 pr-4 pl-[10px] text-left transition-colors {selected
-          ? 'border-l-accent bg-surface'
-          : preview?.pending
-            ? 'border-l-signal hover:bg-surface/60'
-            : 'border-l-transparent hover:bg-surface/60'}"
-      >
-        {#if avatar}
-          <img
-            src={avatar}
-            alt=""
-            aria-hidden="true"
-            class="h-8 w-8 shrink-0 self-center rounded-pill object-cover"
-            onerror={() => avatarCache.markFailed(room.id)}
-          />
-        {:else}
-          <span
-            class="flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-pill bg-surface-raised text-ui font-medium text-content"
-            aria-hidden="true"
-          >
-            {identity.initial}
-          </span>
-        {/if}
-        <!--
-          The row separator lives on this column, not the button: the
-          button's flex row defaults to `align-items: stretch`, and this
-          column (name + role/time, with its own `py-3`) is always the
-          tallest sibling, so its own bottom edge already coincides with the
-          row's. Anchoring the hairline here — rather than on the button —
-          is what keeps it inset to clear the avatar column per spec §6.1
-          ("Row separator: hairline, inset to clear the avatar column")
-          instead of running edge-to-edge under the avatar too.
-        -->
-        <span class="min-w-0 flex-1 border-b border-border py-3">
-          <span class="flex items-center justify-between gap-2">
-            <!--
-              What the roster may say this agent is doing, decided by
-              `core::roster` and carried on the row. Quiet draws a
-              transparent dot rather than nothing, so names stay aligned
-              down the column — absence is not a state worth a mark, but it
-              is not a reason to move everything either.
-            -->
-            <span
-              class="h-1.5 w-1.5 shrink-0 rounded-pill {stateClass(entry.state)}"
-              aria-hidden="true"
-            ></span>
-            <span class="min-w-0 flex-1 truncate text-ui font-medium text-content"
-              >{identity.name}</span
-            >
-            {#if invited}
-              <!--
-                An invitation reads as a room in every other respect — name,
-                avatar, position in the roster — so without this the only
-                honest thing about the row is what happens when you open it.
-                Outlined rather than filled: it is a state, not a count, and
-                the filled accent pill is the unread number's.
-              -->
-              <span
-                class="shrink-0 rounded-pill border border-accent px-1.5 py-0.5 font-mono text-meta text-accent"
-              >
-                Invitation
-              </span>
-            {:else if room.unread > 0}
-              <!--
-                No `aria-label` of its own. The button above sets an explicit
-                one covering name, role and unread count, and an explicit
-                `aria-label` replaces its whole subtree for name computation
-                — so a label here would be dead for the row's accessible
-                name while still being reachable by an assistive
-                technology's virtual cursor, which is the worst of both:
-                inert where it looks useful, and a second, differently
-                worded reading of the same number where it isn't.
-              -->
-              <span
-                class="shrink-0 rounded-pill bg-accent px-1.5 py-0.5 font-mono text-meta text-accent-content"
-              >
-                {room.unread}
-              </span>
-            {/if}
-          </span>
-          {#if showRoleTime}
-            <span class="mt-0.5 flex min-w-0 items-baseline gap-1 font-mono text-meta text-content-muted">
-              {#if identity.role !== null}
-                <span class="truncate text-label uppercase">{identity.role}</span>
-              {/if}
-              {#if identity.role !== null && time !== null}
-                <span aria-hidden="true">·</span>
-              {/if}
-              {#if time !== null}
-                <span class="shrink-0 {recent ? '' : 'text-content-faint'}">{time}</span>
-              {/if}
-            </span>
-          {/if}
-          {#if preview !== null}
-            <!--
-              The preview line (spec §6.1.1). Mono `--text-meta`, the rank
-              §4's scale binds to that face — the same face and size the
-              role/time line above it already uses, so the row stays two
-              typographic ranks (name, then everything under it) rather
-              than three. §5.3's "serif means prose" governs the reading
-              surface, where a message is the thing being read; here it is
-              a 30-character fragment of chrome, and a third face in a
-              32px row would be noise.
-
-              `--color-content-muted` when the room has unread,
-              `--color-content-faint` otherwise: the preview is the reason
-              to open an unread room, and the row that has already been
-              read has nothing left to say. `--color-signal` overrides
-              both on the pending path — the only place amber appears
-              outside the dispatch card (spec §3), and unreachable today
-              (see `core::room_preview`'s decision-bearing types).
-
-              `truncate` rather than a hard-cut string: the core bounds the
-              text at 100 code points for transport, CSS owns what the
-              reader actually sees, exactly as every other roster string
-              here does.
-
-              **Sans, not mono**, even though `--text-meta`'s own scale
-              entry is a mono rank and the role line directly above it is
-              mono. §5.3 is the tiebreaker: mono means machine, serif means
-              prose, sans means chrome. A preview is a fragment of something
-              a person or an agent wrote — prose — so mono is wrong by the
-              design's own rule, and rendered it looked wrong for exactly
-              that reason: three stacked mono lines made a conversation read
-              like terminal output. Not serif either: serif says "read this
-              at length", which a truncated one-liner in a scanning surface
-              is not. Sans is the face for chrome, and this line is prose
-              *quoted into* chrome. It also happens to fit noticeably more
-              characters in the same column than mono did.
-            -->
-            <span
-              class="mt-0.5 block truncate font-sans text-meta {preview.pending
-                ? 'text-signal'
-                : room.unread > 0
-                  ? 'text-content-muted'
-                  : 'text-content-faint'}">{preview.text}</span
-            >
-          {/if}
-        </span>
-      </button>
+        <RoomRow
+          row={entry.row}
+          state={entry.state}
+          selected={entry.row.room.id === roomsStore.selectedId}
+          avatarUrl={avatarCache.get(entry.row.room.id)}
+          {now}
+          onSelect={chooseRoom}
+          onAvatarFailed={(roomId) => avatarCache.markFailed(roomId)}
+        />
       {/each}
     {/each}
   {/if}

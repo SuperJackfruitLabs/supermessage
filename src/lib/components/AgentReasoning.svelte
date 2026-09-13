@@ -27,11 +27,19 @@
   import { richBlocksFromMarkdown, type RichBlock } from "$lib/ipc";
   import Shimmer from "./ai/Shimmer.svelte";
   import { reasoningLabel } from "./reasoningLabel";
-  import { liveStore } from "$lib/stores/live.svelte";
+  /**
+   * The reasoning currently streaming, passed in.
+   *
+   * `roomId` is gone: it existed only to ask `liveStore` for this one
+   * value. What stays is everything this component decides for itself —
+   * holding the last turn's reasoning after the turn ends, the elapsed
+   * counter, and whether the disclosure is open.
+   */
+  export interface Props {
+    streaming: string | null;
+  }
 
-  let { roomId }: { roomId: string | null } = $props();
-
-  const streaming = $derived(liveStore.thought(roomId));
+  let { streaming }: Props = $props();
 
   /** The reasoning to show: the live one, or the last one this room produced. */
   let held = $state<string | null>(null);

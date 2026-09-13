@@ -17,12 +17,21 @@
   // a sibling of the timeline in a flex column, and an unbounded one starves
   // the virtual list until it renders nothing at all.
 
-  import { liveStore } from "$lib/stores/live.svelte";
+  import type { LiveTool } from "$lib/stores/live.svelte";
 
-  let { roomId }: { roomId: string | null } = $props();
+  /**
+   * The live turn's tools and its current thought, passed in.
+   *
+   * `roomId` is gone rather than kept: this component used it only to ask
+   * `liveStore` for these two values, so taking them directly means it no
+   * longer needs to know that rooms exist at all. The route resolves them.
+   */
+  export interface Props {
+    tools: LiveTool[];
+    thinking: string | null;
+  }
 
-  const tools = $derived(liveStore.tools(roomId));
-  const thinking = $derived(liveStore.thought(roomId));
+  let { tools, thinking }: Props = $props();
 
   /**
    * The tool worth naming: the last one still running, or failing.
