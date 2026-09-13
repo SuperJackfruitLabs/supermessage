@@ -30,27 +30,28 @@ class PreviewScreenshotTest(
 ) {
     companion object {
         /**
-         * Previews whose content never settles, and therefore have no frame
-         * worth keeping.
+         * Previews that need the clock held still.
          *
-         * **Excluded on principle, not for speed** — though the speed is how
-         * they were noticed. Each is a fixture that puts its screen in a state
-         * with an *indeterminate* animation: a `CircularProgressIndicator`, or
-         * streaming text's `delay` loop. Robolectric auto-advances its clock,
-         * so the composition never goes idle and the renderer waits.
-         * `ComposerSending` ran for **2 hours 18 minutes** before anyone
-         * measured it; the whole suite took 3h31m while its median preview
-         * took 0.3 seconds.
+         * Each shows an *indeterminate* animation — a
+         * `CircularProgressIndicator`, or streaming text's `delay` loop — and
+         * Robolectric auto-advances its clock, so left alone the composition
+         * never reaches idle and the animation schedules frames as fast as
+         * the CPU allows. `ComposerSending` ran for **2 hours 18 minutes**
+         * that way, while the median preview took 0.3 seconds.
          *
-         * Forcing them to render would not fix the real problem, which is
-         * that a spinner has no canonical frame. Whatever pixel the shutter
-         * caught would be arbitrary, and a baseline of arbitrary pixels fails
-         * at random. They stay in the catalogue and render in Android Studio,
-         * which is the right place to watch an animation anyway.
+         * **These used to be excluded outright, and that was one step short.**
+         * The argument for excluding them was sound — a spinner has no
+         * canonical frame, so any pixel the shutter catches is arbitrary —
+         * but freezing the clock and advancing a fixed 1,000ms *gives* it
+         * one. All 48 previews are gated now, and all 48 are byte-identical
+         * across repeated renders.
          *
-         * **Adding a preview in a loading state means adding it here.** The
-         * symptom is a run that never finishes rather than one that fails,
-         * which is why this list carries its reasons.
+         * [AnimatedPreviewScreenshotTest] renders these. It has to be a
+         * separate class: a `ComposeTestRule` and `captureRoboImage(preview)`
+         * each stand up their own host and cannot share one.
+         *
+         * **A new preview in a loading state belongs here.** Left out, it
+         * does not fail — it runs until someone notices.
          */
         internal val NEVER_SETTLES = setOf(
             "ComposerSending",      // sending = true
