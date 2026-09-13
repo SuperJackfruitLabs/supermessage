@@ -75,6 +75,7 @@ struct LoginView: View {
 #if DEBUG
 #Preview {
     LoginView(session: PreviewFixtures.session(phase: .signedOut))
+        .previewChrome()
 }
 
 // Dark, because this is the first screen anyone sees and the only one they
@@ -82,5 +83,6 @@ struct LoginView: View {
 #Preview("Dark") {
     LoginView(session: PreviewFixtures.session(phase: .signedOut))
         .preferredColorScheme(.dark)
+        .previewChrome()
 }
 #endif

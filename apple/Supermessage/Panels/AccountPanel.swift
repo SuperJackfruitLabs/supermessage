@@ -91,5 +91,6 @@ struct AccountPanel: View {
 // The account, which is two facts and a way out.
 #Preview {
     AccountPanel(session: PreviewFixtures.session(), onClose: {})
+        .previewChrome()
 }
 #endif

@@ -380,5 +380,6 @@ private struct AvatarViewer: View {
 #Preview("Furnished") {
     RoomInfoPanel(
         session: PreviewFixtures.session(), roomId: PreviewFixtures.roomId, onClose: {})
+        .previewChrome()
 }
 #endif

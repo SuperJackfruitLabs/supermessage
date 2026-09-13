@@ -108,11 +108,13 @@ struct TimelineView: View {
 #Preview("A conversation") {
     let session = PreviewFixtures.session()
     return TimelineView(session: session, timeline: session.timeline)
+        .previewChrome()
 }
 
 // A room with nothing in it yet.
 #Preview("Empty room") {
     let session = PreviewFixtures.session(.empty)
     return TimelineView(session: session, timeline: session.timeline)
+        .previewChrome()
 }
 #endif

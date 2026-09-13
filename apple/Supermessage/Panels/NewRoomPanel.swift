@@ -243,11 +243,13 @@ private struct ProgressRow: View {
 // that has not published a profile looks exactly like this.
 #Preview("Known people") {
     NewRoomPanel(session: PreviewFixtures.session(), onOpen: { _ in }, onClose: {})
+        .previewChrome()
 }
 
 // An account that knows nobody, which is where the "join by address" route
 // stops being an alternative and becomes the only way forward.
 #Preview("Nobody yet") {
     NewRoomPanel(session: PreviewFixtures.session(.empty), onOpen: { _ in }, onClose: {})
+        .previewChrome()
 }
 #endif

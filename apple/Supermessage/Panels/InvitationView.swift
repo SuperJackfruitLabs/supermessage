@@ -90,10 +90,12 @@ struct InvitationEmptyTimeline: View {
     InvitationView(
         session: PreviewFixtures.session(), roomId: "!estate:example.org",
         roomName: "Estate Planning")
+        .previewChrome()
 }
 
 // The empty timeline behind an invitation — a room the reader cannot read yet.
 #Preview("Empty timeline") {
     InvitationEmptyTimeline()
+        .previewChrome()
 }
 #endif

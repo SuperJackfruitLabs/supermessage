@@ -187,6 +187,7 @@ private struct ResultRow: View {
         // lives in the avatar — and no role either.
         scope: .init(roomId: PreviewFixtures.roomId, name: "Atlas"),
         onOpen: { _ in }, onClose: {})
+        .previewChrome()
 }
 
 // Opened from nowhere in particular.
@@ -196,5 +197,6 @@ private struct ResultRow: View {
 // This preview is the one that shows the layout without it.
 #Preview("Unscoped") {
     SearchPanel(session: PreviewFixtures.session(), onOpen: { _ in }, onClose: {})
+        .previewChrome()
 }
 #endif

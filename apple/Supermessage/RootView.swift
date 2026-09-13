@@ -42,6 +42,19 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             Task { await session.scenePhaseChanged(to: phase == .active) }
         }
+        // Every control in the app, in the palette's accent.
+        //
+        // Without this a `Button` takes SwiftUI's default tint, which is the
+        // system blue — so `RoomInfoPanel`'s `Done` rendered #007AFF while
+        // `design/tokens.toml` says the accent is #5b43d4. Nothing set a tint
+        // anywhere, so all 30 Button and ToolbarItem sites were Apple's blue.
+        //
+        // **`PreviewGround` sets the same tint, and the two must agree.** A
+        // preview renders a panel directly rather than through this view, so
+        // without it there the catalogue would show a colour the app does
+        // not have — which is the exact failure the fixture work spent a day
+        // on.
+        .tint(Theme.accent)
     }
 }
 
