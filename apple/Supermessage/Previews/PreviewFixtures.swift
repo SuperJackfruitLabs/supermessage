@@ -609,12 +609,13 @@ enum PreviewFixtures {
     static var people: [PersonDto] {
         [
             PersonDto(
-                userId: "@atlas:example.org", name: "✳ Atlas — Platform",
+                userId: "@atlas:example.org", name: "Atlas — Platform", initial: "✳",
                 runtime: RuntimeDto(harness: "Claude Code", host: "Foundry"), avatarUrl: nil),
-            PersonDto(userId: "@krishna:example.org", name: "Krishna", runtime: nil,
-                      avatarUrl: nil),
             PersonDto(
-                userId: "@9247e5a1b3c4:id.agentpod.dev", name: "9247e5…",
+                userId: "@krishna:example.org", name: "Krishna", initial: "K",
+                runtime: nil, avatarUrl: nil),
+            PersonDto(
+                userId: "@9247e5a1b3c4:id.agentpod.dev", name: "9247e5…", initial: "9",
                 runtime: nil, avatarUrl: nil),
         ]
     }

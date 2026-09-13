@@ -23,6 +23,16 @@ pub struct PersonDto {
     /// What to call them, with any `(harness @ host)` suffix taken off and
     /// carried in [`Self::runtime`] instead.
     pub name: String,
+    /// The one glyph or letter a face shows for them.
+    ///
+    /// The same split [`crate::dto::TimelineRow::sender_initial`] carries,
+    /// for the same reason: a host that takes `name.first` gets the glyph
+    /// *and* leaves it in the name beside it. [`Self::name`] is therefore
+    /// **glyph-free** — the symbol belongs to the face.
+    ///
+    /// `None` has no meaning here; a name always yields something, falling
+    /// back to a letter and then to `?`.
+    pub initial: String,
     /// The harness and machine, when this is an agent rather than a person.
     ///
     /// Also the flag that says *which* it is: the app is for talking to
@@ -62,9 +72,14 @@ pub fn project_person_parts(
             })
     });
 
+    // The glyph comes off the name and is handed back on its own, exactly as
+    // `attributed_parts` does for a message's sender.
+    let (initial, name) = crate::room_identity::sender_face_parts(&name);
+
     PersonDto {
         user_id: user_id.to_string(),
         name,
+        initial,
         runtime,
         avatar_url: avatar_url.map(str::to_string),
     }

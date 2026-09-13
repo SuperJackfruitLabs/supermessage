@@ -172,9 +172,18 @@ that is what the 33-frame gate and a person looking at it are for.
 
 ## 8. Not done
 
-- **`PersonDto` still carries its glyph** while `TimelineRow` no longer
-  does. iOS's person row shows a generic symbol in its disc and Android's
-  has no disc, so stripping it would delete the glyph rather than move it.
+- ~~`PersonDto` still carries its glyph.~~ **Done.** It gained `initial`,
+  its `name` is glyph-free, iOS's disc shows the glyph where there is one
+  (and keeps `person.fill`/`cpu` where there is not, because that is the
+  only thing on the row saying *which kind* of correspondent this is), and
+  Android's person row gained the disc it never had.
+
+  **Verified on Android, unverified on iOS.** The change is visible in
+  Android's gated frame. Both iOS previews that would show it are in the
+  unstable set, and three consecutive renders all caught the `.task`
+  loading state — so on iOS this is compiled, symmetrical to Android, and
+  not looked at. That is the cost of the gap in the row below, stated where
+  it applies rather than in general.
 - **Android's Material derivations** — ripples, elevation tints — are still
   computed from the scheme rather than the palette, and no contract covers
   them.

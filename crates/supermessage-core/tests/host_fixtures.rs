@@ -82,7 +82,9 @@ fn people_directory() {
         Some("✳ Atlas — Platform (claude-code @ foundry)"),
         None,
     );
-    assert_eq!(atlas.name, "✳ Atlas — Platform");
+    // The glyph belongs to the face here too, as it does on a timeline row.
+    assert_eq!(atlas.initial, "✳");
+    assert_eq!(atlas.name, "Atlas — Platform");
     let runtime = atlas.runtime.expect("an agent has a runtime");
     // Humanised on the way out — the fixtures said `claude-code`/`foundry`.
     assert_eq!(runtime.harness, "Claude Code");
@@ -90,6 +92,7 @@ fn people_directory() {
 
     let krishna = project_person_parts("@krishna:example.org", Some("Krishna"), None);
     assert_eq!(krishna.name, "Krishna");
+    assert_eq!(krishna.initial, "K", "no glyph, so a letter");
     assert!(krishna.runtime.is_none(), "a colleague has no runtime");
 
     // No display name: named from the localpart, and **bounded**. The fixture
@@ -97,6 +100,7 @@ fn people_directory() {
     // the same string twice.
     let unnamed = project_person_parts("@9247e5a1b3c4:id.agentpod.dev", None, None);
     assert_eq!(unnamed.name, "9247e5…");
+    assert_eq!(unnamed.initial, "9", "the localpart's first character");
     assert!(
         unnamed.name.chars().count() < 12,
         "the fallback is bounded, so a row cannot be overflowed by an id"

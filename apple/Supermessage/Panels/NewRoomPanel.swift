@@ -107,11 +107,28 @@ private struct PersonRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            // The glyph when the suite gave them one, the generic symbol
+            // when it did not.
+            //
+            // Not a straight swap: `person.fill` against `cpu` is the only
+            // thing on this row that says *which kind* of correspondent this
+            // is, and the app exists for talking to agents. So the glyph —
+            // which is itself an agent's mark — takes the disc where there is
+            // one, and the symbol keeps saying it where there is not.
+            //
+            // `initial` rather than `name.first`, for the reason the roster
+            // and the timeline both learned: the first character of a name
+            // that still held its glyph *was* the glyph, drawn twice.
             ZStack {
                 Circle().fill(Theme.surfaceRaised)
-                Image(systemName: person.runtime == nil ? "person.fill" : "cpu")
-                    .imageScale(.small)
-                    .foregroundStyle(Theme.contentMuted)
+                if let glyph = person.initial.first, !glyph.isLetter, !glyph.isNumber {
+                    Text(String(glyph))
+                        .font(.system(size: 14))
+                } else {
+                    Image(systemName: person.runtime == nil ? "person.fill" : "cpu")
+                        .imageScale(.small)
+                        .foregroundStyle(Theme.contentMuted)
+                }
             }
             .frame(width: 30, height: 30)
 

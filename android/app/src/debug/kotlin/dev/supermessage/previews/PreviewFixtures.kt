@@ -495,12 +495,30 @@ object PreviewFixtures {
      */
     val people: List<PersonDto>
         get() = listOf(
+            // Named arguments throughout. These were positional, and adding
+            // `initial` to the DTO turned that into five compile errors that
+            // said "argument type mismatch" rather than "a field was added".
             PersonDto(
-                "@atlas:example.org", "✳ Atlas — Platform",
-                RuntimeDto("Claude Code", "Foundry"), null,
+                userId = "@atlas:example.org",
+                name = "Atlas — Platform",
+                initial = "✳",
+                runtime = RuntimeDto("Claude Code", "Foundry"),
+                avatarUrl = null,
             ),
-            PersonDto("@krishna:example.org", "Krishna", null, null),
-            PersonDto("@9247e5a1b3c4:id.agentpod.dev", "9247e5…", null, null),
+            PersonDto(
+                userId = "@krishna:example.org",
+                name = "Krishna",
+                initial = "K",
+                runtime = null,
+                avatarUrl = null,
+            ),
+            PersonDto(
+                userId = "@9247e5a1b3c4:id.agentpod.dev",
+                name = "9247e5…",
+                initial = "9",
+                runtime = null,
+                avatarUrl = null,
+            ),
         )
 
     val searchResults: List<SearchResultDto>

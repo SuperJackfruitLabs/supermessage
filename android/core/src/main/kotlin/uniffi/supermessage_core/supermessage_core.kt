@@ -1367,6 +1367,18 @@ data class PersonDto (
      */
     var `name`: kotlin.String, 
     /**
+     * The one glyph or letter a face shows for them.
+     *
+     * The same split [`crate::dto::TimelineRow::sender_initial`] carries,
+     * for the same reason: a host that takes `name.first` gets the glyph
+     * *and* leaves it in the name beside it. [`Self::name`] is therefore
+     * **glyph-free** — the symbol belongs to the face.
+     *
+     * `None` has no meaning here; a name always yields something, falling
+     * back to a letter and then to `?`.
+     */
+    var `initial`: kotlin.String, 
+    /**
      * The harness and machine, when this is an agent rather than a person.
      *
      * Also the flag that says *which* it is: the app is for talking to
@@ -1391,6 +1403,7 @@ public object FfiConverterTypePersonDto: FfiConverterRustBuffer<PersonDto> {
         return PersonDto(
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
             FfiConverterOptionalTypeRuntimeDto.read(buf),
             FfiConverterOptionalString.read(buf),
         )
@@ -1399,6 +1412,7 @@ public object FfiConverterTypePersonDto: FfiConverterRustBuffer<PersonDto> {
     override fun allocationSize(value: PersonDto) = (
             FfiConverterString.allocationSize(value.`userId`) +
             FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`initial`) +
             FfiConverterOptionalTypeRuntimeDto.allocationSize(value.`runtime`) +
             FfiConverterOptionalString.allocationSize(value.`avatarUrl`)
     )
@@ -1406,6 +1420,7 @@ public object FfiConverterTypePersonDto: FfiConverterRustBuffer<PersonDto> {
     override fun write(value: PersonDto, buf: ByteBuffer) {
             FfiConverterString.write(value.`userId`, buf)
             FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`initial`, buf)
             FfiConverterOptionalTypeRuntimeDto.write(value.`runtime`, buf)
             FfiConverterOptionalString.write(value.`avatarUrl`, buf)
     }
