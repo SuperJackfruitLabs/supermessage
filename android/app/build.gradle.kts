@@ -163,6 +163,20 @@ tasks.withType<Test>().configureEach {
     // it runs everywhere, always, and gates every pull request.
     maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
 
+    // UTC, so a rendered clock does not depend on where the machine is.
+    //
+    // The baseline's first run on CI failed six frames, and the diff images
+    // showed the whole difference was `11:30 PM` against `6:00 PM` — this
+    // machine is IST, the runner is UTC. `TimelineRow` formats an absolute
+    // `timestampMs` through the *default* zone, so a reference recorded here
+    // can never match one verified there.
+    //
+    // The fixtures' relative times were already made deterministic by passing
+    // a fixed `Instant` for `now`; this is the half that was missed, and it
+    // was invisible until the gate ran somewhere other than where it was
+    // recorded.
+    systemProperty("user.timezone", "UTC")
+
     // Coroutine debug mode off, and it is worth an order of magnitude.
     //
     // kotlinx.coroutines turns it on under tests, and it renames the thread
