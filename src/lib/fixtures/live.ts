@@ -52,15 +52,37 @@ export const typingMany: TypingUser[] = [
 ];
 
 /**
- * No cached display name, so the line falls back to the raw id.
+ * No cached display name, so the core names them from their localpart.
  *
- * `TypingUser.displayName` is `null` until the room's member store has
- * something, and `label` is server-controlled arbitrary text otherwise —
- * its own doc comment says to guard it against overflow like any other
- * sender field.
+ * **This said `@9247e5a1b3c4:id.agentpod.dev` and that was wrong.** The label
+ * is not the raw id: `typing_users` falls back to `user_label`, which takes
+ * the localpart, strips a bridge namespace, humanises it and bounds it — so
+ * what a host actually receives is `9247e5…`. Checked by running the function
+ * rather than by reading it.
+ *
+ * The wrong value also made this story look like an overflow test, which it
+ * never was. The real unbounded case is a *display name*, which is
+ * server-controlled and passes through untouched — see [[typingOverlong]].
  */
 export const typingUnnamed: TypingUser[] = [
-  typingUser({ userId: "@9247e5a1b3c4:id.agentpod.dev", displayName: null, label: "@9247e5a1b3c4:id.agentpod.dev" }),
+  typingUser({ userId: "@9247e5a1b3c4:id.agentpod.dev", displayName: null, label: "9247e5…" }),
+];
+
+/**
+ * A display name long enough to break the line.
+ *
+ * `TypingUser.label`'s own doc comment says to guard it against overflow like
+ * any other sender field, and until now nothing here did: the fixture that
+ * looked like it was testing that was testing a value the core never emits.
+ * A display name is the honest source of an unbounded one, because a
+ * homeserver will hand over whatever its user typed.
+ */
+export const typingOverlong: TypingUser[] = [
+  typingUser({
+    userId: "@verbose:example.org",
+    displayName: "Extremely Verbose Agent Of Considerable Renown And Unbounded Nomenclature",
+    label: "Extremely Verbose Agent Of Considerable Renown And Unbounded Nomenclature",
+  }),
 ];
 
 // ─────────────────────────── live activity ───────────────────────────

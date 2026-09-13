@@ -592,16 +592,29 @@ enum PreviewFixtures {
         ]
     }
 
+    /// People **as `project_person_parts` produces them**, which is not what
+    /// this fixture said before.
+    ///
+    /// Two corrections, both found by rendering the row and then checking the
+    /// function rather than trusting the fixture:
+    ///
+    /// - `runtime` is humanised — `Claude Code on Foundry`, not
+    ///   `claude-code`/`foundry`. `sender_parts` reads `harness @ host` and
+    ///   `humanise` title-cases both.
+    /// - A person with no display name is named from the **localpart**, and
+    ///   bounded: `@9247e5a1b3c4:id.agentpod.dev` arrives as `9247e5…`. This
+    ///   fixture claimed the whole id, which made the row look like it printed
+    ///   the same string twice — a defect that was reported and does not
+    ///   exist.
     static var people: [PersonDto] {
         [
             PersonDto(
                 userId: "@atlas:example.org", name: "✳ Atlas — Platform",
-                runtime: RuntimeDto(harness: "claude-code", host: "foundry"), avatarUrl: nil),
+                runtime: RuntimeDto(harness: "Claude Code", host: "Foundry"), avatarUrl: nil),
             PersonDto(userId: "@krishna:example.org", name: "Krishna", runtime: nil,
                       avatarUrl: nil),
-            // No display name yet, so the row falls back to the raw id.
             PersonDto(
-                userId: "@9247e5a1b3c4:id.agentpod.dev", name: "@9247e5a1b3c4:id.agentpod.dev",
+                userId: "@9247e5a1b3c4:id.agentpod.dev", name: "9247e5…",
                 runtime: nil, avatarUrl: nil),
         ]
     }

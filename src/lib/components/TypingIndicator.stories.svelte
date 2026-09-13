@@ -1,7 +1,14 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
 
-  import { typingMany, typingNobody, typingOne, typingTwo, typingUnnamed } from "$lib/fixtures";
+  import {
+    typingMany,
+    typingNobody,
+    typingOne,
+    typingOverlong,
+    typingTwo,
+    typingUnnamed,
+  } from "$lib/fixtures";
 
   import TypingIndicator from "./TypingIndicator.svelte";
 
@@ -22,6 +29,13 @@
   server-controlled arbitrary text, and long. This is the `truncate` case.
 -->
 <Story name="Unnamed sender" args={{ users: typingUnnamed }} />
+
+<!--
+  The overflow case, which the story above only appeared to cover.
+  A display name is server-controlled and arrives untouched; the unnamed
+  fallback is bounded by the core and cannot overflow.
+-->
+<Story name="Overlong name" args={{ users: typingOverlong }} />
 
 <!--
   Nobody typing. The strip keeps its 24px of height and shows nothing, which
