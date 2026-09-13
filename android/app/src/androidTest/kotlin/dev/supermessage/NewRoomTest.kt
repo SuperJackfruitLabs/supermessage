@@ -42,8 +42,16 @@ import uniffi.supermessage_ffi.TimelineSnapshot
 class NewRoomTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun person(userId: String, name: String, runtime: RuntimeDto? = null) =
-        PersonDto(userId = userId, name = name, runtime = runtime, avatarUrl = null)
+    private fun person(
+        userId: String,
+        name: String,
+        runtime: RuntimeDto? = null,
+        // What the face shows. The core decides it — see
+        // `people::project_person_parts` — and `name` arrives without it.
+        initial: String = "?",
+    ) = PersonDto(
+        userId = userId, name = name, initial = initial, runtime = runtime, avatarUrl = null,
+    )
 
     private fun sessionOf(core: FakeCore): Session =
         Session(client = CoreClient(core = core, dispatcher = Dispatchers.Unconfined), scope = CoroutineScope(Dispatchers.Unconfined))
