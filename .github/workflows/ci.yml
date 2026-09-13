@@ -581,14 +581,24 @@ jobs:
             adb uninstall dev.supermessage || true
             adb uninstall dev.supermessage.test || true
             cd android && ./gradlew :app:connectedDebugAndroidTest
-            # PreviewCaptureTest writes the rule-carrying frames here. Pulled
-            # inside the emulator script because this is the only step with a
-            # device attached.
+            # PreviewCaptureTest writes the rule-carrying frames to the app's
+            # external files directory. Collected here because this is the only
+            # step with a device attached.
             #
-            # `|| true` on the pull, and a directory created either way: a
+            # **`adb root` first, and it is not optional.** Since Android 11,
+            # adb shell cannot read another app's `/sdcard/Android/data/<pkg>`
+            # — so a plain `adb pull` of that path silently returns nothing.
+            # The first run of this step did exactly that: the tests passed,
+            # eleven PNGs were written on the device, the pull produced no
+            # error, and the artifact was empty. This AVD is a `google_apis`
+            # image rather than `google_apis_playstore`, which is precisely
+            # the difference that makes it rootable.
+            #
+            # `|| true` throughout, and the directory created either way: a
             # failure to collect images must not turn a green instrumented run
-            # red. The upload step below reports an empty directory instead,
-            # which says the same thing without hiding the test results.
+            # red. `ls` is what says which happened.
+            adb root || true
+            adb wait-for-device
             mkdir -p "$GITHUB_WORKSPACE/preview-captures"
             adb pull /sdcard/Android/data/dev.supermessage/files/preview-captures/. \
               "$GITHUB_WORKSPACE/preview-captures/" || true
