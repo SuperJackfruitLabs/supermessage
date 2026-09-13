@@ -466,23 +466,31 @@ jobs:
         # Before the cross-compile: these are JVM tests, and the only native
         # library any of them touches is the host one built above.
         #
-        # `roborazzi.test.record`: `PreviewScreenshotTest` is an ordinary unit
-        # test that happens to draw, so it runs here rather than in a step of
-        # its own — a second Gradle invocation would repeat two minutes of
-        # work to produce the same images.
+        # `PreviewScreenshotTest` is excluded unless `-PrenderPreviews=true` —
+        # see app/build.gradle.kts. With it on, this step measured 31 minutes
+        # against ~2 without.
+        run: ./gradlew :kit:testDebugUnitTest :app:testDebugUnitTest :core:testDebugUnitTest
+        working-directory: android
+
+      - name: Render the Compose previews
+        # All 48, drawn by Robolectric in NATIVE graphics mode — no emulator,
+        # and before the expensive half of the job rather than inside it.
+        #
+        # **On `main` only.** It measured 29 minutes on a runner, which is the
+        # same trade `ANDROID_ABIS` already makes in this job: a pull request
+        # gets the cheap answer, `main` gets the complete one. A reviewer who
+        # wants the images before merge runs it locally with
+        # `-PrenderPreviews=true`, or opens Android Studio.
+        if: github.ref == 'refs/heads/main'
         run: >-
-          ./gradlew :kit:testDebugUnitTest :app:testDebugUnitTest
-          :core:testDebugUnitTest -Proborazzi.test.record=true
+          ./gradlew :app:testDebugUnitTest --tests '*PreviewScreenshotTest*'
+          -PrenderPreviews=true -Proborazzi.test.record=true
         working-directory: android
 
       - name: Upload the rendered previews
-        # Every `@Preview` in the debug source set, drawn by Robolectric in
-        # NATIVE graphics mode — no emulator, and this runs *before* the
-        # expensive half of the job rather than inside it.
-        #
         # `always()`: the images are most useful on the run where something
         # broke, which is the run where the step above failed.
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: android-preview-captures
