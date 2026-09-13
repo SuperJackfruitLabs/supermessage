@@ -155,23 +155,12 @@ dependencies {
 // :app needs it because PreviewScreenshotTest renders every @Preview, and a
 // few of those reach a type whose class initialiser loads the core.
 tasks.withType<Test>().configureEach {
-    // Rendering the previews is opt-in, and the number that decided that is
-    // worth keeping: with it on, CI's "Unit tests" step went from ~2 minutes
-    // to **31**, and the Android job from ~25 to 46. Locally a serial run was
-    // 18 minutes; a GitHub runner is slower because it has four cores to this
-    // machine's eight, so `maxParallelForks` resolves to 2 there.
-    //
-    // So it runs on `main` and not on every pull request — the same trade
-    // `ANDROID_ABIS` already makes in that job, and for the same reason. A
-    // reviewer who wants the images before merge runs it locally with
-    // `-PrenderPreviews=true`, or opens Android Studio, where they are free.
-    if (providers.gradleProperty("renderPreviews").orNull != "true") {
-        filter { excludeTestsMatching("*PreviewScreenshotTest*") }
-    }
-
-    // Each preview pays for its own Robolectric sandbox and there are 48 of
-    // them. Half the cores, because the sandboxes are memory-hungry and this
-    // shares a machine with Gradle itself.
+    // The previews used to be opt-in, because rendering them took 31 minutes
+    // on CI. That was never the rendering: 41 of the 48 draw in under a
+    // second and the median is 0.3s. Seven were spinners that never settle,
+    // and one of those ran for 2h18m on its own. With those excluded — see
+    // PreviewScreenshotTest.NEVER_SETTLES — the suite is **24 seconds**, so
+    // it runs everywhere, always, and gates every pull request.
     maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
 
     systemProperty(
