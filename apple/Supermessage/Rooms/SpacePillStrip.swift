@@ -85,3 +85,30 @@ struct SpacePillStrip: View {
         .buttonStyle(.plain)
     }
 }
+
+#if DEBUG
+// The strip with three spaces, one of them an invitation.
+//
+// Wrapped in `PreviewSeeded` because `SpacesStore` has no envelope route —
+// only `refresh()`, which is an `await`. So this is the one component whose
+// preview goes through the same asynchronous path the app does on launch,
+// and it is worth knowing that: the frame before the seed lands is a strip
+// holding nothing but "All", which is also what a reader with no spaces sees.
+#Preview("Three spaces") {
+    let spaces = PreviewFixtures.spacesStore()
+    return PreviewSeeded(seed: { await spaces.refresh() }) {
+        PreviewGround { SpacePillStrip(spaces: spaces, allCount: 5) }
+    }
+}
+
+// No spaces at all, which is most accounts: "All" alone.
+//
+// The question this answers is whether the strip should be there at all in
+// that case — it costs ~40pt of a phone's first screen to say nothing.
+#Preview("No spaces") {
+    let spaces = PreviewFixtures.spacesStore(.empty)
+    return PreviewSeeded(seed: { await spaces.refresh() }) {
+        PreviewGround { SpacePillStrip(spaces: spaces, allCount: 5) }
+    }
+}
+#endif

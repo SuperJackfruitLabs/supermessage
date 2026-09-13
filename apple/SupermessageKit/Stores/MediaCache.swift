@@ -40,11 +40,11 @@ public final class MediaCache {
     /// lands asks once.
     private var fetching: Set<String> = []
 
-    private let client: CoreClient
+    private let client: any MediaFetching
 
     private let byteLimit: Int
 
-    public init(client: CoreClient, byteLimit: Int = 64 * 1024 * 1024) {
+    public init(client: any MediaFetching, byteLimit: Int = 64 * 1024 * 1024) {
         self.client = client
         self.byteLimit = byteLimit
     }

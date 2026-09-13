@@ -68,7 +68,20 @@ dependencies {
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
-    implementation(libs.compose.ui.tooling.preview)
+    // Both tooling artifacts are debug-scoped, and the two halves of that are
+    // one decision rather than two.
+    //
+    // `ui-tooling-preview` was `implementation`, so the annotation shipped in
+    // release. It can only move here because the @Preview functions live in
+    // `src/debug/kotlin` — a preview in `src/main` would no longer compile.
+    // `ui-tooling` is the renderer, which this project never declared at all;
+    // without it a @Preview is an annotation nothing draws.
+    //
+    // R8 was never going to save this: there is no `buildTypes` block in this
+    // file, so minification is off and "ship it and let R8 strip it" would
+    // have stripped nothing.
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.adaptive)
     implementation(libs.adaptive.layout)

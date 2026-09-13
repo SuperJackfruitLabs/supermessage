@@ -268,3 +268,38 @@ private struct RosterSettings: View {
 private struct RoomInfoRequest: Identifiable {
     let id: String
 }
+
+#if DEBUG
+// The roster as a reader meets it: five rooms, one of them owing an answer.
+//
+// `clearsSelectionOnPop` is `true` here, which is the iPhone's answer. The
+// iPad passes `false`, and the reason is recorded on the property: a column
+// reports its own width, so asking inside this view gave the sidebar's answer
+// rather than the window's and an iPad obeyed a `nil` selection by closing
+// the room the reader was in.
+#Preview("Waiting") {
+    NavigationStack {
+        RoomListView(session: PreviewFixtures.session(), clearsSelectionOnPop: true)
+    }
+}
+
+// A synced account with no rooms at all.
+//
+// The empty state is a screen, and this is the one every new reader lands on.
+#Preview("Nothing yet") {
+    NavigationStack {
+        RoomListView(session: PreviewFixtures.session(.empty), clearsSelectionOnPop: true)
+    }
+}
+
+// Dark, where `content-faint`'s worst ground flips to `surface-raised`.
+//
+// The roster is where that matters most: the preview line and the relative
+// time are both faint, and they sit on a row rather than on the page.
+#Preview("Waiting, dark") {
+    NavigationStack {
+        RoomListView(session: PreviewFixtures.session(), clearsSelectionOnPop: true)
+    }
+    .preferredColorScheme(.dark)
+}
+#endif

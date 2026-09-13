@@ -272,3 +272,42 @@ private struct AttachmentChip: View {
         .padding(.vertical, 6)
     }
 }
+
+#if DEBUG
+// The composer at rest.
+#Preview("Empty") {
+    ComposerView(session: PreviewFixtures.session(), roomId: PreviewFixtures.roomId)
+        .background(Theme.surface)
+}
+
+// With a reply staged above it.
+//
+// `ReplyTarget.Pending` carries a snapshot rather than a binding, on purpose:
+// the composer keeps whatever it was handed, so a parent that is later
+// redacted or scrolls out of the materialised timeline does not make this row
+// change or vanish underneath the person writing. This preview is that row.
+#Preview("Replying") {
+    let session = PreviewFixtures.session()
+    // `start` takes the row rather than its parts, and reads `eventId` from
+    // it — not `item.id`, because identity is stable across the
+    // local-echo-to-confirmed transition and is therefore not something the
+    // homeserver has heard of.
+    session.replies.start(PreviewFixtures.replyParent, in: PreviewFixtures.roomId)
+    return ComposerView(session: session, roomId: PreviewFixtures.roomId)
+        .background(Theme.surface)
+}
+
+// With an attachment staged.
+//
+// The staged file has dimensions and a size, and the row has to hold a
+// filename that may be much longer than the space for it.
+#Preview("Attachment staged") {
+    let session = PreviewFixtures.session()
+    return PreviewSeeded(seed: {
+        _ = await session.staged.stage(path: "/tmp/muster-dark.png", in: PreviewFixtures.roomId)
+    }) {
+        ComposerView(session: session, roomId: PreviewFixtures.roomId)
+            .background(Theme.surface)
+    }
+}
+#endif

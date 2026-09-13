@@ -115,3 +115,21 @@ extension RichBlock {
         }
     }
 }
+
+#if DEBUG
+// One of every block kind together, which is the only arrangement that shows
+// whether the vertical rhythm between them is consistent — a heading tight
+// against a list, a quote's indent against a code block's.
+#Preview("Every block") {
+    ScrollView { PreviewGround { RichTextView(blocks: PreviewFixtures.richBlocks) } }
+}
+
+// A code block whose lines are far wider than any phone.
+//
+// Code is the one thing here that may not be re-wrapped — a broken command is
+// a wrong command — so it has to scroll sideways inside its own box while the
+// page does not. This is the preview that shows which of those happens.
+#Preview("Code wider than the screen") {
+    PreviewGround { RichTextView(blocks: PreviewFixtures.wideCode) }
+}
+#endif

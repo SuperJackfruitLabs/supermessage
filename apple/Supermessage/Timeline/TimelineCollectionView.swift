@@ -688,3 +688,20 @@ extension UIViewController {
         presentedViewController?.topmostPresented ?? self
     }
 }
+
+#if DEBUG
+// The list itself, without `TimelineView` around it.
+//
+// Worth previewing separately from `TimelineView` because this is a
+// `UIViewRepresentable`: its cells are `UIHostingController`s inside
+// `UICollectionViewListCell`s, and the two places that arrangement goes wrong
+// — a cell that will not size itself to its content, and a separator drawn
+// where the design has none — are both invisible in a SwiftUI-only preview of
+// the parent.
+#Preview("A conversation") {
+    @Previewable @State var isAwayFromNewest = false
+    let session = PreviewFixtures.session()
+    return TimelineCollectionView(
+        session: session, timeline: session.timeline, isAwayFromNewest: $isAwayFromNewest)
+}
+#endif

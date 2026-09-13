@@ -174,3 +174,25 @@ private struct ResultRow: View {
         }
     }
 }
+
+#if DEBUG
+// Opened from inside a room, so it has a scope to offer and starts narrowed.
+//
+// Nothing has been typed yet: the panel's idle state, which is what a reader
+// sees for as long as it takes them to think of a word.
+#Preview("Scoped, idle") {
+    SearchPanel(
+        session: PreviewFixtures.session(),
+        scope: .init(roomId: PreviewFixtures.roomId, name: "✳ Atlas — Platform"),
+        onOpen: { _ in }, onClose: {})
+}
+
+// Opened from nowhere in particular.
+//
+// `scope` is `nil`, so the segmented control is absent entirely — a
+// segmented control with one option is a label wearing a control's clothes.
+// This preview is the one that shows the layout without it.
+#Preview("Unscoped") {
+    SearchPanel(session: PreviewFixtures.session(), onOpen: { _ in }, onClose: {})
+}
+#endif

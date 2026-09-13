@@ -12,9 +12,9 @@ import SupermessageFFI
 public final class StagedAttachment {
     public private(set) var file: StagedFile?
 
-    private let client: CoreClient
+    private let client: any AttachmentStaging
 
-    public init(client: CoreClient) {
+    public init(client: any AttachmentStaging) {
         self.client = client
     }
 

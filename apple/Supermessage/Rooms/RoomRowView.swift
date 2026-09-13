@@ -165,3 +165,60 @@ private struct UnreadBadge: View {
             .accessibilityLabel("\(count) unread")
     }
 }
+
+#if DEBUG
+// The four states `RoomRow` can arrive in, in one frame.
+//
+// Together rather than separately on purpose: the whole point of the state
+// word and the pending mark is that they are *distinguishable at a glance in
+// a list*, and a row previewed alone cannot show that. Reading down this
+// preview, exactly one row is amber — that is `docs/design-language.md` §2,
+// and a second amber row anywhere in it is a defect rather than a taste
+// disagreement.
+#Preview("Every state") {
+    List {
+        RoomRowView(
+            row: PreviewFixtures.roomNeedsYou, avatarURI: nil, state: .needsYou, when: "2m")
+        RoomRowView(row: PreviewFixtures.roomActive, avatarURI: nil, state: .active, when: "14m")
+        RoomRowView(
+            row: PreviewFixtures.roomInvitation, avatarURI: nil, state: .idle, when: "")
+        RoomRowView(row: PreviewFixtures.roomQuiet, avatarURI: nil, state: .quiet, when: "3d")
+        RoomRowView(row: PreviewFixtures.roomBare, avatarURI: nil, state: .idle, when: "1h")
+    }
+    .listStyle(.plain)
+}
+
+// The same rows in dark, where the palette ramp runs the other way.
+//
+// `content-faint`'s contrast contract lists all three grounds rather than
+// only the reading surface, because in dark the ground it fails on flips to
+// `surface-raised`. A roster row sits on one of those, so this is where that
+// would show.
+#Preview("Every state, dark") {
+    List {
+        RoomRowView(
+            row: PreviewFixtures.roomNeedsYou, avatarURI: nil, state: .needsYou, when: "2m")
+        RoomRowView(row: PreviewFixtures.roomActive, avatarURI: nil, state: .active, when: "14m")
+        RoomRowView(row: PreviewFixtures.roomQuiet, avatarURI: nil, state: .quiet, when: "3d")
+    }
+    .listStyle(.plain)
+    .preferredColorScheme(.dark)
+}
+
+// The state word turned off, which is a stored roster preference.
+//
+// `showsState` defaults to `true`, so every other preview here is showing the
+// default. This is the arrangement a reader who turned it off actually has,
+// and the question it answers is whether the row still balances without it.
+#Preview("State word hidden") {
+    List {
+        RoomRowView(
+            row: PreviewFixtures.roomNeedsYou, avatarURI: nil, state: .needsYou, when: "2m",
+            showsState: false)
+        RoomRowView(
+            row: PreviewFixtures.roomActive, avatarURI: nil, state: .active, when: "14m",
+            showsState: false)
+    }
+    .listStyle(.plain)
+}
+#endif

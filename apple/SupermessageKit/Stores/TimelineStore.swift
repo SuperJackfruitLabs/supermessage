@@ -44,11 +44,11 @@ public final class TimelineStore {
     /// False once the core reports there is no more history to fetch.
     public private(set) var canPaginate = true
 
-    private let client: CoreClient
+    private let client: any TimelineSubscribing
     private let sink: any CoreEventSink
     private var sync: GapSync<TimelineRow>?
 
-    public init(client: CoreClient, sink: any CoreEventSink) {
+    public init(client: any TimelineSubscribing, sink: any CoreEventSink) {
         self.client = client
         self.sink = sink
         sync = GapSync(

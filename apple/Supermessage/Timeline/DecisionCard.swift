@@ -263,3 +263,91 @@ struct GateAnswer {
     let comment: String?
     let prompt: String
 }
+
+#if DEBUG
+// The signature element, and the only place amber appears in this app.
+#Preview("Pending decision") {
+    PreviewGround {
+        CustomEventCard(
+            view: PreviewFixtures.cardPending, label: "Gate",
+            eventType: "dev.kaambaan.gate.v1", senderName: "⌘ Kaambaan — Delivery",
+            onDecide: { _ in true })
+    }
+}
+
+// Answered: the amber is gone and the buttons have settled.
+//
+// The pair is the preview, not either half — the difference between these two
+// frames is the entire visual grammar of "this needs you" in the product.
+#Preview("Answered") {
+    PreviewGround {
+        CustomEventCard(
+            view: PreviewFixtures.cardAnswered, label: "Gate",
+            eventType: "dev.kaambaan.gate.v1", senderName: "⌘ Kaambaan — Delivery")
+    }
+}
+
+#Preview("With reasoning") {
+    PreviewGround {
+        CustomEventCard(
+            view: PreviewFixtures.cardWithReasoning, label: "Turn",
+            eventType: "dev.agentpod.turn.v1", senderName: "✳ Atlas — Platform")
+    }
+}
+
+// A field value that is one 71-character unbroken run.
+//
+// Every value on a card is arbitrary JSON from anyone who can send to the
+// room, so this is the shape that finds a missing wrap guard. The web story
+// for this rendered 1147pt wide on its first attempt while claiming to show
+// the guard holding — which is worse than having no story at all, and is why
+// this one is framed at a phone's width rather than left to fill the canvas.
+#Preview("Unbreakable value") {
+    PreviewGround(width: 360) {
+        CustomEventCard(
+            view: PreviewFixtures.cardLongValue, label: "Artifact",
+            eventType: "dev.agentpod.artifact.v1", senderName: "✳ Atlas — Platform")
+    }
+}
+
+// A schema this build is too old to render fully, and one with nothing
+// structured left at all.
+//
+// Both are the core telling the host that the sender knows more about this
+// event type than it does. They are previewed together because the question
+// is whether the three fallback states are visibly *different* — a host that
+// draws them identically has made the fallback chain pointless.
+#Preview("Fallback chain") {
+    ScrollView {
+        PreviewGround {
+            VStack(spacing: 16) {
+                CustomEventCard(
+                    view: PreviewFixtures.cardNewerVersion, label: "Station",
+                    eventType: "dev.agentpod.station.v2", senderName: "✳ Atlas — Platform")
+                CustomEventCard(
+                    view: PreviewFixtures.cardFallback, label: "Station",
+                    eventType: "dev.agentpod.station.v2", senderName: "✳ Atlas — Platform")
+                CustomEventCard(
+                    view: PreviewFixtures.cardPlaceholder, label: "Event",
+                    eventType: "dev.agentpod.unknown.v1", senderName: "✳ Atlas — Platform")
+            }
+        }
+    }
+}
+
+// A sender-controlled event type carrying a right-to-left override.
+//
+// `ItemView.customEvent`'s own doc comment is explicit that this string is
+// hostile: truncate from the left, never the right, and never render it with
+// an RTL base direction, because the obvious approach hands the bidi
+// algorithm a crafted string and lets a type reorder itself on screen. This
+// is the preview where that would be visible, and it is the reason it exists
+// — nothing else in the catalogue would show it.
+#Preview("Hostile event type") {
+    PreviewGround(width: 360) {
+        CustomEventCard(
+            view: PreviewFixtures.cardAnswered, label: "Station",
+            eventType: PreviewFixtures.hostileEventType, senderName: "✳ Atlas — Platform")
+    }
+}
+#endif

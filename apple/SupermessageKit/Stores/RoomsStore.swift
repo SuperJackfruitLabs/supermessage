@@ -22,11 +22,11 @@ public final class RoomsStore {
     /// have to outlive that.
     private var selectedNameFallback: String?
 
-    private let client: CoreClient
+    private let client: any RoomsSnapshotting
     private var sync: GapSync<RoomRow>?
     private let onSelect: (String) -> Void
 
-    public init(client: CoreClient, onSelect: @escaping (String) -> Void = { _ in }) {
+    public init(client: any RoomsSnapshotting, onSelect: @escaping (String) -> Void = { _ in }) {
         self.client = client
         self.onSelect = onSelect
         sync = GapSync(

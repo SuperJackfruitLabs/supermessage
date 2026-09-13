@@ -492,3 +492,155 @@ private struct MediaFileRow: View {
         return "\(kind) · \(formatted)"
     }
 }
+
+#if DEBUG
+// The whole timeline vocabulary in one frame.
+//
+// Previewed as a list rather than one row at a time, because almost every
+// decision this view makes is about its *neighbours*: the run grouping, the
+// day divider's separation, whether a system line reads as belonging to the
+// message above it. A row alone cannot show any of that.
+#Preview("Everything") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(PreviewFixtures.history.enumerated()), id: \.offset) { _, row in
+                TimelineRowView(row: row, media: media, faces: faces)
+            }
+        }
+        .padding(.horizontal, 12)
+    }
+    .background(Theme.surface)
+}
+
+// A second message from the same sender, moments later.
+//
+// `continuesRun` defaults to `false`, so every other preview here shows the
+// attributed form. This is the pair: the first row names its sender, the
+// second does not, and the vertical gap between them is what says they are
+// one turn rather than two.
+#Preview("Sender run") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return VStack(alignment: .leading, spacing: 0) {
+        TimelineRowView(
+            row: PreviewFixtures.message, attribution: "✳ Atlas — Platform", media: media,
+            faces: faces)
+        TimelineRowView(
+            row: PreviewFixtures.noticed, continuesRun: true, media: media, faces: faces)
+    }
+    .padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Theme.surface)
+}
+
+// Own messages, and the two send states that are not "sent".
+//
+// A failed send is the one row in the timeline that is asking the reader for
+// something, and it may not use amber to do it — amber means a pending
+// decision. `danger` is the role that belongs here.
+#Preview("Sending and failed") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return VStack(alignment: .leading, spacing: 0) {
+        TimelineRowView(row: PreviewFixtures.ownSending, media: media, faces: faces)
+        TimelineRowView(row: PreviewFixtures.ownFailed, media: media, faces: faces)
+    }
+    .padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Theme.surface)
+}
+
+// A reply whose parent is there, and one whose parent is gone.
+//
+// `ReplyQuoteView.unavailable` is a real and common state — the parent was
+// redacted, or has not been paginated in — and the quote has to say so
+// without looking like a failure of this app.
+#Preview("Replies") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return VStack(alignment: .leading, spacing: 0) {
+        TimelineRowView(row: PreviewFixtures.reply, media: media, faces: faces)
+        TimelineRowView(row: PreviewFixtures.replyToNothing, media: media, faces: faces)
+    }
+    .padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Theme.surface)
+}
+
+// Reactions, including a key that is not an emoji.
+//
+// `ReactionDto.key` is arbitrary sender-controlled text. A row previewed with
+// nothing but emoji would never show what a word-length key does to the
+// chip row's wrapping.
+#Preview("Reactions") {
+    PreviewGround(width: 360) {
+        TimelineRowView(
+            row: PreviewFixtures.withReactions, media: PreviewFixtures.mediaCache(),
+            faces: PreviewFixtures.faceCache())
+    }
+}
+
+// Media, with no bytes behind it.
+//
+// The stub's `mediaFetch` returns `nil`, which is deliberately the
+// interesting case: this is the frame a reader sees before an image arrives,
+// or permanently when it never does. `ItemView.image` carries the sender's
+// own pixel dimensions so the box can be reserved before the bytes are
+// requested, and whether that reservation is honoured is exactly what this
+// preview shows.
+#Preview("Media without bytes") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return VStack(alignment: .leading, spacing: 0) {
+        TimelineRowView(row: PreviewFixtures.image, media: media, faces: faces)
+        TimelineRowView(row: PreviewFixtures.attachment, media: media, faces: faces)
+    }
+    .padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Theme.surface)
+}
+
+// The rows that are not bubbles at all: a day divider, a membership line, and
+// a type this build cannot render.
+//
+// `ItemView.dateDivider` exists as a variant because it used to be a contract
+// in a comment — and iOS was the host that missed it and put "Unsupported
+// event (dateDivider)" in the middle of a conversation. This preview is where
+// that regression would be visible without a device.
+#Preview("Not a message") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return VStack(alignment: .leading, spacing: 0) {
+        TimelineRowView(row: PreviewFixtures.dayDivider, media: media, faces: faces)
+        TimelineRowView(row: PreviewFixtures.membership, media: media, faces: faces)
+        TimelineRowView(row: PreviewFixtures.encrypted, media: media, faces: faces)
+    }
+    .padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Theme.surface)
+}
+
+// A 104-character run with no break in it, at a phone's width.
+#Preview("Unbreakable body") {
+    PreviewGround(width: 360) {
+        TimelineRowView(
+            row: PreviewFixtures.unbreakable, media: PreviewFixtures.mediaCache(),
+            faces: PreviewFixtures.faceCache())
+    }
+}
+
+// A card inside a timeline row, which is how a reader actually meets one.
+//
+// The card has its own previews in `DecisionCard.swift`; this one is about
+// the seam around it — whether the row's horizontal inset and the card's own
+// frame agree at a phone's width.
+#Preview("Card in a row") {
+    PreviewGround(width: 360) {
+        TimelineRowView(
+            row: PreviewFixtures.card, media: PreviewFixtures.mediaCache(),
+            faces: PreviewFixtures.faceCache(), onDecide: { _ in true })
+    }
+}
+#endif

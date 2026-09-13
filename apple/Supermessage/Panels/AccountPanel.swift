@@ -86,3 +86,10 @@ struct AccountPanel: View {
         name.first.map { String($0).uppercased() } ?? "?"
     }
 }
+
+#if DEBUG
+// The account, which is two facts and a way out.
+#Preview {
+    AccountPanel(session: PreviewFixtures.session(), onClose: {})
+}
+#endif
