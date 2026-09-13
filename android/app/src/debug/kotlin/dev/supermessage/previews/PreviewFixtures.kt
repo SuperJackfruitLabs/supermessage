@@ -485,17 +485,22 @@ object PreviewFixtures {
 
     // ── People, search, rooms ────────────────────────────────────────────
 
+    /**
+     * People **as `project_person_parts` produces them**, which is not what
+     * this fixture said before. `runtime` is humanised to `Claude Code` /
+     * `Foundry`, and a person with no display name is named from the bounded
+     * localpart — `9247e5…`, not the whole id. Claiming the whole id made the
+     * row look like it printed the same string twice, a defect that was
+     * reported and does not exist.
+     */
     val people: List<PersonDto>
         get() = listOf(
             PersonDto(
                 "@atlas:example.org", "✳ Atlas — Platform",
-                RuntimeDto("claude-code", "foundry"), null,
+                RuntimeDto("Claude Code", "Foundry"), null,
             ),
             PersonDto("@krishna:example.org", "Krishna", null, null),
-            // No display name yet, so the row falls back to the raw id.
-            PersonDto(
-                "@9247e5a1b3c4:id.agentpod.dev", "@9247e5a1b3c4:id.agentpod.dev", null, null,
-            ),
+            PersonDto("@9247e5a1b3c4:id.agentpod.dev", "9247e5…", null, null),
         )
 
     val searchResults: List<SearchResultDto>

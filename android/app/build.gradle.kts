@@ -155,24 +155,47 @@ dependencies {
 // :app needs it because PreviewScreenshotTest renders every @Preview, and a
 // few of those reach a type whose class initialiser loads the core.
 tasks.withType<Test>().configureEach {
-    // Rendering the previews is opt-in, and the number that decided that is
-    // worth keeping: with it on, CI's "Unit tests" step went from ~2 minutes
-    // to **31**, and the Android job from ~25 to 46. Locally a serial run was
-    // 18 minutes; a GitHub runner is slower because it has four cores to this
-    // machine's eight, so `maxParallelForks` resolves to 2 there.
-    //
-    // So it runs on `main` and not on every pull request — the same trade
-    // `ANDROID_ABIS` already makes in that job, and for the same reason. A
-    // reviewer who wants the images before merge runs it locally with
-    // `-PrenderPreviews=true`, or opens Android Studio, where they are free.
-    if (providers.gradleProperty("renderPreviews").orNull != "true") {
-        filter { excludeTestsMatching("*PreviewScreenshotTest*") }
-    }
-
-    // Each preview pays for its own Robolectric sandbox and there are 48 of
-    // them. Half the cores, because the sandboxes are memory-hungry and this
-    // shares a machine with Gradle itself.
+    // The previews used to be opt-in, because rendering them took 31 minutes
+    // on CI. That was never the rendering: 41 of the 48 draw in under a
+    // second and the median is 0.3s. Seven were spinners that never settle,
+    // and one of those ran for 2h18m on its own. With those excluded — see
+    // PreviewScreenshotTest.NEVER_SETTLES — the suite is **24 seconds**, so
+    // it runs everywhere, always, and gates every pull request.
     maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+
+    // UTC, so a rendered clock does not depend on where the machine is.
+    //
+    // The baseline's first run on CI failed six frames, and the diff images
+    // showed the whole difference was `11:30 PM` against `6:00 PM` — this
+    // machine is IST, the runner is UTC. `TimelineRow` formats an absolute
+    // `timestampMs` through the *default* zone, so a reference recorded here
+    // can never match one verified there.
+    //
+    // The fixtures' relative times were already made deterministic by passing
+    // a fixed `Instant` for `now`; this is the half that was missed, and it
+    // was invisible until the gate ran somewhere other than where it was
+    // recorded.
+    systemProperty("user.timezone", "UTC")
+
+    // Coroutine debug mode off, and it is worth an order of magnitude.
+    //
+    // kotlinx.coroutines turns it on under tests, and it renames the thread
+    // on **every dispatch** so a stack trace can say `@coroutine#1`. That is
+    // a native call. A Compose animation dispatches per simulated frame, and
+    // Robolectric's clock has no real delay between frames — so a preview
+    // showing a spinner pays `Thread.setNativeName` millions of times.
+    //
+    // Measured on `ComposerSending`, which shows a CircularProgressIndicator:
+    // **2 hours 18 minutes with it on, about 90 seconds with it off.** The
+    // other pathological cost in that loop is Robolectric's own
+    // ShadowDisplayEventReceiver doing a `Class.forName` per vsync, which is
+    // not ours to fix — but it is affordable once this one is gone.
+    //
+    // The previews in NEVER_SETTLES stay excluded regardless: a spinner has
+    // no canonical frame. What this changes is the blast radius of getting
+    // that list wrong — with debug off, such a preview fails in ninety
+    // seconds with an idle timeout instead of burning a CI job for hours.
+    systemProperty("kotlinx.coroutines.debug", "off")
 
     systemProperty(
         "jna.library.path",

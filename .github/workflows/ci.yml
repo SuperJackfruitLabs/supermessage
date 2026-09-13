@@ -466,36 +466,29 @@ jobs:
         # Before the cross-compile: these are JVM tests, and the only native
         # library any of them touches is the host one built above.
         #
-        # `PreviewScreenshotTest` is excluded unless `-PrenderPreviews=true` —
-        # see app/build.gradle.kts. With it on, this step measured 31 minutes
-        # against ~2 without.
+        # This includes `PreviewScreenshotTest`, which draws all 41 settling
+        # previews with Robolectric and **compares them against the committed
+        # baseline** in app/src/test/previews. `roborazzi.test.verify=true` is
+        # set in gradle.properties, so a changed pixel fails here.
+        #
+        # It costs 24 seconds. It used to cost 31 minutes, and the difference
+        # was seven previews showing spinners that never settle rather than
+        # anything about rendering.
         run: ./gradlew :kit:testDebugUnitTest :app:testDebugUnitTest :core:testDebugUnitTest
         working-directory: android
 
-      - name: Render the Compose previews
-        # All 48, drawn by Robolectric in NATIVE graphics mode — no emulator,
-        # and before the expensive half of the job rather than inside it.
+      - name: Upload the preview diffs
+        # Only when something changed: Roborazzi writes actual/expected/diff
+        # triples, and a reviewer wants the picture, not the assertion text.
         #
-        # **On `main` only.** It measured 29 minutes on a runner, which is the
-        # same trade `ANDROID_ABIS` already makes in this job: a pull request
-        # gets the cheap answer, `main` gets the complete one. A reviewer who
-        # wants the images before merge runs it locally with
-        # `-PrenderPreviews=true`, or opens Android Studio.
-        if: github.ref == 'refs/heads/main'
-        run: >-
-          ./gradlew :app:testDebugUnitTest --tests '*PreviewScreenshotTest*'
-          -PrenderPreviews=true -Proborazzi.test.record=true
-        working-directory: android
-
-      - name: Upload the rendered previews
-        # `always()`: the images are most useful on the run where something
-        # broke, which is the run where the step above failed.
-        if: always() && github.ref == 'refs/heads/main'
+        # If this artifact exists, read it before assuming the test is wrong —
+        # an intended visual change is re-recorded and committed, not skipped.
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: android-preview-captures
-          path: android/app/build/outputs/preview-captures/
-          if-no-files-found: warn
+          name: android-preview-diffs
+          path: android/app/build/outputs/roborazzi/
+          if-no-files-found: ignore
 
       - name: Previews stay out of the release variant
         # Compiles both variants and looks for the fixture marker in the
