@@ -30,16 +30,25 @@ does not.
 **every one was a real defect rather than a coincidence** — which is why the
 index flags identical images rather than deduplicating them.
 
-### 1. A `UIViewRepresentable` renders blank
+### 1. A `UIViewRepresentable` renders blank — the harness, not the preview
 
-`TimelineView` (both previews) and `TimelineCollectionView` produce an empty
-frame. All three are identical, including "A conversation" against "Empty
-room" — so it is not the data. The timeline is a `UICollectionView` behind a
-representable, and it never gets the layout pass a snapshot would need.
+`TimelineView` (both previews) and `TimelineCollectionView` produced an empty
+frame, which looked exactly like the outcome P2b's spec called plausible and
+undetected: *"a preview that compiles and renders a blank frame would not be
+caught."*
 
-This is exactly the outcome P2b's spec called plausible and undetected: *"a
-preview that compiles and renders a blank frame would not be caught."* It
-compiled, it was catalogued, it showed nothing, and nothing knew.
+**It is not that, and the difference matters.** Rendering one with a red
+background produced a *full-screen red* frame: the SwiftUI wrapper is present
+and correctly sized, and only the `UICollectionView`'s cells are absent.
+`UIKitRenderingStrategy` puts the view in a real `UIWindow` and calls
+`drawHierarchy(afterScreenUpdates: true)`, but a diffable data source's
+`apply` lands on a later runloop turn, so the shutter opens before a cell
+exists. The package offers no readiness hook to wait on.
+
+Xcode's canvas keeps re-rendering a live process and has no such problem. So
+these are previews that work where a person looks at them and cannot be
+captured here — excluded, so their blank frames stop being reported as a
+defect every run.
 
 ### 2. `PreviewSeeded` captures the frame before its seed lands
 
@@ -88,6 +97,35 @@ humanises it to `Matrix Rust Sdk`. So the roster preview — the one used to
 check the amber rule — was a screen the product does not have. The fixtures
 now state what `parse_room_identity` produces, and the core pins those values
 in a test.
+
+### 4. Anything that loads in a `.task` snapshots as its loading state
+
+Found while confirming the above, and it bounds what every number on this
+page means.
+
+`RoomInfoPanel` renders as a bare spinner. It was **not** reported as a
+problem, because duplicate detection can only speak when there are two frames
+to compare and this view has one preview. `NewRoomPanel`'s two previews *were*
+caught, and only because there are two of them and they are identical.
+
+Every panel that loads through a `.task` — room info, account, search, new
+room, the invitation's inviter — is in this category. Some of their frames on
+this page are the screen; some are the spinner before it. The index now also
+measures how much of each frame is a single flat colour, which is what sorts
+one from the other, and says plainly that it is a number to look at rather
+than a verdict: a small component on a full-device canvas is legitimately 93%
+background.
+
+**So "40 previews rendered" is not "40 screens verified".** It is 40 frames,
+of which the ones that matter have been looked at individually.
+
+### 5. The room info panel's `Done` is system blue
+
+Not the token `accent` (`#5b43d4`). A toolbar button taking `UIColor.tintColor`
+rather than the palette is exactly the P6 gap P1 recorded in the abstract —
+iOS defining colour roles it does not consistently reach for. Recorded in
+`docs/platform-parity.md`; not fixed here, because P6 is its own project and
+this one is about being able to see.
 
 ## What is excluded, and why
 

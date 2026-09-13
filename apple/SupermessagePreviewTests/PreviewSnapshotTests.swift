@@ -43,11 +43,32 @@ final class PreviewSnapshotTests: SnapshotTest {
     /// which phase is on screen when the shutter opens is a race. Its
     /// comment in `RootView.swift` already says the frame is transient; that
     /// makes it a poor snapshot even though it is a fair preview.
+    ///
+    /// **The timeline pair is excluded for a third reason, and it is the
+    /// harness's limit rather than a fault in the previews.** They came out
+    /// blank on the first run, which looked exactly like the
+    /// "compiles to an empty frame" outcome this whole project was braced
+    /// for. It is not that. Rendering one with a red background produced a
+    /// full-screen red frame: the SwiftUI wrapper is present and correctly
+    /// sized, and only the `UICollectionView`'s cells are missing.
+    ///
+    /// `UIKitRenderingStrategy` puts the view in a real `UIWindow` and calls
+    /// `drawHierarchy(afterScreenUpdates: true)`, but a diffable data
+    /// source's `apply` lands on a later runloop turn — so the shutter opens
+    /// before any cell exists. The package offers no readiness hook to wait
+    /// on, and Xcode's canvas has no such problem because it keeps
+    /// re-rendering a live process.
+    ///
+    /// So these two are previews that work where a person looks at them and
+    /// cannot be captured here. Excluded so their blank frames stop being
+    /// reported as a defect on every run.
     override class func excludedSnapshotPreviews() -> [String]? {
         [
             "Supermessage.RootView",
             "Supermessage.SignedInView",
             "Supermessage.RoomListView",
+            "Supermessage.TimelineView",
+            "Supermessage.TimelineCollectionView",
         ]
     }
 }

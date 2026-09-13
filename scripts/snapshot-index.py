@@ -11,12 +11,104 @@ a real defect: two previews whose async seeding had not landed when the
 shutter opened, and three that render a `UIViewRepresentable` and came out
 blank. Nothing else in this repository could have caught either.
 """
+import collections
 import hashlib
 import html
+import struct
+import zlib
 import json
 import pathlib
 import sys
 from collections import defaultdict
+
+# ── How much of a frame is one flat colour ────────────────────────────────
+#
+# **Duplicate detection is not enough, and the gap is not small.** It found
+# three blank timeline frames only because there were three of them to compare;
+# `RoomInfoPanel` has a single preview, snapshots as a bare spinner, and was
+# reported as perfectly fine. Any view that loads in a `.task` has the same
+# problem, and most of them have one preview each.
+#
+# So each image is also measured for the share of its pixels taken by the one
+# most common colour. This is **a number to look at, not a verdict**: a small
+# component on a full-device canvas is legitimately 93% background, so a
+# threshold alone would cry wolf on half the catalogue. What it is good for is
+# sorting — the frames at the top of that ranking are the ones worth opening.
+#
+# Decoded here rather than with Pillow because this repository installs no
+# Python packages, and a contact sheet is not worth a dependency.
+
+
+def decode(path):
+    data = open(path, "rb").read()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
+    pos, idat, ihdr = 8, [], None
+    while pos < len(data):
+        length, typ = struct.unpack(">I4s", data[pos:pos + 8])
+        body = data[pos + 8:pos + 8 + length]
+        if typ == b"IHDR":
+            ihdr = struct.unpack(">IIBBBBB", body)
+        elif typ == b"IDAT":
+            idat.append(body)
+        elif typ == b"IEND":
+            break
+        pos += 12 + length
+    w, h, depth, colour, _, _, interlace = ihdr
+    assert depth == 8 and interlace == 0, f"unsupported PNG: depth={depth}"
+    channels = {0: 1, 2: 3, 4: 2, 6: 4}[colour]
+    raw = zlib.decompress(b"".join(idat))
+    stride = w * channels
+    out, prev = [], bytearray(stride)
+    i = 0
+    for _ in range(h):
+        f = raw[i]; i += 1
+        line = bytearray(raw[i:i + stride]); i += stride
+        if f == 1:
+            for x in range(channels, stride):
+                line[x] = (line[x] + line[x - channels]) & 0xFF
+        elif f == 2:
+            for x in range(stride):
+                line[x] = (line[x] + prev[x]) & 0xFF
+        elif f == 3:
+            for x in range(stride):
+                a = line[x - channels] if x >= channels else 0
+                line[x] = (line[x] + ((a + prev[x]) >> 1)) & 0xFF
+        elif f == 4:
+            for x in range(stride):
+                a = line[x - channels] if x >= channels else 0
+                b = prev[x]
+                c = prev[x - channels] if x >= channels else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[x] = (line[x] + pr) & 0xFF
+        out.append(bytes(line)); prev = line
+    return w, h, channels, out
+
+def modal_share(path, step=7):
+    w, h, ch, rows = decode(path)
+    counts = collections.Counter()
+    for y in range(0, h, step):
+        row = rows[y]
+        for x in range(0, w, step):
+            counts[row[x * ch:x * ch + 3]] += 1
+    total = sum(counts.values())
+    (colour, n), = counts.most_common(1)
+    return n / total, len(counts), colour.hex()
+
+
+def modal_share(path, step=7):
+    """The most common colour's share, and how many distinct ones there are."""
+    w, h, ch, rows = decode(path)
+    counts = collections.Counter()
+    for y in range(0, h, step):
+        row = rows[y]
+        for x in range(0, w, step):
+            counts[row[x * ch:x * ch + 3]] += 1
+    total = sum(counts.values())
+    (_, n), = counts.most_common(1)
+    return n / total, len(counts)
+
 
 out = pathlib.Path(sys.argv[1])
 pngs = sorted(out.glob("*.png"))
@@ -26,6 +118,26 @@ if not pngs:
 by_hash = defaultdict(list)
 for p in pngs:
     by_hash[hashlib.md5(p.read_bytes()).hexdigest()].append(p)
+# Duplicates that are understood, and stay understood.
+#
+# Both are previews wrapped in `PreviewSeeded`, whose `.task` has not
+# completed when the shutter opens — so the captured frame is the state
+# *before* the seed lands, which is a real frame the app passes through and
+# not the one the preview is named for. They render correctly in Xcode's
+# canvas, which waits.
+#
+# Named here rather than excluded so they still appear on the page, and so a
+# *new* duplicate stands out as something to look into rather than being lost
+# in a warning nobody reads any more.
+KNOWN_UNSEEDED = {
+    "Supermessage_ComposerView.swift_Attachment_staged",
+    "Supermessage_SpacePillStrip.swift_Three_spaces",
+    # Both of NewRoomPanel's previews load their people in a `.task`, so the
+    # two capture the same loading frame and differ in nothing.
+    "Supermessage_NewRoomPanel.swift_Known_people",
+    "Supermessage_NewRoomPanel.swift_Nobody_yet",
+}
+
 dupes = {h: ps for h, ps in by_hash.items() if len(ps) > 1}
 duped = {p for ps in dupes.values() for p in ps}
 
@@ -48,15 +160,34 @@ for view in sorted(groups):
         warn = ""
         if p in duped:
             others = [q.stem for q in by_hash[hashlib.md5(p.read_bytes()).hexdigest()] if q != p]
+            names = ", ".join(label(pathlib.Path(o + ".png"))[1] for o in others)
+            known = p.stem in KNOWN_UNSEEDED or any(o in KNOWN_UNSEEDED for o in others)
+            note = (
+                "the frame before its async seed landed — known, and correct "
+                "in Xcode's canvas"
+                if known
+                else "look into this: a preview showing the same pixels as "
+                "another is usually showing neither"
+            )
             warn = (
-                '<p class="warn">identical to '
-                + html.escape(", ".join(label(pathlib.Path(o + ".png"))[1] for o in others))
-                + " — blank, or a frame captured before its state landed</p>"
+                f'<p class="warn">identical to {html.escape(names)} — {note}</p>'
+            )
+        share, distinct = modal_share(p)
+        # Both conditions, because either alone is wrong: a sparse-but-real
+        # screen is 99% background with plenty of colours in its text, and a
+        # busy screen can have few distinct colours.
+        bare = share > 0.99 and distinct < 60
+        if bare:
+            warn += (
+                '<p class="warn">almost entirely one colour — check this is '
+                "the screen and not its loading state</p>"
             )
         cards.append(
-            f'<figure{" class=dupe" if p in duped else ""}>'
+            f'<figure{" class=dupe" if (p in duped or bare) else ""}>'
             f'<img loading="lazy" src="{html.escape(p.name)}" alt="{html.escape(name)}">'
-            f"<figcaption>{html.escape(name)}{warn}</figcaption></figure>"
+            f"<figcaption>{html.escape(name)}"
+            f' <span class=ink>{share:.0%} flat · {distinct} colours</span>'
+            f"{warn}</figcaption></figure>"
         )
     rows.append(f"<section><h2>{html.escape(view)}</h2><div class=grid>{''.join(cards)}</div></section>")
 
@@ -78,6 +209,7 @@ page = f"""<!doctype html>
          background: #fff; display: block; }}
   figcaption {{ font-size: 12px; color: var(--faint); margin-top: 6px; }}
   figure.dupe img {{ border-color: var(--warn); border-width: 2px; }}
+  .ink {{ opacity: .65; }}
   .warn {{ color: var(--warn); margin: 4px 0 0; }}
 </style>
 <h1>iOS previews</h1>
