@@ -21,7 +21,7 @@ private val NOW: Instant = Instant.ofEpochMilli(1_757_700_120_000L)
  */
 @Preview(name = "Timeline rows", showBackground = true, heightDp = 900)
 @Composable
-private fun TimelineVocabulary() {
+internal fun TimelineVocabulary() {
     PreviewGround {
         Column {
             PreviewFixtures.history.forEach { row ->
@@ -60,7 +60,7 @@ private fun SenderRun() {
  */
 @Preview(name = "Sending and failed", showBackground = true, heightDp = 240)
 @Composable
-private fun SendStates() {
+internal fun SendStates() {
     PreviewGround {
         Column {
             TimelineRow(row = PreviewFixtures.ownSending, now = NOW)
@@ -145,7 +145,7 @@ private fun NotAMessage() {
 /** A 104-character run with no break in it, at a phone's width. */
 @Preview(name = "Unbreakable body", showBackground = true, widthDp = 360)
 @Composable
-private fun UnbreakableBody() {
+internal fun UnbreakableBody() {
     PreviewGround(width = 360.dp) {
         TimelineRow(row = PreviewFixtures.unbreakable, now = NOW)
     }

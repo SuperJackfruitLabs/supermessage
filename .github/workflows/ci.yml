@@ -581,6 +581,28 @@ jobs:
             adb uninstall dev.supermessage || true
             adb uninstall dev.supermessage.test || true
             cd android && ./gradlew :app:connectedDebugAndroidTest
+            # PreviewCaptureTest writes the rule-carrying frames here. Pulled
+            # inside the emulator script because this is the only step with a
+            # device attached.
+            #
+            # `|| true` on the pull, and a directory created either way: a
+            # failure to collect images must not turn a green instrumented run
+            # red. The upload step below reports an empty directory instead,
+            # which says the same thing without hiding the test results.
+            mkdir -p "$GITHUB_WORKSPACE/preview-captures"
+            adb pull /sdcard/Android/data/dev.supermessage/files/preview-captures/. \
+              "$GITHUB_WORKSPACE/preview-captures/" || true
+            ls -la "$GITHUB_WORKSPACE/preview-captures/" || true
+
+      - name: Upload the rendered previews
+        # `always()`: the images are most useful on the run where something
+        # broke, which is the run where the step before this one failed.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-preview-captures
+          path: preview-captures/
+          if-no-files-found: warn
 
       - name: Report per-ABI APK sizes
         # :app:connectedDebugAndroidTest above already assembles :app's own

@@ -30,7 +30,7 @@ private val NOW: Instant = Instant.ofEpochMilli(1_757_700_120_000L)
  */
 @Preview(name = "Roster rows", showBackground = true, heightDp = 460)
 @Composable
-private fun RoomRowStates() {
+internal fun RoomRowStates() {
     PreviewGround {
         androidx.compose.foundation.layout.Column {
             RoomRow(PreviewFixtures.roomNeedsYou, null, AgentState.NEEDS_YOU, "2m")
@@ -51,7 +51,7 @@ private fun RoomRowStates() {
  */
 @Preview(name = "Roster rows, dark", showBackground = true, heightDp = 460)
 @Composable
-private fun RoomRowStatesDark() {
+internal fun RoomRowStatesDark() {
     PreviewGround(dark = true) {
         androidx.compose.foundation.layout.Column {
             RoomRow(PreviewFixtures.roomNeedsYou, null, AgentState.NEEDS_YOU, "2m")
@@ -90,7 +90,7 @@ private fun RoomRowWithoutState() {
 /** The whole roster, sectioned as the core sectioned it. */
 @Preview(name = "Roster", showBackground = true, heightDp = 620)
 @Composable
-private fun RosterFurnished() {
+internal fun RosterFurnished() {
     PreviewGround {
         Roster(
             sections = PreviewFixtures.rosterSections,

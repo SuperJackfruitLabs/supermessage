@@ -16,7 +16,7 @@ import dev.supermessage.RichText
 /** The signature element, and the only place amber appears in this app. */
 @Preview(name = "Card, pending decision", showBackground = true, heightDp = 420)
 @Composable
-private fun CardPending() {
+internal fun CardPending() {
     PreviewGround {
         DecisionCard(
             view = PreviewFixtures.cardPending,
@@ -35,7 +35,7 @@ private fun CardPending() {
  */
 @Preview(name = "Card, answered", showBackground = true, heightDp = 300)
 @Composable
-private fun CardAnswered() {
+internal fun CardAnswered() {
     PreviewGround {
         DecisionCard(
             view = PreviewFixtures.cardAnswered,
@@ -67,7 +67,7 @@ private fun CardWithReasoning() {
  */
 @Preview(name = "Card, unbreakable value", showBackground = true, widthDp = 360)
 @Composable
-private fun CardLongValue() {
+internal fun CardLongValue() {
     PreviewGround(width = 360.dp) {
         DecisionCard(
             view = PreviewFixtures.cardLongValue,
@@ -122,7 +122,7 @@ private fun CardFallbackChain() {
  */
 @Preview(name = "Card, hostile event type", showBackground = true, widthDp = 360)
 @Composable
-private fun CardHostileEventType() {
+internal fun CardHostileEventType() {
     PreviewGround(width = 360.dp) {
         DecisionCard(
             view = PreviewFixtures.cardAnswered,
@@ -138,7 +138,7 @@ private fun CardHostileEventType() {
  */
 @Preview(name = "Rich text, every block", showBackground = true, heightDp = 820)
 @Composable
-private fun RichTextEveryBlock() {
+internal fun RichTextEveryBlock() {
     PreviewGround {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             RichText(blocks = PreviewFixtures.richBlocks)

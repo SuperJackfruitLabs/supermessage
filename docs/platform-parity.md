@@ -39,7 +39,7 @@ grep -rho "@Preview" android/app/src/debug | wc -l
 | Catalogue tool | Storybook 10.6 | Xcode previews | Compose previews |
 | Where the catalogue lives | beside the component | beside the view | **a separate source set** |
 | Anything renders it here | yes, in a browser | no | no |
-| Anything renders it in CI | no | no | **yes** — 24 instrumented test files |
+| Anything renders it in CI | no | **yes** — 40 PNGs per run | **yes** — 24 test files, plus 11 PNGs |
 | Injection seam | view-models as props (P2a) | 11 protocols (P2b) | **never needed one** |
 
 Three rows in that table are the substance of this document.
@@ -130,6 +130,7 @@ was produced; everything else is a reading of the code.
 | Serif for the agent, sans for the operator, mono for data | in `app.css` | `Theme.body`/`own`/`meta` | `SupermessageThemeFonts` |
 | Paper is what light means on a phone | n/a (desktop) | `Theme.dynamic` resolves `paper` for light | `SupermessageTheme` resolves `paper` for light |
 | The three-level depth ramp | `surface`/`sunken`/`raised` in use | **defined, zero call sites** | reached only through the Material bridge |
+| Controls take the palette's accent | yes | **no** — `RoomInfoPanel`'s `Done` renders system blue, seen in its snapshot | through the Material bridge |
 | One generated palette | `src/lib/tokens.css` | `Generated/ThemeTokens.swift` | `GeneratedThemeTokens.kt` |
 
 The fourth row is the open one, and it is **P6** rather than this project:
@@ -146,11 +147,14 @@ previews has been rendered by anyone.
 
 ## 5. What this document cannot tell you
 
-- **Whether any native preview renders.** 100 previews were written across
-  the two native platforms in this project and **zero were looked at**. Xcode
-  16.4 ships the iOS 18.5 SDK against a device on 26.6.1; the machine has no
-  Android SDK at all. A preview that compiles to a blank frame is a plausible,
-  undetected outcome for any of them.
+- **Whether most native previews render.** This is no longer wholly unknown,
+  and what is known is mixed. On iOS 40 of the 52 are rendered to PNGs on
+  every run of `scripts/snapshot-previews.sh`, and looking at them found a
+  real product defect within minutes. But rendering is not verifying: any
+  panel that loads through a `.task` captures its *loading* frame, and
+  `RoomInfoPanel` is a bare spinner in its own snapshot. On Android only the
+  11 rule-carrying frames are captured, by `PreviewCaptureTest`; the other 37
+  previews have still never been looked at by anyone.
 - **Whether two platforms' versions of a state look alike.** §3 says both have
   a decision card with six previews. It does not say the two cards agree, and
   no tool here can.
