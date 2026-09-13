@@ -69,7 +69,7 @@ fun PreviewGround(
  */
 @Preview(name = "The build works", showBackground = true)
 @Composable
-private fun PreviewScaffoldSmokeTest() {
+internal fun PreviewScaffoldSmokeTest() {
     PreviewGround {
         androidx.compose.material3.Text("previews render")
     }

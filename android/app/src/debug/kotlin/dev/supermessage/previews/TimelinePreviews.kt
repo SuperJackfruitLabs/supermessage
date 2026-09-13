@@ -21,7 +21,7 @@ private val NOW: Instant = Instant.ofEpochMilli(1_757_700_120_000L)
  */
 @Preview(name = "Timeline rows", showBackground = true, heightDp = 900)
 @Composable
-private fun TimelineVocabulary() {
+internal fun TimelineVocabulary() {
     PreviewGround {
         Column {
             PreviewFixtures.history.forEach { row ->
@@ -40,11 +40,11 @@ private fun TimelineVocabulary() {
  */
 @Preview(name = "Sender run", showBackground = true, heightDp = 240)
 @Composable
-private fun SenderRun() {
+internal fun SenderRun() {
     PreviewGround {
         Column {
             TimelineRow(
-                row = PreviewFixtures.message, now = NOW, attribution = "✳ Atlas — Platform",
+                row = PreviewFixtures.message, now = NOW, attribution = "Atlas — Platform",
             )
             TimelineRow(row = PreviewFixtures.noticed, now = NOW, continuesRun = true)
         }
@@ -60,7 +60,7 @@ private fun SenderRun() {
  */
 @Preview(name = "Sending and failed", showBackground = true, heightDp = 240)
 @Composable
-private fun SendStates() {
+internal fun SendStates() {
     PreviewGround {
         Column {
             TimelineRow(row = PreviewFixtures.ownSending, now = NOW)
@@ -78,7 +78,7 @@ private fun SendStates() {
  */
 @Preview(name = "Replies", showBackground = true, heightDp = 300)
 @Composable
-private fun Replies() {
+internal fun Replies() {
     PreviewGround {
         Column {
             TimelineRow(row = PreviewFixtures.reply, now = NOW)
@@ -96,7 +96,7 @@ private fun Replies() {
  */
 @Preview(name = "Reactions", showBackground = true, widthDp = 360)
 @Composable
-private fun Reactions() {
+internal fun Reactions() {
     PreviewGround(width = 360.dp) {
         TimelineRow(row = PreviewFixtures.withReactions, now = NOW, onReact = {})
     }
@@ -113,7 +113,7 @@ private fun Reactions() {
  */
 @Preview(name = "Media without bytes", showBackground = true, heightDp = 360)
 @Composable
-private fun MediaWithoutBytes() {
+internal fun MediaWithoutBytes() {
     PreviewGround {
         Column {
             TimelineRow(row = PreviewFixtures.image, now = NOW)
@@ -132,7 +132,7 @@ private fun MediaWithoutBytes() {
  */
 @Preview(name = "Not a message", showBackground = true, heightDp = 300)
 @Composable
-private fun NotAMessage() {
+internal fun NotAMessage() {
     PreviewGround {
         Column {
             TimelineRow(row = PreviewFixtures.dayDivider, now = NOW)
@@ -145,7 +145,7 @@ private fun NotAMessage() {
 /** A 104-character run with no break in it, at a phone's width. */
 @Preview(name = "Unbreakable body", showBackground = true, widthDp = 360)
 @Composable
-private fun UnbreakableBody() {
+internal fun UnbreakableBody() {
     PreviewGround(width = 360.dp) {
         TimelineRow(row = PreviewFixtures.unbreakable, now = NOW)
     }
@@ -160,7 +160,7 @@ private fun UnbreakableBody() {
  */
 @Preview(name = "Timeline with a live turn", showBackground = true, heightDp = 900)
 @Composable
-private fun TimelineLive() {
+internal fun TimelineLive() {
     PreviewGround {
         Timeline(
             rows = PreviewFixtures.history,
@@ -188,7 +188,7 @@ private fun TimelineLive() {
  */
 @Preview(name = "Timeline, paginating", showBackground = true, heightDp = 600)
 @Composable
-private fun TimelinePaginating() {
+internal fun TimelinePaginating() {
     PreviewGround {
         Timeline(
             rows = PreviewFixtures.history,
@@ -205,7 +205,7 @@ private fun TimelinePaginating() {
 /** A room with nothing in it yet. */
 @Preview(name = "Timeline, empty room", showBackground = true, heightDp = 320)
 @Composable
-private fun TimelineEmpty() {
+internal fun TimelineEmpty() {
     PreviewGround {
         Timeline(
             rows = emptyList(),

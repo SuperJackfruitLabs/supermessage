@@ -827,6 +827,21 @@ export interface TimelineRow {
    */
   senderShort: string;
   /**
+   * The one glyph or letter a sender's face shows.
+   *
+   * **{@link senderName} and {@link senderShort} carry no glyph**, because it
+   * belongs to the face rather than to the line beside it. A host that instead
+   * took `senderName[0]` got the glyph *and* left it in the name — which is
+   * how iOS drew `✳ ✳ Atlas — Platform` under every message until someone
+   * rendered a preview to an image.
+   *
+   * Nothing in this app displays it yet: the web timeline reads
+   * {@link senderName} only for grouping and for a reply quote's attribution,
+   * and draws no sender face. It is here so the mirror matches the DTO, and so
+   * the glyph is reachable when this platform does grow one.
+   */
+  senderInitial: string;
+  /**
    * The verb phrase for a membership change, `null` otherwise. Carried apart
    * from the rendered system sentence because a grouped run composes one
    * sentence from many names and a single verb.

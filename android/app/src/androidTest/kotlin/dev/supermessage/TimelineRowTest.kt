@@ -65,8 +65,10 @@ class TimelineRowTest {
         listOf(RichBlock.Paragraph(inlines = listOf(RichInline.Text(text))))
 
     private fun row(
-        view: ItemView,
+        view: ItemView = ItemView.Bubble(muted = false, blocks = paragraph("hi")),
         senderName: String = "Sender",
+        /** What the face shows. Decided by the core — see `sender_initial`. */
+        senderInitial: String = "?",
         sender: String? = "@sender:example.org",
         isOwn: Boolean = false,
         body: String? = "hi",
@@ -102,6 +104,7 @@ class TimelineRowTest {
             view = view,
             senderName = senderName,
             senderShort = senderName,
+            senderInitial = senderInitial,
             membershipVerb = null,
             replyQuote = null,
             canReplyOrReact = true,
@@ -509,4 +512,41 @@ class TimelineRowTest {
         }
         compose.onNodeWithTag("add-reaction").assertDoesNotExist()
     }
+    /**
+     * The face shows the core's initial, and the name beside it shows no
+     * glyph.
+     *
+     * **This is the bug that shipped for as long as nobody looked.** The face
+     * took the first character of the attribution, which for an agent is the
+     * glyph, and the name beside it kept the glyph too — so every message in
+     * an agent room read `✳ ✳ Atlas — Platform`. It was found by rendering an
+     * iOS preview to an image, and Android had it as well, with a second
+     * defect underneath: the face did `initial.firstOrNull()`, and a Kotlin
+     * `Char` is a UTF-16 code unit, so an astral glyph rendered as half a
+     * surrogate pair.
+     *
+     * The assertion is deliberately about the *disc*, not about counting
+     * glyphs on screen. Counting would not catch a revert: with the core now
+     * stripping the glyph out of `senderName`, a host that went back to
+     * `initial = named` would show `A` in the disc and still have exactly one
+     * `✳` in the frame. What distinguishes the two is which character the
+     * face chose.
+     */
+    @Test
+    fun theFaceShowsTheGlyphAndTheNameDoesNot() {
+        compose.setContent {
+            TimelineRow(
+                row = row(
+                    senderName = "Atlas — Platform",
+                    senderInitial = "✳",
+                ),
+                now = now,
+            )
+        }
+
+        compose.onNodeWithText("✳").assertIsDisplayed()
+        compose.onNodeWithText("Atlas — Platform").assertIsDisplayed()
+        compose.onAllNodesWithText("✳ Atlas — Platform").assertCountEquals(0)
+    }
+
 }

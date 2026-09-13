@@ -60,6 +60,7 @@ class SessionTest {
             view = ItemView.Bubble(muted = false, blocks = emptyList()),
             senderName = sender,
             senderShort = sender,
+            senderInitial = "?",
             membershipVerb = null,
             replyQuote = null,
             canReplyOrReact = true,

@@ -5,6 +5,7 @@ plugins {
     // Kotlin Gradle plugin on top of it is a hard configuration error as of
     // AGP 9.0. See :core's build file, which established this pattern first.
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -23,6 +24,9 @@ android {
     }
 
     buildFeatures { compose = true }
+
+    // Robolectric needs the merged resources to inflate anything.
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 
     // The debug APK bundled all four ABIs' copies of libsupermessage_ffi.so
     // (matrix-sdk's dependency tree, ~100MB per ABI unstripped) into one
@@ -61,6 +65,13 @@ android {
     // once, via compileOptions above, and this module matches them.
 }
 
+// Resolves the JNA jar exactly as published, with no artifact transform in
+// the way. `isTransitive = false` because only the one artifact is wanted —
+// its dependencies already arrive through :core.
+val jnaUntransformed = configurations.create("jnaUntransformed") {
+    isTransitive = false
+}
+
 dependencies {
     implementation(project(":kit"))
     implementation(libs.androidx.core.ktx)
@@ -96,6 +107,32 @@ dependencies {
     // kotlinx-coroutines-core transitively (its api dependency), but not the
     // test artifact, so :app needs its own like :kit's test source does.
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.preview.scanner)
+    testImplementation(libs.composable.preview.scanner)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+
+    // JNA's own bootstrap library, on the test classpath *untransformed*.
+    //
+    // Three previews reach a type whose class initialiser loads the core —
+    // AccountPanel's and NewRoomPanel's — and on a host JVM `Native.load`
+    // looks for `libjnidispatch.jnilib` as a classpath **resource**.
+    //
+    // A plain `testImplementation(libs.jna)` is not enough here, which cost a
+    // run to establish. Two JNA artifacts reach an AGP unit-test classpath and
+    // neither carries the native: `:core`'s `jna@aar` never had it, because an
+    // AAR packages native code as Android jniLibs — and the plain jar arrives
+    // as `jna-5.17.0-runtime.jar`, an AGP-transformed copy with the
+    // `com/sun/jna/**` natives stripped. Both were checked; both contain zero
+    // entries matching `jnidispatch`.
+    //
+    // So the jar is resolved through a configuration of its own and added as a
+    // *file*, which no artifact transform touches.
+    jnaUntransformed(libs.jna)
+    testRuntimeOnly(files(jnaUntransformed))
 
     androidTestImplementation(libs.androidx.test.junit)
     // androidx.test.ext:junit 1.2.1 no longer pulls in androidx.test:runner
@@ -107,4 +144,38 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+}
+
+// Points JNA at a *host* build of libsupermessage_ffi for :app's unit tests,
+// the same way :kit's build file does and for the same reason: the
+// Android-ABI .so's under core/src/main/jniLibs cannot be loaded by a desktop
+// JVM, and Cargo — never this Gradle build — produces the host one at the
+// workspace's target/debug.
+//
+// :app needs it because PreviewScreenshotTest renders every @Preview, and a
+// few of those reach a type whose class initialiser loads the core.
+tasks.withType<Test>().configureEach {
+    // Rendering the previews is opt-in, and the number that decided that is
+    // worth keeping: with it on, CI's "Unit tests" step went from ~2 minutes
+    // to **31**, and the Android job from ~25 to 46. Locally a serial run was
+    // 18 minutes; a GitHub runner is slower because it has four cores to this
+    // machine's eight, so `maxParallelForks` resolves to 2 there.
+    //
+    // So it runs on `main` and not on every pull request — the same trade
+    // `ANDROID_ABIS` already makes in that job, and for the same reason. A
+    // reviewer who wants the images before merge runs it locally with
+    // `-PrenderPreviews=true`, or opens Android Studio, where they are free.
+    if (providers.gradleProperty("renderPreviews").orNull != "true") {
+        filter { excludeTestsMatching("*PreviewScreenshotTest*") }
+    }
+
+    // Each preview pays for its own Robolectric sandbox and there are 48 of
+    // them. Half the cores, because the sandboxes are memory-hungry and this
+    // shares a machine with Gradle itself.
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+
+    systemProperty(
+        "jna.library.path",
+        layout.projectDirectory.dir("../../target/debug").asFile.absolutePath,
+    )
 }

@@ -103,19 +103,29 @@ object PreviewFixtures {
         readBy = emptyList(), editable = isOwn,
     )
 
+    /**
+     * A timeline row as `TimelineRow::new` would build it.
+     *
+     * **`senderName` carries no glyph and `senderInitial` is the glyph.**
+     * That split is the core's rather than a choice made here: a fixture that
+     * put `✳ Atlas — Platform` in the name is what let the duplicated-glyph
+     * bug look normal in every preview until one was rendered to an image.
+     */
     fun row(
         item: TimelineItemDto,
         view: ItemView,
-        senderName: String = "✳ Atlas — Platform",
-        senderShort: String = "Atlas",
+        senderName: String = "Atlas — Platform",
+        senderShort: String = "Atlas — Platform",
+        senderInitial: String = "✳",
         membershipVerb: String? = null,
         replyQuote: ReplyQuoteView? = null,
         canReplyOrReact: Boolean = true,
         replyPreview: String? = null,
     ): TimelineRowDto = TimelineRowDto(
         item = item, view = view, senderName = senderName, senderShort = senderShort,
-        membershipVerb = membershipVerb, replyQuote = replyQuote,
-        canReplyOrReact = canReplyOrReact, replyPreview = replyPreview,
+        senderInitial = senderInitial, membershipVerb = membershipVerb,
+        replyQuote = replyQuote, canReplyOrReact = canReplyOrReact,
+        replyPreview = replyPreview,
     )
 
     private fun paragraph(text: String): List<RichBlock> =
@@ -141,7 +151,8 @@ object PreviewFixtures {
                 sendState = "sending",
             ),
             ItemView.Bubble(false, paragraph("Merging it.")),
-            senderName = "Rakesh", senderShort = "Rakesh", canReplyOrReact = false,
+            senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
+            canReplyOrReact = false,
         )
 
     val ownFailed: TimelineRowDto
@@ -151,7 +162,8 @@ object PreviewFixtures {
                 sendState = "failed",
             ),
             ItemView.Bubble(false, paragraph("Merging it.")),
-            senderName = "Rakesh", senderShort = "Rakesh", canReplyOrReact = false,
+            senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
+            canReplyOrReact = false,
         )
 
     /**
@@ -347,8 +359,23 @@ object PreviewFixtures {
 
     // ── Roster rows ──────────────────────────────────────────────────────
 
+    /**
+     * A roster row **as `parse_room_identity` would produce it**.
+     *
+     * `rawName` is the Matrix room name; `name`, `role`, `glyph` and
+     * `initial` are what the core derives from it. Stated rather than derived,
+     * because deriving them here would be a second implementation of a parser
+     * that already exists in Rust — and a second implementation is a second
+     * answer.
+     *
+     * The first version of this file got all three wrong and looked entirely
+     * plausible: the name kept its glyph, the initial was a letter rather than
+     * the glyph, and `matrix-rust-sdk` was shown verbatim when the core
+     * humanises it to `Matrix Rust Sdk`.
+     */
     fun roomRow(
         id: String,
+        rawName: String,
         glyph: String?,
         name: String,
         role: String?,
@@ -361,7 +388,7 @@ object PreviewFixtures {
         affordance: RoomAffordance = RoomAffordance.COMPOSE,
     ): RoomRow = RoomRow(
         room = RoomSummary(
-            id = id, name = name, avatarUrl = null, unread = unread,
+            id = id, name = rawName, avatarUrl = null, unread = unread,
             lastMessage = preview?.text, lastMessageIsOwn = false,
             lastMessageNamesSender = false, lastEventType = "m.room.message",
             lastActivityMs = lastActivityMs, runtime = runtime, membership = membership,
@@ -374,16 +401,17 @@ object PreviewFixtures {
     /** Silent long enough that its absence is the fact. */
     val roomQuiet: RoomRow
         get() = roomRow(
-            id = "!quill:example.org", glyph = "✒", name = "✒ Quill — Writing", role = "Writing",
-            initial = "Q", preview = RoomPreview("Draft is in the branch.", false),
+            id = "!quill:example.org", rawName = "✒ Quill — Writing", glyph = "✒",
+            name = "Quill", role = "Writing", initial = "✒",
+            preview = RoomPreview("Draft is in the branch.", false),
             lastActivityMs = 1_756_000_000_000uL,
         )
 
     /** Spoke recently enough to count as active. */
     val roomActive: RoomRow
         get() = roomRow(
-            id = ROOM_ID, glyph = "✳", name = "✳ Atlas — Platform", role = "Platform",
-            initial = "A",
+            id = ROOM_ID, rawName = "✳ Atlas — Platform", glyph = "✳",
+            name = "Atlas", role = "Platform", initial = "✳",
             preview = RoomPreview("Rebased onto main and the diff is empty.", false),
             runtime = RuntimeDto("claude-code", "foundry"),
         )
@@ -395,8 +423,8 @@ object PreviewFixtures {
      */
     val roomNeedsYou: RoomRow
         get() = roomRow(
-            id = "!kaambaan:example.org", glyph = "⌘", name = "⌘ Kaambaan — Delivery",
-            role = "Delivery", initial = "K",
+            id = "!kaambaan:example.org", rawName = "⌘ Kaambaan — Delivery", glyph = "⌘",
+            name = "Kaambaan", role = "Delivery", initial = "⌘",
             preview = RoomPreview("Merge this branch into main?", true), unread = 2uL,
             runtime = RuntimeDto("kaambaan", "foundry"),
         )
@@ -404,8 +432,9 @@ object PreviewFixtures {
     /** An invitation, which may not be composed into and has no state word. */
     val roomInvitation: RoomRow
         get() = roomRow(
-            id = "!estate:example.org", glyph = null, name = "Estate Planning", role = null,
-            initial = "E", preview = null, lastActivityMs = null,
+            id = "!estate:example.org", rawName = "Estate Planning", glyph = null,
+            name = "Estate Planning", role = null, initial = "E", preview = null,
+            lastActivityMs = null,
             membership = Membership.INVITED, affordance = RoomAffordance.RESPOND_TO_INVITATION,
         )
 
@@ -417,8 +446,10 @@ object PreviewFixtures {
      */
     val roomBare: RoomRow
         get() = roomRow(
-            id = "!plain:example.org", glyph = null, name = "matrix-rust-sdk", role = null,
-            initial = "M", preview = null,
+            // `matrix-rust-sdk` reaches a host as `Matrix Rust Sdk`:
+            // display_name::room_name_label humanises a machine-written name.
+            id = "!plain:example.org", rawName = "matrix-rust-sdk", glyph = null,
+            name = "Matrix Rust Sdk", role = null, initial = "M", preview = null,
         )
 
     val roster: List<RoomRow>

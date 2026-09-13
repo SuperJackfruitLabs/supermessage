@@ -62,6 +62,10 @@ export function row(dto: TimelineItem): TimelineRow {
     view: { render: "none" },
     senderName: dto.senderDisplayName ?? dto.sender ?? "Someone",
     senderShort: dto.senderDisplayName ?? dto.sender ?? "Someone",
+    // The cheapest thing that type-checks, like `view` above: nothing on this
+    // platform draws a sender face, so a real initial here would be a second
+    // implementation of `room_identity::sender_face_parts` with no reader.
+    senderInitial: "?",
     membershipVerb:
       dto.kind === "membership"
         ? (FIXTURE_VERBS[dto.detail ?? ""] ?? "updated their membership")

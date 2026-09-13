@@ -146,7 +146,15 @@ private struct MessageBlock: View {
                     // four it is four near-identical grey headers, and a
                     // reader scanning back for who said what has to read
                     // rather than glance.
-                    SenderFace(mxcUri: row.item.senderAvatar, initial: named, faces: faces)
+                    // `row.senderInitial`, not `named.first`. For an agent
+                    // the first character of the attribution is the glyph, so
+                    // taking it here drew the symbol in the disc and left it
+                    // in the name beside it: `✳ ✳ Atlas — Platform`, under
+                    // every message. The core now hands over the glyph and a
+                    // name without it, the way `RoomIdentity` has always done
+                    // for the roster.
+                    SenderFace(
+                        mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces)
                     Text(named).nameFace()
                     if let timestamp = row.item.timestampMs {
                         Text(Self.time(timestamp)).metaFace().foregroundStyle(.tertiary)
@@ -369,8 +377,15 @@ private struct SenderFace: View {
         }
     }
 
+    /// What the disc shows.
+    ///
+    /// Still reduced to one character here rather than trusted whole: the
+    /// core's `sender_initial` is already a single glyph or letter, but a
+    /// glyph can be a multi-code-point cluster and this frame is 18pt. Taking
+    /// the first `Character` — a grapheme cluster in Swift, not a scalar —
+    /// keeps a ZWJ sequence intact instead of rendering half of it.
     private var letter: String {
-        initial.first.map { String($0).uppercased() } ?? "?"
+        initial.first.map { String($0) } ?? "?"
     }
 }
 
@@ -525,7 +540,7 @@ private struct MediaFileRow: View {
     let faces = PreviewFixtures.faceCache()
     return VStack(alignment: .leading, spacing: 0) {
         TimelineRowView(
-            row: PreviewFixtures.message, attribution: "✳ Atlas — Platform", media: media,
+            row: PreviewFixtures.message, attribution: "Atlas — Platform", media: media,
             faces: faces)
         TimelineRowView(
             row: PreviewFixtures.noticed, continuesRun: true, media: media, faces: faces)

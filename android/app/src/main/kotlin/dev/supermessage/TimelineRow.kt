@@ -268,7 +268,13 @@ private fun MessageBlock(
     ) {
         if (!isOwn && !continuesRun) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                SenderFace(userId = row.item.sender, initial = named, avatarUri = avatarUri)
+                // `row.senderInitial`, not `named`. For an agent the first
+                // character of the attribution is the glyph, so taking it
+                // here drew the symbol in the disc and left it in the name
+                // beside it — `✳ ✳ Atlas — Platform` under every message. The
+                // core now hands over the glyph and a name without it, the
+                // way RoomIdentity has always done for the roster.
+                SenderFace(userId = row.item.sender, initial = row.senderInitial, avatarUri = avatarUri)
                 Text(named, style = MaterialTheme.typography.labelLarge)
                 row.item.timestampMs?.let {
                     Text(clockLabel(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
@@ -524,8 +530,17 @@ private fun SenderFace(userId: String?, initial: String, avatarUri: (userId: Str
                 contentScale = ContentScale.Crop,
             )
         } else {
+            // Rendered whole, not `firstOrNull()`. A Kotlin `Char` is a
+            // UTF-16 code unit, so for an astral glyph — 🧠, and this
+            // deployment is full of them — taking the first one yields half a
+            // surrogate pair and draws tofu. `room_identity.rs`'s own header
+            // records Android doing exactly that for an account avatar.
+            //
+            // Nothing needs trimming here: `sender_initial` arrives from the
+            // core as one glyph or one uppercased letter, and uppercasing it
+            // again would be this host re-deciding something already decided.
             Text(
-                initial.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                initial.ifEmpty { "?" },
                 style = MaterialTheme.typography.labelSmall,
             )
         }

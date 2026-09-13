@@ -16,7 +16,7 @@ import dev.supermessage.RichText
 /** The signature element, and the only place amber appears in this app. */
 @Preview(name = "Card, pending decision", showBackground = true, heightDp = 420)
 @Composable
-private fun CardPending() {
+internal fun CardPending() {
     PreviewGround {
         DecisionCard(
             view = PreviewFixtures.cardPending,
@@ -35,7 +35,7 @@ private fun CardPending() {
  */
 @Preview(name = "Card, answered", showBackground = true, heightDp = 300)
 @Composable
-private fun CardAnswered() {
+internal fun CardAnswered() {
     PreviewGround {
         DecisionCard(
             view = PreviewFixtures.cardAnswered,
@@ -47,7 +47,7 @@ private fun CardAnswered() {
 
 @Preview(name = "Card, with reasoning", showBackground = true, heightDp = 320)
 @Composable
-private fun CardWithReasoning() {
+internal fun CardWithReasoning() {
     PreviewGround {
         DecisionCard(
             view = PreviewFixtures.cardWithReasoning,
@@ -67,7 +67,7 @@ private fun CardWithReasoning() {
  */
 @Preview(name = "Card, unbreakable value", showBackground = true, widthDp = 360)
 @Composable
-private fun CardLongValue() {
+internal fun CardLongValue() {
     PreviewGround(width = 360.dp) {
         DecisionCard(
             view = PreviewFixtures.cardLongValue,
@@ -87,7 +87,7 @@ private fun CardLongValue() {
  */
 @Preview(name = "Card, fallback chain", showBackground = true, heightDp = 640)
 @Composable
-private fun CardFallbackChain() {
+internal fun CardFallbackChain() {
     PreviewGround {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             DecisionCard(
@@ -122,7 +122,7 @@ private fun CardFallbackChain() {
  */
 @Preview(name = "Card, hostile event type", showBackground = true, widthDp = 360)
 @Composable
-private fun CardHostileEventType() {
+internal fun CardHostileEventType() {
     PreviewGround(width = 360.dp) {
         DecisionCard(
             view = PreviewFixtures.cardAnswered,
@@ -138,7 +138,7 @@ private fun CardHostileEventType() {
  */
 @Preview(name = "Rich text, every block", showBackground = true, heightDp = 820)
 @Composable
-private fun RichTextEveryBlock() {
+internal fun RichTextEveryBlock() {
     PreviewGround {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             RichText(blocks = PreviewFixtures.richBlocks)
@@ -155,7 +155,7 @@ private fun RichTextEveryBlock() {
  */
 @Preview(name = "Rich text, wide code", showBackground = true, widthDp = 360)
 @Composable
-private fun RichTextWideCode() {
+internal fun RichTextWideCode() {
     PreviewGround(width = 360.dp) {
         RichText(blocks = PreviewFixtures.wideCode)
     }
@@ -171,7 +171,7 @@ private fun RichTextWideCode() {
  */
 @Preview(name = "Live turn, mid-turn", showBackground = true, heightDp = 420)
 @Composable
-private fun LiveTurnMidTurn() {
+internal fun LiveTurnMidTurn() {
     PreviewGround {
         LiveTurn(
             answer = PreviewFixtures.LIVE_ANSWER,
@@ -189,7 +189,7 @@ private fun LiveTurnMidTurn() {
  */
 @Preview(name = "Live turn, thinking", showBackground = true, heightDp = 200)
 @Composable
-private fun LiveTurnThinking() {
+internal fun LiveTurnThinking() {
     PreviewGround {
         LiveTurn(
             answer = null,
@@ -203,7 +203,7 @@ private fun LiveTurnThinking() {
 /** A finished turn, which is what the composable has to stop showing. */
 @Preview(name = "Live turn, finished", showBackground = true, heightDp = 200)
 @Composable
-private fun LiveTurnFinished() {
+internal fun LiveTurnFinished() {
     PreviewGround {
         LiveTurn(
             answer = PreviewFixtures.LIVE_ANSWER,
