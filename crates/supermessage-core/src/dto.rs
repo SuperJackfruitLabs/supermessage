@@ -807,6 +807,22 @@ pub struct TimelineRow {
     /// rather than derived so a host chooses between two given strings instead
     /// of taking a composed one back apart.
     pub sender_short: String,
+    /// The single character a face shows for this sender: the glyph when the
+    /// name starts with one, otherwise the first character of the name,
+    /// uppercased.
+    ///
+    /// **Carried because the obvious derivation is wrong.** A host that takes
+    /// `sender_name.first` gets the glyph *and* leaves it in the name beside
+    /// it, which is how iOS drew `✳ ✳ Atlas — Platform` under every message
+    /// for as long as nobody had rendered a preview. The roster never had the
+    /// bug because [`RoomIdentity::initial`] already made this decision for a
+    /// room; this is the same decision for a sender, made once, in the one
+    /// place all three hosts read from.
+    ///
+    /// [`Self::sender_name`] and [`Self::sender_short`] are therefore
+    /// **glyph-free**: the symbol belongs to the face, not to the line beside
+    /// it.
+    pub sender_initial: String,
     /// The verb phrase for a membership change — "joined the room" — and
     /// `None` for every other kind.
     ///
@@ -844,7 +860,8 @@ impl TimelineRow {
     /// reason this is a row and not a bare DTO.
     pub fn new(item: TimelineItemDto) -> Self {
         let view = crate::item_view::view_for(&item);
-        let (sender_name, sender_short) = crate::item_view::attributed_parts(&item);
+        let (sender_name, sender_short, sender_initial) =
+            crate::item_view::attributed_parts(&item);
         let membership_verb = (item.kind == "membership")
             .then(|| crate::item_view::membership_verb(item.detail.as_deref()));
         let reply_quote = crate::item_view::reply_quote_view(item.reply_to.as_ref());
@@ -855,6 +872,7 @@ impl TimelineRow {
             view,
             sender_name,
             sender_short,
+            sender_initial,
             membership_verb,
             reply_quote,
             can_reply_or_react,
@@ -1573,6 +1591,103 @@ mod wire_format_golden {
 
         item.sender = None;
         assert_eq!(TimelineRow::new(item).sender_name, "Someone");
+    }
+
+    #[test]
+    fn the_glyph_goes_to_the_face_and_leaves_the_name_beside_it() {
+        // The bug this pins: a host drew the face from `sender_name.first`,
+        // which for an agent is the glyph, and then drew `sender_name` beside
+        // it — so every message in an agent room read `✳ ✳ Atlas — Platform`.
+        // It survived a full component-extraction project and 663 tests here,
+        // and was found the first time anyone rendered a preview to an image.
+        let mut item = a_text_item();
+        item.sender_display_name = Some("✳ Atlas — Platform".into());
+        let row = TimelineRow::new(item);
+
+        assert_eq!(row.sender_initial, "✳");
+        assert_eq!(row.sender_name, "Atlas — Platform");
+        assert_eq!(row.sender_short, "Atlas — Platform");
+        assert!(
+            !row.sender_name.contains('✳'),
+            "the glyph belongs to the face, not to the line beside it: {}",
+            row.sender_name
+        );
+    }
+
+    #[test]
+    fn the_bridge_suffix_survives_the_glyph_coming_off() {
+        // Two independent decompositions of one string, and taking the glyph
+        // off must not disturb the other. `sender_short` exists so a room
+        // with one speaker can drop the runtime; `sender_initial` exists so
+        // the face has something to show. A room with several speakers needs
+        // both at once, which is the case this pins.
+        let mut item = a_text_item();
+        // `harness @ host` inside the parentheses, which is the shape
+        // `display_name::sender_parts` recognises — ` on ` is what it renders
+        // back out, not what it reads in. Writing the output form here was
+        // the first draft of this test, and it passed for the wrong reason:
+        // the suffix went unrecognised, so `sender_short` kept it and the
+        // assertion that the two differ never ran.
+        item.sender_display_name = Some("✳ Atlas — Platform (claude-code @ foundry)".into());
+        let row = TimelineRow::new(item);
+
+        assert_eq!(row.sender_initial, "✳");
+        // Humanised on the way out too — `runtime_label` turns
+        // `claude-code @ foundry` into `Claude Code on Foundry`. Pinned here
+        // because this test is about the glyph split leaving the suffix
+        // alone, and it can only show that if it states the suffix exactly.
+        assert_eq!(row.sender_name, "Atlas — Platform (Claude Code on Foundry)");
+        assert_eq!(row.sender_short, "Atlas — Platform");
+    }
+
+    #[test]
+    fn a_sender_with_no_glyph_gets_a_letter_and_keeps_its_whole_name() {
+        let mut item = a_text_item();
+        item.sender_display_name = Some("krishna".into());
+        let row = TimelineRow::new(item);
+
+        assert_eq!(row.sender_initial, "K", "uppercased, as a face shows it");
+        // `display_name::room_name_label` humanises a machine-written name,
+        // and did so long before this change — `krishna` has always reached a
+        // host as `Krishna`. Asserted rather than left implicit, because the
+        // glyph split runs next to it and a future reader will want to know
+        // which of the two capitalised this.
+        assert_eq!(row.sender_name, "Krishna");
+    }
+
+    #[test]
+    fn a_sender_with_no_display_name_gets_a_letter_from_the_id_not_an_at_sign() {
+        // Every Matrix id starts with `@`, so a room of unnamed senders would
+        // be a column of identical `@` discs — which distinguishes nobody,
+        // and distinguishing is the only thing a face is for.
+        let mut item = a_text_item();
+        item.sender_display_name = None;
+        item.sender = Some("@atlas:example.org".into());
+        let row = TimelineRow::new(item.clone());
+
+        assert_eq!(row.sender_initial, "A");
+        assert_eq!(
+            row.sender_name, "@atlas:example.org",
+            "the id is still shown whole; only the face's letter skips the @"
+        );
+
+        item.sender = None;
+        assert_eq!(TimelineRow::new(item).sender_initial, "S", "from `Someone`");
+    }
+
+    #[test]
+    fn a_name_that_is_nothing_but_a_glyph_keeps_it_in_both_places() {
+        // A sender called `✳` and nothing else. Stripping the glyph would
+        // leave an empty attribution, which `sender_name`'s contract forbids
+        // — it is documented as never empty — so here alone the symbol has to
+        // appear twice, and that is better than a blank line.
+        let mut item = a_text_item();
+        item.sender_display_name = Some("✳".into());
+        let row = TimelineRow::new(item);
+
+        assert_eq!(row.sender_initial, "✳");
+        assert_eq!(row.sender_name, "✳");
+        assert!(!row.sender_name.is_empty());
     }
 
     #[test]

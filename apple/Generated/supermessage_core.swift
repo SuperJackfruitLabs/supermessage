@@ -3712,6 +3712,24 @@ public struct TimelineRow {
      */
     public var senderShort: String
     /**
+     * The single character a face shows for this sender: the glyph when the
+     * name starts with one, otherwise the first character of the name,
+     * uppercased.
+     *
+     * **Carried because the obvious derivation is wrong.** A host that takes
+     * `sender_name.first` gets the glyph *and* leaves it in the name beside
+     * it, which is how iOS drew `✳ ✳ Atlas — Platform` under every message
+     * for as long as nobody had rendered a preview. The roster never had the
+     * bug because [`RoomIdentity::initial`] already made this decision for a
+     * room; this is the same decision for a sender, made once, in the one
+     * place all three hosts read from.
+     *
+     * [`Self::sender_name`] and [`Self::sender_short`] are therefore
+     * **glyph-free**: the symbol belongs to the face, not to the line beside
+     * it.
+     */
+    public var senderInitial: String
+    /**
      * The verb phrase for a membership change — "joined the room" — and
      * `None` for every other kind.
      *
@@ -3761,6 +3779,23 @@ public struct TimelineRow {
          * of taking a composed one back apart.
          */senderShort: String, 
         /**
+         * The single character a face shows for this sender: the glyph when the
+         * name starts with one, otherwise the first character of the name,
+         * uppercased.
+         *
+         * **Carried because the obvious derivation is wrong.** A host that takes
+         * `sender_name.first` gets the glyph *and* leaves it in the name beside
+         * it, which is how iOS drew `✳ ✳ Atlas — Platform` under every message
+         * for as long as nobody had rendered a preview. The roster never had the
+         * bug because [`RoomIdentity::initial`] already made this decision for a
+         * room; this is the same decision for a sender, made once, in the one
+         * place all three hosts read from.
+         *
+         * [`Self::sender_name`] and [`Self::sender_short`] are therefore
+         * **glyph-free**: the symbol belongs to the face, not to the line beside
+         * it.
+         */senderInitial: String, 
+        /**
          * The verb phrase for a membership change — "joined the room" — and
          * `None` for every other kind.
          *
@@ -3792,6 +3827,7 @@ public struct TimelineRow {
         self.view = view
         self.senderName = senderName
         self.senderShort = senderShort
+        self.senderInitial = senderInitial
         self.membershipVerb = membershipVerb
         self.replyQuote = replyQuote
         self.canReplyOrReact = canReplyOrReact
@@ -3815,6 +3851,9 @@ extension TimelineRow: Equatable, Hashable {
         if lhs.senderShort != rhs.senderShort {
             return false
         }
+        if lhs.senderInitial != rhs.senderInitial {
+            return false
+        }
         if lhs.membershipVerb != rhs.membershipVerb {
             return false
         }
@@ -3835,6 +3874,7 @@ extension TimelineRow: Equatable, Hashable {
         hasher.combine(view)
         hasher.combine(senderName)
         hasher.combine(senderShort)
+        hasher.combine(senderInitial)
         hasher.combine(membershipVerb)
         hasher.combine(replyQuote)
         hasher.combine(canReplyOrReact)
@@ -3854,6 +3894,7 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
                 view: FfiConverterTypeItemView.read(from: &buf), 
                 senderName: FfiConverterString.read(from: &buf), 
                 senderShort: FfiConverterString.read(from: &buf), 
+                senderInitial: FfiConverterString.read(from: &buf), 
                 membershipVerb: FfiConverterOptionString.read(from: &buf), 
                 replyQuote: FfiConverterOptionTypeReplyQuoteView.read(from: &buf), 
                 canReplyOrReact: FfiConverterBool.read(from: &buf), 
@@ -3866,6 +3907,7 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
         FfiConverterTypeItemView.write(value.view, into: &buf)
         FfiConverterString.write(value.senderName, into: &buf)
         FfiConverterString.write(value.senderShort, into: &buf)
+        FfiConverterString.write(value.senderInitial, into: &buf)
         FfiConverterOptionString.write(value.membershipVerb, into: &buf)
         FfiConverterOptionTypeReplyQuoteView.write(value.replyQuote, into: &buf)
         FfiConverterBool.write(value.canReplyOrReact, into: &buf)

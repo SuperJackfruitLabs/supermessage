@@ -16,7 +16,7 @@ struct EditTargetTests {
                 body: body, formattedBody: nil, media: nil, customPayload: nil,
                 timestampMs: 1_700_000_000_000, isOwn: true, sendState: nil, replyTo: nil,
                 edited: false, reactions: [], readBy: [], editable: editable),
-            view: .bubble(muted: false, blocks: []), senderName: "Me", senderShort: "Me",
+            view: .bubble(muted: false, blocks: []), senderName: "Me", senderShort: "Me", senderInitial: "?",
             membershipVerb: nil, replyQuote: nil, canReplyOrReact: eventId != nil,
             replyPreview: nil)
     }

@@ -183,7 +183,9 @@ private struct ResultRow: View {
 #Preview("Scoped, idle") {
     SearchPanel(
         session: PreviewFixtures.session(),
-        scope: .init(roomId: PreviewFixtures.roomId, name: "✳ Atlas — Platform"),
+        // `identity.name`, which is what RootView passes: no glyph — that
+        // lives in the avatar — and no role either.
+        scope: .init(roomId: PreviewFixtures.roomId, name: "Atlas"),
         onOpen: { _ in }, onClose: {})
 }
 

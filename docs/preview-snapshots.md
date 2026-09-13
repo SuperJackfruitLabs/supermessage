@@ -51,7 +51,7 @@ The `SpacePillStrip` preview's own comment predicted the frame — *"the frame
 before the seed lands is a strip holding nothing but All"* — and treated it as
 a curiosity. It is the only frame that gets captured.
 
-### 3. The sender glyph is drawn twice, in every agent message
+### 3. The sender glyph is drawn twice, in every agent message — fixed
 
 Not a preview problem. A product defect, visible the moment anyone looked:
 
@@ -67,11 +67,27 @@ The roster does not have this problem, because `RoomRow` carries
 equivalent, so the view improvised, and improvising is the thing this app is
 not allowed to do.
 
-**The fix belongs in the core, not here.** `AGENTS.md`: the app parses
-nothing and decides nothing. Stripping a leading glyph in SwiftUI would put a
-naming rule in two hosts and let them disagree, which is the failure the
-`RoomIdentity` split exists to prevent. The right change is a sender initial
-on `TimelineRow`, decided once in Rust.
+**Fixed in the core, not here.** `AGENTS.md`: the app parses nothing and
+decides nothing. Stripping a leading glyph in SwiftUI would have put a naming
+rule in two hosts and let them disagree, which is the failure the
+`RoomIdentity` split exists to prevent. `TimelineRow` now carries
+`sender_initial`, and `sender_name`/`sender_short` arrive glyph-free.
+
+Two things fell out of fixing it that were worth more than the fix.
+
+**Android had the same bug and a worse one underneath.** Its face did
+`initial.firstOrNull()`, and a Kotlin `Char` is a UTF-16 code unit — so an
+astral glyph rendered as half a surrogate pair, which is tofu.
+`room_identity.rs`'s own header records Android doing exactly that for an
+account avatar once before.
+
+**Three of the roster fixtures were wrong**, in ways that cancelled out to
+look plausible: `identity.name` kept its glyph, `initial` was a letter rather
+than the glyph, and `matrix-rust-sdk` was shown verbatim when the core
+humanises it to `Matrix Rust Sdk`. So the roster preview — the one used to
+check the amber rule — was a screen the product does not have. The fixtures
+now state what `parse_room_identity` produces, and the core pins those values
+in a test.
 
 ## What is excluded, and why
 

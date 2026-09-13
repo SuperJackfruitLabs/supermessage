@@ -215,11 +215,18 @@ enum PreviewFixtures {
             readBy: [], editable: !isOwn ? false : true)
     }
 
+    /// A timeline row as `TimelineRow::new` would build it.
+    ///
+    /// **`senderName` carries no glyph, and `senderInitial` is the glyph.**
+    /// That split is the core's, not a choice made here: a fixture that put
+    /// `✳ Atlas — Platform` in the name is what let the duplicated-glyph bug
+    /// look normal in every preview until one was rendered to an image.
     static func row(
         _ item: TimelineItemDto,
         view: ItemView,
-        senderName: String = "✳ Atlas — Platform",
-        senderShort: String = "Atlas",
+        senderName: String = "Atlas — Platform",
+        senderShort: String = "Atlas — Platform",
+        senderInitial: String = "✳",
         membershipVerb: String? = nil,
         replyQuote: ReplyQuoteView? = nil,
         canReplyOrReact: Bool = true,
@@ -227,8 +234,9 @@ enum PreviewFixtures {
     ) -> TimelineRow {
         TimelineRow(
             item: item, view: view, senderName: senderName, senderShort: senderShort,
-            membershipVerb: membershipVerb, replyQuote: replyQuote,
-            canReplyOrReact: canReplyOrReact, replyPreview: replyPreview)
+            senderInitial: senderInitial, membershipVerb: membershipVerb,
+            replyQuote: replyQuote, canReplyOrReact: canReplyOrReact,
+            replyPreview: replyPreview)
     }
 
     static var message: TimelineRow {
@@ -249,7 +257,7 @@ enum PreviewFixtures {
                  body: "Should the contrast contract list every ground?", isOwn: true),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [
                 .text(text: "Should the contrast contract list every ground?")])]),
-            senderName: "Rakesh", senderShort: "Rakesh",
+            senderName: "Rakesh", senderShort: "Rakesh", senderInitial: "R",
             replyPreview: "Should the contrast contract list every ground?")
     }
 
@@ -265,7 +273,8 @@ enum PreviewFixtures {
             item(id: "$own1", sender: "@rakesh:example.org", body: "Merging it.",
                  isOwn: true, sendState: "sending"),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Merging it.")])]),
-            senderName: "Rakesh", senderShort: "Rakesh", canReplyOrReact: false)
+            senderName: "Rakesh", senderShort: "Rakesh", senderInitial: "R",
+            canReplyOrReact: false)
     }
 
     static var ownFailed: TimelineRow {
@@ -273,7 +282,8 @@ enum PreviewFixtures {
             item(id: "$own2", sender: "@rakesh:example.org", body: "Merging it.",
                  isOwn: true, sendState: "failed"),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Merging it.")])]),
-            senderName: "Rakesh", senderShort: "Rakesh", canReplyOrReact: false)
+            senderName: "Rakesh", senderShort: "Rakesh", senderInitial: "R",
+            canReplyOrReact: false)
     }
 
     /// A 104-character run with no break in it.
@@ -466,8 +476,23 @@ enum PreviewFixtures {
 
     // MARK: Roster rows
 
+    /// A roster row **as `parse_room_identity` would produce it**.
+    ///
+    /// `rawName` is the Matrix room name; `name`, `role`, `glyph` and
+    /// `initial` are what the core derives from it. Stated separately rather
+    /// than derived here, because deriving them would make this fixture a
+    /// second implementation of a parser that already exists in Rust — and a
+    /// second implementation is a second answer.
+    ///
+    /// **The first version of this file got all three derivations wrong**, and
+    /// the previews looked entirely plausible: `identity.name` kept the glyph,
+    /// `initial` was a letter rather than the glyph, and `matrix-rust-sdk` was
+    /// shown verbatim when the core humanises it to `Matrix Rust Sdk`. The
+    /// values below were taken from running the parser —
+    /// `room_identity::fixture_ground_truth` in the core pins them.
     static func roomRow(
         id: String,
+        rawName: String,
         glyph: String?,
         name: String,
         role: String?,
@@ -481,7 +506,7 @@ enum PreviewFixtures {
     ) -> RoomRow {
         RoomRow(
             room: RoomSummary(
-                id: id, name: name, avatarUrl: nil, unread: unread,
+                id: id, name: rawName, avatarUrl: nil, unread: unread,
                 lastMessage: preview?.text, lastMessageIsOwn: false,
                 lastMessageNamesSender: false, lastEventType: "m.room.message",
                 lastActivityMs: lastActivityMs, runtime: runtime, membership: membership),
@@ -492,16 +517,17 @@ enum PreviewFixtures {
     /// Silent long enough that its absence is the fact.
     static var roomQuiet: RoomRow {
         roomRow(
-            id: "!quill:example.org", glyph: "✒", name: "✒ Quill — Writing", role: "Writing",
-            initial: "Q", preview: RoomPreview(text: "Draft is in the branch.", pending: false),
+            id: "!quill:example.org", rawName: "✒ Quill — Writing", glyph: "✒",
+            name: "Quill", role: "Writing", initial: "✒",
+            preview: RoomPreview(text: "Draft is in the branch.", pending: false),
             lastActivityMs: 1_756_000_000_000)
     }
 
     /// Spoke recently enough to count as active.
     static var roomActive: RoomRow {
         roomRow(
-            id: "!atlas:example.org", glyph: "✳", name: "✳ Atlas — Platform", role: "Platform",
-            initial: "A",
+            id: "!atlas:example.org", rawName: "✳ Atlas — Platform", glyph: "✳",
+            name: "Atlas", role: "Platform", initial: "✳",
             preview: RoomPreview(text: "Rebased onto main and the diff is empty.", pending: false),
             runtime: RuntimeDto(harness: "claude-code", host: "foundry"))
     }
@@ -511,8 +537,8 @@ enum PreviewFixtures {
     /// product allowed to paint `signal`.
     static var roomNeedsYou: RoomRow {
         roomRow(
-            id: "!kaambaan:example.org", glyph: "⌘", name: "⌘ Kaambaan — Delivery",
-            role: "Delivery", initial: "K",
+            id: "!kaambaan:example.org", rawName: "⌘ Kaambaan — Delivery", glyph: "⌘",
+            name: "Kaambaan", role: "Delivery", initial: "⌘",
             preview: RoomPreview(text: "Merge this branch into main?", pending: true),
             unread: 2, runtime: RuntimeDto(harness: "kaambaan", host: "foundry"))
     }
@@ -520,8 +546,9 @@ enum PreviewFixtures {
     /// An invitation, which may not be composed into and has no state word.
     static var roomInvitation: RoomRow {
         roomRow(
-            id: "!estate:example.org", glyph: nil, name: "Estate Planning", role: nil,
-            initial: "E", preview: nil, lastActivityMs: nil, membership: .invited,
+            id: "!estate:example.org", rawName: "Estate Planning", glyph: nil,
+            name: "Estate Planning", role: nil, initial: "E", preview: nil,
+            lastActivityMs: nil, membership: .invited,
             affordance: .respondToInvitation)
     }
 
@@ -532,8 +559,12 @@ enum PreviewFixtures {
     /// survives that.
     static var roomBare: RoomRow {
         roomRow(
-            id: "!plain:example.org", glyph: nil, name: "matrix-rust-sdk", role: nil,
-            initial: "M", preview: nil)
+            // `matrix-rust-sdk` reaches a host as `Matrix Rust Sdk`:
+            // `display_name::room_name_label` humanises a machine-written
+            // name. This fixture said `matrix-rust-sdk` and was showing a
+            // screen the product does not have.
+            id: "!plain:example.org", rawName: "matrix-rust-sdk", glyph: nil,
+            name: "Matrix Rust Sdk", role: nil, initial: "M", preview: nil)
     }
 
     static var roster: [RoomRow] {

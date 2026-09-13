@@ -107,6 +107,7 @@ describe("replyTargetStore: fromItem", () => {
       view: { render: "bubble", muted: false, blocks: [] },
       senderName: dto.senderDisplayName ?? dto.sender ?? "Someone",
       senderShort: dto.senderDisplayName ?? dto.sender ?? "Someone",
+      senderInitial: "?",
       membershipVerb: null,
       replyQuote: null,
       canReplyOrReact: true,

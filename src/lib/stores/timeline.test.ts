@@ -36,6 +36,7 @@ function item(id: string): TimelineRow {
     view: { render: "bubble", muted: false, blocks: [] },
     senderName: "@someone:example.org",
     senderShort: "@someone:example.org",
+    senderInitial: "?",
     membershipVerb: null,
     replyQuote: null,
     canReplyOrReact: true,

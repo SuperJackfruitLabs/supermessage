@@ -178,15 +178,28 @@ pub fn attributed_name(item: &TimelineItemDto) -> String {
 /// Host)` finds no `@` and hands the whole string back. That is not a
 /// hypothetical — it is how this was written the first time, and the timeline
 /// silently kept the suffix it was supposed to drop.
-pub fn attributed_parts(item: &TimelineItemDto) -> (String, String) {
+pub fn attributed_parts(item: &TimelineItemDto) -> (String, String, String) {
     let Some(raw) = item.sender_display_name.as_deref() else {
         let fallback = item.sender.clone().unwrap_or_else(|| "Someone".to_string());
-        return (fallback.clone(), fallback);
+        // A raw id — `@atlas:example.org` — has no glyph to split, and its
+        // first character is `@` for every sender there has ever been. So the
+        // initial skips it: an entire room of `@` discs distinguishes nobody,
+        // which is the one job a face has.
+        let initial = crate::room_identity::display_initial(
+            fallback.strip_prefix('@').unwrap_or(&fallback),
+        );
+        return (fallback.clone(), fallback, initial);
     };
     let (head, runtime) = crate::display_name::sender_parts(raw);
+    // The glyph comes off both attributions and is handed back on its own.
+    // Before this, a host drew the face from `sender_name.first` — which for
+    // an agent is the glyph — and then drew the name beside it, glyph
+    // included: `✳ ✳ Atlas — Platform`, on every message. See
+    // `room_identity::sender_face_parts`.
+    let (initial, head) = crate::room_identity::sender_face_parts(&head);
     match runtime {
-        Some(runtime) => (format!("{head} ({runtime})"), head),
-        None => (head.clone(), head),
+        Some(runtime) => (format!("{head} ({runtime})"), head, initial),
+        None => (head.clone(), head, initial),
     }
 }
 

@@ -2699,6 +2699,24 @@ data class TimelineRow (
      */
     var `senderShort`: kotlin.String, 
     /**
+     * The single character a face shows for this sender: the glyph when the
+     * name starts with one, otherwise the first character of the name,
+     * uppercased.
+     *
+     * **Carried because the obvious derivation is wrong.** A host that takes
+     * `sender_name.first` gets the glyph *and* leaves it in the name beside
+     * it, which is how iOS drew `✳ ✳ Atlas — Platform` under every message
+     * for as long as nobody had rendered a preview. The roster never had the
+     * bug because [`RoomIdentity::initial`] already made this decision for a
+     * room; this is the same decision for a sender, made once, in the one
+     * place all three hosts read from.
+     *
+     * [`Self::sender_name`] and [`Self::sender_short`] are therefore
+     * **glyph-free**: the symbol belongs to the face, not to the line beside
+     * it.
+     */
+    var `senderInitial`: kotlin.String, 
+    /**
      * The verb phrase for a membership change — "joined the room" — and
      * `None` for every other kind.
      *
@@ -2745,6 +2763,7 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterTypeItemView.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalTypeReplyQuoteView.read(buf),
             FfiConverterBoolean.read(buf),
@@ -2757,6 +2776,7 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterTypeItemView.allocationSize(value.`view`) +
             FfiConverterString.allocationSize(value.`senderName`) +
             FfiConverterString.allocationSize(value.`senderShort`) +
+            FfiConverterString.allocationSize(value.`senderInitial`) +
             FfiConverterOptionalString.allocationSize(value.`membershipVerb`) +
             FfiConverterOptionalTypeReplyQuoteView.allocationSize(value.`replyQuote`) +
             FfiConverterBoolean.allocationSize(value.`canReplyOrReact`) +
@@ -2768,6 +2788,7 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterTypeItemView.write(value.`view`, buf)
             FfiConverterString.write(value.`senderName`, buf)
             FfiConverterString.write(value.`senderShort`, buf)
+            FfiConverterString.write(value.`senderInitial`, buf)
             FfiConverterOptionalString.write(value.`membershipVerb`, buf)
             FfiConverterOptionalTypeReplyQuoteView.write(value.`replyQuote`, buf)
             FfiConverterBoolean.write(value.`canReplyOrReact`, buf)

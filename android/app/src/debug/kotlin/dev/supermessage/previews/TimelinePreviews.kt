@@ -44,7 +44,7 @@ private fun SenderRun() {
     PreviewGround {
         Column {
             TimelineRow(
-                row = PreviewFixtures.message, now = NOW, attribution = "✳ Atlas — Platform",
+                row = PreviewFixtures.message, now = NOW, attribution = "Atlas — Platform",
             )
             TimelineRow(row = PreviewFixtures.noticed, now = NOW, continuesRun = true)
         }

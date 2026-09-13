@@ -23,14 +23,20 @@ xcodegen generate > /dev/null
 # The newest booted-or-available iPhone. Resolved rather than hard-coded, for
 # the reason CI's own simulator step gives: the runtime set is tied to the
 # Xcode that ships it and neither is ours to pin.
-UDID=$(xcrun simctl list devices available --json \
-  | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; \
-rows=[v for k,vs in d.items() if "iOS" in k for v in vs if v["name"].startswith("iPhone")]; \
-print(rows[0]["udid"] if rows else "")')
+UDID=$(xcrun simctl list devices available --json | python3 -c '
+import json, sys
+devices = json.load(sys.stdin)["devices"]
+phones = [d for runtime, ds in devices.items() if "iOS" in runtime
+          for d in ds if d["name"].startswith("iPhone")]
+print(phones[0]["udid"] if phones else "")
+')
 [ -n "$UDID" ] || { echo "FAIL: no iPhone simulator available."; exit 1; }
 
 rm -rf "$OUT"; mkdir -p "$OUT"
-echo "Rendering previews on $UDID…"
+# `${UDID}`, braced: an unbraced `$UDID…` makes bash read the ellipsis as
+# part of the name, and under `set -u` that is an unbound-variable abort
+# naming a variable nobody wrote.
+echo "Rendering previews on ${UDID}…"
 TEST_RUNNER_SNAPSHOTS_EXPORT_DIR="$OUT" xcodebuild test \
   -project Supermessage.xcodeproj \
   -scheme PreviewSnapshots \

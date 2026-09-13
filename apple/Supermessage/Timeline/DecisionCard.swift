@@ -270,7 +270,7 @@ struct GateAnswer {
     PreviewGround {
         CustomEventCard(
             view: PreviewFixtures.cardPending, label: "Gate",
-            eventType: "dev.kaambaan.gate.v1", senderName: "⌘ Kaambaan — Delivery",
+            eventType: "dev.kaambaan.gate.v1", senderName: "Kaambaan — Delivery",
             onDecide: { _ in true })
     }
 }
@@ -283,7 +283,7 @@ struct GateAnswer {
     PreviewGround {
         CustomEventCard(
             view: PreviewFixtures.cardAnswered, label: "Gate",
-            eventType: "dev.kaambaan.gate.v1", senderName: "⌘ Kaambaan — Delivery")
+            eventType: "dev.kaambaan.gate.v1", senderName: "Kaambaan — Delivery")
     }
 }
 
@@ -291,7 +291,7 @@ struct GateAnswer {
     PreviewGround {
         CustomEventCard(
             view: PreviewFixtures.cardWithReasoning, label: "Turn",
-            eventType: "dev.agentpod.turn.v1", senderName: "✳ Atlas — Platform")
+            eventType: "dev.agentpod.turn.v1", senderName: "Atlas — Platform")
     }
 }
 
@@ -306,7 +306,7 @@ struct GateAnswer {
     PreviewGround(width: 360) {
         CustomEventCard(
             view: PreviewFixtures.cardLongValue, label: "Artifact",
-            eventType: "dev.agentpod.artifact.v1", senderName: "✳ Atlas — Platform")
+            eventType: "dev.agentpod.artifact.v1", senderName: "Atlas — Platform")
     }
 }
 
@@ -323,13 +323,13 @@ struct GateAnswer {
             VStack(spacing: 16) {
                 CustomEventCard(
                     view: PreviewFixtures.cardNewerVersion, label: "Station",
-                    eventType: "dev.agentpod.station.v2", senderName: "✳ Atlas — Platform")
+                    eventType: "dev.agentpod.station.v2", senderName: "Atlas — Platform")
                 CustomEventCard(
                     view: PreviewFixtures.cardFallback, label: "Station",
-                    eventType: "dev.agentpod.station.v2", senderName: "✳ Atlas — Platform")
+                    eventType: "dev.agentpod.station.v2", senderName: "Atlas — Platform")
                 CustomEventCard(
                     view: PreviewFixtures.cardPlaceholder, label: "Event",
-                    eventType: "dev.agentpod.unknown.v1", senderName: "✳ Atlas — Platform")
+                    eventType: "dev.agentpod.unknown.v1", senderName: "Atlas — Platform")
             }
         }
     }
@@ -347,7 +347,7 @@ struct GateAnswer {
     PreviewGround(width: 360) {
         CustomEventCard(
             view: PreviewFixtures.cardAnswered, label: "Station",
-            eventType: PreviewFixtures.hostileEventType, senderName: "✳ Atlas — Platform")
+            eventType: PreviewFixtures.hostileEventType, senderName: "Atlas — Platform")
     }
 }
 #endif

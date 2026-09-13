@@ -139,6 +139,47 @@ fn bound(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
+/// Split a leading glyph off a name, returning it and what remains.
+///
+/// Extracted from [`parse_room_identity`] so a **sender** can be treated the
+/// same way as a room, which on this deployment is usually the same entity
+/// seen from two directions: `✳ Atlas — Platform` names both the agent and
+/// its room.
+///
+/// The caller gets the remainder rather than a parsed structure because a
+/// timeline attribution keeps its role — `Atlas — Platform` reads correctly
+/// on one line — while a roster row splits the two across a name and a meta
+/// line. Same glyph rule, different composition.
+pub fn split_leading_glyph(name: &str) -> (Option<&str>, &str) {
+    let trimmed = name.trim();
+    match leading_token(trimmed).filter(|token| looks_like_glyph(token)) {
+        Some(glyph) => (Some(glyph), trimmed[glyph.len()..].trim_start()),
+        None => (None, trimmed),
+    }
+}
+
+/// The glyph and the name to show beside it, for a message's sender.
+///
+/// **Why this exists.** The face beside a message used to be drawn from
+/// `sender_name.first`, and for an agent that is the glyph — so a room where
+/// `✳ Atlas — Platform` speaks drew `✳ ✳ Atlas — Platform` on every message.
+/// The roster never had the bug, because [`RoomIdentity`] hands it a glyph for
+/// the disc and a name without one for the line beside it. This gives the
+/// timeline the same pair.
+///
+/// Decided here rather than in a host for the reason the whole module exists:
+/// a naming rule in three renderers is three chances to disagree about what a
+/// sender is called.
+pub fn sender_face_parts(attribution: &str) -> (String, String) {
+    let (glyph, rest) = split_leading_glyph(attribution);
+    let rest = if rest.is_empty() { attribution.trim() } else { rest };
+    let initial = match glyph {
+        Some(glyph) => glyph.to_string(),
+        None => display_initial(rest),
+    };
+    (initial, rest.to_string())
+}
+
 /// Parse a raw Matrix room name.
 pub fn parse_room_identity(raw_name: &str) -> RoomIdentity {
     if raw_name.trim().is_empty() {
@@ -154,11 +195,7 @@ pub fn parse_room_identity(raw_name: &str) -> RoomIdentity {
         None => (raw_name.trim(), ""),
     };
 
-    let glyph = leading_token(name_half).filter(|token| looks_like_glyph(token));
-    let without_glyph = match glyph {
-        Some(token) => name_half[token.len()..].trim(),
-        None => name_half,
-    };
+    let (glyph, without_glyph) = split_leading_glyph(name_half);
 
     // Humanised before bounding, so the cap counts characters a reader will
     // actually see. `room_name_label` leaves anything a person wrote exactly

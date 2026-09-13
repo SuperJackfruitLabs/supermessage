@@ -232,11 +232,11 @@ private fun RoomInfo() {
 private fun SearchScoped() {
     PreviewGround {
         SearchPanel(
-            scope = SearchPanelScope(PreviewFixtures.ROOM_ID, "✳ Atlas — Platform"),
+            scope = SearchPanelScope(PreviewFixtures.ROOM_ID, "Atlas"),
             onOpen = {},
             onClose = {},
             search = { _, _ -> PreviewFixtures.searchResults },
-            roomName = { "✳ Atlas — Platform" },
+            roomName = { "Atlas" },
             now = NOW,
         )
     }
