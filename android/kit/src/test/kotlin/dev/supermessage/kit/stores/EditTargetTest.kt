@@ -45,6 +45,7 @@ class EditTargetTest {
             view = ItemView.Bubble(muted = false, blocks = emptyList()),
             senderName = "Me",
             senderShort = "Me",
+            senderInitial = "?",
             membershipVerb = null,
             replyQuote = null,
             canReplyOrReact = eventId != null,

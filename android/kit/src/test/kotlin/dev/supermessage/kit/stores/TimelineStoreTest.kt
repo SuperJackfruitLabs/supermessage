@@ -46,6 +46,7 @@ class TimelineStoreTest {
             view = ItemView.Bubble(muted = false, blocks = emptyList()),
             senderName = "@a:x",
             senderShort = "@a:x",
+            senderInitial = "?",
             membershipVerb = null,
             replyQuote = null,
             canReplyOrReact = true,

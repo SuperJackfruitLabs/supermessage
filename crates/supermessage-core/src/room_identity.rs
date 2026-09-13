@@ -172,7 +172,11 @@ pub fn split_leading_glyph(name: &str) -> (Option<&str>, &str) {
 /// sender is called.
 pub fn sender_face_parts(attribution: &str) -> (String, String) {
     let (glyph, rest) = split_leading_glyph(attribution);
-    let rest = if rest.is_empty() { attribution.trim() } else { rest };
+    let rest = if rest.is_empty() {
+        attribution.trim()
+    } else {
+        rest
+    };
     let initial = match glyph {
         Some(glyph) => glyph.to_string(),
         None => display_initial(rest),

@@ -185,9 +185,8 @@ pub fn attributed_parts(item: &TimelineItemDto) -> (String, String, String) {
         // first character is `@` for every sender there has ever been. So the
         // initial skips it: an entire room of `@` discs distinguishes nobody,
         // which is the one job a face has.
-        let initial = crate::room_identity::display_initial(
-            fallback.strip_prefix('@').unwrap_or(&fallback),
-        );
+        let initial =
+            crate::room_identity::display_initial(fallback.strip_prefix('@').unwrap_or(&fallback));
         return (fallback.clone(), fallback, initial);
     };
     let (head, runtime) = crate::display_name::sender_parts(raw);

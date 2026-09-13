@@ -860,8 +860,7 @@ impl TimelineRow {
     /// reason this is a row and not a bare DTO.
     pub fn new(item: TimelineItemDto) -> Self {
         let view = crate::item_view::view_for(&item);
-        let (sender_name, sender_short, sender_initial) =
-            crate::item_view::attributed_parts(&item);
+        let (sender_name, sender_short, sender_initial) = crate::item_view::attributed_parts(&item);
         let membership_verb = (item.kind == "membership")
             .then(|| crate::item_view::membership_verb(item.detail.as_deref()));
         let reply_quote = crate::item_view::reply_quote_view(item.reply_to.as_ref());
