@@ -8,6 +8,16 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
+/**
+ * The lowest version code this project will ever emit.
+ *
+ * Bump it when a build has shipped with a higher number from CI and the repo
+ * should not be able to go backwards — it is a floor, not the value used.
+ */
+// Plain `val`, not `const val`: a .kts script body is a function body, and
+// Kotlin allows `const` only at true top level or in an object.
+val VERSION_CODE_FLOOR = 2
+
 android {
     namespace = "dev.supermessage"
     compileSdk = 36
@@ -18,9 +28,62 @@ android {
         applicationId = "dev.supermessage"
         minSdk = 31
         targetSdk = 36
-        versionCode = 2
+        // The build number, and the same rule iOS uses.
+        //
+        // Play rejects an upload whose versionCode it has already seen, and
+        // #35 flagged that nothing enforced the increase — a human
+        // remembering to bump a counter is a release rejected at the worst
+        // moment. CI passes the run number; `coerceAtLeast` keeps the
+        // committed value an actual floor rather than a comment claiming to
+        // be one, which is the exact bug the iOS workflow shipped with and
+        // had to fix.
+        //
+        // A local build with nothing set gets the floor, so `assembleDebug`
+        // needs no environment.
+        versionCode = maxOf(
+            System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: 0,
+            VERSION_CODE_FLOOR,
+        )
         versionName = "0.0.11"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Signing for release, from the environment and nowhere else.
+    //
+    // No keystore path, alias or password appears in this file or anywhere in
+    // the repository. When the environment is unset — every local build, and
+    // every CI job that is not a release — `findByName` returns null, the
+    // release build type is simply unsigned, and `assembleDebug` is
+    // unaffected. A missing secret therefore produces an unsigned artifact
+    // that Play refuses, rather than a build that fails confusingly.
+    //
+    // This is the *upload* key, not the app signing key. Play App Signing
+    // holds the latter, which means a leaked upload key is rotated through
+    // the Play Console rather than being the end of the application's
+    // identity — unlike iOS, where the distribution key is the real one.
+    signingConfigs {
+        val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+        if (keystorePath != null) {
+            create("upload") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "upload"
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("upload")
+            // Minification stays off, for the reason the debug dependency
+            // block a few lines down already gives: this project ships a
+            // UniFFI boundary reached reflectively through JNA, and R8 cannot
+            // see those call sites. Turning it on is a real size win and a
+            // real risk, and it wants its own change with its own testing
+            // rather than riding along with the first release.
+            isMinifyEnabled = false
+        }
     }
 
     buildFeatures { compose = true }
@@ -39,9 +102,11 @@ android {
     // No per-ABI versionCode override (the usual companion to this block,
     // via applicationVariants.all { outputs... }): that scheme exists so the
     // Play Store can tell a device which of several same-versionCode APKs to
-    // serve. This project does not publish to Play — a human picks the
-    // right file by name and sideloads it — so the extra build-script
-    // complexity would have no reader.
+    // serve, and it applies to *APKs*. The Play release is an App Bundle,
+    // which splits by ABI on Google's side from a single artifact, so the
+    // scheme is unnecessary there too. These splits remain what a human
+    // sideloads: `assembleDebug` still yields one APK per ABI plus a
+    // universal one.
     splits {
         abi {
             isEnable = true
@@ -206,4 +271,19 @@ tasks.withType<Test>().configureEach {
         "jna.library.path",
         layout.projectDirectory.dir("../../target/debug").asFile.absolutePath,
     )
+}
+
+// A one-line check that the version code rule behaves, without needing an
+// AAB, the JNI libs, or a Play account:
+//
+//     ./gradlew -q :app:printVersion
+//     ANDROID_VERSION_CODE=42 ./gradlew -q :app:printVersion
+//
+// It exists because the rule is `maxOf(env, floor)` and both halves are easy
+// to get backwards — the iOS workflow shipped with exactly that bug, claiming
+// a floor it did not enforce.
+tasks.register("printVersion") {
+    val code = android.defaultConfig.versionCode
+    val name = android.defaultConfig.versionName
+    doLast { println("versionCode=$code versionName=$name") }
 }
