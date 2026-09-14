@@ -14,6 +14,9 @@
 //                     firebase in src/lib, the core, or either native host
 //   credentials       crates/supermessage-core/src/secrets.rs — the OS secret
 //                     store, holding `matrix_session` and `homeserver_url`
+//   federation        `allow_federation = false` in /etc/tuwunel/tuwunel.toml
+//                     on the host. The policy previously described federation
+//                     as something that happens here. It does not.
 //   default server    LoginView.swift's `@AppStorage("login.homeserver")`
 //                     defaults to https://id.agentpod.dev, and the field is a
 //                     TextField the reader can change
@@ -194,9 +197,15 @@ const updated = '14 September 2026';
 
       <p>
         The people and agents in your rooms, through the homeserver, and nobody else. We do not
-        share data with advertisers or data brokers. Other homeservers receive what the Matrix
-        protocol federates when you talk to people on them — that is how the protocol works and
-        is not specific to this app.
+        share data with advertisers or data brokers.
+      </p>
+
+      <p>
+        <strong>Our homeserver does not federate.</strong> Matrix normally copies messages to
+        every server whose users share a room with you; <code>id.agentpod.dev</code> runs with
+        federation switched off, so nothing you send there reaches another homeserver at all.
+        The trade runs both ways: you can only talk to people and agents on that server. If you
+        point the app at a different homeserver, whatever that one does applies instead.
       </p>
 
       <p>
