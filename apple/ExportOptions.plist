@@ -17,15 +17,36 @@
     <string>N2QQPW2BRJ</string>
 
     <!--
-      Let Xcode fetch or create the distribution profile.
+      Manual, after automatic was tried three times and refused three times.
 
-      The alternative is checking a `.mobileprovision` into the repo and
-      re-checking it every year when it expires. `-allowProvisioningUpdates`
-      on the command line is what actually permits this; without it the flag
-      here is ignored and the export fails asking for a profile by name.
+      `automatic` asks Xcode to manage signing, and with an API key present it
+      insists on **cloud signing** — which needs a cloud-managed distribution
+      certificate. This team's certificate was created the ordinary way, so
+      Xcode reported `Cloud signing permission error` and, alongside it, `No
+      profiles for 'dev.supermessage.ios' were found` even once the profile
+      existed and was ACTIVE in App Store Connect. It was not looking for it
+      there.
+
+      Manual signing takes both halves from the runner's own keychain and
+      profile directory, which the workflow puts there: the Apple Distribution
+      identity, and this profile by name. Nothing is fetched, so nothing can be
+      refused.
+
+      The cost is that the profile is now a secret to rotate before
+      2027-08-31. That is a real cost and it buys an export that works.
     -->
     <key>signingStyle</key>
-    <string>automatic</string>
+    <string>manual</string>
+
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+
+    <!-- Keyed by bundle id, valued by the profile's *name*, not its UUID. -->
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>dev.supermessage.ios</key>
+        <string>supermessage iOS App Store</string>
+    </dict>
 
     <!--
       Symbols go up with the build.
