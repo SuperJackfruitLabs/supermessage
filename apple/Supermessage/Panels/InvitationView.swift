@@ -16,6 +16,33 @@ struct InvitationView: View {
     @State private var busy = false
     @State private var failure: String?
 
+    init(session: Session, roomId: String, roomName: String) {
+        self.session = session
+        self.roomId = roomId
+        self.roomName = roomName
+    }
+
+    #if DEBUG
+    /// The invitation with its inviter already known.
+    ///
+    /// This frame was **not** on the unstable list, and it should have been:
+    /// it loads the inviter in a `.task` exactly like the panels that were.
+    /// It surfaced only when the seven known ones were fixed and the same
+    /// five-render check was run again, disagreeing by 60,654 pixels — the
+    /// whole card reflowing around a line of text that had or had not
+    /// arrived.
+    ///
+    /// Worth saying plainly: the exclusion list was **evidence of what had
+    /// been caught, not of what was flaky**, and a frame it missed was being
+    /// gated against a baseline it could flip away from at any time.
+    init(session: Session, roomId: String, roomName: String, inviter: String?) {
+        self.session = session
+        self.roomId = roomId
+        self.roomName = roomName
+        _inviter = State(initialValue: inviter)
+    }
+    #endif
+
     var body: some View {
         VStack(spacing: 12) {
             VStack(spacing: 3) {
@@ -47,7 +74,7 @@ struct InvitationView: View {
         .padding(20)
         .frame(maxWidth: .infinity)
         .background(.bar)
-        .task(id: roomId) { await loadInviter() }
+        .task(id: roomId) { if inviter == nil { await loadInviter() } }
     }
 
     /// Asked once, for the one invitation on screen — see
@@ -89,7 +116,7 @@ struct InvitationEmptyTimeline: View {
 #Preview("Invitation") {
     InvitationView(
         session: PreviewFixtures.session(), roomId: "!estate:example.org",
-        roomName: "Estate Planning")
+        roomName: "Estate Planning", inviter: "Krishna")
         .previewChrome()
 }
 

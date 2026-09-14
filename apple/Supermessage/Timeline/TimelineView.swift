@@ -72,13 +72,28 @@ struct TimelineView: View {
                             .frame(width: 36, height: 36)
                             .background(.regularMaterial, in: Circle())
                             .overlay(Circle().stroke(Theme.border, lineWidth: 1))
+                            // The disc stays 36; the target becomes 44.
+                            //
+                            // This is the route home from a long scrollback,
+                            // and it was eight points under the minimum on
+                            // every axis. `contentShape(Circle())` rather
+                            // than a rectangle so the corners of the 44pt box
+                            // do not steal taps meant for the timeline behind
+                            // it.
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Jump to newest")
                     // Clear of the conversation rather than on top of it: at
                     // twelve points it sat over a reaction chip, which is a
                     // control covering another control.
-                    .padding(.trailing, 12)
-                    .padding(.bottom, 20)
+                    //
+                    // Eight and sixteen, not twelve and twenty: the 44pt
+                    // target adds four points on every side, so the padding
+                    // gives four back and the disc sits exactly where it did.
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 16)
                     .transition(.scale.combined(with: .opacity))
                     .accessibilityLabel("Jump to newest")
                 }

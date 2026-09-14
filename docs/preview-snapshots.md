@@ -52,10 +52,13 @@ preview registry at run time and renders each `#Preview` on a simulator.
 `SupermessagePreviewTests` is four lines and declares no test functions —
 there is deliberately no list of previews to keep in step with the previews.
 
-**A viewer, not a gate.** The images are gitignored. Several previews still
-depend on the wall clock through relative-time formatting, so a committed
-baseline would diff against itself; making this a regression gate is a
-separate decision that needs those fixed first.
+**It was a viewer; it is a gate now.** This section used to say the images
+were gitignored and a committed baseline would diff against itself, because
+several previews depended on the wall clock and others raced a `.task`. Both
+were true when written and neither is any longer. All 45 frames are committed
+under `apple/SupermessagePreviewTests/previews` and compared on every run —
+see §"What it took to make them hold still" below. The rendered output is
+still gitignored; the *baseline* is not.
 
 `PreviewGallery` — the package's on-device browser — is deliberately not
 used. It links to the *app* target, so it would ship in release, and
@@ -141,10 +144,15 @@ in a test.
 Found while confirming the above, and it bounds what every number on this
 page means.
 
-`RoomInfoPanel` renders as a bare spinner. It was **not** reported as a
+`RoomInfoPanel` rendered as a bare spinner. It was **not** reported as a
 problem, because duplicate detection can only speak when there are two frames
 to compare and this view has one preview. `NewRoomPanel`'s two previews *were*
 caught, and only because there are two of them and they are identical.
+
+Both are fixed — the previews seed their state through a `#if DEBUG`
+initialiser rather than racing a `.task` — but the asymmetry is the part
+worth keeping. **A defect that appears once is invisible to duplicate
+detection**, and that is a property of the check rather than of the view.
 
 Every panel that loads through a `.task` — room info, account, search, new
 room, the invitation's inviter — is in this category. Some of their frames on
@@ -196,3 +204,40 @@ passed:
 - **The palette is the generated one.** The unread badge and the invitation
   chip are `accent` — `#5b43d4`, straight from `design/tokens.toml` — and not
   the system tint, which was the thing worth checking given P6.
+
+
+## What it took to make them hold still
+
+Seven frames were rendered but not compared, on the argument that they could
+not be: a spinner has no canonical frame, and a `.task` resolves while the
+shutter is opening. Both halves were true; neither was a reason to stop.
+
+  - **Spinners** lose their motion through `\.rendersStill`, a custom
+    environment value. It exists because `accessibilityReduceMotion` is
+    read-only — `.environment(\.accessibilityReduceMotion, true)` does not
+    compile — so a preview has no way to ask for the settled rendering.
+    `LiveTurnView` honours both: the accessibility value for readers who
+    asked for it, this one for the camera.
+  - **Racing `.task`s** get `#if DEBUG` initialisers that seed the state the
+    task would have fetched, guarded on a condition that already existed —
+    `loading`, `info == nil`, `inviter == nil` — rather than a new "is this a
+    preview" flag.
+  - **`Media without bytes`** flipped between the spinner and the
+    permanent-absence glyph, because `hasFailed` turns true only once a fetch
+    that can never succeed gives up. The fixture starts failed, which is both
+    the settled state and the one the preview's name promises.
+  - **`RoomInfoPanel`** came out a *different size*: identical content for
+    3,558 rows, then a total wandering between 3,558 and 3,562 with plain
+    background in dispute. Measuring an unbounded `List` of that height does
+    not land on the same number twice, so the preview states its height.
+
+Then the same five-render check found an **eighth** frame that had never been
+on the list. `InvitationView` loads its inviter in a `.task` exactly like the
+panels that were excluded, and disagreed by 60,654 pixels — the whole card
+reflowing around a line that had or had not arrived. It was being gated
+against a baseline it could flip away from at any time.
+
+That is the argument for emptying the list rather than curating it: **it
+recorded what had been caught, not what was flaky.** Two runs agreeing is
+what put seven frames on it and left the eighth off. What is committed now is
+45 frames each rendered five times and agreeing five times.

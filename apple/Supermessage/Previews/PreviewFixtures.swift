@@ -174,7 +174,9 @@ struct PreviewClient: SessionClient {
     // MARK: AccountDirectory
 
     func account() async throws -> AccountDto {
-        AccountDto(userId: "@rakesh:example.org", homeserver: "https://matrix.example.org")
+        AccountDto(
+            userId: PreviewFixtures.accountUserId,
+            homeserver: "https://matrix.example.org")
     }
     func knownPeople() async throws -> [PersonDto] {
         isEmpty ? [] : PreviewFixtures.people
@@ -633,6 +635,13 @@ enum PreviewFixtures {
         ]
     }
 
+    /// The signed-in account, named once.
+    ///
+    /// Previews that seed a view's state need the same id the `PreviewClient`
+    /// would have returned — two spellings of it is a fixture drift waiting
+    /// to happen, and this repository has already paid for three of those.
+    static let accountUserId = "@rakesh:example.org"
+
     static var roomInfo: RoomInfoDto {
         RoomInfoDto(
             roomId: roomId, name: "✳ Atlas — Platform",
@@ -807,7 +816,13 @@ enum PreviewFixtures {
     }
 
     @MainActor
-    static func mediaCache() -> MediaCache { MediaCache(client: PreviewClient()) }
+    /// A media cache, optionally already knowing some events will never
+    /// resolve. See the "Media without bytes" preview for why that matters.
+    static func mediaCache(failed: [String] = []) -> MediaCache {
+        let cache = MediaCache(client: PreviewClient())
+        for eventId in failed { cache.markFailed(eventId) }
+        return cache
+    }
 
     @MainActor
     static func faceCache() -> AvatarCache { AvatarCache.forMembers(client: PreviewClient()) }

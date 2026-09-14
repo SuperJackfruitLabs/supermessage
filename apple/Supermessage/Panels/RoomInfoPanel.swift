@@ -14,6 +14,35 @@ struct RoomInfoPanel: View {
     @State private var account: String?
     @State private var showsAvatar = false
 
+    init(session: Session, roomId: String, onClose: @escaping () -> Void) {
+        self.session = session
+        self.roomId = roomId
+        self.onClose = onClose
+    }
+
+    #if DEBUG
+    /// The panel with the room already loaded.
+    ///
+    /// This preview did not merely wobble between runs — it came out a
+    /// **different size**, because a panel that has not loaded is a spinner
+    /// and a panel that has is a member list. There is no tolerance that
+    /// covers that and no reason to want one; the fix is to not race.
+    ///
+    /// `account` is seeded too. It is only used to leave this account out of
+    /// the member list, but it arrives from its own `await`, so leaving it
+    /// unseeded would trade a large race for a small one.
+    init(
+        session: Session, roomId: String, info: RoomInfoDto, account: String?,
+        onClose: @escaping () -> Void
+    ) {
+        self.session = session
+        self.roomId = roomId
+        self.onClose = onClose
+        _info = State(initialValue: info)
+        _account = State(initialValue: account)
+    }
+    #endif
+
     /// The room's picture as a `data:` URI, from the same cache the roster
     /// reads — so opening this panel does not re-fetch what is already held.
     private var avatarURI: String? { session.avatars.uri(for: roomId) }
@@ -148,7 +177,11 @@ struct RoomInfoPanel: View {
                 }
             }
         }
+        // Skipped entirely when the room arrived with the view. Guarding on
+        // `info` rather than adding a flag: "already have it" is exactly the
+        // condition, and the shipping path always starts without it.
         .task(id: roomId) {
+            guard info == nil else { return }
             account = await session.account()?.userId
             await session.avatars.load(roomId)
             await load()
@@ -379,7 +412,23 @@ private struct AvatarViewer: View {
 // renders, which is what most rooms in this product actually show.
 #Preview("Furnished") {
     RoomInfoPanel(
-        session: PreviewFixtures.session(), roomId: PreviewFixtures.roomId, onClose: {})
+        session: PreviewFixtures.session(), roomId: PreviewFixtures.roomId,
+        info: PreviewFixtures.roomInfo, account: PreviewFixtures.accountUserId,
+        onClose: {})
+        // A stated height, because an unstated one is not reproducible here.
+        //
+        // With the room seeded the *content* of this frame is byte-identical
+        // across renders — the first 3,558 rows match exactly. What varied
+        // was the total, between 3,558 and 3,562, and the four rows in
+        // dispute were plain background. This is the tallest frame in the
+        // catalogue and the only one inside a `List`, and measuring an
+        // unbounded list of that height does not land on the same number
+        // twice.
+        //
+        // Clipping is the failure mode to watch, and the gate watches it: if
+        // the panel outgrows this the content moves, the pixels change, and
+        // the comparison fails rather than quietly cropping.
+        .frame(height: 1240)
         .previewChrome()
 }
 #endif

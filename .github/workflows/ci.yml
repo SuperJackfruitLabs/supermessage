@@ -185,6 +185,28 @@ jobs:
         # reasoning as the design-token drift gate.
         run: pnpm storybook:build
 
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: The stories still look like the baseline
+        # ubuntu-24.04 is where the baseline was recorded, and the only place
+        # it can be compared — see docs/story-snapshots.md §2. On a developer
+        # Mac the same script renders and skips the comparison.
+        run: ./scripts/snapshot-stories.sh
+
+      - name: Keep the frames when they disagree
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-snapshots
+          path: .snapshots-web/
+          # Both these directories start with a dot, and upload-artifact v4
+          # calls that hidden and skips it — with a warning, on a step that
+          # still reports success. The iOS upload has been doing that since it
+          # was added: every failing run promised frames to look at and
+          # attached none.
+          include-hidden-files: true
+
   rust:
     name: Rust
     needs: changes
@@ -377,6 +399,12 @@ jobs:
         with:
           name: ios-preview-frames
           path: .snapshots/
+          # Both these directories start with a dot, and upload-artifact v4
+          # calls that hidden and skips it — with a warning, on a step that
+          # still reports success. The iOS upload has been doing that since it
+          # was added: every failing run promised frames to look at and
+          # attached none.
+          include-hidden-files: true
           if-no-files-found: ignore
 
       - name: Previews and their fixtures stay out of Release

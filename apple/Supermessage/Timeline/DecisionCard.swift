@@ -9,7 +9,28 @@ import SwiftUI
 /// and never makes the choice itself. Every field is **text**, bounded and
 /// validated on the Rust side before it crossed, and nothing read out of a
 /// payload may be rendered as anything but text.
+/// A decision field's label, rendered identically in both arrangements of
+/// the `ViewThatFits` that draws a field row.
+///
+/// `@MainActor` because `metaFace()` is: the type ramp reads the colour
+/// scheme, so a face is a main-actor decision like any other view modifier.
+@MainActor
+@ViewBuilder
+private func fieldLabel(_ field: CustomEventField) -> some View {
+    Text(field.label)
+        .metaFace()
+        .textCase(.uppercase)
+        .foregroundStyle(Theme.contentMuted)
+}
+
 struct CustomEventCard: View {
+    /// Whether the reader has chosen one of the accessibility text sizes.
+    ///
+    /// Read rather than guessed at: a fixed-width label column is a promise
+    /// about text size, and this is the only thing that can say whether the
+    /// promise still holds.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let view: CustomEventView
     /// What this kind of event is called — "Turn", "Permission" — decided by
     /// the renderer that drew the card, not by reading the schema address.
@@ -74,13 +95,30 @@ struct CustomEventCard: View {
             }
 
             ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(field.label)
-                        .metaFace()
-                        .textCase(.uppercase)
-                        .foregroundStyle(Theme.contentMuted)
-                        .frame(width: 84, alignment: .leading)
-                    Text(field.value).font(.callout)
+                // Label beside value, or above it once the text is large.
+                //
+                // The column was a flat `.frame(width: 84)`, and at
+                // `.accessibility3` a label broke *mid-word* inside it —
+                // `REPOSITORY` rendered as `REPO SITO RY` down three lines —
+                // while the value beside it had room to spare. A fixed column
+                // is a promise about text size that nothing was keeping.
+                //
+                // `ViewThatFits` was the first attempt and is wrong here: a
+                // fixed-width column *does* fit horizontally, the label just
+                // wraps inside it, so it kept choosing the broken arm.
+                // Fitting is precisely what `ViewThatFits` measures. The
+                // accessibility boundary is the honest test, and it is
+                // Apple's own rather than a number invented for this card.
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 2) {
+                        fieldLabel(field)
+                        Text(field.value).font(.callout)
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        fieldLabel(field).frame(width: 84, alignment: .leading)
+                        Text(field.value).font(.callout)
+                    }
                 }
             }
 
@@ -184,9 +222,30 @@ private struct DecisionButtons: View {
     /// nothing, by which point the reader believes they have approved.
     private var answerable: Bool { decision.subject != nil && onDecide != nil }
 
+    /// The options, rendered identically whichever way they are arranged.
+    @ViewBuilder
+    private var optionButtons: some View {
+        ForEach(Array(decision.options.enumerated()), id: \.offset) { index, option in
+            Button(option.label) { tapped(option) }
+                .buttonStyle(.borderedProminent)
+                .tint(index == 0 ? Theme.signal : Theme.contentMuted)
+                .disabled(!answerable || sending)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(decision.prompt).font(.system(.callout, weight: .semibold))
+            // The question itself, allowed the height to ask it.
+            //
+            // Nothing in this file sets a `lineLimit`, and at
+            // `.accessibility3` the prompt still rendered as `Merge this
+            // branch i…` — the layout was giving it one line's height and
+            // letting it truncate rather than wrap. `fixedSize(vertical:)`
+            // says take the height you need, which for the one sentence a
+            // reader has to answer is not negotiable.
+            Text(decision.prompt)
+                .font(.system(.callout, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
 
             if let answered {
                 // What was chosen, not a row of buttons that would refuse.
@@ -194,13 +253,21 @@ private struct DecisionButtons: View {
                     .font(.system(.callout, weight: .semibold))
                     .foregroundStyle(Theme.signal)
             } else {
-                HStack(spacing: 8) {
-                    ForEach(Array(decision.options.enumerated()), id: \.offset) { index, option in
-                        Button(option.label) { tapped(option) }
-                            .buttonStyle(.borderedProminent)
-                            .tint(index == 0 ? Theme.signal : Theme.contentMuted)
-                            .disabled(!answerable || sending)
-                    }
+                // A row while the options fit, a column when they do not.
+                //
+                // At `.accessibility3` the row produced `Ap-prov e` over three
+                // lines, `Re-ques t chan ges` over five, and three buttons of
+                // three different heights — on the one control in this product
+                // that must not be missed. Hyphenating a verb mid-word inside a
+                // button is worse than a taller card.
+                //
+                // `ViewThatFits` rather than a size threshold: it picks the
+                // first layout that actually fits, so there is no accessibility
+                // step to guess wrong and no behaviour that only appears above
+                // some boundary nobody previews.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { optionButtons }
+                    VStack(alignment: .leading, spacing: 8) { optionButtons }
                 }
             }
         }

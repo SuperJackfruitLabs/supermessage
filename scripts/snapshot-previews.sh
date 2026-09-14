@@ -7,10 +7,14 @@
 # was never available. This is what closes that, and the first run of it found
 # two things nothing else could have — see `docs/preview-snapshots.md`.
 #
-# The images are **not committed**. This is a viewer, not a regression gate:
-# several previews still depend on the wall clock through relative-time
-# formatting, so a committed baseline would diff against itself. Turning this
-# into a gate is a separate decision and needs those fixed first.
+# Verify by default; `--record` replaces the baseline.
+#
+# This header used to say the images were not committed and this was a viewer
+# rather than a gate, because several previews depended on the wall clock and
+# others raced a `.task`. All 45 are compared now — see
+# docs/preview-snapshots.md, "What it took to make them hold still". The
+# rendered output stays gitignored; the baseline under
+# apple/SupermessagePreviewTests/previews does not.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,11 +66,15 @@ if [ "$RECORD" = yes ]; then
   mkdir -p "$REFERENCES"
   rm -f "$REFERENCES"/*.png
   cp "$OUT"/*.png "$REFERENCES"/
-  # The unstable frames are rendered but are not references — copying them in
+  # Unstable frames are rendered but are not references — copying them in
   # leaves the next verify reporting them as "gone", because the comparison
   # skips them on the rendered side.
+  #
+  # The list is empty now, and `[ -n "$name" ]` is why that is quiet rather
+  # than destructive: an empty list still yields one blank line, and
+  # `rm -f "$REFERENCES/"` then argues with the directory itself.
   python3 "$ROOT/scripts/tests/test_ios_preview_baseline.py" --unstable \
-    | while read -r name; do rm -f "$REFERENCES/$name"; done
+    | while read -r name; do [ -n "$name" ] && rm -f "$REFERENCES/$name"; done
   echo "RECORDED: $count previews are the new baseline."
   echo "Look at them before committing: open $OUT/index.html"
   exit 0

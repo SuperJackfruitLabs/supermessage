@@ -21,6 +21,37 @@ struct NewRoomPanel: View {
     @State private var failure: String?
     @State private var showsAddress = false
 
+    init(session: Session, onOpen: @escaping (String) -> Void, onClose: @escaping () -> Void) {
+        self.session = session
+        self.onOpen = onOpen
+        self.onClose = onClose
+    }
+
+    #if DEBUG
+    /// The panel with its people already in hand.
+    ///
+    /// Both previews of this view were outside the snapshot gate, and for a
+    /// reason no amount of care in the preview could fix: `.task` starts
+    /// after the first render, and the shutter does not wait for it. Five
+    /// renders disagreed by up to 812 pixels — sometimes the list, sometimes
+    /// the spinner, decided by which won the race.
+    ///
+    /// Seeding `loading` to false is what suppresses the reload: `.task`
+    /// below runs only while loading, which is what the flag already meant.
+    /// No second "is this a preview" flag, and nothing in the shipping build
+    /// can reach this.
+    init(
+        session: Session, people: [PersonDto],
+        onOpen: @escaping (String) -> Void, onClose: @escaping () -> Void
+    ) {
+        self.session = session
+        self.onOpen = onOpen
+        self.onClose = onClose
+        _people = State(initialValue: people)
+        _loading = State(initialValue: false)
+    }
+    #endif
+
     private var matches: [PersonDto] {
         peopleMatching(people: people, query: query)
     }
@@ -75,7 +106,10 @@ struct NewRoomPanel: View {
             }
         }
         .searchable(text: $query, prompt: "Name, machine, or @user:server")
-        .task { await load() }
+        // Only while loading. A preview that arrives with its people already
+        // seeded sets `loading` false, and this does not fire — so there is
+        // no async hop for the shutter to race.
+        .task { if loading { await load() } }
         .sheet(isPresented: $showsAddress) {
             JoinByAddress(session: session, onOpen: onOpen, onDone: { showsAddress = false })
                 .presentationDetents([.medium])
@@ -259,14 +293,18 @@ private struct ProgressRow: View {
 // is both real and the longest thing the row will ever have to hold. An agent
 // that has not published a profile looks exactly like this.
 #Preview("Known people") {
-    NewRoomPanel(session: PreviewFixtures.session(), onOpen: { _ in }, onClose: {})
+    NewRoomPanel(
+        session: PreviewFixtures.session(), people: PreviewFixtures.people,
+        onOpen: { _ in }, onClose: {})
         .previewChrome()
 }
 
 // An account that knows nobody, which is where the "join by address" route
 // stops being an alternative and becomes the only way forward.
 #Preview("Nobody yet") {
-    NewRoomPanel(session: PreviewFixtures.session(.empty), onOpen: { _ in }, onClose: {})
+    NewRoomPanel(
+        session: PreviewFixtures.session(.empty), people: [],
+        onOpen: { _ in }, onClose: {})
         .previewChrome()
 }
 #endif

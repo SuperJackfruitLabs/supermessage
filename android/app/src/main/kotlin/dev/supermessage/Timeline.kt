@@ -13,6 +13,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
@@ -423,17 +426,53 @@ fun Timeline(
         // "scrolling through history with no route home is the thing that
         // makes a long room feel like a trap."
         if (!isAtNewest) {
-            SmallFloatingActionButton(
+            JumpToNewestButton(
                 onClick = { scope.launch { listState.animateScrollToItem(0) } },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 12.dp, bottom = 20.dp)
-                    .testTag("jump-to-newest")
-                    .semantics { contentDescription = "Jump to newest" },
-            ) {
-                Text("↓", style = MaterialTheme.typography.titleMedium)
-            }
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
         }
+    }
+}
+
+/**
+ * The way back to the newest message.
+ *
+ * Its own composable so that something can photograph it. Inline in
+ * [Timeline] it was reachable only by scrolling a real list on a real
+ * device — no Compose preview rendered it, so the screenshot gate had never
+ * seen this button, and the change from `Text("↓")` to an icon passed 281
+ * tests and 61 frames without one of them looking at it.
+ */
+@Composable
+internal fun JumpToNewestButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    SmallFloatingActionButton(
+        onClick = onClick,
+        modifier = modifier
+            .padding(end = 12.dp, bottom = 20.dp)
+            .testTag("jump-to-newest")
+            .semantics { contentDescription = "Jump to newest" },
+    ) {
+        // An icon, not `Text("↓")`.
+        //
+        // A text arrow is drawn in the body font and sized by the
+        // body text style, so it grew with `fontScale` and outgrew
+        // the button holding it — the one control on this screen
+        // whose whole job is to be a fixed target in the corner. An
+        // `Icon` is 24dp regardless.
+        //
+        // `KeyboardArrowDown` because `material-icons-core` carries
+        // 49 icons and a plain `ArrowDownward` is not one of them;
+        // that lives in `-extended`, which is the artifact famous for
+        // what it adds to a release build. iOS keeps `arrow.down`,
+        // so the two platforms differ by a chevron against an arrow —
+        // recorded in docs/platform-parity.md rather than resolved by
+        // giving iOS the weaker glyph to match a library limit here.
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowDown,
+            // The button already carries "Jump to newest"; naming the
+            // glyph again would have a screen reader say it twice.
+            contentDescription = null,
+        )
     }
 }
 

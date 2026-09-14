@@ -104,7 +104,46 @@ one easing. They exist so anything added is inside a budget, **not as an
 invitation**. Whether a transition is added at all is still a design
 question, and the answer is usually no.
 
-## 7. Three appearances, two per platform
+## 7. An icon is a glyph that must not grow
+
+Each platform draws from its own system set — **SF Symbols** on iOS,
+**Material icons** on Android — and neither is wrapped in a shared
+abstraction. A cross-platform icon layer would mean shipping one vendor's
+glyphs on the other's hardware, which readers notice even when they cannot
+say why.
+
+What is shared is the rule for **when a mark is an icon at all**, and it came
+out of a defect rather than a preference:
+
+> A glyph beside text, describing that text, may be text — it should grow
+> with the words it belongs to. A glyph alone inside a control of fixed size
+> must be an icon, because it must not grow at all.
+
+Android's jump-to-newest was `Text("↓")` in a 40dp floating button: a
+body-font arrow, sized by the body text style, that outgrew its own button at
+large `fontScale`. The one control on that screen whose entire job is to be a
+fixed target in the corner was the one that would not hold its size. It is
+`Icon(Icons.Filled.KeyboardArrowDown)` now, 24dp regardless.
+
+The web's disclosure chevron, `⌄`, **is** text and is right to be. It sits
+against a label, it means something about that label, and it scales with it.
+The same character in the same repository is correct in one place and a
+defect in the other, which is why the rule is about the position rather than
+the character.
+
+Two consequences worth stating:
+
+- **`material-icons-core`, never `-extended`.** Core carries 49 icons;
+  extended carries every Material icon ever drawn and is well known for what
+  it adds to a release build. When core lacks a glyph, that is a reason to
+  pick a different affordance, not to pull in the larger artifact.
+- **The platforms may differ in the glyph, never in the affordance.**
+  Jump-to-newest is an arrow on iOS and a chevron on Android, because core
+  has no plain down-arrow. The alternative was giving iOS the weaker glyph to
+  match a library limit on Android, which is a library deciding the design.
+  Differences of this kind belong in `docs/platform-parity.md`.
+
+## 8. Three appearances, two per platform
 
 | | Light | Dark |
 |---|---|---|
@@ -116,7 +155,7 @@ is no picker, and nothing on desktop selects it. `dark` is anchored on the
 marketing site's own ink (`#151129`) so arriving at the app from the site
 does not feel like leaving it.
 
-## 8. Changing a value
+## 9. Changing a value
 
 1. Edit `design/tokens.toml`.
 2. Run `python3 scripts/generate-tokens.py`.
@@ -130,7 +169,7 @@ If the generator refuses, it is because a contract you did not intend to
 break is written down. Read the message; it names the appearance, the role,
 and the number it wanted.
 
-## 9. Open
+## 10. Open
 
 - **The three platforms disagree about when panes split** — web derives 1238
   from its pane widths, `RootView.swift` hardcodes 1000, and Android measures

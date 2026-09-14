@@ -73,17 +73,38 @@ fun RoomRow(
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    row.identity.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (row.affordance == RoomAffordance.RESPOND_TO_INVITATION) {
-                    InvitationBadge()
+                // The name and its badge take all the slack; the time and the
+                // unread count take what they need.
+                //
+                // This was `Text(weight(1f, fill = false))` beside
+                // `Spacer(weight(1f))`, and two competing weights split the
+                // leftover space **evenly** — so the name could never have
+                // more than half of it, however little that was. At the
+                // default text size there is slack and nothing shows. At
+                // `fontScale = 2.0` the row read `Kaa…`: four characters of
+                // `Kaambaan`, truncated to make room for whitespace, while
+                // `2m` and the unread badge kept their full width.
+                //
+                // The name is the most important thing on the row and it was
+                // losing to a Spacer. Grouping it with its badge under one
+                // weight means the slack goes to content and the truncation
+                // happens last.
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        row.identity.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (row.affordance == RoomAffordance.RESPOND_TO_INVITATION) {
+                        InvitationBadge()
+                    }
                 }
-                Spacer(Modifier.weight(1f))
                 if (`when`.isNotEmpty()) {
                     Text(
                         `when`,
