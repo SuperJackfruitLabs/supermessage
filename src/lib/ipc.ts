@@ -778,12 +778,44 @@ export type ReplyQuoteView =
     };
 
 /**
+ * What a system line is *about*, independent of its wording — the Rust
+ * `SystemKind`, tagged on `about`.
+ *
+ * The English in `text` is a convenience, not the contract. Nothing on the
+ * web reads this yet; it is mirrored so the type does not quietly describe a
+ * narrower shape than the core actually sends.
+ */
+export type SystemKind =
+  | { about: "roomCreated"; who: string }
+  | { about: "encryptionEnabled" }
+  | { about: "roomReplaced" }
+  | { about: "membershipChanged"; who: string; detail: string | null }
+  | { about: "timelineStart" };
+
+/** What a placeholder stands in for. See {@link SystemKind}. */
+export type PlaceholderKind =
+  | { about: "sticker" }
+  | { about: "poll" }
+  | { about: "liveLocation" }
+  | { about: "call" }
+  | { about: "callNotification" }
+  | { about: "redacted" }
+  | { about: "unableToDecrypt" }
+  | { about: "unsupportedMessage"; msgtype: string }
+  | { about: "unsupportedEvent"; eventType: string };
+
+
+/**
  * The render decision for one item, made by `core::item_view::view_for`.
  */
 export type ItemView =
   | { render: "bubble"; muted: boolean; blocks: RichBlock[] }
   | { render: "emote" }
-  | { render: "system"; text: string }
+  // `kind` beside `text`, mirroring the Rust. The web renders `text` and
+  // ignores `kind`; it is here because this type is hand-maintained against
+  // `ItemView`, and a mirror that omits a field is a mirror that will be
+  // trusted and be wrong. See docs/i18n.md §2.2 for what the field is for.
+  | { render: "system"; kind: SystemKind; text: string }
   | { render: "unreadMarker" }
   /**
    * The line between one day and the next. Carries no text: the date is
@@ -791,7 +823,7 @@ export type ItemView =
    * reads a clock and a locale and both belong where the rendering is.
    */
   | { render: "dateDivider" }
-  | { render: "placeholder"; text: string }
+  | { render: "placeholder"; kind: PlaceholderKind; text: string }
   | { render: "image"; alt: string; width: number | null; height: number | null }
   | {
       render: "mediaFile";

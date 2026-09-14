@@ -316,7 +316,10 @@ enum PreviewFixtures {
     static var membership: TimelineRow {
         row(
             item(id: "$join", body: nil, kind: "state", msgtype: nil),
-            view: .system(text: "Krishna joined the room"), membershipVerb: "joined the room")
+            view: .system(
+                kind: .membershipChanged(who: "Krishna", detail: "joined"),
+                text: "Krishna joined the room"),
+            membershipVerb: "joined the room")
     }
 
     /// A type this build cannot render at all, which is a log line rather
@@ -324,7 +327,7 @@ enum PreviewFixtures {
     static var encrypted: TimelineRow {
         row(
             item(id: "$enc", body: nil, kind: "encrypted", msgtype: nil),
-            view: .placeholder(text: "Encrypted message"))
+            view: .placeholder(kind: .unableToDecrypt, text: "Encrypted message"))
     }
 
     static var withReactions: TimelineRow {

@@ -16,7 +16,7 @@ struct TimelineGroupingTests {
             replyTo: nil, edited: false, reactions: [], readBy: [], editable: false)
         return TimelineRow(
             item: item,
-            view: system ? .system(text: "something happened") : .bubble(muted: false, blocks: []),
+            view: system ? .system(kind: .encryptionEnabled, text: "something happened") : .bubble(muted: false, blocks: []),
             senderName: sender, senderShort: sender, senderInitial: "?", membershipVerb: nil, replyQuote: nil, canReplyOrReact: true,
             replyPreview: nil)
     }
@@ -112,7 +112,7 @@ struct MembershipRunTests {
             media: nil, customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil,
             replyTo: nil, edited: false, reactions: [], readBy: [], editable: false)
         row = TimelineRow(
-            item: item, view: .system(text: "\(sender) \(verb)"), senderName: sender,
+            item: item, view: .system(kind: .membershipChanged(who: sender, detail: verb), text: "\(sender) \(verb)"), senderName: sender,
             senderShort: sender, senderInitial: "?", membershipVerb: verb, replyQuote: nil,
             canReplyOrReact: false, replyPreview: nil)
         return row

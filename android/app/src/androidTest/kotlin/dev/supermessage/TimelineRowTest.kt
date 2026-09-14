@@ -40,6 +40,8 @@ import uniffi.supermessage_core.RichTableCell
 import uniffi.supermessage_core.RichTableRow
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
+import uniffi.supermessage_core.PlaceholderKind
+import uniffi.supermessage_core.SystemKind
 
 /**
  * One timeline row, drawn from the core's [ItemView] decision — see
@@ -176,8 +178,8 @@ class TimelineRowTest {
             Column {
                 TimelineRow(row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("bubble text"))), now = now)
                 TimelineRow(row = row(view = ItemView.Emote, body = "waved"), now = now)
-                TimelineRow(row = row(view = ItemView.System(text = "system text")), now = now)
-                TimelineRow(row = row(view = ItemView.Placeholder(text = "placeholder text")), now = now)
+                TimelineRow(row = row(view = ItemView.System(kind = SystemKind.EncryptionEnabled, text = "system text")), now = now)
+                TimelineRow(row = row(view = ItemView.Placeholder(kind = PlaceholderKind.Redacted, text = "placeholder text")), now = now)
                 TimelineRow(row = row(view = ItemView.DateDivider), now = now)
                 TimelineRow(row = row(view = ItemView.UnreadMarker), now = now)
                 TimelineRow(row = row(view = ItemView.Image(alt = "a sunset", width = 100uL, height = 50uL)), now = now)

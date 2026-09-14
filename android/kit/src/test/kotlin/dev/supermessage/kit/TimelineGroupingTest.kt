@@ -8,6 +8,7 @@ import org.junit.Test
 import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.TimelineRow
+import uniffi.supermessage_core.SystemKind
 
 class TimelineGroupingTest {
 
@@ -44,7 +45,7 @@ class TimelineGroupingTest {
             return TimelineRow(
                 item = item,
                 view = if (system) {
-                    ItemView.System(text = "something happened")
+                    ItemView.System(kind = SystemKind.EncryptionEnabled, text = "something happened")
                 } else {
                     ItemView.Bubble(muted = false, blocks = emptyList())
                 },
@@ -186,7 +187,10 @@ class MembershipRunTest {
             )
             return TimelineRow(
                 item = item,
-                view = ItemView.System(text = "$sender $verb"),
+                view = ItemView.System(
+                    kind = SystemKind.MembershipChanged(who = sender, detail = verb),
+                    text = "$sender $verb",
+                ),
                 senderName = sender,
                 senderShort = sender,
                 senderInitial = "?",

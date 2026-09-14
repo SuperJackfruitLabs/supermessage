@@ -179,19 +179,24 @@ jobs:
         # that proof passed and meant nothing.
         run: node scripts/tests/test_fixture_leak.mjs
 
-      - name: The story catalogue builds
-        # A story referencing a prop that no longer exists should be a red
-        # build, not a surprise next time someone opens the catalogue. Same
-        # reasoning as the design-token drift gate.
-        run: pnpm storybook:build
-
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: The stories still look like the baseline
-        # ubuntu-24.04 is where the baseline was recorded, and the only place
-        # it can be compared — see docs/story-snapshots.md §2. On a developer
-        # Mac the same script renders and skips the comparison.
+      - name: The story catalogue builds, and still looks like the baseline
+        # Two steps until this one. `snapshot-stories.sh` builds the
+        # catalogue itself — deliberately, because a stale `storybook-static`
+        # is a gate that passes while looking at last week's components — so a
+        # separate `pnpm storybook:build` step above it was compiling the same
+        # thing twice on every run.
+        #
+        # The build is still gated: a story referencing a prop that no longer
+        # exists fails here rather than a step earlier, and fails before a
+        # single frame is rendered. What is lost is a distinct step name, which
+        # is why this one says both things it does.
+        #
+        # ubuntu-24.04 is where the baseline was recorded and the only place it
+        # can be compared — see docs/story-snapshots.md §2. On a developer Mac
+        # the same script renders and skips the comparison.
         run: ./scripts/snapshot-stories.sh
 
       - name: Keep the frames when they disagree

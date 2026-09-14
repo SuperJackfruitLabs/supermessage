@@ -11,6 +11,7 @@ import uniffi.supermessage_core.MediaFileLabel
 import uniffi.supermessage_core.MediaMetaDto
 import uniffi.supermessage_core.Membership
 import uniffi.supermessage_core.PersonDto
+import uniffi.supermessage_core.PlaceholderKind
 import uniffi.supermessage_core.ReactionDto
 import uniffi.supermessage_core.ReplyQuoteView
 import uniffi.supermessage_core.ReplyToDto
@@ -30,6 +31,7 @@ import uniffi.supermessage_core.RosterRow
 import uniffi.supermessage_core.RosterSection
 import uniffi.supermessage_core.RuntimeDto
 import uniffi.supermessage_core.SearchResultDto
+import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 
@@ -196,7 +198,10 @@ object PreviewFixtures {
     val membership: TimelineRowDto
         get() = row(
             item("\$join", body = null, kind = "state", msgtype = null),
-            ItemView.System("Krishna joined the room"),
+            ItemView.System(
+                SystemKind.MembershipChanged("Krishna", "joined"),
+                "Krishna joined the room",
+            ),
             membershipVerb = "joined the room",
         )
 
@@ -204,7 +209,7 @@ object PreviewFixtures {
     val encrypted: TimelineRowDto
         get() = row(
             item("\$enc", body = null, kind = "encrypted", msgtype = null),
-            ItemView.Placeholder("Encrypted message"),
+            ItemView.Placeholder(PlaceholderKind.UnableToDecrypt, "Encrypted message"),
         )
 
     val withReactions: TimelineRowDto

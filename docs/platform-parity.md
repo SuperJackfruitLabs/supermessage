@@ -213,15 +213,21 @@ wrong trade: it lets a library's contents decide the glyph on a platform that
 has the right one. The affordance is identical, the position is identical,
 and the accessible name is identical on both — "Jump to newest".
 
-### 7.2 The web has no jump-to-newest at all (open)
+### 7.2 The web had no jump-to-newest at all (closed)
 
-`Timeline.svelte` scrolls to the newest item when the tail grows, but there
-is no control to get back there once a reader has scrolled up. Both mobile
+`Timeline.svelte` scrolled to the newest item when the tail grew, but there
+was no control to get back there once a reader had scrolled up — the web was
+the only platform where scrolling into history was one-way. Both mobile
 platforms have one, and the iOS source says why in a comment that applies
-just as well to the browser: *scrolling through history with no route home is
+just as well to a browser: *scrolling through history with no route home is
 the thing that makes a long room feel like a trap.*
 
-This is a missing control rather than a mis-drawn one, so it is recorded here
-rather than fixed under an icon audit. What it needs is the scroll-position
-tracking the virtual list already has, an `isAwayFromNewest` derived from it,
-and a button — the shape of it is `TimelineView.swift:66`.
+It needed no new state. `handleScroll` already maintained `followBottom` —
+that is what decides whether a newly appended item scrolls the pane — so
+"away from the bottom" wanted a reader rather than a mechanism.
+
+All three now agree on the affordance and its accessible name ("Jump to
+newest"), and on a 44px minimum target. They differ only in the glyph: the
+web draws Material's `keyboard_arrow_down` as an inline SVG, the same path
+Android gets from `material-icons-core`, and iOS keeps `arrow.down` — see
+§7.1 for why that difference is deliberate rather than unfinished.

@@ -4321,7 +4321,7 @@ public enum ItemView {
     case bubble(muted: Bool, blocks: [RichBlock]
     )
     case emote
-    case system(text: String
+    case system(kind: SystemKind, text: String
     )
     /**
      * The line between what has been read and what has not, which the SDK
@@ -4331,7 +4331,7 @@ public enum ItemView {
      * every scroll position would be chrome pretending to be content.
      */
     case unreadMarker
-    case placeholder(text: String
+    case placeholder(kind: PlaceholderKind, text: String
     )
     /**
      * An `m.image`. `alt` is never empty — it falls back through the media
@@ -4407,12 +4407,12 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         
         case 2: return .emote
         
-        case 3: return .system(text: try FfiConverterString.read(from: &buf)
+        case 3: return .system(kind: try FfiConverterTypeSystemKind.read(from: &buf), text: try FfiConverterString.read(from: &buf)
         )
         
         case 4: return .unreadMarker
         
-        case 5: return .placeholder(text: try FfiConverterString.read(from: &buf)
+        case 5: return .placeholder(kind: try FfiConverterTypePlaceholderKind.read(from: &buf), text: try FfiConverterString.read(from: &buf)
         )
         
         case 6: return .image(alt: try FfiConverterString.read(from: &buf), width: try FfiConverterOptionUInt64.read(from: &buf), height: try FfiConverterOptionUInt64.read(from: &buf)
@@ -4446,8 +4446,9 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             writeInt(&buf, Int32(2))
         
         
-        case let .system(text):
+        case let .system(kind,text):
             writeInt(&buf, Int32(3))
+            FfiConverterTypeSystemKind.write(kind, into: &buf)
             FfiConverterString.write(text, into: &buf)
             
         
@@ -4455,8 +4456,9 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             writeInt(&buf, Int32(4))
         
         
-        case let .placeholder(text):
+        case let .placeholder(kind,text):
             writeInt(&buf, Int32(5))
+            FfiConverterTypePlaceholderKind.write(kind, into: &buf)
             FfiConverterString.write(text, into: &buf)
             
         
@@ -4878,6 +4880,142 @@ public func FfiConverterTypeNotificationMode_lower(_ value: NotificationMode) ->
 
 
 extension NotificationMode: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What a [`ItemView::Placeholder`] stands in for. See [`SystemKind`].
+ */
+
+public enum PlaceholderKind {
+    
+    case sticker
+    case poll
+    case liveLocation
+    case call
+    case callNotification
+    /**
+     * Redacted — the event is gone, which is different from unreadable.
+     */
+    case redacted
+    /**
+     * Visible but unreadable on this device. Expected on a fresh login and
+     * self-resolving for anything sent from now on, which is why it is its
+     * own kind rather than folded into [`Self::UnsupportedMessage`].
+     */
+    case unableToDecrypt
+    /**
+     * An `m.room.message` whose msgtype this build does not render.
+     */
+    case unsupportedMessage(msgtype: String
+    )
+    /**
+     * An event kind this build does not render at all.
+     */
+    case unsupportedEvent(eventType: String
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlaceholderKind: FfiConverterRustBuffer {
+    typealias SwiftType = PlaceholderKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaceholderKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .sticker
+        
+        case 2: return .poll
+        
+        case 3: return .liveLocation
+        
+        case 4: return .call
+        
+        case 5: return .callNotification
+        
+        case 6: return .redacted
+        
+        case 7: return .unableToDecrypt
+        
+        case 8: return .unsupportedMessage(msgtype: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 9: return .unsupportedEvent(eventType: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlaceholderKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .sticker:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .poll:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .liveLocation:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .call:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .callNotification:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .redacted:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .unableToDecrypt:
+            writeInt(&buf, Int32(7))
+        
+        
+        case let .unsupportedMessage(msgtype):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(msgtype, into: &buf)
+            
+        
+        case let .unsupportedEvent(eventType):
+            writeInt(&buf, Int32(9))
+            FfiConverterString.write(eventType, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaceholderKind_lift(_ buf: RustBuffer) throws -> PlaceholderKind {
+    return try FfiConverterTypePlaceholderKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaceholderKind_lower(_ value: PlaceholderKind) -> RustBuffer {
+    return FfiConverterTypePlaceholderKind.lower(value)
+}
+
+
+
+extension PlaceholderKind: Equatable, Hashable {}
 
 
 
@@ -5367,6 +5505,132 @@ public func FfiConverterTypeRosterView_lower(_ value: RosterView) -> RustBuffer 
 
 
 extension RosterView: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What a [`ItemView::System`] line is *about*, independent of its wording.
+ *
+ * The English in `text` is a convenience, not the contract. A host that
+ * wants this line in another language matches on this and writes its own
+ * sentence; a host that does not keeps using `text` and is unaffected.
+ *
+ * This is the same split [`crate::dto::TimelineRow`] already makes for
+ * membership — `membership_verb` beside `item.detail` — and for the same
+ * reason it gives: re-deriving the meaning from a rendered sentence is
+ * parsing your own output, and it breaks the moment somebody edits copy
+ * they are entitled to edit.
+ *
+ * Variants carry whatever the English interpolates, so a host never has to
+ * reach back into the row to rebuild the sentence.
+ */
+
+public enum SystemKind {
+    
+    /**
+     * `m.room.create`. `who` is the creator, already attributed.
+     */
+    case roomCreated(who: String
+    )
+    /**
+     * `m.room.encryption`.
+     */
+    case encryptionEnabled
+    /**
+     * `m.room.tombstone`.
+     */
+    case roomReplaced
+    /**
+     * A membership transition. `detail` is the raw SDK discriminant —
+     * `"joined"`, `"kickedAndBanned"` — which is what
+     * [`membership_verb`] turns into English.
+     */
+    case membershipChanged(who: String, detail: String?
+    )
+    /**
+     * The boundary the SDK inserts once back-pagination reaches the genuine
+     * start of a room's history.
+     */
+    case timelineStart
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSystemKind: FfiConverterRustBuffer {
+    typealias SwiftType = SystemKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SystemKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .roomCreated(who: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .encryptionEnabled
+        
+        case 3: return .roomReplaced
+        
+        case 4: return .membershipChanged(who: try FfiConverterString.read(from: &buf), detail: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 5: return .timelineStart
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SystemKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .roomCreated(who):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(who, into: &buf)
+            
+        
+        case .encryptionEnabled:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .roomReplaced:
+            writeInt(&buf, Int32(3))
+        
+        
+        case let .membershipChanged(who,detail):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(who, into: &buf)
+            FfiConverterOptionString.write(detail, into: &buf)
+            
+        
+        case .timelineStart:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSystemKind_lift(_ buf: RustBuffer) throws -> SystemKind {
+    return try FfiConverterTypeSystemKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSystemKind_lower(_ value: SystemKind) -> RustBuffer {
+    return FfiConverterTypeSystemKind.lower(value)
+}
+
+
+
+extension SystemKind: Equatable, Hashable {}
 
 
 
