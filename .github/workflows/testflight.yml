@@ -40,21 +40,31 @@ jobs:
           brew install xcodegen
           cd apple && xcodegen generate
 
-      # The build number, from the run number rather than from the repo.
+      # The build number: whichever of the run number and the committed value
+      # is larger.
       #
-      # `CURRENT_PROJECT_VERSION` in project.yml is a counter that must
-      # increase on every upload and never repeat, and #35 notes that nothing
-      # enforces it — a human remembering to bump a number is a build rejected
-      # at the worst moment. `github.run_number` only ever goes up, so the
-      # committed value is the floor and this is what actually ships.
-      - name: Set the build number from the run
+      # `CURRENT_PROJECT_VERSION` must increase on every upload and never
+      # repeat, and #35 notes nothing enforces it — a human remembering to
+      # bump a counter is a build rejected at the worst possible moment.
+      # `github.run_number` only ever goes up, so it is the right source.
+      #
+      # **But it starts at 1, and this repo already carries 2.** A first run
+      # would have shipped a build number *below* the committed floor, which
+      # happens to be harmless today only because nothing has been uploaded
+      # yet — and would silently reject every build if somebody had ever
+      # archived from a laptop. `max` is what makes the committed value an
+      # actual floor rather than a comment claiming to be one.
+      - name: Set the build number
         run: |
           cd apple
+          floor=$(awk '/CURRENT_PROJECT_VERSION:/ {print $2; exit}' project.yml)
+          build=$(( ${{ github.run_number }} > floor ? ${{ github.run_number }} : floor ))
+          echo "floor $floor, run ${{ github.run_number }} -> build $build"
           /usr/bin/sed -i '' \
-            "s/CURRENT_PROJECT_VERSION: .*/CURRENT_PROJECT_VERSION: ${{ github.run_number }}/" \
+            "s/CURRENT_PROJECT_VERSION: .*/CURRENT_PROJECT_VERSION: $build/" \
             project.yml
           xcodegen generate
-          grep CURRENT_PROJECT_VERSION project.yml
+          grep -E "MARKETING_VERSION|CURRENT_PROJECT_VERSION" project.yml
 
       # Written to the path `xcodebuild` and `altool` both look in by
       # convention, so neither needs the key passed on a command line where it
