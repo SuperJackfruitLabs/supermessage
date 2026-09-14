@@ -83,6 +83,63 @@ jobs:
           shasum -a 256 ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
             | cut -c1-16
 
+      # The half of a signing identity that App Store Connect does not hold.
+      #
+      # The first run of this workflow failed here, and the error named three
+      # things — no "iOS Distribution" certificate, no profile for the bundle
+      # id, and a cloud signing permission error — which all reduce to one:
+      # **a certificate in App Store Connect is only half an identity.** The
+      # account's DISTRIBUTION certificate was present and valid, and the API
+      # key is ACCOUNT_HOLDER + ADMIN, so neither was the problem. Signing
+      # needs the *private* key, and that exists only where it was generated.
+      #
+      # `-allowProvisioningUpdates` fell back to cloud signing and Apple
+      # refused, because the existing certificate is not cloud-managed. So the
+      # identity is imported instead, which is what this organisation already
+      # does for supermd.
+      #
+      # The certificate is `Apple Distribution`, the unified type that covers
+      # iOS and macOS — not the Mac-only `3rd Party Mac Developer Installer`
+      # sitting beside it in the same folder.
+      - name: Import the distribution identity
+        env:
+          P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          # Random, and thrown away with the runner. Nothing unlocks this
+          # keychain later, so the password only has to be unguessable for the
+          # length of one job.
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          P12="$RUNNER_TEMP/dist.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Long enough for a cold Rust build and an archive. The default is
+          # five minutes, after which the keychain re-locks and codesign fails
+          # in the middle of an export for no visible reason.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          printf '%s' "$P12_BASE64" | base64 -d > "$P12"
+          security import "$P12" -k "$KEYCHAIN" -P "$P12_PASSWORD" \
+              -T /usr/bin/codesign -T /usr/bin/security -f pkcs12
+          rm -f "$P12"
+
+          # Without this, codesign blocks on a GUI prompt that no runner can
+          # answer, and the job hangs until it times out rather than failing.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+              -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+
+          # Ahead of the default keychains, so xcodebuild finds this identity.
+          security list-keychains -d user -s "$KEYCHAIN" \
+              $(security list-keychains -d user | tr -d '"')
+
+          # Proof, and a useful log line: the identity by name, not by secret.
+          security find-identity -v -p codesigning "$KEYCHAIN" \
+              | grep "Apple Distribution" \
+              || { echo "::error::no Apple Distribution identity after import"; exit 1; }
+
       - name: Archive, export${{ inputs.upload && ', upload' || '' }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
