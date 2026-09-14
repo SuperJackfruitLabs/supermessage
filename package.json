@@ -15,7 +15,8 @@
     "test:e2e": "wdio run ./wdio.conf.ts",
     "tauri:mcp": "tauri dev --features mcp",
     "storybook": "storybook dev -p 6006 --no-open",
-    "storybook:build": "storybook build"
+    "storybook:build": "storybook build",
+    "prepare": "svelte-kit sync"
   },
   "license": "MIT",
   "dependencies": {
