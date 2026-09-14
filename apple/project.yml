@@ -137,6 +137,33 @@ targets:
         # remembering because that is on the roadmap.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
 
+        # Orientations, which App Store Connect rejects an upload for lacking.
+        #
+        # The same silent failure as the version keys, and found the same way:
+        # `GENERATE_INFOPLIST_FILE` writes only the keys it is given, so with
+        # none of these set the built app declared **no** supported
+        # orientations at all. Xcode builds and runs it happily; validation
+        # refuses it — "No orientations were specified in the
+        # dev.supermessage.ios bundle".
+        #
+        # Both keys are needed because `TARGETED_DEVICE_FAMILY` is unset,
+        # which defaults to iPhone *and* iPad — and iPad multitasking requires
+        # all four, since a multitasking app cannot refuse an orientation the
+        # user put another app into.
+        #
+        # Upside-down is left off the iPhone deliberately: it is the platform
+        # default, and a phone that rotates to upside-down while somebody is
+        # reading is a worse bug than one that does not.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone:
+          UIInterfaceOrientationPortrait
+          UIInterfaceOrientationLandscapeLeft
+          UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad:
+          UIInterfaceOrientationPortrait
+          UIInterfaceOrientationPortraitUpsideDown
+          UIInterfaceOrientationLandscapeLeft
+          UIInterfaceOrientationLandscapeRight
+
   SupermessageUITests:
     type: bundle.ui-testing
     platform: iOS
