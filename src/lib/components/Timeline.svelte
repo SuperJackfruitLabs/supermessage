@@ -294,6 +294,7 @@
   import RichText from "./RichText.svelte";
   import DispatchCard from "./timeline/DispatchCard.svelte";
   import LogLine from "./timeline/LogLine.svelte";
+  import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
   import UnreadMarker from "./timeline/UnreadMarker.svelte";
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
@@ -827,6 +828,23 @@
   }
 
   /**
+   * The route back to the newest message.
+   *
+   * `followBottom` is already maintained by `handleScroll` — it is what
+   * decides whether a newly appended item scrolls the pane — so "away from
+   * the bottom" needed no new state, only a reader.
+   *
+   * `displayRows.length - 1` rather than `items.length - 1`, for the reason
+   * the tail-following effect above spells out: `VList` is bound to
+   * `displayRows`, and a membership group is one row however many members it
+   * holds, so indexing by items overshoots the end of what `VList` has.
+   */
+  function jumpToNewest(): void {
+    if (displayRows.length === 0) return;
+    vlist?.scrollToIndex(displayRows.length - 1, { align: "end" });
+  }
+
+  /**
    * Toggles `key` as a reaction on `eventId`. Never mutates
    * `timelineStore.items` itself — see this file's top-of-script doc
    * comment for why the local echo arriving back through the diff stream is
@@ -1134,6 +1152,23 @@
       >
         Jump to unread
       </button>
+    </div>
+  {/if}
+
+  {#if !followBottom}
+    <!--
+      The web had no way back to the newest message. Both mobile platforms
+      have one; here, scrolling up was a one-way trip, and the iOS source says
+      why in a comment that reads the same in a browser: "scrolling through
+      history with no route home is the thing that makes a long room feel like
+      a trap."
+
+      Bottom-right and only while scrolled away, matching Android's placement
+      and the unread pill's own rule above it — a button that stayed put once
+      you are already at the bottom would be chrome, not navigation.
+    -->
+    <div class="pointer-events-none absolute bottom-4 right-4 z-20">
+      <JumpToNewest onJump={jumpToNewest} />
     </div>
   {/if}
 
