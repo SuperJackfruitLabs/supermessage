@@ -7,10 +7,14 @@
 # was never available. This is what closes that, and the first run of it found
 # two things nothing else could have — see `docs/preview-snapshots.md`.
 #
-# The images are **not committed**. This is a viewer, not a regression gate:
-# several previews still depend on the wall clock through relative-time
-# formatting, so a committed baseline would diff against itself. Turning this
-# into a gate is a separate decision and needs those fixed first.
+# Verify by default; `--record` replaces the baseline.
+#
+# This header used to say the images were not committed and this was a viewer
+# rather than a gate, because several previews depended on the wall clock and
+# others raced a `.task`. All 45 are compared now — see
+# docs/preview-snapshots.md, "What it took to make them hold still". The
+# rendered output stays gitignored; the baseline under
+# apple/SupermessagePreviewTests/previews does not.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
