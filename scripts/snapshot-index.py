@@ -87,6 +87,20 @@ for p in pngs:
 # *new* duplicate stands out as something to look into rather than being lost
 # in a warning nobody reads any more.
 KNOWN_UNSEEDED = {
+    # ── web ──────────────────────────────────────────────────────────────
+    # Four components whose named state is "renders nothing", so they are
+    # identical to each other and should be. Listed rather than special-cased
+    # so a *fifth* frame joining them is news.
+    "chrome-connectionbanner--live-renders-nothing",
+    "chrome-typingindicator--nobody-space-reserved",
+    "live-agentreasoning--nothing-streaming",
+    "live-liveactivity--idle-renders-nothing",
+    # Collapsed by design, and collapsed they are one line either way. See
+    # the long comment in AgentReasoning.stories.svelte: opening them needs
+    # the core, which Storybook does not have.
+    "live-agentreasoning--streaming-short",
+    "live-agentreasoning--streaming-long",
+    # ── iOS ──────────────────────────────────────────────────────────────
     "Supermessage_ComposerView.swift_Attachment_staged",
     "Supermessage_SpacePillStrip.swift_Three_spaces",
     # Both of NewRoomPanel's previews load their people in a `.task`, so the
@@ -100,9 +114,20 @@ duped = {p for ps in dupes.values() for p in ps}
 
 
 def label(p: pathlib.Path) -> tuple[str, str]:
+    """Group name and frame name, for either catalogue.
+
+    iOS files are `Supermessage_RoomListView.swift_Empty`; Storybook ids are
+    `timeline-logline--membership`. Both carry the same two parts in different
+    punctuation, so one page renders either.
+    """
     stem = p.stem.removeprefix("Supermessage_")
-    view, _, name = stem.partition(".swift_")
-    return view or stem, name.replace("_", " ") or "(unnamed)"
+    if ".swift_" in stem:
+        view, _, name = stem.partition(".swift_")
+        return view or stem, name.replace("_", " ") or "(unnamed)"
+    group, sep, name = stem.partition("--")
+    if not sep:
+        return stem, "(unnamed)"
+    return group.replace("-", " ").title(), name.replace("-", " ")
 
 
 groups = defaultdict(list)
@@ -120,8 +145,9 @@ for view in sorted(groups):
             names = ", ".join(label(pathlib.Path(o + ".png"))[1] for o in others)
             known = p.stem in KNOWN_UNSEEDED or any(o in KNOWN_UNSEEDED for o in others)
             note = (
-                "the frame before its async seed landed — known, and correct "
-                "in Xcode's canvas"
+                "expected, and documented where the frame is defined — an "
+                "unseeded `.task` on iOS, or a state whose picture is "
+                "legitimately the same as another's on the web"
                 if known
                 else "look into this: a preview showing the same pixels as "
                 "another is usually showing neither"
@@ -149,9 +175,13 @@ for view in sorted(groups):
     rows.append(f"<section><h2>{html.escape(view)}</h2><div class=grid>{''.join(cards)}</div></section>")
 
 flagged = sum(len(ps) for ps in dupes.values())
+# Named from the images rather than hard-coded, now that two catalogues
+# share this page.
+heading = ("iOS previews" if any(p.name.startswith("Supermessage_") for p in pngs)
+           else "web stories")
 page = f"""<!doctype html>
 <meta charset=utf-8>
-<title>supermessage — iOS previews</title>
+<title>supermessage — rendered previews</title>
 <style>
   :root {{ color-scheme: light dark; --ink: #221c38; --faint: #70688f; --warn: #814904; }}
   body {{ font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 24px;
@@ -169,11 +199,10 @@ page = f"""<!doctype html>
   .ink {{ opacity: .65; }}
   .warn {{ color: var(--warn); margin: 4px 0 0; }}
 </style>
-<h1>iOS previews</h1>
-<p class=lede>{len(pngs)} previews, rendered on a simulator from the app's own
-<code>#Preview</code> blocks. {flagged} are flagged as byte-identical to another —
-on the first run every one of those was a real defect rather than a
-coincidence.</p>
+<h1>{html.escape(heading)}</h1>
+<p class=lede>{len(pngs)} frames. {flagged} are flagged as byte-identical to
+another — on the first run of the iOS catalogue every one of those was a real
+defect rather than a coincidence, which is why the flag is still here.</p>
 {''.join(rows)}
 """
 (out / "index.html").write_text(page)

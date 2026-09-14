@@ -1,0 +1,40 @@
+name: Record the story baseline
+
+# The web's screenshot baseline is Linux pixels, and most of this repository
+# is developed on a Mac where `snapshot-stories.sh --record` refuses to run —
+# Chromium's text rasterization differs enough between the two that a Mac
+# recording is a baseline CI can never match. See docs/story-snapshots.md §2.
+#
+# So this is how the baseline gets replaced: run it, download the artifact,
+# commit the PNGs. Deliberately manual. A workflow that pushed a new baseline
+# on its own would be a gate that rewrites itself to agree with whatever the
+# code now does, which is the one thing a visual gate must not do.
+on:
+  workflow_dispatch:
+
+jobs:
+  record:
+    name: Record
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - name: Render and record
+        run: ./scripts/snapshot-stories.sh --record
+
+      - name: The recorded baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-baseline
+          path: src/lib/stories/baseline/

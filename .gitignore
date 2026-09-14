@@ -75,3 +75,6 @@ storybook-static/
 
 # Rendered previews, never committed — see scripts/snapshot-previews.sh.
 .snapshots/
+# Rendered stories. The *baseline* is committed, under
+# src/lib/stories/baseline; this is the working output compared against it.
+.snapshots-web/

@@ -185,6 +185,22 @@ jobs:
         # reasoning as the design-token drift gate.
         run: pnpm storybook:build
 
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: The stories still look like the baseline
+        # ubuntu-24.04 is where the baseline was recorded, and the only place
+        # it can be compared — see docs/story-snapshots.md §2. On a developer
+        # Mac the same script renders and skips the comparison.
+        run: ./scripts/snapshot-stories.sh
+
+      - name: Keep the frames when they disagree
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-snapshots
+          path: .snapshots-web/
+
   rust:
     name: Rust
     needs: changes

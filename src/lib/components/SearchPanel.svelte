@@ -87,7 +87,7 @@
   <div
     role="dialog"
     tabindex="-1"
-    aria-label="Search messages"
+    aria-label="Search"
     class="relative z-10 flex max-h-[70vh] w-full max-w-2xl flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-overlay"
     onkeydown={(e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
