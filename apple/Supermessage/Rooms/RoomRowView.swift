@@ -44,7 +44,7 @@ struct RoomRowView: View {
                     }
                     Spacer(minLength: 4)
                     if !when.isEmpty {
-                        Text(when).metaFace().foregroundStyle(.tertiary)
+                        Text(when).metaFace().foregroundStyle(Theme.contentFaint)
                     }
                     if row.room.unread > 0 {
                         UnreadBadge(count: row.room.unread)
@@ -60,13 +60,13 @@ struct RoomRowView: View {
                             Circle()
                                 .fill(dotColour)
                                 .strokeBorder(
-                                    state == .quiet ? Color.secondary.opacity(0.5) : .clear,
+                                    state == .quiet ? Theme.border : .clear,
                                     lineWidth: 1)
                                 .frame(width: 7, height: 7)
                         }
                         Text(meta)
                             .metaFace()
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Theme.contentFaint)
                             .lineLimit(1)
                     }
                 }
@@ -77,7 +77,7 @@ struct RoomRowView: View {
                         // The row's amber switch, and the only place this view
                         // may use it. If it is on screen, the operator owes
                         // someone an answer.
-                        .foregroundStyle(preview.pending ? Theme.signal : Color.secondary)
+                        .foregroundStyle(preview.pending ? Theme.signal : Theme.contentMuted)
                         .lineLimit(2)
                 }
             }
@@ -115,7 +115,7 @@ struct RoomRowView: View {
         switch state {
         case .needsYou: return Theme.signal
         case .active: return Theme.ok
-        case .idle: return Color.secondary.opacity(0.55)
+        case .idle: return Theme.contentFaint
         case .quiet: return .clear
         }
     }
@@ -127,7 +127,7 @@ struct RoomRowView: View {
     /// have fixed once.
     @ViewBuilder private var avatar: some View {
         ZStack {
-            Circle().fill(.quaternary)
+            Circle().fill(Theme.surfaceRaised)
             if let avatarURI, let image = Self.image(from: avatarURI) {
                 image.resizable().scaledToFill().clipShape(Circle())
             } else {

@@ -78,7 +78,7 @@ struct SearchPanel: View {
             // saying so would be answering a question that has not been asked.
             VStack(spacing: 10) {
                 ProgressView()
-                Text("Searching…").metaFace().foregroundStyle(.secondary)
+                Text("Searching…").metaFace().foregroundStyle(Theme.contentMuted)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -146,7 +146,7 @@ private struct ResultRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             ZStack {
-                Circle().fill(.quaternary)
+                Circle().fill(Theme.surfaceRaised)
                 if let avatarURI, let image = RoomRowView.image(from: avatarURI) {
                     image.resizable().scaledToFill().clipShape(Circle())
                 } else {
@@ -160,14 +160,14 @@ private struct ResultRow: View {
                     Text(identity?.name ?? result.roomId)
                         .metaFace()
                         .textCase(.uppercase)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.contentMuted)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     // When, so a hit can be placed. A result with no date is a
                     // fragment with no context.
                     Text(RelativeTime.label(for: result.timestampMs, now: .now))
                         .metaFace()
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.contentFaint)
                 }
                 Text(result.body).font(.callout).lineLimit(2)
             }
@@ -187,6 +187,7 @@ private struct ResultRow: View {
         // lives in the avatar — and no role either.
         scope: .init(roomId: PreviewFixtures.roomId, name: "Atlas"),
         onOpen: { _ in }, onClose: {})
+        .previewChrome()
 }
 
 // Opened from nowhere in particular.
@@ -196,5 +197,6 @@ private struct ResultRow: View {
 // This preview is the one that shows the layout without it.
 #Preview("Unscoped") {
     SearchPanel(session: PreviewFixtures.session(), onOpen: { _ in }, onClose: {})
+        .previewChrome()
 }
 #endif

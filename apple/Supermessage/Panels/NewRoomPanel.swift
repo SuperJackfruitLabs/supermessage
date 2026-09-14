@@ -107,22 +107,39 @@ private struct PersonRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            // The glyph when the suite gave them one, the generic symbol
+            // when it did not.
+            //
+            // Not a straight swap: `person.fill` against `cpu` is the only
+            // thing on this row that says *which kind* of correspondent this
+            // is, and the app exists for talking to agents. So the glyph —
+            // which is itself an agent's mark — takes the disc where there is
+            // one, and the symbol keeps saying it where there is not.
+            //
+            // `initial` rather than `name.first`, for the reason the roster
+            // and the timeline both learned: the first character of a name
+            // that still held its glyph *was* the glyph, drawn twice.
             ZStack {
-                Circle().fill(.quaternary)
-                Image(systemName: person.runtime == nil ? "person.fill" : "cpu")
-                    .imageScale(.small)
-                    .foregroundStyle(.secondary)
+                Circle().fill(Theme.surfaceRaised)
+                if let glyph = person.initial.first, !glyph.isLetter, !glyph.isNumber {
+                    Text(String(glyph))
+                        .font(.system(size: 14))
+                } else {
+                    Image(systemName: person.runtime == nil ? "person.fill" : "cpu")
+                        .imageScale(.small)
+                        .foregroundStyle(Theme.contentMuted)
+                }
             }
             .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(person.name).foregroundStyle(.primary)
+                Text(person.name).foregroundStyle(Theme.content)
                 // The runtime where there is one, the address where there is
                 // not. Both answer "which one is this" — an agent by the
                 // machine it runs on, a person by where their account lives.
                 Text(subtitle)
                     .metaFace()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.contentMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -137,7 +154,7 @@ private struct PersonRow: View {
             } else {
                 Image(systemName: "chevron.right")
                     .imageScale(.small)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.contentFaint)
             }
         }
         .contentShape(Rectangle())
@@ -230,7 +247,7 @@ private struct ProgressRow: View {
     var body: some View {
         HStack(spacing: 10) {
             ProgressView()
-            Text(label).metaFace().foregroundStyle(.secondary)
+            Text(label).metaFace().foregroundStyle(Theme.contentMuted)
         }
     }
 }
@@ -243,11 +260,13 @@ private struct ProgressRow: View {
 // that has not published a profile looks exactly like this.
 #Preview("Known people") {
     NewRoomPanel(session: PreviewFixtures.session(), onOpen: { _ in }, onClose: {})
+        .previewChrome()
 }
 
 // An account that knows nobody, which is where the "join by address" route
 // stops being an alternative and becomes the only way forward.
 #Preview("Nobody yet") {
     NewRoomPanel(session: PreviewFixtures.session(.empty), onOpen: { _ in }, onClose: {})
+        .previewChrome()
 }
 #endif

@@ -609,12 +609,13 @@ enum PreviewFixtures {
     static var people: [PersonDto] {
         [
             PersonDto(
-                userId: "@atlas:example.org", name: "✳ Atlas — Platform",
+                userId: "@atlas:example.org", name: "Atlas — Platform", initial: "✳",
                 runtime: RuntimeDto(harness: "Claude Code", host: "Foundry"), avatarUrl: nil),
-            PersonDto(userId: "@krishna:example.org", name: "Krishna", runtime: nil,
-                      avatarUrl: nil),
             PersonDto(
-                userId: "@9247e5a1b3c4:id.agentpod.dev", name: "9247e5…",
+                userId: "@krishna:example.org", name: "Krishna", initial: "K",
+                runtime: nil, avatarUrl: nil),
+            PersonDto(
+                userId: "@9247e5a1b3c4:id.agentpod.dev", name: "9247e5…", initial: "9",
                 runtime: nil, avatarUrl: nil),
         ]
     }
@@ -814,6 +815,24 @@ enum PreviewFixtures {
 
 // MARK: - Seeding what only an await can reach
 
+extension View {
+    /// The environment a screen inherits from `RootView` in the real app.
+    ///
+    /// **A preview that renders a panel directly inherits nothing.** The tint
+    /// is set on `RootView`, and a sheet or inspector picks it up from the
+    /// environment — but `#Preview { RoomInfoPanel(...) }` has no `RootView`
+    /// above it, so its `Done` button rendered in the system blue while the
+    /// app's rendered in `accent`. The preview was showing a screen the
+    /// product does not have, which is the same failure the fixtures kept
+    /// making with the wrong strings.
+    ///
+    /// `PreviewGround` applies this too, so a component preview and a panel
+    /// preview agree.
+    func previewChrome() -> some View {
+        tint(Theme.accent).foregroundStyle(Theme.content)
+    }
+}
+
 /// Runs an async seed before the preview settles.
 ///
 /// `#Preview` bodies are synchronous, and two things a preview wants —
@@ -839,6 +858,7 @@ struct PreviewGround<Content: View>: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.surface)
+            .previewChrome()
     }
 }
 

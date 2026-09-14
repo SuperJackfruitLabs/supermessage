@@ -53,10 +53,17 @@ enum Theme {
     static let border = dynamic(\.border)
     static let borderStrong = dynamic(\.borderStrong)
 
-    /// The three text ranks. **New to iOS in this change** — the app has
-    /// been colouring text with `Color.secondary` and SwiftUI defaults, so
-    /// the hierarchy the type ramp assumes did not exist here at all.
-    /// Adopting them across the views is P6, not this commit.
+    /// The three text ranks, and the app now uses them.
+    ///
+    /// This said adoption was "P6, not this commit", and P6 has happened:
+    /// every `foregroundStyle` in the views maps to one of these, and
+    /// `RootView` sets `content` for the text that says nothing at all —
+    /// which was most of it, and was taking SwiftUI's label colour.
+    ///
+    /// These three carry contrast contracts in `design/tokens.toml`, and
+    /// `content-faint` carries one against all three grounds rather than
+    /// only the reading surface. Before this the contracts were asserted at
+    /// build time and governed nothing on iOS.
     static let content = dynamic(\.content)
     static let contentMuted = dynamic(\.contentMuted)
     static let contentFaint = dynamic(\.contentFaint)

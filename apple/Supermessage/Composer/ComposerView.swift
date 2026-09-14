@@ -62,7 +62,7 @@ struct ComposerView: View {
                     Image(systemName: "plus")
                         .font(.system(size: 20, weight: .medium))
                         .frame(width: 32, height: 32)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.contentMuted)
                 }
 
                 HStack(alignment: .bottom, spacing: 6) {
@@ -113,7 +113,7 @@ struct ComposerView: View {
                 .padding(.trailing, canSend ? 0 : 12)
                 .overlay(
                     RoundedRectangle(cornerRadius: 19, style: .continuous)
-                        .stroke(.secondary.opacity(0.35), lineWidth: 1)
+                        .stroke(Theme.border, lineWidth: 1)
                 )
                 .animation(.snappy(duration: 0.18), value: canSend)
             }
@@ -218,7 +218,7 @@ private struct EditStrip: View {
             Spacer()
             Button(action: cancel) { Image(systemName: "xmark") }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.contentMuted)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
@@ -238,13 +238,13 @@ private struct ReplyStrip: View {
                     .metaFace()
                     .textCase(.uppercase)
                 if let excerpt = pending.excerpt {
-                    Text(excerpt).font(.footnote).lineLimit(1).foregroundStyle(.secondary)
+                    Text(excerpt).font(.footnote).lineLimit(1).foregroundStyle(Theme.contentMuted)
                 }
             }
             Spacer()
             Button(action: cancel) { Image(systemName: "xmark") }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.contentMuted)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
@@ -262,11 +262,11 @@ private struct AttachmentChip: View {
             Text(staged.filename).font(.footnote).lineLimit(1)
             Text(ByteCountFormatter.string(fromByteCount: Int64(staged.sizeBytes), countStyle: .file))
                 .metaFace()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.contentMuted)
             Spacer()
             Button(action: discard) { Image(systemName: "xmark") }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.contentMuted)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)

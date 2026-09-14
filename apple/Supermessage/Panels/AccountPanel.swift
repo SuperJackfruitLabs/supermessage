@@ -20,7 +20,7 @@ struct AccountPanel: View {
                 Section {
                     HStack(spacing: 12) {
                         ZStack {
-                            Circle().fill(.quaternary)
+                            Circle().fill(Theme.surfaceRaised)
                             Text(initial).font(.headline)
                         }
                         .frame(width: 44, height: 44)
@@ -30,7 +30,7 @@ struct AccountPanel: View {
                             if let account {
                                 Text(account.userId)
                                     .metaFace()
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.contentMuted)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
@@ -91,5 +91,6 @@ struct AccountPanel: View {
 // The account, which is two facts and a way out.
 #Preview {
     AccountPanel(session: PreviewFixtures.session(), onClose: {})
+        .previewChrome()
 }
 #endif

@@ -1,4 +1,8 @@
-# P6: where native reaches past the palette
+# P6: where native reached past the palette
+
+> **Steps 1–4 are done.** The counts below are the audit as written on
+> 2026-09-13 and are left unedited, because a before is only useful if it
+> stays a before. §7 records what each step changed.
 
 **Written 2026-09-13**, after the visual gate made the evidence viewable.
 Counts are from the tree at that date and every command that produced one is
@@ -140,3 +144,49 @@ only step where nothing can check the result but a person looking at it.
 - **Whether iOS's frames are right at all.** 12 of its 52 previews do not
   render and `.task` panels capture loading states, so the iOS evidence in
   this document is weaker than the Android evidence throughout.
+
+## 7. What the steps changed
+
+| Step | Was | Now |
+|---|---|---|
+| 1. Android's unmapped roles | `secondaryContainer` took Material's default | `accentSoft` under `content`, the pairing the palette already asserts |
+| 2. iOS accent | 30 controls took the system blue | one `.tint` on `RootView`; `previewChrome()` carries it into previews |
+| 3. iOS depth | `surfaceRaised`, `surfaceSunken`, `border` had **zero** call sites | 7 sites: discs, a code-block well, a quote rule |
+| 4. iOS text | 87 system-colour uses against 46 token uses | **zero system colours in the views** |
+
+Step 4's shape is worth keeping. Of the 51 explicit `foregroundStyle`
+sites, a regex caught 51 and missed eighteen more hiding in ternaries,
+`AnyShapeStyle` wrappers and the `Color.secondary` spelling — found by
+grepping again afterwards rather than by trusting the first pass. And the
+larger half was never in those counts at all: text with **no** style took
+SwiftUI's label colour, which is why `RootView` now sets `content` and the
+palette colours the page rather than its exceptions.
+
+`.background(.bar)` is deliberately untouched in all four places. A
+material blurs what scrolls behind it; swapping it for a flat token is a
+design decision, not palette adoption.
+
+**What is still true from §4:** the contracts now govern iOS text, which
+they did not before. What they cannot do is prove the result reads well —
+that is what the 33-frame gate and a person looking at it are for.
+
+## 8. Not done
+
+- ~~`PersonDto` still carries its glyph.~~ **Done.** It gained `initial`,
+  its `name` is glyph-free, iOS's disc shows the glyph where there is one
+  (and keeps `person.fill`/`cpu` where there is not, because that is the
+  only thing on the row saying *which kind* of correspondent this is), and
+  Android's person row gained the disc it never had.
+
+  **Verified on Android, unverified on iOS.** The change is visible in
+  Android's gated frame. Both iOS previews that would show it are in the
+  unstable set, and three consecutive renders all caught the `.task`
+  loading state — so on iOS this is compiled, symmetrical to Android, and
+  not looked at. That is the cost of the gap in the row below, stated where
+  it applies rather than in general.
+- **Android's Material derivations** — ripples, elevation tints — are still
+  computed from the scheme rather than the palette, and no contract covers
+  them.
+- **iOS's seven unstable frames** are rendered but not gated. Android's
+  equivalent seven were fixed by freezing the Compose clock; SwiftUI has no
+  externally-freezable clock, so the same fix has no analogue.

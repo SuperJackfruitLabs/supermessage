@@ -193,11 +193,35 @@ schemes:
         SupermessagePreviewTests: [test]
     test:
       targets: [SupermessagePreviewTests]
+      # A fixed locale, for the same reason as the fixed timezone below and
+      # found the same way — by the gate failing somewhere other than where
+      # it was recorded.
+      #
+      # `TimelineRowView` formats a date divider with a `DateFormatter` at
+      # `.medium` and no explicit locale, so it follows the device: this
+      # machine is en_IN and renders `13 Sept 2026`, a runner renders
+      # `Sep 13, 2026`. Two frames differed by exactly 3,428 pixels each —
+      # the same number twice, because both draw the same divider.
+      #
+      # Pinned **here and not in the view**: the app should follow the
+      # reader's locale. Only the baseline needs to stop moving.
+      commandLineArguments:
+        "-AppleLocale en_US_POSIX": true
+        "-AppleLanguages (en)": true
       environmentVariables:
         # The package's own flag, mirroring the variable Xcode sets in a
         # preview. Nothing reads it yet; it is here so that the first preview
         # which wants to know it is being snapshotted — to skip an animation,
         # say — has the answer without a scheme change.
+        # UTC, so a rendered clock does not depend on where the machine is.
+        #
+        # Android's baseline failed its first CI run on exactly this: six
+        # frames differed by `11:30 PM` against `6:00 PM`, because the
+        # recording machine is IST and the runner is UTC. `TimelineRowView`
+        # formats an absolute `timestampMs` through the default zone, the
+        # same as its Compose counterpart, so the same fix applies before the
+        # same failure rather than after it.
+        TZ: "UTC"
         SNAPSHOTS_RUNNING_FOR_PREVIEWS: "1"
         # Where the PNGs go. Overridden by `scripts/snapshot-previews.sh`;
         # without it the images are attachments inside the .xcresult, which

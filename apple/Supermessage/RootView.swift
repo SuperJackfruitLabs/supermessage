@@ -42,6 +42,27 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             Task { await session.scenePhaseChanged(to: phase == .active) }
         }
+        // Every control in the app, in the palette's accent.
+        //
+        // Without this a `Button` takes SwiftUI's default tint, which is the
+        // system blue — so `RoomInfoPanel`'s `Done` rendered #007AFF while
+        // `design/tokens.toml` says the accent is #5b43d4. Nothing set a tint
+        // anywhere, so all 30 Button and ToolbarItem sites were Apple's blue.
+        //
+        // **`PreviewGround` sets the same tint, and the two must agree.** A
+        // preview renders a panel directly rather than through this view, so
+        // without it there the catalogue would show a colour the app does
+        // not have — which is the exact failure the fixture work spent a day
+        // on.
+        .tint(Theme.accent)
+        // And every piece of text that does not say otherwise.
+        //
+        // The 51 explicit `foregroundStyle` sites are only half of it: text
+        // with no style at all takes SwiftUI's label colour, which is Apple's
+        // near-black and not `content` #221c38. Setting it here means the
+        // palette owns the page rather than its exceptions — which is what
+        // `docs/p6-palette-audit.md` found was backwards.
+        .foregroundStyle(Theme.content)
     }
 }
 
@@ -294,7 +315,7 @@ struct ConnectionBar: View {
             HStack(spacing: 6) {
                 Text(label).metaFace()
                 if let message = connection.message {
-                    Text(message).metaFace().foregroundStyle(.secondary)
+                    Text(message).metaFace().foregroundStyle(Theme.contentMuted)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -335,7 +356,7 @@ private struct RoomHeader: View {
                     .frame(width: 5, height: 5)
                 Text(subtitle)
                     .metaFace()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.contentMuted)
                     .lineLimit(1)
             }
         }
@@ -356,7 +377,7 @@ private struct RoomHeader: View {
         switch state {
         case .needsYou: return Theme.signal
         case .active: return Theme.accent
-        case .idle: return Color.secondary.opacity(0.55)
+        case .idle: return Theme.contentFaint
         case .quiet: return .clear
         }
     }

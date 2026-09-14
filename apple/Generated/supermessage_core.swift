@@ -1105,6 +1105,18 @@ public struct PersonDto {
      */
     public var name: String
     /**
+     * The one glyph or letter a face shows for them.
+     *
+     * The same split [`crate::dto::TimelineRow::sender_initial`] carries,
+     * for the same reason: a host that takes `name.first` gets the glyph
+     * *and* leaves it in the name beside it. [`Self::name`] is therefore
+     * **glyph-free** — the symbol belongs to the face.
+     *
+     * `None` has no meaning here; a name always yields something, falling
+     * back to a letter and then to `?`.
+     */
+    public var initial: String
+    /**
      * The harness and machine, when this is an agent rather than a person.
      *
      * Also the flag that says *which* it is: the app is for talking to
@@ -1128,6 +1140,17 @@ public struct PersonDto {
          * carried in [`Self::runtime`] instead.
          */name: String, 
         /**
+         * The one glyph or letter a face shows for them.
+         *
+         * The same split [`crate::dto::TimelineRow::sender_initial`] carries,
+         * for the same reason: a host that takes `name.first` gets the glyph
+         * *and* leaves it in the name beside it. [`Self::name`] is therefore
+         * **glyph-free** — the symbol belongs to the face.
+         *
+         * `None` has no meaning here; a name always yields something, falling
+         * back to a letter and then to `?`.
+         */initial: String, 
+        /**
          * The harness and machine, when this is an agent rather than a person.
          *
          * Also the flag that says *which* it is: the app is for talking to
@@ -1139,6 +1162,7 @@ public struct PersonDto {
          */avatarUrl: String?) {
         self.userId = userId
         self.name = name
+        self.initial = initial
         self.runtime = runtime
         self.avatarUrl = avatarUrl
     }
@@ -1154,6 +1178,9 @@ extension PersonDto: Equatable, Hashable {
         if lhs.name != rhs.name {
             return false
         }
+        if lhs.initial != rhs.initial {
+            return false
+        }
         if lhs.runtime != rhs.runtime {
             return false
         }
@@ -1166,6 +1193,7 @@ extension PersonDto: Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(userId)
         hasher.combine(name)
+        hasher.combine(initial)
         hasher.combine(runtime)
         hasher.combine(avatarUrl)
     }
@@ -1181,6 +1209,7 @@ public struct FfiConverterTypePersonDto: FfiConverterRustBuffer {
             try PersonDto(
                 userId: FfiConverterString.read(from: &buf), 
                 name: FfiConverterString.read(from: &buf), 
+                initial: FfiConverterString.read(from: &buf), 
                 runtime: FfiConverterOptionTypeRuntimeDto.read(from: &buf), 
                 avatarUrl: FfiConverterOptionString.read(from: &buf)
         )
@@ -1189,6 +1218,7 @@ public struct FfiConverterTypePersonDto: FfiConverterRustBuffer {
     public static func write(_ value: PersonDto, into buf: inout [UInt8]) {
         FfiConverterString.write(value.userId, into: &buf)
         FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.initial, into: &buf)
         FfiConverterOptionTypeRuntimeDto.write(value.runtime, into: &buf)
         FfiConverterOptionString.write(value.avatarUrl, into: &buf)
     }

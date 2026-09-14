@@ -3,6 +3,12 @@ package dev.supermessage
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -226,6 +232,30 @@ private fun PersonRow(person: PersonDto, busy: Boolean, enabled: Boolean, onClic
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // A disc, which this row did not have.
+        //
+        // The roster and the timeline both put an agent's glyph in one, and a
+        // person row that leaves it inline is the third different answer to
+        // the same question. `initial` is the core's — a glyph where the name
+        // had one, a letter otherwise — so this shows what they show.
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(SupermessageTheme.colors.surfaceRaised),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                // Whole, not `first()`: a Kotlin Char is a UTF-16 code unit,
+                // and half an astral glyph is tofu. The same trap the sender
+                // face had.
+                person.initial.ifEmpty { "?" },
+                style = MaterialTheme.typography.labelLarge,
+                color = SupermessageTheme.colors.content,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+
         Column(Modifier.weight(1f)) {
             Text(person.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
