@@ -94,6 +94,11 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    // The design language's icon rule: each platform draws from its own
+    // system set — SF Symbols on iOS, Material here. Before this, Android had
+    // no icons at all: the jump-to-newest control was `Text("↓")`, a body-font
+    // arrow that scaled with `fontScale` and outgrew its own button.
+    implementation(libs.compose.material.icons)
     implementation(libs.adaptive)
     implementation(libs.adaptive.layout)
     implementation(libs.adaptive.navigation)

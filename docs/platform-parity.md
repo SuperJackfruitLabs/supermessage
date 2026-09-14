@@ -185,3 +185,43 @@ because these carry a rule rather than an illustration:
 5. **Dark, anywhere faint text sits on a raised surface** — `content-faint`'s
    contract names all three grounds because in dark the ground it fails on
    flips to `surface-raised`.
+
+## 7. Icons, and two gaps the icon audit found
+
+The audit was meant to compare icon *styles* and found something blunter:
+iOS draws 17 SF Symbols, Android drew **none**, and the web draws one
+disclosure chevron. Where iOS puts a glyph, Android and the web put a word —
+"Cancel", "Done", "Copy", "Search".
+
+That divergence is mostly correct and is left alone. A text button is the
+Material and web idiom for a dialog action exactly as a toolbar symbol is the
+iOS one, and every affordance checked — attach, reply, delete, copy, edit,
+new room, search — exists on all three. The rule for when a mark may be text
+at all is in `docs/design-language.md` §7.
+
+Two things are **not** correct, and one of them is still open.
+
+### 7.1 Jump-to-newest: an arrow and a chevron (closed, with a note)
+
+iOS shows `arrow.down`; Android shows `Icons.Filled.KeyboardArrowDown`,
+a chevron. They differ because `material-icons-core` ships 49 icons and a
+plain down-arrow is not among them — it lives in `-extended`, the artifact
+known for what it adds to a release build.
+
+Giving iOS `chevron.down` would have matched them in one word, and is the
+wrong trade: it lets a library's contents decide the glyph on a platform that
+has the right one. The affordance is identical, the position is identical,
+and the accessible name is identical on both — "Jump to newest".
+
+### 7.2 The web has no jump-to-newest at all (open)
+
+`Timeline.svelte` scrolls to the newest item when the tail grows, but there
+is no control to get back there once a reader has scrolled up. Both mobile
+platforms have one, and the iOS source says why in a comment that applies
+just as well to the browser: *scrolling through history with no route home is
+the thing that makes a long room feel like a trap.*
+
+This is a missing control rather than a mis-drawn one, so it is recorded here
+rather than fixed under an icon audit. What it needs is the scroll-position
+tracking the virtual list already has, an `isAwayFromNewest` derived from it,
+and a button — the shape of it is `TimelineView.swift:66`.

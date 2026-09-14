@@ -285,9 +285,18 @@ private struct AttachmentChip: View {
                 .metaFace()
                 .foregroundStyle(Theme.contentMuted)
             Spacer()
-            Button(action: discard) { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.contentMuted)
+            Button(action: discard) {
+                // The third of three, and the one the first pass missed:
+                // the other two call their action `cancel`, this one calls it
+                // `discard`, so a search for the pattern found two of them.
+                // Same 14pt target against the same 44pt floor.
+                Image(systemName: "xmark")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Remove attachment")
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.contentMuted)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
