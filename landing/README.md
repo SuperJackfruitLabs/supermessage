@@ -8,6 +8,35 @@ npm run dev     # http://localhost:4325
 npm run build   # -> dist/
 ```
 
+## How it deploys
+
+Cloudflare Pages, wired to this repository through the dashboard — there is no
+`wrangler.toml` and no workflow, so this section is the only record of it.
+
+| | |
+|---|---|
+| Root directory | `landing` |
+| Build command | `npm ci && npm run build` |
+| Build output | `dist` |
+| Production branch | `main`, automatic deployments on |
+
+**The build command has to install, and that is not the default.** Cloudflare
+detects `packageManager: pnpm` in the repo root and runs `pnpm install`
+*there* — 613 packages of the root workspace. But this directory is
+deliberately outside that workspace (see the next section), so
+`landing/node_modules` stays empty and the build fails with:
+
+```
+> astro build
+sh: 1: astro: not found
+```
+
+which reads like a broken dependency and is really a working directory. Since
+Pages runs the build command with the cwd already set to the root directory,
+`npm ci` there installs from this project's own `package-lock.json` and fixes
+it. `ci` rather than `install` so the lockfile is authoritative and a drifted
+`package.json` fails the build instead of silently resolving something else.
+
 ## Why npm, and why it sits at the repo root
 
 Same reason as `docs-site/`: Astro 7 brings Vite 8, and putting that in the shared tree
