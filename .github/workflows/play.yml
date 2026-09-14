@@ -34,15 +34,33 @@ jobs:
         with:
           node-version: 22
 
-      # The four Android ABIs the app ships. `:core:checkJniLibs` fails the
-      # build when any is missing, which is what makes this a prerequisite
-      # rather than something to discover inside the bundle task.
+      # The cross-compile setup, copied from ci.yml's Android job rather than
+      # reinvented — the first run of this workflow failed with
+      # `error: no such command: ndk`, because `rustup target add` supplies
+      # the targets and nothing supplies the tool that drives them.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      - name: Point at the runner's prebuilt NDK
+        # The same version ci.yml pins and `build-android-libs.sh`'s own
+        # missing-NDK error names, so a local repro of a failure here is
+        # actually reproducing it.
+        run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      # All four ABIs, unlike ci.yml which builds only x86_64 on pull
+      # requests. A release bundle carrying three of four would install on
+      # most devices and fail on the rest, which is the kind of defect that
+      # reaches a tester rather than a build log.
       - name: Build the core for every Android ABI
-        run: |
-          rustup target add \
-            aarch64-linux-android armv7-linux-androideabi \
-            x86_64-linux-android i686-linux-android
-          ./scripts/build-android-libs.sh
+        run: ./scripts/build-android-libs.sh
 
       # Written to a path only this job can see, and deleted in the same step
       # it is used by nothing else. The keystore never reaches the workspace,
