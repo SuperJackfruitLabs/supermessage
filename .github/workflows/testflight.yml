@@ -140,6 +140,26 @@ jobs:
               | grep "Apple Distribution" \
               || { echo "::error::no Apple Distribution identity after import"; exit 1; }
 
+      # The profile, where Xcode looks for it rather than where Apple keeps it.
+      #
+      # Export is manual-signed now, so nothing is fetched at build time — see
+      # the long note in apple/ExportOptions.plist. Xcode reads this directory
+      # and matches on the profile's embedded name, so the file name does not
+      # matter and the UUID does not either.
+      - name: Install the provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$DIR"
+          printf '%s' "$PROFILE_BASE64" | base64 -d > "$DIR/supermessage.mobileprovision"
+          # Decoded and named back, so a truncated or wrong secret is a red
+          # step here rather than "no profiles were found" during export.
+          security cms -D -i "$DIR/supermessage.mobileprovision" \
+            | plutil -extract Name raw - \
+            || { echo "::error::the profile secret did not decode"; exit 1; }
+
       - name: Archive, export${{ inputs.upload && ', upload' || '' }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
