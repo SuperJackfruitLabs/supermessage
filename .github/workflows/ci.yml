@@ -200,6 +200,12 @@ jobs:
         with:
           name: story-snapshots
           path: .snapshots-web/
+          # Both these directories start with a dot, and upload-artifact v4
+          # calls that hidden and skips it — with a warning, on a step that
+          # still reports success. The iOS upload has been doing that since it
+          # was added: every failing run promised frames to look at and
+          # attached none.
+          include-hidden-files: true
 
   rust:
     name: Rust
@@ -393,6 +399,12 @@ jobs:
         with:
           name: ios-preview-frames
           path: .snapshots/
+          # Both these directories start with a dot, and upload-artifact v4
+          # calls that hidden and skips it — with a warning, on a step that
+          # still reports success. The iOS upload has been doing that since it
+          # was added: every failing run promised frames to look at and
+          # attached none.
+          include-hidden-files: true
           if-no-files-found: ignore
 
       - name: Previews and their fixtures stay out of Release
