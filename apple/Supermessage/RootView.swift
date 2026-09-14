@@ -147,8 +147,14 @@ struct SignedInView: View {
                         .accessibilityLabel("Account")
                     }
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        // Labelled, like the account button above it.
+                        // An icon-only control is announced as "button" and
+                        // nothing else — VoiceOver reads the SF Symbol name
+                        // at best, which is `square.and.pencil`.
                         Button { showsSearch = true } label: { Image(systemName: "magnifyingglass") }
+                            .accessibilityLabel("Search")
                         Button { showsNewRoom = true } label: { Image(systemName: "square.and.pencil") }
+                            .accessibilityLabel("New conversation")
                     }
                 }
         } detail: {

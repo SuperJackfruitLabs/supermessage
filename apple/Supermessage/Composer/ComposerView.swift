@@ -64,6 +64,7 @@ struct ComposerView: View {
                         .frame(width: 32, height: 32)
                         .foregroundStyle(Theme.contentMuted)
                 }
+                .accessibilityLabel("Attach")
 
                 HStack(alignment: .bottom, spacing: 6) {
                     TextField(
@@ -216,9 +217,19 @@ private struct EditStrip: View {
             Image(systemName: "pencil").font(.footnote).foregroundStyle(Theme.accent)
             Text("Editing message").metaFace().textCase(.uppercase)
             Spacer()
-            Button(action: cancel) { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.contentMuted)
+            Button(action: cancel) {
+                // The glyph stays small; the target does not. `.plain` around a
+                // bare `Image` is hit-testable only where the xmark's own ink
+                // is — about 14pt across, a third of the 44pt Apple asks for.
+                // `contentShape` is what makes the empty part of the frame
+                // count; the frame alone would still only catch the glyph.
+                Image(systemName: "xmark")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Cancel")
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.contentMuted)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
@@ -242,9 +253,19 @@ private struct ReplyStrip: View {
                 }
             }
             Spacer()
-            Button(action: cancel) { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.contentMuted)
+            Button(action: cancel) {
+                // The glyph stays small; the target does not. `.plain` around a
+                // bare `Image` is hit-testable only where the xmark's own ink
+                // is — about 14pt across, a third of the 44pt Apple asks for.
+                // `contentShape` is what makes the empty part of the frame
+                // count; the frame alone would still only catch the glyph.
+                Image(systemName: "xmark")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Cancel")
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.contentMuted)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
