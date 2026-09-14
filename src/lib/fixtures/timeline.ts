@@ -206,7 +206,7 @@ export const longUnbrokenToken: TimelineRow = {
  */
 export const encryptedPlaceholder: TimelineRow = {
   ...item({ id: "encrypted-1", kind: "encrypted" }),
-  view: { render: "placeholder", text: "Encrypted message" },
+  view: { render: "placeholder", kind: { about: "unableToDecrypt" }, text: "Encrypted message" },
 };
 
 /** A message the reader has reacted to, plus one they have not. */
@@ -246,5 +246,9 @@ export const reactionsMany: TimelineRow = {
 /** A membership change, which renders as a system line rather than a bubble. */
 export const membershipLine: TimelineRow = {
   ...membership({ id: "member-1", detail: "joined", senderDisplayName: "Krishna" }),
-  view: { render: "system", text: "Krishna joined the room" },
+  view: {
+    render: "system",
+    kind: { about: "membershipChanged", who: "Krishna", detail: "joined" },
+    text: "Krishna joined the room",
+  },
 };

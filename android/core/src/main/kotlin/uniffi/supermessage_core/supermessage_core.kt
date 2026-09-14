@@ -3096,6 +3096,7 @@ sealed class ItemView {
     
     
     data class System(
+        val `kind`: SystemKind, 
         val `text`: kotlin.String) : ItemView() {
         companion object
     }
@@ -3111,6 +3112,7 @@ sealed class ItemView {
     
     
     data class Placeholder(
+        val `kind`: PlaceholderKind, 
         val `text`: kotlin.String) : ItemView() {
         companion object
     }
@@ -3208,10 +3210,12 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 )
             2 -> ItemView.Emote
             3 -> ItemView.System(
+                FfiConverterTypeSystemKind.read(buf),
                 FfiConverterString.read(buf),
                 )
             4 -> ItemView.UnreadMarker
             5 -> ItemView.Placeholder(
+                FfiConverterTypePlaceholderKind.read(buf),
                 FfiConverterString.read(buf),
                 )
             6 -> ItemView.Image(
@@ -3255,6 +3259,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
+                + FfiConverterTypeSystemKind.allocationSize(value.`kind`)
                 + FfiConverterString.allocationSize(value.`text`)
             )
         }
@@ -3268,6 +3273,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
+                + FfiConverterTypePlaceholderKind.allocationSize(value.`kind`)
                 + FfiConverterString.allocationSize(value.`text`)
             )
         }
@@ -3327,6 +3333,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
             }
             is ItemView.System -> {
                 buf.putInt(3)
+                FfiConverterTypeSystemKind.write(value.`kind`, buf)
                 FfiConverterString.write(value.`text`, buf)
                 Unit
             }
@@ -3336,6 +3343,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
             }
             is ItemView.Placeholder -> {
                 buf.putInt(5)
+                FfiConverterTypePlaceholderKind.write(value.`kind`, buf)
                 FfiConverterString.write(value.`text`, buf)
                 Unit
             }
@@ -3622,6 +3630,191 @@ public object FfiConverterTypeNotificationMode: FfiConverterRustBuffer<Notificat
 
     override fun write(value: NotificationMode, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * What a [`ItemView::Placeholder`] stands in for. See [`SystemKind`].
+ */
+sealed class PlaceholderKind {
+    
+    object Sticker : PlaceholderKind()
+    
+    
+    object Poll : PlaceholderKind()
+    
+    
+    object LiveLocation : PlaceholderKind()
+    
+    
+    object Call : PlaceholderKind()
+    
+    
+    object CallNotification : PlaceholderKind()
+    
+    
+    /**
+     * Redacted — the event is gone, which is different from unreadable.
+     */
+    object Redacted : PlaceholderKind()
+    
+    
+    /**
+     * Visible but unreadable on this device. Expected on a fresh login and
+     * self-resolving for anything sent from now on, which is why it is its
+     * own kind rather than folded into [`Self::UnsupportedMessage`].
+     */
+    object UnableToDecrypt : PlaceholderKind()
+    
+    
+    /**
+     * An `m.room.message` whose msgtype this build does not render.
+     */
+    data class UnsupportedMessage(
+        val `msgtype`: kotlin.String) : PlaceholderKind() {
+        companion object
+    }
+    
+    /**
+     * An event kind this build does not render at all.
+     */
+    data class UnsupportedEvent(
+        val `eventType`: kotlin.String) : PlaceholderKind() {
+        companion object
+    }
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePlaceholderKind : FfiConverterRustBuffer<PlaceholderKind>{
+    override fun read(buf: ByteBuffer): PlaceholderKind {
+        return when(buf.getInt()) {
+            1 -> PlaceholderKind.Sticker
+            2 -> PlaceholderKind.Poll
+            3 -> PlaceholderKind.LiveLocation
+            4 -> PlaceholderKind.Call
+            5 -> PlaceholderKind.CallNotification
+            6 -> PlaceholderKind.Redacted
+            7 -> PlaceholderKind.UnableToDecrypt
+            8 -> PlaceholderKind.UnsupportedMessage(
+                FfiConverterString.read(buf),
+                )
+            9 -> PlaceholderKind.UnsupportedEvent(
+                FfiConverterString.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: PlaceholderKind) = when(value) {
+        is PlaceholderKind.Sticker -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is PlaceholderKind.Poll -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is PlaceholderKind.LiveLocation -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is PlaceholderKind.Call -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is PlaceholderKind.CallNotification -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is PlaceholderKind.Redacted -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is PlaceholderKind.UnableToDecrypt -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is PlaceholderKind.UnsupportedMessage -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`msgtype`)
+            )
+        }
+        is PlaceholderKind.UnsupportedEvent -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`eventType`)
+            )
+        }
+    }
+
+    override fun write(value: PlaceholderKind, buf: ByteBuffer) {
+        when(value) {
+            is PlaceholderKind.Sticker -> {
+                buf.putInt(1)
+                Unit
+            }
+            is PlaceholderKind.Poll -> {
+                buf.putInt(2)
+                Unit
+            }
+            is PlaceholderKind.LiveLocation -> {
+                buf.putInt(3)
+                Unit
+            }
+            is PlaceholderKind.Call -> {
+                buf.putInt(4)
+                Unit
+            }
+            is PlaceholderKind.CallNotification -> {
+                buf.putInt(5)
+                Unit
+            }
+            is PlaceholderKind.Redacted -> {
+                buf.putInt(6)
+                Unit
+            }
+            is PlaceholderKind.UnableToDecrypt -> {
+                buf.putInt(7)
+                Unit
+            }
+            is PlaceholderKind.UnsupportedMessage -> {
+                buf.putInt(8)
+                FfiConverterString.write(value.`msgtype`, buf)
+                Unit
+            }
+            is PlaceholderKind.UnsupportedEvent -> {
+                buf.putInt(9)
+                FfiConverterString.write(value.`eventType`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 }
 
@@ -4136,6 +4329,156 @@ public object FfiConverterTypeRosterView: FfiConverterRustBuffer<RosterView> {
 
     override fun write(value: RosterView, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * What a [`ItemView::System`] line is *about*, independent of its wording.
+ *
+ * The English in `text` is a convenience, not the contract. A host that
+ * wants this line in another language matches on this and writes its own
+ * sentence; a host that does not keeps using `text` and is unaffected.
+ *
+ * This is the same split [`crate::dto::TimelineRow`] already makes for
+ * membership — `membership_verb` beside `item.detail` — and for the same
+ * reason it gives: re-deriving the meaning from a rendered sentence is
+ * parsing your own output, and it breaks the moment somebody edits copy
+ * they are entitled to edit.
+ *
+ * Variants carry whatever the English interpolates, so a host never has to
+ * reach back into the row to rebuild the sentence.
+ */
+sealed class SystemKind {
+    
+    /**
+     * `m.room.create`. `who` is the creator, already attributed.
+     */
+    data class RoomCreated(
+        val `who`: kotlin.String) : SystemKind() {
+        companion object
+    }
+    
+    /**
+     * `m.room.encryption`.
+     */
+    object EncryptionEnabled : SystemKind()
+    
+    
+    /**
+     * `m.room.tombstone`.
+     */
+    object RoomReplaced : SystemKind()
+    
+    
+    /**
+     * A membership transition. `detail` is the raw SDK discriminant —
+     * `"joined"`, `"kickedAndBanned"` — which is what
+     * [`membership_verb`] turns into English.
+     */
+    data class MembershipChanged(
+        val `who`: kotlin.String, 
+        val `detail`: kotlin.String?) : SystemKind() {
+        companion object
+    }
+    
+    /**
+     * The boundary the SDK inserts once back-pagination reaches the genuine
+     * start of a room's history.
+     */
+    object TimelineStart : SystemKind()
+    
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSystemKind : FfiConverterRustBuffer<SystemKind>{
+    override fun read(buf: ByteBuffer): SystemKind {
+        return when(buf.getInt()) {
+            1 -> SystemKind.RoomCreated(
+                FfiConverterString.read(buf),
+                )
+            2 -> SystemKind.EncryptionEnabled
+            3 -> SystemKind.RoomReplaced
+            4 -> SystemKind.MembershipChanged(
+                FfiConverterString.read(buf),
+                FfiConverterOptionalString.read(buf),
+                )
+            5 -> SystemKind.TimelineStart
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: SystemKind) = when(value) {
+        is SystemKind.RoomCreated -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`who`)
+            )
+        }
+        is SystemKind.EncryptionEnabled -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is SystemKind.RoomReplaced -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is SystemKind.MembershipChanged -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`who`)
+                + FfiConverterOptionalString.allocationSize(value.`detail`)
+            )
+        }
+        is SystemKind.TimelineStart -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: SystemKind, buf: ByteBuffer) {
+        when(value) {
+            is SystemKind.RoomCreated -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.`who`, buf)
+                Unit
+            }
+            is SystemKind.EncryptionEnabled -> {
+                buf.putInt(2)
+                Unit
+            }
+            is SystemKind.RoomReplaced -> {
+                buf.putInt(3)
+                Unit
+            }
+            is SystemKind.MembershipChanged -> {
+                buf.putInt(4)
+                FfiConverterString.write(value.`who`, buf)
+                FfiConverterOptionalString.write(value.`detail`, buf)
+                Unit
+            }
+            is SystemKind.TimelineStart -> {
+                buf.putInt(5)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 }
 

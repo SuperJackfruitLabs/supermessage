@@ -24,6 +24,63 @@ use crate::custom_events::{default_registry, resolve_custom_event, CustomEventVi
 use crate::dto::{ReplyToDto, TimelineItemDto};
 use crate::rich::{blocks_from_markdown, blocks_from_sanitised_html, RichBlock};
 
+/// What a [`ItemView::System`] line is *about*, independent of its wording.
+///
+/// The English in `text` is a convenience, not the contract. A host that
+/// wants this line in another language matches on this and writes its own
+/// sentence; a host that does not keeps using `text` and is unaffected.
+///
+/// This is the same split [`crate::dto::TimelineRow`] already makes for
+/// membership — `membership_verb` beside `item.detail` — and for the same
+/// reason it gives: re-deriving the meaning from a rendered sentence is
+/// parsing your own output, and it breaks the moment somebody edits copy
+/// they are entitled to edit.
+///
+/// Variants carry whatever the English interpolates, so a host never has to
+/// reach back into the row to rebuild the sentence.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase", tag = "about")]
+pub enum SystemKind {
+    /// `m.room.create`. `who` is the creator, already attributed.
+    RoomCreated { who: String },
+    /// `m.room.encryption`.
+    EncryptionEnabled,
+    /// `m.room.tombstone`.
+    RoomReplaced,
+    /// A membership transition. `detail` is the raw SDK discriminant —
+    /// `"joined"`, `"kickedAndBanned"` — which is what
+    /// [`membership_verb`] turns into English.
+    MembershipChanged { who: String, detail: Option<String> },
+    /// The boundary the SDK inserts once back-pagination reaches the genuine
+    /// start of a room's history.
+    TimelineStart,
+}
+
+/// What a [`ItemView::Placeholder`] stands in for. See [`SystemKind`].
+#[derive(Debug, Clone, PartialEq, serde::Serialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase", tag = "about")]
+pub enum PlaceholderKind {
+    Sticker,
+    Poll,
+    LiveLocation,
+    Call,
+    CallNotification,
+    /// Redacted — the event is gone, which is different from unreadable.
+    Redacted,
+    /// Visible but unreadable on this device. Expected on a fresh login and
+    /// self-resolving for anything sent from now on, which is why it is its
+    /// own kind rather than folded into [`Self::UnsupportedMessage`].
+    UnableToDecrypt,
+    /// An `m.room.message` whose msgtype this build does not render.
+    UnsupportedMessage {
+        msgtype: String,
+    },
+    /// An event kind this build does not render at all.
+    UnsupportedEvent {
+        event_type: String,
+    },
+}
+
 /// The render decision for one item.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase", tag = "render")]
@@ -40,6 +97,7 @@ pub enum ItemView {
     },
     Emote,
     System {
+        kind: SystemKind,
         text: String,
     },
     /// The line between what has been read and what has not, which the SDK
@@ -49,6 +107,7 @@ pub enum ItemView {
     /// every scroll position would be chrome pretending to be content.
     UnreadMarker,
     Placeholder {
+        kind: PlaceholderKind,
         text: String,
     },
     /// An `m.image`. `alt` is never empty — it falls back through the media
@@ -418,6 +477,9 @@ fn message_view(item: &TimelineItemDto) -> ItemView {
             }
         }
         _ => ItemView::Placeholder {
+            kind: PlaceholderKind::UnsupportedMessage {
+                msgtype: msgtype.unwrap_or("unknown").to_string(),
+            },
             text: format!("Unsupported message ({})", msgtype.unwrap_or("unknown")),
         },
     }
@@ -433,12 +495,17 @@ fn state_view(item: &TimelineItemDto) -> ItemView {
         // date divider. Naming the creator is strictly more informative than
         // printing the generic marker twice.
         Some("m.room.create") => ItemView::System {
+            kind: SystemKind::RoomCreated {
+                who: attributed_name(item),
+            },
             text: format!("{} created the room", attributed_name(item)),
         },
         Some("m.room.encryption") => ItemView::System {
+            kind: SystemKind::EncryptionEnabled,
             text: "Encryption enabled".to_string(),
         },
         Some("m.room.tombstone") => ItemView::System {
+            kind: SystemKind::RoomReplaced,
             text: "This room has been replaced".to_string(),
         },
         // Suppressed unless the reader must know. This is the regression the
@@ -468,21 +535,27 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         "message" => message_view(item),
 
         "sticker" => ItemView::Placeholder {
+            kind: PlaceholderKind::Sticker,
             text: "Sticker".to_string(),
         },
         "poll" => ItemView::Placeholder {
+            kind: PlaceholderKind::Poll,
             text: "Poll".to_string(),
         },
         "liveLocation" => ItemView::Placeholder {
+            kind: PlaceholderKind::LiveLocation,
             text: "Live location".to_string(),
         },
         "callInvite" => ItemView::Placeholder {
+            kind: PlaceholderKind::Call,
             text: "Call".to_string(),
         },
         "rtcNotification" => ItemView::Placeholder {
+            kind: PlaceholderKind::CallNotification,
             text: "Call notification".to_string(),
         },
         "redacted" => ItemView::Placeholder {
+            kind: PlaceholderKind::Redacted,
             text: "Message deleted".to_string(),
         },
 
@@ -490,6 +563,7 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         // fresh device and resolves itself for messages sent from now on, so
         // it gets its own wording rather than the generic placeholder.
         "unableToDecrypt" => ItemView::Placeholder {
+            kind: PlaceholderKind::UnableToDecrypt,
             text: "Encrypted message — this device has no key for it".to_string(),
         },
 
@@ -505,6 +579,10 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         },
 
         "membership" => ItemView::System {
+            kind: SystemKind::MembershipChanged {
+                who: attributed_name(item),
+                detail: item.detail.clone(),
+            },
             text: format!(
                 "{} {}",
                 attributed_name(item),
@@ -521,6 +599,9 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         // The *only* legitimate use of "Unsupported event" text — every other
         // fallback in this module has its own wording.
         "failedToParse" => ItemView::Placeholder {
+            kind: PlaceholderKind::UnsupportedEvent {
+                event_type: item.detail.as_deref().unwrap_or("unknown").to_string(),
+            },
             text: format!(
                 "Unsupported event ({})",
                 item.detail.as_deref().unwrap_or("unknown")
@@ -534,6 +615,7 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         // The boundary the SDK inserts once back-pagination reaches the
         // genuine start of a room's history — at most once, and always first.
         "timelineStart" => ItemView::System {
+            kind: SystemKind::TimelineStart,
             text: "Beginning of the room".to_string(),
         },
 
@@ -542,6 +624,9 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         // release this build has not been updated for, not a path any current
         // event takes.
         other => ItemView::Placeholder {
+            kind: PlaceholderKind::UnsupportedEvent {
+                event_type: other.to_string(),
+            },
             text: format!("Unsupported event ({other})"),
         },
     }
@@ -805,6 +890,9 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::Placeholder {
+                kind: PlaceholderKind::UnsupportedMessage {
+                    msgtype: "m.location".into()
+                },
                 text: "Unsupported message (m.location)".into()
             }
         );
@@ -830,11 +918,76 @@ mod tests {
 
     // ---- viewFor: other kinds -------------------------------------------
 
+    /// Every placeholder kind, and the wording it must keep agreeing with.
+    ///
+    /// **This is the field's first consumer, and deliberately so.** A `kind`
+    /// nothing reads is an abstraction with no consumer; a `kind` that can
+    /// silently disagree with the sentence beside it is worse, because a host
+    /// switching on it would render confidently wrong copy. Pairing them here
+    /// means one cannot be edited without the other being looked at.
+    ///
+    /// It is not asserting the exact English — that is a product decision
+    /// somebody is entitled to change, which is the whole reason the kind
+    /// exists. It asserts they are talking about the same thing.
     #[test]
-    fn names_undecryptable_events_specifically_not_generically() {
-        let ItemView::Placeholder { text } = view_for(&item("unableToDecrypt")) else {
+    fn every_placeholder_kind_matches_the_sentence_beside_it() {
+        let cases = [
+            ("sticker", PlaceholderKind::Sticker, "sticker"),
+            ("poll", PlaceholderKind::Poll, "poll"),
+            ("liveLocation", PlaceholderKind::LiveLocation, "location"),
+            ("callInvite", PlaceholderKind::Call, "call"),
+            (
+                "rtcNotification",
+                PlaceholderKind::CallNotification,
+                "notification",
+            ),
+            ("redacted", PlaceholderKind::Redacted, "deleted"),
+            (
+                "unableToDecrypt",
+                PlaceholderKind::UnableToDecrypt,
+                "encrypted",
+            ),
+        ];
+        for (event_kind, expected, word) in cases {
+            let ItemView::Placeholder { kind, text } = view_for(&item(event_kind)) else {
+                panic!("{event_kind} is not a placeholder");
+            };
+            assert_eq!(kind, expected, "{event_kind} carried the wrong kind");
+            assert!(
+                text.to_lowercase().contains(word),
+                "{event_kind}: kind says {expected:?} but the text reads {text:?}"
+            );
+        }
+    }
+
+    /// The unsupported kinds carry the type that the English interpolates.
+    ///
+    /// Without this a host has the kind but not the noun, and would have to
+    /// pull the type back out of the rendered parentheses — which is the
+    /// parsing-your-own-output problem the kind was added to end.
+    #[test]
+    fn unsupported_kinds_carry_the_type_their_sentence_names() {
+        let ItemView::Placeholder { kind, text } = view_for(&item("somethingFromTheFuture")) else {
             panic!("expected a placeholder");
         };
+        assert_eq!(
+            kind,
+            PlaceholderKind::UnsupportedEvent {
+                event_type: "somethingFromTheFuture".into()
+            }
+        );
+        assert!(text.contains("somethingFromTheFuture"));
+    }
+
+    #[test]
+    fn names_undecryptable_events_specifically_not_generically() {
+        let ItemView::Placeholder { kind, text } = view_for(&item("unableToDecrypt")) else {
+            panic!("expected a placeholder");
+        };
+        // Both halves, because the point of the kind is that it survives the
+        // wording being rewritten — and this test exists precisely because
+        // somebody may rewrite this wording.
+        assert_eq!(kind, PlaceholderKind::UnableToDecrypt);
         assert!(
             text.to_lowercase().contains("encrypted"),
             "wording lost its specificity: {text:?}"
@@ -846,6 +999,7 @@ mod tests {
         assert_eq!(
             view_for(&item("redacted")),
             ItemView::Placeholder {
+                kind: PlaceholderKind::Redacted,
                 text: "Message deleted".into()
             }
         );
@@ -875,6 +1029,9 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::System {
+                kind: SystemKind::RoomCreated {
+                    who: "Alice".into()
+                },
                 text: "Alice created the room".into()
             }
         );
@@ -888,6 +1045,9 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::System {
+                kind: SystemKind::RoomCreated {
+                    who: "@alice:example.org".into()
+                },
                 text: "@alice:example.org created the room".into()
             }
         );
@@ -897,9 +1057,10 @@ mod tests {
     fn surfaces_encryption_being_enabled() {
         let mut it = item("state");
         it.detail = Some("m.room.encryption".into());
-        let ItemView::System { text } = view_for(&it) else {
+        let ItemView::System { kind, text } = view_for(&it) else {
             panic!("expected a system line");
         };
+        assert_eq!(kind, SystemKind::EncryptionEnabled);
         assert!(text.to_lowercase().contains("encryption"), "got {text:?}");
     }
 
@@ -918,6 +1079,10 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::System {
+                kind: SystemKind::MembershipChanged {
+                    who: "Alice".into(),
+                    detail: Some("joined".into())
+                },
                 text: "Alice joined the room".into()
             }
         );
@@ -931,6 +1096,10 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::System {
+                kind: SystemKind::MembershipChanged {
+                    who: "@bob:example.org".into(),
+                    detail: Some("left".into())
+                },
                 text: "@bob:example.org left the room".into()
             }
         );
@@ -978,6 +1147,9 @@ mod tests {
         assert_eq!(
             view_for(&it),
             ItemView::Placeholder {
+                kind: PlaceholderKind::UnsupportedEvent {
+                    event_type: "m.some.custom".into()
+                },
                 text: "Unsupported event (m.some.custom)".into()
             }
         );
@@ -1081,6 +1253,7 @@ mod tests {
         assert_eq!(
             view_for(&item("timelineStart")),
             ItemView::System {
+                kind: SystemKind::TimelineStart,
                 text: "Beginning of the room".into()
             }
         );
@@ -1119,7 +1292,7 @@ mod tests {
             "customMessage",
         ];
         for kind in kinds {
-            if let ItemView::Placeholder { text } = view_for(&item(kind)) {
+            if let ItemView::Placeholder { text, .. } = view_for(&item(kind)) {
                 assert!(!text.is_empty(), "{kind} produced an empty placeholder");
             }
         }
@@ -1130,6 +1303,9 @@ mod tests {
         assert_eq!(
             view_for(&item("somethingFromTheFuture")),
             ItemView::Placeholder {
+                kind: PlaceholderKind::UnsupportedEvent {
+                    event_type: "somethingFromTheFuture".into()
+                },
                 text: "Unsupported event (somethingFromTheFuture)".into()
             }
         );

@@ -77,7 +77,11 @@ struct TimelineRowView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 6)
 
-        case let .system(text):
+        // `kind` ignored here, and that is the correct reading of it: this
+        // host renders the English the core already composed. The field
+        // exists for a host that wants the line in another language — see
+        // docs/i18n.md §2.2 — and this one does not yet.
+        case let .system(_, text):
             SystemLine(text: text)
 
         case .dateDivider:
@@ -102,7 +106,8 @@ struct TimelineRowView: View {
                 .overlay(Theme.accent)
                 .padding(.vertical, 10)
 
-        case let .placeholder(text):
+        // `kind` ignored, like `.system` above and for the same reason.
+        case let .placeholder(_, text):
             SystemLine(text: text)
 
         case let .image(alt, width, height):

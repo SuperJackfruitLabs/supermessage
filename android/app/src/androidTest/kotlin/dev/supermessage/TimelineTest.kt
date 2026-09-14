@@ -29,6 +29,7 @@ import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RichInline
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
+import uniffi.supermessage_core.SystemKind
 
 /**
  * The scroll container — see `Timeline.kt`'s own KDoc and
@@ -89,7 +90,10 @@ class TimelineTest {
         )
         return TimelineRowDto(
             item = item,
-            view = ItemView.System(text = "$sender $verb"),
+            view = ItemView.System(
+                kind = SystemKind.MembershipChanged(who = sender, detail = verb),
+                text = "$sender $verb",
+            ),
             senderName = sender,
             senderShort = sender,
             senderInitial = "?",
