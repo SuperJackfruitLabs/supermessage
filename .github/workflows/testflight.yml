@@ -23,9 +23,30 @@ on:
 jobs:
   testflight:
     name: Archive${{ inputs.upload && ' and upload' || '' }}
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+
+      # The newest Xcode on the image, named in the log.
+      #
+      # The fourth run exported a valid .ipa and was refused at validation:
+      # "This app was built with the iOS 18.5 SDK. All iOS and iPadOS apps
+      # must be built with the iOS 26 SDK or later." Apple raises this floor
+      # roughly yearly, the runner image ships several Xcodes, and its default
+      # is not always the newest.
+      #
+      # Picking the highest version present rather than pinning one means the
+      # next floor-raise is absorbed by the image being updated. Printing the
+      # SDK is what makes a repeat of this diagnosable from the log instead of
+      # from a rejection twenty minutes later.
+      - name: Use the newest Xcode
+        run: |
+          set -euo pipefail
+          newest="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "available: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
+          echo "iOS SDK: $(xcodebuild -showsdks | grep -o 'iphoneos[0-9.]*' | tail -1)"
 
       - uses: actions/setup-node@v4
         with:
