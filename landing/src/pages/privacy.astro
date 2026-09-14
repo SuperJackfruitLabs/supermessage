@@ -19,6 +19,13 @@
 //                     TextField the reader can change
 //
 // If any of those change, this page becomes wrong.
+//
+// **The contact address is on superjackfruit.com, not supermessage.dev, and
+// that is not an oversight.** `supermessage.dev` publishes no MX records at
+// all, so mail to it bounces at the DNS layer; `superjackfruit.com` routes to
+// Google Workspace. A policy naming an address that cannot receive mail is
+// worse than one naming no address, because both stores treat it as the
+// deletion route and a user gets silence.
 import '../styles/tokens.css';
 
 const updated = '14 September 2026';
@@ -234,7 +241,7 @@ const updated = '14 September 2026';
 
       <p>
         Super Jackfruit Labs (OPC) Private Limited —
-        <a href="mailto:privacy@supermessage.dev">privacy@supermessage.dev</a>
+        <a href="mailto:privacy@superjackfruit.com">privacy@superjackfruit.com</a>
       </p>
 
       <footer>
