@@ -606,7 +606,20 @@ private struct MediaFileRow: View {
 // requested, and whether that reservation is honoured is exactly what this
 // preview shows.
 #Preview("Media without bytes") {
-    let media = PreviewFixtures.mediaCache()
+    // Failed up front, rather than a cache that will get there on its own.
+    //
+    // Five renders of this frame disagreed by up to 2,311 pixels in a 58×45
+    // box — the placeholder flipping between the spinner and the
+    // permanent-absence glyph, because `hasFailed` becomes true only once the
+    // fetch this preview can never satisfy has given up. Both states are
+    // real; which one the shutter caught was a race.
+    //
+    // "Without bytes" is the settled one, so the fixture starts there.
+    // `markFailed` also stops `image(for:)` asking again, so there is no
+    // outstanding Task left to land mid-capture.
+    let media = PreviewFixtures.mediaCache(
+        failed: [PreviewFixtures.image, PreviewFixtures.attachment]
+            .compactMap(\.item.eventId))
     let faces = PreviewFixtures.faceCache()
     return VStack(alignment: .leading, spacing: 0) {
         TimelineRowView(row: PreviewFixtures.image, media: media, faces: faces)

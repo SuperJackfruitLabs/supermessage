@@ -62,11 +62,15 @@ if [ "$RECORD" = yes ]; then
   mkdir -p "$REFERENCES"
   rm -f "$REFERENCES"/*.png
   cp "$OUT"/*.png "$REFERENCES"/
-  # The unstable frames are rendered but are not references — copying them in
+  # Unstable frames are rendered but are not references — copying them in
   # leaves the next verify reporting them as "gone", because the comparison
   # skips them on the rendered side.
+  #
+  # The list is empty now, and `[ -n "$name" ]` is why that is quiet rather
+  # than destructive: an empty list still yields one blank line, and
+  # `rm -f "$REFERENCES/"` then argues with the directory itself.
   python3 "$ROOT/scripts/tests/test_ios_preview_baseline.py" --unstable \
-    | while read -r name; do rm -f "$REFERENCES/$name"; done
+    | while read -r name; do [ -n "$name" ] && rm -f "$REFERENCES/$name"; done
   echo "RECORDED: $count previews are the new baseline."
   echo "Look at them before committing: open $OUT/index.html"
   exit 0

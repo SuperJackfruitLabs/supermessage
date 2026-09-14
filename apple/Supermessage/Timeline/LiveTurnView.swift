@@ -21,6 +21,20 @@ struct LiveTurnView: View {
     let writerName: String
 
     @State private var showsThought = false
+    /// Whether the reader has asked for less movement.
+    ///
+    /// The spinner beside "writing…" is the only moving part of this view,
+    /// and it says exactly what the word beside it already says. Redundant
+    /// motion is the easiest kind to drop, and dropping it costs a reader
+    /// nothing: the label stays.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Whether a still frame is being taken of this view.
+    ///
+    /// Separate from `reduceMotion`, which is read-only — SwiftUI owns it,
+    /// and `.environment(\.rendersStill, true)` does not compile.
+    /// So a preview cannot ask for the accessible rendering, and needs its
+    /// own way to say "nothing that never settles".
+    @Environment(\.rendersStill) private var rendersStill
     /// Paces the answer onto the screen — see `StreamingText`.
     @State private var stream = StreamingText()
 
@@ -36,7 +50,7 @@ struct LiveTurnView: View {
                     Text(live.finished ? "last turn" : "writing…")
                         .metaFace()
                         .foregroundStyle(Theme.contentMuted)
-                    if !live.finished {
+                    if !live.finished && !reduceMotion && !rendersStill {
                         ProgressView().controlSize(.mini)
                     }
                 }
@@ -189,8 +203,21 @@ private struct Detail: View {
 // that was asleep never sees it — which is exactly why it is worth a still
 // frame. In a running app these states are gone in seconds, so this is the
 // only way to look at the failed-tool row at all.
+// `.rendersStill` on all three, and not only to make them sit still for the
+// camera. A spinner has no canonical frame: five renders of this preview
+// disagreed in a 37×37 box at 396 pixels, which is exactly the mini
+// `ProgressView` and nothing else. With the motion gone the frame is
+// reproducible, and these three stop being the only iOS previews no gate
+// looks at.
+//
+// What that costs is stated rather than hidden: for these three the baseline
+// defends the reduce-motion rendering, so a change to the spinner itself
+// would not be caught. Everything else in the frame — layout, type, colour,
+// the disclosure, the streamed text — is now covered, where before none of
+// it was.
 #Preview("Mid-turn") {
     PreviewGround { LiveTurnView(live: PreviewFixtures.liveStore(), writerName: "Atlas") }
+        .environment(\.rendersStill, true)
 }
 
 // Thinking, with nothing to show yet.
@@ -203,6 +230,7 @@ private struct Detail: View {
             live: PreviewFixtures.liveStore(thinking: true, answering: false, tools: false),
             writerName: "Atlas")
     }
+    .environment(\.rendersStill, true)
 }
 
 // Answering with no thought and no tools: a plain reply streaming in.
@@ -212,5 +240,6 @@ private struct Detail: View {
             live: PreviewFixtures.liveStore(thinking: false, answering: true, tools: false),
             writerName: "Atlas")
     }
+    .environment(\.rendersStill, true)
 }
 #endif

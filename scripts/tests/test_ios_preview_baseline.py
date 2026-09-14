@@ -27,36 +27,35 @@ from baseline_compare import compare  # noqa: E402
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 REFERENCES = ROOT / "apple/SupermessagePreviewTests/previews"
 
-# Frames whose content arrives after the shutter, so no two renders agree.
+# Empty, and it took making it so rather than declaring it.
 #
-# **Found by rendering five times and comparing, not by reasoning.** Two runs
-# agreed on all forty; the third disagreed on one. So "I rendered it twice and
-# it matched" is not evidence of determinism, and this list is the reason the
-# gate is trustworthy rather than merely green.
+# This list held seven frames, and its comment argued they could not be
+# gated: a spinner has no canonical frame, a `.task` resolves while the
+# shutter is opening. Both halves were true and neither was a reason to stop.
 #
-# Every one of them is either an animation or a `.task` that resolves while
-# the shutter is opening:
+#   `LiveTurnView` ×3   A mini `ProgressView` beside the word "writing…",
+#                       disagreeing in a 37×37 box. The label already says
+#                       what the spinner says, so `\.rendersStill` drops it —
+#                       and `LiveTurnView` now honours `accessibilityReduce\
+#                       Motion` for the same redundancy, which is the better
+#                       half of that change.
+#   `NewRoomPanel` ×2   `.task { await load() }` against a shutter that does
+#                       not wait. A `#if DEBUG` initialiser seeds the people
+#                       and `loading`, and the task already ran only while
+#                       loading — so no second "is this a preview" flag.
+#   `RoomInfoPanel`     The same, but it came out a different *size*: a
+#                       spinner and a member list are not the same height.
+#   `Media without      `hasFailed` flips only once a fetch that can never
+#   bytes`              succeed gives up. The fixture starts failed, which is
+#                       both the settled state and the one the name promises.
 #
-#   LiveTurnView    streaming text, which is an animation
-#   NewRoomPanel    loads its people
-#   RoomInfoPanel   loads the room
-#   Media without bytes   asks MediaCache for an image it will not get
-#
-# They are still **rendered**, and still on the contact sheet, because they
-# are worth looking at. They are only excluded from the comparison, which is
-# the one thing they cannot support. Android does the cruder thing and skips
-# rendering its seven entirely; it has to, because there they hang rather
-# than race.
-UNSTABLE = {
-    "Supermessage_LiveTurnView.swift_Answering_only.png",
-    "Supermessage_LiveTurnView.swift_Mid-turn.png",
-    "Supermessage_LiveTurnView.swift_Thinking_only.png",
-    "Supermessage_NewRoomPanel.swift_Known_people.png",
-    "Supermessage_NewRoomPanel.swift_Nobody_yet.png",
-    "Supermessage_RoomInfoPanel.swift_Furnished.png",
-    "Supermessage_TimelineRowView.swift_Media_without_bytes.png",
-}
-
+# Then the same five-render check found an **eighth** frame — `InvitationView`,
+# which had never been on the list and was being gated against a baseline it
+# could flip away from at any time. The list was evidence of what had been
+# caught, not of what was flaky. That is the argument for emptying it rather
+# than curating it: what is left is 45 frames that were each rendered five
+# times and agreed five times.
+UNSTABLE: set[str] = set()
 
 RECORD = "./scripts/snapshot-previews.sh --record"
 
