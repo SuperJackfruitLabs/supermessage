@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      How the archive leaves this machine.
+
+      `app-store-connect` is Xcode 15's spelling of what used to be
+      `app-store`; 16.4 accepts both and warns on the old one. Anything else
+      here — `development`, `ad-hoc` — produces an .ipa that TestFlight
+      refuses, and it refuses it after the upload rather than before.
+    -->
+    <key>method</key>
+    <string>app-store-connect</string>
+
+    <key>teamID</key>
+    <string>N2QQPW2BRJ</string>
+
+    <!--
+      Let Xcode fetch or create the distribution profile.
+
+      The alternative is checking a `.mobileprovision` into the repo and
+      re-checking it every year when it expires. `-allowProvisioningUpdates`
+      on the command line is what actually permits this; without it the flag
+      here is ignored and the export fails asking for a profile by name.
+    -->
+    <key>signingStyle</key>
+    <string>automatic</string>
+
+    <!--
+      Symbols go up with the build.
+
+      Without them a TestFlight crash report is a list of hex addresses.
+      This is the one setting here whose absence costs nothing at upload time
+      and everything at the moment somebody reports a crash.
+    -->
+    <key>uploadSymbols</key>
+    <true/>
+
+    <!--
+      Bitcode is gone as of Xcode 14 and the key is ignored, but stating it
+      false avoids a deprecation warning on every export.
+    -->
+    <key>uploadBitcode</key>
+    <false/>
+
+    <!--
+      Not `upload`. This exports an .ipa to disk and stops.
+
+      Uploading is a separate, deliberate step in `scripts/testflight.sh`,
+      because a build number cannot be reused: an accidental upload is not
+      undoable, it is a number burned. Exporting and uploading as one command
+      makes "let me just check the archive" impossible to do safely.
+    -->
+    <key>destination</key>
+    <string>export</string>
+</dict>
+</plist>

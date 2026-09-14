@@ -122,6 +122,20 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: supermessage
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Declared, so App Store Connect stops asking on every upload.
+        #
+        # Without this key each build is held after upload until somebody
+        # answers the export-compliance question by hand, which turns a
+        # scripted release into a scripted release plus a person. The answer
+        # does not change between builds, so it belongs in the build.
+        #
+        # `NO` is the accurate answer, not the convenient one: this app's only
+        # cryptography is TLS to a Matrix homeserver and the platform's own
+        # keychain — both exempt under the standard-encryption exemption. It
+        # would stop being true the day the app implements end-to-end
+        # encryption itself rather than delegating it, which is worth
+        # remembering because that is on the roadmap.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
 
   SupermessageUITests:
     type: bundle.ui-testing

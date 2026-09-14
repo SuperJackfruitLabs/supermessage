@@ -1,0 +1,101 @@
+name: TestFlight
+
+# Ship the iOS app to TestFlight from CI rather than from a laptop.
+#
+# This is #35's step 4, and it landed for a blunter reason than elegance: the
+# archive does not fit on the machine it was being built on. It needs roughly
+# 10–12GB — two Rust iOS slices, a host build for the bindings generator, the
+# XCFramework, and Xcode's own archive — and a developer laptop with a full
+# disk cannot produce a release build at all. A macOS runner starts empty
+# every time.
+#
+# **Manual dispatch only, and that is deliberate.** App Store Connect rejects
+# a build number it has already seen, so an upload is not a step that can be
+# retried — a mistaken one burns a number. Nothing here runs on a push.
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Upload to TestFlight (unchecked = archive and export only)'
+        type: boolean
+        default: false
+
+jobs:
+  testflight:
+    name: Archive${{ inputs.upload && ' and upload' || '' }}
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: The Rust toolchain, with the two iOS targets
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd apple && xcodegen generate
+
+      # The build number: whichever of the run number and the committed value
+      # is larger.
+      #
+      # `CURRENT_PROJECT_VERSION` must increase on every upload and never
+      # repeat, and #35 notes nothing enforces it — a human remembering to
+      # bump a counter is a build rejected at the worst possible moment.
+      # `github.run_number` only ever goes up, so it is the right source.
+      #
+      # **But it starts at 1, and this repo already carries 2.** A first run
+      # would have shipped a build number *below* the committed floor, which
+      # happens to be harmless today only because nothing has been uploaded
+      # yet — and would silently reject every build if somebody had ever
+      # archived from a laptop. `max` is what makes the committed value an
+      # actual floor rather than a comment claiming to be one.
+      - name: Set the build number
+        run: |
+          cd apple
+          floor=$(awk '/CURRENT_PROJECT_VERSION:/ {print $2; exit}' project.yml)
+          build=$(( ${{ github.run_number }} > floor ? ${{ github.run_number }} : floor ))
+          echo "floor $floor, run ${{ github.run_number }} -> build $build"
+          /usr/bin/sed -i '' \
+            "s/CURRENT_PROJECT_VERSION: .*/CURRENT_PROJECT_VERSION: $build/" \
+            project.yml
+          xcodegen generate
+          grep -E "MARKETING_VERSION|CURRENT_PROJECT_VERSION" project.yml
+
+      # Written to the path `xcodebuild` and `altool` both look in by
+      # convention, so neither needs the key passed on a command line where it
+      # would land in a log. Never echoed; `base64 -d` reads stdin.
+      - name: Install the App Store Connect API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 -d \
+            > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          # Fingerprint rather than contents, so a wrong or truncated secret
+          # is visible in the log without the key being in it.
+          shasum -a 256 ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            | cut -c1-16
+
+      - name: Archive, export${{ inputs.upload && ', upload' || '' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          ./scripts/testflight.sh ${{ inputs.upload && '--upload' || '' }}
+
+      # Kept whether or not the upload ran: an .ipa that was built but not
+      # sent is the thing you want to inspect before spending a build number.
+      - name: The exported build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supermessage-ipa
+          path: build/export/
+          if-no-files-found: warn
