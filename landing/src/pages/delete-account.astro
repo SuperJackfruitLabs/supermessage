@@ -1,0 +1,214 @@
+---
+// The account-deletion page, which Google Play requires as a *separate* URL
+// from the privacy policy.
+//
+// The Data Safety form's "Delete data URL" has three stated requirements, and
+// the privacy page met only the first: name the app or developer, prominently
+// feature the steps, and specify what is deleted or kept with any retention
+// period. A one-line "email us" satisfies none of the last two.
+//
+// **The honest part is the second table.** Deactivating a Matrix account does
+// not unsend anything: a message is an event copied to every server
+// participating in the room, and those copies are not ours to delete. A
+// template would promise erasure here, and the promise would be false in a
+// document a regulator may read.
+//
+// The head and styles are lifted from privacy.astro deliberately, so the two
+// compliance pages cannot drift apart visually.
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Delete your account — supermessage</title>
+    <meta
+      name="description"
+      content="How to ask for your supermessage account and its data to be deleted, and exactly what is removed."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    />
+    <style>
+      :root {
+        --display: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+        --body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--color-surface-sunken);
+        color: var(--color-content);
+        font-family: var(--body);
+        font-size: 17px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        max-width: 68ch;
+        margin: 0 auto;
+        padding: 48px 24px 96px;
+      }
+
+      a { color: var(--color-accent); }
+
+      h1 {
+        font-family: var(--display);
+        font-size: clamp(32px, 6vw, 44px);
+        line-height: 1.1;
+        margin: 0 0 8px;
+      }
+
+      h2 {
+        font-family: var(--display);
+        font-size: 22px;
+        margin: 40px 0 8px;
+      }
+
+      .updated { color: var(--color-content-muted); margin: 0 0 40px; }
+
+      /* The one claim a reader is most likely to be surprised by, so it is
+         the one thing on the page given a surface of its own. */
+      .callout {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-left: 3px solid var(--color-signal);
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin: 24px 0;
+      }
+
+      table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+      th, td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--color-border);
+        vertical-align: top;
+      }
+      th { font-weight: 600; }
+      td:first-child { white-space: nowrap; }
+
+      footer {
+        margin-top: 56px;
+        padding-top: 24px;
+        border-top: 1px solid var(--color-border);
+        color: var(--color-content-muted);
+        font-size: 15px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <main>
+      <h1>Delete your account</h1>
+      <p class="updated">Last updated 15 September 2026</p>
+
+      <p>
+        This page is for <strong>supermessage</strong>, published by
+        <strong>Super Jackfruit Labs (OPC) Private Limited</strong>. It explains how to have
+        your account deleted and exactly what that does and does not remove.
+      </p>
+
+      <h2>How to request deletion</h2>
+
+      <ol>
+        <li>
+          Email <a href="mailto:privacy@superjackfruit.com">privacy@superjackfruit.com</a> from
+          an address we can associate with you, with the subject
+          <strong>Delete my account</strong>.
+        </li>
+        <li>
+          Include your <strong>Matrix user ID</strong> — it looks like
+          <code>@you:id.agentpod.dev</code> and is shown in the app under Account.
+        </li>
+        <li>
+          We reply to confirm it is really you before doing anything, because an
+          unverified request is a way to delete somebody else's account.
+        </li>
+      </ol>
+
+      <p>
+        We action confirmed requests within <strong>30 days</strong>, and usually much sooner.
+      </p>
+
+      <div class="callout">
+        <strong>This applies to accounts on <code>id.agentpod.dev</code>, the homeserver we
+        operate.</strong> If you signed in with an account on a different Matrix homeserver, we
+        never held your data and cannot delete it — ask whoever runs that server.
+      </div>
+
+      <h2>What is deleted</h2>
+
+      <table>
+        <tr><th>Data</th><th>What happens</th></tr>
+        <tr>
+          <td>Your account</td>
+          <td>Deactivated. It can no longer sign in, and the user ID is never reissued.</td>
+        </tr>
+        <tr>
+          <td>Your profile</td>
+          <td>Display name and avatar removed.</td>
+        </tr>
+        <tr>
+          <td>Room membership</td>
+          <td>You are removed from the rooms you were in.</td>
+        </tr>
+        <tr>
+          <td>Media you uploaded</td>
+          <td>Deleted from our servers.</td>
+        </tr>
+        <tr>
+          <td>Data on your device</td>
+          <td>Removed when you uninstall the app. Nothing on your phone depends on us.</td>
+        </tr>
+      </table>
+
+      <h2>What is kept, and why</h2>
+
+      <div class="callout">
+        <strong>Messages you already sent stay in the rooms you sent them to.</strong> This is
+        how Matrix works rather than a choice we make: a message is an event copied to every
+        server participating in that room, and those copies are not ours to remove. Other
+        members continue to see what you wrote. If that matters to you, delete individual
+        messages before requesting account deletion — a deletion request is not a way to unsend
+        a conversation.
+      </div>
+
+      <table>
+        <tr><th>Data</th><th>Retention</th></tr>
+        <tr>
+          <td>Messages you sent to rooms</td>
+          <td>Remain in room history, on our server and on any other server whose users were in
+            the room.</td>
+        </tr>
+        <tr>
+          <td>Server logs, including IP addresses</td>
+          <td>Kept up to <strong>90 days</strong> for security and abuse investigation, then
+            deleted.</td>
+        </tr>
+        <tr>
+          <td>Records we are required to keep</td>
+          <td>Retained only where the law requires it, and only for as long as it requires.</td>
+        </tr>
+      </table>
+
+      <h2>Related</h2>
+
+      <p>
+        <a href="/privacy/">Privacy policy</a> — what is collected while the account exists.
+      </p>
+
+      <footer>
+        <a href="/">← supermessage</a>
+      </footer>
+    </main>
+  </body>
+</html>
