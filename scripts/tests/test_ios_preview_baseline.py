@@ -55,6 +55,12 @@ REFERENCES = ROOT / "apple/SupermessagePreviewTests/previews"
 # caught, not of what was flaky. That is the argument for emptying it rather
 # than curating it: what is left is 45 frames that were each rendered five
 # times and agreed five times.
+#
+# Four more have joined them since — `RecoveryView`'s states — and they did
+# not need the five-render check to earn it. What that check was hunting is a
+# frame captured before its `.task` lands, and those four take their state
+# from an `initialState` argument instead, so the first frame is already the
+# one the name promises. There is no race left to lose.
 UNSTABLE: set[str] = set()
 
 RECORD = "./scripts/snapshot-previews.sh --record"

@@ -521,6 +521,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                                 extraPanel = null
                                 closeInfo()
                             },
+                            recoveryState = session::recoveryState,
+                            onEnableRecovery = session::enableRecovery,
+                            onRecoverWithKey = session::recoverWithKey,
                         )
 
                     null -> {}

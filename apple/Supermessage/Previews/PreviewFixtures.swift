@@ -68,8 +68,17 @@ struct PreviewClient: SessionClient {
 
     let population: Population
 
-    init(_ population: Population = .furnished) {
+    /// Which of `RecoveryView`'s four states this stub reports.
+    ///
+    /// A parameter rather than a constant because the four are four different
+    /// screens and the two that matter most — a device missing its keys, an
+    /// account with no backup at all — are the ones nobody sees while the
+    /// feature is working.
+    let recovery: String
+
+    init(_ population: Population = .furnished, recovery: String = "enabled") {
         self.population = population
+        self.recovery = recovery
         // Keeps `PREVIEW_FIXTURE_MARKER` reachable from any code that builds
         // a stub, which is what makes the release gate able to find it. A
         // `precondition` rather than an `assert`, because `assert` is
@@ -161,6 +170,12 @@ struct PreviewClient: SessionClient {
     func createRoom(name: String, invite: [String], isDirect: Bool) async throws -> String {
         PreviewFixtures.roomId
     }
+    // Recovery, for previews. `enabled` by default because that is the state
+    // a signed-in account spends its life in; the other three are reached by
+    // passing `recovery:`.
+    func recoveryState() async throws -> String { recovery }
+    func enableRecovery() async throws -> String { PreviewFixtures.recoveryKey }
+    func recoverWithKey(recoveryKey: String) async throws {}
     func directRoomWith(userId: String) async throws -> String? { PreviewFixtures.roomId }
     func roomInviter(roomId: String) async throws -> String? { "@krishna:example.org" }
 
@@ -190,6 +205,8 @@ struct PreviewClient: SessionClient {
 
 enum PreviewFixtures {
     static let roomId = "!atlas:example.org"
+    /// A real recovery key's shape: base58 in groups of four.
+    static let recoveryKey = "EsTb 8Qn4 7rGa 2mVd 9pLx 3kWc 6yHf 1tRj"
 
     // MARK: Timeline rows
 
@@ -744,9 +761,11 @@ enum PreviewFixtures {
         _ population: PreviewClient.Population = .furnished,
         phase: Session.Phase = .signedIn,
         connection: String = "live",
-        openRoom: Bool = true
+        openRoom: Bool = true,
+        recovery: String = "enabled"
     ) -> Session {
-        let session = Session(previewClient: PreviewClient(population), phase: phase)
+        let session = Session(
+            previewClient: PreviewClient(population, recovery: recovery), phase: phase)
         session.connection.apply(
             ConnectionState(
                 state: connection,

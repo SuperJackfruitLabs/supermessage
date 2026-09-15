@@ -403,6 +403,34 @@ impl Core {
         Ok(self.block(self.session.create_room(&name, &invite, is_direct))?)
     }
 
+    /// How encryption recovery stands: "enabled", "disabled", "incomplete" or
+    /// "unknown".
+    ///
+    /// A string rather than an enum because it crosses two FFI boundaries and
+    /// the callers only ever switch on it. `"unknown"` means the first sync has
+    /// not answered yet — a screen must say "checking", never "not set up",
+    /// because offering a second recovery key to somebody who already has one
+    /// is how the first one is orphaned.
+    pub fn recovery_state(&self) -> Result<String, FfiError> {
+        Ok(self.block(self.session.recovery_state())?)
+    }
+
+    /// Turn recovery on and return the key, once.
+    ///
+    /// Show it and forget it. There is deliberately no way to ask for it again:
+    /// an app that can re-display a recovery key is an app that stored one.
+    /// Never log it, never put it in analytics, never write it to a crash
+    /// report.
+    pub fn enable_recovery(&self) -> Result<String, FfiError> {
+        Ok(self.block(self.session.enable_recovery())?)
+    }
+
+    /// Use a recovery key on this device, to read what other devices hold.
+    pub fn recover_with_key(&self, recovery_key: String) -> Result<(), FfiError> {
+        self.block(self.session.recover_with_key(&recovery_key))?;
+        Ok(())
+    }
+
     /// Join by alias (`#room:server`) or id, returning the id joined.
     pub fn join_room_by_alias(&self, alias_or_id: String) -> Result<String, FfiError> {
         Ok(self.block(self.session.join_room_by_alias(&alias_or_id))?)

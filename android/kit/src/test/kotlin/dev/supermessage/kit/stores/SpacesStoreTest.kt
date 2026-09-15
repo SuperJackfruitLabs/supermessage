@@ -177,6 +177,9 @@ class SpacesStoreTest {
     ) : CoreInterface {
         val selectedSpaceIds = mutableListOf<String?>()
 
+        override fun recoverWithKey(recoveryKey: String): Unit = throw NotImplementedError()
+        override fun recoveryState(): String = throw NotImplementedError()
+        override fun enableRecovery(): String = throw NotImplementedError()
         override fun spaceSelect(spaceId: String?) {
             selectResult?.invoke()
             selectedSpaceIds.add(spaceId)

@@ -125,6 +125,17 @@ class CoreClient(
     suspend fun createRoom(name: String, invite: List<String>, isDirect: Boolean): String =
         run { it.createRoom(name, invite, isDirect) }
 
+    /** "enabled", "disabled", "incomplete" or "unknown". */
+    suspend fun recoveryState(): String = run { it.recoveryState() }
+
+    /** Turn recovery on and return the key, once. Never store or log it. */
+    suspend fun enableRecovery(): String = run { it.enableRecovery() }
+
+    /** Use a recovery key on this device. */
+    suspend fun recoverWithKey(recoveryKey: String) {
+        run { it.recoverWithKey(recoveryKey) }
+    }
+
     suspend fun inviteUser(roomId: String, userId: String) {
         run { it.inviteUser(roomId, userId) }
     }

@@ -417,6 +417,26 @@ public final class Session {
         await spaces.refresh()
     }
 
+    // MARK: - Encryption recovery
+    //
+    // Thin pass-throughs: the decisions all live in the core, and a screen that
+    // has to interpret them would be a second place to get them wrong.
+
+    /// "enabled", "disabled", "incomplete" or "unknown".
+    public func recoveryState() async throws -> String {
+        try await client.recoveryState()
+    }
+
+    /// Turn recovery on and return the key, once. Never store or log it.
+    public func enableRecovery() async throws -> String {
+        try await client.enableRecovery()
+    }
+
+    /// Use a recovery key on this device.
+    public func recoverWithKey(_ key: String) async throws {
+        try await client.recoverWithKey(recoveryKey: key)
+    }
+
     public func signOut() async {
         try? await client.logout()
         pump.finish()

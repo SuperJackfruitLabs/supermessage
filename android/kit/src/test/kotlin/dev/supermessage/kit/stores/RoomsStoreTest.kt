@@ -227,6 +227,7 @@ class RoomsStoreTest {
         override fun directRoomWith(userId: String): String? = throw NotImplementedError()
         override fun editMessage(roomId: String, eventId: String, body: String): Unit =
             throw NotImplementedError()
+        override fun enableRecovery(): String = throw NotImplementedError()
         override fun inviteUser(roomId: String, userId: String): Unit = throw NotImplementedError()
         override fun joinRoom(roomId: String): Unit = throw NotImplementedError()
         override fun joinRoomByAlias(aliasOrId: String): String = throw NotImplementedError()
@@ -238,6 +239,8 @@ class RoomsStoreTest {
         override fun markRoomRead(roomId: String): Unit = throw NotImplementedError()
         override fun mediaFetch(eventId: String): String? = throw NotImplementedError()
         override fun memberAvatar(mxcUri: String): String? = throw NotImplementedError()
+        override fun recoverWithKey(recoveryKey: String): Unit = throw NotImplementedError()
+        override fun recoveryState(): String = throw NotImplementedError()
         override fun restoreSession(sink: EventSink): Boolean = throw NotImplementedError()
         override fun roomAvatar(roomId: String): String? = throw NotImplementedError()
         override fun roomAvatarFull(roomId: String): String? = throw NotImplementedError()

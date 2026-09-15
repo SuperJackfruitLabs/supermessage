@@ -72,9 +72,17 @@ fun AccountPanel(
     onSignOut: suspend () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    // Defaulted so existing callers and tests compile unchanged; the real ones
+    // are wired at the call site. A screen that cannot reach recovery shows
+    // "unknown", which reads as "checking" — never as "not set up".
+    recoveryState: suspend () -> String = { "unknown" },
+    onEnableRecovery: suspend () -> String = { "" },
+    onRecoverWithKey: suspend (String) -> Unit = {},
 ) {
     var account by remember { mutableStateOf<AccountDto?>(null) }
     var confirmingSignOut by remember { mutableStateOf(false) }
+    var showingRecovery by remember { mutableStateOf(false) }
+    var recovery by remember { mutableStateOf("unknown") }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -146,6 +154,26 @@ fun AccountPanel(
         }
 
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+        // Beside `Sign out` because it is the same rarely-visited class of
+        // account action — and because the day it is needed is the day someone
+        // is setting up a new device and looking for exactly this.
+        TextButton(
+            onClick = {
+                showingRecovery = true
+                scope.launch { recovery = runCatching { recoveryState() }.getOrDefault("unknown") }
+            },
+            modifier = Modifier.testTag("account-recovery"),
+        ) { Text("Encryption recovery") }
+
+        if (showingRecovery) {
+            RecoveryPanel(
+                state = recovery,
+                onEnable = onEnableRecovery,
+                onRecover = onRecoverWithKey,
+                onClose = { showingRecovery = false },
+            )
+        }
 
         TextButton(
             onClick = { confirmingSignOut = true },
