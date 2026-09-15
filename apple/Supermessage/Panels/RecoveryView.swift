@@ -90,7 +90,7 @@ struct RecoveryView: View {
                             Button("Restore") { Task { await restore() } }
                                 .disabled(busy || entered.trimmingCharacters(in: .whitespaces).isEmpty)
                         } header: {
-                            Text("This device is missing your keys")
+                            Text("This device is missing your encryption keys")
                         } footer: {
                             Text("Enter your recovery key to read your earlier messages here.")
                         }
