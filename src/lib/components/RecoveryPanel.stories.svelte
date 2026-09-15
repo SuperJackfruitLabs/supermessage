@@ -1,6 +1,31 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
-  import { expect, userEvent, within } from "storybook/test";
+
+  /**
+   * Driven with plain DOM rather than `storybook/test`.
+   *
+   * Importing that pulls the interactions instrumenter into the preview bundle
+   * for *every* story, and it does not leave the pixels alone: it moved three
+   * of them in `live-liveturnbubble--several-paragraphs`, a component these
+   * stories have nothing to do with — text subpixel antialiasing, identical to
+   * the eye, and over the screenshot gate's tolerance. Proven by re-running
+   * main's own gate on the same runner, where it passes.
+   *
+   * A helper that clicks and waits costs eight lines and leaves the other
+   * eighty-four frames exactly as they were.
+   */
+  const settled = async (find: () => Element | null | undefined, ms = 2000) => {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const found = find();
+      if (found) return found;
+      if (Date.now() > deadline) throw new Error("timed out waiting for the panel to settle");
+      await new Promise((r) => setTimeout(r, 16));
+    }
+  };
+
+  const buttonNamed = (root: HTMLElement, label: string) =>
+    [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === label);
 
   import RecoveryPanel from "./RecoveryPanel.svelte";
 
@@ -65,9 +90,11 @@
     // back, and a story that merely *described* it rendered the previous
     // screen instead — the contact sheet caught it as a frame identical to
     // "Not set up", which is exactly what that duplicate check is for.
-    const panel = within(canvasElement);
-    await userEvent.click(await panel.findByRole("button", { name: "Set up recovery" }));
-    await expect(await panel.findByTestId("recovery-key")).toBeInTheDocument();
+    const root = canvasElement as HTMLElement;
+    (await settled(() => buttonNamed(root, "Set up recovery"))).dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settled(() => root.querySelector("[data-testid='recovery-key']"));
   }}
 />
 
@@ -76,9 +103,17 @@
   name="Wrong key"
   args={{ state: "incomplete", onEnable: key, onRecover: refuse, onClose: () => {} }}
   play={async ({ canvasElement }) => {
-    const panel = within(canvasElement);
-    await userEvent.type(await panel.findByLabelText("Recovery key"), "EsTb wrong key");
-    await userEvent.click(await panel.findByRole("button", { name: "Restore" }));
-    await expect(await panel.findByRole("alert")).toBeInTheDocument();
+    const root = canvasElement as HTMLElement;
+    const field = (await settled(() =>
+      root.querySelector("input[aria-label='Recovery key']"),
+    )) as HTMLInputElement;
+    // `input` rather than keystrokes: Svelte binds on `input`, and typing
+    // character by character buys nothing a screenshot can show.
+    field.value = "EsTb wrong key";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    (await settled(() => buttonNamed(root, "Restore"))).dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settled(() => root.querySelector("[role='alert']"));
   }}
 />
