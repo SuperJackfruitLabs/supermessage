@@ -1226,7 +1226,6 @@ fn load_or_create_passphrase(store: &dyn SecretStore) -> CoreResult<String> {
     Ok(passphrase)
 }
 
-
 /// Whether a room being created now should be encrypted from birth.
 ///
 /// Encrypted unless an agent is being invited. An agent reads its room through
@@ -1257,7 +1256,9 @@ mod tests {
     fn a_room_that_invites_an_agent_is_left_in_the_clear() {
         // Not a preference — a room encrypted around a harness-mode agent is
         // one that agent can never read, and `m.room.encryption` has no undo.
-        assert!(!encrypt_from_birth(&["@agent_ganesha:id.agentpod.dev".to_string()]));
+        assert!(!encrypt_from_birth(&[
+            "@agent_ganesha:id.agentpod.dev".to_string()
+        ]));
         assert!(!encrypt_from_birth(&[
             "@rakesh:id.agentpod.dev".to_string(),
             "@agent_59099bf1:id.agentpod.dev".to_string(),
@@ -1268,8 +1269,12 @@ mod tests {
     fn a_user_merely_named_like_an_agent_elsewhere_does_not_disarm_it() {
         // The prefix is anchored: `@agent_` starts the localpart or it does not
         // count. A homeserver called `agent_pod.example` is not an agent.
-        assert!(encrypt_from_birth(&["@rakesh:agent_pod.example".to_string()]));
-        assert!(encrypt_from_birth(&["@not_agent_x:id.agentpod.dev".to_string()]));
+        assert!(encrypt_from_birth(&[
+            "@rakesh:agent_pod.example".to_string()
+        ]));
+        assert!(encrypt_from_birth(&[
+            "@not_agent_x:id.agentpod.dev".to_string()
+        ]));
     }
 
     #[tokio::test]
