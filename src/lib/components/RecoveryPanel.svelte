@@ -213,6 +213,16 @@
             void reset();
           }}
         >
+          <!--
+            The consequence stays on screen next to the button that causes it.
+            It used to be replaced by the sentence about the password, so the
+            one moment a reader was deciding to destroy a backup was the one
+            moment nothing on screen said a backup would be destroyed.
+          -->
+          <p class="text-ui text-content-muted">
+            Anything backed up under the old key is lost, and your other devices will need
+            verifying again. Messages already on this device stay readable.
+          </p>
           <p class="text-ui text-content-muted">
             Your password confirms this with your homeserver. It is used once and not
             stored.

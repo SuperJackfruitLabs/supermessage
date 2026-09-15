@@ -166,9 +166,15 @@ struct RecoveryView: View {
         } header: {
             Text("No recovery key?")
         } footer: {
+            // The consequence stays beside the button that causes it. An
+            // earlier version swapped it for the sentence about the password,
+            // so the one moment a reader was deciding to destroy a backup was
+            // the one moment nothing on screen said so.
             Text(
                 resetting
-                    ? "Your password confirms this with your homeserver. It is used once and "
+                    ? "Anything backed up under the old key is lost, and your other devices will "
+                        + "need verifying again. Messages already on this device stay readable. "
+                        + "Your password confirms this with your homeserver; it is used once and "
                         + "not stored."
                     : "Start again with a new recovery key. Messages already on this device stay "
                         + "readable, but anything backed up under the old key is lost, and your "

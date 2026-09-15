@@ -146,9 +146,15 @@ fun RecoveryPanel(
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                     )
+                    // The consequence stays beside the button that causes it.
+                    // An earlier version swapped it for the sentence about the
+                    // password, so the one moment a reader was deciding to
+                    // destroy a backup was the one moment nothing said so.
                     Text(
-                        "Your password confirms this with your homeserver. It is used once and " +
-                            "not stored.",
+                        "Anything backed up under the old key is lost, and your other devices " +
+                            "will need verifying again. Messages already on this device stay " +
+                            "readable. Your password confirms this with your homeserver; it is " +
+                            "used once and not stored.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Button(
