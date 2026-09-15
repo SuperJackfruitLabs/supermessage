@@ -654,6 +654,19 @@ class Session(
         spaces.refresh()
     }
 
+    // Encryption recovery: thin pass-throughs. The decisions live in the core,
+    // and a screen that had to interpret them would be a second place to get
+    // them wrong.
+
+    /** "enabled", "disabled", "incomplete" or "unknown". */
+    suspend fun recoveryState(): String = client.recoveryState()
+
+    /** Turn recovery on and return the key, once. Never store or log it. */
+    suspend fun enableRecovery(): String = client.enableRecovery()
+
+    /** Use a recovery key on this device. */
+    suspend fun recoverWithKey(key: String) = client.recoverWithKey(key)
+
     suspend fun signOut() {
         try {
             client.logout()

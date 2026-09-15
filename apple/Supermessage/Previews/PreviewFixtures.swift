@@ -161,6 +161,11 @@ struct PreviewClient: SessionClient {
     func createRoom(name: String, invite: [String], isDirect: Bool) async throws -> String {
         PreviewFixtures.roomId
     }
+    // Recovery, for previews. `enabled` because that is the state a signed-in
+    // account spends its life in; the other three get their own previews.
+    func recoveryState() async throws -> String { "enabled" }
+    func enableRecovery() async throws -> String { PreviewFixtures.recoveryKey }
+    func recoverWithKey(recoveryKey: String) async throws {}
     func directRoomWith(userId: String) async throws -> String? { PreviewFixtures.roomId }
     func roomInviter(roomId: String) async throws -> String? { "@krishna:example.org" }
 
@@ -190,6 +195,8 @@ struct PreviewClient: SessionClient {
 
 enum PreviewFixtures {
     static let roomId = "!atlas:example.org"
+    /// A real recovery key's shape: base58 in groups of four.
+    static let recoveryKey = "EsTb 8Qn4 7rGa 2mVd 9pLx 3kWc 6yHf 1tRj"
 
     // MARK: Timeline rows
 

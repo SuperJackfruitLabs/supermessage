@@ -188,6 +188,11 @@ class InvitationTest {
         override fun login(homeserver: String, username: String, password: String, sink: EventSink): Unit =
             throw NotImplementedError()
         override fun logout(): Unit = throw NotImplementedError()
+        // Recovery is not what these tests are about; they fail loudly rather
+        // than pretending, like every other unused member of this fake.
+        override fun recoveryState(): String = throw NotImplementedError()
+        override fun enableRecovery(): String = throw NotImplementedError()
+        override fun recoverWithKey(recoveryKey: String): Unit = throw NotImplementedError()
         override fun markRoomRead(roomId: String): Unit = throw NotImplementedError()
         override fun mediaFetch(eventId: String): String? = throw NotImplementedError()
         override fun memberAvatar(mxcUri: String): String? = throw NotImplementedError()

@@ -13,6 +13,7 @@ struct AccountPanel: View {
 
     @State private var account: AccountDto?
     @State private var confirmingSignOut = false
+    @State private var showingRecovery = false
 
     var body: some View {
         NavigationStack {
@@ -45,6 +46,14 @@ struct AccountPanel: View {
                 }
 
                 Section {
+                    // Beside `Sign out` because it is the same rarely-visited
+                    // class of account action — and because the day it is
+                    // needed is the day someone is setting up a new device and
+                    // looking for exactly this.
+                    Button("Encryption recovery") { showingRecovery = true }
+                }
+
+                Section {
                     Button("Sign out", role: .destructive) { confirmingSignOut = true }
                 } footer: {
                     // Said plainly, because it is true and because signing out
@@ -52,6 +61,9 @@ struct AccountPanel: View {
                     // encrypted store goes with it.
                     Text("Signing out removes this account and its messages from this device.")
                 }
+            }
+            .sheet(isPresented: $showingRecovery) {
+                RecoveryView(session: session) { showingRecovery = false }
             }
             .navigationTitle("Account")
             .navigationBarTitleDisplayMode(.inline)

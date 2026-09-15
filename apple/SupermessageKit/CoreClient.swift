@@ -136,6 +136,18 @@ public actor CoreClient {
         try await run { try $0.createRoom(name: name, invite: invite, isDirect: isDirect) }
     }
 
+    public func recoveryState() async throws -> String {
+        try await run { try $0.recoveryState() }
+    }
+
+    public func enableRecovery() async throws -> String {
+        try await run { try $0.enableRecovery() }
+    }
+
+    public func recoverWithKey(recoveryKey: String) async throws {
+        try await run { try $0.recoverWithKey(recoveryKey: recoveryKey) }
+    }
+
     public func inviteUser(roomId: String, userId: String) async throws {
         try await run { try $0.inviteUser(roomId: roomId, userId: userId) }
     }

@@ -113,6 +113,11 @@ public protocol RoomMembership: Sendable {
     func joinRoomByAlias(aliasOrId: String) async throws -> String
     func leaveRoom(roomId: String) async throws
     func createRoom(name: String, invite: [String], isDirect: Bool) async throws -> String
+    /// "enabled", "disabled", "incomplete" or "unknown" — see `RecoveryView`.
+    func recoveryState() async throws -> String
+    /// Returns the recovery key, once. Never store or log it.
+    func enableRecovery() async throws -> String
+    func recoverWithKey(recoveryKey: String) async throws
     func directRoomWith(userId: String) async throws -> String?
     func roomInviter(roomId: String) async throws -> String?
 }

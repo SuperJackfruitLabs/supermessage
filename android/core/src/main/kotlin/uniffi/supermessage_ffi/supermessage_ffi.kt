@@ -913,6 +913,12 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -960,6 +966,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_edit_message(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_enable_recovery(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_invite_user(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_join_room(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -979,6 +987,10 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_media_fetch(`ptr`: Pointer,`eventId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_member_avatar(`ptr`: Pointer,`mxcUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_recover_with_key(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_recovery_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_restore_session(`ptr`: Pointer,`sink`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -1188,6 +1200,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_edit_message(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_enable_recovery(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_invite_user(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_join_room(
@@ -1207,6 +1221,10 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_method_core_media_fetch(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_member_avatar(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_recover_with_key(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_recovery_state(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_restore_session(
     ): Short
@@ -1329,6 +1347,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_edit_message() != 26116.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_enable_recovery() != 28545.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_invite_user() != 43593.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1357,6 +1378,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_member_avatar() != 39314.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_recover_with_key() != 27628.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_restore_session() != 6863.toShort()) {
@@ -1862,6 +1889,16 @@ public interface CoreInterface {
     fun `editMessage`(`roomId`: kotlin.String, `eventId`: kotlin.String, `body`: kotlin.String)
     
     /**
+     * Turn recovery on and return the key, once.
+     *
+     * Show it and forget it. There is deliberately no way to ask for it again:
+     * an app that can re-display a recovery key is an app that stored one.
+     * Never log it, never put it in analytics, never write it to a crash
+     * report.
+     */
+    fun `enableRecovery`(): kotlin.String
+    
+    /**
      * Invite someone to a room.
      */
     fun `inviteUser`(`roomId`: kotlin.String, `userId`: kotlin.String)
@@ -1921,6 +1958,23 @@ public interface CoreInterface {
      * A member's avatar as a `data:` URI, given its `mxc:` URI.
      */
     fun `memberAvatar`(`mxcUri`: kotlin.String): kotlin.String?
+    
+    /**
+     * Use a recovery key on this device, to read what other devices hold.
+     */
+    fun `recoverWithKey`(`recoveryKey`: kotlin.String)
+    
+    /**
+     * How encryption recovery stands: "enabled", "disabled", "incomplete" or
+     * "unknown".
+     *
+     * A string rather than an enum because it crosses two FFI boundaries and
+     * the callers only ever switch on it. `"unknown"` means the first sync has
+     * not answered yet — a screen must say "checking", never "not set up",
+     * because offering a second recovery key to somebody who already has one
+     * is how the first one is orphaned.
+     */
+    fun `recoveryState`(): kotlin.String
     
     /**
      * Pick up a session stored from a previous run.
@@ -2331,6 +2385,27 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Turn recovery on and return the key, once.
+     *
+     * Show it and forget it. There is deliberately no way to ask for it again:
+     * an app that can re-display a recovery key is an app that stored one.
+     * Never log it, never put it in analytics, never write it to a crash
+     * report.
+     */
+    @Throws(FfiException::class)override fun `enableRecovery`(): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_enable_recovery(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Invite someone to a room.
      */
     @Throws(FfiException::class)override fun `inviteUser`(`roomId`: kotlin.String, `userId`: kotlin.String)
@@ -2488,6 +2563,44 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_member_avatar(
         it, FfiConverterString.lower(`mxcUri`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Use a recovery key on this device, to read what other devices hold.
+     */
+    @Throws(FfiException::class)override fun `recoverWithKey`(`recoveryKey`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_recover_with_key(
+        it, FfiConverterString.lower(`recoveryKey`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * How encryption recovery stands: "enabled", "disabled", "incomplete" or
+     * "unknown".
+     *
+     * A string rather than an enum because it crosses two FFI boundaries and
+     * the callers only ever switch on it. `"unknown"` means the first sync has
+     * not answered yet — a screen must say "checking", never "not set up",
+     * because offering a second recovery key to somebody who already has one
+     * is how the first one is orphaned.
+     */
+    @Throws(FfiException::class)override fun `recoveryState`(): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_recovery_state(
+        it, _status)
 }
     }
     )
