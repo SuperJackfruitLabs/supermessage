@@ -129,6 +129,17 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
         }
     }
 
+    // The key generated at sign-in, shown where the reader already is.
+    //
+    // Presented from the root rather than from the account panel because the
+    // reader has not gone looking for it: it arrives a moment after the first
+    // sign-in, and the alternative was an account whose backup could never be
+    // opened by anyone, silently.
+    val newRecoveryKey by session.newRecoveryKey.collectAsStateWithLifecycle()
+    newRecoveryKey?.let { key ->
+        NewRecoveryKeyDialog(key = key, onDone = session::clearNewRecoveryKey)
+    }
+
     // The roster's own three remembered choices — see
     // RosterPreferences for why each defaults the way it does.
     val rosterView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
@@ -524,6 +535,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             recoveryState = session::recoveryState,
                             onEnableRecovery = session::enableRecovery,
                             onRecoverWithKey = session::recoverWithKey,
+                            onResetRecovery = session::resetRecovery,
                         )
 
                     null -> {}

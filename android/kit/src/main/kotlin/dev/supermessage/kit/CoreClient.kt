@@ -132,6 +132,12 @@ class CoreClient(
     suspend fun enableRecovery(): String = run { it.enableRecovery() }
 
     /** Use a recovery key on this device. */
+    /** The key to show once at sign-in, or null when there was nothing to do. */
+    suspend fun ensureRecovery(): String? = run { it.ensureRecovery() }
+
+    /** Destructive: replaces the identity and returns a new key. */
+    suspend fun resetRecovery(password: String): String = run { it.resetRecovery(password) }
+
     suspend fun recoverWithKey(recoveryKey: String) {
         run { it.recoverWithKey(recoveryKey) }
     }

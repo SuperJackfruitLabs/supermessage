@@ -148,6 +148,14 @@ public actor CoreClient {
         try await run { try $0.recoverWithKey(recoveryKey: recoveryKey) }
     }
 
+    public func ensureRecovery() async throws -> String? {
+        try await run { try $0.ensureRecovery() }
+    }
+
+    public func resetRecovery(password: String) async throws -> String {
+        try await run { try $0.resetRecovery(password: password) }
+    }
+
     public func inviteUser(roomId: String, userId: String) async throws {
         try await run { try $0.inviteUser(roomId: roomId, userId: userId) }
     }

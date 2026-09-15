@@ -37,6 +37,7 @@
   const settle = () => new Promise<void>((r) => setTimeout(r, 400));
   const refuse = () =>
     Promise.reject(new Error("M_FORBIDDEN: that is not this account's recovery key"));
+  const resetTo = () => Promise.resolve(KEY);
 
   const { Story } = defineMeta({
     title: "Encryption/RecoveryPanel",
@@ -44,28 +45,33 @@
   });
 </script>
 
-<!-- Nothing set up yet: the state most accounts open on. -->
-<Story
-  name="Not set up"
-  args={{ state: "disabled", onEnable: key, onRecover: settle, onClose: () => {} }}
-/>
-
 <!--
-  Already on. Deliberately has no "show me my key again" — there is no such
-  thing, and a button implying otherwise would be a lie about what was stored.
+  Already covered. Deliberately has no "show me my key again" — there is no
+  such thing, and a button implying otherwise would be a lie about what was
+  stored.
 -->
 <Story
   name="Already on"
-  args={{ state: "enabled", onEnable: key, onRecover: settle, onClose: () => {} }}
+  args={{ state: "enabled", onEnable: key, onRecover: settle, onReset: resetTo, onClose: () => {} }}
 />
 
 <!--
-  The account has recovery; this device does not hold the secrets. The one
-  state where the entry field is the primary action rather than a way back.
+  Stranded: this device cannot read the history.
+  
+  `disabled` renders this same frame and deliberately has no story of its own —
+  it would be byte-identical, and the contact sheet's duplicate check would
+  rightly call that a defect. The two states differ only in which of the two
+  actions below resolves them, which is a difference the buttons already make.
 -->
 <Story
   name="This device is missing keys"
-  args={{ state: "incomplete", onEnable: key, onRecover: settle, onClose: () => {} }}
+  args={{
+    state: "incomplete",
+    onEnable: key,
+    onRecover: settle,
+    onReset: resetTo,
+    onClose: () => {},
+  }}
 />
 
 <!--
@@ -74,7 +80,33 @@
 -->
 <Story
   name="Still checking"
-  args={{ state: "unknown", onEnable: key, onRecover: settle, onClose: () => {} }}
+  args={{ state: "unknown", onEnable: key, onRecover: settle, onReset: resetTo, onClose: () => {} }}
+/>
+
+<!--
+  The escape hatch, mid-flow, asking for the password.
+  
+  Worth a frame of its own because this is the last screen before something
+  destructive happens, and it is the one that has to make the cost legible: the
+  warning above it and a password field are all that stand between a reader and
+  a deleted backup.
+-->
+<Story
+  name="Starting over"
+  args={{
+    state: "incomplete",
+    onEnable: key,
+    onRecover: settle,
+    onReset: resetTo,
+    onClose: () => {},
+  }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    (await settled(() => buttonNamed(root, "Start over with a new key"))).dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settled(() => root.querySelector("input[type='password']"));
+  }}
 />
 
 <!--
@@ -84,14 +116,32 @@
 -->
 <Story
   name="The key, shown once"
-  args={{ state: "disabled", onEnable: key, onRecover: settle, onClose: () => {} }}
+  args={{
+    state: "incomplete",
+    onEnable: key,
+    onRecover: settle,
+    onReset: resetTo,
+    onClose: () => {},
+  }}
   play={async ({ canvasElement }) => {
     // Driven rather than posed. This state only exists after the key comes
     // back, and a story that merely *described* it rendered the previous
     // screen instead — the contact sheet caught it as a frame identical to
-    // "Not set up", which is exactly what that duplicate check is for.
+    // another, which is exactly what that duplicate check is for.
+    //
+    // Reached through the reset now rather than through "Set up recovery":
+    // that button belonged to the `disabled` screen, which no longer exists
+    // as a screen of its own.
     const root = canvasElement as HTMLElement;
-    (await settled(() => buttonNamed(root, "Set up recovery"))).dispatchEvent(
+    (await settled(() => buttonNamed(root, "Start over with a new key"))).dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    const password = (await settled(() =>
+      root.querySelector("input[type='password']"),
+    )) as HTMLInputElement;
+    password.value = "hunter2";
+    password.dispatchEvent(new Event("input", { bubbles: true }));
+    (await settled(() => buttonNamed(root, "Start over"))).dispatchEvent(
       new MouseEvent("click", { bubbles: true }),
     );
     await settled(() => root.querySelector("[data-testid='recovery-key']"));
@@ -101,7 +151,13 @@
 <!-- A wrong key. The panel stays open, because the user needs another go. -->
 <Story
   name="Wrong key"
-  args={{ state: "incomplete", onEnable: key, onRecover: refuse, onClose: () => {} }}
+  args={{
+    state: "incomplete",
+    onEnable: key,
+    onRecover: refuse,
+    onReset: resetTo,
+    onClose: () => {},
+  }}
   play={async ({ canvasElement }) => {
     const root = canvasElement as HTMLElement;
     const field = (await settled(() =>
