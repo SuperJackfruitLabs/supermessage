@@ -582,6 +582,16 @@ public protocol CoreProtocol : AnyObject {
     func editMessage(roomId: String, eventId: String, body: String) throws 
     
     /**
+     * Turn recovery on and return the key, once.
+     *
+     * Show it and forget it. There is deliberately no way to ask for it again:
+     * an app that can re-display a recovery key is an app that stored one.
+     * Never log it, never put it in analytics, never write it to a crash
+     * report.
+     */
+    func enableRecovery() throws  -> String
+    
+    /**
      * Invite someone to a room.
      */
     func inviteUser(roomId: String, userId: String) throws 
@@ -641,6 +651,23 @@ public protocol CoreProtocol : AnyObject {
      * A member's avatar as a `data:` URI, given its `mxc:` URI.
      */
     func memberAvatar(mxcUri: String) throws  -> String?
+    
+    /**
+     * Use a recovery key on this device, to read what other devices hold.
+     */
+    func recoverWithKey(recoveryKey: String) throws 
+    
+    /**
+     * How encryption recovery stands: "enabled", "disabled", "incomplete" or
+     * "unknown".
+     *
+     * A string rather than an enum because it crosses two FFI boundaries and
+     * the callers only ever switch on it. `"unknown"` means the first sync has
+     * not answered yet — a screen must say "checking", never "not set up",
+     * because offering a second recovery key to somebody who already has one
+     * is how the first one is orphaned.
+     */
+    func recoveryState() throws  -> String
     
     /**
      * Pick up a session stored from a previous run.
@@ -997,6 +1024,21 @@ open func editMessage(roomId: String, eventId: String, body: String)throws  {try
 }
     
     /**
+     * Turn recovery on and return the key, once.
+     *
+     * Show it and forget it. There is deliberately no way to ask for it again:
+     * an app that can re-display a recovery key is an app that stored one.
+     * Never log it, never put it in analytics, never write it to a crash
+     * report.
+     */
+open func enableRecovery()throws  -> String {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_enable_recovery(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
      * Invite someone to a room.
      */
 open func inviteUser(roomId: String, userId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
@@ -1109,6 +1151,33 @@ open func memberAvatar(mxcUri: String)throws  -> String? {
     return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_member_avatar(self.uniffiClonePointer(),
         FfiConverterString.lower(mxcUri),$0
+    )
+})
+}
+    
+    /**
+     * Use a recovery key on this device, to read what other devices hold.
+     */
+open func recoverWithKey(recoveryKey: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_recover_with_key(self.uniffiClonePointer(),
+        FfiConverterString.lower(recoveryKey),$0
+    )
+}
+}
+    
+    /**
+     * How encryption recovery stands: "enabled", "disabled", "incomplete" or
+     * "unknown".
+     *
+     * A string rather than an enum because it crosses two FFI boundaries and
+     * the callers only ever switch on it. `"unknown"` means the first sync has
+     * not answered yet — a screen must say "checking", never "not set up",
+     * because offering a second recovery key to somebody who already has one
+     * is how the first one is orphaned.
+     */
+open func recoveryState()throws  -> String {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_recovery_state(self.uniffiClonePointer(),$0
     )
 })
 }
@@ -3509,6 +3578,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_edit_message() != 26116) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_enable_recovery() != 28545) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_invite_user() != 43593) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3537,6 +3609,12 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_member_avatar() != 39314) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_recover_with_key() != 27628) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_restore_session() != 6863) {

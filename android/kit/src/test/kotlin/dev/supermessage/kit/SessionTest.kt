@@ -456,9 +456,12 @@ class SessionTest {
         var timelineSubscribeCallCount = 0
             private set
 
+        override fun enableRecovery(): String = throw NotImplementedError()
         override fun login(homeserver: String, username: String, password: String, sink: EventSink): Unit =
             loginBody(homeserver, username, password, sink)
 
+        override fun recoverWithKey(recoveryKey: String): Unit = throw NotImplementedError()
+        override fun recoveryState(): String = throw NotImplementedError()
         override fun restoreSession(sink: EventSink): Boolean = restoreSessionResult()
 
         override fun logout() {
