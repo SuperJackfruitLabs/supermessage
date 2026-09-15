@@ -20,8 +20,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use matrix_sdk::{
+    encryption::{BackupDownloadStrategy, EncryptionSettings},
     ruma::{
         api::client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
+        events::{room::encryption::RoomEncryptionEventContent, InitialStateEvent},
         EventId, RoomId, RoomOrAliasId, UserId,
     },
     Client,
@@ -36,6 +38,7 @@ use super::error::{CoreError, CoreResult};
 use super::event::{EventSink, FilePicker};
 use super::live;
 use super::media;
+use super::recovery;
 use super::room_info::{self, RoomInfoDto};
 use super::rooms::{self, RoomListHandle, SpaceSelection};
 use super::search::{self, SearchResultDto};
@@ -1000,6 +1003,29 @@ impl Session {
             .filter_map(|id| UserId::parse(id).ok())
             .collect();
 
+        // Encrypted from birth, or not at all.
+        //
+        // Matrix has no un-encrypt: `m.room.encryption` can be set once and
+        // never removed, so it goes in the creation request or the room stays
+        // in the clear forever. Retro-fitting it onto an existing room is the
+        // one thing this must never do.
+        //
+        // **Except when an agent is invited.** An agent reads its room through
+        // the AgentPod bridge, and only bridge-mode agents can do that today —
+        // the fourteen harness-mode agents run their own Matrix client with
+        // encryption switched off, and a room encrypted around one of those is
+        // a room it cannot read, silently and permanently. supermessage cannot
+        // tell the two apart from here, so it declines to encrypt any room it
+        // is inviting an agent into. Agent DMs are created by the bridge
+        // itself, not here, so this costs nothing today and stops a mistake
+        // that could not be undone. Remove it once harness agents have E2EE.
+        if encrypt_from_birth(invite) {
+            request.initial_state = vec![InitialStateEvent::with_empty_state_key(
+                RoomEncryptionEventContent::with_recommended_defaults(),
+            )
+            .to_raw_any()];
+        }
+
         let room = client
             .create_room(request)
             .await
@@ -1126,9 +1152,45 @@ impl Session {
         Client::builder()
             .homeserver_url(homeserver)
             .sqlite_store(self.store_path(), Some(&passphrase))
+            // Encryption is set up at login rather than asked for later.
+            //
+            // `auto_enable_cross_signing` is what makes this account's devices
+            // *verifiable* — without it every login publishes a device nobody
+            // can check, which is the state this app was in: eighteen devices
+            // on one account, none of them signed. It needs an auth the SDK can
+            // replay, and this app logs in with a password, so it qualifies.
+            //
+            // `auto_enable_backups` puts the room keys in server-side backup,
+            // encrypted under a recovery key. Without it, a phone that is lost
+            // takes every conversation on it, and `AfterDecryptionFailure`
+            // means a key is fetched exactly when something cannot be read
+            // rather than downloading the whole backup on sight.
+            .with_encryption_settings(EncryptionSettings {
+                auto_enable_cross_signing: true,
+                auto_enable_backups: true,
+                backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
+            })
             .build()
             .await
             .map_err(|e| CoreError::Network(e.to_string()))
+    }
+
+    /// How recovery stands for this account.
+    pub async fn recovery_state(&self) -> CoreResult<String> {
+        let client = self.require_client().await?;
+        Ok(recovery::state_of(&client).to_string())
+    }
+
+    /// Turn recovery on, returning the key to show the user once.
+    pub async fn enable_recovery(&self) -> CoreResult<String> {
+        let client = self.require_client().await?;
+        recovery::enable(&client).await
+    }
+
+    /// Use a recovery key on this device.
+    pub async fn recover_with_key(&self, recovery_key: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        recovery::recover(&client, recovery_key).await
     }
 
     /// Where the encrypted store lives on disk.
@@ -1164,10 +1226,56 @@ fn load_or_create_passphrase(store: &dyn SecretStore) -> CoreResult<String> {
     Ok(passphrase)
 }
 
+/// Whether a room being created now should be encrypted from birth.
+///
+/// Encrypted unless an agent is being invited. An agent reads its room through
+/// the AgentPod bridge, and only bridge-mode agents can do that today: the
+/// harness-mode ones run their own Matrix client with encryption switched off,
+/// and a room encrypted around one of those is a room it cannot read, silently
+/// and permanently. Nothing here can tell the two apart, and `m.room.encryption`
+/// cannot be undone, so the safe half of the guess is the only one available.
+///
+/// Costs nothing today: agent DMs are created by the bridge, not by this app.
+/// Delete this rule once harness agents have E2EE.
+fn encrypt_from_birth(invite: &[String]) -> bool {
+    !invite.iter().any(|id| id.starts_with("@agent_"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::secrets::MemoryStore;
+
+    #[test]
+    fn a_room_with_no_agent_in_it_is_encrypted_from_birth() {
+        assert!(encrypt_from_birth(&[]));
+        assert!(encrypt_from_birth(&["@rakesh:id.agentpod.dev".to_string()]));
+    }
+
+    #[test]
+    fn a_room_that_invites_an_agent_is_left_in_the_clear() {
+        // Not a preference — a room encrypted around a harness-mode agent is
+        // one that agent can never read, and `m.room.encryption` has no undo.
+        assert!(!encrypt_from_birth(&[
+            "@agent_ganesha:id.agentpod.dev".to_string()
+        ]));
+        assert!(!encrypt_from_birth(&[
+            "@rakesh:id.agentpod.dev".to_string(),
+            "@agent_59099bf1:id.agentpod.dev".to_string(),
+        ]));
+    }
+
+    #[test]
+    fn a_user_merely_named_like_an_agent_elsewhere_does_not_disarm_it() {
+        // The prefix is anchored: `@agent_` starts the localpart or it does not
+        // count. A homeserver called `agent_pod.example` is not an agent.
+        assert!(encrypt_from_birth(&[
+            "@rakesh:agent_pod.example".to_string()
+        ]));
+        assert!(encrypt_from_birth(&[
+            "@not_agent_x:id.agentpod.dev".to_string()
+        ]));
+    }
 
     #[tokio::test]
     async fn require_client_reports_not_ready_before_login() {

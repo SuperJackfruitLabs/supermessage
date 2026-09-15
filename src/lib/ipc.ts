@@ -1009,6 +1009,39 @@ export function makeSessionCommands(onArm: () => void) {
 }
 
 /** Logs out, clearing the session, secrets and local stores. */
+/**
+ * How recovery stands for this account.
+ *
+ * `"unknown"` is not a failure — it is what the SDK reports before the first
+ * sync has told it anything, so a screen opened fast enough will see it and
+ * should say "checking" rather than "not set up". Offering to generate a
+ * second recovery key to somebody who already has one is how the first one
+ * gets orphaned.
+ */
+export async function recoveryState(): Promise<
+  "enabled" | "disabled" | "incomplete" | "unknown"
+> {
+  return invoke<"enabled" | "disabled" | "incomplete" | "unknown">(
+    "recovery_state",
+  );
+}
+
+/**
+ * Turn recovery on and return the key.
+ *
+ * **Shown once and never stored.** There is deliberately no way to ask for it
+ * again: an app that can re-display a recovery key is an app that kept one.
+ * Do not log it, do not put it in analytics, do not persist it.
+ */
+export async function enableRecovery(): Promise<string> {
+  return invoke<string>("enable_recovery");
+}
+
+/** Use a recovery key on this device, to read what other devices already hold. */
+export async function recoverWithKey(recoveryKey: string): Promise<void> {
+  await invoke<void>("recover_with_key", { recoveryKey });
+}
+
 export async function logout(): Promise<void> {
   await invoke<void>("logout");
 }
