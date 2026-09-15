@@ -118,6 +118,10 @@ public protocol RoomMembership: Sendable {
     /// Returns the recovery key, once. Never store or log it.
     func enableRecovery() async throws -> String
     func recoverWithKey(recoveryKey: String) async throws
+    /// The key to show once at sign-in, or nil when there was nothing to do.
+    func ensureRecovery() async throws -> String?
+    /// Destructive: replaces the identity and returns a new key.
+    func resetRecovery(password: String) async throws -> String
     func directRoomWith(userId: String) async throws -> String?
     func roomInviter(roomId: String) async throws -> String?
 }

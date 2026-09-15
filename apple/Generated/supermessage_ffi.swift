@@ -592,6 +592,13 @@ public protocol CoreProtocol : AnyObject {
     func enableRecovery() throws  -> String
     
     /**
+     * Set recovery up at sign-in if this account has none.
+     *
+     * Returns the key to show once, or nothing when there was nothing to do.
+     */
+    func ensureRecovery() throws  -> String?
+    
+    /**
      * Invite someone to a room.
      */
     func inviteUser(roomId: String, userId: String) throws 
@@ -668,6 +675,15 @@ public protocol CoreProtocol : AnyObject {
      * is how the first one is orphaned.
      */
     func recoveryState() throws  -> String
+    
+    /**
+     * Throw the old identity away and start again, returning the new key.
+     *
+     * Destructive: deletes the old backup and replaces the cross-signing
+     * identity. Only for someone with no key and no device that holds the
+     * secrets — the caller must have said as much.
+     */
+    func resetRecovery(password: String) throws  -> String
     
     /**
      * Pick up a session stored from a previous run.
@@ -1039,6 +1055,18 @@ open func enableRecovery()throws  -> String {
 }
     
     /**
+     * Set recovery up at sign-in if this account has none.
+     *
+     * Returns the key to show once, or nothing when there was nothing to do.
+     */
+open func ensureRecovery()throws  -> String? {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_ensure_recovery(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
      * Invite someone to a room.
      */
 open func inviteUser(roomId: String, userId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
@@ -1178,6 +1206,21 @@ open func recoverWithKey(recoveryKey: String)throws  {try rustCallWithError(FfiC
 open func recoveryState()throws  -> String {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_recovery_state(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Throw the old identity away and start again, returning the new key.
+     *
+     * Destructive: deletes the old backup and replaces the cross-signing
+     * identity. Only for someone with no key and no device that holds the
+     * secrets — the caller must have said as much.
+     */
+open func resetRecovery(password: String)throws  -> String {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_reset_recovery(self.uniffiClonePointer(),
+        FfiConverterString.lower(password),$0
     )
 })
 }
@@ -3581,6 +3624,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_enable_recovery() != 28545) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_ensure_recovery() != 63369) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_invite_user() != 43593) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3615,6 +3661,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_reset_recovery() != 24413) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_restore_session() != 6863) {

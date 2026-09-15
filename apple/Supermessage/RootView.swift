@@ -185,6 +185,22 @@ struct SignedInView: View {
         .sheet(isPresented: $showsAccount) {
             AccountPanel(session: session) { showsAccount = false }
         }
+
+        // The key generated at sign-in, shown where the reader already is.
+        //
+        // Presented from here rather than from the account panel because the
+        // reader has not gone looking for it — it arrives a moment after the
+        // first sign-in, and the alternative was an account whose backup could
+        // never be opened by anyone, silently.
+        .sheet(
+            isPresented: Binding(
+                get: { session.newRecoveryKey != nil },
+                set: { if !$0 { session.clearNewRecoveryKey() } })
+        ) {
+            if let key = session.newRecoveryKey {
+                NewRecoveryKeyView(key: key) { session.clearNewRecoveryKey() }
+            }
+        }
         .sheet(isPresented: $showsSearch) {
             // Scoped to the open room when there is one. A reader who opens
             // search from inside a conversation is usually asking about that

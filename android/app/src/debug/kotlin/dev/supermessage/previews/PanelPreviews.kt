@@ -393,25 +393,37 @@ internal fun ShellTablet() {
 @Composable
 internal fun RecoveryEnabled() {
     PreviewGround {
-        RecoveryPanel(state = "enabled", onEnable = { "" }, onRecover = {}, onClose = {})
+        RecoveryPanel(
+            state = "enabled",
+            onEnable = { "" },
+            onRecover = {},
+            onReset = { "" },
+            onClose = {},
+        )
     }
 }
 
-/** A new device that cannot read anything sent before it existed. */
-@Preview(name = "Recovery, keys missing", showBackground = true, heightDp = 320)
+/**
+ * A new device that cannot read anything sent before it existed.
+ *
+ * Also the `disabled` screen: the two states render the same words, which is
+ * the point of collapsing them, so a second preview would be a byte-identical
+ * frame and `snapshot-index.py` would rightly flag it.
+ */
+// Tall enough to show the way out as well as the key field. The frame
+// exists to prove this screen is not a dead end, and a crop that cut off
+// "Start over with a new key" would have shown exactly the dead end.
+@Preview(name = "Recovery, keys missing", showBackground = true, heightDp = 560)
 @Composable
 internal fun RecoveryIncomplete() {
     PreviewGround {
-        RecoveryPanel(state = "incomplete", onEnable = { "" }, onRecover = {}, onClose = {})
-    }
-}
-
-/** No backup at all, which is where every account starts. */
-@Preview(name = "Recovery, not set up", showBackground = true, heightDp = 260)
-@Composable
-internal fun RecoveryDisabled() {
-    PreviewGround {
-        RecoveryPanel(state = "disabled", onEnable = { "" }, onRecover = {}, onClose = {})
+        RecoveryPanel(
+            state = "incomplete",
+            onEnable = { "" },
+            onRecover = {},
+            onReset = { "" },
+            onClose = {},
+        )
     }
 }
 
@@ -420,6 +432,12 @@ internal fun RecoveryDisabled() {
 @Composable
 internal fun RecoveryChecking() {
     PreviewGround {
-        RecoveryPanel(state = "unknown", onEnable = { "" }, onRecover = {}, onClose = {})
+        RecoveryPanel(
+            state = "unknown",
+            onEnable = { "" },
+            onRecover = {},
+            onReset = { "" },
+            onClose = {},
+        )
     }
 }

@@ -78,6 +78,7 @@ fun AccountPanel(
     recoveryState: suspend () -> String = { "unknown" },
     onEnableRecovery: suspend () -> String = { "" },
     onRecoverWithKey: suspend (String) -> Unit = {},
+    onResetRecovery: suspend (String) -> String = { throw NotImplementedError() },
 ) {
     var account by remember { mutableStateOf<AccountDto?>(null) }
     var confirmingSignOut by remember { mutableStateOf(false) }
@@ -171,6 +172,7 @@ fun AccountPanel(
                 state = recovery,
                 onEnable = onEnableRecovery,
                 onRecover = onRecoverWithKey,
+                onReset = onResetRecovery,
                 onClose = { showingRecovery = false },
             )
         }

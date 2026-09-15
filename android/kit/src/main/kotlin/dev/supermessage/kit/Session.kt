@@ -269,6 +269,7 @@ class Session(
             _phase.value = Phase.SIGNED_IN
             beginDraining()
             load()
+            setUpRecoveryIfNeeded()
         } catch (e: CancellationException) {
             throw e
         } catch (e: FfiException) {
@@ -666,6 +667,42 @@ class Session(
 
     /** Use a recovery key on this device. */
     suspend fun recoverWithKey(key: String) = client.recoverWithKey(key)
+
+    /**
+     * A key just generated at sign-in, waiting to be shown once.
+     *
+     * Non-null for exactly as long as it takes the reader to write it down;
+     * the screen that shows it calls [clearNewRecoveryKey] and nothing else
+     * keeps a copy.
+     */
+    private val _newRecoveryKey = MutableStateFlow<String?>(null)
+    val newRecoveryKey: StateFlow<String?> = _newRecoveryKey.asStateFlow()
+
+    fun clearNewRecoveryKey() {
+        _newRecoveryKey.value = null
+    }
+
+    /**
+     * Generate a recovery key at sign-in when the account has none.
+     *
+     * `auto_enable_backups` creates a key backup but not the secret storage
+     * holding that backup's key, so an account with only the former has a
+     * backup nothing can restore from. Setting it up in a settings screen does
+     * not fix that, because the people who most need the key never open it.
+     *
+     * Failures are silent: this is offered on the user's behalf rather than
+     * asked for, and an error about something they did not request would be
+     * noise on the screen they just signed in to.
+     */
+    fun setUpRecoveryIfNeeded() {
+        scope.launch {
+            val key = runCatching { client.ensureRecovery() }.getOrNull()
+            if (!key.isNullOrEmpty()) _newRecoveryKey.value = key
+        }
+    }
+
+    /** Destructive: replaces the identity and returns a new key. */
+    suspend fun resetRecovery(password: String): String = client.resetRecovery(password)
 
     suspend fun signOut() {
         try {

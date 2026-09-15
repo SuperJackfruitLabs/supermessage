@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -32,19 +33,33 @@ import kotlinx.coroutines.launch
  * means. Backup uploads those keys encrypted under a key the server never sees;
  * this screen hands that key over, and uses it on a new device.
  *
- * Four states, four screens, because they are four different situations. Mirrors
- * `RecoveryView.swift` and the desktop `RecoveryPanel.svelte` deliberately: the
- * same words in all three, so one explanation covers the product.
+ * ## Two situations, not four states
+ *
+ * The SDK reports four (`unknown`, `enabled`, `disabled`, `incomplete`) and an
+ * earlier version of this panel drew all four as four different screens. That
+ * was the wrong shape: those words are the SDK's, not a person's, and somebody
+ * told their device "is incomplete" has learned nothing they can act on.
+ *
+ * A person is in one of two situations, each with one action: covered, or
+ * stranded — this device cannot read the history, so either produce the key or
+ * start again. Element reorganised its own version of this screen for the same
+ * reason and arrived at the same two.
+ *
+ * Mirrors `RecoveryView.swift` and the desktop `RecoveryPanel.svelte`
+ * deliberately: the same words in all three, so one explanation covers the
+ * product.
  *
  * @param state "enabled", "disabled", "incomplete" or "unknown"
  * @param onEnable Turns recovery on, returning the key — shown once, never stored.
  * @param onRecover Uses a key on this device.
+ * @param onReset Destructive: replaces the identity, returning a new key.
  */
 @Composable
 fun RecoveryPanel(
     state: String,
     onEnable: suspend () -> String,
     onRecover: suspend (String) -> Unit,
+    onReset: suspend (String) -> String,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -54,6 +69,8 @@ fun RecoveryPanel(
     var busy by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
+    var resetting by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
         Text("Encryption recovery", style = MaterialTheme.typography.titleMedium)
@@ -82,17 +99,10 @@ fun RecoveryPanel(
             // has one is how the first gets orphaned.
             "unknown" -> Text("Checking this account…", modifier = Modifier.padding(top = 8.dp))
 
-            "enabled" -> {
-                Text(
-                    "Recovery is on. Your messages can be restored on a new device with your " +
-                        "recovery key. There is no way to show it again.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                TextButton(onClick = onClose) { Text("Done") }
-            }
-
-            "incomplete" -> {
+            // Stranded. `incomplete` and `disabled` read the same to a person —
+            // the history is not reachable from here — and differ only in which
+            // action fixes it, which the buttons already say.
+            "incomplete", "disabled" -> {
                 Text(
                     "This device is missing your encryption keys. Enter your recovery key to " +
                         "read your earlier messages here.",
@@ -124,32 +134,71 @@ fun RecoveryPanel(
                         }
                     },
                 ) { Text(if (busy) "Restoring…" else "Restore") }
+
+                // The escape hatch, and the reason this panel stopped being a
+                // dead end. Somebody who never had a key used to be shown a
+                // field they could not fill and nothing else.
+                if (resetting) {
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Your password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    )
+                    Text(
+                        "Your password confirms this with your homeserver. It is used once and " +
+                            "not stored.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(
+                        enabled = !busy && password.isNotBlank(),
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                failure = null
+                                try {
+                                    freshKey = onReset(password)
+                                    resetting = false
+                                    password = ""
+                                } catch (e: Exception) {
+                                    failure = e.message
+                                } finally {
+                                    busy = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.padding(top = 8.dp).testTag("recovery-reset-confirm"),
+                    ) { Text(if (busy) "Starting over…" else "Start over") }
+                    TextButton(onClick = {
+                        resetting = false
+                        password = ""
+                        failure = null
+                    }) { Text("Cancel") }
+                } else {
+                    Text(
+                        "No recovery key? Start again with a new one. Messages already on this " +
+                            "device stay readable, but anything backed up under the old key is " +
+                            "lost, and your other devices will need verifying again.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                    TextButton(
+                        onClick = { resetting = true },
+                        modifier = Modifier.testTag("recovery-reset"),
+                    ) { Text("Start over with a new key") }
+                }
             }
 
+            // Covered.
             else -> {
                 Text(
-                    "Set up recovery so you can read your encrypted messages on a new device. " +
-                        "Without it, messages stay on this device only.",
+                    "Your messages can be recovered. They can be restored on a new device with " +
+                        "your recovery key. There is no way to show it again.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp),
                 )
-                Button(
-                    enabled = !busy,
-                    onClick = {
-                        scope.launch {
-                            busy = true
-                            failure = null
-                            try {
-                                freshKey = onEnable()
-                            } catch (e: Exception) {
-                                failure = e.message
-                            } finally {
-                                busy = false
-                            }
-                        }
-                    },
-                    modifier = Modifier.padding(top = 8.dp).testTag("recovery-enable"),
-                ) { Text(if (busy) "Setting up…" else "Set up recovery") }
+                TextButton(onClick = onClose) { Text("Done") }
             }
         }
 

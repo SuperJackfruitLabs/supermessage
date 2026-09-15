@@ -121,6 +121,7 @@ public final class Session {
             phase = .signedIn
             beginDraining()
             await load()
+            setUpRecoveryIfNeeded()
         } catch let error as FfiError {
             failure = ErrorPresenter.message(for: error)
         } catch {
@@ -435,6 +436,52 @@ public final class Session {
     /// Use a recovery key on this device.
     public func recoverWithKey(_ key: String) async throws {
         try await client.recoverWithKey(recoveryKey: key)
+    }
+
+    /// A key just generated at sign-in, waiting to be shown once.
+    ///
+    /// Non-nil for exactly as long as it takes the reader to write it down:
+    /// the screen that shows it calls ``clearNewRecoveryKey()`` on dismissal
+    /// and nothing else keeps a copy.
+    public private(set) var newRecoveryKey: String?
+
+    /// Forget the key once it has been shown.
+    public func clearNewRecoveryKey() { newRecoveryKey = nil }
+
+    /// Generate a recovery key at sign-in when the account has none.
+    ///
+    /// Deliberately not awaited by ``signIn(homeserver:username:password:)``:
+    /// the answer depends on the first sync, and a sign-in that sat waiting
+    /// for it would look broken. The key surfaces a moment later instead.
+    ///
+    /// A failure is silent by design. This is an improvement offered on the
+    /// user's behalf, not something they asked for, and an error about a thing
+    /// they did not request — on the screen they have just signed in to — would
+    /// be noise. The recovery screen states the position plainly whenever they
+    /// go looking.
+    private func setUpRecoveryIfNeeded() {
+        Task { [weak self] in
+            guard let self else { return }
+            if let key = try? await self.client.ensureRecovery(), !key.isEmpty {
+                self.newRecoveryKey = key
+            }
+        }
+    }
+
+    /// Set recovery up at sign-in if this account has none.
+    ///
+    /// Returns the key to show once. `nil` means there was nothing to do,
+    /// which is every sign-in after the first.
+    public func ensureRecovery() async throws -> String? {
+        try await client.ensureRecovery()
+    }
+
+    /// Throw the old identity away and start again, returning the new key.
+    ///
+    /// Destructive: the old backup is deleted and the cross-signing identity
+    /// replaced. Only offered where the alternative is a dead end.
+    public func resetRecovery(password: String) async throws -> String {
+        try await client.resetRecovery(password: password)
     }
 
     public func signOut() async {

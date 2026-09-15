@@ -10,13 +10,24 @@ import SwiftUI
 /// never sees; this screen is where that key is handed over, and where a new
 /// device uses it.
 ///
-/// **Shipped later than the encryption it protects, and that gap was real.**
-/// Build 6 turned on key backup for iOS with no way to see the recovery key, so
-/// an account had a backup it could not unlock from the device that made it.
+/// ## Two situations, not four states
 ///
-/// Four states, four screens, because they are four different situations and
-/// one page that made the reader work out which they were in would be the worst
-/// version of this.
+/// The SDK reports four (`unknown`, `enabled`, `disabled`, `incomplete`) and
+/// an earlier version of this screen showed all four as four different pages.
+/// That was the wrong shape: the words are the SDK's, not a person's, and a
+/// reader who has just been told their device "is incomplete" has learned
+/// nothing they can act on.
+///
+/// A person is in one of two situations, and each has exactly one action:
+///
+///   covered  → the key exists, nothing to do
+///   stranded → this device cannot read the history, so either produce the
+///              key or start again
+///
+/// `unknown` is the absence of an answer and shows a spinner rather than a
+/// guess; `disabled` is now vanishingly rare, because ``Session/ensureRecovery``
+/// sets recovery up at sign-in. Element reorganised its own version of this
+/// screen for the same reason and reached the same two situations.
 struct RecoveryView: View {
     let session: Session
     let onClose: () -> Void
@@ -27,6 +38,8 @@ struct RecoveryView: View {
     @State private var busy = false
     @State private var failure: String?
     @State private var copied = false
+    @State private var resetting = false
+    @State private var password = ""
 
     /// `initialState` is the frame this screen opens on, and it exists because
     /// a snapshot has no time to wait.
@@ -34,77 +47,35 @@ struct RecoveryView: View {
     /// `.task` corrects it a moment later from the session, which is what the
     /// app relies on and why the default is the same `unknown` the app starts
     /// from. But the preview renderer photographs the *first* frame: without
-    /// this, all four previews below would capture "Checking this account…"
-    /// and come out identical — the exact failure `scripts/snapshot-index.py`
-    /// flags, and one already documented there for two other screens.
+    /// this, the previews below would capture "Checking…" and come out
+    /// identical — the exact failure `scripts/snapshot-index.py` flags, and one
+    /// already documented there for two other screens.
     init(session: Session, onClose: @escaping () -> Void, initialState: String = "unknown") {
         self.session = session
         self.onClose = onClose
         _state = State(initialValue: initialState)
     }
 
+    /// Whether this device can read what was backed up.
+    ///
+    /// `incomplete` and `disabled` are the same situation to a reader — the
+    /// history is not reachable from here — and differ only in which action
+    /// fixes it, which is a difference the buttons already express.
+    private var stranded: Bool { state == "incomplete" || state == "disabled" }
+
     var body: some View {
         NavigationStack {
             List {
                 if let freshKey {
-                    Section {
-                        Text(freshKey)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                        Button(copied ? "Copied" : "Copy") {
-                            UIPasteboard.general.string = freshKey
-                            copied = true
-                        }
-                    } header: {
-                        Text("Your recovery key")
-                    } footer: {
-                        // The one moment this key exists outside the SDK. Said
-                        // plainly: losing it costs nothing today and everything
-                        // on the day the phone goes in a river.
-                        Text(
-                            "Save this somewhere safe. It is shown once, and it is the only way to "
-                                + "read your encrypted messages on a new device."
-                        )
-                    }
+                    freshKeySection(freshKey)
+                } else if state == "unknown" {
+                    // Never "not set up": offering a second key to somebody who
+                    // has one is how the first is orphaned.
+                    Section { Text("Checking this account…") }
+                } else if stranded {
+                    strandedSections
                 } else {
-                    switch state {
-                    case "unknown":
-                        // Never "not set up": offering a second key to somebody
-                        // who has one is how the first is orphaned.
-                        Section { Text("Checking this account…") }
-                    case "enabled":
-                        Section {
-                            Text("Recovery is on.")
-                        } footer: {
-                            Text(
-                                "Your messages can be restored on a new device with your recovery key. "
-                                    + "There is no way to show it again — set up recovery afresh if it is lost."
-                            )
-                        }
-                    case "incomplete":
-                        Section {
-                            TextField("Recovery key", text: $entered, axis: .vertical)
-                                .font(.system(.body, design: .monospaced))
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                            Button("Restore") { Task { await restore() } }
-                                .disabled(busy || entered.trimmingCharacters(in: .whitespaces).isEmpty)
-                        } header: {
-                            Text("This device is missing your encryption keys")
-                        } footer: {
-                            Text("Enter your recovery key to read your earlier messages here.")
-                        }
-                    default:
-                        Section {
-                            Button("Set up recovery") { Task { await enable() } }
-                                .disabled(busy)
-                        } footer: {
-                            Text(
-                                "Set up recovery so you can read your encrypted messages on a new "
-                                    + "device. Without it, messages stay on this device only."
-                            )
-                        }
-                    }
+                    coveredSection
                 }
 
                 if let failure {
@@ -120,19 +91,98 @@ struct RecoveryView: View {
         }
     }
 
+    // MARK: The key, shown once
+
+    private func freshKeySection(_ key: String) -> some View {
+        Section {
+            Text(key)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+            Button(copied ? "Copied" : "Copy") {
+                UIPasteboard.general.string = key
+                copied = true
+            }
+        } header: {
+            Text("Your recovery key")
+        } footer: {
+            // The one moment this key exists outside the SDK. Said plainly:
+            // losing it costs nothing today and everything on the day the
+            // phone goes in a river.
+            Text(
+                "Save this somewhere safe. It is shown once, and it is the only way to "
+                    + "read your encrypted messages on a new device."
+            )
+        }
+    }
+
+    // MARK: Covered
+
+    private var coveredSection: some View {
+        Section {
+            Text("Your messages can be recovered.")
+        } footer: {
+            Text(
+                "They can be restored on a new device with your recovery key. There is no way "
+                    + "to show it again — start over below if it is lost."
+            )
+        }
+    }
+
+    // MARK: Stranded — the key, or start again
+
+    @ViewBuilder
+    private var strandedSections: some View {
+        Section {
+            TextField("Recovery key", text: $entered, axis: .vertical)
+                .font(.system(.body, design: .monospaced))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            Button("Restore") { Task { await restore() } }
+                .disabled(busy || entered.trimmingCharacters(in: .whitespaces).isEmpty)
+        } header: {
+            Text("This device is missing your encryption keys")
+        } footer: {
+            Text("Enter your recovery key to read your earlier messages here.")
+        }
+
+        // The escape hatch, and the reason this screen stopped being a dead
+        // end. Without it, somebody who never had a key is shown a field they
+        // cannot fill and given nothing else — which was the state this app
+        // shipped in. Element offers exactly one way out of the same corner
+        // and this is the same one.
+        Section {
+            if resetting {
+                SecureField("Your password", text: $password)
+                Button("Start over", role: .destructive) { Task { await reset() } }
+                    .disabled(busy || password.isEmpty)
+                Button("Cancel") {
+                    resetting = false
+                    password = ""
+                    failure = nil
+                }
+            } else {
+                Button("Start over with a new key") { resetting = true }
+            }
+        } header: {
+            Text("No recovery key?")
+        } footer: {
+            Text(
+                resetting
+                    ? "Your password confirms this with your homeserver. It is used once and "
+                        + "not stored."
+                    : "Start again with a new recovery key. Messages already on this device stay "
+                        + "readable, but anything backed up under the old key is lost, and your "
+                        + "other devices will need verifying again."
+            )
+        }
+    }
+
+    // MARK: Actions
+
     private func refresh() async {
         do { state = try await session.recoveryState() } catch {
             // "unknown" already reads as "checking", which is the honest thing
             // to show when the question could not be asked.
-            failure = error.localizedDescription
-        }
-    }
-
-    private func enable() async {
-        busy = true
-        failure = nil
-        defer { busy = false }
-        do { freshKey = try await session.enableRecovery() } catch {
             failure = error.localizedDescription
         }
     }
@@ -152,16 +202,31 @@ struct RecoveryView: View {
             failure = "That key was not accepted — check it for typos. (\(error.localizedDescription))"
         }
     }
+
+    private func reset() async {
+        busy = true
+        failure = nil
+        defer { busy = false }
+        do {
+            freshKey = try await session.resetRecovery(password: password)
+            state = "enabled"
+            resetting = false
+            password = ""
+        } catch {
+            failure = error.localizedDescription
+        }
+    }
 }
 
 #if DEBUG
-// The four states, which are four different situations.
+// The three frames a person can actually be shown.
 //
-// The two that matter are the two nobody sees while this is working: a device
-// that is missing its keys, and an account with no backup at all. Both are
-// reached on the worst day the account has, which is a poor time to discover
-// the screen was drawn once and never looked at.
-#Preview("Recovery is on") {
+// The one worth having is "stranded": it is reached on the worst day the
+// account has, which is a poor time to find out the screen was drawn once and
+// never looked at. It carries both ways out at once, which is the whole point
+// of the rewrite — the earlier version showed the key field alone and left
+// somebody who had no key with nothing to do.
+#Preview("Covered") {
     RecoveryView(
         session: PreviewFixtures.session(recovery: "enabled"), onClose: {},
         initialState: "enabled"
@@ -169,18 +234,10 @@ struct RecoveryView: View {
     .previewChrome()
 }
 
-#Preview("This device is missing its keys") {
+#Preview("Stranded") {
     RecoveryView(
         session: PreviewFixtures.session(recovery: "incomplete"), onClose: {},
         initialState: "incomplete"
-    )
-    .previewChrome()
-}
-
-#Preview("No backup yet") {
-    RecoveryView(
-        session: PreviewFixtures.session(recovery: "disabled"), onClose: {},
-        initialState: "disabled"
     )
     .previewChrome()
 }
