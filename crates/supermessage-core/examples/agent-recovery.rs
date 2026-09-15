@@ -35,6 +35,21 @@
 //! It prints the recovery key on stdout and nothing else there, so a caller can
 //! capture it with `$(...)`. Everything else goes to stderr.
 //!
+//! ## Signing a device that cannot sign itself
+//!
+//! With `AGENT_SIGN_DEVICE=<device_id>` and `MATRIX_RECOVERY_KEY=<key>` it does
+//! the other half: import the identity from secret storage and cross-sign that
+//! device. That is what closes the gap for a Hermes agent, whose own client
+//! never reaches its `verify_with_recovery_key` branch — reproduced on v0.21.3
+//! with an empty crypto store and INFO logging, where it emits neither success,
+//! failure, nor the bootstrap-skip message.
+//!
+//! Cross-signing does not require a device to sign *itself*. It requires the
+//! user's self-signing key, and this holds it, so it signs on the agent's
+//! behalf. The honest cost: the operator custodies that identity rather than
+//! the agent owning it — better than an identity nobody owns, worse than one
+//! the agent controls, and reversible the day Hermes fixes its side.
+//!
 //! **The key is the agent's history.** It is printed once and never stored by
 //! this tool; the caller writes it to the agent's `.env` as
 //! `MATRIX_RECOVERY_KEY` and protects that file.
@@ -56,6 +71,59 @@ fn required(name: &str) -> String {
             std::process::exit(2);
         }
     }
+}
+
+/// Cross-sign one device with the identity held in secret storage.
+///
+/// `recover()` first, because the keys have to be *here* to sign with: this
+/// process holds them only if it just minted them, or if it imports them from
+/// 4S with the recovery key.
+async fn sign_if_asked(
+    client: &Client,
+    user_id: &OwnedUserId,
+    fresh_key: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Ok(target) = env::var("AGENT_SIGN_DEVICE") else {
+        return Ok(());
+    };
+    let target = target.trim();
+    if target.is_empty() {
+        return Ok(());
+    }
+
+    // A key passed in wins over one just generated: when both exist they are
+    // the same identity, and the caller's is the one on disk for the agent.
+    let key = env::var("MATRIX_RECOVERY_KEY")
+        .ok()
+        .filter(|k| !k.trim().is_empty())
+        .or_else(|| fresh_key.map(str::to_string));
+    let Some(key) = key else {
+        eprintln!("AGENT_SIGN_DEVICE needs MATRIX_RECOVERY_KEY, or a run that just made one");
+        std::process::exit(2);
+    };
+
+    if client.encryption().recovery().state() != RecoveryState::Enabled {
+        eprintln!("importing the identity from secret storage…");
+        client.encryption().recovery().recover(key.trim()).await?;
+    }
+
+    let device = client
+        .encryption()
+        .get_device(user_id, target.into())
+        .await?;
+    let Some(device) = device else {
+        eprintln!("no such device: {target}");
+        std::process::exit(1);
+    };
+
+    if device.is_verified_with_cross_signing() {
+        eprintln!("{target} is already cross-signed");
+        return Ok(());
+    }
+
+    device.verify().await?;
+    eprintln!("signed {target}");
+    Ok(())
 }
 
 #[tokio::main]
@@ -151,6 +219,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  reset done");
     }
 
+    // Sign-only: the identity already exists in secret storage and the caller
+    // just wants a device signed. No reset, no new key, nothing destroyed.
+    if env::var("AGENT_SIGN_ONLY").as_deref() == Ok("1") {
+        sign_if_asked(&client, &user_id, None).await?;
+        let _ = std::fs::remove_dir_all(&dir);
+        return Ok(());
+    }
+
     let key = client
         .encryption()
         .recovery()
@@ -167,6 +243,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // stdout carries the key and nothing else.
     println!("{key}");
+
+    sign_if_asked(&client, &user_id, Some(&key)).await?;
 
     // The store held this account's keys for the length of one bootstrap; an
     // account whose whole problem is owning two crypto stores does not need a
