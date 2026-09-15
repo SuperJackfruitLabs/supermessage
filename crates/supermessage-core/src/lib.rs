@@ -43,6 +43,7 @@ pub mod matrix_links;
 pub mod media;
 pub mod mentions;
 pub mod people;
+pub mod recovery;
 pub mod rich;
 pub mod room_identity;
 pub mod room_info;

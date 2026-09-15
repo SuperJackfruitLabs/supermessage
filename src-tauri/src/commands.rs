@@ -53,6 +53,30 @@ pub async fn restore_session(
 /// Logs out, clearing the session, secrets and local stores. `Session::logout`
 /// stops the focused timeline, sync and room-list streaming itself before it
 /// clears anything else.
+/// How recovery stands: "enabled", "disabled", "incomplete" or "unknown".
+#[tauri::command]
+pub async fn recovery_state(session: State<'_, Session>) -> Result<String, CoreError> {
+    session.recovery_state().await
+}
+
+/// Turn recovery on and return the key, which the UI shows once and forgets.
+///
+/// Never logged. A recovery key in a log file is the same leak as a password
+/// in one, and this is the only place the value ever passes through.
+#[tauri::command]
+pub async fn enable_recovery(session: State<'_, Session>) -> Result<String, CoreError> {
+    session.enable_recovery().await
+}
+
+/// Use a recovery key on this device.
+#[tauri::command]
+pub async fn recover_with_key(
+    session: State<'_, Session>,
+    recovery_key: String,
+) -> Result<(), CoreError> {
+    session.recover_with_key(&recovery_key).await
+}
+
 #[tauri::command]
 pub async fn logout(session: State<'_, Session>) -> Result<(), CoreError> {
     session.logout().await

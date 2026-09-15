@@ -20,7 +20,14 @@
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
-  import { createRoom, joinRoomByAlias, searchMessages } from "$lib/ipc";
+  import {
+    createRoom,
+    enableRecovery,
+    joinRoomByAlias,
+    recoverWithKey,
+    recoveryState as ipcRecoveryState,
+    searchMessages,
+  } from "$lib/ipc";
   import { connectionStore } from "$lib/stores/connection.svelte";
   // Owned here rather than inside the indicators, so those stay components a
   // story can hand a fixture to. See the P2a design's §5.
@@ -44,6 +51,7 @@
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
   import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
+  import RecoveryPanel from "$lib/components/RecoveryPanel.svelte";
 
   let checking = $state(true);
   let restored = $state(false);
@@ -607,6 +615,27 @@
    * the user is logged out regardless, and leaving them staring at a room
    * list for an account that no longer exists would be the worse outcome.
    */
+  /**
+   * The recovery screen, and the state it opens onto.
+   *
+   * Read when the panel opens rather than held live: the state only changes as
+   * a result of what happens *in* the panel, and a subscription would be three
+   * moving parts to save one call.
+   */
+  let recoveryOpen = $state(false);
+  let recoveryState = $state<"enabled" | "disabled" | "incomplete" | "unknown">("unknown");
+
+  async function openRecovery(): Promise<void> {
+    recoveryOpen = true;
+    try {
+      recoveryState = await ipcRecoveryState();
+    } catch (err) {
+      // "unknown" already reads as "checking", which is the honest thing to
+      // show when the question could not be asked.
+      console.error("could not read recovery state", err);
+    }
+  }
+
   async function signOut(): Promise<void> {
     if (signingOut) return;
     signingOut = true;
@@ -740,6 +769,18 @@
             not a primary action, and M0 has no account menu to hang it off.
           -->
           <div class="shrink-0 border-t border-border p-2">
+            <!--
+              Beside `Sign out` because it is the same rarely-visited class of account
+              action — and because the day a user needs it is the day they are setting
+              up a new device and looking for exactly this.
+            -->
+            <button
+              type="button"
+              onclick={() => void openRecovery()}
+              class="w-full rounded-control px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface-sunken"
+            >
+              Encryption recovery
+            </button>
             <button
               type="button"
               onclick={signOut}
@@ -1142,6 +1183,15 @@
     onClose={() => (spaceInviteId = null)}
   />
 {/if}
+
+  {#if recoveryOpen}
+    <RecoveryPanel
+      state={recoveryState}
+      onEnable={enableRecovery}
+      onRecover={recoverWithKey}
+      onClose={() => (recoveryOpen = false)}
+    />
+  {/if}
 
 {#if newRoomOpen}
   <NewRoomPanel

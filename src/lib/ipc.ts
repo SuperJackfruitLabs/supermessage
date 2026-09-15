@@ -213,7 +213,8 @@ export interface RoomInfo {
  * applies — deliberately *not* resolved into a concrete level, see the Rust
  * enum's doc comment.
  */
-export type NotificationMode = "default" | "allMessages" | "mentionsOnly" | "muted";
+export type NotificationMode =
+  "default" | "allMessages" | "mentionsOnly" | "muted";
 
 /**
  * Mirrors `TimelineItemDto` from `src-tauri/src/core/dto.rs`.
@@ -719,7 +720,11 @@ export type RichBlock =
       items: { blocks: RichBlock[] }[];
     }
   | { block: "thematicBreak" }
-  | { block: "table"; header: RichTableCell[]; rows: { cells: RichTableCell[] }[] };
+  | {
+      block: "table";
+      header: RichTableCell[];
+      rows: { cells: RichTableCell[] }[];
+    };
 
 /** One labelled row on a custom-event card. Both halves are display text. */
 export interface CustomEventField {
@@ -804,7 +809,6 @@ export type PlaceholderKind =
   | { about: "unsupportedMessage"; msgtype: string }
   | { about: "unsupportedEvent"; eventType: string };
 
-
 /**
  * The render decision for one item, made by `core::item_view::view_for`.
  */
@@ -824,7 +828,12 @@ export type ItemView =
    */
   | { render: "dateDivider" }
   | { render: "placeholder"; kind: PlaceholderKind; text: string }
-  | { render: "image"; alt: string; width: number | null; height: number | null }
+  | {
+      render: "image";
+      alt: string;
+      width: number | null;
+      height: number | null;
+    }
   | {
       render: "mediaFile";
       label: "File" | "Audio" | "Video";
@@ -832,7 +841,12 @@ export type ItemView =
       size: number | null;
       mimetype: string | null;
     }
-  | { render: "customEvent"; view: CustomEventView; label: string; eventType: string }
+  | {
+      render: "customEvent";
+      view: CustomEventView;
+      label: string;
+      eventType: string;
+    }
   | { render: "none" };
 
 /**
@@ -997,7 +1011,11 @@ export async function coreStatus(): Promise<CoreStatus> {
  */
 export function makeSessionCommands(onArm: () => void) {
   return {
-    async login(homeserver: string, username: string, password: string): Promise<void> {
+    async login(
+      homeserver: string,
+      username: string,
+      password: string,
+    ): Promise<void> {
       onArm();
       await invoke<void>("login", { homeserver, username, password });
     },
@@ -1009,6 +1027,39 @@ export function makeSessionCommands(onArm: () => void) {
 }
 
 /** Logs out, clearing the session, secrets and local stores. */
+/**
+ * How recovery stands for this account.
+ *
+ * `"unknown"` is not a failure — it is what the SDK reports before the first
+ * sync has told it anything, so a screen opened fast enough will see it and
+ * should say "checking" rather than "not set up". Offering to generate a
+ * second recovery key to somebody who already has one is how the first one
+ * gets orphaned.
+ */
+export async function recoveryState(): Promise<
+  "enabled" | "disabled" | "incomplete" | "unknown"
+> {
+  return invoke<"enabled" | "disabled" | "incomplete" | "unknown">(
+    "recovery_state",
+  );
+}
+
+/**
+ * Turn recovery on and return the key.
+ *
+ * **Shown once and never stored.** There is deliberately no way to ask for it
+ * again: an app that can re-display a recovery key is an app that kept one.
+ * Do not log it, do not put it in analytics, do not persist it.
+ */
+export async function enableRecovery(): Promise<string> {
+  return invoke<string>("enable_recovery");
+}
+
+/** Use a recovery key on this device, to read what other devices already hold. */
+export async function recoverWithKey(recoveryKey: string): Promise<void> {
+  await invoke<void>("recover_with_key", { recoveryKey });
+}
+
 export async function logout(): Promise<void> {
   await invoke<void>("logout");
 }
@@ -1086,7 +1137,10 @@ export async function timelineSubscribe(roomId: string): Promise<void> {
  * paginating whatever room ended up focused instead. See
  * {@link CoreErrorKind}'s doc comment.
  */
-export async function timelinePaginateBack(roomId: string, count: number): Promise<boolean> {
+export async function timelinePaginateBack(
+  roomId: string,
+  count: number,
+): Promise<boolean> {
   return invoke<boolean>("timeline_paginate_back", { roomId, count });
 }
 
@@ -1103,7 +1157,9 @@ export async function timelinePaginateBack(roomId: string, count: number): Promi
  * messages under the new room's header, permanently. See
  * `core::timeline::TimelineSnapshot` for the full sequence.
  */
-export async function timelineResync(): Promise<[string, number, TimelineRow[]]> {
+export async function timelineResync(): Promise<
+  [string, number, TimelineRow[]]
+> {
   return invoke<[string, number, TimelineRow[]]>("timeline_resync");
 }
 
@@ -1146,7 +1202,11 @@ export async function sendMessage(
  * `core::item_view`'s `core::item_view::can_reply_or_react` for the rule the
  * webview uses to only ever offer this for an item that already has one.
  */
-export async function sendReply(roomId: string, body: string, inReplyTo: string): Promise<void> {
+export async function sendReply(
+  roomId: string,
+  body: string,
+  inReplyTo: string,
+): Promise<void> {
   await invoke<void>("send_reply", { roomId, body, inReplyTo });
 }
 
@@ -1161,7 +1221,11 @@ export async function sendReply(roomId: string, body: string, inReplyTo: string)
  * {@link sendMessage}'s. `eventId` has the same real-event-id requirement
  * as {@link sendReply}'s `inReplyTo`.
  */
-export async function toggleReaction(roomId: string, eventId: string, key: string): Promise<boolean> {
+export async function toggleReaction(
+  roomId: string,
+  eventId: string,
+  key: string,
+): Promise<boolean> {
   return invoke<boolean>("toggle_reaction", { roomId, eventId, key });
 }
 
@@ -1179,7 +1243,10 @@ export async function toggleReaction(roomId: string, eventId: string, key: strin
  * comment) — but callers should still not invoke this on every keystroke;
  * see `$lib/components/typingTracker.ts`.
  */
-export async function setTyping(roomId: string, typing: boolean): Promise<void> {
+export async function setTyping(
+  roomId: string,
+  typing: boolean,
+): Promise<void> {
   await invoke<void>("set_typing", { roomId, typing });
 }
 
@@ -1247,7 +1314,10 @@ export async function joinRoomByAlias(aliasOrId: string): Promise<string> {
 }
 
 /** Invites somebody to a room this account is in. */
-export async function inviteUser(roomId: string, userId: string): Promise<void> {
+export async function inviteUser(
+  roomId: string,
+  userId: string,
+): Promise<void> {
   return invoke<void>("invite_user", { roomId, userId });
 }
 
@@ -1375,7 +1445,10 @@ export async function rosterHiddenInvitations(
   rows: RoomRow[],
   showsInvitations: boolean,
 ): Promise<number> {
-  return invoke<number>("roster_hidden_invitations", { rows, showsInvitations });
+  return invoke<number>("roster_hidden_invitations", {
+    rows,
+    showsInvitations,
+  });
 }
 
 /**
@@ -1393,7 +1466,10 @@ export async function searchMessages(
   term: string,
   roomId?: string,
 ): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>("search_messages", { term, roomId: roomId ?? null });
+  return invoke<SearchResult[]>("search_messages", {
+    term,
+    roomId: roomId ?? null,
+  });
 }
 
 /**
@@ -1461,7 +1537,9 @@ export async function memberAvatar(mxcUri: string): Promise<string | null> {
  * limit. Staging a second file for the same room replaces the first; see
  * {@link StagedAttachment}.
  */
-export async function attachmentStage(roomId: string): Promise<StagedAttachment | null> {
+export async function attachmentStage(
+  roomId: string,
+): Promise<StagedAttachment | null> {
   return invoke<StagedAttachment | null>("attachment_stage", { roomId });
 }
 
@@ -1488,7 +1566,10 @@ export async function attachmentStage(roomId: string): Promise<StagedAttachment 
  *   because a file on disk can grow between staging and sending (a download
  *   completing, a log file, a video still rendering).
  */
-export async function attachmentSend(roomId: string, token: string): Promise<void> {
+export async function attachmentSend(
+  roomId: string,
+  token: string,
+): Promise<void> {
   await invoke<void>("attachment_send", { roomId, token });
 }
 
@@ -1538,13 +1619,21 @@ export async function attachmentDiscard(token: string): Promise<void> {
  * attribute the file to the room it believes is focused *at the moment the
  * event arrives*, and re-check it before sending.
  */
-export function onStagedAttachment(handler: (staged: StagedAttachment) => void): Promise<UnlistenFn> {
-  return listen<StagedAttachment>(STAGED_ATTACHMENT_EVENT, (event) => handler(event.payload));
+export function onStagedAttachment(
+  handler: (staged: StagedAttachment) => void,
+): Promise<UnlistenFn> {
+  return listen<StagedAttachment>(STAGED_ATTACHMENT_EVENT, (event) =>
+    handler(event.payload),
+  );
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
-export function onRoomsDiff(handler: (env: DiffEnvelope<RoomRow>) => void): Promise<UnlistenFn> {
-  return listen<DiffEnvelope<RoomRow>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));
+export function onRoomsDiff(
+  handler: (env: DiffEnvelope<RoomRow>) => void,
+): Promise<UnlistenFn> {
+  return listen<DiffEnvelope<RoomRow>>(ROOMS_DIFF_EVENT, (event) =>
+    handler(event.payload),
+  );
 }
 
 /**
@@ -1553,7 +1642,9 @@ export function onRoomsDiff(handler: (env: DiffEnvelope<RoomRow>) => void): Prom
  * `null` when the href is not a matrix link at all — the signal
  * `messageLinks.ts` uses to fall back to the system browser unchanged.
  */
-export async function parseMatrixLink(href: string): Promise<MatrixLinkTarget | null> {
+export async function parseMatrixLink(
+  href: string,
+): Promise<MatrixLinkTarget | null> {
   return invoke<MatrixLinkTarget | null>("parse_matrix_link", { href });
 }
 
@@ -1571,8 +1662,12 @@ export async function collectMentions(
 }
 
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */
-export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void): Promise<UnlistenFn> {
-  return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
+export function onTimelineDiff(
+  handler: (env: DiffEnvelope<TimelineRow>) => void,
+): Promise<UnlistenFn> {
+  return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) =>
+    handler(event.payload),
+  );
 }
 
 /**
@@ -1583,7 +1678,9 @@ export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void
  * item yet. Same parser on the Rust side, so a turn does not change appearance
  * the instant it lands.
  */
-export async function richBlocksFromMarkdown(source: string): Promise<RichBlock[]> {
+export async function richBlocksFromMarkdown(
+  source: string,
+): Promise<RichBlock[]> {
   return invoke<RichBlock[]>("rich_blocks_from_markdown", { source });
 }
 
@@ -1601,8 +1698,12 @@ export async function connectionState(): Promise<ConnectionPayload> {
 }
 
 /** Subscribes to connection-health updates on {@link CONNECTION_EVENT}. */
-export function onConnection(handler: (payload: ConnectionPayload) => void): Promise<UnlistenFn> {
-  return listen<ConnectionPayload>(CONNECTION_EVENT, (event) => handler(event.payload));
+export function onConnection(
+  handler: (payload: ConnectionPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<ConnectionPayload>(CONNECTION_EVENT, (event) =>
+    handler(event.payload),
+  );
 }
 
 /**
@@ -1621,7 +1722,9 @@ export interface LivePayload {
 }
 
 /** Subscribes to live turn text on {@link LIVE_EVENT}. */
-export function onLive(handler: (payload: LivePayload) => void): Promise<UnlistenFn> {
+export function onLive(
+  handler: (payload: LivePayload) => void,
+): Promise<UnlistenFn> {
   return listen<LivePayload>(LIVE_EVENT, (event) => handler(event.payload));
 }
 
@@ -1633,7 +1736,9 @@ export function onLive(handler: (payload: LivePayload) => void): Promise<Unliste
  * never reaches a room on either side of the bridge. Watchable while it
  * happens, then gone.
  */
-export function onThought(handler: (payload: LivePayload) => void): Promise<UnlistenFn> {
+export function onThought(
+  handler: (payload: LivePayload) => void,
+): Promise<UnlistenFn> {
   return listen<LivePayload>(THOUGHT_EVENT, (event) => handler(event.payload));
 }
 
@@ -1665,11 +1770,15 @@ export interface ToolPayload {
 }
 
 /** Subscribes to tool-call state on {@link TOOL_EVENT}. */
-export function onTool(handler: (payload: ToolPayload) => void): Promise<UnlistenFn> {
+export function onTool(
+  handler: (payload: ToolPayload) => void,
+): Promise<UnlistenFn> {
   return listen<ToolPayload>(TOOL_EVENT, (event) => handler(event.payload));
 }
 
 /** Subscribes to typing-state updates on {@link TYPING_EVENT}. */
-export function onTyping(handler: (payload: TypingPayload) => void): Promise<UnlistenFn> {
+export function onTyping(
+  handler: (payload: TypingPayload) => void,
+): Promise<UnlistenFn> {
   return listen<TypingPayload>(TYPING_EVENT, (event) => handler(event.payload));
 }

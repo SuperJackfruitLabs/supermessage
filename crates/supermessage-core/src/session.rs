@@ -38,6 +38,7 @@ use super::error::{CoreError, CoreResult};
 use super::event::{EventSink, FilePicker};
 use super::live;
 use super::media;
+use super::recovery;
 use super::room_info::{self, RoomInfoDto};
 use super::rooms::{self, RoomListHandle, SpaceSelection};
 use super::search::{self, SearchResultDto};
@@ -1172,6 +1173,24 @@ impl Session {
             .build()
             .await
             .map_err(|e| CoreError::Network(e.to_string()))
+    }
+
+    /// How recovery stands for this account.
+    pub async fn recovery_state(&self) -> CoreResult<String> {
+        let client = self.require_client().await?;
+        Ok(recovery::state_of(&client).to_string())
+    }
+
+    /// Turn recovery on, returning the key to show the user once.
+    pub async fn enable_recovery(&self) -> CoreResult<String> {
+        let client = self.require_client().await?;
+        recovery::enable(&client).await
+    }
+
+    /// Use a recovery key on this device.
+    pub async fn recover_with_key(&self, recovery_key: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        recovery::recover(&client, recovery_key).await
     }
 
     /// Where the encrypted store lives on disk.
