@@ -26,6 +26,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+
+    // `StubCore` — the CoreInterface every fake extends — lives here rather
+    // than in a test source set because three of them need it: :kit's own unit
+    // tests, :app's unit tests and :app's instrumentation tests. A test source
+    // set is visible to none of the others, which is why twelve copies of it
+    // existed. `testFixtures` is the one place all three can reach that the
+    // release variant still cannot.
+    testFixtures { enable = true }
 }
 
 dependencies {

@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import dev.supermessage.kit.CoreClient
 import dev.supermessage.kit.Session
+import dev.supermessage.kit.StubCore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
@@ -175,7 +176,7 @@ class NewRoomTest {
         // both need an answer whenever createRoom is expected to run.
         private val roomsSnapshotResult: () -> RoomsSnapshot = { RoomsSnapshot(seq = 0uL, rooms = emptyList()) },
         private val spacesListResult: () -> List<SpaceSummary> = { emptyList() },
-    ) : CoreInterface {
+    ) : StubCore() {
         val directRoomWithCalls = mutableListOf<String>()
         val createRoomCalls = mutableListOf<Triple<String, List<String>, Boolean>>()
 
@@ -192,52 +193,7 @@ class NewRoomTest {
         override fun roomsSnapshot(): RoomsSnapshot = roomsSnapshotResult()
         override fun spacesList(): List<SpaceSummary> = spacesListResult()
 
-        override fun account(): AccountDto = throw NotImplementedError()
-        override fun attachmentDiscard(token: String): Unit = throw NotImplementedError()
-        override fun attachmentSend(roomId: String, token: String): Unit = throw NotImplementedError()
-        override fun attachmentStagePath(roomId: String, path: String): StagedFile = throw NotImplementedError()
-        override fun connectionState(): ConnectionState = throw NotImplementedError()
-        override fun deleteMessage(roomId: String, eventId: String): Unit = throw NotImplementedError()
-        override fun editMessage(roomId: String, eventId: String, body: String): Unit = throw NotImplementedError()
-        override fun inviteUser(roomId: String, userId: String): Unit = throw NotImplementedError()
-        override fun joinRoom(roomId: String): Unit = throw NotImplementedError()
-        override fun joinRoomByAlias(aliasOrId: String): String = throw NotImplementedError()
-        override fun knownPeople(): List<PersonDto> = throw NotImplementedError()
-        override fun leaveRoom(roomId: String): Unit = throw NotImplementedError()
-        override fun login(homeserver: String, username: String, password: String, sink: EventSink): Unit =
-            throw NotImplementedError()
-        override fun logout(): Unit = throw NotImplementedError()
         // Recovery is not what these tests are about; they fail loudly rather
         // than pretending, like every other unused member of this fake.
-        override fun recoveryState(): String = throw NotImplementedError()
-        override fun enableRecovery(): String = throw NotImplementedError()
-        override fun recoverWithKey(recoveryKey: String): Unit = throw NotImplementedError()
-        override fun markRoomRead(roomId: String): Unit = throw NotImplementedError()
-        override fun mediaFetch(eventId: String): String? = throw NotImplementedError()
-        override fun memberAvatar(mxcUri: String): String? = throw NotImplementedError()
-        override fun restoreSession(sink: EventSink): Boolean = throw NotImplementedError()
-        override fun roomAvatar(roomId: String): String? = throw NotImplementedError()
-        override fun roomAvatarFull(roomId: String): String? = throw NotImplementedError()
-        override fun roomInfo(roomId: String): RoomInfoDto = throw NotImplementedError()
-        override fun roomInviter(roomId: String): String? = throw NotImplementedError()
-        override fun searchMessages(term: String, roomId: String?): List<SearchResultDto> = throw NotImplementedError()
-        override fun sendMessage(roomId: String, body: String, mentions: List<String>): Unit = throw NotImplementedError()
-        override fun sendReply(roomId: String, body: String, inReplyTo: String): Unit = throw NotImplementedError()
-        override fun sendGateDecision(
-            roomId: String,
-            gateId: String,
-            optionId: String,
-            comment: String?,
-            inReplyTo: String,
-            prompt: String,
-        ): Unit = throw NotImplementedError()
-        override fun setRoomNotifications(roomId: String, mode: NotificationMode): Unit = throw NotImplementedError()
-        override fun setRoomPinned(roomId: String, pinned: Boolean): Unit = throw NotImplementedError()
-        override fun setTyping(roomId: String, typing: Boolean): Unit = throw NotImplementedError()
-        override fun spaceSelect(spaceId: String?): Unit = throw NotImplementedError()
-        override fun timelinePaginateBack(roomId: String, count: UShort): Boolean = throw NotImplementedError()
-        override fun timelineResync(): TimelineSnapshot = throw NotImplementedError()
-        override fun timelineSubscribe(roomId: String, sink: EventSink): Unit = throw NotImplementedError()
-        override fun toggleReaction(roomId: String, eventId: String, key: String): Boolean = throw NotImplementedError()
     }
 }
