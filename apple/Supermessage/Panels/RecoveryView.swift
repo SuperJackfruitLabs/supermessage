@@ -21,12 +21,27 @@ struct RecoveryView: View {
     let session: Session
     let onClose: () -> Void
 
-    @State private var state = "unknown"
+    @State private var state: String
     @State private var freshKey: String?
     @State private var entered = ""
     @State private var busy = false
     @State private var failure: String?
     @State private var copied = false
+
+    /// `initialState` is the frame this screen opens on, and it exists because
+    /// a snapshot has no time to wait.
+    ///
+    /// `.task` corrects it a moment later from the session, which is what the
+    /// app relies on and why the default is the same `unknown` the app starts
+    /// from. But the preview renderer photographs the *first* frame: without
+    /// this, all four previews below would capture "Checking this account…"
+    /// and come out identical — the exact failure `scripts/snapshot-index.py`
+    /// flags, and one already documented there for two other screens.
+    init(session: Session, onClose: @escaping () -> Void, initialState: String = "unknown") {
+        self.session = session
+        self.onClose = onClose
+        _state = State(initialValue: initialState)
+    }
 
     var body: some View {
         NavigationStack {
@@ -138,3 +153,40 @@ struct RecoveryView: View {
         }
     }
 }
+
+#if DEBUG
+// The four states, which are four different situations.
+//
+// The two that matter are the two nobody sees while this is working: a device
+// that is missing its keys, and an account with no backup at all. Both are
+// reached on the worst day the account has, which is a poor time to discover
+// the screen was drawn once and never looked at.
+#Preview("Recovery is on") {
+    RecoveryView(
+        session: PreviewFixtures.session(recovery: "enabled"), onClose: {},
+        initialState: "enabled"
+    )
+    .previewChrome()
+}
+
+#Preview("This device is missing its keys") {
+    RecoveryView(
+        session: PreviewFixtures.session(recovery: "incomplete"), onClose: {},
+        initialState: "incomplete"
+    )
+    .previewChrome()
+}
+
+#Preview("No backup yet") {
+    RecoveryView(
+        session: PreviewFixtures.session(recovery: "disabled"), onClose: {},
+        initialState: "disabled"
+    )
+    .previewChrome()
+}
+
+#Preview("Checking") {
+    RecoveryView(session: PreviewFixtures.session(), onClose: {})
+        .previewChrome()
+}
+#endif

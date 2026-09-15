@@ -8,6 +8,7 @@ import dev.supermessage.InvitationEmptyTimeline
 import dev.supermessage.InvitationView
 import dev.supermessage.LoginScreen
 import dev.supermessage.NewRoomPanel
+import dev.supermessage.RecoveryPanel
 import dev.supermessage.RoomInfoPanel
 import dev.supermessage.RootScaffold
 import dev.supermessage.SearchPanel
@@ -373,5 +374,52 @@ internal fun ShellStarting() {
 internal fun ShellTablet() {
     PreviewGround {
         RootScaffold(phase = Session.Phase.SIGNED_IN)
+    }
+}
+
+/**
+ * Recovery, in each of the four situations it has to explain.
+ *
+ * The two worth having are the two nobody sees while this is working: a
+ * device missing its keys, and an account with no backup at all. Both are
+ * reached on the worst day the account has, which is a poor time to find out
+ * the screen was drawn once and never looked at.
+ *
+ * `unknown` gets one too, because the thing it must never say is "not set
+ * up" — offering a second recovery key to somebody who already has one is
+ * how the first is orphaned.
+ */
+@Preview(name = "Recovery, on", showBackground = true, heightDp = 260)
+@Composable
+internal fun RecoveryEnabled() {
+    PreviewGround {
+        RecoveryPanel(state = "enabled", onEnable = { "" }, onRecover = {}, onClose = {})
+    }
+}
+
+/** A new device that cannot read anything sent before it existed. */
+@Preview(name = "Recovery, keys missing", showBackground = true, heightDp = 320)
+@Composable
+internal fun RecoveryIncomplete() {
+    PreviewGround {
+        RecoveryPanel(state = "incomplete", onEnable = { "" }, onRecover = {}, onClose = {})
+    }
+}
+
+/** No backup at all, which is where every account starts. */
+@Preview(name = "Recovery, not set up", showBackground = true, heightDp = 260)
+@Composable
+internal fun RecoveryDisabled() {
+    PreviewGround {
+        RecoveryPanel(state = "disabled", onEnable = { "" }, onRecover = {}, onClose = {})
+    }
+}
+
+/** Before the answer arrives — "checking", never "not set up". */
+@Preview(name = "Recovery, checking", showBackground = true, heightDp = 200)
+@Composable
+internal fun RecoveryChecking() {
+    PreviewGround {
+        RecoveryPanel(state = "unknown", onEnable = { "" }, onRecover = {}, onClose = {})
     }
 }
