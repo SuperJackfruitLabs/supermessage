@@ -1,5 +1,6 @@
 package dev.supermessage.kit
 
+import dev.supermessage.kit.StubCore
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -126,7 +127,7 @@ class CoreClientTest {
      * [manyBlockingCallsAtOnceDoNotStarveAnything] meaningful without
      * slowing the suite down.
      */
-    private class FakeCore(private val blockMillis: Long = 0) : CoreInterface {
+    private class FakeCore(private val blockMillis: Long = 0) : StubCore() {
         // `manyBlockingCallsAtOnceDoNotStarveAnything` drives this fake from
         // 64 real `Dispatchers.IO` threads at once, all incrementing this
         // counter concurrently. A plain `var Int` loses updates under that —
@@ -150,63 +151,5 @@ class CoreClientTest {
             return ConnectionState(state = "offline", message = null)
         }
 
-        override fun account(): uniffi.supermessage_core.AccountDto = throw NotImplementedError()
-        override fun attachmentDiscard(token: String): Unit = throw NotImplementedError()
-        override fun attachmentSend(roomId: String, token: String): Unit = throw NotImplementedError()
-        override fun attachmentStagePath(roomId: String, path: String): uniffi.supermessage_ffi.StagedFile =
-            throw NotImplementedError()
-        override fun createRoom(name: String, invite: List<String>, isDirect: Boolean): String =
-            throw NotImplementedError()
-        override fun deleteMessage(roomId: String, eventId: String): Unit = throw NotImplementedError()
-        override fun directRoomWith(userId: String): String? = throw NotImplementedError()
-        override fun editMessage(roomId: String, eventId: String, body: String): Unit =
-            throw NotImplementedError()
-        override fun enableRecovery(): String = throw NotImplementedError()
-        override fun inviteUser(roomId: String, userId: String): Unit = throw NotImplementedError()
-        override fun joinRoom(roomId: String): Unit = throw NotImplementedError()
-        override fun joinRoomByAlias(aliasOrId: String): String = throw NotImplementedError()
-        override fun knownPeople(): List<uniffi.supermessage_core.PersonDto> = throw NotImplementedError()
-        override fun leaveRoom(roomId: String): Unit = throw NotImplementedError()
-        override fun login(homeserver: String, username: String, password: String, sink: EventSink): Unit =
-            throw NotImplementedError()
-        override fun logout(): Unit = throw NotImplementedError()
-        override fun markRoomRead(roomId: String): Unit = throw NotImplementedError()
-        override fun mediaFetch(eventId: String): String? = throw NotImplementedError()
-        override fun memberAvatar(mxcUri: String): String? = throw NotImplementedError()
-        override fun recoverWithKey(recoveryKey: String): Unit = throw NotImplementedError()
-        override fun recoveryState(): String = throw NotImplementedError()
-        override fun restoreSession(sink: EventSink): Boolean = throw NotImplementedError()
-        override fun roomAvatar(roomId: String): String? = throw NotImplementedError()
-        override fun roomAvatarFull(roomId: String): String? = throw NotImplementedError()
-        override fun roomInfo(roomId: String): uniffi.supermessage_core.RoomInfoDto =
-            throw NotImplementedError()
-        override fun roomInviter(roomId: String): String? = throw NotImplementedError()
-        override fun roomsSnapshot(): uniffi.supermessage_ffi.RoomsSnapshot = throw NotImplementedError()
-        override fun searchMessages(term: String, roomId: String?): List<uniffi.supermessage_core.SearchResultDto> =
-            throw NotImplementedError()
-        override fun sendMessage(roomId: String, body: String, mentions: List<String>): Unit =
-            throw NotImplementedError()
-        override fun sendReply(roomId: String, body: String, inReplyTo: String): Unit =
-            throw NotImplementedError()
-        override fun sendGateDecision(
-            roomId: String,
-            gateId: String,
-            optionId: String,
-            comment: String?,
-            inReplyTo: String,
-            prompt: String,
-        ): Unit = throw NotImplementedError()
-        override fun setRoomNotifications(roomId: String, mode: uniffi.supermessage_core.NotificationMode): Unit =
-            throw NotImplementedError()
-        override fun setRoomPinned(roomId: String, pinned: Boolean): Unit = throw NotImplementedError()
-        override fun setTyping(roomId: String, typing: Boolean): Unit = throw NotImplementedError()
-        override fun spaceSelect(spaceId: String?): Unit = throw NotImplementedError()
-        override fun spacesList(): List<uniffi.supermessage_core.SpaceSummary> = throw NotImplementedError()
-        override fun timelinePaginateBack(roomId: String, count: UShort): Boolean =
-            throw NotImplementedError()
-        override fun timelineResync(): uniffi.supermessage_ffi.TimelineSnapshot = throw NotImplementedError()
-        override fun timelineSubscribe(roomId: String, sink: EventSink): Unit = throw NotImplementedError()
-        override fun toggleReaction(roomId: String, eventId: String, key: String): Boolean =
-            throw NotImplementedError()
     }
 }

@@ -5,15 +5,43 @@ import Testing
 
 /// Ported from `src/lib/stores/gapSync.test.ts`. Each of the three hazards
 /// below cost a real incident on the desktop app; the comments say which.
-/// Let a resumed continuation run through to its `onUpdate`.
+/// Wait for a resumed continuation to reach its `onUpdate`, by watching for
+/// the thing being waited on.
 ///
-/// A resumption is not synchronous with `resume`, so a handful of hops are
-/// needed before the effect is observable. Named rather than repeated as bare
-/// `Task.yield()` pairs, so a reader can see it is a deliberate settle and not
-/// a magic number someone tuned until the suite went green.
+/// **Ten hops used to be the whole of this, and CI lost that guess.** On a
+/// loaded runner `published.last` was still its pre-resolve value and two
+/// assertions in `suspendsWhileResyncing` failed together. That is precisely
+/// the mistake `Gate.waitUntilCalled` below already carries a comment about —
+/// a guess at how many hops the runtime needs, correct until the machine is
+/// busy — so this is the same repair applied a second time.
+///
+/// The bound is a ceiling rather than a duration: it is reached only by a
+/// genuine hang, and any real settle returns in a few hops.
 @MainActor
-private func settle() async {
-    for _ in 0..<10 { await Task.yield() }
+private func settle(until condition: () -> Bool) async {
+    for _ in 0..<1_000 {
+        if condition() { return }
+        await Task.yield()
+    }
+}
+
+/// The same wait where there is nothing to poll for.
+///
+/// Four waits have no value to watch for. Three precede an assertion that
+/// *nothing* arrived — a stale resync was dropped, another room's snapshot was
+/// refused — where the condition that matters is already true on the first hop
+/// and proves nothing by being checked. The fourth simply lets a stale resync
+/// clear before the test carries on.
+///
+/// So a fixed budget is unavoidable in these four, and this is the only place
+/// in the file where the number does any work. It is generous because the
+/// direction of error is what matters: too few hops means the stale write had
+/// not yet had its chance to land, and the test passes without having tried.
+/// `Task.yield()` on an idle runtime costs nanoseconds, so there is nothing to
+/// buy by being stingy.
+@MainActor
+private func settleFully() async {
+    for _ in 0..<1_000 { await Task.yield() }
 }
 
 @MainActor
@@ -88,7 +116,7 @@ struct GapSyncTests {
         #expect(published == [[1]], "an envelope was applied during the resync")
 
         gate.resolve(seq: 6, items: [1, 2, 3])
-        await settle()
+        await settle(until: { published.last == [1, 2, 3] })
 
         #expect(published.last == [1, 2, 3])
         // The next live envelope is seq + 1 and must resume normally.
@@ -124,7 +152,7 @@ struct GapSyncTests {
         #expect(published.last == [], "a reset must publish an empty list immediately")
 
         gate.resolve(seq: 9, items: [7, 8, 9])
-        await settle()
+        await settleFully()
 
         #expect(published.last == [], "a stale resync landed and clobbered the new context")
     }
@@ -139,13 +167,13 @@ struct GapSyncTests {
         await gate.waitUntilCalled()
         sync.resetForNewSubscription()
         gate.resolve(seq: 9, items: [7])
-        await settle()
+        await settleFully()
 
         // The stale one has cleared; the new context must be able to recover.
         sync.handle(subject: "s", seq: 4, ops: [.append([4])])
         await gate.waitUntilCalled(2)
         gate.resolve(seq: 4, items: [1, 2])
-        await settle()
+        await settle(until: { published.last == [1, 2] })
 
         #expect(published.last == [1, 2])
     }
@@ -186,7 +214,7 @@ struct GapSyncTests {
         sync.handle(subject: "!b:x.org", seq: 5, ops: [.append([5])])  // gap -> resync
         await gate.waitUntilCalled()
         gate.resolve(subject: "!a:x.org", seq: 12, items: [98, 99])
-        await settle()
+        await settleFully()
 
         #expect(published.isEmpty, "another room's snapshot was installed")
     }
@@ -203,7 +231,7 @@ struct GapSyncTests {
         Task { await sync.seed() }
         await gate.waitUntilCalled()
         gate.resolve(seq: 3, items: [1, 2, 3])
-        await settle()
+        await settle(until: { published.last == [1, 2, 3] })
 
         #expect(published.last == [1, 2, 3])
     }
@@ -265,7 +293,7 @@ struct GapSyncTests {
 
         // The old session's resync lands now, carrying its rows.
         gate.resolve(seq: 9, items: [99])
-        await settle()
+        await settleFully()
 
         #expect(
             published.last != [99],

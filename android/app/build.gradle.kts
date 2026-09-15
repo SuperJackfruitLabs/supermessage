@@ -171,6 +171,11 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.datastore.preferences)
 
+    // `StubCore`, which every FakeCore in this module extends. See :kit's
+    // build file for why it is a test fixture and not a test source file.
+    testImplementation(testFixtures(project(":kit")))
+    androidTestImplementation(testFixtures(project(":kit")))
+
     testImplementation(libs.junit)
     // SessionViewModelTest drives suspend functions via runTest — kotlinx's
     // own test dispatcher, not this repo's real Dispatchers.IO. :kit exposes
