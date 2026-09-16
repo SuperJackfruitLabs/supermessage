@@ -3687,7 +3687,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_search_messages() != 28627) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 12791) {
+    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 31962) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384) {
