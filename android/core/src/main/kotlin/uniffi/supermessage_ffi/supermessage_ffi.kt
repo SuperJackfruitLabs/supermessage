@@ -919,6 +919,10 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -968,6 +972,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_enable_recovery(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_ensure_recovery(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_invite_user(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_join_room(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -991,6 +997,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_recover_with_key(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_recovery_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_reset_recovery(`ptr`: Pointer,`password`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_restore_session(`ptr`: Pointer,`sink`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -1202,6 +1210,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_enable_recovery(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_ensure_recovery(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_invite_user(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_join_room(
@@ -1225,6 +1235,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_method_core_recover_with_key(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_recovery_state(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_reset_recovery(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_restore_session(
     ): Short
@@ -1350,6 +1362,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_enable_recovery() != 28545.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_ensure_recovery() != 63369.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_invite_user() != 43593.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1384,6 +1399,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_reset_recovery() != 24413.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_restore_session() != 6863.toShort()) {
@@ -1899,6 +1917,13 @@ public interface CoreInterface {
     fun `enableRecovery`(): kotlin.String
     
     /**
+     * Set recovery up at sign-in if this account has none.
+     *
+     * Returns the key to show once, or nothing when there was nothing to do.
+     */
+    fun `ensureRecovery`(): kotlin.String?
+    
+    /**
      * Invite someone to a room.
      */
     fun `inviteUser`(`roomId`: kotlin.String, `userId`: kotlin.String)
@@ -1975,6 +2000,15 @@ public interface CoreInterface {
      * is how the first one is orphaned.
      */
     fun `recoveryState`(): kotlin.String
+    
+    /**
+     * Throw the old identity away and start again, returning the new key.
+     *
+     * Destructive: deletes the old backup and replaces the cross-signing
+     * identity. Only for someone with no key and no device that holds the
+     * secrets — the caller must have said as much.
+     */
+    fun `resetRecovery`(`password`: kotlin.String): kotlin.String
     
     /**
      * Pick up a session stored from a previous run.
@@ -2406,6 +2440,24 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Set recovery up at sign-in if this account has none.
+     *
+     * Returns the key to show once, or nothing when there was nothing to do.
+     */
+    @Throws(FfiException::class)override fun `ensureRecovery`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_ensure_recovery(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Invite someone to a room.
      */
     @Throws(FfiException::class)override fun `inviteUser`(`roomId`: kotlin.String, `userId`: kotlin.String)
@@ -2601,6 +2653,26 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_recovery_state(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Throw the old identity away and start again, returning the new key.
+     *
+     * Destructive: deletes the old backup and replaces the cross-signing
+     * identity. Only for someone with no key and no device that holds the
+     * secrets — the caller must have said as much.
+     */
+    @Throws(FfiException::class)override fun `resetRecovery`(`password`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_reset_recovery(
+        it, FfiConverterString.lower(`password`),_status)
 }
     }
     )

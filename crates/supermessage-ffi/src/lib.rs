@@ -431,6 +431,22 @@ impl Core {
         Ok(())
     }
 
+    /// Set recovery up at sign-in if this account has none.
+    ///
+    /// Returns the key to show once, or nothing when there was nothing to do.
+    pub fn ensure_recovery(&self) -> Result<Option<String>, FfiError> {
+        Ok(self.block(self.session.ensure_recovery())?)
+    }
+
+    /// Throw the old identity away and start again, returning the new key.
+    ///
+    /// Destructive: deletes the old backup and replaces the cross-signing
+    /// identity. Only for someone with no key and no device that holds the
+    /// secrets — the caller must have said as much.
+    pub fn reset_recovery(&self, password: String) -> Result<String, FfiError> {
+        Ok(self.block(self.session.reset_recovery(&password))?)
+    }
+
     /// Join by alias (`#room:server`) or id, returning the id joined.
     pub fn join_room_by_alias(&self, alias_or_id: String) -> Result<String, FfiError> {
         Ok(self.block(self.session.join_room_by_alias(&alias_or_id))?)

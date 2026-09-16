@@ -22,12 +22,15 @@
     state: "enabled" | "disabled" | "incomplete" | "unknown";
     onEnable: () => Promise<string>;
     onRecover: (key: string) => Promise<void>;
+    onReset: (password: string) => Promise<string>;
     onClose: () => void;
   }
 
-  let { state: recovery, onEnable, onRecover, onClose }: Props = $props();
+  let { state: recovery, onEnable, onRecover, onReset, onClose }: Props = $props();
 
   let busy = $state(false);
+  let resetting = $state(false);
+  let password = $state("");
   let failure = $state<string | null>(null);
   /**
    * The key, held only until this panel closes.
@@ -47,6 +50,28 @@
     failure = null;
     try {
       freshKey = await onEnable();
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Throw the old identity away and start again.
+   *
+   * The only way out for somebody with no recovery key and no device holding
+   * the secrets. Destructive, and the copy above says so before the password
+   * field appears.
+   */
+  async function reset(): Promise<void> {
+    if (busy || password === "") return;
+    busy = true;
+    failure = null;
+    try {
+      freshKey = await onReset(password);
+      resetting = false;
+      password = "";
     } catch (err) {
       failure = err instanceof Error ? err.message : String(err);
     } finally {
@@ -138,23 +163,12 @@
         simply "we have not finished asking".
       -->
       <p class="text-ui text-content-muted">Checking this account…</p>
-    {:else if recovery === "enabled"}
-      <p class="text-ui text-content-muted">
-        Recovery is on. Your messages can be restored on a new device with your recovery
-        key.
-      </p>
-      <button
-        type="button"
-        onclick={onClose}
-        class="self-start rounded-control bg-surface-sunken px-3 py-2 text-ui text-content transition-colors hover:bg-surface-sunken/70"
-      >
-        Done
-      </button>
-    {:else if recovery === "incomplete"}
+    {:else if recovery === "incomplete" || recovery === "disabled"}
       <!--
-        This device is the odd one out: the account has recovery, this device
-        does not hold the secrets. Entering the key here is the fix, and it is
-        the only state where the *entry* field is the primary action.
+        Stranded: this device cannot read the history. `incomplete` and
+        `disabled` read the same to a person and differ only in which action
+        fixes it, which the two buttons already say — so they share a screen
+        rather than being two of four states nobody can tell apart.
       -->
       <p class="text-ui text-content-muted">
         This device is missing your encryption keys. Enter your recovery key to read your
@@ -184,18 +198,88 @@
           {busy ? "Restoring…" : "Restore"}
         </button>
       </form>
+
+      <!--
+        The escape hatch, and the reason this panel stopped being a dead end:
+        somebody who never had a key used to be shown a field they could not
+        fill and nothing else. Element offers exactly one way out of the same
+        corner, and this is the same one.
+      -->
+      {#if resetting}
+        <form
+          class="flex flex-col gap-2 border-t border-border pt-4"
+          onsubmit={(e: SubmitEvent) => {
+            e.preventDefault();
+            void reset();
+          }}
+        >
+          <!--
+            The consequence stays on screen next to the button that causes it.
+            It used to be replaced by the sentence about the password, so the
+            one moment a reader was deciding to destroy a backup was the one
+            moment nothing on screen said a backup would be destroyed.
+          -->
+          <p class="text-ui text-content-muted">
+            Anything backed up under the old key is lost, and your other devices will need
+            verifying again. Messages already on this device stay readable.
+          </p>
+          <p class="text-ui text-content-muted">
+            Your password confirms this with your homeserver. It is used once and not
+            stored.
+          </p>
+          <input
+            bind:value={password}
+            type="password"
+            autocomplete="current-password"
+            aria-label="Your password"
+            class="rounded-control border border-border bg-surface-sunken px-3 py-2 text-ui text-content"
+          />
+          <div class="flex gap-2">
+            <button
+              type="submit"
+              disabled={busy || password === ""}
+              class="self-start rounded-control bg-danger px-3 py-2 text-ui text-on-accent transition-colors disabled:opacity-50"
+            >
+              {busy ? "Starting over…" : "Start over"}
+            </button>
+            <button
+              type="button"
+              onclick={() => {
+                resetting = false;
+                password = "";
+                failure = null;
+              }}
+              class="self-start rounded-control bg-surface-sunken px-3 py-2 text-ui text-content transition-colors hover:bg-surface-sunken/70"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      {:else}
+        <p class="border-t border-border pt-4 text-ui text-content-muted">
+          No recovery key? Start again with a new one. Messages already on this device stay
+          readable, but anything backed up under the old key is lost, and your other
+          devices will need verifying again.
+        </p>
+        <button
+          type="button"
+          onclick={() => (resetting = true)}
+          class="self-start rounded-control bg-surface-sunken px-3 py-2 text-ui text-content transition-colors hover:bg-surface-sunken/70"
+        >
+          Start over with a new key
+        </button>
+      {/if}
     {:else}
       <p class="text-ui text-content-muted">
-        Set up recovery so you can read your encrypted messages on a new device. Without
-        it, messages stay on this device only.
+        Your messages can be recovered. They can be restored on a new device with your
+        recovery key. There is no way to show it again.
       </p>
       <button
         type="button"
-        onclick={enable}
-        disabled={busy}
-        class="self-start rounded-control bg-accent px-3 py-2 text-ui text-on-accent transition-colors disabled:opacity-50"
+        onclick={onClose}
+        class="self-start rounded-control bg-surface-sunken px-3 py-2 text-ui text-content transition-colors hover:bg-surface-sunken/70"
       >
-        {busy ? "Setting up…" : "Set up recovery"}
+        Done
       </button>
     {/if}
 

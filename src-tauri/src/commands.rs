@@ -68,6 +68,19 @@ pub async fn enable_recovery(session: State<'_, Session>) -> Result<String, Core
     session.enable_recovery().await
 }
 
+/// Throw the old identity away and start again, returning the new key.
+///
+/// Destructive: the old backup is deleted and the cross-signing identity
+/// replaced. The password is the homeserver's price for that and, like the
+/// key, is never logged.
+#[tauri::command]
+pub async fn reset_recovery(
+    session: State<'_, Session>,
+    password: String,
+) -> Result<String, CoreError> {
+    session.reset_recovery(&password).await
+}
+
 /// Use a recovery key on this device.
 #[tauri::command]
 pub async fn recover_with_key(

@@ -1193,6 +1193,22 @@ impl Session {
         recovery::recover(&client, recovery_key).await
     }
 
+    /// Set recovery up at sign-in if this account has none.
+    ///
+    /// Returns the key to show once, or `None` when there was nothing to do.
+    pub async fn ensure_recovery(&self) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        recovery::ensure(&client).await
+    }
+
+    /// Throw the old identity away and start again, returning the new key.
+    ///
+    /// Destructive; see `recovery::reset`.
+    pub async fn reset_recovery(&self, password: &str) -> CoreResult<String> {
+        let client = self.require_client().await?;
+        recovery::reset(&client, password).await
+    }
+
     /// Where the encrypted store lives on disk.
     fn store_path(&self) -> PathBuf {
         self.data_dir.join("store")

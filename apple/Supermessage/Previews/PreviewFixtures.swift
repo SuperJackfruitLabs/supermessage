@@ -176,6 +176,9 @@ struct PreviewClient: SessionClient {
     func recoveryState() async throws -> String { recovery }
     func enableRecovery() async throws -> String { PreviewFixtures.recoveryKey }
     func recoverWithKey(recoveryKey: String) async throws {}
+    // Nothing to do: every preview account already has recovery.
+    func ensureRecovery() async throws -> String? { nil }
+    func resetRecovery(password: String) async throws -> String { PreviewFixtures.recoveryKey }
     func directRoomWith(userId: String) async throws -> String? { PreviewFixtures.roomId }
     func roomInviter(roomId: String) async throws -> String? { "@krishna:example.org" }
 

@@ -1042,6 +1042,22 @@ export async function recoverWithKey(recoveryKey: string): Promise<void> {
   await invoke<void>("recover_with_key", { recoveryKey });
 }
 
+/**
+ * Throw the old identity away and start again, returning the new key.
+ *
+ * The way out for somebody with no recovery key and no device that holds the
+ * secrets — without it their account is a screen asking for something they
+ * cannot produce.
+ *
+ * **Destructive.** The old backup is deleted and the cross-signing identity
+ * replaced; anything still trusting the old one reads as unverified. The
+ * password is used for one call and, like the returned key, must never be
+ * logged or persisted.
+ */
+export async function resetRecovery(password: string): Promise<string> {
+  return invoke<string>("reset_recovery", { password });
+}
+
 export async function logout(): Promise<void> {
   await invoke<void>("logout");
 }

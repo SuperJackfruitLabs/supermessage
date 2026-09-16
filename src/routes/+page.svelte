@@ -25,6 +25,7 @@
     enableRecovery,
     joinRoomByAlias,
     recoverWithKey,
+    resetRecovery,
     recoveryState as ipcRecoveryState,
     searchMessages,
   } from "$lib/ipc";
@@ -1189,6 +1190,7 @@
       state={recoveryState}
       onEnable={enableRecovery}
       onRecover={recoverWithKey}
+      onReset={resetRecovery}
       onClose={() => (recoveryOpen = false)}
     />
   {/if}
