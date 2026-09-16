@@ -1,10 +1,25 @@
 # supermessage
 
+[![CI](https://github.com/SuperJackfruitLabs/supermessage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SuperJackfruitLabs/supermessage/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SuperJackfruitLabs/supermessage)](https://github.com/SuperJackfruitLabs/supermessage/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A cross-platform, agent-aware Matrix chat client for iOS, Android, Windows,
 macOS, and Linux. The platforms share a Rust Matrix core: desktop uses
 **Tauri 2 + Svelte 5**, iOS uses **SwiftUI**, and Android uses **Kotlin/Compose**
 through UniFFI. See [AGENTS.md](AGENTS.md) for the current architecture and
 [docs/tech-stack.md](docs/tech-stack.md) for the original decisions.
+
+**[Download desktop](https://github.com/SuperJackfruitLabs/supermessage/releases/latest)** ·
+**[Build from source](#building)** ·
+**[Development guide](AGENTS.md)** ·
+**[Issues](https://github.com/SuperJackfruitLabs/supermessage/issues)**
+
+![Supermessage desktop frontend showing a room roster, a conversation with an agent, and a permission card awaiting a decision](docs/assets/desktop-preview.png)
+
+*Desktop frontend captured in Chromium with synthetic local fixtures. It shows
+production UI components; no Matrix account or live conversation was used.
+Native window chrome and platform rendering differ.*
 
 ## Status: early, with active desktop and native clients
 
@@ -60,6 +75,26 @@ agents:
 Ordinary Matrix chat does not require suite services. Suite-specific decision
 handling requires a compatible bridge on the receiving side.
 
+## Installing
+
+Choose an asset from the [latest published desktop release](https://github.com/SuperJackfruitLabs/supermessage/releases/latest):
+
+| Platform | Download |
+| --- | --- |
+| Linux x86_64 | `.deb`, `.rpm` or `.AppImage` |
+| macOS, Apple Silicon and Intel | Universal `.dmg` |
+| Windows x64 | Setup `.exe` or `.msi` |
+
+These formats are present in the published v0.0.11 release (August 30, 2026).
+The source capability table above may include changes newer than a download.
+Desktop binaries are **unsigned**; macOS Gatekeeper and Windows SmartScreen
+can warn on first run. Native iOS and Android clients currently have build
+instructions in [AGENTS.md](AGENTS.md), rather than a mobile store release
+published by this repository's release workflow.
+
+Use an existing Matrix account on a homeserver that supports password login.
+Ordinary chat needs no AgentPod or Superpipeline installation.
+
 ## Building
 
 Requires [Rust](https://rustup.rs), [Node](https://nodejs.org) 22+ and
@@ -68,19 +103,51 @@ Requires [Rust](https://rustup.rs), [Node](https://nodejs.org) 22+ and
 for your OS.
 
 ```sh
+git clone https://github.com/SuperJackfruitLabs/supermessage.git
+cd supermessage
 pnpm install --frozen-lockfile
 pnpm tauri dev             # run the app
 pnpm test                  # frontend unit tests
 pnpm check                 # svelte-check
+pnpm build                 # frontend build
 cargo test --workspace     # core, FFI and desktop shell
 ```
 
-Release binaries for Linux, macOS and Windows are built by
-[`.github/workflows/release.yml`](.github/workflows/release.yml) on a `v*`
-tag. That workflow does not publish mobile store releases. Desktop binaries
-are currently **unsigned**, so macOS Gatekeeper and Windows SmartScreen will
-warn on first run. Native build instructions and prerequisites are in
-[AGENTS.md](AGENTS.md); source availability is not release availability.
+Use `pnpm tauri build` for a desktop bundle. `pnpm build` only builds the
+frontend; a bare Cargo debug binary expects the Vite server to be running.
+The [release workflow](.github/workflows/release.yml) creates draft desktop
+releases on `v*` tags, which need publication before users can download them.
+
+## Repository guide
+
+| Area | Responsibility |
+| --- | --- |
+| [`crates/supermessage-core/`](crates/supermessage-core/) | Matrix sessions, sync, crypto and shared view models |
+| [`crates/supermessage-ffi/`](crates/supermessage-ffi/) | UniFFI boundary for native mobile clients |
+| [`src/`](src/) and [`src-tauri/`](src-tauri/) | Svelte desktop UI and Tauri host |
+| [`apple/`](apple/) | Native SwiftUI app, state layer and previews |
+| [`android/`](android/) | Native Compose app, state layer and FFI module |
+| [`design/tokens.toml`](design/tokens.toml) | Shared design tokens generated into all clients |
+
+## Documentation and contributing
+
+Start with [AGENTS.md](AGENTS.md) for architecture, platform prerequisites,
+mobile build commands and validation rules. Useful references:
+
+- [Design language](docs/design-language.md) and [preview snapshots](docs/preview-snapshots.md)
+  explain the shared visual system and its fixture-based checks.
+- [AgentPod event schemas](docs/agentpod-events.md) document the suite cards.
+- [CI workflow](.github/workflows/ci.yml) defines platform checks and selects
+  jobs according to changed paths.
+- [Technical decisions](docs/tech-stack.md) record the original design;
+  compare dated plans with the current source before extending them.
+
+For desktop changes, run the frontend checks above and the applicable Rust
+checks (`cargo test --workspace`, `cargo fmt --all --check`, and
+`cargo clippy --workspace --all-targets --all-features -- -D warnings`).
+For visual or mobile changes, also follow the platform and snapshot checks in
+the development guide. Inspect failed frames before updating a baseline, and
+report local test results separately from device or live homeserver checks.
 
 ## Licence
 
