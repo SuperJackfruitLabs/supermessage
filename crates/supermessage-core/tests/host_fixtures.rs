@@ -40,9 +40,9 @@ fn roster_identities() {
     let cases = [
         // raw name,                 glyph,       name,              role,          initial
         (
-            "⌘ Kaambaan — Delivery",
+            "⌘ Superpipeline — Delivery",
             Some("⌘"),
-            "Kaambaan",
+            "Superpipeline",
             Some("Delivery"),
             "⌘",
         ),

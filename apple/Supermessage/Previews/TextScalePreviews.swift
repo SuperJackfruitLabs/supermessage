@@ -48,7 +48,7 @@ import SwiftUI
     PreviewGround {
         CustomEventCard(
             view: PreviewFixtures.cardPending, label: "Gate",
-            eventType: "dev.kaambaan.gate.v1", senderName: "Kaambaan — Delivery",
+            eventType: "dev.superpipeline.gate.v1", senderName: "Superpipeline — Delivery",
             onDecide: { _ in true })
     }
     .environment(\.dynamicTypeSize, .accessibility3)

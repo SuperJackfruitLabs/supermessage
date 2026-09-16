@@ -1106,7 +1106,7 @@ data class CustomEventDecision (
     var `options`: List<CustomEventDecisionOption>, 
     /**
      * What this decision resolves, handed back verbatim when the reader
-     * answers — a kaambaan `gate_id` today.
+     * answers — a superpipeline `gate_id` today.
      *
      * Without it a host can draw the buttons and has nothing to name when it
      * sends the answer. The alternative was for the host to reach past this
@@ -2523,7 +2523,7 @@ data class TimelineItemDto (
     /**
      * The event's raw `content` object, present only for `kind:
      * "customMessage"` — this is the plumbing `docs/matrix-events.md` §G
-     * describes for Kaambaan cards/runs/permission requests/station status
+     * describes for Superpipeline cards/runs/permission requests/station status
      * (see `core::timeline::custom_message_payload`). The SDK's
      * `MsgLikeKind::Other` discards a custom event's content entirely
      * (`matrix-sdk-ui`'s `OtherMessageLike` carries only the event type), so
@@ -3163,7 +3163,7 @@ sealed class ItemView {
     
     
     /**
-     * A suite event — a Kaambaan card or run, a permission request, station
+     * A suite event — a Superpipeline card or run, a permission request, station
      * status. `view` is the whole fallback-chain decision: a host renders its
      * three states but never makes that decision itself.
      */

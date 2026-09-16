@@ -18,7 +18,7 @@
 const events = [
   { type: 'dev.agentpod.turn.v1', label: 'Turn' },
   { type: 'dev.agentpod.permission.v1', label: 'Permission' },
-  { type: 'dev.kaambaan.gate.v1', label: 'Approval' },
+  { type: 'dev.superpipeline.gate.v1', label: 'Approval' },
 ];
 
 import '../styles/tokens.css';
@@ -301,7 +301,7 @@ import '../styles/tokens.css';
 
         <!-- The signature element. See the design note at the top of this file. -->
         <div class="room" role="img"
-          aria-label="A room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, with Approve and Decline options; and a kaambaan card waits for an approval.">
+          aria-label="A room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, with Approve and Decline options; and a superpipeline card waits for an approval.">
           <div class="room-head">
             <b>#billing-migration</b>
             <span>3 people · 2 agents</span>
@@ -338,7 +338,7 @@ import '../styles/tokens.css';
             </div>
 
             <div class="msg">
-              <div class="who"><b>kaambaan</b></div>
+              <div class="who"><b>superpipeline</b></div>
               <div class="card awaiting">
                 <span class="etype">{events[2].type}</span>
                 <div class="field"><span class="k">Card</span><span>Billing migration</span></div>
@@ -451,7 +451,7 @@ import '../styles/tokens.css';
           <a href="https://docs.supermessage.dev">Documentation</a>
           <a href="https://github.com/SuperJackfruitLabs/supermessage">GitHub</a>
           <a href="https://docs.agentpod.dev">AgentPod</a>
-          <a href="https://docs.kaambaan.dev">kaambaan</a>
+          <a href="https://docs.superpipeline.dev">superpipeline</a>
         </span>
       </div>
     </footer>

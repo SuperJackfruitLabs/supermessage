@@ -27,7 +27,7 @@ Each of those is rendered as what it is:
 |---|---|
 | `dev.agentpod.turn.v1` | **Turn** — what the agent did |
 | `dev.agentpod.permission.v1` | **Permission** — what it wants to do, and your answer |
-| `dev.kaambaan.gate.v1` | **Approval** — a card waiting on a decision |
+| `dev.superpipeline.gate.v1` | **Approval** — a card waiting on a decision |
 
 ## It does not stop being Matrix
 
@@ -62,7 +62,7 @@ which is why five front ends do not drift into five different products.
 ## What it is not
 
 It is **not a harness** — it does not run agents. [AgentPod](https://docs.agentpod.dev) manages
-where they run, and [kaambaan](https://docs.kaambaan.dev) decides what they work on.
+where they run, and [superpipeline](https://docs.superpipeline.dev) decides what they work on.
 supermessage is where you and they talk.
 
 ## Next

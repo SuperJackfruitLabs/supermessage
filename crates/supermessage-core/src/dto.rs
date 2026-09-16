@@ -340,7 +340,7 @@ pub struct TimelineItemDto {
     pub media: Option<MediaMetaDto>,
     /// The event's raw `content` object, present only for `kind:
     /// "customMessage"` — this is the plumbing `docs/matrix-events.md` §G
-    /// describes for Kaambaan cards/runs/permission requests/station status
+    /// describes for Superpipeline cards/runs/permission requests/station status
     /// (see `core::timeline::custom_message_payload`). The SDK's
     /// `MsgLikeKind::Other` discards a custom event's content entirely
     /// (`matrix-sdk-ui`'s `OtherMessageLike` carries only the event type), so

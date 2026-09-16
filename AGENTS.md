@@ -6,7 +6,7 @@ Guidance for AI coding agents working in this repository. Read this first; it su
 
 supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android, Windows, macOS, and Linux from a single codebase**.
 
-It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Kaambaan + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Kaambaan cards/runs, permission requests, station status), approvals from chat (Kaambaan gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
+It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Superpipeline + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Superpipeline cards/runs, permission requests, station status), approvals from chat (Superpipeline gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
 
 **Current status: M0 and most of M1 are on `main`, plus a full design pass; v0.0.1 is tagged.** Password login, encrypted session persistence, `SyncService`, room-list and timeline streaming, send/receive, replies, reactions, typing notices, read receipts, media rendering, the custom-event framework, and a responsive three-pane desktop UI (571 Rust tests, 379 frontend tests, clippy and svelte-check clean).
 
@@ -79,9 +79,9 @@ android/             — the native Android app (Gradle, over the Rust core via 
 
 ## Product boundaries (hard rules from docs/positioning.md)
 
-- Matrix conversation ≠ ACP execution transcript ≠ Kaambaan work activity. supermessage is **not** an ACP client and **not** a work-state board; it renders links and projections of those, never their truth.
+- Matrix conversation ≠ ACP execution transcript ≠ Superpipeline work activity. supermessage is **not** an ACP client and **not** a work-state board; it renders links and projections of those, never their truth.
 - Correlate rooms to work via `missionId/cardId/taskId/runId` + `matrixRoomId/matrixEventId`; never attach a whole Matrix room to one run.
-- Agent identity, Station, ACP Session, and Kaambaan Run are distinct linked objects — render them as such.
+- Agent identity, Station, ACP Session, and Superpipeline Run are distinct linked objects — render them as such.
 - Do not build a homeserver (Synapse stays) and do not own org membership (the P1 Organization layer will). The Application Service bridge (server half) lives outside this repo.
 - Custom "rich card" event types must be **versioned, documented, suite-shared schemas** with plain-text fallback so Element/Cinny remain usable clients. Never client-private hacks.
 
@@ -430,7 +430,7 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 - **M0 — spine:** Tauri scaffold; Rust core syncs a real account on `id.agentpod.dev` (password login); Svelte stores mirror room list/timeline; virtua message list; send/receive plaintext. Dogfood immediately against real agent users.
 - **M1 — agent-aware client:** custom event rendering framework + schema drafts (card/run/permission/station), deep links, graceful plain-text fallback. E2EE is "available, not blocking".
 - **M2 — daily driver:** media, replies/reactions/edits, receipts/typing, iOS keyboard fix, Android 16KB/ring fix, Framework7 mobile skin + desktop skins.
-- **M3 — push + approvals:** Sygnal deployment; FCM/APNs; Kaambaan gate notifications → Matrix → approve/reject end-to-end; then iOS NSE.
+- **M3 — push + approvals:** Sygnal deployment; FCM/APNs; Superpipeline gate notifications → Matrix → approve/reject end-to-end; then iOS NSE.
 - **M4 — mission surfaces:** spaces/mission rooms, presence-from-org-state, fleet event rooms, multi-account, settings polish, store submissions.
 
 ## Known risks to keep in mind when writing code
@@ -443,4 +443,4 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 
 ## Related repositories (not part of this workspace's code)
 
-The suite's other surfaces live in sibling repos: **AgentPod** (fleet console/node-agent, agents already have Matrix accounts on `id.agentpod.dev`) and **Kaambaan** (cards/tasks/runs/gates, REST+MCP, approvals, notifications). supermessage integrates with them via links, projections, and the Matrix room/event IDs — it must not own their state.
+The suite's other surfaces live in sibling repos: **AgentPod** (fleet console/node-agent, agents already have Matrix accounts on `id.agentpod.dev`) and **Superpipeline** (cards/tasks/runs/gates, REST+MCP, approvals, notifications). supermessage integrates with them via links, projections, and the Matrix room/event IDs — it must not own their state.

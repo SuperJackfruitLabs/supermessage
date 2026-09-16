@@ -199,7 +199,7 @@ passed:
   lines inside the bubble. The web's equivalent rendered 1147px wide on its
   first attempt while appearing to show the guard holding.
 - **Serif for the agent, mono for data.** Sender names render serif, the
-  meta line (`needs you · kaambaan · foundry`) renders monospaced, on paper
+  meta line (`needs you · superpipeline · foundry`) renders monospaced, on paper
   rather than white.
 - **The palette is the generated one.** The unread badge and the invitation
   chip are `accent` — `#5b43d4`, straight from `design/tokens.toml` — and not

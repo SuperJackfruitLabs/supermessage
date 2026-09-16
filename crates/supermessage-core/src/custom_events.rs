@@ -1,6 +1,6 @@
 //! The custom-event rendering registry.
 //!
-//! Suite events — Kaambaan cards and runs, permission requests, station
+//! Suite events — Superpipeline cards and runs, permission requests, station
 //! status — arrive as `kind: "customMessage"` timeline items, with
 //! `TimelineItemDto::detail` carrying the Matrix event type and
 //! `custom_payload` its bounded `content` object. This module turns one of
@@ -54,7 +54,7 @@
 //!
 //! `schema_version`, not `schemaVersion`: this `content` is suite-shared wire
 //! format, so it follows the wire's snake_case convention rather than this
-//! codebase's. That is this module's assumption pending Kaambaan's actual
+//! codebase's. That is this module's assumption pending Superpipeline's actual
 //! co-designed schema, not a demand on it — if their schema lands with a
 //! different name, only [`read_schema_version`] changes.
 //!
@@ -142,7 +142,7 @@ pub struct CustomEventDecision {
     pub prompt: String,
     pub options: Vec<CustomEventDecisionOption>,
     /// What this decision resolves, handed back verbatim when the reader
-    /// answers — a kaambaan `gate_id` today.
+    /// answers — a superpipeline `gate_id` today.
     ///
     /// Without it a host can draw the buttons and has nothing to name when it
     /// sends the answer. The alternative was for the host to reach past this
@@ -476,7 +476,7 @@ pub fn resolve_custom_event(
 
 /// The demo renderer, shipped to prove the extension path end to end.
 ///
-/// **Not** a Kaambaan schema — those are co-designed with that team, never
+/// **Not** a Superpipeline schema — those are co-designed with that team, never
 /// invented here. `dev.supermessage.demo.*` is a namespace this app owns for
 /// exactly this purpose, so it can never collide with, or be mistaken for, a
 /// genuine card, run or permission request.
@@ -770,16 +770,16 @@ impl CustomEventRenderer for PermissionRequestRenderer {
     }
 }
 
-/// A kaambaan approval gate a reader can answer — `dev.kaambaan.gate.v1`.
+/// A superpipeline approval gate a reader can answer — `dev.superpipeline.gate.v1`.
 ///
 /// **The option `id` is a `GateDecision`, not a free-form name.** This is the
 /// one place a gate differs from a permission request, which hands back an
 /// option's *name* because the hub's matcher accepts any of three spellings.
-/// kaambaan's `resolveGate` accepts exactly `approve | request_changes |
+/// superpipeline's `resolveGate` accepts exactly `approve | request_changes |
 /// reject` and nothing else, so an id outside that set draws a button that is
 /// refused the moment it is pressed. `charter` →
 /// `decisions/2026-08-30-a-gate-closes-over-chat.md` records this as the one
-/// correction to kaambaan#34 that would otherwise have failed at runtime: the
+/// correction to superpipeline#34 that would otherwise have failed at runtime: the
 /// proposal there has ids mirroring a `select` signal's free-form semantics.
 ///
 /// Unknown ids are dropped rather than renamed. A gate offering only ids this
@@ -790,9 +790,9 @@ impl CustomEventRenderer for PermissionRequestRenderer {
 /// As with `dev.agentpod.permission.v1`, the event is sent beside an ordinary
 /// prose message carrying the same question, so a client that never renders
 /// this is exactly as able to follow the room as it was.
-pub const GATE_EVENT_TYPE: &str = "dev.kaambaan.gate.v1";
+pub const GATE_EVENT_TYPE: &str = "dev.superpipeline.gate.v1";
 
-/// The only option ids kaambaan resolves against — its `GateDecision` union,
+/// The only option ids superpipeline resolves against — its `GateDecision` union,
 /// mirrored here and pinned by `fixtures/ecosystem-identity/matrix_gate_events.json`
 /// in AgentPod, which both repos validate against.
 pub const GATE_OPTION_IDS: [&str; 3] = ["approve", "request_changes", "reject"];
@@ -894,7 +894,7 @@ impl CustomEventRenderer for GateRenderer {
 
 /// The registry hosts render through in production.
 ///
-/// Built once. Kaambaan's gate schema landed 2026-08-30; see `GateRenderer`.
+/// Built once. Superpipeline's gate schema landed 2026-08-30; see `GateRenderer`.
 pub fn default_registry() -> &'static CustomEventRegistry {
     static REGISTRY: std::sync::OnceLock<CustomEventRegistry> = std::sync::OnceLock::new();
     REGISTRY.get_or_init(|| {
@@ -2013,7 +2013,7 @@ mod tool_title_tests {
 ///
 /// These cases mirror `fixtures/ecosystem-identity/matrix_gate_events.json` in
 /// AgentPod. They are hand-written rather than loaded, which is the same
-/// arrangement kaambaan uses: the corpus is plain JSON depending on no type
+/// arrangement superpipeline uses: the corpus is plain JSON depending on no type
 /// from any repo, and each repo reimplements against it. A published package
 /// would couple three release cadences to hold one contract.
 ///
@@ -2052,7 +2052,7 @@ mod gate_tests {
     };
 
     #[test]
-    fn renders_the_prompt_and_every_option_kaambaan_accepts() {
+    fn renders_the_prompt_and_every_option_superpipeline_accepts() {
         let result = GateRenderer.render(&gate(ALL_THREE()), None);
         let decision = result.decision.expect("a gate is a decision");
         assert_eq!(decision.prompt, "Ship the OAuth change to staging?");
@@ -2079,7 +2079,7 @@ mod gate_tests {
     }
 
     #[test]
-    fn drops_an_option_id_kaambaan_would_refuse() {
+    fn drops_an_option_id_superpipeline_would_refuse() {
         let result = GateRenderer.render(
             &gate(json!([
                 { "id": "approve", "label": "Approve" },
@@ -2341,11 +2341,11 @@ mod gate_tests {
         let mut content = gate(ALL_THREE());
         content.as_object_mut().unwrap().insert(
             "deep_link".into(),
-            json!("https://kaambaan.dev/b/brd_7c1f/c/crd_9a22"),
+            json!("https://superpipeline.dev/b/brd_7c1f/c/crd_9a22"),
         );
         assert_eq!(
             GateRenderer.render(&content, None).link.as_deref(),
-            Some("https://kaambaan.dev/b/brd_7c1f/c/crd_9a22")
+            Some("https://superpipeline.dev/b/brd_7c1f/c/crd_9a22")
         );
     }
 
@@ -2361,7 +2361,7 @@ mod gate_tests {
             "data:text/html,<script>alert(1)</script>",
             "file:///etc/passwd",
             "//evil.example/path",
-            "http://kaambaan.dev/b/x",
+            "http://superpipeline.dev/b/x",
             "https://",
             "",
         ] {
@@ -2384,7 +2384,7 @@ mod gate_tests {
         content
             .as_object_mut()
             .unwrap()
-            .insert("deep_link".into(), json!("HTTPS://kaambaan.dev/b/x"));
+            .insert("deep_link".into(), json!("HTTPS://superpipeline.dev/b/x"));
         assert!(
             GateRenderer.render(&content, None).link.is_some(),
             "a check that can be walked around by shouting is not a check"
@@ -2395,9 +2395,9 @@ mod gate_tests {
     fn refuses_a_url_carrying_control_characters_or_whitespace() {
         // How a link's displayed text is made to disagree with where it goes.
         for sneaky in [
-            "https://kaambaan.dev/\u{202e}evil",
-            "https://kaambaan.dev/a b",
-            "https://kaambaan.dev/a\nb",
+            "https://superpipeline.dev/\u{202e}evil",
+            "https://superpipeline.dev/a b",
+            "https://superpipeline.dev/a\nb",
         ] {
             let mut content = gate(ALL_THREE());
             content
@@ -2413,7 +2413,7 @@ mod gate_tests {
         let mut content = gate(ALL_THREE());
         content.as_object_mut().unwrap().insert(
             "deep_link".into(),
-            json!(format!("https://kaambaan.dev/{}", "a".repeat(4000))),
+            json!(format!("https://superpipeline.dev/{}", "a".repeat(4000))),
         );
         assert_eq!(GateRenderer.render(&content, None).link, None);
     }
@@ -2429,7 +2429,7 @@ mod gate_tests {
         content
             .as_object_mut()
             .unwrap()
-            .insert("deep_link".into(), json!("https://kaambaan.dev/b/x"));
+            .insert("deep_link".into(), json!("https://superpipeline.dev/b/x"));
         match resolve_custom_event(
             default_registry(),
             Some(GATE_EVENT_TYPE),
@@ -2437,15 +2437,15 @@ mod gate_tests {
             None,
         ) {
             CustomEventView::Rendered { link, .. } => {
-                assert_eq!(link.as_deref(), Some("https://kaambaan.dev/b/x"));
+                assert_eq!(link.as_deref(), Some("https://superpipeline.dev/b/x"));
             }
             other => panic!("expected a rendered gate, got {other:?}"),
         }
     }
 
     #[test]
-    fn the_option_ids_are_exactly_kaambaans_gate_decision_union() {
-        // If this fails, kaambaan widened GateDecision and the fixture, the hub
+    fn the_option_ids_are_exactly_superpipelines_gate_decision_union() {
+        // If this fails, superpipeline widened GateDecision and the fixture, the hub
         // and this renderer all need the same change in the same release.
         assert_eq!(GATE_OPTION_IDS, ["approve", "request_changes", "reject"]);
     }

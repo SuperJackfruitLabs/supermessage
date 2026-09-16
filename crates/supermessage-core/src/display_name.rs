@@ -33,7 +33,7 @@ const KNOWN_WORDS: &[(&str, &str)] = &[
     ("ios", "iOS"),
     // Suite vocabulary.
     ("agentpod", "AgentPod"),
-    ("kaambaan", "Kaambaan"),
+    ("superpipeline", "Superpipeline"),
     ("api", "API"),
     ("cli", "CLI"),
     ("id", "ID"),

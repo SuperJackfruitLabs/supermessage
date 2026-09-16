@@ -273,7 +273,7 @@ object PreviewFixtures {
     val card: TimelineRowDto
         get() = row(
             item("\$card"),
-            ItemView.CustomEvent(cardPending, "Gate", "dev.kaambaan.gate.v1"),
+            ItemView.CustomEvent(cardPending, "Gate", "dev.superpipeline.gate.v1"),
         )
 
     /** Newest last, which is the order the timeline holds them in. */
@@ -428,10 +428,10 @@ object PreviewFixtures {
      */
     val roomNeedsYou: RoomRow
         get() = roomRow(
-            id = "!kaambaan:example.org", rawName = "⌘ Kaambaan — Delivery", glyph = "⌘",
-            name = "Kaambaan", role = "Delivery", initial = "⌘",
+            id = "!superpipeline:example.org", rawName = "⌘ Superpipeline — Delivery", glyph = "⌘",
+            name = "Superpipeline", role = "Delivery", initial = "⌘",
             preview = RoomPreview("Merge this branch into main?", true), unread = 2uL,
-            runtime = RuntimeDto("kaambaan", "foundry"),
+            runtime = RuntimeDto("superpipeline", "foundry"),
         )
 
     /** An invitation, which may not be composed into and has no state word. */

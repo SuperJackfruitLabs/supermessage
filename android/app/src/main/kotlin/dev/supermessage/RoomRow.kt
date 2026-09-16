@@ -82,7 +82,7 @@ fun RoomRow(
                 // more than half of it, however little that was. At the
                 // default text size there is slack and nothing shows. At
                 // `fontScale = 2.0` the row read `Kaa…`: four characters of
-                // `Kaambaan`, truncated to make room for whitespace, while
+                // `Superpipeline`, truncated to make room for whitespace, while
                 // `2m` and the unread badge kept their full width.
                 //
                 // The name is the most important thing on the row and it was

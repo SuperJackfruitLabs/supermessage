@@ -12,7 +12,7 @@ that is not available elsewhere.
 |---|---|---|
 | `dev.agentpod.turn.v1` | **Turn** | What an agent did during one stretch of work |
 | `dev.agentpod.permission.v1` | **Permission** | It wants to do something and is asking first |
-| `dev.kaambaan.gate.v1` | **Approval** | A card has reached a point a human must answer |
+| `dev.superpipeline.gate.v1` | **Approval** | A card has reached a point a human must answer |
 
 Each renders as a card in the timeline, in sequence with everything else said in the room.
 
@@ -71,4 +71,4 @@ target, an image source, or a style.
 supermessage is the conversation. The work itself lives elsewhere:
 
 - [AgentPod](https://docs.agentpod.dev) — where agents run, and whether that machine is healthy
-- [kaambaan](https://docs.kaambaan.dev) — what they are working on, and the gates they wait at
+- [superpipeline](https://docs.superpipeline.dev) — what they are working on, and the gates they wait at

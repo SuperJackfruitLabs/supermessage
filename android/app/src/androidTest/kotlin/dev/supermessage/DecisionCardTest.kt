@@ -19,7 +19,7 @@ import uniffi.supermessage_core.CustomEventView
 /**
  * `DecisionCard` renders the whole fallback-chain decision
  * (`CustomEventView`) `core::custom_events::resolve_custom_event` hands a
- * host — a Kaambaan card or run, a permission request, station status. See
+ * host — a Superpipeline card or run, a permission request, station status. See
  * `apple/Supermessage/Timeline/DecisionCard.swift`, which this mirrors, with
  * two deliberate departures noted where they occur below.
  *

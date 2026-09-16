@@ -278,10 +278,10 @@ impl Core {
         Ok(())
     }
 
-    /// Answer a kaambaan approval gate.
+    /// Answer a superpipeline approval gate.
     ///
     /// `option_id` must be one of `approve`, `request_changes` or
-    /// `reject` — kaambaan's `GateDecision`, and the only values its
+    /// `reject` — superpipeline's `GateDecision`, and the only values its
     /// resolution endpoint accepts. Anything else is refused here rather
     /// than reaching the room, so a mistake surfaces as an error the host
     /// can show instead of a tap that silently does nothing.
@@ -290,7 +290,7 @@ impl Core {
     /// and the Application Service refuses a decision whose `gate_id` and
     /// reference disagree.
     ///
-    /// `comment` is the feedback kaambaan merges into the card's handoff on
+    /// `comment` is the feedback superpipeline merges into the card's handoff on
     /// `request_changes`, so the rework carries the reviewer's reasoning.
     /// Pass `None` for the other two — a host should only prompt for it on
     /// that option.

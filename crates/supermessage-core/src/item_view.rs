@@ -143,7 +143,7 @@ pub enum ItemView {
     /// the middle of a conversation — a contract in a comment is one a second
     /// host will eventually miss. As a variant, ignoring it fails to compile.
     DateDivider,
-    /// A suite event — a Kaambaan card or run, a permission request, station
+    /// A suite event — a Superpipeline card or run, a permission request, station
     /// status. `view` is the whole fallback-chain decision: a host renders its
     /// three states but never makes that decision itself.
     CustomEvent {
@@ -1318,14 +1318,14 @@ mod tests {
     #[test]
     fn a_custom_message_dispatches_to_the_registry_never_a_bare_placeholder() {
         let mut it = item("customMessage");
-        it.detail = Some("org.kaambaan.card.v1".into());
+        it.detail = Some("org.superpipeline.card.v1".into());
         assert_eq!(
             view_for(&it),
             ItemView::CustomEvent {
-                label: "org.kaambaan.card.v1".into(),
-                event_type: "org.kaambaan.card.v1".into(),
+                label: "org.superpipeline.card.v1".into(),
+                event_type: "org.superpipeline.card.v1".into(),
                 view: CustomEventView::Placeholder {
-                    text: "Custom event (org.kaambaan.card.v1)".into()
+                    text: "Custom event (org.superpipeline.card.v1)".into()
                 }
             }
         );
@@ -1334,13 +1334,13 @@ mod tests {
     #[test]
     fn a_custom_message_falls_back_to_its_plain_text_body() {
         let mut it = item("customMessage");
-        it.detail = Some("org.kaambaan.card.v1".into());
+        it.detail = Some("org.superpipeline.card.v1".into());
         it.body = Some("New card: Ship it".into());
         assert_eq!(
             view_for(&it),
             ItemView::CustomEvent {
-                label: "org.kaambaan.card.v1".into(),
-                event_type: "org.kaambaan.card.v1".into(),
+                label: "org.superpipeline.card.v1".into(),
+                event_type: "org.superpipeline.card.v1".into(),
                 view: CustomEventView::FallbackBody {
                     text: "New card: Ship it".into()
                 }

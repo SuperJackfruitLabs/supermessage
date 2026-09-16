@@ -77,7 +77,7 @@ internal fun CardPendingHuge() {
         DecisionCard(
             view = PreviewFixtures.cardPending,
             label = "Gate",
-            eventType = "dev.kaambaan.gate.v1",
+            eventType = "dev.superpipeline.gate.v1",
             onDecide = { true },
         )
     }
