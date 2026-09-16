@@ -409,7 +409,7 @@ enum PreviewFixtures {
 
     static var card: TimelineRow {
         row(item(id: "$card"), view: .customEvent(
-            view: cardPending, label: "Gate", eventType: "dev.kaambaan.gate.v1"))
+            view: cardPending, label: "Gate", eventType: "dev.superpipeline.gate.v1"))
     }
 
     /// Newest last, which is the order the timeline holds them in.
@@ -562,10 +562,10 @@ enum PreviewFixtures {
     /// product allowed to paint `signal`.
     static var roomNeedsYou: RoomRow {
         roomRow(
-            id: "!kaambaan:example.org", rawName: "⌘ Kaambaan — Delivery", glyph: "⌘",
-            name: "Kaambaan", role: "Delivery", initial: "⌘",
+            id: "!superpipeline:example.org", rawName: "⌘ Superpipeline — Delivery", glyph: "⌘",
+            name: "Superpipeline", role: "Delivery", initial: "⌘",
             preview: RoomPreview(text: "Merge this branch into main?", pending: true),
-            unread: 2, runtime: RuntimeDto(harness: "kaambaan", host: "foundry"))
+            unread: 2, runtime: RuntimeDto(harness: "superpipeline", host: "foundry"))
     }
 
     /// An invitation, which may not be composed into and has no state word.

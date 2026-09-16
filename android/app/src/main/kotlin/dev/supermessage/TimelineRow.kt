@@ -162,7 +162,7 @@ fun TimelineRow(
         is ItemView.MediaFile ->
             MediaFileRow(label = view.label, filename = view.filename, size = view.size, modifier = modifier)
 
-        // A suite event — a Kaambaan card or run, a permission request,
+        // A suite event — a Superpipeline card or run, a permission request,
         // station status. `DecisionCard` renders the whole fallback-chain
         // decision; see its own doc for the three states it handles.
         is ItemView.CustomEvent ->

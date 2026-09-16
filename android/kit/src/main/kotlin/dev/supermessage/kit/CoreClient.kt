@@ -211,7 +211,7 @@ class CoreClient(
         run { it.toggleReaction(roomId, eventId, key) }
 
     /**
-     * Answer a Kaambaan approval gate.
+     * Answer a Superpipeline approval gate.
      *
      * `optionId` must be one of `approve`, `request_changes`, `reject`; the
      * core refuses anything else before it reaches the room. `prompt` is the

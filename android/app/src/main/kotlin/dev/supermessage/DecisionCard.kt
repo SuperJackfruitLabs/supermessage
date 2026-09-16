@@ -38,7 +38,7 @@ import uniffi.supermessage_core.CustomEventField
 import uniffi.supermessage_core.CustomEventView
 
 /**
- * A suite event — a Kaambaan card or run, a permission request, station
+ * A suite event — a Superpipeline card or run, a permission request, station
  * status. `view` is the whole fallback-chain decision from
  * `core::custom_events::resolve_custom_event`: this renders its three states
  * and never makes the choice itself. Every field on it is **text**, bounded
@@ -285,7 +285,7 @@ private fun DecisionPrompt(
 
     // The option awaiting a comment, if one is. Only `request_changes` ever
     // sets this: approve and reject are decisions, and request-changes is
-    // feedback that becomes the rework's context — Kaambaan merges it into the
+    // feedback that becomes the rework's context — Superpipeline merges it into the
     // card's handoff, so an empty one costs the next agent the reason.
     var commenting by remember { mutableStateOf<Pair<String, String>?>(null) }
     var comment by remember { mutableStateOf("") }
@@ -293,7 +293,7 @@ private fun DecisionPrompt(
     // The option this reader chose, once it has actually landed.
     //
     // A gate is answered once. Leaving three live buttons after an answer
-    // invites a second tap that Kaambaan refuses with GATE_NOT_PENDING — a
+    // invites a second tap that Superpipeline refuses with GATE_NOT_PENDING — a
     // round trip whose only outcome is a message saying nothing happened, and
     // which reads as though the first tap failed.
     //
@@ -418,7 +418,7 @@ private fun DecisionPrompt(
 /**
  * One answer to a decision, on its way out of the card.
  *
- * Carries [subject] — what the decision resolves, a Kaambaan `gate_id` today —
+ * Carries [subject] — what the decision resolves, a Superpipeline `gate_id` today —
  * because the card is the only place that knows it: the renderer read it out of
  * the payload, and the row above has only an event id. Both are needed to
  * answer and neither side has both.
@@ -430,7 +430,7 @@ data class GateAnswer(
     val prompt: String,
 ) {
     companion object {
-        /** Kaambaan's only option id that expects a comment. */
+        /** Superpipeline's only option id that expects a comment. */
         const val REQUEST_CHANGES = "request_changes"
     }
 }

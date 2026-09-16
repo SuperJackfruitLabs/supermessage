@@ -153,16 +153,16 @@ These arrive outside the timeline and need their own plumbing. None exist today.
 
 ## G. Suite events — the actual differentiator
 
-`docs/positioning.md` makes this the product: Kaambaan cards and runs, permission requests with approve/reject, station status, mission and fleet events. They arrive as `MsgLikeKind::Other` (custom message-like) and today would render as "Unsupported message".
+`docs/positioning.md` makes this the product: Superpipeline cards and runs, permission requests with approve/reject, station status, mission and fleet events. They arrive as `MsgLikeKind::Other` (custom message-like) and today would render as "Unsupported message".
 
 Binding constraints from `AGENTS.md`, restated because they shape the schema:
 
 - Custom event types must be **versioned, documented, suite-shared schemas**.
 - Every one must carry a **plain-text fallback body**, so Element and Cinny remain usable clients against the same rooms.
 - Correlate to work via `missionId` / `cardId` / `taskId` / `runId` plus `matrixRoomId` / `matrixEventId`. Never attach a whole room to one run.
-- Agent identity, Station, ACP Session and Kaambaan Run are distinct linked objects and must render as such.
+- Agent identity, Station, ACP Session and Superpipeline Run are distinct linked objects and must render as such.
 
-That schema work is M1's first task and should be co-designed with Kaambaan rather than invented here.
+That schema work is M1's first task and should be co-designed with Superpipeline rather than invented here.
 
 ## Recommended order
 

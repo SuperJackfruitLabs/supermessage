@@ -6,7 +6,7 @@
 //!
 //! It moved because of one branch: the pending-decision line is the roster's
 //! **amber switch**, and amber means the operator owes someone an answer and
-//! nothing else. Which event types trip it is a contract shared with Kaambaan,
+//! nothing else. Which event types trip it is a contract shared with Superpipeline,
 //! not a per-platform styling choice.
 
 use std::collections::HashSet;

@@ -378,7 +378,7 @@ class Session(
      * than sending against an id the homeserver never issued.
      */
     /**
-     * Answer a Kaambaan approval gate.
+     * Answer a Superpipeline approval gate.
      *
      * Takes the **event** id for the same reason [toggleReaction] does: the
      * decision references the gate event, and a gate the homeserver has not

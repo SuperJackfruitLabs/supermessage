@@ -34,7 +34,7 @@ ahead of anything else:
   the same rooms. The framework is built and tested; the only renderer that
   ships today is a demo one, because the real schemas belong to another team
   and are still being designed in the open
-  ([kaambaan#34](https://github.com/rakeshgangwar/kaambaan/issues/34)).
+  ([superpipeline#34](https://github.com/rakeshgangwar/superpipeline/issues/34)).
 - **Approvals from chat** — *not yet working.* When an agent needs a human
   decision, the timeline is where that decision should be made. The card that
   renders it is built, unit-tested, and **unreachable in this build**: no

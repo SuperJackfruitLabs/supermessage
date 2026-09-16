@@ -45,7 +45,7 @@ answer attached once you have given one, so the room keeps the record of who dec
 
 ## Approval gate
 
-`dev.kaambaan.gate.v1` — a [kaambaan](https://docs.kaambaan.dev) card that has reached a point
+`dev.superpipeline.gate.v1` — a [superpipeline](https://docs.superpipeline.dev) card that has reached a point
 where a human has to answer. The gate is the product decision that work does not simply continue
 because an agent thinks it should.
 

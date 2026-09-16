@@ -334,7 +334,7 @@ fn sender_display_name(profile: &TimelineDetails<Profile>, sender: &UserId) -> S
 ///   and ruma's catch-all `_Custom` variant falls into it — the identical
 ///   gap `timeline_event_filter` had to patch for the timeline, except that
 ///   this one is inside the SDK's own background task and cannot be
-///   overridden from here. So a Kaambaan card/run/permission-request event
+///   overridden from here. So a Superpipeline card/run/permission-request event
 ///   does not become the latest-event value at all; the roster shows the
 ///   last ordinary message underneath it instead. `lastEventType` is
 ///   therefore unreachable in production twice over (no gate schema exists

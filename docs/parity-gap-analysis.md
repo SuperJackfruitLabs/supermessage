@@ -247,7 +247,7 @@ rule, and it has held.
 
 The core half is less visible and more impressive. `matrix_sdk_ui`'s own
 `default_event_filter` ends in an unqualified `_ => false` with no exception for
-an unrecognized message-like type — meaning a custom Kaambaan event would have
+an unrecognized message-like type — meaning a custom Superpipeline event would have
 been **dropped before it ever became a timeline item at all**, and
 `docs/matrix-events.md` §G's entire "arrives as `MsgLikeKind::Other`" premise
 would have been quietly false. `timeline_event_filter` in `core/timeline.rs`
@@ -271,12 +271,12 @@ And then `onDecide` calls `console.warn`. No shipped renderer sets `decision`,
 so `boundDecision` returns `null` for every real event and the button branch
 never executes. This is the spec's requirement — §7.1, "do not ship a visible
 button that does nothing" — not a bug. It is blocked on two things that belong
-to Kaambaan, not here (`rakeshgangwar/kaambaan#34`): the inbound schema whose
+to Superpipeline, not here (`rakeshgangwar/superpipeline#34`): the inbound schema whose
 renderer would set `decision`, and the outbound decision event type. The comment
 at `Timeline.svelte:584` records why it must be a Matrix event and not the REST
 call an earlier version assumed — the client holds one credential, gate
 resolution needs a human session, and resolving as a bridge identity would void
-Kaambaan's separation-of-duties check.
+Superpipeline's separation-of-duties check.
 
 **Be clear about what this means.** The single feature that justifies this
 client existing is a well-built, well-tested, hostile-input-hardened socket with
@@ -390,7 +390,7 @@ voice playback only; location render-only. ²⁵ FluffyChat: static location onl
 others' presence, cannot set your own. ²⁸ A registry, a versioning scheme, a
 four-step fallback chain and a hostile-input validator — see §4. No other client
 has this because no other client needs it. ²⁹ Built, unit-tested and unreachable
-pending `kaambaan#34`. Nobody else has it either — this is the intended
+pending `superpipeline#34`. Nobody else has it either — this is the intended
 differentiator, unclaimed by anyone including us.
 
 **What the table says.** On the seventeen rows that describe ordinary Matrix
@@ -452,7 +452,7 @@ plan that still looks correct.
 The first is that the differentiator is blocked on someone else. The dispatch
 card's decision row, the roster's "Approval needed" state, and wedge #3
 ("approvals from chat — nobody else has this") are all one schema away, and that
-schema is `rakeshgangwar/kaambaan#34`. Until it lands there is no agent-aware
+schema is `rakeshgangwar/superpipeline#34`. Until it lands there is no agent-aware
 work to do that isn't inventing schemas, which this codebase has correctly
 refused to do. That makes the next quarter's agent-aware capacity *involuntarily
 free* — and it should go into the parity floor rather than being idled.
@@ -470,7 +470,7 @@ so the scope stays decided rather than relitigated every month.**
 
 ### The order
 
-**0. Unblock `kaambaan#34`.** Not engineering. It is the highest-leverage item
+**0. Unblock `superpipeline#34`.** Not engineering. It is the highest-leverage item
 on this page and it costs a conversation: the inbound gate/permission schema and
 the outbound decision event type. Everything the product is *for* is downstream
 of it. Do this in week one regardless of what else happens.

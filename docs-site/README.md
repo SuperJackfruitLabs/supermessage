@@ -15,7 +15,7 @@ TestFlight. Every page carries a "not released yet" notice until then.
 ## Why this is not a workspace member
 
 It uses npm and sits at the repo root, outside the pnpm workspace. Astro 7 brings Vite 8, which
-re-resolves a shared tree's vitest and breaks vitest-based suites — in kaambaan the same
+re-resolves a shared tree's vitest and breaks vitest-based suites — in superpipeline the same
 arrangement took out 556 tests on a change that touched no product code. The same choice was made
 in all three repos for the same reason.
 

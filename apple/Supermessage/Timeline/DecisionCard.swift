@@ -151,7 +151,7 @@ struct CustomEventCard: View {
             // Before it existed the deep link was printed at the reader as
             // characters to retype, which looks like an affordance and is not.
             //
-            // "the card", and it really is the card: kaambaan/#47 made cards
+            // "the card", and it really is the card: superpipeline/#47 made cards
             // addressable. This label said "Open on the board" for a day while
             // pointing at an address that 404d, then "Open the board" while
             // pointing at the app root. A label must not promise what the other
@@ -193,7 +193,7 @@ private struct DecisionButtons: View {
 
     /// The option awaiting a comment, if one is. Only `request_changes` ever
     /// sets this: approve and reject are decisions, and request-changes is
-    /// feedback that becomes the rework's context — kaambaan merges it into
+    /// feedback that becomes the rework's context — superpipeline merges it into
     /// the card's handoff, so an empty one costs the next agent the reason.
     @State private var commenting: CustomEventDecisionOption?
     @State private var comment = ""
@@ -201,7 +201,7 @@ private struct DecisionButtons: View {
     /// The option this reader chose, once it has actually landed.
     ///
     /// A gate is answered **once**. Leaving three live buttons after an answer
-    /// invites a second tap that kaambaan refuses with GATE_NOT_PENDING — a
+    /// invites a second tap that superpipeline refuses with GATE_NOT_PENDING — a
     /// round trip whose only outcome is a message explaining that nothing
     /// happened. Worse, it reads as though the first tap failed.
     ///
@@ -318,11 +318,11 @@ private struct DecisionButtons: View {
 
 /// One answer to a decision, on its way out of the card.
 ///
-/// Carries `subject` — what the decision resolves, a kaambaan `gate_id` today —
+/// Carries `subject` — what the decision resolves, a superpipeline `gate_id` today —
 /// because the card is the only place that knows it: the renderer read it out
 /// of the payload, and the row above has only an event id.
 struct GateAnswer {
-    /// kaambaan's only option id that expects a comment.
+    /// superpipeline's only option id that expects a comment.
     static let requestChanges = "request_changes"
 
     let subject: String
@@ -337,7 +337,7 @@ struct GateAnswer {
     PreviewGround {
         CustomEventCard(
             view: PreviewFixtures.cardPending, label: "Gate",
-            eventType: "dev.kaambaan.gate.v1", senderName: "Kaambaan — Delivery",
+            eventType: "dev.superpipeline.gate.v1", senderName: "Superpipeline — Delivery",
             onDecide: { _ in true })
     }
 }
@@ -350,7 +350,7 @@ struct GateAnswer {
     PreviewGround {
         CustomEventCard(
             view: PreviewFixtures.cardAnswered, label: "Gate",
-            eventType: "dev.kaambaan.gate.v1", senderName: "Kaambaan — Delivery")
+            eventType: "dev.superpipeline.gate.v1", senderName: "Superpipeline — Delivery")
     }
 }
 

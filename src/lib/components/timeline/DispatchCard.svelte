@@ -43,7 +43,7 @@
      *
      * Named for what it does rather than what it sends: the suite's rule is
      * that supermessage acts only through Matrix, so answering a gate is a
-     * decision *event*, never a REST call to Kaambaan.
+     * decision *event*, never a REST call to Superpipeline.
      */
     onDecide: (itemId: string, optionId: string) => void;
     /** How the container renders a timestamp, so both agree. */
@@ -193,7 +193,7 @@
     every real event and this block never executes.
     That is spec §7.1's requirement — "do not ship a
     visible button that does nothing" — and the reason
-    `onDecide` is inert. Kaambaan's permission-request
+    `onDecide` is inert. Superpipeline's permission-request
     renderer plus its gate-resolution REST call
     (`docs/positioning.md`, wedge #3) are what make
     this live; the slot is covered by unit tests

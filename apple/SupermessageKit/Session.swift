@@ -215,7 +215,7 @@ public final class Session {
         _ = try? await client.toggleReaction(roomId: roomId, eventId: eventId, key: key)
     }
 
-    /// Answer a kaambaan approval gate.
+    /// Answer a superpipeline approval gate.
     ///
     /// Takes the **event** id for the same reason `toggleReaction` does: the
     /// decision references the gate event, and a gate the homeserver has not

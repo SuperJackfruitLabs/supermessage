@@ -242,7 +242,7 @@ public actor CoreClient {
         try await run { try $0.toggleReaction(roomId: roomId, eventId: eventId, key: key) }
     }
 
-    /// Answer a kaambaan approval gate.
+    /// Answer a superpipeline approval gate.
     ///
     /// `optionId` must be one of `approve`, `request_changes`, `reject`; the
     /// core refuses anything else before it reaches the room. `prompt` is the

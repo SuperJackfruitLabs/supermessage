@@ -120,7 +120,7 @@
   //
   // The dispatch card (spec §7) is this design's signature element and the
   // one bordered object in the timeline — everything else here is unbordered
-  // prose. Every `kind: "customMessage"` item renders as one: Kaambaan
+  // prose. Every `kind: "customMessage"` item renders as one: Superpipeline
   // cards, runs, station status, and above all permission requests
   // (`docs/matrix-events.md` §G), which are the app's third named
   // differentiator. Four things about it are decisions, not defaults:
@@ -884,14 +884,14 @@
    * §7.1) — deliberately inert in this build.
    *
    * **What replaces this: sending a Matrix event — not an HTTP call.**
-   * An earlier version of this comment said Kaambaan's gate-resolution REST
+   * An earlier version of this comment said Superpipeline's gate-resolution REST
    * endpoint, and that is now known to be wrong
-   * (rakeshgangwar/kaambaan#34). Three reasons, in ascending order of how
+   * (rakeshgangwar/superpipeline#34). Three reasons, in ascending order of how
    * badly a REST client would fail:
    *
    * 1. The suite's decision is that supermessage acts **only** through
    *    Matrix. An Application Service translates the event into the
-   *    Kaambaan call. The client then holds exactly one credential — the
+   *    Superpipeline call. The client then holds exactly one credential — the
    *    Matrix one — which is also what keeps this app usable as an ordinary
    *    Matrix client against any homeserver, rather than degrading to
    *    read-only wherever suite credentials are absent.
@@ -899,7 +899,7 @@
    *    bearer cannot reach it at all, so a client holding a suite token
    *    could not resolve a gate even if it tried.
    * 3. Resolving as a single bridge identity would attribute every approval
-   *    in the suite to one account and silently void Kaambaan's
+   *    in the suite to one account and silently void Superpipeline's
    *    separation-of-duties check, which refuses a decision whose
    *    `decidedBy` is the agent that produced the work. The Application
    *    Service therefore has to act *on behalf of* the person who tapped
@@ -1511,7 +1511,7 @@
               {:else if view.render === "customEvent"}
                 <!--
                   The dispatch card (spec §7) — a `kind: "customMessage"`
-                  item: Kaambaan cards/runs/permission requests/station status
+                  item: Superpipeline cards/runs/permission requests/station status
                   once those schemas land (`docs/matrix-events.md` §G), the
                   demo renderer until then. `view.view` is the whole
                   `core::custom_events::resolve_custom_event` outcome

@@ -97,7 +97,7 @@ use supermessage_core::timeline::{
 use supermessage_core::tls::install_ring_provider;
 
 /// A hand-rolled custom message-like event content, standing in for a real
-/// (not-yet-designed — see `docs/matrix-events.md` §G) Kaambaan schema, so
+/// (not-yet-designed — see `docs/matrix-events.md` §G) Superpipeline schema, so
 /// `custom_message_payload`'s SDK-facing extraction (reading `content` back
 /// out of `EventTimelineItem::original_json`, since `MsgLikeKind::Other`
 /// itself discards it — see that function's doc comment) can be driven

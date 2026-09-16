@@ -639,7 +639,7 @@ fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
 /// of the rest of the event's envelope (`type`, `sender`, `event_id`,
 /// `origin_server_ts`, `unsigned`, …) that shares the same 64KiB budget. A
 /// schema that genuinely needs more than this should carry a reference (a
-/// Kaambaan card/run id the client resolves via its own API) rather than
+/// Superpipeline card/run id the client resolves via its own API) rather than
 /// embedding the full payload inline — the same shape this app already uses
 /// for media (metadata inline, bytes fetched on demand).
 ///
@@ -761,7 +761,7 @@ pub(crate) fn gate_decision_body(option_id: &str, prompt: &str) -> String {
 ///
 /// Carried in `content`, not in the Matrix event type, because the event is an
 /// ordinary `m.room.message` — see [`FocusedTimeline::send_gate_decision`].
-pub const GATE_DECISION_SUITE_TYPE: &str = "dev.kaambaan.gate.decision.v1";
+pub const GATE_DECISION_SUITE_TYPE: &str = "dev.superpipeline.gate.decision.v1";
 
 /// Builds a decision's `content`.
 ///
@@ -812,7 +812,7 @@ pub(crate) fn gate_decision_content(
 /// match on a message-like event's content ends in an unqualified `_ =>
 /// false`, with **no exception for an unrecognized type**. Concretely, that
 /// means the plain `room.timeline()` this module used before this filter
-/// existed would silently drop a custom Kaambaan card/run/permission-request
+/// existed would silently drop a custom Superpipeline card/run/permission-request
 /// event *before it was ever added to the timeline's item list at all* — it
 /// would never become a `MsgLikeKind::Other` item, `original_json()` would
 /// never be called on it, and `docs/matrix-events.md` §G's whole "arrives as
@@ -2224,7 +2224,7 @@ impl FocusedTimeline {
         Ok(())
     }
 
-    /// Answers a kaambaan approval gate.
+    /// Answers a superpipeline approval gate.
     ///
     /// Sent as an ordinary `m.room.message` carrying its structured fields
     /// alongside, rather than as a custom event type — the reverse of the
@@ -5337,7 +5337,7 @@ mod gate_decision_tests {
         );
         assert!(
             content.get("comment").is_none(),
-            "kaambaan merges a comment into the card's handoff as feedback; \
+            "superpipeline merges a comment into the card's handoff as feedback; \
              blank feedback is worse than none"
         );
     }
@@ -5390,7 +5390,7 @@ mod gate_decision_tests {
     }
 
     #[tokio::test]
-    async fn refuses_an_option_kaambaan_could_not_resolve() {
+    async fn refuses_an_option_superpipeline_could_not_resolve() {
         let err = FocusedTimeline::default()
             .send_gate_decision("!r:x", "gate_4e8b", "ship_it", None, GATE_EVENT, "Shipped")
             .await
@@ -5422,7 +5422,7 @@ mod gate_decision_tests {
     }
 
     #[tokio::test]
-    async fn accepts_all_three_of_kaambaans_decisions() {
+    async fn accepts_all_three_of_superpipelines_decisions() {
         for option in ["approve", "request_changes", "reject"] {
             let err = FocusedTimeline::default()
                 .send_gate_decision("!r:x", "gate_4e8b", option, None, GATE_EVENT, "…")

@@ -21,7 +21,7 @@ internal fun CardPending() {
         DecisionCard(
             view = PreviewFixtures.cardPending,
             label = "Gate",
-            eventType = "dev.kaambaan.gate.v1",
+            eventType = "dev.superpipeline.gate.v1",
             onDecide = { true },
         )
     }
@@ -40,7 +40,7 @@ internal fun CardAnswered() {
         DecisionCard(
             view = PreviewFixtures.cardAnswered,
             label = "Gate",
-            eventType = "dev.kaambaan.gate.v1",
+            eventType = "dev.superpipeline.gate.v1",
         )
     }
 }
