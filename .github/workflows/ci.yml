@@ -199,17 +199,6 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: PROBE (temporary) render 5 times with and without LCD text
-        run: |
-          pnpm storybook:build >/dev/null
-          sed "s/chromium.launch({ args: \['--disable-lcd-text'\] })/chromium.launch()/" scripts/snapshot-stories.mjs > scripts/_probe-lcd.mjs
-          grep -q "chromium.launch()" scripts/_probe-lcd.mjs || { echo "PROBE: sed did not produce an LCD-on copy"; exit 1; }
-          for i in 1 2 3 4 5; do
-            node scripts/_probe-lcd.mjs .probe/lcd-$i > /dev/null
-            node scripts/snapshot-stories.mjs .probe/gray-$i > /dev/null
-          done
-          python3 scripts/_probe_report.py .probe
-
       - name: The story catalogue builds, and still looks like the baseline
         # Two steps until this one. `snapshot-stories.sh` builds the
         # catalogue itself — deliberately, because a stale `storybook-static`
