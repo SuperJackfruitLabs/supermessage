@@ -281,7 +281,8 @@
   import { tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import Shimmer from "./ai/Shimmer.svelte";
-  import { mediaDownload } from "$lib/ipc";
+  import { mediaDownload, type CustomEventDecision } from "$lib/ipc";
+  import { sendDecisionReply } from "./decisionReply";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
   import { QUICK_REACTIONS } from "./emojiPicker";
@@ -879,64 +880,10 @@
     replyTargetStore.set(roomId, replyTargetStore.fromItem(row));
   }
 
-  /**
-   * The operator's answer to a pending decision on a dispatch card (spec
-   * §7.1) — deliberately inert in this build.
-   *
-   * **What replaces this: sending a Matrix event — not an HTTP call.**
-   * An earlier version of this comment said Superpipeline's gate-resolution REST
-   * endpoint, and that is now known to be wrong
-   * (rakeshgangwar/superpipeline#34). Three reasons, in ascending order of how
-   * badly a REST client would fail:
-   *
-   * 1. The suite's decision is that supermessage acts **only** through
-   *    Matrix. An Application Service translates the event into the
-   *    Superpipeline call. The client then holds exactly one credential — the
-   *    Matrix one — which is also what keeps this app usable as an ordinary
-   *    Matrix client against any homeserver, rather than degrading to
-   *    read-only wherever suite credentials are absent.
-   * 2. Gate resolution requires a **human session cookie**. An agent-token
-   *    bearer cannot reach it at all, so a client holding a suite token
-   *    could not resolve a gate even if it tried.
-   * 3. Resolving as a single bridge identity would attribute every approval
-   *    in the suite to one account and silently void Superpipeline's
-   *    separation-of-duties check, which refuses a decision whose
-   *    `decidedBy` is the agent that produced the work. The Application
-   *    Service therefore has to act *on behalf of* the person who tapped
-   *    the button, which needs an explicitly-minted `mxid → Principal`
-   *    link — never one inferred from a localpart or a matching email.
-   *
-   * So this becomes a `timelineStore` send of a decision event carrying the
-   * option id and the event it answers. Two further things this slot waits
-   * on, both that team's to design rather than this app's to invent: the
-   * inbound schema whose renderer sets `CustomEventRenderResult.decision`
-   * (`core::custom_events`, "Decisions"), and the outbound decision event type
-   * itself. Note also that "gate" is two mechanisms there — a stage-review
-   * gate, which resolves today, and a mid-run elicitation, which currently
-   * has no return path at all — so this may end up answering two event
-   * types rather than one.
-   *
-   * Nothing in this build can reach it: no shipped renderer sets
-   * `decision`, so `core::custom_events::resolve_custom_event` returns `decision: null` for every
-   * real event and the branch that renders these buttons never executes.
-   * That is the spec's requirement, not an accident — §7.1: "Do not ship a
-   * visible button that does nothing." It logs rather than being an empty
-   * body so that the first renderer to set a decision produces visible
-   * evidence in the console instead of a silent click.
-   */
-  function onDecide(itemId: string, optionId: string): void {
-    // `optionId` is the option's *name* — see `permissionRequestRenderer`,
-    // which puts the name in `CustomEventDecisionOption.id` precisely because
-    // this is what gets sent and the room is a shared human record. The hub's
-    // `matchPermissionAnswer` accepts the number, the name or the id, so this
-    // resolves through the path a reader typing "Allow once" already uses.
-    //
-    // An ordinary message, not a custom event: the answer needs no new
-    // vocabulary, and sending it as text means the transcript afterwards reads
-    // as a person deciding rather than as a machine exchange. It also keeps
-    // this the same send path Element would use.
-    void timelineStore.send(roomId, optionId).catch((err: unknown) => {
-      console.error("failed to send a decision", { itemId, optionId, err });
+  /** Gate answers carry the core's subject and the Matrix event address. */
+  function onDecide(eventId: string | null, decision: CustomEventDecision, optionId: string): void {
+    void sendDecisionReply(roomId, eventId, decision, optionId).catch((err: unknown) => {
+      console.error("failed to send a decision", { eventId, optionId, err });
     });
   }
 

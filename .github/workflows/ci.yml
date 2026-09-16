@@ -57,7 +57,16 @@ jobs:
               - 'crates/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
+            snapshots: &snapshots
+              - 'scripts/snapshot-index.py'
+              - 'scripts/png_decode.py'
+              - 'scripts/baseline_compare.py'
             frontend:
+              - *snapshots
+              - 'scripts/snapshot-stories.sh'
+              - 'scripts/snapshot-stories.mjs'
+              - 'scripts/tests/test_story_baseline.py'
+              - 'scripts/tests/test_fixture_leak.mjs'
               - *workflow
               - 'src/**'
               - '.storybook/**'
@@ -75,6 +84,10 @@ jobs:
             # The mobile clients link the Rust core, so a core change has to
             # rebuild them even when no platform file moved.
             ios:
+              - *snapshots
+              - 'scripts/snapshot-previews.sh'
+              - 'scripts/tests/test_ios_preview_baseline.py'
+              - 'scripts/tests/test_ios_preview_leak.sh'
               - *workflow
               - *core
               - 'apple/**'
@@ -84,6 +97,8 @@ jobs:
               - *core
               - 'android/**'
               - 'scripts/build-android-libs.sh'
+              - 'scripts/generate-kotlin-bindings.sh'
+              - 'scripts/tests/test_android_preview_leak.sh'
               - 'scripts/android-*.sh'
             # The generated outputs are listed alongside the sources, so a
             # hand-edited generated file triggers the job that catches it.
@@ -103,6 +118,8 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'src-tauri/Cargo.toml'
+              - 'src-tauri/deny.toml'
+              - 'crates/**/Cargo.toml'
 
   tokens:
     name: Design tokens
@@ -275,11 +292,12 @@ jobs:
         # separate set that it would otherwise report as warnings and exit 0
         # on. Without this the job goes green on a tree full of clippy
         # findings.
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
         working-directory: src-tauri
 
       - name: Tests
-        run: cargo test --all-features
+        # Dependency compilation does not execute core or FFI tests.
+        run: cargo test --workspace --all-features
         working-directory: src-tauri
 
   ios:

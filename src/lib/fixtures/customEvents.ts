@@ -36,6 +36,7 @@ const fields: CustomEventField[] = [
 ];
 
 const decision: CustomEventDecision = {
+  subject: null,
   prompt: "Promote build 214 to production?",
   options: [
     { id: "approve", label: "Approve" },

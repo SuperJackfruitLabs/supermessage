@@ -1,20 +1,34 @@
 # AGENTS.md — supermessage
 
-Guidance for AI coding agents working in this repository. Read this first; it summarizes the project's purpose, current state, and decided architecture. For full detail, read the two docs in `docs/` — they are the source of truth.
+Guidance for AI coding agents working in this repository. Read this first for current architecture and development rules. [README.md](README.md) records implemented capabilities; dated documents in `docs/` preserve their original decisions and assessments and must be checked against the code.
 
 ## Project overview
 
-supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android, Windows, macOS, and Linux from a single codebase**.
+supermessage is a **cross-platform Matrix chat client** targeting **iOS, Android, Windows, macOS, and Linux with one shared Rust core** and desktop, SwiftUI and Compose frontends.
 
 It is the **Communication layer (client)** of the Synthetic Organization suite (AgentPod + Superpipeline + Matrix + org control plane) — the human-facing, agent-aware Matrix client for a mixed human/AI-agent organization. Generic-client quality is the baseline; the differentiators are agent-aware rendering of suite events (Superpipeline cards/runs, permission requests, station status), approvals from chat (Superpipeline gate resolution), and fleet/mission awareness. See `docs/positioning.md`.
 
-**Current status: M0 and most of M1 are on `main`, plus a full design pass; v0.0.1 is tagged.** Password login, encrypted session persistence, `SyncService`, room-list and timeline streaming, send/receive, replies, reactions, typing notices, read receipts, media rendering, the custom-event framework, and a responsive three-pane desktop UI (571 Rust tests, 379 frontend tests, clippy and svelte-check clean).
+**Current status (September 2026):** desktop Tauri/Svelte and native iOS/Android
+clients share `crates/supermessage-core` through Tauri commands and UniFFI.
+The [README capability table](README.md#status-early-with-active-desktop-and-native-clients)
+covers messaging, attachments, edits/deletes, rooms, search, recovery and suite
+cards. Gate choices use `FocusedTimeline::send_gate_decision` on all three
+frontends; ordinary AgentPod permission replies remain plain text on desktop.
 
-**Before planning work, read [docs/parity-gap-analysis.md](docs/parity-gap-analysis.md).** It is the only document here grounded in the command surface rather than in intent, and it is blunt about how far this is from a general-purpose client: no file sending, no edit or delete, no room creation or joining, no search, no notifications, and encrypted rooms rendering a placeholder. The 17 commands registered in `src-tauri/src/lib.rs`'s `generate_handler!` are the authoritative capability list — everything else in these docs describes intent and drifts.
+**Before planning work, inspect both the UI caller and its core implementation.**
+`src-tauri/src/lib.rs` registers the desktop commands; mobile calls go through
+`crates/supermessage-ffi`. Registration is not proof of a reachable UI or
+successful live delivery. [docs/parity-gap-analysis.md](docs/parity-gap-analysis.md)
+is a dated August assessment with a drift note, not a current feature inventory.
+Do not repeat its old command count or missing-feature claims.
 
-Verified by driving the real app over WebDriver against `id.agentpod.dev` (see "Driving the real UI" below): 16 rooms render, rooms load history, encrypted events show placeholders, composer drafts stay scoped to their room, no connection banner while sync is live, and the session restores from the keyring with no password after a restart.
-
-**What is still unverified:** sending a message end to end (not exercised, because it posts real text into real rooms), scroll-triggered back-pagination beyond the initial page, and anything on Windows, macOS or mobile.
+**Validation boundaries:** local unit/contract checks do not prove a live gate
+resolves, a message is delivered, encrypted history recovers across clients,
+or a platform has a downloadable release. End-to-end checks require explicit
+permission before posting into live rooms. Windows/macOS and native mobile
+builds and device checks remain separate from Linux frontend/core checks.
+Background push delivery is not implemented. Keep dated verification reports
+in their original context rather than presenting them as current evidence.
 
 Remaining follow-ups:
 
@@ -24,7 +38,7 @@ Remaining follow-ups:
 ## Repository layout
 
 ```
-README.md            — one-paragraph summary and stack pointer
+README.md            — current capabilities, validation/release caveats and build entry point
 docs/tech-stack.md   — full stack decision record: choices, rationale, risks, protocol choices, milestones
 docs/positioning.md  — suite context, boundaries (hard rules), near-term wedge, milestone adjustments
                        NOT IN THIS REPOSITORY. Internal strategy notes, git-ignored and unpublished.
@@ -42,11 +56,14 @@ docs/design-language.md — the rules the tokens cannot carry (what amber means,
 scripts/generate-tokens.py — the generator; scripts/tokens/ is its package
 src/app.css          — behaviour only: safe areas, user-select, motion budget
 src/lib/tokens.css   — generated, do not edit
-src/routes/          — Svelte 5 routes (currently the M0 placeholder screen)
-src-tauri/           — the Rust core and Tauri config
+src/routes/          — desktop login, room shell, search, recovery and room actions
+crates/supermessage-core/ — shared Matrix state, protocol and view-model logic
+  src/tls.rs         — rustls provider selection (ring)
+  src/session.rs     — ownership seam for the logged-in matrix_sdk::Client
+crates/supermessage-ffi/ — UniFFI boundary for native clients
+src-tauri/           — desktop host and Tauri config
   src/lib.rs         — app setup, tracing, command registration
-  src/core/tls.rs    — rustls provider selection (ring); see the Android note below
-  src/core/session.rs— ownership seam for the logged-in matrix_sdk::Client
+  src/commands.rs    — thin command wrappers around the shared core
   gen/android/       — generated Android Studio project (committed)
 android/             — the native Android app (Gradle, over the Rust core via UniFFI)
   core/              — the FFI boundary module: generated Kotlin bindings + jniLibs
@@ -58,31 +75,31 @@ android/             — the native Android app (Gradle, over the Rust core via 
 
 | Layer | Choice | License |
 |---|---|---|
-| App shell | Tauri 2 (one Rust + webview codebase for all 5 OS targets) | MIT/Apache-2.0 |
-| Matrix SDK | matrix-rust-sdk, as a plain crate in the Tauri core (no UniFFI/FFI bridge) | Apache-2.0 |
-| Frontend | Svelte 5, SPA mode, no SSR | MIT |
+| App shells | Tauri 2 on desktop; SwiftUI on iOS; Kotlin/Compose on Android | MIT/Apache-2.0 |
+| Matrix SDK | matrix-rust-sdk in `supermessage-core`, with UniFFI for mobile | Apache-2.0 |
+| Desktop frontend | Svelte 5, SPA mode, no SSR | MIT |
 | Styling | Tailwind CSS v4 design tokens | MIT |
 | Headless primitives | Bits UI (Radix-equivalent for Svelte) | MIT |
-| Mobile skin | Framework7 Svelte v9 (fallback: Konsta UI Svelte) | MIT |
+| Mobile UI | Native SwiftUI and Kotlin/Compose | Platform framework / Apache-2.0 |
 | Desktop skins | Per-OS token themes over Tauri native chrome (Fluent-inspired Windows, hand-rolled HIG macOS, libadwaita CSS vars Linux) | — |
 | Message list | virtua (Svelte virtualizer) for the inverted chat timeline | MIT |
 | JS ↔ Rust bridge | Tauri commands/events + Svelte stores | — |
-| Push infra | Self-hosted push gateway (unmodified Sygnal, or own minimal Rust gateway at M3) + FCM/APNs | AGPL-3.0 if Sygnal — infrastructure only, not linked |
+| Push proposal (not implemented) | Self-hosted gateway + FCM/APNs | AGPL-3.0 if Sygnal — infrastructure only, not linked |
 
-**Wired so far:** Tauri 2, matrix-sdk 0.18 (`markdown` + `bundled-sqlite`), Svelte 5 + SvelteKit (SPA), Tailwind v4, Bits UI, virtua. **Not yet added:** Framework7 (mobile skin, M2) and the desktop skins — add them when skin work starts, not before, so the Konsta fallback stays cheap.
+**Wired so far:** Tauri 2, matrix-sdk 0.18 (`markdown` + `bundled-sqlite`), Svelte 5 + SvelteKit (SPA), Tailwind v4, Bits UI, virtua. Native mobile hosts use UniFFI. Framework7 was an earlier proposal, superseded by the native iOS and Android implementations. Shared design tokens feed each host.
 
 ## Architecture rules (from docs/tech-stack.md — treat as binding)
 
 - The Matrix client lives **entirely in the Rust core** (tokio). The webview is a dumb renderer: Svelte stores mirror core state streamed over Tauri events; user intents go down as Tauri commands. Use windowed/delta updates to bound IPC serialization cost.
 - Exactly one `matrix_sdk::Client` per logged-in account, owned by the core.
-- UI skins are the **only** platform-branched layer (~20% of UI code). All logic, state, and chat behavior is shared.
+- Hosts own platform UI and adapters; shared Rust owns Matrix state, protocol parsing and view-model decisions. Keep host-specific rendering out of the core.
 
 ## Product boundaries (hard rules from docs/positioning.md)
 
 - Matrix conversation ≠ ACP execution transcript ≠ Superpipeline work activity. supermessage is **not** an ACP client and **not** a work-state board; it renders links and projections of those, never their truth.
 - Correlate rooms to work via `missionId/cardId/taskId/runId` + `matrixRoomId/matrixEventId`; never attach a whole Matrix room to one run.
 - Agent identity, Station, ACP Session, and Superpipeline Run are distinct linked objects — render them as such.
-- Do not build a homeserver (Synapse stays) and do not own org membership (the P1 Organization layer will). The Application Service bridge (server half) lives outside this repo.
+- Do not build a homeserver (the homeserver stays external) and do not own org membership (the P1 Organization layer will). The Application Service bridge (server half) lives outside this repo.
 - Custom "rich card" event types must be **versioned, documented, suite-shared schemas** with plain-text fallback so Element/Cinny remain usable clients. Never client-private hacks.
 
 ## Matrix protocol choices
@@ -119,10 +136,10 @@ pnpm build                   # frontend only -> build/
 python3 scripts/generate-tokens.py                    # regenerate all five token targets
 python3 -m unittest discover -s scripts/tests -t .    # the token contracts
 
-cd src-tauri
-cargo check                  # fast Rust typecheck
-cargo test                   # Rust unit tests
-cargo fmt && cargo clippy    # format and lint
+cargo check --workspace      # core, FFI and desktop typecheck
+cargo test --workspace       # execute tests in every member
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
 Android (SDK at `~/Android/Sdk`, NDK 29.0.14206865 installed; all four Rust
@@ -359,16 +376,17 @@ working and is deliberately **not** the plan; the spec says why.
 
 ## Testing strategy
 
-`cargo test` covers the Rust core (622 tests) and `pnpm test` the frontend
-(380, vitest).
+`cargo test --workspace` covers core, FFI and desktop tests; `pnpm test` runs
+the frontend Vitest suite. A bare Cargo command from `src-tauri` selects only
+the shell and does not run its dependencies' unit tests.
 
-The frontend count went *down* as the Rust one went up, and that is the
-shape of the shared view-model migration rather than lost coverage: the
+During the shared view-model migration, the
 render classification, rich-text parsing, the custom-event registry, room
 identity, matrix-link parsing, mention collection, previews and affordances
 all moved into the core, taking their tests with them, so iOS and Android
-cannot disagree with this app about any of them. Both are clean, and CI runs them on every PR along with
-`clippy -D warnings` and a dependency-licence gate.
+cannot disagree with this app about any of them. CI selects jobs by changed paths and runs workspace tests,
+`clippy -D warnings`, frontend checks and a dependency-licence gate when their
+inputs change. Report actual commands and results rather than fixed test counts.
 
 ### A test that has never failed is not yet a regression test
 
@@ -425,7 +443,11 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 - E2EE via vodozemac only; never hand-roll cryptography. Note the product call (docs/positioning.md): org rooms are unencrypted by design (knowledge extraction, AS-bridge incompatibility); E2EE stays available for external/DM contexts but is not on the critical path.
 - Push content is fetched and decrypted by the app itself (`event_id_only` pushes) — do not route message content through the push gateway.
 
-## Milestones (docs/positioning.md supersedes docs/tech-stack.md on ordering)
+## Original milestone sequence (historical planning context)
+
+These are the original stages, not a current completion checklist. Native
+mobile implementations supersede the webview/Framework7 proposals below; use
+the README capability table and source for present behavior.
 
 - **M0 — spine:** Tauri scaffold; Rust core syncs a real account on `id.agentpod.dev` (password login); Svelte stores mirror room list/timeline; virtua message list; send/receive plaintext. Dogfood immediately against real agent users.
 - **M1 — agent-aware client:** custom event rendering framework + schema drafts (card/run/permission/station), deep links, graceful plain-text fallback. E2EE is "available, not blocking".
@@ -435,11 +457,9 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 
 ## Known risks to keep in mind when writing code
 
-- No production Tauri-**mobile** Matrix client exists yet — mobile integration is trailblazing; spike the push path early.
-- iOS keyboard does not resize WKWebView (the #1 "web tell" in chat apps) — the planned fix is ~200 lines of objc2 Rust resizing the webview frame; treat as core work.
-- aws-lc-rs crashes on Android 16KB-page devices ([matrix-rust-sdk#6442](https://github.com/matrix-org/matrix-rust-sdk/issues/6442), still open as of Aug 2026). **The `ring` backend cannot be selected purely by features:** matrix-sdk 0.18 depends on `reqwest` with its `rustls` feature, which resolves to `__rustls-aws-lc-rs` and turns on `rustls/aws_lc_rs`. Cargo features are additive, so aws-lc-rs is compiled in no matter what this crate declares. The mitigation is runtime, in `src-tauri/src/core/tls.rs`: we also enable `rustls/ring` and install ring as the process-wide provider at the top of `run()`. This is also load-bearing for correctness — with two providers compiled in, rustls has no implicit default and `ClientConfig::builder()` panics unless one is installed. **Anything that constructs TLS must run after `install_ring_provider()`.** Verify on a real 16KB-page device at M2; if it still crashes, the remaining lever is a `[patch.crates-io]` forcing reqwest's `rustls-no-provider` feature.
+- Native mobile lifecycle, background execution and push need platform-specific validation. The current iOS app uses SwiftUI, so old WKWebView keyboard proposals do not describe its UI.
+- aws-lc-rs crashes on Android 16KB-page devices ([matrix-rust-sdk#6442](https://github.com/matrix-org/matrix-rust-sdk/issues/6442), still open as of Aug 2026). **The `ring` backend cannot be selected purely by features:** matrix-sdk 0.18 depends on `reqwest` with its `rustls` feature, which resolves to `__rustls-aws-lc-rs` and turns on `rustls/aws_lc_rs`. Cargo features are additive, so aws-lc-rs is compiled in no matter what this crate declares. The mitigation is runtime, in `crates/supermessage-core/src/tls.rs`: we also enable `rustls/ring` and install ring as the process-wide provider at the top of `run()`. This is also load-bearing for correctness — with two providers compiled in, rustls has no implicit default and `ClientConfig::builder()` panics unless one is installed. **Anything that constructs TLS must run after `install_ring_provider()`.** Verify on a real 16KB-page device at M2; if it still crashes, the remaining lever is a `[patch.crates-io]` forcing reqwest's `rustls-no-provider` feature.
 - IPC cost of streaming timelines to the webview — use windowed/delta updates.
-- Framework7 is single-maintainer — keep the skin isolated (~20% of UI) so the Konsta fallback stays viable.
 
 ## Related repositories (not part of this workspace's code)
 

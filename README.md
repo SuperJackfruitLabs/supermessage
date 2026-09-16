@@ -1,72 +1,86 @@
 # supermessage
 
-A cross-platform Matrix chat client — iOS, Android, Windows, macOS, and Linux from a single codebase.
+A cross-platform, agent-aware Matrix chat client for iOS, Android, Windows,
+macOS, and Linux. The platforms share a Rust Matrix core: desktop uses
+**Tauri 2 + Svelte 5**, iOS uses **SwiftUI**, and Android uses **Kotlin/Compose**
+through UniFFI. See [AGENTS.md](AGENTS.md) for the current architecture and
+[docs/tech-stack.md](docs/tech-stack.md) for the original decisions.
 
-Stack: **Tauri 2 + matrix-rust-sdk (Rust core) + Svelte 5**. See [docs/tech-stack.md](docs/tech-stack.md) for the full architecture, decisions, risks, and milestones.
+## Status: early, with active desktop and native clients
 
-## Status: early. Read this before installing.
+The table describes implemented source paths on this branch, reviewed in
+September 2026. It is not a promise that every platform has a current signed
+release, or that every operation has been exercised against a live homeserver.
 
-supermessage today is a **capable Matrix reader with a reply box.** Everything
-it can send to a homeserver is: a plain-text message, a plain-text reply, a
-reaction, a typing notice and a read receipt.
+| Capability | Desktop (Linux/macOS/Windows) | iOS | Android |
+|---|---|---|---|
+| Password login, persistent session, room and timeline sync | Implemented | Implemented | Implemented |
+| Messages, replies, reactions, typing and read receipts | Implemented | Implemented | Implemented |
+| File/image sending and editing/deleting own messages | Implemented | Implemented | Implemented |
+| New conversations, room joining and accepting invitations | Implemented | Implemented | Implemented |
+| Message search | Homeserver search | Homeserver search | Homeserver search |
+| Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
+| AgentPod turn/permission cards and Superpipeline gates | Implemented; gate sender uses shared core | Implemented | Implemented |
+| Background push notifications when closed | Not implemented | Not implemented | Not implemented |
 
-It cannot yet send a file or an image, edit or delete your own messages,
-create or join a room, invite anyone, search, change any setting, edit your
-profile, or notify you when it is closed. **Encrypted rooms render a
-placeholder** — E2EE is deliberately not on the critical path, so most DMs on
-most homeservers will not be readable here.
+Search depends on homeserver support and is not an encrypted local-history
+search. Encrypted events can still show undecryptable placeholders when keys
+are unavailable; recovery support does not establish full cross-client E2EE
+parity. Platform-specific account and room settings differ.
 
-[docs/parity-gap-analysis.md](docs/parity-gap-analysis.md) is an honest,
-code-grounded account of where this stands against Element, Cinny,
-FluffyChat and Nheko, and what each gap would cost to close. Read it before
-deciding whether this is usable for you. If you want a general-purpose Matrix
-client today, use one of those.
+The implementation paths are the desktop [routes](src/routes/+page.svelte),
+[composer](src/lib/components/Composer.svelte) and [timeline](src/lib/components/Timeline.svelte),
+the [iOS app](apple/Supermessage) and [Android app](android/app/src/main/kotlin/dev/supermessage),
+and the shared [Rust core](crates/supermessage-core/src). Frontend and Rust
+regression tests cover contracts; they do not establish live delivery,
+background execution or complete device/platform validation. Windows, macOS
+and mobile need their own build and device checks.
+
+[docs/parity-gap-analysis.md](docs/parity-gap-analysis.md) is a dated August
+assessment with a drift note. Use it for comparison context, not as today's
+capability list.
 
 ## What it is for
 
-supermessage is built for rooms whose other occupants are AI agents as often
-as people. That is the reason it exists, and it is the only area where it is
-ahead of anything else:
+supermessage is built for rooms whose occupants include both people and AI
+agents:
 
-- **Agent-aware rendering.** A registry that turns structured suite events
-  into first-class timeline objects instead of "unsupported message", with a
-  plain-text fallback so Element, Cinny and every other client stay usable in
-  the same rooms. The framework is built and tested; the only renderer that
-  ships today is a demo one, because the real schemas belong to another team
-  and are still being designed in the open
-  ([superpipeline#34](https://github.com/rakeshgangwar/superpipeline/issues/34)).
-- **Approvals from chat** — *not yet working.* When an agent needs a human
-  decision, the timeline is where that decision should be made. The card that
-  renders it is built, unit-tested, and **unreachable in this build**: no
-  event type exists yet for it to render. It is a slot, not a feature.
-- **A reading surface, not a chat log.** Agents write at length — plans,
-  findings, reports. Message bodies are set for reading; the chrome around
-  them is set for scanning. This part is real and shipped. See
-  [the design spec](docs/superpowers/specs/2026-08-13-console-design.md).
+- **Agent-aware rendering.** Production renderers handle AgentPod turns,
+  permission requests and Superpipeline gates, with plain-text fallback for
+  clients that do not recognize those event schemas.
+- **Approvals from chat.** Gate choices use the shared core's structured
+  Matrix decision sender, carrying the gate identifier and the gate event
+  reference. AgentPod permission replies remain ordinary chat text. Resolving
+  a Superpipeline gate also requires the AgentPod Application Service and its
+  human-identity mapping; local tests do not prove that live integration.
+- **A reading surface for long-form agent output.** Message bodies are set for
+  reading and surrounding controls for scanning. See the
+  [design language](docs/design-language.md).
 
-It talks to any homeserver and needs no particular server-side software.
-Everything above degrades to plain text when the other side does not speak
-the same event types.
+Ordinary Matrix chat does not require suite services. Suite-specific decision
+handling requires a compatible bridge on the receiving side.
 
 ## Building
 
 Requires [Rust](https://rustup.rs), [Node](https://nodejs.org) 22+ and
-[pnpm](https://pnpm.io) 10+, plus the
+[pnpm](https://pnpm.io) at the version pinned in `package.json`, plus the
 [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/)
 for your OS.
 
 ```sh
-pnpm install
-pnpm tauri dev          # run the app
-pnpm test               # frontend unit tests
-pnpm check              # svelte-check
-cd src-tauri && cargo test
+pnpm install --frozen-lockfile
+pnpm tauri dev             # run the app
+pnpm test                  # frontend unit tests
+pnpm check                 # svelte-check
+cargo test --workspace     # core, FFI and desktop shell
 ```
 
 Release binaries for Linux, macOS and Windows are built by
 [`.github/workflows/release.yml`](.github/workflows/release.yml) on a `v*`
-tag. They are currently **unsigned**, so macOS Gatekeeper and Windows
-SmartScreen will warn on first run.
+tag. That workflow does not publish mobile store releases. Desktop binaries
+are currently **unsigned**, so macOS Gatekeeper and Windows SmartScreen will
+warn on first run. Native build instructions and prerequisites are in
+[AGENTS.md](AGENTS.md); source availability is not release availability.
 
 ## Licence
 

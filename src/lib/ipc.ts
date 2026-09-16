@@ -740,6 +740,8 @@ export interface CustomEventDecisionOption {
 export interface CustomEventDecision {
   prompt: string;
   options: CustomEventDecisionOption[];
+  /** The gate this resolves; null for ordinary AgentPod permissions. */
+  subject: string | null;
 }
 
 /**
@@ -1179,6 +1181,14 @@ export async function sendMessage(
   mentions: string[] = [],
 ): Promise<void> {
   return invoke<void>("send_message", { roomId, body, mentions });
+}
+
+/** Send a structured gate answer through the shared core, using a Matrix event address. */
+export async function sendGateDecision(
+  roomId: string, gateId: string, optionId: string, comment: string | null,
+  inReplyTo: string, prompt: string,
+): Promise<void> {
+  await invoke<void>("send_gate_decision", { roomId, gateId, optionId, comment, inReplyTo, prompt });
 }
 
 /**
