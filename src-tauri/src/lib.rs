@@ -26,8 +26,8 @@ use crate::commands::{
     media_download, media_fetch, member_avatar, parse_matrix_link, recover_with_key,
     recovery_state, reset_recovery, restore_session, rich_blocks_from_markdown, room_avatar,
     room_info, rooms_resync, roster_hidden_invitations, roster_sections, roster_state,
-    search_messages, send_message, send_reply, set_typing, space_select, spaces_list,
-    timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
+    search_messages, send_gate_decision, send_message, send_reply, set_typing, space_select,
+    spaces_list, timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -232,6 +232,7 @@ pub fn run() {
             parse_matrix_link,
             collect_mentions,
             send_message,
+            send_gate_decision,
             send_reply,
             toggle_reaction,
             edit_message,

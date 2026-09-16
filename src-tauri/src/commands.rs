@@ -227,6 +227,30 @@ pub async fn send_message(
         .await
 }
 
+/// Answers a gate through the shared core's structured Matrix sender.
+/// The core validates the option, event reference, and focused room.
+#[tauri::command]
+pub async fn send_gate_decision(
+    room_id: String,
+    gate_id: String,
+    option_id: String,
+    comment: Option<String>,
+    in_reply_to: String,
+    prompt: String,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<(), CoreError> {
+    timeline
+        .send_gate_decision(
+            &room_id,
+            &gate_id,
+            &option_id,
+            comment.as_deref(),
+            &in_reply_to,
+            &prompt,
+        )
+        .await
+}
+
 /// Sends a plain-text reply to `in_reply_to` (a parent event id) in
 /// `room_id`.
 ///

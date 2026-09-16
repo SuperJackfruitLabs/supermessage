@@ -36,7 +36,7 @@
     view: Extract<ItemView, { render: "customEvent" }>;
     /** The pending decision, or `null` when there is nothing to answer. */
     decision: CustomEventDecision | null;
-    /** The item the card belongs to — read for its id and timestamp only. */
+    /** The item the card belongs to — read for its Matrix event address and timestamp. */
     item: TimelineItem;
     /**
      * The operator's answer.
@@ -45,7 +45,7 @@
      * that supermessage acts only through Matrix, so answering a gate is a
      * decision *event*, never a REST call to Superpipeline.
      */
-    onDecide: (itemId: string, optionId: string) => void;
+    onDecide: (eventId: string | null, decision: CustomEventDecision, optionId: string) => void;
     /** How the container renders a timestamp, so both agree. */
     formatTime: (ms: number | null) => string;
   }
@@ -184,21 +184,8 @@
 {/if}
 {#if decision}
   <!--
-    UNREACHABLE IN THIS BUILD — do not go looking for
-    these buttons in the running app. No shipped
-    renderer sets `CustomEventRenderResult.decision`
-    (`core::custom_events` "Decisions"; the demo renderer
-    never does, and a unit test holds it that way), so
-    `core::custom_events::resolve_custom_event` returns `decision: null` for
-    every real event and this block never executes.
-    That is spec §7.1's requirement — "do not ship a
-    visible button that does nothing" — and the reason
-    `onDecide` is inert. Superpipeline's permission-request
-    renderer plus its gate-resolution REST call
-    (`docs/positioning.md`, wedge #3) are what make
-    this live; the slot is covered by unit tests
-    against a fixture renderer so it ships proven
-    rather than speculative.
+    The core supplies the decision's subject. Gate answers also need this
+    item's Matrix event address; a UI row id is never a wire reference.
 
     Everything here is bounded and validated by
     `boundDecision` before it arrives: the prompt is a
@@ -235,7 +222,7 @@
       {#each decision.options as option, i (i)}
         <button
           type="button"
-          onclick={() => onDecide(item.id, option.id)}
+          onclick={() => decision && onDecide(item.eventId, decision, option.id)}
           class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised"
         >
           {option.label}
