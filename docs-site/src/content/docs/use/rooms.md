@@ -48,8 +48,12 @@ on them.
 
 ## Searching
 
-Message search runs across your rooms. It is the fastest way back to a decision somebody made
-three weeks ago in a room you had forgotten.
+Message search asks your homeserver, across every room your account is in or within one room. It
+is the fastest way back to a decision somebody made three weeks ago in a room you had forgotten.
+
+Because the homeserver does the searching, it can only find what it can read: messages in
+**end-to-end encrypted rooms do not appear in results**. Results are plain-text messages, newest
+first, up to twenty at a time.
 
 ## Marking read
 

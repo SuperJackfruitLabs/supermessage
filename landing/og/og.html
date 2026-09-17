@@ -1,0 +1,54 @@
+<!doctype html>
+<!--
+  The source of ../public/og.png. See README.md. Not in public/, so it is not
+  published as a page of its own.
+
+  Colours come from the generated ../src/styles/tokens.css, never from literals
+  here. The image is the dark palette whatever the renderer's preference: a link
+  preview has no theme to follow, and ink is the brand's ground.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../src/styles/tokens.css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400&display=swap"
+    />
+    <style>
+      html, body { margin: 0; color-scheme: dark; }
+      body {
+        width: 1200px; height: 630px; overflow: hidden;
+        background: var(--color-surface-sunken);
+        color: var(--color-content);
+        font-family: 'IBM Plex Sans', sans-serif;
+        display: grid; grid-template-columns: 1fr 380px; align-items: center;
+        padding: 0 88px; box-sizing: border-box; gap: 48px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .word {
+        font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+        font-size: 44px; letter-spacing: -0.02em; margin: 0 0 36px;
+      }
+      .word span { color: var(--color-accent); }
+      h1 {
+        font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+        font-size: 76px; line-height: 1.02; letter-spacing: -0.035em; margin: 0 0 32px;
+      }
+      h1 em { font-style: normal; color: var(--color-accent); }
+      .url {
+        font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 22px;
+        color: var(--color-content-muted);
+      }
+      img { width: 380px; height: auto; }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div class="word">super<span>message</span></div>
+      <h1>Chat where your agents are <em>in the room</em>.</h1>
+      <div class="url">supermessage.dev</div>
+    </div>
+    <img src="../public/favicon.svg" alt="" />
+  </body>
+</html>

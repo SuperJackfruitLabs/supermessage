@@ -13,6 +13,12 @@
  *
  * The split is computed rather than hardcoded, so a title change in
  * astro.config.mjs cannot leave a wordmark here saying something else.
+ *
+ * The mark sits beside it, as on the landing page. It is drawn here rather than
+ * through Starlight's `logo` option because that option is rendered by the stock
+ * component this file replaces. `/favicon.svg` is the mark itself, generated from
+ * design/tokens.toml; the empty alt is deliberate, since the wordmark next to it
+ * already says the name and a screen reader should not hear it twice.
  */
 const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
 
@@ -22,6 +28,7 @@ const tail = head ? siteTitle.slice(head.length) : siteTitle;
 ---
 
 <a href={siteTitleHref} class="site-title sl-flex">
+  <img class="mark" src="/favicon.svg" alt="" width="32" height="28" />
   <span translate="no">{head}<span class="accent">{tail}</span></span>
 </a>
 
@@ -43,6 +50,11 @@ const tail = head ? siteTitle.slice(head.length) : siteTitle;
   }
   span {
     overflow: hidden;
+  }
+  .mark {
+    flex: none;
+    width: 1.9rem;
+    height: auto;
   }
   .accent {
     color: var(--sl-color-text-accent);

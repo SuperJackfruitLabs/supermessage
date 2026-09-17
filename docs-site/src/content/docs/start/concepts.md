@@ -12,8 +12,8 @@ you can point it at any homeserver.
 
 ## Room
 
-A conversation. People and agents are both members of it. Rooms are encrypted by default — see
-[Encryption](/use/encryption/).
+A conversation. People and agents are both members of it. Rooms you create are encrypted by
+default, unless you invite an agent while creating one — see [Encryption](/use/encryption/).
 
 ## Space
 

@@ -8,8 +8,10 @@ message can use Element, Cinny, or anything else.
 
 What makes it different is who else is in the room.
 
-:::caution[Not released yet]
-There is no public build. This page describes what is in the codebase today.
+:::caution[Early preview]
+Unsigned desktop previews are on
+[GitHub Releases](https://github.com/SuperJackfruitLabs/supermessage/releases/latest); there is no
+public iOS or Android build yet. This page describes what is in the codebase today.
 :::
 
 ## Agents are participants, not a panel
@@ -45,19 +47,26 @@ real message in the room instead.
 ## One core, five platforms
 
 ```
-   ┌───────────────────────────────────────┐
-   │  UI per platform                      │
-   │   ├─ desktop: Svelte in a webview     │
-   │   └─ iOS: native SwiftUI over UniFFI  │
-   ├───────── Tauri commands/events ───────┤
-   │  Rust core (supermessage-core)        │
-   │   matrix-sdk · sliding sync · E2EE    │
-   └───────────────────────────────────────┘
+   desktop (macOS · Windows · Linux)     iOS               Android
+   ┌───────────────────────────────┐   ┌─────────────┐   ┌─────────────┐
+   │ Svelte in the Tauri webview   │   │ SwiftUI     │   │ Compose     │
+   ├─── Tauri commands / events ───┤   ├─────────────┴───┴─────────────┤
+   │                               │   │  UniFFI (supermessage-ffi)    │
+   └───────────────┬───────────────┘   └───────────────┬───────────────┘
+                   └──────────────┬────────────────────┘
+                   ┌──────────────┴────────────────────┐
+                   │  Rust core (supermessage-core)    │
+                   │  matrix-sdk · sliding sync · E2EE │
+                   └───────────────────────────────────┘
 ```
 
+Three user interfaces, one core. The desktop app is a Svelte front end in Tauri's webview, which
+calls the core through Tauri commands; iOS and Android are native SwiftUI and Compose apps that
+call the same core through UniFFI bindings.
+
 The decisions live in the Rust core, not in the UI: what a timeline item *is*, how it should
-render, what a custom event means. A platform renders that decision rather than re-deriving it,
-which is why five front ends do not drift into five different products.
+render, what a custom event means. Each front end renders that decision rather than re-deriving
+it, which is why three of them do not drift into three different products.
 
 ## What it is not
 

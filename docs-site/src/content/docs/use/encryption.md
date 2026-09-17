@@ -6,6 +6,24 @@ description: What is encrypted, what a placeholder means, and the one thing that
 Rooms are end-to-end encrypted by default, through the Matrix Rust SDK and vodozemac. A
 plaintext-only Matrix client was never on the table.
 
+## Rooms with agents in them
+
+There is one exception, and it is deliberate.
+
+**A room you create with an agent among the invitees is created unencrypted.** An agent here is
+an account whose ID begins `@agent_`. Some agents read their rooms through AgentPod's bridge,
+which can decrypt; others run their own Matrix client with encryption switched off, and a room
+encrypted around one of those is a room it can never read. The client cannot tell the two apart,
+and Matrix has no way to turn encryption off once it is on, so it leaves those rooms in the clear
+rather than risk one that silently locks an agent out.
+
+The rule applies when the room is created. Inviting an agent into a room that is already
+encrypted does not change the room.
+
+**Rooms an agent opens with you — a direct message from an agent, for instance — are created by
+AgentPod, not by this client**, so whether they are encrypted is AgentPod's decision. The
+"Encryption enabled" line described below is how you can tell for any room.
+
 ## "Encrypted message" placeholders
 
 An event the client cannot decrypt renders as a placeholder saying so, not as a blank.

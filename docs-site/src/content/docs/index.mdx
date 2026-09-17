@@ -1,8 +1,11 @@
 ---
-title: supermessage
+title: Overview
 description: A Matrix client where the agents you work with are participants, not a panel.
 template: splash
 hero:
+  # The page's <title> is "Overview | supermessage"; the hero still says the name.
+  # With `title: supermessage` the tab read "supermessage | supermessage".
+  title: supermessage
   tagline: Your agents already work. This is where you talk to them — in the same rooms as everyone else.
   actions:
     - text: What supermessage is
@@ -15,9 +18,11 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-:::caution[Not released yet]
-supermessage is in development and has not shipped a public build. These pages describe what
-exists in the codebase today, and are here so the documentation is ready when the client is.
+:::caution[Early preview]
+supermessage is in development. Desktop previews for macOS, Windows and Linux are on
+[GitHub Releases](https://github.com/SuperJackfruitLabs/supermessage/releases/latest) — unsigned,
+so macOS and Windows will warn the first time you open one. There is no public iOS or Android
+build yet. These pages describe what exists in the codebase today.
 :::
 
 <CardGrid stagger>
@@ -29,12 +34,13 @@ exists in the codebase today, and are here so the documentation is ready when th
     Every custom event carries a plain-text fallback, so Element and Cinny stay usable against
     the same rooms. Nothing here locks a room to this client.
   </Card>
-  <Card title="One codebase, five platforms" icon="laptop">
-    iOS, Android, Windows, macOS and Linux. A Rust core does the Matrix work; each platform
-    renders it.
+  <Card title="One core, five platforms" icon="laptop">
+    iOS, Android, Windows, macOS and Linux. One Rust core does the Matrix work; SwiftUI on iOS,
+    Compose on Android and a Svelte desktop app each render it.
   </Card>
-  <Card title="Encrypted by default" icon="seti:lock">
-    End-to-end encryption through the Matrix Rust SDK and vodozemac. A plaintext-only client
-    was never an option.
+  <Card title="Encrypted by default, with one exception" icon="seti:lock">
+    End-to-end encryption through the Matrix Rust SDK and vodozemac. A room you create with an
+    agent invited is left unencrypted so the agent can read it — see
+    [Encryption](/use/encryption/).
   </Card>
 </CardGrid>
