@@ -69,6 +69,12 @@ RECORD = "./scripts/snapshot-stories.sh --record"
 # cause is Chromium's antialiasing of curves and not those three stories: the
 # next run would spoil a different corner, and the list would grow until the
 # gate covered nothing. See `pixels_differ` for what ±1 can and cannot hide.
+#
+# That measurement holds only for grayscale text. With Chromium's LCD
+# subpixel text a glyph's coloured fringe could move one channel by 19,
+# which no honest tolerance absorbs; measured on 2026-09-17, five renders in
+# one job gave a largest delta of 19 with LCD text and 2 without. The
+# renderer turns it off (`--disable-lcd-text`), which keeps 2 correct.
 UNSTABLE = set()
 TOLERANCE = 2
 

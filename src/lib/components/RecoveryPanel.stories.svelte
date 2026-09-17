@@ -5,11 +5,11 @@
    * Driven with plain DOM rather than `storybook/test`.
    *
    * Importing that pulls the interactions instrumenter into the preview bundle
-   * for *every* story, and it does not leave the pixels alone: it moved three
-   * of them in `live-liveturnbubble--several-paragraphs`, a component these
-   * stories have nothing to do with — text subpixel antialiasing, identical to
-   * the eye, and over the screenshot gate's tolerance. Proven by re-running
-   * main's own gate on the same runner, where it passes.
+   * for *every* story. It was blamed for moving three pixels in
+   * `live-liveturnbubble--several-paragraphs`, but that turned out to be a
+   * flake of its own: the same three pixels moved on main with no instrumenter
+   * loaded. The cause was LCD subpixel text, which `snapshot-stories.mjs` now
+   * turns off. Plain DOM is still the lighter choice for a click and a wait.
    *
    * A helper that clicks and waits costs eight lines and leaves the other
    * eighty-four frames exactly as they were.

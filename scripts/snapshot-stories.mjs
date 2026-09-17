@@ -13,6 +13,13 @@
 //     a third of this catalogue is streaming states with a pulsing caret.
 //   - `document.fonts.ready`, because the first frames came out in Times.
 //   - A fixed viewport and `deviceScaleFactor: 1`.
+//   - `--disable-lcd-text`, so text is antialiased in grey rather than in
+//     coloured subpixel fringes. With LCD text on, the fringe on a glyph's
+//     edge occasionally landed one channel differently from run to run:
+//     `live-liveturnbubble--several-paragraphs` failed `main` twice in two
+//     days on three pixels in a single column, the blue channel moved by 19,
+//     on the left edge of a "T". A per-channel tolerance of 2 cannot absorb
+//     that, and raising it to 19 would absorb real regressions too.
 //   - UTC and `en-US`: the timeline renders relative timestamps, and the
 //     native gates both learned this the expensive way — six Android frames
 //     to a timezone, two iOS frames to a locale.
@@ -59,7 +66,7 @@ stories.sort((a, b) => a.id.localeCompare(b.id))
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
 
-const browser = await chromium.launch()
+const browser = await chromium.launch({ args: ['--disable-lcd-text'] })
 const context = await browser.newContext({
   viewport: { width: 900, height: 720 },
   deviceScaleFactor: 1,
