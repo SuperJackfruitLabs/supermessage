@@ -10,16 +10,27 @@ npm run build   # -> dist/
 
 ## How it deploys
 
-CI deploys `dist/` to the Cloudflare Pages project `supermessage-docs` on every push to `main` that
-touches this directory — the `deploy-docs` job in `.github/workflows/ci.yml`. The project is not
-connected to Git, unlike the landing page's `supermessage-site`; the job is what keeps it current.
+Cloudflare Pages project `supermessage-docs`, connected to this repository in the dashboard, the
+same way as the landing page's `supermessage-site` — there is no workflow that deploys it.
 
-It used to be deployed by hand, and the live site went stale the same way that always happens:
-docs.supermessage.dev went on naming `dev.kaambaan.gate.v1` and linking docs.kaambaan.dev long after
-`main` had moved to superpipeline, because nothing fails when a page nobody redeploys drifts.
+| | |
+|---|---|
+| Root directory | `docs-site` |
+| Build command | `npm ci && npm run build` |
+| Build output | `dist` |
+| Production branch | `main`, automatic deployments on |
 
-The job needs a `CLOUDFLARE_API_TOKEN` secret with Pages edit rights on the account. Read the long
-comment on the job before changing how it calls wrangler.
+The build command has to install, for the reason `landing/README.md` gives: Cloudflare sees
+`packageManager: pnpm` at the repo root and installs *there*, which leaves this directory's
+`node_modules` empty and fails with `astro: not found`.
+
+It was deployed by hand once, and went stale the way that always happens: docs.supermessage.dev
+went on naming `dev.kaambaan.gate.v1` and linking docs.kaambaan.dev long after `main` had moved to
+superpipeline, because nothing fails when a page nobody redeploys drifts. A CI job replaced that
+briefly; the Git connection replaced the job, and needs no API token in this repository.
+
+CI's `docs` job still builds the site on every pull request that touches it, so a broken page fails
+the PR rather than the deploy.
 
 **The desktop app has unsigned previews on GitHub Releases, and there is no public mobile build.**
 The home page and "What supermessage is" say so in an "Early preview" notice, which should change
