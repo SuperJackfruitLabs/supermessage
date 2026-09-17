@@ -3,6 +3,7 @@ package dev.supermessage
 import android.content.res.Configuration
 import android.graphics.Color
 import android.view.ContextThemeWrapper
+import androidx.compose.ui.graphics.toArgb
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
@@ -70,9 +71,17 @@ class StylesTest {
         assertNotEquals(light, dark)
     }
 
-    /** The light half stays paper — matches `GeneratedThemeTokens.paper.surface`. */
+    /**
+     * The light half stays paper — read from `GeneratedThemeTokens.paper.surface`
+     * rather than written out. It used to be the literal `0xFFF6F4EF`, and when the
+     * palette moved to `#FAF8F3` the resource followed the tokens and this test did
+     * not, so the test failed on a correct theme.
+     */
     @Test
     fun lightConfigurationWindowBackgroundIsPaper() {
-        assertEquals(0xFFF6F4EF.toInt(), windowBackground(Configuration.UI_MODE_NIGHT_NO))
+        assertEquals(
+            GeneratedThemeTokens.paper.surface.toArgb(),
+            windowBackground(Configuration.UI_MODE_NIGHT_NO),
+        )
     }
 }
