@@ -227,12 +227,17 @@ Three rules that are not style preferences:
 Amber (`Theme.signal`) means a pending decision and nothing else. Only
 `DecisionCard` may use it.
 
-The app icon is generated, not hand-drawn: `assets/logo.svg` is the mark and
-`assets/build-icon.py` renders the three variants iOS asks for (light, dark and
-tinted) into `apple/Supermessage/Assets.xcassets`. Both need `librsvg`, and
-regenerating the mark itself needs `potrace` (`brew install librsvg potrace`).
-Read `assets/build-logo.py`'s doc comment before changing the mark — it records
-why it is drawn rather than traced.
+The app icon is generated, not hand-drawn. The mark's geometry lives in
+`scripts/tokens/emit_mark.py` and its colours and icon grounds in
+`design/tokens.toml` (`[brand]`); `python3 scripts/generate-tokens.py` writes
+`assets/logo.svg`, every favicon, and Android's launcher-icon resources, and CI's
+token job fails on drift. The rasters cannot be drawn on that runner, so
+`python3 assets/build-icon.py` renders them by hand — the three variants iOS
+asks for (light, dark and tinted) into `apple/Supermessage/Assets.xcassets`,
+the desktop set in `src-tauri/icons`, and the landing page's
+`apple-touch-icon.png` — and needs `librsvg` and ImageMagick
+(`brew install librsvg imagemagick`). Read `emit_mark.py`'s doc comment before
+changing the mark — it records why it is drawn rather than traced.
 
 Design: `docs/superpowers/specs/2026-08-18-native-ios-app-design.md`.
 The AgentPod event contract this client consumes: `docs/agentpod-events.md`.

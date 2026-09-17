@@ -2,10 +2,7 @@
 <resources>
     <!-- See values/styles.xml's own note: same style name, dark half. -->
     <style name="Theme.Supermessage" parent="@android:style/Theme.Material.NoActionBar">
-        <!--
-          Slate: matches SupermessageColorRoles.dark.ground in Theme.kt. Kept
-          in sync by hand, same caveat as the light half.
-        -->
-        <item name="android:windowBackground">#FF171B22</item>
+        <!-- Dark's `surface`, generated; same reasoning as the light half. -->
+        <item name="android:windowBackground">@color/sm_dark_surface</item>
     </style>
 </resources>
