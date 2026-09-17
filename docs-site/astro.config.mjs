@@ -4,6 +4,25 @@ import starlight from '@astrojs/starlight';
 
 export default defineConfig({
   site: 'https://docs.supermessage.dev',
+  // Two settings, one cause. The repo root's tsconfig.json extends
+  // `.svelte-kit/tsconfig.json`, a file `svelte-kit sync` generates and git does
+  // not have. On a machine that has built the desktop app it is there; on a
+  // fresh CI checkout it is not, and Vite 8 goes looking for it twice:
+  //
+  //   - resolving tsconfig paths, where `astro sync` fails with
+  //     "Tsconfig not found .svelte-kit/tsconfig.json". This site defines no
+  //     path aliases, so turning it off loses nothing — AgentPod's docs needed
+  //     only this (SuperJackfruitLabs/agentpod#450).
+  //   - rolldown's own per-file tsconfig discovery while building the static
+  //     entrypoints, "Failed to load tsconfig '../.svelte-kit/tsconfig.json'".
+  //     Pinning it to this site's tsconfig stops the walk at this directory.
+  //
+  // Both reproduce only in a clean checkout, which is why the site built on every
+  // laptop and not in CI.
+  vite: {
+    resolve: { tsconfigPaths: false },
+    build: { rolldownOptions: { tsconfig: './tsconfig.json' } },
+  },
   integrations: [
     starlight({
       title: 'supermessage',
