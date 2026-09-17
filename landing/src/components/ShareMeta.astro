@@ -1,0 +1,44 @@
+---
+/**
+ * Canonical URL, icons, and the tags a link preview is built from.
+ *
+ * One component rather than a block per page, because the three pages here
+ * have no shared layout — each carries its own head and styles on purpose
+ * (see the note at the top of delete-account.astro) — and link-preview tags
+ * copied three times are tags that drift three ways.
+ *
+ * The canonical URL is derived from `Astro.site` and the page's own path, so
+ * it cannot name a page that is not the one being served. og:image is
+ * absolute because several unfurlers ignore a relative one.
+ */
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const image = new URL('/og.png', Astro.site).href;
+const imageAlt = 'supermessage — chat where your agents are in the room';
+---
+
+<link rel="canonical" href={canonical} />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="sitemap" href="/sitemap-index.xml" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="supermessage" />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical} />
+<meta property="og:image" content={image} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content={imageAlt} />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={image} />
+<meta name="twitter:image:alt" content={imageAlt} />

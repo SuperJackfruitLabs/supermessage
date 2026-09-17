@@ -1,0 +1,79 @@
+---
+// Not found.
+//
+// Without this file Cloudflare Pages has no 404.html to serve, so it treats
+// the site as a single-page app and answers every missing path with the home
+// page and a 200 — which tells a crawler that /anything is a real page with
+// the home page's content, and tells a person who mistyped nothing at all.
+// With it, Pages serves this page with a real 404 status.
+//
+// Styled like the compliance pages: same tokens, same faces, nothing more.
+import '../styles/tokens.css';
+import ShareMeta from '../components/ShareMeta.astro';
+
+const title = 'Not found — supermessage';
+const description = 'There is no page at this address.';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content="noindex" />
+    <ShareMeta title={title} description={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=IBM+Plex+Sans:wght@400;600&display=swap"
+    />
+    <style>
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--color-surface-sunken);
+        color: var(--color-content);
+        font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 17px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        max-width: 68ch;
+        margin: 0 auto;
+        padding: 96px 24px;
+      }
+
+      img { width: 72px; height: auto; display: block; margin-bottom: 28px; }
+
+      h1 {
+        font-family: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+        font-weight: 800;
+        font-size: clamp(32px, 6vw, 44px);
+        letter-spacing: -0.03em;
+        line-height: 1.1;
+        margin: 0 0 12px;
+      }
+
+      p { color: var(--color-content-muted); margin: 0 0 24px; }
+      a { color: var(--color-accent); }
+      nav { display: flex; gap: 20px; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/favicon.svg" alt="" width="72" height="64" />
+      <h1>Nothing here</h1>
+      <p>There is no page at this address. It may have moved, or the link may be mistyped.</p>
+      <nav>
+        <a href="/">supermessage home</a>
+        <a href="https://docs.supermessage.dev">Documentation</a>
+      </nav>
+    </main>
+  </body>
+</html>
