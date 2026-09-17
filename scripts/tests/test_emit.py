@@ -411,5 +411,87 @@ class AppearanceSelectorTests(unittest.TestCase):
                 self.assertIn(tokens.appearances[name].colors["surface"], block)
 
 
+class MarkTests(unittest.TestCase):
+    def setUp(self):
+        from scripts.tokens.emit_mark import (
+            emit_android_colors,
+            emit_android_foreground,
+            emit_android_monochrome,
+            emit_logo_svg,
+        )
+
+        self.tokens = load(SOURCE)
+        self.svg = emit_logo_svg(self.tokens)
+        self.colors = emit_android_colors(self.tokens)
+        self.foreground = emit_android_foreground(self.tokens)
+        self.monochrome = emit_android_monochrome(self.tokens)
+
+    def test_every_colour_in_the_logo_comes_from_the_source(self):
+        stops = {c for pair in self.tokens.brand.mark.values() for c in pair}
+        self.assertEqual(set(re.findall(r"#[0-9a-fA-F]{6}", self.svg)), stops)
+
+    def test_the_name_is_lowercase(self):
+        self.assertIn("<title>supermessage</title>", self.svg)
+        self.assertIn('aria-label="supermessage"', self.svg)
+
+    def test_every_gradient_the_logo_uses_is_defined(self):
+        used = set(re.findall(r"url\(#(\w+)\)", self.svg))
+        defined = set(re.findall(r'id="(\w+)"', self.svg))
+        self.assertTrue(used)
+        self.assertLessEqual(used, defined)
+
+    def test_every_colour_the_launcher_icon_names_is_emitted(self):
+        """A missing @color fails aapt, on a machine the generator's author
+        may not be able to build Android on — the Kotlin imports lesson."""
+        defined = set(re.findall(r'<color name="(\w+)"', self.colors))
+        referenced = set(re.findall(r"@color/(\w+)", self.foreground))
+        adaptive = (
+            REPO / "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
+        ).read_text()
+        referenced |= set(re.findall(r"@color/(\w+)", adaptive))
+        styles = [
+            REPO / "android/app/src/main/res/values/styles.xml",
+            REPO / "android/app/src/main/res/values-night/styles.xml",
+        ]
+        for path in styles:
+            referenced |= set(re.findall(r"@color/(\w+)", path.read_text()))
+        self.assertTrue(referenced)
+        self.assertLessEqual(referenced, defined)
+
+    def test_the_window_background_is_what_compose_paints_first(self):
+        self.assertIn(
+            f'<color name="sm_paper_surface">'
+            f'{self.tokens.appearances["paper"].colors["surface"].upper()}<',
+            self.colors,
+        )
+        self.assertIn(
+            f'<color name="sm_dark_surface">'
+            f'{self.tokens.appearances["dark"].colors["surface"].upper()}<',
+            self.colors,
+        )
+
+    def test_the_monochrome_layer_carries_no_colour(self):
+        # The launcher tints it; a colour here would be ignored at best.
+        self.assertNotIn("@color/", self.monochrome)
+        self.assertEqual(set(re.findall(r'fillColor="(#\w+)"', self.monochrome)), {"#FFFFFFFF"})
+
+    def test_the_mark_stays_inside_the_adaptive_icon_safe_zone(self):
+        """Only a 66dp circle of the 108dp canvas survives every mask. The
+        furthest points of the mark are its two tails' tips, and a cubic lies
+        inside the hull of its control points, so checking those is
+        conservative."""
+        from scripts.tokens import emit_mark as m
+
+        centre = m.ADAPTIVE / 2
+        tails = m.BLUE_TAIL + " " + m.CORAL_TAIL
+        numbers = [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", tails)]
+        points = list(zip(numbers[0::2], numbers[1::2]))
+        for x, y in points:
+            dx = m.OFFSET_X + x * m.SCALE - centre
+            dy = m.OFFSET_Y + y * m.SCALE - centre
+            with self.subTest(point=(x, y)):
+                self.assertLessEqual((dx * dx + dy * dy) ** 0.5, 33.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -57,11 +57,25 @@ class TypeRole:
 
 
 @dataclass(frozen=True)
+class Brand:
+    """The mark's gradient stops, and the grounds it is drawn on.
+
+    `mark` maps a shape to its `(from, to)` stops. `ground` maps a name to a
+    colour already resolved from its appearance and role, so no emitter can
+    reach for a ground the palette does not have.
+    """
+
+    mark: dict[str, tuple[str, str]]
+    ground: dict[str, str]
+
+
+@dataclass(frozen=True)
 class Tokens:
     appearances: dict[str, Appearance]
     type: dict[str, TypeRole] = field(default_factory=dict)
     scale: dict[str, dict] = field(default_factory=dict)
     breakpoints: dict[str, int] = field(default_factory=dict)
+    brand: Brand | None = None
 
 
 def validate(data: dict) -> None:
@@ -122,6 +136,7 @@ def validate(data: dict) -> None:
                     )
 
     _validate_type(data)
+    _validate_brand(data)
 
     for required in ("radius", "elevation", "motion", "layout"):
         if required not in data:
@@ -165,6 +180,66 @@ def _validate_type(data: dict) -> None:
                 )
 
 
+MARK_SHAPES: tuple[str, ...] = ("blue", "coral", "overlap")
+HEX = re.compile(r"^#[0-9a-f]{6}$")
+
+
+def _validate_brand(data: dict) -> None:
+    brand = data.get("brand")
+    if brand is None:
+        raise TokenError("design/tokens.toml has no [brand] table")
+
+    mark = brand.get("mark", {})
+    if sorted(mark) != sorted(MARK_SHAPES):
+        raise TokenError(
+            f"brand.mark must define exactly {MARK_SHAPES}, got "
+            f"{tuple(sorted(mark))}"
+        )
+    for shape, stops in mark.items():
+        for end in ("from", "to"):
+            # Lowercase six-digit hex only: these are written into SVG and
+            # Android resource XML verbatim, and neither accepts rgb().
+            if not HEX.match(str(stops.get(end, ""))):
+                raise TokenError(
+                    f"brand.mark.{shape}.{end} must be a lowercase #rrggbb, "
+                    f"got {stops.get(end)!r}"
+                )
+
+    appearances = data.get("appearance", {})
+    for name, ref in brand.get("ground", {}).items():
+        appearance, role = ref.get("appearance"), ref.get("role")
+        if appearance not in appearances or role not in ROLES:
+            raise TokenError(
+                f"brand.ground.{name} names {appearance}.{role}, which is not "
+                f"a colour in this palette. A ground is a role, never a new "
+                f"value."
+            )
+        value = appearances[appearance]["color"][role]["value"]
+        if not HEX.match(value):
+            raise TokenError(
+                f"brand.ground.{name} resolves to {value}, which is not opaque"
+            )
+    for required in ("ink", "paper"):
+        if required not in brand.get("ground", {}):
+            raise TokenError(f"brand.ground has no `{required}`")
+
+
+def _brand(data: dict) -> Brand:
+    brand = data["brand"]
+    return Brand(
+        mark={
+            shape: (stops["from"], stops["to"])
+            for shape, stops in brand["mark"].items()
+        },
+        ground={
+            name: data["appearance"][ref["appearance"]]["color"][ref["role"]][
+                "value"
+            ]
+            for name, ref in brand["ground"].items()
+        },
+    )
+
+
 def _comments(path: Path) -> dict[str, dict[str, str]]:
     """Collect the comment block immediately above each role assignment.
 
@@ -206,6 +281,7 @@ def load(path: Path) -> Tokens:
             for name in ("radius", "elevation", "motion", "layout")
         },
         breakpoints=breakpoints_for(data),
+        brand=_brand(data),
         type={
             name: TypeRole(
                 name=name,

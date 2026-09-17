@@ -30,8 +30,15 @@
       a Matrix session store and an encrypted database that must not
       round-trip through a cloud backup.
     -->
+    <!--
+      The name is lowercase, as it is everywhere the suite shows it. The icon
+      is an adaptive icon built entirely from generated resources — see
+      res/mipmap-anydpi-v26/ic_launcher.xml.
+    -->
     <application
-        android:label="Supermessage"
+        android:label="supermessage"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:allowBackup="false"
         android:theme="@style/Theme.Supermessage">

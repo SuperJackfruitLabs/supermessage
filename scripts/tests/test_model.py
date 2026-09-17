@@ -217,5 +217,37 @@ class ScaleTests(unittest.TestCase):
         self.assertEqual(sorted(motion), ["easing", "quick", "settle"])
 
 
+class BrandTests(unittest.TestCase):
+    def test_an_icon_ground_must_be_a_role_not_a_value(self):
+        """How the iOS icon kept a retired palette's grounds: they were
+        literals in a script, and nothing checked them against anything."""
+        broken = copy.deepcopy(raw())
+        broken["brand"]["ground"]["ink"] = {"appearance": "dark", "role": "slate"}
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("brand.ground.ink", str(caught.exception))
+
+    def test_a_ground_resolves_to_the_role_it_names(self):
+        tokens = load(SOURCE)
+        self.assertEqual(
+            tokens.brand.ground["ink"],
+            tokens.appearances["dark"].colors["surface-sunken"],
+        )
+
+    def test_a_mark_stop_must_be_plain_hex(self):
+        # Written verbatim into SVG and Android XML, neither of which takes
+        # rgb().
+        broken = copy.deepcopy(raw())
+        broken["brand"]["mark"]["coral"]["to"] = "rgb(255 132 137)"
+        with self.assertRaises(TokenError):
+            validate(broken)
+
+    def test_the_mark_has_exactly_its_three_shapes(self):
+        broken = copy.deepcopy(raw())
+        del broken["brand"]["mark"]["overlap"]
+        with self.assertRaises(TokenError):
+            validate(broken)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,25 @@ import starlight from '@astrojs/starlight';
 
 export default defineConfig({
   site: 'https://docs.supermessage.dev',
+  // Two settings, one cause. The repo root's tsconfig.json extends
+  // `.svelte-kit/tsconfig.json`, a file `svelte-kit sync` generates and git does
+  // not have. On a machine that has built the desktop app it is there; on a
+  // fresh CI checkout it is not, and Vite 8 goes looking for it twice:
+  //
+  //   - resolving tsconfig paths, where `astro sync` fails with
+  //     "Tsconfig not found .svelte-kit/tsconfig.json". This site defines no
+  //     path aliases, so turning it off loses nothing — AgentPod's docs needed
+  //     only this (SuperJackfruitLabs/agentpod#450).
+  //   - rolldown's own per-file tsconfig discovery while building the static
+  //     entrypoints, "Failed to load tsconfig '../.svelte-kit/tsconfig.json'".
+  //     Pinning it to this site's tsconfig stops the walk at this directory.
+  //
+  // Both reproduce only in a clean checkout, which is why the site built on every
+  // laptop and not in CI.
+  vite: {
+    resolve: { tsconfigPaths: false },
+    build: { rolldownOptions: { tsconfig: './tsconfig.json' } },
+  },
   integrations: [
     starlight({
       title: 'supermessage',
@@ -15,6 +34,28 @@ export default defineConfig({
       // Shared with the landing page — see src/styles/theme.css.
       customCss: ['./src/styles/theme.css'],
       head: [
+        // The link preview. Starlight already declares `twitter:card` as
+        // summary_large_image and then names no image, so a pasted link showed
+        // a bare title card. og.png is rendered from landing/og/og.html — see
+        // the README there — and copied here so the docs host serves its own.
+        // Absolute URLs: several unfurlers ignore a relative og:image.
+        {
+          tag: 'meta',
+          attrs: { property: 'og:image', content: 'https://docs.supermessage.dev/og.png' },
+        },
+        { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
+        { tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
+        {
+          tag: 'meta',
+          attrs: {
+            property: 'og:image:alt',
+            content: 'supermessage — chat where your agents are in the room',
+          },
+        },
+        {
+          tag: 'meta',
+          attrs: { name: 'twitter:image', content: 'https://docs.supermessage.dev/og.png' },
+        },
         {
           tag: 'link',
           attrs: { rel: 'preconnect', href: 'https://fonts.googleapis.com' },

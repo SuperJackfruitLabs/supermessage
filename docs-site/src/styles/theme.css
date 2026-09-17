@@ -11,11 +11,10 @@
  * Starlight derives nearly everything from a seven-step gray ramp plus an accent
  * triple, so overriding those is enough; there is no need to restyle components.
  *
- * **Both themes are kept, deliberately.** The landing page commits to one dark look
- * because it is a single marketing page. Documentation is read at a desk in daylight
+ * **Both themes are kept, deliberately.** Documentation is read at a desk in daylight
  * and in bed at midnight, and a docs site that ignores the reader's preference is
- * choosing a mood over legibility. Dark is an exact match for the landing ground; light
- * is the same hue family inverted, so the two read as one palette rather than two.
+ * choosing a mood over legibility. The landing page follows the same preference, from
+ * the same generated tokens, so arriving here from there never flips the theme.
  *
  * The hue is 252 throughout. Amber (`--sm-amber`) is spent on exactly one thing, as on
  * the landing page: something waiting on a person.
@@ -61,9 +60,22 @@ html:root {
   --sl-color-gray-7: var(--color-surface-sunken);
   --sl-color-black: var(--color-surface-sunken);
 
+  /* `accent-high` is NOT the strongest accent tint, whatever the name suggests.
+     Starlight's dark theme makes it `--sl-color-text-accent` — the colour of accent
+     TEXT: the wordmark's "message", the GitHub icon, the current sidebar link — and
+     the fill of the primary hero button. It was mapped to `accent-soft`, #2b224f,
+     which put that text on the #151129 ground at 1.26:1: present in the markup and
+     invisible on the page. `accent` measures 6.66:1 there, and in light (where
+     Starlight uses `accent` for text anyway) #5b43d4 measures 5.90:1.
+
+     Text drawn ON an accent fill is `text-invert` (the current sidebar item, the
+     skip link), and `accent-content` is exactly that role: 6.39:1 dark, 6.57:1
+     light. The primary button's label is `--sl-color-black`, the page ground,
+     which clears 6.66:1 and 5.90:1 on the same fills. */
   --sl-color-accent-low: var(--color-accent-soft);
   --sl-color-accent: var(--color-accent);
-  --sl-color-accent-high: var(--color-accent-soft);
+  --sl-color-accent-high: var(--color-accent);
+  --sl-color-text-invert: var(--color-accent-content);
 
   /* Amber is spent on exactly one thing, as everywhere else in this suite:
      something waiting on a person. */

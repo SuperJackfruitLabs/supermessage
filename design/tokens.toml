@@ -139,6 +139,34 @@ danger = { value = "#b4222a", contrast = [{ against = "surface", min = 4.5 }] }
 ok = { value = "#1d7c59", contrast = [{ against = "surface", min = 4.5 }] }
 scrim = { value = "rgb(34 25 46 / 0.45)", drop = { min = 2.5 } }   # measures 3.07x
 
+# ---------------------------------------------------------------- brand ----
+# The mark: two overlapping speech bubbles, one logo on every surface — app
+# icons on all three platforms, both favicons, the landing and docs headers.
+#
+# These are the mark's own colours and nothing else may use them. They were
+# sampled from the source artwork and are not UI roles: a pastel blue carries
+# no contrast contract because nothing is ever written on it. What the mark
+# sits ON is a role, so an icon ground cannot be a colour the palette lacks —
+# which is exactly how the iOS icon ended up on #F6F4EF and #171B22, the
+# grounds of a theme that no longer exists.
+#
+# Each pair is a gradient's two stops. `overlap` is the blue bubble seen
+# through the coral one, drawn rather than blended so it is the same at 16px
+# and 1024px.
+
+[brand.mark]
+blue = { from = "#cbe1fb", to = "#9bc0fa" }
+coral = { from = "#ffa98a", to = "#ff8489" }
+overlap = { from = "#c0bcd2", to = "#cfacbd" }
+
+# Where the mark is drawn on a ground of its own. `ink` is the landing page's
+# #151129 — the pastel bubbles need a dark ground to read at dock and launcher
+# sizes — and a platform with a single icon (desktop, Android) uses it. iOS
+# alone asks for a light variant too.
+[brand.ground]
+ink = { appearance = "dark", role = "surface-sunken" }
+paper = { appearance = "paper", role = "surface" }
+
 # ----------------------------------------------------------------- type ----
 # Structural, not decorative: serif is what an agent wrote, sans what the
 # operator wrote, mono is data and sigils.

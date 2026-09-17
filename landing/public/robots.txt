@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://supermessage.dev/sitemap-index.xml

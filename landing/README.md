@@ -59,16 +59,23 @@ it.
 **Amber is spent on exactly one thing:** the item waiting on a person. Giving the only warm colour
 in the palette to "needs you" is the point of the palette.
 
-**No download button, and no waitlist.** There is no public build. The status bar says so in the
-first line a visitor reads, and the two calls to action go to the docs and the source. A landing
-page that implies you can install something you cannot is the one mistake worth avoiding here.
+**No download button, and no waitlist.** What exists is unsigned desktop previews on GitHub
+Releases and no public mobile build, and the status bar says exactly that in the first line a
+visitor reads. The two calls to action go to the docs and the source. A landing page that implies
+more than you can install is the one mistake worth avoiding here — and the opposite mistake,
+saying there is nothing when there is, is the one this page made until September 2026.
 
-**Single theme, deliberately.** It is a marketing page with one intended look, so every colour is
-painted explicitly rather than inherited from the visitor's preference.
+**It follows the visitor's light or dark preference**, as the docs do. Both palettes are generated
+from `design/tokens.toml` into `src/styles/tokens.css`; nothing on the page is a colour literal.
 
-## Publishing
+**One mark.** The header, favicon, `apple-touch-icon.png` and `og.png` all show the mark in
+`assets/logo.svg`. `public/favicon.svg` is written by `scripts/generate-tokens.py` and
+`apple-touch-icon.png` by `assets/build-icon.py`; the link preview is rendered from `og/` — see
+the README there.
 
-Deployed to the Cloudflare Pages project `supermessage-site`. `supermessage.dev` is registered at
-Porkbun and is **not** on Cloudflare's nameservers, so the DNS records are manual — see the
-"Publishing" section of `../docs-site/README.md` for the same procedure applied to the docs
-subdomain.
+**The three pages share no layout**, deliberately (see `src/pages/delete-account.astro`), but they
+do share `src/components/ShareMeta.astro`, which carries the canonical URL, icons and link-preview
+tags. A page without it has no preview when it is pasted anywhere.
+
+`src/pages/404.astro` exists so Pages answers a missing path with a 404. Without a `404.html` it
+treats the site as a single-page app and serves the home page, with a 200, for any URL at all.

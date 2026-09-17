@@ -8,9 +8,15 @@ on:
 # A second push to the same branch cancels the first: these jobs build the
 # whole Rust tree, and a queue of superseded runs is the main way a small
 # project burns its Actions minutes.
+#
+# Except on main, where a run may be deploying the docs. Cancelling it there
+# does not mean the next run deploys instead: `deploy-docs` only runs when its
+# own push touched docs-site/, so a docs merge followed by any other merge
+# would leave the site on whatever was there before — the exact staleness the
+# job exists to end. A queued run on main still replaces an older queued one.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -45,6 +51,7 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       licences: ${{ steps.filter.outputs.licences }}
       tokens: ${{ steps.filter.outputs.tokens }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -113,6 +120,15 @@ jobs:
               - 'android/app/src/main/kotlin/dev/supermessage/GeneratedThemeTokens.kt'
               - 'landing/src/styles/tokens.css'
               - 'docs-site/src/styles/tokens.css'
+              - 'assets/logo.svg'
+              - 'landing/public/favicon.svg'
+              - 'docs-site/public/favicon.svg'
+              - 'static/favicon.svg'
+              - 'android/app/src/main/res/values/generated_theme_colors.xml'
+              - 'android/app/src/main/res/drawable/ic_launcher_*.xml'
+            docs:
+              - *workflow
+              - 'docs-site/**'
             licences:
               - *workflow
               - 'Cargo.toml'
@@ -155,6 +171,92 @@ jobs:
             git diff --stat
             exit 1
           fi
+
+  # The documentation site, built on every change so a broken page fails the
+  # pull request rather than the deploy after it merges.
+  docs:
+    name: Docs site
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # npm, not pnpm, and scoped to docs-site: it is deliberately not a
+      # workspace member — see docs-site/README.md.
+      - run: npm ci
+        working-directory: docs-site
+      - run: npm run build
+        working-directory: docs-site
+
+  # docs.supermessage.dev, to the Cloudflare Pages project `supermessage-docs`.
+  #
+  # Until this job existed the site was deployed by hand, and it went stale:
+  # the live pages named `dev.kaambaan.gate.v1` and linked docs.kaambaan.dev
+  # long after main had moved to superpipeline. A page nothing redeploys drifts
+  # silently, because nothing fails. (The landing page's `supermessage-site` is
+  # connected to Git in the Cloudflare dashboard and needs no job — see
+  # landing/README.md.)
+  #
+  # Rebuilt rather than handed an artifact by `docs`: the build is seconds, and
+  # an artifact hop is one more thing to go wrong between what was checked and
+  # what ships.
+  deploy-docs:
+    name: Deploy docs
+    needs: [changes, docs]
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: deploy-docs
+      cancel-in-progress: false
+    environment:
+      name: docs
+      url: https://docs.supermessage.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: docs-site
+      - run: npm run build
+        working-directory: docs-site
+      # wrangler invoked directly rather than through cloudflare/wrangler-action.
+      # The action picks a package manager by looking at the REPO ROOT, finds
+      # pnpm-lock.yaml, and shells out to pnpm to install wrangler — which this
+      # job does not have, because docs-site is deliberately npm. In superpipeline,
+      # whose layout this matches, that failed with "Unable to locate executable
+      # file: pnpm" before it ever reached Cloudflare.
+      #
+      # Run from a scratch directory, NOT from docs-site and NOT from the repo
+      # root. Both were tried against the live account there, and both are wrong:
+      #
+      #   - in docs-site, wrangler's project detection SCAFFOLDS the project — it
+      #     added an @astrojs/cloudflare adapter and a wrangler devDependency,
+      #     wrote wrangler.jsonc, and rewrote astro.config.mjs and tsconfig.json.
+      #     The Astro build then failed on the Cloudflare vite plugin it had just
+      #     installed.
+      #   - at the repo root it refuses outright: "application detection logic
+      #     has been run in the root of a workspace".
+      #
+      # From a neutral cwd with an absolute path it is clean, and leaves the
+      # checkout untouched.
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is not set on this repository — add a token with Cloudflare Pages edit rights"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/wrangler-cwd"
+          cd "$RUNNER_TEMP/wrangler-cwd"
+          npx --yes wrangler@4 pages deploy "$GITHUB_WORKSPACE/docs-site/dist" \
+            --project-name=supermessage-docs --branch=main
 
   frontend:
     name: Frontend

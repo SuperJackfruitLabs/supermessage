@@ -13,8 +13,8 @@
 // Amber is used for exactly one thing: the item that is waiting on a person.
 // Spending the only warm colour on "needs you" is the whole point of the palette.
 //
-// Single-theme on purpose. It is a marketing page with one intended look, so
-// every colour is painted explicitly rather than inherited.
+// It follows the visitor's light or dark preference, as the docs do, with both
+// palettes generated from design/tokens.toml into ../styles/tokens.css.
 const events = [
   { type: 'dev.agentpod.turn.v1', label: 'Turn' },
   { type: 'dev.agentpod.permission.v1', label: 'Permission' },
@@ -22,6 +22,12 @@ const events = [
 ];
 
 import '../styles/tokens.css';
+import ShareMeta from '../components/ShareMeta.astro';
+
+const title = 'supermessage — chat where your agents are in the room';
+const description =
+  'A Matrix client where the agents you work with are participants, not a panel. In development for iOS, Android, Windows, macOS and Linux.';
+const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/latest';
 ---
 
 <!doctype html>
@@ -29,12 +35,9 @@ import '../styles/tokens.css';
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>supermessage — chat where your agents are in the room</title>
-    <meta
-      name="description"
-      content="A Matrix client where the agents you work with are participants, not a panel. In development for iOS, Android, Windows, macOS and Linux."
-    />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <ShareMeta title={title} description={description} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -97,7 +100,11 @@ import '../styles/tokens.css';
         width: 7px; height: 7px; border-radius: 50%;
         background: var(--color-signal); flex: none;
       }
+      /* A zero basis keeps the sentence beside its dot. With its natural width it is
+         wider than a phone, and the wrap put the dot on a line of its own. */
+      .status .wrap > span:last-child { flex: 1 1 0; min-width: 0; }
       .status strong { color: var(--color-content); font-weight: 600; }
+      .status a { color: var(--color-content); }
 
       /* ── masthead ───────────────────────────────────────────────── */
       header.mast .wrap {
@@ -105,10 +112,12 @@ import '../styles/tokens.css';
         padding-top: 26px; padding-bottom: 26px; gap: 20px;
       }
       .brand {
+        display: flex; align-items: center; gap: 10px;
         font-family: var(--display);
         font-weight: 800; font-size: 21px; letter-spacing: -0.02em;
       }
-      .brand span { color: var(--color-accent); }
+      .brand img { width: 32px; height: auto; flex: none; }
+      .brand .word span { color: var(--color-accent); }
       nav { display: flex; gap: 22px; font-size: 15px; }
       nav a { color: var(--color-content-muted); text-decoration: none; }
       nav a:hover, nav a:focus-visible { color: var(--color-content); }
@@ -161,6 +170,9 @@ import '../styles/tokens.css';
         margin-left: auto; font-family: var(--mono); font-size: 11px;
         color: var(--color-signal); border: 1px solid var(--color-signal);
         border-radius: 999px; padding: 2px 9px;
+        /* At phone width the header ran out of room and this wrapped to two lines —
+           the one label on the card that must read at a glance. */
+        white-space: nowrap;
       }
       .msgs { padding: 16px; display: flex; flex-direction: column; gap: 13px; }
       .msg { display: flex; flex-direction: column; gap: 4px; }
@@ -183,7 +195,8 @@ import '../styles/tokens.css';
       }
       .field { display: flex; gap: 8px; font-size: 14.5px; margin-bottom: 3px; }
       .field .k { color: var(--color-content-muted); flex: none; min-width: 4.6em; }
-      .opts { display: flex; gap: 8px; margin-top: 10px; }
+      .prompt { font-size: 14.5px; margin-top: 8px; }
+      .opts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
       .opt {
         font-size: 13px; font-weight: 600; padding: 6px 13px;
         border-radius: 7px; border: 1px solid var(--color-border); color: var(--color-content);
@@ -210,6 +223,7 @@ import '../styles/tokens.css';
         margin: 0 0 8px; letter-spacing: -0.015em;
       }
       .cell p { margin: 0; color: var(--color-content-muted); font-size: 15.5px; }
+      .cell a { color: var(--color-accent); }
 
       /* roster states */
       .states { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
@@ -257,6 +271,12 @@ import '../styles/tokens.css';
         .states li { flex-direction: column; gap: 3px; }
       }
 
+      /* Below this the room name, the head count and the pill do not fit on one line.
+         The count is the one of the three the transcript does not need. */
+      @media (max-width: 480px) {
+        .room-head .count { display: none; }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         * { transition: none !important; animation: none !important; }
       }
@@ -267,14 +287,18 @@ import '../styles/tokens.css';
     <div class="status">
       <div class="wrap">
         <span class="dot" aria-hidden="true"></span>
-        <span><strong>In development.</strong> There is no public build yet — no download, no
-        waitlist. The documentation is written and open while the client is built.</span>
+        <span><strong>In development.</strong> Unsigned desktop previews for macOS, Windows and
+        Linux are on <a href={releases}>GitHub Releases</a>; there is no public iOS or Android
+        build yet.</span>
       </div>
     </div>
 
     <header class="mast">
       <div class="wrap">
-        <div class="brand">super<span>message</span></div>
+        <!-- The mark is generated from design/tokens.toml, and it is the same file as the
+             favicon. Empty alt: the wordmark beside it already says the name. -->
+        <div class="brand"><img src="/favicon.svg" alt="" width="32" height="28" /><span
+          class="word">super<span>message</span></span></div>
         <nav>
           <a href="https://docs.supermessage.dev">Docs</a>
           <a href="https://github.com/SuperJackfruitLabs/supermessage">Source</a>
@@ -301,10 +325,10 @@ import '../styles/tokens.css';
 
         <!-- The signature element. See the design note at the top of this file. -->
         <div class="room" role="img"
-          aria-label="A room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, with Approve and Decline options; and a superpipeline card waits for an approval.">
+          aria-label="A room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, offering Allow once or Reject; and a superpipeline gate waits for an approval, with Approve, Request changes and Reject.">
           <div class="room-head">
             <b>#billing-migration</b>
-            <span>3 people · 2 agents</span>
+            <span class="count">3 people · 2 agents</span>
             <span class="pill">needs you</span>
           </div>
           <div class="msgs">
@@ -329,10 +353,14 @@ import '../styles/tokens.css';
               <div class="card awaiting">
                 <span class="etype">{events[1].type}</span>
                 <div class="field"><span class="k">Wants to</span><span
-                  >Run the migration against staging</span></div>
+                  >run the migration against staging</span></div>
+                <!-- The prompt is PermissionRequestRenderer's own ("Allow {title}?"), and
+                     the buttons are whatever options the agent sent — these two are the
+                     ones the core's own tests use. -->
+                <div class="prompt">Allow run the migration against staging?</div>
                 <div class="opts">
-                  <span class="opt yes">Approve</span>
-                  <span class="opt">Decline</span>
+                  <span class="opt yes">Allow once</span>
+                  <span class="opt">Reject</span>
                 </div>
               </div>
             </div>
@@ -343,6 +371,13 @@ import '../styles/tokens.css';
                 <span class="etype">{events[2].type}</span>
                 <div class="field"><span class="k">Card</span><span>Billing migration</span></div>
                 <div class="field"><span class="k">Stage</span><span>Awaiting review</span></div>
+                <!-- A gate's three answers are fixed: superpipeline resolves exactly
+                     approve | request_changes | reject (GATE_OPTION_IDS). -->
+                <div class="opts">
+                  <span class="opt yes">Approve</span>
+                  <span class="opt">Request changes</span>
+                  <span class="opt">Reject</span>
+                </div>
               </div>
             </div>
           </div>
@@ -414,8 +449,10 @@ import '../styles/tokens.css';
         <div class="grid">
           <div class="cell">
             <h3>Encrypted by default</h3>
-            <p>End-to-end encryption through the Matrix Rust SDK and vodozemac. A plaintext-only
-              client in 2026 was never an option.</p>
+            <p>End-to-end encryption through the Matrix Rust SDK and vodozemac. One exception: a
+              room created with an agent invited stays unencrypted, so an agent that cannot
+              decrypt is never locked out of it. <a
+              href="https://docs.supermessage.dev/use/encryption/">Why</a>.</p>
           </div>
           <div class="cell">
             <h3>Your homeserver</h3>
@@ -433,10 +470,11 @@ import '../styles/tokens.css';
 
     <section class="band">
       <div class="wrap">
-        <h2>Five platforms, one codebase</h2>
+        <h2>Five platforms, one core</h2>
         <p class="sub">
-          Mobile and desktop are equally weighted, and the UI is meant to feel native on each —
-          not a web page in a shell.
+          Mobile and desktop are equally weighted. iOS is SwiftUI and Android is Compose, both over
+          the Rust core through UniFFI; the desktop app is Svelte in a Tauri window, over the same
+          core.
         </p>
         <ul class="platforms">
           <li>iOS</li><li>Android</li><li>macOS</li><li>Windows</li><li>Linux</li>
@@ -452,6 +490,8 @@ import '../styles/tokens.css';
           <a href="https://github.com/SuperJackfruitLabs/supermessage">GitHub</a>
           <a href="https://docs.agentpod.dev">AgentPod</a>
           <a href="https://docs.superpipeline.dev">superpipeline</a>
+          <a href="/privacy/">Privacy</a>
+          <a href="/delete-account/">Delete account</a>
         </span>
       </div>
     </footer>

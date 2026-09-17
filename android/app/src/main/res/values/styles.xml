@@ -16,11 +16,13 @@
     -->
     <style name="Theme.Supermessage" parent="@android:style/Theme.Material.Light.NoActionBar">
         <!--
-          Paper: matches SupermessageColorRoles.light.ground in Theme.kt.
-          Kept in sync by hand — resource XML has no way to reference a
-          Kotlin `Color` literal, so this hex and that one must be changed
-          together.
+          Paper's `surface`: what Theme.kt's `Surface` paints on the first
+          frame, so the window and the frame agree. A generated resource
+          rather than a hex, because resource XML cannot read a Kotlin
+          `Color` — this used to be a literal "kept in sync by hand", and it
+          went on showing #F6F4EF, a ground from a palette that had already
+          been replaced.
         -->
-        <item name="android:windowBackground">#FFF6F4EF</item>
+        <item name="android:windowBackground">@color/sm_paper_surface</item>
     </style>
 </resources>
