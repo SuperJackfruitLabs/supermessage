@@ -469,3 +469,11 @@ the README capability table and source for present behavior.
 ## Related repositories (not part of this workspace's code)
 
 The suite's other surfaces live in sibling repos: **AgentPod** (fleet console/node-agent, agents already have Matrix accounts on `id.agentpod.dev`) and **Superpipeline** (cards/tasks/runs/gates, REST+MCP, approvals, notifications). supermessage integrates with them via links, projections, and the Matrix room/event IDs — it must not own their state.
+
+## Native verification workflow
+
+For a native parity, generated-binding, or platform-verification task, use the
+[repository-owned verification skill](.agents/skills/sjl-native-verification/SKILL.md).
+It follows the boundaries above and records the actual evidence available for
+each host. This candidate skill does not establish a new supported platform or
+a completed device test by being present in the checkout.
