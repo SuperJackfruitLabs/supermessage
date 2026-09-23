@@ -48,7 +48,8 @@ final class LiveActivityController {
         if let activity {
             guard summary != last else { return }
             last = summary
-            Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+            let handle = ActivityHandle(activity)
+            Task { await handle.activity.update(ActivityContent(state: state, staleDate: nil)) }
             return
         }
 
@@ -66,7 +67,8 @@ final class LiveActivityController {
     func endAll() {
         end(finished: false)
         for stray in Activity<AgentActivityAttributes>.activities {
-            Task { await stray.end(nil, dismissalPolicy: .immediate) }
+            let handle = ActivityHandle(stray)
+            Task { await handle.activity.end(nil, dismissalPolicy: .immediate) }
         }
     }
 
@@ -83,8 +85,22 @@ final class LiveActivityController {
         // claiming progress nobody is tracking any more.
         let policy: ActivityUIDismissalPolicy =
             finished ? .after(Date().addingTimeInterval(120)) : .immediate
+        let handle = ActivityHandle(activity)
         Task {
-            await activity.end(ActivityContent(state: final, staleDate: nil), dismissalPolicy: policy)
+            await handle.activity.end(
+                ActivityContent(state: final, staleDate: nil), dismissalPolicy: policy)
         }
     }
+}
+
+/// An `Activity` carried into a `Task`.
+///
+/// `Activity` is not `Sendable`, and Swift 6.2 (Xcode 26) refuses to send it
+/// into the task that updates or ends it — which Xcode 16 accepted, so this
+/// surfaced only in the TestFlight archive. ActivityKit documents an activity
+/// as safe to update and end from any context; this box says so to the
+/// compiler, and only this file creates one.
+private struct ActivityHandle: @unchecked Sendable {
+    let activity: Activity<AgentActivityAttributes>
+    init(_ activity: Activity<AgentActivityAttributes>) { self.activity = activity }
 }
