@@ -41,7 +41,13 @@ struct RoomListView: View {
     @State private var swipeLanded = 0
 
     private var view: RosterChoice { RosterChoice(rawValue: storedView) ?? .waiting }
-    private var filter: RosterFilter { RosterFilter(rawValue: storedFilter) ?? .all }
+    /// The chip in force. A filter that is no longer offered as a chip —
+    /// Agents and Needs you, which are tabs — reads as All, so a stored
+    /// choice from before cannot leave the list narrowed with no chip lit.
+    private var filter: RosterFilter {
+        let stored = RosterFilter(rawValue: storedFilter) ?? .all
+        return RosterFilterChips.offered.contains(stored) ? stored : .all
+    }
 
     private var filterBinding: Binding<RosterFilter> {
         Binding(get: { filter }, set: { storedFilter = $0.rawValue })
@@ -73,11 +79,11 @@ struct RoomListView: View {
             Section {
                 EmptyView()
             } header: {
-                // Inside the scroll content on purpose — see SpacePillStrip.
+                // Inside the scroll content on purpose: present the moment
+                // the reader arrives, and giving its height back as soon as
+                // they scroll. Spaces are chosen from the title — see
+                // `SpaceMenu`.
                 VStack(alignment: .leading, spacing: 0) {
-                    if !session.spaces.spaces.isEmpty {
-                        SpacePillStrip(spaces: session.spaces, allCount: session.rooms.rooms.count)
-                    }
                     if !session.rooms.rooms.isEmpty {
                         RosterFilterChips(selection: filterBinding, counts: counts)
                     }
@@ -139,7 +145,9 @@ struct RoomListView: View {
                     }
                 } header: {
                     if let title = section.title {
-                        SectionHeader(title: title, detail: section.detail, attention: section.attention)
+                        SectionHeader(
+                            title: SpaceNames.display(title), detail: section.detail,
+                            attention: section.attention)
                     }
                 }
             }
@@ -150,7 +158,13 @@ struct RoomListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { arrangementMenu }
         }
-        .navigationTitle(session.spaces.selectedName ?? "Chats")
+        // Still set: it is the back button's title in a room.
+        .navigationTitle(session.spaces.selectedName.map(SpaceNames.display) ?? "Chats")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                SpaceMenu(spaces: session.spaces, allCount: session.rooms.rooms.count)
+            }
+        }
         .navigationBarTitleDisplayMode(.inline)
         // A roster that says "2m" forever is lying by the time you look again.
         .task(id: session.rooms.rooms.count) { now = Date() }

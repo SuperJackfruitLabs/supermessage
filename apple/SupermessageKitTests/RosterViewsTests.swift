@@ -144,7 +144,9 @@ struct RosterViewsTests {
     func headerStatus() {
         #expect(RoomStatus.of(state: .active, describesAgent: true, turnInProgress: true) == .working)
         #expect(RoomStatus.of(state: .needsYou, describesAgent: true, turnInProgress: true) == .needsYou)
-        #expect(RoomStatus.of(state: .active, describesAgent: true, turnInProgress: false) == .idle)
+        // The roster's green dot and the header must agree: spoke recently
+        // is "Active", not "Idle".
+        #expect(RoomStatus.of(state: .active, describesAgent: true, turnInProgress: false) == .active)
         #expect(RoomStatus.of(state: .idle, describesAgent: true, turnInProgress: false) == .idle)
         #expect(RoomStatus.of(state: .quiet, describesAgent: true, turnInProgress: false) == .quiet)
         #expect(RoomStatus.of(state: .needsYou, describesAgent: false, turnInProgress: false) == nil)

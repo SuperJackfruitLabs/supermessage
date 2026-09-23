@@ -13,6 +13,7 @@ struct RoomInfoPanel: View {
     /// This account's user id, so it can be left out of the member list.
     @State private var account: String?
     @State private var showsAvatar = false
+    @State private var confirmsLeave = false
 
     init(session: Session, roomId: String, onClose: @escaping () -> Void) {
         self.session = session
@@ -154,11 +155,28 @@ struct RoomInfoPanel: View {
                             }
 
                             Section {
+                                // Red by hand: the root view's
+                                // `.foregroundStyle(Theme.content)` outranks the
+                                // destructive role's colour, so the button drew
+                                // as plain white text (2026-09-24 screenshot).
+                                // And asked first — leaving took effect on the
+                                // tap, with no way back from a stray one.
                                 Button("Leave room", role: .destructive) {
-                                    Task {
-                                        _ = await session.leaveRoom(roomId)
-                                        onClose()
+                                    confirmsLeave = true
+                                }
+                                .foregroundStyle(Theme.danger)
+                                .confirmationDialog(
+                                    "Leave \(info.name ?? "this room")?", isPresented: $confirmsLeave,
+                                    titleVisibility: .visible
+                                ) {
+                                    Button("Leave", role: .destructive) {
+                                        Task {
+                                            _ = await session.leaveRoom(roomId)
+                                            onClose()
+                                        }
                                     }
+                                } message: {
+                                    Text("You'll stop receiving its messages.")
                                 }
                             }
                         }

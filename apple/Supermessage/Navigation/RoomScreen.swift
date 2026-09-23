@@ -37,6 +37,15 @@ struct RoomScreen: View {
                 showsInfo = false
                 memberCount = nil
             }
+            // "Active" is a claim about the last 15 minutes, so the header's
+            // clock has to move while the reader stays: without this, an
+            // agent that went quiet stayed "Active" until the room changed.
+            .task(id: roomId) {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(60))
+                    now = Date()
+                }
+            }
     }
 
     @ViewBuilder private var content: some View {
@@ -210,7 +219,7 @@ struct RoomHeader: View {
     }
 }
 
-/// Working · Needs you · Idle · Quiet, as a small pill.
+/// Working · Needs you · Active · Idle · Quiet, as a small pill.
 ///
 /// Working pulses, unless Reduce Motion is on; a pending decision is the one
 /// state drawn in amber, because it is the one that is a decision.
@@ -242,7 +251,9 @@ struct StatusPill: View {
 
     private var dotColour: Color {
         switch status {
-        case .working: return Theme.ok
+        // Working and Active share the roster dot's green; only Working
+        // pulses, which is the difference between "is" and "was just".
+        case .working, .active: return Theme.ok
         case .needsYou: return Theme.signal
         case .idle: return Theme.contentFaint
         case .quiet: return Theme.border

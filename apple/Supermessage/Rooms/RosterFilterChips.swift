@@ -1,12 +1,19 @@
 import SupermessageKit
 import SwiftUI
 
-/// All · Unread · Agents · Needs you, above the Chats list.
+/// All · Unread, above the Chats list.
+///
+/// Agents and Needs you were chips too, and both are tabs one tap away, so
+/// the chip row repeated the tab bar (2026-09-24). What is left narrows the
+/// list by something no tab covers. Mentions joins when the core exposes it.
 ///
 /// A chip narrows what the core arranged; it never re-sorts it — see
 /// `RosterFilter.apply`. Each chip says how many rooms it would leave, so it
 /// can be chosen without being tried.
 struct RosterFilterChips: View {
+    /// The chips a phone offers.
+    static let offered: [RosterFilter] = [.all, .unread]
+
     @Binding var selection: RosterFilter
     /// How many rooms each chip would show.
     let counts: [RosterFilter: Int]
@@ -14,7 +21,7 @@ struct RosterFilterChips: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(RosterFilter.allCases, id: \.self) { filter in
+                ForEach(Self.offered, id: \.self) { filter in
                     chip(filter)
                 }
             }

@@ -114,14 +114,19 @@ extension RosterArrangement {
 
 /// What a room's header says its agent is doing.
 ///
-/// The fixed vocabulary from the revamp spec: Working, Needs you, Idle, Quiet.
-/// Two inputs, neither decided here — the core's `AgentState` for the room,
-/// and whether `LiveStore` is watching a turn being written right now. The
-/// core's `.active` means *spoke recently*, which is not the same claim as
-/// *is working*; only a live turn earns "Working".
+/// Working, Needs you, Active, Idle, Quiet. Two inputs, neither decided
+/// here — the core's `AgentState` for the room, and whether `LiveStore` is
+/// watching a turn being written right now. Only a live turn earns
+/// "Working"; the core's `.active` (spoke within 15 minutes) is "Active".
+///
+/// **The same words as the roster's dot.** `.active` used to read "Idle"
+/// here, so an agent that had just answered was green in the list and idle
+/// in its own header — the 2026-09-24 screenshots, and why Guild agents
+/// looked idle almost all the time.
 public enum RoomStatus: String, CaseIterable, Sendable {
     case working
     case needsYou
+    case active
     case idle
     case quiet
 
@@ -129,6 +134,7 @@ public enum RoomStatus: String, CaseIterable, Sendable {
         switch self {
         case .working: return "Working"
         case .needsYou: return "Needs you"
+        case .active: return "Active"
         case .idle: return "Idle"
         case .quiet: return "Quiet"
         }
@@ -148,7 +154,8 @@ public enum RoomStatus: String, CaseIterable, Sendable {
         if turnInProgress { return .working }
         switch state {
         case .needsYou: return .needsYou
-        case .active, .idle: return .idle
+        case .active: return .active
+        case .idle: return .idle
         case .quiet: return .quiet
         }
     }

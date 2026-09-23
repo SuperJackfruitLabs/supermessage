@@ -203,10 +203,54 @@ public final class LiveStore {
         }
     }
 
-    /// Focus a room, discarding anything belonging to the last one.
+    /// Focus a room, putting the last one's finished turn aside.
+    ///
+    /// **A finished turn's record outlives leaving its room.** It used to be
+    /// discarded on every focus change, so opening another chat and coming
+    /// back lost "What I thought" — an agent's reasoning, which is written
+    /// nowhere else (2026-09-24, IMG_7586 → 7587). A turn still in progress
+    /// is not kept: its remaining deltas are addressed to a room this store
+    /// is no longer listening to, so the record would stop mid-sentence.
     public func focus(_ roomId: String?) {
+        if let current = self.roomId, finished, isLive {
+            keep(Record(thought: thought, tools: tools, startedAt: startedAt, endedAt: endedAt,
+                        lastActivityAt: lastActivityAt), for: current)
+        }
         self.roomId = roomId
-        clear()
+        reset()
+        if let roomId, let record = records[roomId] {
+            thought = record.thought
+            tools = record.tools
+            startedAt = record.startedAt
+            endedAt = record.endedAt
+            lastActivityAt = record.lastActivityAt
+            finished = true
+        }
+    }
+
+    /// A room's last finished turn, kept while the reader is elsewhere.
+    private struct Record {
+        let thought: String?
+        let tools: [ToolCall]
+        let startedAt: Date?
+        let endedAt: Date?
+        let lastActivityAt: Date?
+    }
+
+    /// The kept records, and the order they were kept in, oldest first.
+    /// Bounded, so a session that visits every room holds a handful of
+    /// reasoning texts rather than all of them.
+    private var records: [String: Record] = [:]
+    private var recordOrder: [String] = []
+    static let keptRecords = 20
+
+    private func keep(_ record: Record, for roomId: String) {
+        records[roomId] = record
+        recordOrder.removeAll { $0 == roomId }
+        recordOrder.append(roomId)
+        while recordOrder.count > Self.keptRecords {
+            records[recordOrder.removeFirst()] = nil
+        }
     }
 
     /// The first delta of a new turn clears the last one's record.
@@ -215,10 +259,19 @@ public final class LiveStore {
     /// has to survive the end of its own turn. It ends when it is replaced.
     private func beginTurnIfFinished() {
         guard finished else { return }
-        clear()
+        reset()
+        if let roomId { records[roomId] = nil }
     }
 
+    /// Forget everything, kept records included — signing out.
     public func clear() {
+        reset()
+        records = [:]
+        recordOrder = []
+    }
+
+    /// Forget the turn on screen.
+    private func reset() {
         answer = nil
         thought = nil
         tools = []

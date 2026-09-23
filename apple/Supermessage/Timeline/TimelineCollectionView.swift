@@ -103,14 +103,21 @@ struct TimelineCollectionView: View {
                 // (2026-09-23 screenshot). Now: the full fade while the list
                 // is moving, when text really is sliding under the edge; a
                 // feather at rest; nothing when nothing is beneath it.
+                //
+                // Opaque exactly as far as the bar reaches, then fading over
+                // `fadeHeight` and no further. The midpoint used to sit at a
+                // fixed 55% of the whole height, so the fade reaching below
+                // the bar grew with the bar — two lines veiled at rest on a
+                // phone whose bar is tall (2026-09-24, IMG_7586 and 7588).
+                let total = obscured + topEdge.fadeHeight
                 LinearGradient(
                     stops: [
                         .init(color: Theme.surface, location: 0),
-                        .init(color: Theme.surface.opacity(0.85), location: obscured > 0 ? 0.55 : 0),
+                        .init(color: Theme.surface, location: total > 0 ? obscured / total : 0),
                         .init(color: Theme.surface.opacity(0), location: 1),
                     ], startPoint: .top, endPoint: .bottom
                 )
-                .frame(height: obscured + topEdge.fadeHeight)
+                .frame(height: total)
                 .opacity(topEdge == .clear && obscured == 0 ? 0 : 1)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: topEdge)
                 .allowsHitTesting(false)
@@ -166,6 +173,32 @@ final class TimelineCollection: UICollectionView {
     }
 }
 
+/// A tap anywhere on the timeline that ends editing, and does nothing else.
+///
+/// `cancelsTouchesInView = false` and simultaneous recognition, so it only
+/// ever *adds* the dismissal: every control, link and gesture beneath it
+/// behaves exactly as it would without it.
+@MainActor
+final class KeyboardDismissTap: NSObject, UIGestureRecognizerDelegate {
+    private static let shared = KeyboardDismissTap()
+
+    static func make() -> UITapGestureRecognizer {
+        let tap = UITapGestureRecognizer(target: shared, action: #selector(tapped(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = shared
+        return tap
+    }
+
+    @objc private func tapped(_ tap: UITapGestureRecognizer) {
+        tap.view?.window?.endEditing(true)
+    }
+
+    nonisolated func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool { true }
+}
+
 /// The collection view itself. See `TimelineCollectionView`.
 struct TimelineList: UIViewRepresentable {
     let session: Session
@@ -219,6 +252,12 @@ struct TimelineList: UIViewRepresentable {
         // interactive tracking is what keeps the two moving together instead
         // of the keyboard snapping away on the first pixel.
         view.keyboardDismissMode = .interactive
+        // And a tap on the conversation puts it away, as in WhatsApp,
+        // Telegram and Signal — dragging was the only way, and a reader who
+        // just wants to see the whole screen should not have to scroll for
+        // it. It never takes the touch: a link, a quote or a button under the
+        // finger still gets its tap.
+        view.addGestureRecognizer(KeyboardDismissTap.make())
         // The inversion itself. Everything else in this file follows from it.
         view.transform = CGAffineTransform(scaleX: 1, y: -1)
         // It would otherwise run down the leading edge and travel backwards.
@@ -384,7 +423,6 @@ struct TimelineList: UIViewRepresentable {
         /// Told when what sits at the top edge changes. See `TimelineTopEdge`.
         var onTopEdgeChanged: ((TimelineTopEdge) -> Void)?
         private var topEdge = TimelineTopEdge.clear
-        private var isScrolling = false
         /// Entries that arrived in the last animated pass and have not been
         /// drawn yet — the only ones that spring in (M1).
         private var arriving: Set<Entry> = []
@@ -603,6 +641,10 @@ struct TimelineList: UIViewRepresentable {
             var runs: [String: String] = [:]
             byId.reserveCapacity(rows.count)
             var previous: TimelineRow?
+            // The nearest row above that is an event, for the quote check:
+            // the unread marker can sit between a message and the reply
+            // quoting it, and the quote then repeated the line right above.
+            var previousEvent: TimelineRow?
             for entry in display {
                 switch entry {
                 case let .row(row):
@@ -617,13 +659,15 @@ struct TimelineList: UIViewRepresentable {
                     }
                     byId[row.item.id] = Placement(
                         row: row, continuesRun: continues, endsRun: true,
-                        hidesQuote: TimelineGrouping.quoteRepeatsPrevious(row, after: previous),
+                        hidesQuote: TimelineGrouping.quoteRepeatsPrevious(row, after: previousEvent),
                         readers: readers)
                     if let eventId = row.item.eventId { byEventId[eventId] = row.item.id }
                     previous = row
+                    if row.item.eventId != nil { previousEvent = row }
                 case let .membershipRun(id, text, _):
                     runs[id] = text
                     previous = nil
+                    previousEvent = nil
                 }
             }
             let previousRows = rowsById
@@ -1101,25 +1145,24 @@ struct TimelineList: UIViewRepresentable {
         }
 
         nonisolated func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-            MainActor.assumeIsolated { setScrolling(true, scrollView) }
+            MainActor.assumeIsolated { refreshTopEdge(scrollView) }
         }
 
         nonisolated func scrollViewDidEndDragging(
             _ scrollView: UIScrollView, willDecelerate decelerate: Bool
         ) {
-            MainActor.assumeIsolated { if !decelerate { setScrolling(false, scrollView) } }
+            MainActor.assumeIsolated { refreshTopEdge(scrollView) }
         }
 
         nonisolated func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-            MainActor.assumeIsolated { setScrolling(false, scrollView) }
+            MainActor.assumeIsolated { refreshTopEdge(scrollView) }
+        }
+
+        nonisolated func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+            MainActor.assumeIsolated { refreshTopEdge(scrollView) }
         }
 
         func refreshTopEdge(_ scrollView: UIScrollView) {
-            setScrolling(isScrolling, scrollView)
-        }
-
-        private func setScrolling(_ scrolling: Bool, _ scrollView: UIScrollView) {
-            isScrolling = scrolling
             updateTopEdge(
                 distanceFromTop: scrollView.contentSize.height - scrollView.contentOffset.y
                     - scrollView.bounds.height,
@@ -1131,7 +1174,12 @@ struct TimelineList: UIViewRepresentable {
         /// it (the bottom inset, in this inverted view).
         private func updateTopEdge(distanceFromTop: CGFloat, in scrollView: UIScrollView) {
             let beneath = distanceFromTop > -scrollView.adjustedContentInset.bottom + 1
-            let edge: TimelineTopEdge = !beneath ? .clear : isScrolling ? .moving : .resting
+            // "Moving" read from the scroll view itself on every call, not
+            // from begin/end callbacks: a fling interrupted by the keyboard or
+            // an offset change never reports its end, and a flag set on begin
+            // then stayed set — the tall fade stuck on a still list.
+            let moving = scrollView.isTracking || scrollView.isDecelerating
+            let edge: TimelineTopEdge = !beneath ? .clear : moving ? .moving : .resting
             if edge != topEdge {
                 topEdge = edge
                 onTopEdgeChanged?(edge)

@@ -124,11 +124,21 @@ struct TimelineRowView: View {
             .accessibilityElement(children: .combine)
 
         case .unreadMarker:
-            // No label. The divider says it, and a caption repeated at every
-            // scroll position would be chrome pretending to be content.
-            Divider()
-                .overlay(Theme.accent)
-                .padding(.vertical, 10)
+            // Labelled, briefly. It was a bare accent line on the theory that
+            // the line says it; read cold it said nothing, and looked like a
+            // stray divider between a message and its reply (2026-09-24).
+            // One word at the trailing end, as Slack does — enough to name
+            // the line without a banner across the conversation.
+            HStack(spacing: 8) {
+                VStack { Divider().overlay(Theme.accent) }
+                Text("New")
+                    .metaFace()
+                    .foregroundStyle(Theme.accent)
+                    .fixedSize()
+            }
+            .padding(.vertical, 10)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("New messages")
 
         // A message this device holds no key for is still a *message*: it was
         // sent by someone, at a time, into this conversation. Drawn as a
