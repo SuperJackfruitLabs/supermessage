@@ -109,3 +109,5 @@ re-recorded from reviewed renders.
 | P3/P4 Live Activity, widgets | Done behind `SM_EXTENSIONS`; **blocked** on the widget App ID, App Group and its profile. |
 | Desktop typography | Done: serif and capitals gone, mono kept only for code, ids and keys. |
 | Mentions in Needs you | Not included: the core does not expose mentions yet. |
+| Streaming stutter (2026-09-24) | Fixed. The list animated each self-sizing resize, so every new line snapped and glided. `TimelineCollection` lays out without animation while a turn streams, and `StreamingText` spreads each delta over the expected gap to the next. Checked by `StreamingStutterTests` with the fix on and off: 14 animating frames with it, 156 without. |
+| Top fade, tab bar (2026-09-24) | The fade depends on scroll state: 28pt while scrolling, 10pt at rest, none when nothing is beneath. The tab bar is hidden inside a room. |

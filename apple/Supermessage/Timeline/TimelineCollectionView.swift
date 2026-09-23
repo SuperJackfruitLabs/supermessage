@@ -72,6 +72,8 @@ struct TimelineCollectionView: View {
     /// Raised while the reader is away from the newest message, so the view
     /// above can offer a way back. Written from scroll callbacks.
     @Binding var isAwayFromNewest: Bool
+    @State private var topEdge = TimelineTopEdge.clear
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // **Inside the safe area, not under the bar.** The list used to run
@@ -88,12 +90,19 @@ struct TimelineCollectionView: View {
             let obscured = proxy.safeAreaInsets.top
             TimelineList(
                 session: session, timeline: timeline, isAwayFromNewest: $isAwayFromNewest,
-                topObscured: obscured
+                topEdge: $topEdge, topObscured: obscured
             )
             .overlay(alignment: .top) {
                 // The fade the bar sits on: opaque page colour under the bar
-                // itself, easing to nothing a line below it, so text slides
-                // out of view instead of being sliced by an edge.
+                // itself, easing to nothing below it, so text slides out of
+                // view instead of being sliced by an edge.
+                //
+                // **Only as tall as the moment needs.** It used to be 28pt at
+                // 85% whatever the list was doing, and at rest that veiled
+                // the top two lines of whatever the reader was looking at
+                // (2026-09-23 screenshot). Now: the full fade while the list
+                // is moving, when text really is sliding under the edge; a
+                // feather at rest; nothing when nothing is beneath it.
                 LinearGradient(
                     stops: [
                         .init(color: Theme.surface, location: 0),
@@ -101,7 +110,9 @@ struct TimelineCollectionView: View {
                         .init(color: Theme.surface.opacity(0), location: 1),
                     ], startPoint: .top, endPoint: .bottom
                 )
-                .frame(height: obscured + 28)
+                .frame(height: obscured + topEdge.fadeHeight)
+                .opacity(topEdge == .clear && obscured == 0 ? 0 : 1)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: topEdge)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             }
@@ -110,11 +121,57 @@ struct TimelineCollectionView: View {
     }
 }
 
+/// What is at the top edge of the timeline, which decides how much fade it
+/// wears.
+enum TimelineTopEdge: Equatable {
+    /// The oldest loaded message is in full view: nothing to fade.
+    case clear
+    /// History continues above the edge and the list is still.
+    case resting
+    /// The reader is scrolling: text is sliding under the edge.
+    case moving
+
+    var fadeHeight: CGFloat {
+        switch self {
+        case .clear: 0
+        case .resting: 10
+        case .moving: 28
+        }
+    }
+}
+
+/// The timeline's collection view: one that does not animate its own
+/// resizing while an answer is streaming.
+///
+/// A hosted cell whose SwiftUI content changes size asks the list to resize
+/// it, and the list **animates** that resize. For a streaming answer that is
+/// the stutter of the 2026-09-23 Guild recording: every wrap onto a new line
+/// was laid out at once — the text already spilling past its card — while
+/// the cells glided to their new places over the next frames, the history
+/// snapping and sliding a line at a time. `StreamProbe` measured it as
+/// visible cells off their layout position in over half of all frames.
+///
+/// While a turn streams, layout is applied without animation, so a new line
+/// moves the history exactly once. Outside a turn nothing changes: a card
+/// expanding still eases open, and an arrival still rises into place.
+final class TimelineCollection: UICollectionView {
+    var isStreaming: () -> Bool = { false }
+
+    override func layoutSubviews() {
+        if isStreaming() {
+            UIView.performWithoutAnimation { super.layoutSubviews() }
+        } else {
+            super.layoutSubviews()
+        }
+    }
+}
+
 /// The collection view itself. See `TimelineCollectionView`.
 struct TimelineList: UIViewRepresentable {
     let session: Session
     let timeline: TimelineStore
     @Binding var isAwayFromNewest: Bool
+    @Binding var topEdge: TimelineTopEdge
     /// How much of the top of this view is under the navigation bar, so the
     /// oldest row can come to rest below it.
     var topObscured: CGFloat = 0
@@ -123,7 +180,7 @@ struct TimelineList: UIViewRepresentable {
         Coordinator(session: session, timeline: timeline)
     }
 
-    func makeUIView(context: Context) -> UICollectionView {
+    func makeUIView(context: Context) -> TimelineCollection {
         var configuration = UICollectionLayoutListConfiguration(appearance: .plain)
         configuration.showsSeparators = false
         configuration.backgroundColor = .clear
@@ -136,9 +193,10 @@ struct TimelineList: UIViewRepresentable {
             coordinator?.swipeToReply(at: indexPath)
         }
 
-        let view = UICollectionView(
+        let view = TimelineCollection(
             frame: .zero,
             collectionViewLayout: UICollectionViewCompositionalLayout.list(using: configuration))
+        view.isStreaming = { [session] in session.live.isLive && !session.live.finished }
         // The page's own colour, never the system's (D9): a clear list over a
         // container that fell back to `systemBackground` was pure black in
         // dark mode.
@@ -181,10 +239,13 @@ struct TimelineList: UIViewRepresentable {
             guard let view else { return }
             MainActor.assumeIsolated { Self.scrollToNewest(view) }
         }
+        #if DEBUG
+        if StreamProbe.isOn { StreamProbe.shared.watch(view) }
+        #endif
         return view
     }
 
-    func updateUIView(_ view: UICollectionView, context: Context) {
+    func updateUIView(_ view: TimelineCollection, context: Context) {
         // The far end of the inverted content is the top of the screen, so
         // the room under the bar is the *bottom* inset.
         let bottom = topObscured + 8
@@ -199,10 +260,21 @@ struct TimelineList: UIViewRepresentable {
                 DispatchQueue.main.async { isAwayFromNewest = away }
             }
         }
+        context.coordinator.onTopEdgeChanged = { edge in
+            if topEdge != edge {
+                DispatchQueue.main.async { topEdge = edge }
+            }
+        }
         context.coordinator.apply(
             rows: timeline.items, revision: timeline.revision,
             isPaginating: timeline.isPaginating, isLive: session.live.isLive,
             isFinished: session.live.finished)
+        // After the layout this update causes: a room that has just opened,
+        // or history that just arrived, changes what is beneath the edge
+        // without any scroll to report it.
+        DispatchQueue.main.async { [weak view, coordinator = context.coordinator] in
+            if let view { coordinator.refreshTopEdge(view) }
+        }
     }
 
     /// Turn off UIKit's scroll-edge effect on iOS 26.
@@ -309,6 +381,10 @@ struct TimelineList: UIViewRepresentable {
         /// message. Exact in an inverted list, where the bottom is the origin.
         var onDistanceChanged: ((Bool) -> Void)?
         private var wasAway = false
+        /// Told when what sits at the top edge changes. See `TimelineTopEdge`.
+        var onTopEdgeChanged: ((TimelineTopEdge) -> Void)?
+        private var topEdge = TimelineTopEdge.clear
+        private var isScrolling = false
         /// Entries that arrived in the last animated pass and have not been
         /// drawn yet — the only ones that spring in (M1).
         private var arriving: Set<Entry> = []
@@ -899,6 +975,9 @@ struct TimelineList: UIViewRepresentable {
             forItemAt indexPath: IndexPath
         ) {
             MainActor.assumeIsolated {
+                // A row coming into view can be what first puts history
+                // beneath the top edge — a turn growing, say — with no scroll.
+                refreshTopEdge(collectionView)
                 let view = cell.contentView
                 view.layer.removeAllAnimations()
                 guard let entry = dataSource?.itemIdentifier(for: indexPath),
@@ -1004,6 +1083,7 @@ struct TimelineList: UIViewRepresentable {
                 let distanceFromTop =
                     scrollView.contentSize.height - scrollView.contentOffset.y
                     - scrollView.bounds.height
+                updateTopEdge(distanceFromTop: distanceFromTop, in: scrollView)
 
                 guard
                     TimelineFollow.wantsOlderHistory(
@@ -1017,6 +1097,44 @@ struct TimelineList: UIViewRepresentable {
                 else { return }
 
                 Task { await timeline.paginateBack() }
+            }
+        }
+
+        nonisolated func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            MainActor.assumeIsolated { setScrolling(true, scrollView) }
+        }
+
+        nonisolated func scrollViewDidEndDragging(
+            _ scrollView: UIScrollView, willDecelerate decelerate: Bool
+        ) {
+            MainActor.assumeIsolated { if !decelerate { setScrolling(false, scrollView) } }
+        }
+
+        nonisolated func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            MainActor.assumeIsolated { setScrolling(false, scrollView) }
+        }
+
+        func refreshTopEdge(_ scrollView: UIScrollView) {
+            setScrolling(isScrolling, scrollView)
+        }
+
+        private func setScrolling(_ scrolling: Bool, _ scrollView: UIScrollView) {
+            isScrolling = scrolling
+            updateTopEdge(
+                distanceFromTop: scrollView.contentSize.height - scrollView.contentOffset.y
+                    - scrollView.bounds.height,
+                in: scrollView)
+        }
+
+        /// Recompute what sits at the top edge. Something is beneath it when
+        /// the far end of the content is further away than the room left for
+        /// it (the bottom inset, in this inverted view).
+        private func updateTopEdge(distanceFromTop: CGFloat, in scrollView: UIScrollView) {
+            let beneath = distanceFromTop > -scrollView.adjustedContentInset.bottom + 1
+            let edge: TimelineTopEdge = !beneath ? .clear : isScrolling ? .moving : .resting
+            if edge != topEdge {
+                topEdge = edge
+                onTopEdgeChanged?(edge)
             }
         }
     }

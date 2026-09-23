@@ -86,15 +86,63 @@ enum ScrollFixture {
     }
 }
 
+extension ScrollFixture {
+    /// An agent answering the way a Guild agent does through the Hermes
+    /// plugin: cumulative text, a sentence per delta, a delta every ~0.45s —
+    /// the cadence of the 2026-09-23 recording. Long enough to wrap many
+    /// times, which is what exposed the stutter.
+    static let answer = [
+        "Here is a longer answer, written the way an agent streams one. ",
+        "Each delta carries the whole answer so far, and arrives when a sentence ends. ",
+        "The reader should see the text move at an even pace, not in bursts. ",
+        "When a new line wraps, the history above moves up once, and stays. ",
+        "Nothing should snap and then glide back, which is what the old height animation did. ",
+        "A second paragraph starts here, so the answer grows by more than one line at a time.\n\n",
+        "Strategy is not only the plan; it is the order in which things are allowed to fail. ",
+        "Good plans make the next decision easier, and leave room for the one after it. ",
+        "The last sentence closes the turn, and the real message replaces this card. ",
+    ]
+
+    @MainActor
+    static func stream(_ session: Session) async {
+        try? await Task.sleep(for: .seconds(1))
+        session.live.focus(roomId)
+        var text = ""
+        for (i, sentence) in answer.enumerated() {
+            text += sentence
+            session.live.handleLive(roomId: roomId, seq: UInt64(i + 1), text: text, done: false)
+            try? await Task.sleep(for: .milliseconds(450))
+        }
+        // Let the reveal drain before judging: the probe counts what the
+        // reader saw, all of it.
+        try? await Task.sleep(for: .seconds(2))
+        StreamProbe.shared.finish()
+    }
+}
+
 /// The fixture room on screen, the way a phone shows a room.
 struct ScrollFixtureRoot: View {
     @State private var session = ScrollFixture.session()
+    private let streams = ProcessInfo.processInfo.arguments.contains("-fixtureStreaming")
 
     var body: some View {
         NavigationStack {
             RoomScreen(session: session, roomId: ScrollFixture.roomId)
         }
-        .task { await ScrollFixture.seed(session) }
+        .overlay(alignment: .topLeading) {
+            if streams {
+                // For the UI test to read; invisible to a person.
+                Text(StreamProbe.shared.summary)
+                    .font(.system(size: 1))
+                    .opacity(0.01)
+                    .accessibilityIdentifier("stream-probe")
+                    .allowsHitTesting(false)
+            }
+        }
+        .task {
+            await ScrollFixture.seed(session)
+            if streams { await ScrollFixture.stream(session) }
+        }
     }
 }
 #endif

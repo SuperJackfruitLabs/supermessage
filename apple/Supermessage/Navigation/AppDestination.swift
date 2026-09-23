@@ -36,6 +36,11 @@ extension View {
     func roomDestination(session: Session, item: Binding<String?>) -> some View {
         navigationDestination(item: item) { roomId in
             RoomScreen(session: session, roomId: roomId)
+                // A conversation is a place, not a tab: the bar goes, as it
+                // does in every messenger. On a 13 mini it cost the room
+                // about 80pt, stacked right under the composer. Back returns
+                // to the list, where the tabs are.
+                .toolbar(.hidden, for: .tabBar)
         }
     }
 }

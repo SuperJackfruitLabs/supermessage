@@ -9,7 +9,9 @@ struct SupermessageApp: App {
         WindowGroup {
             #if DEBUG
             // A long local room for reproducing scrolling, no account needed.
-            if ProcessInfo.processInfo.arguments.contains("-fixtureTimeline") {
+            if ProcessInfo.processInfo.arguments.contains("-fixtureTimeline")
+                || ProcessInfo.processInfo.arguments.contains("-fixtureStreaming")
+            {
                 ScrollFixtureRoot()
             } else {
                 RootView()

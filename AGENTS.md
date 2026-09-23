@@ -237,6 +237,16 @@ whole list, and never let the list's cells lie under the navigation bar — a
 hosted cell grows by whatever safe area it overlaps, and the list re-lays its
 neighbours every frame.
 
+`-fixtureStreaming` does the same for a streaming answer: the fixture room,
+then an agent answer delivered a sentence every ~0.45s, as a Guild agent's
+arrives. `SupermessageUITests/StreamingStutterTests` checks it through
+`StreamProbe`, which compares where each visible cell is drawn with where the
+layout put it. A third rule from that bug: a streaming cell's resize must not
+animate. The list animates self-sizing by default, so every new line snapped
+the history up and then glided it back. `TimelineCollection` lays out without
+animation while a turn streams. The bug is invisible to layout, so measure it
+on screen (presentation layer or video), not with `onGeometryChange`.
+
 The app icon is generated, not hand-drawn. The mark's geometry lives in
 `scripts/tokens/emit_mark.py` and its colours and icon grounds in
 `design/tokens.toml` (`[brand]`); `python3 scripts/generate-tokens.py` writes
