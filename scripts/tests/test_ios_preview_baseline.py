@@ -73,6 +73,9 @@ UNSTABLE: set[str] = {
     # Stages its refused attachment in a task, so the chip lands after or
     # before the capture.
     "Supermessage_ComposerView.swift_Attachment_refused.png",
+    # The mark scales in on appear; CI caught it mid-scale (0.10%).
+    "Supermessage_WelcomeView.swift_Welcome.png",
+    "Supermessage_WelcomeView.swift_Welcome_dark.png",
     # The stub session answers the recovery check asynchronously; the frame
     # lands on "Checking…" or on "covered" depending on which wins.
     "Supermessage_RecoveryView.swift_Checking.png",
