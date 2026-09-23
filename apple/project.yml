@@ -130,6 +130,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.ios
+        # Empty everywhere but the TestFlight archive, which passes the App
+        # Store profile's name. On the app target only: a framework target
+        # given a profile fails to build ("does not support provisioning
+        # profiles"), so this cannot be a command-line setting.
+        PROVISIONING_PROFILE_SPECIFIER: $(SM_APP_PROFILE)
         SWIFT_STRICT_CONCURRENCY: complete
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         # The keys INFOPLIST_KEY_* cannot express — SMPushGatewayURL,
