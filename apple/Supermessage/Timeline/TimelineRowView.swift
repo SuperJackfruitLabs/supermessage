@@ -316,7 +316,14 @@ private struct MessageBlock: View {
                 // of it is one tap away, set for reading. A 4,000-word report
                 // drawn in full in the timeline is a room nobody can scroll
                 // past.
+                //
+                // `fixedSize` first: the text lays out at its full height and
+                // the frame then *cuts* it. Without it the 320pt frame was a
+                // height offer, and every paragraph shrank to fit it — each
+                // one truncated to a line or two with "…", which read as a
+                // broken message rather than the opening of a long one.
                 text
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxHeight: 320, alignment: .top)
                     .clipped()
                     .mask {
