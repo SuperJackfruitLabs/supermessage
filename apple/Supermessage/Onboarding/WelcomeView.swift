@@ -46,8 +46,9 @@ struct WelcomeView: View {
                 .scaledToFit()
                 .frame(width: 132)
                 .accessibilityLabel("supermessage")
-                .scaleEffect(arrived || reduceMotion ? 1 : 0.9)
-                .opacity(arrived || reduceMotion ? 1 : 0)
+                // Scale only, never opacity: a mark that starts invisible is
+                // missing from any still frame taken before it arrives.
+                .scaleEffect(arrived || reduceMotion ? 1 : 0.94)
             Text("supermessage")
                 .font(.largeTitle.weight(.bold))
                 .padding(.top, 20)

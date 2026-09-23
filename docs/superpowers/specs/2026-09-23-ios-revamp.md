@@ -92,3 +92,20 @@ a pending decision and nothing else, and every value comes from
 - The app parses nothing and decides nothing that the core already decides.
 - Every change keeps Dynamic Type working at accessibility sizes.
 - Previews for new states; baselines are re-recorded once, at the end.
+
+## Status (2026-09-23)
+
+Built and tested on CI (PR #82) and on the owner's Mac with build products on
+an external APFS sparse bundle: Rust workspace green, 265 iOS Kit tests green,
+the app and UI-test targets compile, Android and web green, previews
+re-recorded from reviewed renders.
+
+| Item | State |
+|---|---|
+| D1–D12, T1–T6, A1–A3, G1, N1–N3, R1–R3, C1–C4, M1–M2, O1 | Implemented. Runtime behaviour (gestures, haptics, animation) needs a device pass. |
+| A4 Stop | **Blocked**: needs a suite-shared cancel event from AgentPod. |
+| P1 Push | Client half done (`core::push`, `event_id_only`). **Blocked** on a deployed gateway, the APNs key and the push entitlement in the App Store profile. |
+| P2 Local notifications | Done; only while the app is alive until P1 lands. |
+| P3/P4 Live Activity, widgets | Done behind `SM_EXTENSIONS`; **blocked** on the widget App ID, App Group and its profile. |
+| Desktop typography | Done: serif and capitals gone, mono kept only for code, ids and keys. |
+| Mentions in Needs you | Not included: the core does not expose mentions yet. |

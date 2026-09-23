@@ -64,8 +64,8 @@
         top-of-script doc comment.
 
         `font-sans` explicitly: a chip is chrome, and it sits inside a
-        message block that sets `font-serif` (peer) on itself so its
-        `ch`-based measure resolves in the reading face.
+        message block that sets its own face so its `ch`-based measure
+        resolves in the reading face.
 
         The "mine" fill is `.reaction-chip-mine` (in the style block at
         the foot of this file) rather than a `bg-accent/15` utility, and

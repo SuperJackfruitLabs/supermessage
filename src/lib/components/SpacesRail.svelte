@@ -134,13 +134,13 @@
         {:else if entry.spaceId === null}
           <!--
             "All rooms" has no avatar to fall back from, so its circle is the
-            word itself, in the mono label rank — the register this design
+            word itself, in the label rank — the register this design
             uses for chrome that names a state rather than an entity. A
             rounded square, not a circle: it is the one entry that is not a
             room, and the silhouette says so before the label is read.
           -->
           <span
-            class="flex h-8 w-8 items-center justify-center rounded-card border border-border bg-surface-raised font-mono text-label text-content-muted uppercase"
+            class="flex h-8 w-8 items-center justify-center rounded-card border border-border bg-surface-raised text-label text-content-muted"
             aria-hidden="true"
           >
             {entry.initial}

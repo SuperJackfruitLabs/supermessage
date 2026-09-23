@@ -247,8 +247,8 @@ export type AttachmentPhase = "attach" | "send";
 /** A refusal, as the composer's error strip renders it: a `--text-label` rank eyebrow and a sentence. */
 export interface AttachmentFailure {
   /**
-   * The eyebrow. Written in sentence case and uppercased by CSS — uppercase
-   * here is a typographic rank, never shouting in a sentence (spec §10).
+   * The eyebrow. Written and shown in sentence case — labels are never set in
+   * capitals (docs/design-language.md §1).
    */
   label: string;
   /** The sentence under it. Plain text, bounded, rendered in a `role="alert"`. */

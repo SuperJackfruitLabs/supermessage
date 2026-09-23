@@ -141,7 +141,7 @@
                 <span class="truncate font-sans text-ui font-medium text-content">
                   {view.roomLabel}
                 </span>
-                <span class="shrink-0 font-mono text-meta text-content-faint">
+                <span class="shrink-0 font-sans text-meta tabular-nums text-content-faint">
                   {relativeTime(view.timestampMs, now) ?? ""}
                 </span>
               </span>

@@ -42,9 +42,9 @@
         forbidden: `--color-signal` means the operator owes someone an
         answer (§3), and they owe this one only to themselves.
       -->
-      <p class="font-mono text-label text-accent uppercase">Attached</p>
+      <p class="text-label text-accent">Attached</p>
       <p class="truncate text-ui font-medium text-content" title={filename}>{filename}</p>
-      <p class="mt-0.5 truncate font-mono text-meta text-content-muted">{summary}</p>
+      <p class="mt-0.5 truncate text-meta tabular-nums text-content-muted">{summary}</p>
       {#if caveat}
         <p class="mt-1 text-ui text-content-muted">{caveat}</p>
       {/if}

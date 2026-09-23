@@ -127,7 +127,7 @@ struct LoginView: View {
 }
 
 #if DEBUG
-#Preview {
+#Preview("Light") {
     LoginView(session: PreviewFixtures.session(phase: .signedOut))
         .previewChrome()
 }

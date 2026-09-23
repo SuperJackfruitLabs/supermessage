@@ -897,7 +897,7 @@
                   onclick={backToRoster}
                   class="-ml-1 flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
                 >
-                  <span aria-hidden="true" class="font-mono">‹</span>
+                  <span aria-hidden="true">‹</span>
                   Rooms
                 </button>
               {/if}
@@ -951,9 +951,15 @@
                   text. `CODE & BUILD` fits with 29px to spare, and the
                   40-character worst case still truncates rather than
                   reaching the connection dot.
+
+                  Those figures are from when the chip was mono capitals
+                  with tracking. It is sentence-case sans now
+                  (docs/design-language.md §1), which is narrower per
+                  character, so the same cap only leaves more room; the
+                  `1.28em` term is kept as slack rather than re-measured.
                 -->
                 <span
-                  class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-pill border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+                  class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-pill border border-border px-2 py-0.5 text-label text-content-muted"
                 >
                   {selectedIdentity.role}
                 </span>
@@ -977,7 +983,7 @@
                       : 'border border-content-muted'}"
                 ></span>
                 <span
-                  class="font-mono text-meta {connectionStore.state === 'error'
+                  class="text-meta {connectionStore.state === 'error'
                     ? 'text-danger'
                     : 'text-content-muted'}"
                 >
@@ -1093,7 +1099,7 @@
             aria-hidden="true"
           >
             <p
-              class="rounded-pill border border-accent bg-surface-raised px-3 py-1 font-mono text-label text-accent uppercase"
+              class="rounded-pill border border-accent bg-surface-raised px-3 py-1 text-label text-accent"
             >
               Drop to attach
             </p>

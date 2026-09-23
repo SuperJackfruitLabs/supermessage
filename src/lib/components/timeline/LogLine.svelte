@@ -9,9 +9,8 @@
    * differently from an ungrouped one, and a placeholder must read as part
    * of the same log rather than as a failed message.
    *
-   * Mono means machine, and no mono rank is ever italic — `font-synthesis:
-   * none` plus no bundled mono italic would render an italic upright
-   * anyway.
+   * Sans like everything else said (docs/design-language.md §1) — a log
+   * line is prose about the room, not machine output — and never italic.
    *
    * `text` is NOT an app-authored constant. A system line is built from the
    * sender's own unbounded display name, and a placeholder interpolates a
@@ -34,14 +33,13 @@
   The quiet machine log: membership changes (grouped or not), room
   creation, encryption enabled, room replaced, and every placeholder for
   something this build cannot render yet. All of these are the same row —
-  centred, mono `--text-meta`, `--color-content-faint` — and they were
+  centred, sans `--text-meta`, `--color-content-faint` — and they were
   three verbatim copies of this markup before this snippet existed.
   Keeping them literally identical is the point, not an accident: a
   collapsed membership run must read no differently from an ungrouped
   one, and a placeholder must read as part of the same log rather than as
-  a failed message. Mono means machine (spec §5.3), and no mono rank is
-  ever italic (spec §6.3) — `font-synthesis: none` plus no bundled mono
-  italic would render an italic upright anyway.
+  a failed message. Sans, one voice (docs/design-language.md §1), and
+  never italic.
 
   `min-w-0` + `max-w` + `break-words`, the same three-part guard every
   other sender-controlled string in this file carries. These strings are
@@ -56,7 +54,7 @@
 -->
 <div class="flex justify-center py-2">
   <span
-    class="min-w-0 max-w-[68ch] text-center font-mono text-meta break-words text-content-faint"
+    class="min-w-0 max-w-[68ch] text-center font-sans text-meta break-words text-content-faint"
     >{text}</span
   >
 </div>

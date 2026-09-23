@@ -14,7 +14,7 @@
    * carry: that value only made sense against the accent-*filled* own
    * bubble it sat on. The own bubble is `--color-accent-soft` with
    * `--color-content` text now, and white-at-70% on that ground is
-   * effectively invisible. Mono, because a read receipt is data.
+   * effectively invisible. Sans, like every other meta line.
    */
   export interface Props {
     item: TimelineItem;
@@ -44,9 +44,9 @@
     carry: that value only ever made sense against the accent-*filled*
     own bubble it sat on. The own bubble is now `--color-accent-soft`
     with `--color-content` text, and white-at-70% on that ground is
-    effectively invisible. Mono, because a read receipt is data.
+    effectively invisible. Sans, like every other meta line.
   -->
-  <p class="mt-1 font-mono text-meta text-content-muted {alignEnd ? 'text-right' : 'text-left'}">
+  <p class="mt-1 font-sans text-meta tabular-nums text-content-muted {alignEnd ? 'text-right' : 'text-left'}">
     {item.readBy.length === 1 ? "Seen" : `Seen by ${item.readBy.length}`}
   </p>
 {/if}

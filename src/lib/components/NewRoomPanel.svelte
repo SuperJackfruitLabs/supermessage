@@ -156,7 +156,7 @@
             client's list this lands in is decided at creation and cannot be
             changed later.
           -->
-          <span class="font-mono text-meta text-content-faint">
+          <span class="text-meta text-content-faint">
             {invitees.length === 1
               ? "One person — this will be a direct message."
               : "Two or more — this will be a room."}

@@ -44,7 +44,7 @@
   </p>
   {#if identity.role !== null}
     <span
-      class="shrink-0 truncate rounded-pill border border-border px-2 py-0.5 font-mono text-label text-content-muted uppercase"
+      class="shrink-0 truncate rounded-pill border border-border px-2 py-0.5 text-label text-content-muted"
     >
       {identity.role}
     </span>

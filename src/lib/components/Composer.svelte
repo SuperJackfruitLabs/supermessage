@@ -625,7 +625,7 @@
 {#if failure}
   <div class="shrink-0 bg-surface-sunken px-4 py-2">
     <div class="mx-auto flex w-full max-w-[72ch] flex-col gap-0.5">
-    <span class="font-mono text-label text-danger uppercase">{failure.label}</span>
+    <span class="text-label text-danger">{failure.label}</span>
     <p class="selectable text-ui text-content" role="alert">{failure.message}</p>
     </div>
   </div>
@@ -697,7 +697,7 @@
     **A glyph, not an icon.** Spec §11 ships no icon set and lists the two
     characters in use (`✕`, `›`); one control is not a reason to start one,
     and a paperclip emoji would be a third typeface's worth of colour
-    rendering in a monochrome console. `+` in mono is the same vernacular as
+    rendering in a monochrome console. `+` is the same vernacular as
     the `›` prompt beside it.
 
     **A glyph is not a label**, so the accessible name is a real one and the
@@ -731,14 +731,14 @@
     disabled={staging}
     aria-label="Attach a file"
     title="Attach a file — or drop one on the window"
-    class="flex shrink-0 items-center justify-center rounded-control px-2.5 py-2 font-mono text-ui-lg text-content-muted transition-colors hover:bg-surface hover:text-content disabled:text-content-faint disabled:hover:bg-transparent"
+    class="flex shrink-0 items-center justify-center rounded-control px-2.5 py-2 text-ui-lg text-content-muted transition-colors hover:bg-surface hover:text-content disabled:text-content-faint disabled:hover:bg-transparent"
   >
     <span aria-hidden="true">+</span>
   </button>
   <div
     class="flex min-w-0 flex-1 items-end gap-1.5 rounded-control px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
   >
-    <span class="shrink-0 pb-1.5 font-mono text-content-faint" aria-hidden="true">›</span>
+    <span class="shrink-0 pb-1.5 text-content-faint" aria-hidden="true">›</span>
     <textarea
       bind:this={input}
       bind:value
@@ -815,7 +815,7 @@
       colour is an alpha over an accent ground, which is precisely the case
       an rgba-parsing probe gets wrong.
     -->
-    <span aria-hidden="true" class="font-mono opacity-80">⏎</span>
+    <span aria-hidden="true" class="opacity-80">⏎</span>
   </button>
   </div>
 </div>

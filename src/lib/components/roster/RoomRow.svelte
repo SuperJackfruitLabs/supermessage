@@ -203,7 +203,7 @@
           the filled accent pill is the unread number's.
         -->
         <span
-          class="shrink-0 rounded-pill border border-accent px-1.5 py-0.5 font-mono text-meta text-accent"
+          class="shrink-0 rounded-pill border border-accent px-1.5 py-0.5 text-meta text-accent"
         >
           Invitation
         </span>
@@ -219,16 +219,16 @@
           worded reading of the same number where it isn't.
         -->
         <span
-          class="shrink-0 rounded-pill bg-accent px-1.5 py-0.5 font-mono text-meta text-accent-content"
+          class="shrink-0 rounded-pill bg-accent px-1.5 py-0.5 text-meta tabular-nums text-accent-content"
         >
           {room.unread}
         </span>
       {/if}
     </span>
     {#if showRoleTime}
-      <span class="mt-0.5 flex min-w-0 items-baseline gap-1 font-mono text-meta text-content-muted">
+      <span class="mt-0.5 flex min-w-0 items-baseline gap-1 text-meta tabular-nums text-content-muted">
         {#if identity.role !== null}
-          <span class="truncate text-label uppercase">{identity.role}</span>
+          <span class="truncate text-label">{identity.role}</span>
         {/if}
         {#if identity.role !== null && time !== null}
           <span aria-hidden="true">·</span>
@@ -262,18 +262,11 @@
         reader actually sees, exactly as every other roster string
         here does.
 
-        **Sans, not mono**, even though `--text-meta`'s own scale
-        entry is a mono rank and the role line directly above it is
-        mono. §5.3 is the tiebreaker: mono means machine, serif means
-        prose, sans means chrome. A preview is a fragment of something
-        a person or an agent wrote — prose — so mono is wrong by the
-        design's own rule, and rendered it looked wrong for exactly
-        that reason: three stacked mono lines made a conversation read
-        like terminal output. Not serif either: serif says "read this
-        at length", which a truncated one-liner in a scanning surface
-        is not. Sans is the face for chrome, and this line is prose
-        *quoted into* chrome. It also happens to fit noticeably more
-        characters in the same column than mono did.
+        **Sans**, like the role line above it and everything else
+        said or labelled (docs/design-language.md §1: one voice, mono
+        only for code, paths, ids and keys). A preview is a fragment of
+        something a person or an agent wrote; rendered in mono, three
+        stacked lines made a conversation read like terminal output.
       -->
       <span
         class="mt-0.5 block truncate font-sans text-meta {preview.pending

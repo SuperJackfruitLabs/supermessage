@@ -60,7 +60,7 @@
     sheet.
   -->
   <div
-    class="flex h-6 shrink-0 items-center gap-2 overflow-hidden bg-surface-sunken px-4 font-mono text-meta text-content-muted lg:px-8"
+    class="flex h-6 shrink-0 items-center gap-2 overflow-hidden bg-surface-sunken px-4 text-meta text-content-muted lg:px-8"
     role="status"
     aria-live="polite"
   >

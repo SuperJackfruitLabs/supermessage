@@ -21,11 +21,11 @@
 </script>
 
 <h2
-  class="flex items-baseline gap-2 px-4 pt-3 pb-1 text-label uppercase
+  class="flex items-baseline gap-2 px-4 pt-3 pb-1 text-label
     {attention ? 'text-signal' : 'text-content-faint'}"
 >
   <span class="min-w-0 truncate">{title}</span>
   {#if detail}
-    <span class="shrink-0 font-mono text-meta normal-case">{detail}</span>
+    <span class="shrink-0 text-meta tabular-nums">{detail}</span>
   {/if}
 </h2>

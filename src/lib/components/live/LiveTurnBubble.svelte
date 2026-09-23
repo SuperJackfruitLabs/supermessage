@@ -27,7 +27,7 @@
 <div class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 lg:max-w-[calc(72ch+4rem)]">
   <!--
     The same sender line a peer message carries (`Timeline.svelte`, spec
-    §6.3): mono, uppercase, muted, on one baseline. `Writing…` sits where
+    §6.3): sans, sentence case, muted, on one baseline. `Writing…` sits where
     the timestamp will be, so when the real message lands the line does not
     move — the word is simply replaced by a time.
 
@@ -36,8 +36,8 @@
     reads as two events, and the reader notices the seam at exactly the
     moment they are paying most attention.
   -->
-  <p class="mb-1 flex items-baseline gap-2 font-mono text-meta text-content-muted">
-    <span class="min-w-0 truncate text-label uppercase">{writerName ?? "Agent"}</span>
+  <p class="mb-1 flex items-baseline gap-2 font-sans text-meta tabular-nums text-content-muted">
+    <span class="min-w-0 truncate text-label">{writerName ?? "Agent"}</span>
     <span class="shrink-0">Writing…</span>
   </p>
   <!--
@@ -57,7 +57,7 @@
     an unclosed `**bo` as literal text until its closing marker lands, so a
     half-typed emphasis cannot flicker on and back off.
   -->
-  <div class="message-html max-w-[68ch] font-serif text-body text-content">
+  <div class="message-html max-w-[68ch] font-sans text-body text-content">
     <RichText {blocks} /><!--
       The caret: one honest signal that this is still arriving. A static
       label can go stale — the text can stop moving while the label still
