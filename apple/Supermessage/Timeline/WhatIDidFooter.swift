@@ -2,14 +2,15 @@ import SupermessageFFI
 import SupermessageKit
 import SwiftUI
 
-/// "What I did · 4 steps", under the agent's newest message once its turn has
-/// finished (T6).
+/// "Thought for 12s · 4 steps", above the agent's newest answer once its turn
+/// has finished (T6).
 ///
 /// `LiveStore` keeps a finished turn's tool calls and reasoning until the
 /// next turn starts — nothing else on screen carries them — and this is where
-/// they go once the answer has landed: collapsed, under the answer they led
-/// to, rather than a second card above it competing with it. Open, it lists
-/// each step with the core's own word for how it ended.
+/// they go once the answer has landed: collapsed, between the agent's name
+/// and its answer, because that is the order it happened in. Open, it shows
+/// the reasoning and lists each step with the core's own word for how it
+/// ended.
 ///
 /// Draws nothing for a turn that is still going (the live card is showing it)
 /// or one that left no record.
@@ -18,10 +19,6 @@ struct WhatIDidFooter: View {
 
     @State private var open = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    static func label(steps: Int) -> String {
-        steps == 1 ? "What I did · 1 step" : "What I did · \(steps) steps"
-    }
 
     var body: some View {
         if live.finished, !live.tools.isEmpty || live.thought != nil {
@@ -43,7 +40,10 @@ struct WhatIDidFooter: View {
                 }
                 .padding(.top, 6)
             } label: {
-                Text(live.tools.isEmpty ? "What I thought" : Self.label(steps: live.tools.count))
+                Text(
+                    TurnRecordLabel.text(
+                        thought: live.thought != nil, steps: live.tools.count,
+                        seconds: live.elapsed(at: Date())))
                     .font(ThemeType.ui)
                     .foregroundStyle(Theme.contentMuted)
             }
@@ -53,7 +53,6 @@ struct WhatIDidFooter: View {
             .background(Theme.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusCard))
             .frame(maxWidth: MessageMeasure.card, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 2)
         }
     }
 }
@@ -103,15 +102,13 @@ enum MessageMeasure {
 }
 
 #if DEBUG
-// A finished turn's record under the answer it produced, collapsed (T6).
+// A finished turn's record above the answer it produced, collapsed (T6).
 #Preview("What I did") {
     PreviewGround(width: 390) {
-        VStack(alignment: .leading, spacing: 0) {
-            TimelineRowView(
-                row: PreviewFixtures.agentMessage, attribution: "Atlas",
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
-            WhatIDidFooter(live: PreviewFixtures.finishedTurn())
-        }
+        TimelineRowView(
+            row: PreviewFixtures.agentMessage, attribution: "Atlas",
+            media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache(),
+            prelude: AnyView(WhatIDidFooter(live: PreviewFixtures.finishedTurn())))
     }
     .environment(\.rendersStill, true)
 }

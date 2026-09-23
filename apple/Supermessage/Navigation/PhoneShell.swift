@@ -32,6 +32,7 @@ struct PhoneShell: View {
                         }
                         .toolbar {
                             ChatsToolbar(
+                                session: session,
                                 onAccount: { showsAccount = true },
                                 onCompose: { showsNewRoom = true })
                         }

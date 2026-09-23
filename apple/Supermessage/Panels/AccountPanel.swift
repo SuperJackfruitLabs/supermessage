@@ -14,6 +14,11 @@ struct AccountPanel: View {
     @State private var account: AccountDto?
     @State private var confirmingSignOut = false
     @State private var showingRecovery = false
+    /// The roster's arrangement and whether it shows agent state. Here
+    /// rather than behind a button beside compose: both are chosen once and
+    /// rarely changed, which is what an account screen is for.
+    @AppStorage("roster.view") private var storedView = RosterChoice.waiting.rawValue
+    @AppStorage("roster.showsState") private var showsState = true
 
     var body: some View {
         NavigationStack {
@@ -47,6 +52,20 @@ struct AccountPanel: View {
                     }
 
                     Section {
+                        Picker("Order rooms by", selection: $storedView) {
+                            ForEach(RosterChoice.offered, id: \.rawValue) { option in
+                                Text(option == .waiting ? "Waiting first" : "Most recent")
+                                    .tag(option.rawValue)
+                            }
+                        }
+                        Toggle("Agent state", isOn: $showsState)
+                    } header: {
+                        Text("Chats")
+                    } footer: {
+                        Text("Waiting first puts what needs an answer at the top. Agent state is the dot and word beside an agent's name.")
+                    }
+
+                    Section {
                         // Beside `Sign out` because it is the same rarely-visited
                         // class of account action — and because the day it is
                         // needed is the day someone is setting up a new device and
@@ -55,7 +74,10 @@ struct AccountPanel: View {
                     }
 
                     Section {
+                        // Red by hand, like Leave room: the root's
+                        // `.foregroundStyle(Theme.content)` outranks the role.
                         Button("Sign out", role: .destructive) { confirmingSignOut = true }
+                            .foregroundStyle(Theme.danger)
                     } footer: {
                         // Said plainly, because it is true and because signing out
                         // of this app is not the small thing it is elsewhere: the
@@ -91,21 +113,14 @@ struct AccountPanel: View {
 
     /// The local part of the Matrix id — `@rakesh:id.agentpod.dev` is a name
     /// and an address, and only the first half is worth a headline.
-    private var name: String {
-        guard let id = account?.userId, id.hasPrefix("@"), let colon = id.firstIndex(of: ":") else {
-            return account?.userId ?? "Signed in"
-        }
-        return String(id[id.index(after: id.startIndex)..<colon])
-    }
+    private var name: String { AccountLabel.name(of: account?.userId) }
 
-    private var initial: String {
-        name.first.map { String($0).uppercased() } ?? "?"
-    }
+    private var initial: String { AccountLabel.initial(of: account?.userId) }
 }
 
 #if DEBUG
 // The account, which is two facts and a way out.
-#Preview {
+#Preview("Account") {
     AccountPanel(session: PreviewFixtures.session(), onClose: {})
         .previewChrome()
 }

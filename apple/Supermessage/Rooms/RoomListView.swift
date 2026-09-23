@@ -24,11 +24,13 @@ struct RoomListView: View {
 
     /// The arrangement the app opens on, and the filters, all remembered.
     @AppStorage("roster.view") private var storedView = RosterChoice.waiting.rawValue
-    @AppStorage("roster.showsInvitations") private var showsInvitations = false
+    /// Whether the invitations row is open. Not stored: invitations are
+    /// something to act on, and a list that opened with them spread across
+    /// its top every launch would bury the conversations.
+    @State private var showsInvitations = false
     @AppStorage("roster.showsState") private var showsState = true
     @AppStorage("roster.filter") private var storedFilter = RosterFilter.all.rawValue
 
-    @State private var showsSettings = false
     /// Re-read on every roster change so "2m" does not sit at "2m" all day.
     @State private var now = Date()
     /// The room whose info panel is open from the roster, if any.
@@ -40,7 +42,13 @@ struct RoomListView: View {
     /// Bumped when a swipe lands, for the haptic.
     @State private var swipeLanded = 0
 
-    private var view: RosterChoice { RosterChoice(rawValue: storedView) ?? .waiting }
+    /// The arrangement, chosen in Account → Roster. "Machine" is no longer
+    /// offered — a space is a machine's rooms, and the title chooses spaces —
+    /// so a stored choice of it reads as the default.
+    private var view: RosterChoice {
+        let stored = RosterChoice(rawValue: storedView) ?? .waiting
+        return RosterChoice.offered.contains(stored) ? stored : .waiting
+    }
     /// The chip in force. A filter that is no longer offered as a chip —
     /// Agents and Needs you, which are tabs — reads as All, so a stored
     /// choice from before cannot leave the list narrowed with no chip lit.
@@ -74,6 +82,10 @@ struct RoomListView: View {
         RosterArrangement.hiddenInvitations(session.rooms.rooms, showsInvitations: showsInvitations)
     }
 
+    private var invitationCount: Int {
+        session.rooms.rooms.filter { $0.affordance == .respondToInvitation }.count
+    }
+
     var body: some View {
         List(selection: $selection) {
             Section {
@@ -86,6 +98,9 @@ struct RoomListView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if !session.rooms.rooms.isEmpty {
                         RosterFilterChips(selection: filterBinding, counts: counts)
+                    }
+                    if invitationCount > 0 {
+                        InvitationsRow(count: invitationCount, isOpen: $showsInvitations)
                     }
                 }
                 .textCase(nil)
@@ -155,9 +170,6 @@ struct RoomListView: View {
         .listStyle(.plain)
         .paletteListGround()
         .sensoryFeedback(.success, trigger: swipeLanded)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { arrangementMenu }
-        }
         // Still set: it is the back button's title in a room.
         .navigationTitle(session.spaces.selectedName.map(SpaceNames.display) ?? "Chats")
         .toolbar {
@@ -190,18 +202,8 @@ struct RoomListView: View {
                 // Every room was filtered away. Say so, and say what by.
                 ContentUnavailableView(
                     "Nothing but invitations", systemImage: "envelope",
-                    description: Text("\(hiddenInvitations) waiting. Turn them on to see them."))
+                    description: Text("\(hiddenInvitations) waiting — open Invitations above."))
             }
-        }
-        .sheet(isPresented: $showsSettings) {
-            RosterSettings(
-                view: $storedView, showsInvitations: $showsInvitations, showsState: $showsState,
-                invitationCount: session.rooms.rooms.filter {
-                    $0.affordance == .respondToInvitation
-                }.count
-            ) { showsSettings = false }
-            .presentationDetents([.medium])
-            .paletteSheet()
         }
         // Reached by tapping a row's avatar. Presented from the roster rather
         // than by opening the room first: asking what a room *is* should not
@@ -260,40 +262,6 @@ struct RoomListView: View {
         }
     }
 
-/// The arrangement switcher, in the toolbar with compose.
-    ///
-    /// It used to be a segmented control pinned inside the list, which meant
-    /// the roster carried a second permanent bar of chrome above it, and the
-    /// one control that is *not* about the list's contents was the one
-    /// sitting in them. A menu also has room to name each arrangement
-    /// properly, which three segments never did.
-    private var arrangementMenu: some View {
-        Menu {
-            Picker("Arrangement", selection: $storedView) {
-                ForEach(RosterChoice.allCases, id: \.rawValue) { option in
-                    Text(option.title).tag(option.rawValue)
-                }
-            }
-            .pickerStyle(.inline)
-
-            Divider()
-
-            Button("Roster options") { showsSettings = true }
-        } label: {
-            // Admits to what is being withheld. Hidden must never mean gone:
-            // a roster that silently drops a room you were invited to is a
-            // roster that lost it.
-            if hiddenInvitations > 0 {
-                Label("\(hiddenInvitations)", systemImage: "envelope")
-                    .labelStyle(.titleAndIcon)
-            } else {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-            }
-        }
-        .accessibilityLabel(
-            hiddenInvitations > 0
-                ? "Roster options, \(hiddenInvitations) invitations hidden" : "Roster options")
-    }
 }
 
 /// A room's notification and pin settings, as a swipe last heard them.
@@ -320,73 +288,40 @@ private struct SectionHeader: View {
     }
 }
 
-/// What the roster opens on, and what it leaves out.
-private struct RosterSettings: View {
-    @Binding var view: String
-    @Binding var showsInvitations: Bool
-    @Binding var showsState: Bool
-    let invitationCount: Int
-    let onClose: () -> Void
+/// "Invitations · 2", at the top of the list when there are any.
+///
+/// Invitations used to be hidden behind a switch in a sheet, with the only
+/// sign of them an envelope that replaced the options button's icon — which
+/// then read as a second messaging action beside compose (2026-09-24). They
+/// are something to act on, so they are a row in the list, as Messages does
+/// with unknown senders and WhatsApp with its archive. Tapping it opens the
+/// core's invitations section in place.
+private struct InvitationsRow: View {
+    let count: Int
+    @Binding var isOpen: Bool
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Open the roster on") {
-                    ForEach(RosterChoice.allCases, id: \.rawValue) { option in
-                        Button { view = option.rawValue } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(option.title).foregroundStyle(Theme.content)
-                                    Text(blurb(for: option))
-                                        .metaFace()
-                                        .foregroundStyle(Theme.contentMuted)
-                                }
-                                Spacer()
-                                if view == option.rawValue {
-                                    Image(systemName: "checkmark").foregroundStyle(Theme.accent)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section("Show") {
-                    Toggle(isOn: $showsInvitations) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Invitations")
-                            Text(
-                                invitationCount == 1
-                                    ? "1 pending" : "\(invitationCount) pending"
-                            )
-                            .metaFace()
-                            .foregroundStyle(Theme.contentMuted)
-                        }
-                    }
-                    Toggle(isOn: $showsState) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Agent state")
-                            Text("the dot and its word")
-                                .metaFace()
-                                .foregroundStyle(Theme.contentMuted)
-                        }
-                    }
-                }
+        Button {
+            isOpen.toggle()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "envelope")
+                    .foregroundStyle(Theme.accent)
+                Text(count == 1 ? "1 invitation" : "\(count) invitations")
+                    .foregroundStyle(Theme.content)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.contentMuted)
+                    .rotationEffect(.degrees(isOpen ? 180 : 0))
             }
-            .paletteGroupedGround()
-            .navigationTitle("Roster")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onClose) }
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
-    }
-
-    private func blurb(for option: RosterChoice) -> String {
-        switch option {
-        case .recent: return "newest first"
-        case .waiting: return "what needs an answer, then the rest"
-        case .machine: return "grouped by the machine it runs on"
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(count == 1 ? "1 invitation" : "\(count) invitations")
+        .accessibilityHint(isOpen ? "Hides them" : "Shows them")
     }
 }
 

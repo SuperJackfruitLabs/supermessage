@@ -158,6 +158,8 @@ struct RecoveryView: View {
             if resetting {
                 SecureField("Your password", text: $password)
                 Button("Start over", role: .destructive) { Task { await reset() } }
+                    // Red by hand: the root's foregroundStyle outranks the role.
+                    .foregroundStyle(Theme.danger)
                     .disabled(busy || password.isEmpty)
                 Button("Cancel") {
                     resetting = false

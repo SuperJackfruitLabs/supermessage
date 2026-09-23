@@ -55,6 +55,9 @@ struct TimelineRowView: View {
     /// another plane — the row cannot supply the latter's subject, so the card
     /// hands it back up.
     var onDecide: ((GateAnswer) async -> Bool)?
+    /// Drawn between the sender's name and what they said: the reasoning
+    /// and steps that led to an agent's answer. See `WhatIDidFooter`.
+    var prelude: AnyView?
 
     private var item: TimelineItemDto { row.item }
 
@@ -88,7 +91,8 @@ struct TimelineRowView: View {
             MessageBlock(
                 row: row, named: named, muted: muted, blocks: blocks,
                 continuesRun: continuesRun, endsRun: endsRun, hidesQuote: hidesQuote,
-                readers: readers, faces: faces, onReact: onReact, onQuoteTap: onQuoteTap
+                readers: readers, faces: faces, onReact: onReact, onQuoteTap: onQuoteTap,
+                prelude: prelude
             )
 
         case .emote:
@@ -210,6 +214,7 @@ private struct MessageBlock: View {
     let faces: AvatarCache
     var onReact: ((String) -> Void)?
     var onQuoteTap: (() -> Void)?
+    var prelude: AnyView?
 
     @State private var reading = false
 
@@ -221,6 +226,14 @@ private struct MessageBlock: View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
             if !isOwn && !continuesRun {
                 header
+            }
+
+            // An agent reasons, then answers, so the record of its reasoning
+            // reads first — under its name, above what it said — as it does
+            // in ChatGPT, Claude and assistant-ui. It used to be a footnote
+            // under the answer, which put the conclusion before the working.
+            if let prelude {
+                prelude
             }
 
             // The bubble, with its reactions pulled up over its bottom edge.

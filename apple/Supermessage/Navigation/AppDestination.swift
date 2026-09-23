@@ -45,16 +45,23 @@ extension View {
     }
 }
 
-/// The toolbar the Chats list carries: the account at the leading edge, where
-/// every messaging app puts it, and compose at the trailing one.
+/// The toolbar the Chats list carries: you at the leading edge, where every
+/// messaging app puts the account, and compose — the one primary action — at
+/// the trailing one.
+///
+/// Two buttons, each with one job. A third, the roster options, sat beside
+/// compose and turned into an envelope when invitations were hidden: an
+/// options menu and a status light in one button, reading as a second
+/// messaging action (2026-09-24). Its arrangement moved to Account → Roster
+/// and its invitations into the list.
 struct ChatsToolbar: ToolbarContent {
+    let session: Session
     let onAccount: () -> Void
     let onCompose: () -> Void
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button(action: onAccount) { Image(systemName: "person.crop.circle") }
-                .accessibilityLabel("Account")
+            AccountButton(session: session, action: onAccount)
         }
         ToolbarItem(placement: .topBarTrailing) {
             // Labelled: an icon-only control is announced as "button" and
@@ -64,3 +71,28 @@ struct ChatsToolbar: ToolbarContent {
         }
     }
 }
+
+/// Your initial, in a circle: which account this is, and the way to it.
+///
+/// A generic person glyph said "an account" rather than "you"; Apple's apps,
+/// WhatsApp and Slack all show the person signed in.
+private struct AccountButton: View {
+    let session: Session
+    let action: () -> Void
+    @State private var userId: String?
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle().fill(Theme.accent.opacity(0.18))
+                Text(AccountLabel.initial(of: userId))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            .frame(width: 30, height: 30)
+        }
+        .accessibilityLabel("Account")
+        .task { userId = await session.account()?.userId }
+    }
+}
+

@@ -356,9 +356,6 @@ struct TimelineList: UIViewRepresentable {
         case membershipRun(String)
         /// The agent's in-progress turn, pinned to the newest end.
         case liveTurn
-        /// A finished turn's record — "What I did · N steps" — under the
-        /// agent's newest message (T6).
-        case turnRecord
         /// Shown at the oldest end while a page of history is in flight.
         case paginating
     }
@@ -416,6 +413,9 @@ struct TimelineList: UIViewRepresentable {
         /// come off every attribution in the room.
         private var singleSpeaker = true
         private var writerName = "Agent"
+        /// The row that carries the finished turn's record: the newest
+        /// message from someone else, which is the answer the turn produced.
+        private var recordAnchorId: String?
         /// Told when the reader moves away from, or back to, the newest
         /// message. Exact in an inverted list, where the bottom is the origin.
         var onDistanceChanged: ((Bool) -> Void)?
@@ -496,7 +496,12 @@ struct TimelineList: UIViewRepresentable {
                                 onReply: { self.startReply(row) },
                                 onReact: { key in self.react(row, key) },
                                 onQuoteTap: canJump ? { self.jumpToParent(of: row) } : nil,
-                                onDecide: { answer in await self.decide(row, answer) }
+                                onDecide: { answer in await self.decide(row, answer) },
+                                // Always given to the answer's row: the
+                                // footer draws nothing until the turn is
+                                // finished, and observes the store itself.
+                                prelude: id == self.recordAnchorId
+                                    ? AnyView(WhatIDidFooter(live: self.session.live)) : nil
                             )
                         }
                     }
@@ -525,11 +530,6 @@ struct TimelineList: UIViewRepresentable {
                 case .liveTurn:
                     cell.contentConfiguration = self.column(entry) {
                         LiveTurnView(live: self.session.live, writerName: self.writerName)
-                    }
-
-                case .turnRecord:
-                    cell.contentConfiguration = self.column(entry) {
-                        WhatIDidFooter(live: self.session.live)
                     }
 
                 case .paginating:
@@ -692,6 +692,17 @@ struct TimelineList: UIViewRepresentable {
                 entries: displayEntries, isPaginating: isPaginating, isLive: isLive,
                 isFinished: isFinished)
 
+            // Which row carries the turn's record. When a newer answer takes
+            // it, both rows must be redrawn: one gains it, one gives it up.
+            let previousAnchor = recordAnchorId
+            recordAnchorId = displayEntries.lazy.compactMap { entry -> String? in
+                guard case let .row(id) = entry, let row = byId[id]?.row,
+                    case .bubble = row.view, !row.item.isOwn
+                else { return nil }
+                return id
+            }.first
+            let anchorMoved = previousAnchor != recordAnchorId
+
             // Reconfigure rather than reload: an identity that survived should
             // update in place, which is the point of the identity this list is
             // keyed on.
@@ -709,13 +720,14 @@ struct TimelineList: UIViewRepresentable {
                 switch entry {
                 case let .row(id):
                     if previousSingleSpeaker != singleSpeaker { return true }
+                    if anchorMoved, id == previousAnchor || id == recordAnchorId { return true }
                     guard let before = previousRows[id], let after = byId[id] else { return true }
                     return before != after
                 case let .membershipRun(id):
                     return previousRuns[id] != runs[id]
                 // The live turn redraws itself: `LiveTurnView` reads the
                 // observable store directly, so its cell never needs telling.
-                case .liveTurn, .turnRecord, .paginating:
+                case .liveTurn, .paginating:
                     return false
                 }
             }
@@ -761,33 +773,22 @@ struct TimelineList: UIViewRepresentable {
         /// in the room, still being written, and the message it becomes has
         /// not arrived.
         ///
-        /// A turn that has *finished* is a footnote to the answer it
-        /// produced — "What I did · 4 steps" — directly under the agent's
-        /// newest message (T6). It used to be a whole card above that
-        /// message, which put the working ahead of the conclusion and read as
-        /// a second reply.
+        /// A turn that has *finished* has no row: its record — "Thought for
+        /// 12s · 4 steps" — is drawn inside the answer's own row, between the
+        /// agent's name and the text (`recordAnchorId`). Reasoning comes
+        /// before the answer because it happened first. It was once a whole
+        /// card above the message, which read as a second reply, and then a
+        /// footnote under it, which put the conclusion before the working;
+        /// inside the row it is neither.
         private func snapshot(
             entries: [Entry], isPaginating: Bool, isLive: Bool, isFinished: Bool
         ) -> NSDiffableDataSourceSnapshot<Int, Entry> {
             var snapshot = NSDiffableDataSourceSnapshot<Int, Entry>()
             snapshot.appendSections([0])
             if isLive, !isFinished { snapshot.appendItems([.liveTurn]) }
-            if isLive, isFinished {
-                // Under the newest message from someone else — the answer.
-                // Newest first, so "under" is the index before it.
-                let anchor = entries.firstIndex { entry in
-                    guard case let .row(id) = entry, let row = rowsById[id]?.row else {
-                        return false
-                    }
-                    guard case .bubble = row.view else { return false }
-                    return !row.item.isOwn
-                } ?? 0
-                var ordered = entries
-                ordered.insert(.turnRecord, at: anchor)
-                snapshot.appendItems(ordered)
-            } else {
-                snapshot.appendItems(entries)
-            }
+            // A finished turn's record is not a row of its own: it is drawn
+            // inside its answer's row (`recordAnchorId`), above the text.
+            snapshot.appendItems(entries)
             if isPaginating { snapshot.appendItems([.paginating]) }
             return snapshot
         }
