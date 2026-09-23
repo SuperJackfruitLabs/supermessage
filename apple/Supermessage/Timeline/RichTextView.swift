@@ -16,18 +16,22 @@ import SwiftUI
 /// reasoning is stronger on a phone.
 struct RichTextView: View {
     let blocks: [RichBlock]
+    /// Set in the long-read view, where headings and list markers follow the
+    /// serif the prose around them is set in instead of switching face
+    /// mid-page. Everywhere else the timeline is one sans voice.
+    var longread = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: longread ? 12 : 8) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                block.view
+                block.view(longread: longread)
             }
         }
     }
 }
 
 extension RichBlock {
-    @ViewBuilder fileprivate var view: some View {
+    @ViewBuilder fileprivate func view(longread: Bool) -> some View {
         switch self {
         case let .paragraph(inlines):
             Text(RichTextFolding.attributed(inlines))
@@ -35,7 +39,7 @@ extension RichBlock {
 
         case let .heading(level, inlines):
             Text(RichTextFolding.attributed(inlines))
-                .font(.system(headingStyle(for: level), design: .serif, weight: .semibold))
+                .font(.system(headingStyle(for: level), design: longread ? .serif : .default, weight: .semibold))
                 .textSelection(.enabled)
 
         case let .codeBlock(_, text):
@@ -52,7 +56,7 @@ extension RichBlock {
         case let .blockQuote(blocks):
             // Overlay rather than an HStack sibling — see ReplyQuote in
             // TimelineRowView for why a bare `Rectangle` stretches a row.
-            RichTextView(blocks: blocks)
+            RichTextView(blocks: blocks, longread: longread)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) {
@@ -64,9 +68,9 @@ extension RichBlock {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .top, spacing: 8) {
                         Text(ordered ? "\(Int(start) + index)." : "•")
-                            .font(Theme.body)
+                            .font(longread ? Theme.longread : Theme.body)
                             .monospacedDigit()
-                        RichTextView(blocks: item.blocks)
+                        RichTextView(blocks: item.blocks, longread: longread)
                     }
                 }
             }
@@ -129,6 +133,18 @@ extension RichBlock {
 // Code is the one thing here that may not be re-wrapped — a broken command is
 // a wrong command — so it has to scroll sideways inside its own box while the
 // page does not. This is the preview that shows which of those happens.
+// The same blocks as the long-read view sets them: New York throughout,
+// headings included, on a wider leading.
+#Preview("Long read") {
+    ScrollView {
+        PreviewGround {
+            RichTextView(blocks: PreviewFixtures.richBlocks, longread: true)
+                .font(Theme.longread)
+                .lineSpacing(4)
+        }
+    }
+}
+
 #Preview("Code wider than the screen") {
     PreviewGround { RichTextView(blocks: PreviewFixtures.wideCode) }
 }

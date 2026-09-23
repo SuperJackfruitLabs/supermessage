@@ -20,6 +20,18 @@
 #
 # Regenerate with `xcodegen generate` from this directory after editing.
 name: Supermessage
+
+# Opt-in pieces that change what code signing needs, each OFF unless its
+# variable is set when generating (e.g. `SM_EXTENSIONS=YES xcodegen generate`).
+# Off, the project signs with the single App Store profile the TestFlight
+# workflow installs. Each file lists the Apple-side setup it needs first.
+include:
+  # The widget extension (Live Activity + widgets) and its App Group.
+  - path: SupermessageWidgets/extensions.yml
+    enable: ${SM_EXTENSIONS}
+  # The aps-environment entitlement, for APNs push.
+  - path: SupermessageWidgets/push.yml
+    enable: ${SM_PUSH}
 options:
   bundleIdPrefix: dev.supermessage
   deploymentTarget:
@@ -120,6 +132,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.ios
         SWIFT_STRICT_CONCURRENCY: complete
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # The keys INFOPLIST_KEY_* cannot express — SMPushGatewayURL,
+        # NSSupportsLiveActivities, the URL scheme — merged with the
+        # generated plist. See the file.
+        INFOPLIST_FILE: Supermessage/Platform/Info.plist
+        # The push gateway's notify URL. EMPTY: no gateway is deployed, and
+        # empty means no pusher is registered (PushConfiguration.swift).
+        SM_PUSH_GATEWAY_URL: ""
         INFOPLIST_KEY_CFBundleDisplayName: supermessage
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Declared, so App Store Connect stops asking on every upload.
@@ -136,6 +155,9 @@ targets:
         # encryption itself rather than delegating it, which is worth
         # remembering because that is on the roadmap.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        # Voice messages (C2) record with AVAudioRecorder; iOS refuses the
+        # microphone without this sentence and terminates the app on asking.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Supermessage records voice messages you choose to send."
 
         # Orientations, which App Store Connect rejects an upload for lacking.
         #

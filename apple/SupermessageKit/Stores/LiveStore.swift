@@ -65,7 +65,82 @@ public final class LiveStore {
     private var answerSeq: UInt64 = 0
     private var thoughtSeq: UInt64 = 0
 
-    public init() {}
+    // MARK: - Time
+
+    /// When this turn's first delta arrived — the reader's clock, not the
+    /// agent's. `nil` when nothing is live.
+    ///
+    /// The reader's clock because the question the activity card answers is
+    /// "how long have I been waiting", and the events carry no timestamp of
+    /// their own to disagree with it.
+    public private(set) var startedAt: Date?
+    /// When the turn finished, so a finished card shows how long it took
+    /// rather than a number that keeps climbing.
+    public private(set) var endedAt: Date?
+    /// When anything last arrived for this turn. What a still rendering
+    /// measures against, since it cannot ask for the time.
+    public private(set) var lastActivityAt: Date?
+
+    private let clock: @MainActor () -> Date
+
+    /// - Parameter clock: the time source, injectable so a test can say how
+    ///   long a turn took without waiting for it.
+    public init(clock: @escaping @MainActor () -> Date = { Date() }) {
+        self.clock = clock
+    }
+
+    /// How long the turn has run at `now`: to its end once it has one.
+    public func elapsed(at now: Date) -> TimeInterval? {
+        guard let startedAt else { return nil }
+        return max(0, (endedAt ?? now).timeIntervalSince(startedAt))
+    }
+
+    private func noteActivity() {
+        let now = clock()
+        if startedAt == nil { startedAt = now }
+        lastActivityAt = now
+    }
+
+    private func noteFinished() {
+        if !finished { endedAt = clock() }
+        finished = true
+    }
+
+    // MARK: - Steps
+
+    /// The step being worked on: the latest running call, else the latest
+    /// queued one. `nil` between steps.
+    public var currentStep: ToolCall? {
+        tools.last { $0.phase == .running } ?? tools.last { $0.phase == .queued }
+    }
+
+    /// How many steps have completed.
+    public var completedSteps: Int {
+        tools.filter { $0.phase == .done }.count
+    }
+
+    /// The latest step that failed — the one state that still matters after
+    /// the turn ends, so the card names it ahead of any running one.
+    public var failedStep: ToolCall? {
+        tools.last { $0.phase == .failed }
+    }
+
+    /// Whether a turn is streaming and has not finished.
+    public var inProgress: Bool { isLive && !finished }
+
+    // MARK: - Who
+
+    /// What to call the agent, by room — set by the view that knows the
+    /// room's header (D11). Keyed by room, not cleared by `focus`, for the
+    /// same race `TypingStore.recognise` records.
+    private var agentNames: [String: String] = [:]
+
+    public func setAgentName(_ name: String?, for roomId: String) {
+        agentNames[roomId] = name
+    }
+
+    /// The header's name for the agent in the focused room, when it has one.
+    public var agentName: String? { roomId.flatMap { agentNames[$0] } }
 
     /// Whether there is anything to show — a turn in progress, or the record
     /// of the one that just ended.
@@ -81,10 +156,11 @@ public final class LiveStore {
             // starts, or when the reader leaves the room.
             answer = nil
             answerSeq = 0
-            finished = true
+            noteFinished()
             return
         }
         beginTurnIfFinished()
+        noteActivity()
         guard seq >= answerSeq else { return }
         answerSeq = seq
         answer = text
@@ -96,10 +172,11 @@ public final class LiveStore {
             // Kept, for the same reason as the tool calls above: reasoning
             // that vanishes the moment the answer appears is reasoning nobody
             // has had time to read.
-            finished = true
+            noteFinished()
             return
         }
         beginTurnIfFinished()
+        noteActivity()
         guard seq >= thoughtSeq else { return }
         thoughtSeq = seq
         thought = text
@@ -112,6 +189,7 @@ public final class LiveStore {
     ) {
         guard accept(roomId) else { return }
         beginTurnIfFinished()
+        noteActivity()
         let call = ToolCall(
             id: toolCallId, title: title, status: status, phase: phase, statusLabel: statusLabel,
             kind: kind, locations: locations,
@@ -147,6 +225,9 @@ public final class LiveStore {
         answerSeq = 0
         thoughtSeq = 0
         finished = false
+        startedAt = nil
+        endedAt = nil
+        lastActivityAt = nil
     }
 
     /// Whether this belongs to the room on screen.

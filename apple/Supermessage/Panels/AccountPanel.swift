@@ -18,53 +18,57 @@ struct AccountPanel: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle().fill(Theme.surfaceRaised)
-                            Text(initial).font(.headline)
-                        }
-                        .frame(width: 44, height: 44)
+                Group {
+                    Section {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle().fill(Theme.surfaceRaised)
+                                Text(initial).font(.headline)
+                            }
+                            .frame(width: 44, height: 44)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(name).font(.headline)
-                            if let account {
-                                Text(account.userId)
-                                    .metaFace()
-                                    .foregroundStyle(Theme.contentMuted)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(name).font(.headline)
+                                if let account {
+                                    Text(account.userId)
+                                        .metaFace()
+                                        .foregroundStyle(Theme.contentMuted)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
                             }
                         }
+                        if let account {
+                            LabeledContent("Homeserver", value: account.homeserver)
+                                .metaFace()
+                        }
+                    } header: {
+                        Text("Signed in as")
                     }
-                    if let account {
-                        LabeledContent("Homeserver", value: account.homeserver)
-                            .metaFace()
+
+                    Section {
+                        // Beside `Sign out` because it is the same rarely-visited
+                        // class of account action — and because the day it is
+                        // needed is the day someone is setting up a new device and
+                        // looking for exactly this.
+                        Button("Encryption recovery") { showingRecovery = true }
                     }
-                } header: {
-                    Text("Signed in as")
-                }
 
-                Section {
-                    // Beside `Sign out` because it is the same rarely-visited
-                    // class of account action — and because the day it is
-                    // needed is the day someone is setting up a new device and
-                    // looking for exactly this.
-                    Button("Encryption recovery") { showingRecovery = true }
+                    Section {
+                        Button("Sign out", role: .destructive) { confirmingSignOut = true }
+                    } footer: {
+                        // Said plainly, because it is true and because signing out
+                        // of this app is not the small thing it is elsewhere: the
+                        // encrypted store goes with it.
+                        Text("Signing out removes this account and its messages from this device.")
+                    }
                 }
-
-                Section {
-                    Button("Sign out", role: .destructive) { confirmingSignOut = true }
-                } footer: {
-                    // Said plainly, because it is true and because signing out
-                    // of this app is not the small thing it is elsewhere: the
-                    // encrypted store goes with it.
-                    Text("Signing out removes this account and its messages from this device.")
-                }
+                .listRowBackground(Theme.surface)
             }
             .sheet(isPresented: $showingRecovery) {
                 RecoveryView(session: session) { showingRecovery = false }
             }
+            .paletteGroupedGround()
             .navigationTitle("Account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

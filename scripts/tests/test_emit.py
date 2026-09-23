@@ -231,7 +231,7 @@ class TypeEmissionTests(unittest.TestCase):
         css = emit_app_css(load(SOURCE))
         self.assertIn("--text-body: 0.9375rem", css)
         self.assertIn("--text-body--line-height: 1.62", css)
-        self.assertIn("--text-label--letter-spacing: 0.08em", css)
+        self.assertIn("--text-label--font-weight: 600", css)
 
     def test_css_emits_the_three_families(self):
         css = emit_app_css(load(SOURCE))
@@ -243,7 +243,7 @@ class TypeEmissionTests(unittest.TestCase):
         from scripts.tokens.emit_swift import emit_swift
 
         swift = emit_swift(load(SOURCE))
-        self.assertIn("Font.system(.body, design: .serif)", swift)
+        self.assertIn("Font.system(.body, design: .serif)", swift)  # longread
         self.assertIn("Font.system(.footnote)", swift)
         self.assertNotIn("Font.system(size:", code_only(swift))
 
@@ -251,8 +251,8 @@ class TypeEmissionTests(unittest.TestCase):
         from scripts.tokens.emit_swift import emit_swift
 
         swift = emit_swift(load(SOURCE))
-        self.assertIn("design: .monospaced", swift)   # mono roles
-        self.assertIn("design: .serif", swift)        # body
+        self.assertIn("design: .serif", swift)        # longread
+        self.assertNotIn("static let body = Font.system(.body, design: .serif)", swift)
 
     def test_kotlin_emits_type_scale_names_not_sp(self):
         from scripts.tokens.emit_kotlin import emit_kotlin
@@ -262,15 +262,16 @@ class TypeEmissionTests(unittest.TestCase):
         self.assertNotIn(".sp", code_only(kt))
 
     def test_the_structural_rule_survives_into_every_target(self):
-        """serif for the agent, sans for the operator — on all three."""
+        """One conversational face, serif kept for long reads — on all three."""
         from scripts.tokens.emit_kotlin import emit_kotlin
         from scripts.tokens.emit_swift import emit_swift
 
         swift, kt = emit_swift(load(SOURCE)), emit_kotlin(load(SOURCE))
-        self.assertIn("static let body = Font.system(.body, design: .serif)", swift)
+        self.assertIn("static let body = Font.system(.body)", swift)
         self.assertIn("static let bodyOwn = Font.system(.body)", swift)
-        self.assertIn('val body = FontFamily.Serif', kt)
-        self.assertIn('val bodyOwn = FontFamily.SansSerif', kt)
+        self.assertIn("static let longread = Font.system(.body, design: .serif)", swift)
+        self.assertIn('val body = FontFamily.SansSerif', kt)
+        self.assertIn('val longread = FontFamily.Serif', kt)
 
 class ImportTests(unittest.TestCase):
     """Every symbol the generated code references must be imported.

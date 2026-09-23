@@ -39,6 +39,7 @@ import uniffi.supermessage_core.FfiConverterTypeMatrixLinkTarget
 import uniffi.supermessage_core.FfiConverterTypeMentionable
 import uniffi.supermessage_core.FfiConverterTypeNotificationMode
 import uniffi.supermessage_core.FfiConverterTypePersonDto
+import uniffi.supermessage_core.FfiConverterTypePushRegistration
 import uniffi.supermessage_core.FfiConverterTypeRichBlock
 import uniffi.supermessage_core.FfiConverterTypeRoomInfoDto
 import uniffi.supermessage_core.FfiConverterTypeRoomRow
@@ -53,6 +54,7 @@ import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
+import uniffi.supermessage_core.PushRegistration
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomRow
@@ -69,6 +71,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferMatrixLinkTarget
 import uniffi.supermessage_core.RustBuffer as RustBufferMentionable
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationMode
 import uniffi.supermessage_core.RustBuffer as RustBufferPersonDto
+import uniffi.supermessage_core.RustBuffer as RustBufferPushRegistration
 import uniffi.supermessage_core.RustBuffer as RustBufferRichBlock
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomInfoDto
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomRow
@@ -926,6 +929,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1001,6 +1006,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_recovery_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_register_pusher(`ptr`: Pointer,`registration`: RustBufferPushRegistration.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_reset_recovery(`ptr`: Pointer,`password`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_restore_session(`ptr`: Pointer,`sink`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1239,6 +1246,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_recovery_state(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_register_pusher(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_reset_recovery(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_restore_session(
@@ -1402,6 +1411,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_register_pusher() != 45337.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_reset_recovery() != 24413.toShort()) {
@@ -2003,6 +2015,12 @@ public interface CoreInterface {
      * is how the first one is orphaned.
      */
     fun `recoveryState`(): kotlin.String
+    
+    /**
+     * Register this device's push token with the homeserver, pointed at a
+     * push gateway. `event_id_only`, so no content leaves the homeserver.
+     */
+    fun `registerPusher`(`registration`: PushRegistration)
     
     /**
      * Throw the old identity away and start again, returning the new key.
@@ -2660,6 +2678,22 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     }
     )
     }
+    
+
+    
+    /**
+     * Register this device's push token with the homeserver, pointed at a
+     * push gateway. `event_id_only`, so no content leaves the homeserver.
+     */
+    @Throws(FfiException::class)override fun `registerPusher`(`registration`: PushRegistration)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_register_pusher(
+        it, FfiConverterTypePushRegistration.lower(`registration`),_status)
+}
+    }
+    
     
 
     
@@ -5058,6 +5092,10 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
         }
     }
 }
+
+
+
+
 
 
 

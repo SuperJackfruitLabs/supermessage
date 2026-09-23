@@ -329,6 +329,16 @@ impl Core {
         Ok(())
     }
 
+    /// Register this device's push token with the homeserver, pointed at a
+    /// push gateway. `event_id_only`, so no content leaves the homeserver.
+    pub fn register_pusher(
+        &self,
+        registration: supermessage_core::push::PushRegistration,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.register_pusher(&registration))?;
+        Ok(())
+    }
+
     /// Pin or unpin a room — the `m.favourite` tag, so it travels between
     /// clients.
     pub fn set_room_pinned(&self, room_id: String, pinned: bool) -> Result<(), FfiError> {

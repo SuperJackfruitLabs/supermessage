@@ -50,7 +50,10 @@ public final class Session {
 
     public init(client: any SessionClient) {
         self.client = client
-        rooms = RoomsStore(client: client)
+        // Marking read from the roster — a swipe — goes through the same core
+        // call opening a room makes, so the two cannot mean different things.
+        rooms = RoomsStore(
+            client: client, markRead: { [client] roomId in try await client.markRoomRead(roomId: roomId) })
         spaces = SpacesStore(client: client)
         avatars = AvatarCache(client: client)
         faces = AvatarCache.forMembers(client: client)
@@ -94,6 +97,7 @@ public final class Session {
     /// configures — this app never sees them.
     @discardableResult
     public func start() async -> Bool {
+        SessionHooks.willStart?(self)  // platform services attach (Notifications/)
         do {
             prepareForNewSession()
             let restored = try await client.restoreSession(sink: pump)
@@ -113,6 +117,7 @@ public final class Session {
     }
 
     public func signIn(homeserver: String, username: String, password: String) async {
+        SessionHooks.willStart?(self)  // platform services attach (Notifications/)
         failure = nil
         do {
             prepareForNewSession()
@@ -131,33 +136,26 @@ public final class Session {
 
     /// Send what is in the composer: the text, the attachment, or both.
     ///
-    /// Returns a message when the core refuses, or `nil`. Mentions are the
-    /// core's — `collectMentions` produces the `m.mentions` an agent reads to
-    /// decide a message in a room full of agents was addressed to it, and this
-    /// app must not have a second opinion about that.
-    public func send(text: String, in roomId: String) async -> String? {
-        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if staged.file != nil, let failure = await staged.send(in: roomId) {
-            return failure
-        }
-        guard !body.isEmpty else { return nil }
-
-        do {
-            if let reply = replies.pending(for: roomId) {
-                try await client.sendReply(roomId: roomId, body: body, inReplyTo: reply.eventId)
-                replies.cancel(roomId)
-            } else {
-                let mentions = SupermessageFFI.collectMentions(text: body, members: [])
-                try await client.sendMessage(roomId: roomId, body: body, mentions: mentions)
-            }
+    /// The order and its failure rules are `Outbox`'s: the attachment first,
+    /// and the text only if the attachment went, so a caption never arrives
+    /// without its picture. Mentions are the core's — `collectMentions`
+    /// produces the `m.mentions` an agent reads to decide a message in a room
+    /// full of agents was addressed to it, and this app must not have a second
+    /// opinion about that. `members` is who *could* be addressed: the room's
+    /// people, as the composer's `@` picker offered them. With none, nobody is.
+    public func send(
+        text: String, in roomId: String, mentioning members: [Mentionable] = []
+    ) async -> SendResult {
+        let result = await Outbox.send(
+            text: text, in: roomId, mentioning: members, staged: staged, replies: replies,
+            client: client)
+        if result.delivered {
+            // Recorded for the acknowledgement dock: "Sent to …" until the
+            // agent shows it heard. See `Acknowledgement`.
+            typing.noteSent(in: roomId)
             await setTyping(false, in: roomId)
-            return nil
-        } catch let error as FfiError {
-            return ErrorPresenter.message(for: error)
-        } catch {
-            return "Couldn't send that."
         }
+        return result
     }
 
     /// Tell the room whether this account is typing.
@@ -416,6 +414,47 @@ public final class Session {
     private func load() async {
         await rooms.seed()
         await spaces.refresh()
+    }
+
+    // MARK: - Notification hooks (P1, P2 — see Notifications/)
+    //
+    // Kept apart from the send path above on purpose: these are what a
+    // notification action and the APNs token reach, and neither may change
+    // how the composer sends.
+
+    /// Answer an AgentPod permission request with one of its options.
+    ///
+    /// A **plain message** carrying the option's name, exactly as the desktop
+    /// answers one (`decisionReply.ts`) and as Element would: the hub's
+    /// matcher reads the room, and a permission request has no gate to
+    /// resolve. Returns whether it landed.
+    @discardableResult
+    public func answerPermission(optionId: String, in roomId: String) async -> Bool {
+        guard phase == .signedIn else { return false }
+        do {
+            try await client.sendMessage(roomId: roomId, body: optionId, mentions: [])
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Register this device's APNs pusher. Returns whether it landed; `false`
+    /// also when the client behind this session cannot register one.
+    @discardableResult
+    public func registerPusher(_ registration: PushRegistration) async -> Bool {
+        guard phase == .signedIn, let pushes = client as? any PushRegistering else { return false }
+        do {
+            try await pushes.registerPusher(registration: registration)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// A room's notification setting, or `nil` when it cannot be read.
+    public func notificationMode(of roomId: String) async -> NotificationMode? {
+        try? await client.roomInfo(roomId: roomId).notifications
     }
 
     // MARK: - Encryption recovery

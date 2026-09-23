@@ -429,7 +429,9 @@ pub struct TimelineItemDto {
     pub editable: bool,
     /// For `kind == "membership"`: the person the change is about — the
     /// event's `state_key` — as a display name, or their user id when they
-    /// have none. `None` for every other kind.
+    /// have none. `None` for every other kind, and `None` when the subject is
+    /// the sender — "joined", "left" — where the sender's resolved profile is
+    /// the better name.
     ///
     /// Distinct from `sender`: an invite, a ban or a removal is sent by
     /// someone else, and naming the sender told the room the wrong person had

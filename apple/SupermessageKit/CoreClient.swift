@@ -295,4 +295,10 @@ public actor CoreClient {
     public func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {
         try await run { try $0.searchMessages(term: term, roomId: roomId) }
     }
+
+    // MARK: - Push (see Notifications/PushConfiguration.swift)
+
+    public func registerPusher(registration: PushRegistration) async throws {
+        try await run { try $0.registerPusher(registration: registration) }
+    }
 }

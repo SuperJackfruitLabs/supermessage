@@ -1241,6 +1241,135 @@ public func FfiConverterTypePersonDto_lower(_ value: PersonDto) -> RustBuffer {
 
 
 /**
+ * What a host knows about its own push channel.
+ */
+public struct PushRegistration {
+    /**
+     * The device token, as the platform issued it (APNs: hex).
+     */
+    public var pushkey: String
+    /**
+     * Which app and environment the gateway should route to —
+     * `dev.supermessage.ios` for production APNs, a `.dev` suffix for the
+     * sandbox. The gateway's configuration names these.
+     */
+    public var appId: String
+    public var appDisplayName: String
+    public var deviceDisplayName: String
+    /**
+     * BCP 47, for the gateway's own wording where it has any.
+     */
+    public var lang: String
+    /**
+     * The gateway's `/_matrix/push/v1/notify` URL.
+     */
+    public var gatewayUrl: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The device token, as the platform issued it (APNs: hex).
+         */pushkey: String, 
+        /**
+         * Which app and environment the gateway should route to —
+         * `dev.supermessage.ios` for production APNs, a `.dev` suffix for the
+         * sandbox. The gateway's configuration names these.
+         */appId: String, appDisplayName: String, deviceDisplayName: String, 
+        /**
+         * BCP 47, for the gateway's own wording where it has any.
+         */lang: String, 
+        /**
+         * The gateway's `/_matrix/push/v1/notify` URL.
+         */gatewayUrl: String) {
+        self.pushkey = pushkey
+        self.appId = appId
+        self.appDisplayName = appDisplayName
+        self.deviceDisplayName = deviceDisplayName
+        self.lang = lang
+        self.gatewayUrl = gatewayUrl
+    }
+}
+
+
+
+extension PushRegistration: Equatable, Hashable {
+    public static func ==(lhs: PushRegistration, rhs: PushRegistration) -> Bool {
+        if lhs.pushkey != rhs.pushkey {
+            return false
+        }
+        if lhs.appId != rhs.appId {
+            return false
+        }
+        if lhs.appDisplayName != rhs.appDisplayName {
+            return false
+        }
+        if lhs.deviceDisplayName != rhs.deviceDisplayName {
+            return false
+        }
+        if lhs.lang != rhs.lang {
+            return false
+        }
+        if lhs.gatewayUrl != rhs.gatewayUrl {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(pushkey)
+        hasher.combine(appId)
+        hasher.combine(appDisplayName)
+        hasher.combine(deviceDisplayName)
+        hasher.combine(lang)
+        hasher.combine(gatewayUrl)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePushRegistration: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PushRegistration {
+        return
+            try PushRegistration(
+                pushkey: FfiConverterString.read(from: &buf), 
+                appId: FfiConverterString.read(from: &buf), 
+                appDisplayName: FfiConverterString.read(from: &buf), 
+                deviceDisplayName: FfiConverterString.read(from: &buf), 
+                lang: FfiConverterString.read(from: &buf), 
+                gatewayUrl: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PushRegistration, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.pushkey, into: &buf)
+        FfiConverterString.write(value.appId, into: &buf)
+        FfiConverterString.write(value.appDisplayName, into: &buf)
+        FfiConverterString.write(value.deviceDisplayName, into: &buf)
+        FfiConverterString.write(value.lang, into: &buf)
+        FfiConverterString.write(value.gatewayUrl, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePushRegistration_lift(_ buf: RustBuffer) throws -> PushRegistration {
+    return try FfiConverterTypePushRegistration.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePushRegistration_lower(_ value: PushRegistration) -> RustBuffer {
+    return FfiConverterTypePushRegistration.lower(value)
+}
+
+
+/**
  * One reaction key aggregated across senders on a message (see
  * `core::timeline::project_reactions`), projected from the SDK's
  * `ReactionsByKeyBySender`.
@@ -3414,7 +3543,9 @@ public struct TimelineItemDto {
     /**
      * For `kind == "membership"`: the person the change is about — the
      * event's `state_key` — as a display name, or their user id when they
-     * have none. `None` for every other kind.
+     * have none. `None` for every other kind, and `None` when the subject is
+     * the sender — "joined", "left" — where the sender's resolved profile is
+     * the better name.
      *
      * Distinct from `sender`: an invite, a ban or a removal is sent by
      * someone else, and naming the sender told the room the wrong person had
@@ -3548,7 +3679,9 @@ public struct TimelineItemDto {
         /**
          * For `kind == "membership"`: the person the change is about — the
          * event's `state_key` — as a display name, or their user id when they
-         * have none. `None` for every other kind.
+         * have none. `None` for every other kind, and `None` when the subject is
+         * the sender — "joined", "left" — where the sender's resolved profile is
+         * the better name.
          *
          * Distinct from `sender`: an invite, a ban or a removal is sent by
          * someone else, and naming the sender told the room the wrong person had

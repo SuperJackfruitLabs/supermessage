@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import SupermessageKit
@@ -221,5 +222,229 @@ struct SilentRowTests {
             MembershipRunTests.membership("2", "Krishna", "joined the room"),
         ])
         #expect(out.count == 1, "an invisible row split a run that a reader sees as one")
+    }
+}
+
+/// One person's churn, collapsed across verbs.
+@MainActor
+struct MembershipChurnTests {
+    static func change(
+        _ id: String, _ sender: String, _ verb: String, subject: String? = nil
+    ) -> TimelineRow {
+        var row = MembershipRunTests.membership(id, sender, verb)
+        row.item.membershipSubject = subject
+        return row
+    }
+
+    static func texts(_ out: [DisplayRow]) -> [String] {
+        out.map { entry in
+            if case let .membershipRun(_, text, _) = entry { return text }
+            return "<row \(entry.id)>"
+        }
+    }
+
+    @Test("one person joining, leaving and rejoining is one line")
+    func churnIsOneLine() {
+        // A bridge reconnecting did this to real rooms: three lines about one
+        // agent, and nothing any of them said was news.
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.change("1", "Strategy Sam", "joined the room"),
+            Self.change("2", "Strategy Sam", "left the room"),
+            Self.change("3", "Strategy Sam", "joined the room"),
+        ])
+        #expect(Self.texts(out) == ["Strategy Sam made 3 membership changes"])
+    }
+
+    @Test("two changes read as what happened, in order")
+    func twoChangesInOrder() {
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.change("1", "Strategy Sam", "joined the room"),
+            Self.change("2", "Strategy Sam", "left the room"),
+        ])
+        #expect(Self.texts(out) == ["Strategy Sam joined the room, then left the room"])
+    }
+
+    @Test("a person's churn does not swallow the neighbours who share a verb with it")
+    func churnKeepsNeighboursApart() {
+        // Alice's "joined" matches Sam's first change, and Bob's "left" his
+        // last: a rule that merged on the verb first would fold one of them
+        // into a sentence about Sam.
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.change("1", "Alice", "joined the room"),
+            Self.change("2", "Strategy Sam", "joined the room"),
+            Self.change("3", "Strategy Sam", "left the room"),
+            Self.change("4", "Bob", "left the room"),
+        ])
+        #expect(
+            Self.texts(out) == [
+                "Alice joined the room",
+                "Strategy Sam joined the room, then left the room",
+                "Bob left the room",
+            ])
+    }
+
+    @Test("one person repeating one change still joins a crowd making it")
+    func repeatedSameVerbStillGroups() {
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.change("1", "Annapurna", "updated their membership"),
+            Self.change("2", "Annapurna", "updated their membership"),
+            Self.change("3", "Surya", "updated their membership"),
+        ])
+        #expect(Self.texts(out) == ["Annapurna and Surya updated their membership"])
+    }
+
+    @Test("an invite and the join that follows are about the same person")
+    func subjectIsThePerson() {
+        // The invite is *sent* by someone else; it is about Sam. Keyed on the
+        // sender, these were two people and two lines.
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.change("1", "Rakesh", "was invited", subject: "Strategy Sam"),
+            Self.change("2", "Strategy Sam", "joined the room"),
+        ])
+        #expect(Self.texts(out) == ["Strategy Sam was invited, then joined the room"])
+    }
+
+    @Test("a message between two changes keeps them apart")
+    func messageBreaksChurn() {
+        let out = TimelineGrouping.collapseMembershipRuns([
+            Self.change("1", "Strategy Sam", "joined the room"),
+            TimelineGroupingTests.row(id: "m", sender: "@a:x", at: 2),
+            Self.change("2", "Strategy Sam", "left the room"),
+        ])
+        #expect(
+            Self.texts(out) == ["Strategy Sam joined the room", "<row m>", "Strategy Sam left the room"])
+    }
+}
+
+/// Reply quotes that only repeat the row above.
+@MainActor
+struct QuoteRepetitionTests {
+    static func reply(_ id: String, to parent: String) -> TimelineRow {
+        var row = TimelineGroupingTests.row(id: id, sender: "@b:x", at: 2)
+        row.item.replyTo = ReplyToDto(
+            eventId: parent, available: true, sender: "@a:x", senderDisplayName: "a",
+            excerpt: "hi", label: nil)
+        return row
+    }
+
+    @Test("a reply directly under its parent drops the quote")
+    func parentDirectlyAbove() {
+        let parent = TimelineGroupingTests.row(id: "$p", sender: "@a:x", at: 1)
+        #expect(TimelineGrouping.quoteRepeatsPrevious(Self.reply("$r", to: "$p"), after: parent))
+    }
+
+    @Test("a reply to anything further up keeps it")
+    func parentElsewhere() {
+        let between = TimelineGroupingTests.row(id: "$q", sender: "@a:x", at: 1)
+        #expect(
+            !TimelineGrouping.quoteRepeatsPrevious(Self.reply("$r", to: "$p"), after: between))
+        #expect(!TimelineGrouping.quoteRepeatsPrevious(Self.reply("$r", to: "$p"), after: nil))
+    }
+
+    @Test("a local echo above has no event id, so it cannot be the parent")
+    func localEchoAbove() {
+        var echo = TimelineGroupingTests.row(id: "$p", sender: "@a:x", at: 1)
+        echo.item.eventId = nil
+        #expect(!TimelineGrouping.quoteRepeatsPrevious(Self.reply("$r", to: "$p"), after: echo))
+    }
+
+    @Test("a message that is not a reply never has a quote to drop")
+    func notAReply() {
+        let parent = TimelineGroupingTests.row(id: "$p", sender: "@a:x", at: 1)
+        let plain = TimelineGroupingTests.row(id: "$r", sender: "@b:x", at: 2)
+        #expect(!TimelineGrouping.quoteRepeatsPrevious(plain, after: parent))
+    }
+}
+
+/// Agents and long reads.
+@MainActor
+struct AgentAndLongReadTests {
+    @Test("the agent namespace marks an agent, and nothing else does")
+    func agentNamespace() {
+        #expect(TimelineGrouping.isAgent(TimelineGroupingTests.row(id: "1", sender: "@agent_ashram_openclaw-atlas:x", at: 1)))
+        #expect(!TimelineGrouping.isAgent(TimelineGroupingTests.row(id: "2", sender: "@atlas:x", at: 1)))
+        // Contains the word, not the prefix.
+        #expect(!TimelineGrouping.isAgent(TimelineGroupingTests.row(id: "3", sender: "@my_agent_x:x", at: 1)))
+        #expect(!TimelineGrouping.isAgent(TimelineGroupingTests.row(id: "4", sender: "@agent_x:x", at: 1, isOwn: true)))
+    }
+
+    static func body(_ text: String, isOwn: Bool = false) -> TimelineRow {
+        var row = TimelineGroupingTests.row(id: "b", sender: "@a:x", at: 1, isOwn: isOwn)
+        row.item.body = text
+        return row
+    }
+
+    @Test("past six hundred characters a message is a long read")
+    func threshold() {
+        let limit = TimelineGrouping.longReadCharacters
+        #expect(!TimelineGrouping.isLongRead(Self.body(String(repeating: "a", count: limit))))
+        #expect(TimelineGrouping.isLongRead(Self.body(String(repeating: "a", count: limit + 1))))
+    }
+
+    @Test("characters are counted as a reader sees them, not as UTF-16")
+    func countsCharacters() {
+        // Each is one Character and four UTF-16 units: counted by encoding,
+        // this is 2400 long and would be cut short at a quarter of the limit.
+        let text = String(repeating: "👍🏽", count: TimelineGrouping.longReadCharacters)
+        #expect(!TimelineGrouping.isLongRead(Self.body(text)))
+    }
+
+    @Test("your own long message is not offered back to you as a long read")
+    func ownIsNot() {
+        let text = String(repeating: "a", count: TimelineGrouping.longReadCharacters + 1)
+        #expect(!TimelineGrouping.isLongRead(Self.body(text, isOwn: true)))
+    }
+}
+
+/// What a day divider says.
+struct TimelineDayTests {
+    static func calendar(_ zone: String) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: zone)!
+        return calendar
+    }
+
+    static let british = Locale(identifier: "en_GB")
+
+    /// 2026-09-23 10:00 UTC.
+    static let now = Date(timeIntervalSince1970: 1_790_157_600)
+
+    static func ms(_ iso: String) -> UInt64 {
+        UInt64(ISO8601DateFormatter().date(from: iso)!.timeIntervalSince1970 * 1000)
+    }
+
+    static func label(_ iso: String, zone: String = "UTC", now: Date = now) -> String {
+        TimelineDay.label(ms(iso), now: now, calendar: calendar(zone), locale: british)
+    }
+
+    @Test("today and yesterday are words")
+    func words() {
+        #expect(Self.label("2026-09-23T00:05:00Z") == "Today")
+        #expect(Self.label("2026-09-22T23:55:00Z") == "Yesterday")
+    }
+
+    @Test("an older day this year is a day and a month, in sentence case")
+    func thisYear() {
+        #expect(Self.label("2026-09-15T12:00:00Z") == "15 September")
+        #expect(Self.label("2026-09-21T12:00:00Z") == "21 September")
+    }
+
+    @Test("a day in another year says which")
+    func anotherYear() {
+        #expect(Self.label("2025-09-15T12:00:00Z") == "15 September 2025")
+    }
+
+    @Test("today is the reader's today, not UTC's")
+    func readersZone() {
+        // 20:00 UTC on the 22nd is 01:30 on the 23rd in Kolkata, where it is
+        // 07:30 now. One timestamp, two true answers.
+        let early = Date(timeIntervalSince1970: 1_790_128_800)  // 2026-09-23 02:00 UTC
+        #expect(Self.label("2026-09-22T20:00:00Z", zone: "Asia/Kolkata", now: early) == "Today")
+        #expect(Self.label("2026-09-22T20:00:00Z", zone: "UTC", now: early) == "Yesterday")
+    }
+
+    @Test("no timestamp, no words")
+    func missing() {
+        #expect(TimelineDay.label(nil) == "")
     }
 }

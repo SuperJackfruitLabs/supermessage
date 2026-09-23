@@ -52,114 +52,117 @@ struct RoomInfoPanel: View {
             Group {
                 if let info {
                     List {
-                        Section {
-                            HStack(spacing: 12) {
-                                // The room's actual picture, where it has one.
-                                // This panel showed a grey initial even for
-                                // rooms whose avatar the roster was already
-                                // drawing three rows away.
-                                Button {
-                                    guard avatarURI != nil else { return }
-                                    showsAvatar = true
-                                } label: {
-                                    ZStack {
-                                        Circle().fill(Theme.surfaceRaised)
-                                        if let avatarURI,
-                                            let image = RoomRowView.image(from: avatarURI)
-                                        {
-                                            image.resizable().scaledToFill().clipShape(Circle())
-                                        } else {
-                                            // The initial the core derived
-                                            // from the *parsed* name, never
-                                            // the raw string's first
-                                            // character — for a structured
-                                            // room that is the glyph.
-                                            Text(info.identity.initial)
+                        Group {
+                            Section {
+                                HStack(spacing: 12) {
+                                    // The room's actual picture, where it has one.
+                                    // This panel showed a grey initial even for
+                                    // rooms whose avatar the roster was already
+                                    // drawing three rows away.
+                                    Button {
+                                        guard avatarURI != nil else { return }
+                                        showsAvatar = true
+                                    } label: {
+                                        ZStack {
+                                            Circle().fill(Theme.surfaceRaised)
+                                            if let avatarURI,
+                                                let image = RoomRowView.image(from: avatarURI)
+                                            {
+                                                image.resizable().scaledToFill().clipShape(Circle())
+                                            } else {
+                                                // The initial the core derived
+                                                // from the *parsed* name, never
+                                                // the raw string's first
+                                                // character — for a structured
+                                                // room that is the glyph.
+                                                Text(info.identity.initial)
+                                            }
+                                        }
+                                        .frame(width: 44, height: 44)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(avatarURI == nil)
+                                    .accessibilityLabel(
+                                        avatarURI == nil
+                                            ? "\(info.identity.name)"
+                                            : "\(info.identity.name), tap to view the picture")
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(info.identity.name).font(.headline)
+                                        if let role = info.identity.role {
+                                            Text(role).metaFace().foregroundStyle(Theme.contentMuted)
                                         }
                                     }
-                                    .frame(width: 44, height: 44)
                                 }
-                                .buttonStyle(.plain)
-                                .disabled(avatarURI == nil)
-                                .accessibilityLabel(
-                                    avatarURI == nil
-                                        ? "\(info.identity.name)"
-                                        : "\(info.identity.name), tap to view the picture")
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(info.identity.name).font(.headline)
-                                    if let role = info.identity.role {
-                                        Text(role).metaFace().foregroundStyle(Theme.contentMuted)
+                                // The runtime, when this room is an agent's — the
+                                // thing you open this panel to find. The core has
+                                // already read it out of the topic and suppressed
+                                // the raw line, so there is nothing to decide here.
+                                if let runtime = info.runtime {
+                                    LabeledContent("Harness", value: runtime.harness)
+                                    LabeledContent("Machine", value: runtime.host)
+                                }
+                                if let topic = info.topic, !topic.isEmpty {
+                                    Text(topic).font(.callout)
+                                }
+                            }
+
+                            // Above the member list, so the two settings people
+                            // actually reach for are on screen at the medium
+                            // detent rather than below a list of two.
+                            Section("Notifications") {
+                                Toggle("Mute", isOn: muted)
+                                Picker("Notify me about", selection: notifications) {
+                                    Text("Everything").tag(NotificationMode.allMessages)
+                                    Text("Mentions only").tag(NotificationMode.mentionsOnly)
+                                    // Named for what it does, not for what it is:
+                                    // "Default" is a word about the settings
+                                    // system, "Account default" is about the
+                                    // reader's account.
+                                    Text("Account default").tag(NotificationMode.default)
+                                    Text("Nothing").tag(NotificationMode.muted)
+                                }
+                                .pickerStyle(.menu)
+                                Toggle("Pin to top", isOn: pinned)
+                            }
+
+                            // A room with one agent and you in it does not need a
+                            // list — it needs the *other* participant named, and
+                            // the count for anything larger. The list is the
+                            // answer to "who is in here", which is only a question
+                            // once there is more than one of them.
+                            if others(info).count > 1 {
+                                Section("Members (\(info.activeMemberCount))") {
+                                    ForEach(info.members, id: \.userId) { member in
+                                        MemberRow(member: member)
+                                    }
+                                }
+                            } else if let sole = others(info).first {
+                                Section("Members") {
+                                    MemberRow(member: sole)
+                                }
+                            }
+
+                            // The room's own address. Last, because it is what you
+                            // come here for when something is wrong rather than
+                            // when something is normal — and copyable, because the
+                            // only use for it is pasting it somewhere else.
+                            Section("Address") {
+                                if let alias = info.canonicalAlias {
+                                    CopyableRow(label: "Alias", value: alias)
+                                }
+                                CopyableRow(label: "Room id", value: info.roomId)
+                            }
+
+                            Section {
+                                Button("Leave room", role: .destructive) {
+                                    Task {
+                                        _ = await session.leaveRoom(roomId)
+                                        onClose()
                                     }
                                 }
                             }
-                            // The runtime, when this room is an agent's — the
-                            // thing you open this panel to find. The core has
-                            // already read it out of the topic and suppressed
-                            // the raw line, so there is nothing to decide here.
-                            if let runtime = info.runtime {
-                                LabeledContent("Harness", value: runtime.harness)
-                                LabeledContent("Machine", value: runtime.host)
-                            }
-                            if let topic = info.topic, !topic.isEmpty {
-                                Text(topic).font(.callout)
-                            }
                         }
-
-                        // Above the member list, so the two settings people
-                        // actually reach for are on screen at the medium
-                        // detent rather than below a list of two.
-                        Section("Notifications") {
-                            Toggle("Mute", isOn: muted)
-                            Picker("Notify me about", selection: notifications) {
-                                Text("Everything").tag(NotificationMode.allMessages)
-                                Text("Mentions only").tag(NotificationMode.mentionsOnly)
-                                // Named for what it does, not for what it is:
-                                // "Default" is a word about the settings
-                                // system, "Account default" is about the
-                                // reader's account.
-                                Text("Account default").tag(NotificationMode.default)
-                                Text("Nothing").tag(NotificationMode.muted)
-                            }
-                            .pickerStyle(.menu)
-                            Toggle("Pin to top", isOn: pinned)
-                        }
-
-                        // A room with one agent and you in it does not need a
-                        // list — it needs the *other* participant named, and
-                        // the count for anything larger. The list is the
-                        // answer to "who is in here", which is only a question
-                        // once there is more than one of them.
-                        if others(info).count > 1 {
-                            Section("Members (\(info.activeMemberCount))") {
-                                ForEach(info.members, id: \.userId) { member in
-                                    MemberRow(member: member)
-                                }
-                            }
-                        } else if let sole = others(info).first {
-                            Section("Members") {
-                                MemberRow(member: sole)
-                            }
-                        }
-
-                        // The room's own address. Last, because it is what you
-                        // come here for when something is wrong rather than
-                        // when something is normal — and copyable, because the
-                        // only use for it is pasting it somewhere else.
-                        Section("Address") {
-                            if let alias = info.canonicalAlias {
-                                CopyableRow(label: "Alias", value: alias)
-                            }
-                            CopyableRow(label: "Room id", value: info.roomId)
-                        }
-
-                        Section {
-                            Button("Leave room", role: .destructive) {
-                                Task {
-                                    _ = await session.leaveRoom(roomId)
-                                    onClose()
-                                }
-                            }
-                        }
+                        .listRowBackground(Theme.surface)
                     }
                 } else if let failure {
                     ContentUnavailableView(
@@ -169,6 +172,7 @@ struct RoomInfoPanel: View {
                     ProgressView()
                 }
             }
+            .paletteGroupedGround()
             .navigationTitle("Room info")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -382,7 +386,10 @@ private struct AvatarViewer: View {
                     }
                 }
             }
-            .background(Color.black.ignoresSafeArea())
+            // The palette's deepest ground rather than #000 (D9): a picture reads
+            // just as well on it, and the viewer stops being the one screen
+            // drawn from outside the palette.
+            .background(Theme.surfaceSunken.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

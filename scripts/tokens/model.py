@@ -26,7 +26,7 @@ ROLES: tuple[str, ...] = (
 FAMILIES: tuple[str, ...] = ("sans", "serif", "mono")
 
 TYPE_ROLES: tuple[str, ...] = (
-    "label", "meta", "ui", "ui-lg", "avatar", "body", "body-own",
+    "label", "meta", "ui", "ui-lg", "avatar", "body", "longread", "body-own",
 )
 
 

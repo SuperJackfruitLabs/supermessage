@@ -25,9 +25,18 @@ public final class RoomsStore {
     private let client: any RoomsSnapshotting
     private var sync: GapSync<RoomRow>?
     private let onSelect: (String) -> Void
+    /// Mark a room read. A closure rather than a wider protocol on `client`,
+    /// so a store built for a test without it still compiles, and says so by
+    /// doing nothing.
+    private let reader: (@Sendable (String) async throws -> Void)?
 
-    public init(client: any RoomsSnapshotting, onSelect: @escaping (String) -> Void = { _ in }) {
+    public init(
+        client: any RoomsSnapshotting,
+        markRead reader: (@Sendable (String) async throws -> Void)? = nil,
+        onSelect: @escaping (String) -> Void = { _ in }
+    ) {
         self.client = client
+        self.reader = reader
         self.onSelect = onSelect
         sync = GapSync(
             resync: { [client] in
@@ -65,6 +74,24 @@ public final class RoomsStore {
     public func deselect() {
         selectedId = nil
         selectedNameFallback = nil
+    }
+
+    /// Mark `roomId` read from the roster, without opening it.
+    ///
+    /// The core's `mark_room_read`, the same call opening a room makes. The
+    /// row's unread count is not touched here: the core re-emits the row when
+    /// the receipt lands, and a count that dropped locally before the
+    /// homeserver agreed would be a count the roster made up. Returns whether
+    /// it landed.
+    @discardableResult
+    public func markRead(_ roomId: String) async -> Bool {
+        guard let reader else { return false }
+        do {
+            try await reader(roomId)
+            return true
+        } catch {
+            return false
+        }
     }
 
     public func row(for roomId: String) -> RoomRow? {

@@ -1,0 +1,63 @@
+# The widget extension (P3 Live Activity, P4 widgets) and the App Group they
+# share with the app. Included by ../project.yml ONLY when the project is
+# generated with SM_EXTENSIONS=YES:
+#
+#     cd apple && SM_EXTENSIONS=YES xcodegen generate
+#
+# **Off by default, because turning it on changes what signing needs.** The
+# TestFlight workflow exports with manual signing and exactly one profile,
+# `supermessage iOS App Store`, for `dev.supermessage.ios`
+# (apple/ExportOptions.plist). This file adds a second bundle id,
+# `dev.supermessage.ios.widgets`, which has no profile there, and an App Group
+# entitlement the existing profile does not grant — either one fails the
+# export. Until the Apple-side setup below exists, CI generates without this
+# file and the app builds exactly as before: the Live Activity is not started
+# (no extension to draw it) and nothing is written for widgets (no group).
+#
+# Apple-side, before enabling this in CI:
+#   1. App ID `dev.supermessage.ios`: enable App Groups; add
+#      `group.dev.supermessage.ios` (register the group first).
+#   2. New App ID `dev.supermessage.ios.widgets`, App Groups with the same
+#      group.
+#   3. Regenerate the `supermessage iOS App Store` profile (it must now carry
+#      the App Group) and create an App Store profile for the widgets id.
+#   4. Update the IOS_PROFILE_BASE64 secret, add one for the second profile,
+#      install both in .github/workflows/testflight.yml, name the second in
+#      apple/ExportOptions.plist's provisioningProfiles, and set
+#      SM_EXTENSIONS=YES on the workflow's `xcodegen generate` steps.
+#
+# Paths below are relative to this file; build settings are not rewritten by
+# an include, so those stay relative to apple/ (SRCROOT).
+targets:
+  Supermessage:
+    dependencies:
+      # An app extension dependency is embedded in PlugIns by XcodeGen.
+      - target: SupermessageWidgets
+    entitlements:
+      path: ../Supermessage/Platform/Supermessage.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.supermessage.ios
+
+  SupermessageWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Sources
+      # Shared with the app through SupermessageKit — one declaration each,
+      # so the two processes cannot disagree about a shape.
+      - path: ../SupermessageKit/Notifications/AgentActivityAttributes.swift
+      - path: ../SupermessageKit/Notifications/WidgetSnapshot.swift
+      # The palette. Generated; never edited by hand.
+      - path: ../Supermessage/Generated/ThemeTokens.swift
+    entitlements:
+      path: SupermessageWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.supermessage.ios
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.ios.widgets
+        INFOPLIST_FILE: SupermessageWidgets/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: supermessage
+        SWIFT_STRICT_CONCURRENCY: complete

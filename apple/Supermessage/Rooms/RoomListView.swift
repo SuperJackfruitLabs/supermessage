@@ -9,31 +9,59 @@ import SwiftUI
 /// makes none of the decisions itself.
 struct RoomListView: View {
     let session: Session
-    /// Whether a `nil` from the list means "popped back to the roster".
+    /// The open room, in whichever sense the shell means it.
     ///
-    /// Decided by the view that owns the `NavigationSplitView`, not read from
-    /// the environment here: **a column reports its own width**, and a sidebar
-    /// on an iPad is compact. Asking inside this view gave the answer for the
-    /// sidebar rather than for the window, so an iPad would have obeyed a `nil`
-    /// and closed the room the reader was in.
-    let clearsSelectionOnPop: Bool
+    /// On an iPad this is `RoomsStore.selectedId`, because the detail column
+    /// shows the selected room. On a phone each tab owns its own stack, so
+    /// the Chats tab passes its own state and a room opened from the Needs
+    /// you tab cannot also push itself onto Chats.
+    ///
+    /// Decided by the view that owns the navigation, not read from the
+    /// environment here: **a column reports its own width**, and a sidebar on
+    /// an iPad is compact. Asking inside this view gave the answer for the
+    /// sidebar rather than for the window.
+    @Binding var selection: String?
 
     /// The arrangement the app opens on, and the filters, all remembered.
     @AppStorage("roster.view") private var storedView = RosterChoice.waiting.rawValue
     @AppStorage("roster.showsInvitations") private var showsInvitations = false
     @AppStorage("roster.showsState") private var showsState = true
+    @AppStorage("roster.filter") private var storedFilter = RosterFilter.all.rawValue
 
     @State private var showsSettings = false
     /// Re-read on every roster change so "2m" does not sit at "2m" all day.
     @State private var now = Date()
     /// The room whose info panel is open from the roster, if any.
     @State private var infoRequest: RoomInfoRequest?
+    /// What a swipe learned about a room's settings, so its next swipe can
+    /// say "Unmute" rather than "Mute". Only ever filled by a swipe that
+    /// asked the core — never guessed.
+    @State private var settings: [String: KnownSettings] = [:]
+    /// Bumped when a swipe lands, for the haptic.
+    @State private var swipeLanded = 0
 
     private var view: RosterChoice { RosterChoice(rawValue: storedView) ?? .waiting }
+    private var filter: RosterFilter { RosterFilter(rawValue: storedFilter) ?? .all }
 
-    private var sections: [RosterSection] {
+    private var filterBinding: Binding<RosterFilter> {
+        Binding(get: { filter }, set: { storedFilter = $0.rawValue })
+    }
+
+    /// The core's arrangement — `core::roster` orders and groups.
+    private var arranged: [RosterSection] {
         RosterArrangement.sections(
             session.rooms.rooms, view: view, showsInvitations: showsInvitations, now: now)
+    }
+
+    /// The arrangement, narrowed by the chip. Never re-ordered.
+    private var sections: [RosterSection] { filter.apply(arranged) }
+
+    private var counts: [RosterFilter: Int] {
+        let rows = arranged.flatMap(\.rows)
+        return Dictionary(
+            uniqueKeysWithValues: RosterFilter.allCases.map { chip in
+                (chip, rows.filter(chip.admits).count)
+            })
     }
 
     private var hiddenInvitations: Int {
@@ -41,16 +69,21 @@ struct RoomListView: View {
     }
 
     var body: some View {
-        List(selection: selectionBinding) {
+        List(selection: $selection) {
             Section {
                 EmptyView()
             } header: {
                 // Inside the scroll content on purpose — see SpacePillStrip.
-                if !session.spaces.spaces.isEmpty {
-                    SpacePillStrip(spaces: session.spaces, allCount: session.rooms.rooms.count)
-                        .textCase(nil)
-                        .listRowInsets(EdgeInsets())
+                VStack(alignment: .leading, spacing: 0) {
+                    if !session.spaces.spaces.isEmpty {
+                        SpacePillStrip(spaces: session.spaces, allCount: session.rooms.rooms.count)
+                    }
+                    if !session.rooms.rooms.isEmpty {
+                        RosterFilterChips(selection: filterBinding, counts: counts)
+                    }
                 }
+                .textCase(nil)
+                .listRowInsets(EdgeInsets())
             }
 
             ForEach(sections, id: \.id) { section in
@@ -67,11 +100,42 @@ struct RoomListView: View {
                                 for: entry.row.room.lastActivityMs, now: now),
                             showsState: showsState,
                             describesAgent: entry.describesAgent,
-                            hidesHost: view == .machine,
                             onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
                         )
                         .tag(entry.row.room.id)
+                        .listRowBackground(Theme.surface)
                         .task { await session.avatars.load(entry.row.room.id) }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            if entry.row.affordance == .compose {
+                                Button {
+                                    Task { await markRead(entry.row.room.id) }
+                                } label: {
+                                    Label("Mark read", systemImage: "checkmark.message")
+                                }
+                                .tint(Theme.accent)
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if entry.row.affordance == .compose {
+                                let known = settings[entry.row.room.id]
+                                Button {
+                                    Task { await toggleMute(entry.row.room.id) }
+                                } label: {
+                                    known?.muted == true
+                                        ? Label("Unmute", systemImage: "bell")
+                                        : Label("Mute", systemImage: "bell.slash")
+                                }
+                                .tint(Theme.contentMuted)
+                                Button {
+                                    Task { await togglePin(entry.row.room.id) }
+                                } label: {
+                                    known?.pinned == true
+                                        ? Label("Unpin", systemImage: "pin.slash")
+                                        : Label("Pin", systemImage: "pin")
+                                }
+                                .tint(Theme.ok)
+                            }
+                        }
                     }
                 } header: {
                     if let title = section.title {
@@ -81,10 +145,12 @@ struct RoomListView: View {
             }
         }
         .listStyle(.plain)
+        .paletteListGround()
+        .sensoryFeedback(.success, trigger: swipeLanded)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { arrangementMenu }
         }
-        .navigationTitle(session.spaces.selectedName ?? "All rooms")
+        .navigationTitle(session.spaces.selectedName ?? "Chats")
         .navigationBarTitleDisplayMode(.inline)
         // A roster that says "2m" forever is lying by the time you look again.
         .task(id: session.rooms.rooms.count) { now = Date() }
@@ -97,6 +163,15 @@ struct RoomListView: View {
                 ContentUnavailableView(
                     "No rooms yet", systemImage: "tray",
                     description: Text("Rooms appear here as they sync."))
+            } else if sections.isEmpty, filter != .all {
+                // The chip left nothing. Say which chip, and offer the way back.
+                ContentUnavailableView {
+                    Label(emptyTitle, systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text(emptyDescription)
+                } actions: {
+                    Button("Show all") { storedFilter = RosterFilter.all.rawValue }
+                }
             } else if sections.isEmpty {
                 // Every room was filtered away. Say so, and say what by.
                 ContentUnavailableView(
@@ -112,6 +187,7 @@ struct RoomListView: View {
                 }.count
             ) { showsSettings = false }
             .presentationDetents([.medium])
+            .paletteSheet()
         }
         // Reached by tapping a row's avatar. Presented from the roster rather
         // than by opening the room first: asking what a room *is* should not
@@ -119,10 +195,58 @@ struct RoomListView: View {
         .sheet(item: $infoRequest) { request in
             RoomInfoPanel(session: session, roomId: request.id) { infoRequest = nil }
                 .presentationDetents([.large, .medium])
+                .paletteSheet()
         }
     }
 
-/// The arrangement switcher, in the toolbar with search and compose.
+    private var emptyTitle: String {
+        switch filter {
+        case .all: return "Nothing here"
+        case .unread: return "Nothing unread"
+        case .agents: return "No agents here"
+        case .needsYou: return "You're all caught up"
+        }
+    }
+
+    private var emptyDescription: String {
+        switch filter {
+        case .all: return ""
+        case .unread: return "Every room is read."
+        case .agents: return "No room here reads as an agent's."
+        case .needsYou: return "Nothing is waiting on you."
+        }
+    }
+
+    // MARK: - Swipes
+
+    private func markRead(_ roomId: String) async {
+        if await session.rooms.markRead(roomId) { swipeLanded += 1 }
+    }
+
+    /// Mute, or unmute a room that is muted.
+    ///
+    /// Asks the core what the room is set to first. The roster row does not
+    /// carry it, and toggling a setting the view only believes it knows is
+    /// how a "Mute" button unmutes something.
+    private func toggleMute(_ roomId: String) async {
+        guard let info = try? await session.roomInfo(roomId) else { return }
+        let next = RoomToggles.nextNotificationMode(from: info.notifications)
+        if await session.setNotifications(next, in: roomId) {
+            settings[roomId] = KnownSettings(muted: next == .muted, pinned: info.pinned)
+            swipeLanded += 1
+        }
+    }
+
+    private func togglePin(_ roomId: String) async {
+        guard let info = try? await session.roomInfo(roomId) else { return }
+        let next = !info.pinned
+        if await session.setPinned(next, in: roomId) {
+            settings[roomId] = KnownSettings(muted: info.notifications == .muted, pinned: next)
+            swipeLanded += 1
+        }
+    }
+
+/// The arrangement switcher, in the toolbar with compose.
     ///
     /// It used to be a segmented control pinned inside the list, which meant
     /// the roster carried a second permanent bar of chrome above it, and the
@@ -156,25 +280,12 @@ struct RoomListView: View {
             hiddenInvitations > 0
                 ? "Roster options, \(hiddenInvitations) invitations hidden" : "Roster options")
     }
+}
 
-    /// Selection, in both directions.
-    ///
-    /// **The `set` used to drop `nil` on the floor.** A collapsed
-    /// `NavigationSplitView` navigates by selection and writes `nil` back when
-    /// it pops — swallowing that left the row highlighted after coming back,
-    /// and left `List`'s idea of its selection disagreeing with ours, so
-    /// tapping the same room again produced no change and it would not reopen.
-    private var selectionBinding: Binding<String?> {
-        Binding(
-            get: { session.rooms.selectedId },
-            set: { next in
-                if let id = next {
-                    session.rooms.select(id)
-                } else if clearsSelectionOnPop {
-                    session.rooms.deselect()
-                }
-            })
-    }
+/// A room's notification and pin settings, as a swipe last heard them.
+private struct KnownSettings {
+    let muted: Bool
+    let pinned: Bool
 }
 
 /// A section heading: what it is, how much of it, and whether it wants you.
@@ -247,6 +358,7 @@ private struct RosterSettings: View {
                     }
                 }
             }
+            .paletteGroupedGround()
             .navigationTitle("Roster")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -271,16 +383,12 @@ private struct RoomInfoRequest: Identifiable {
 }
 
 #if DEBUG
-// The roster as a reader meets it: five rooms, one of them owing an answer.
-//
-// `clearsSelectionOnPop` is `true` here, which is the iPhone's answer. The
-// iPad passes `false`, and the reason is recorded on the property: a column
-// reports its own width, so asking inside this view gave the sidebar's answer
-// rather than the window's and an iPad obeyed a `nil` selection by closing
-// the room the reader was in.
+// The roster as a reader meets it: five rooms, one of them owing an answer,
+// two lines each, the state as a dot on the avatar.
 #Preview("Waiting") {
+    @Previewable @State var open: String?
     NavigationStack {
-        RoomListView(session: PreviewFixtures.session(), clearsSelectionOnPop: true)
+        RoomListView(session: PreviewFixtures.session(openRoom: false), selection: $open)
     }
 }
 
@@ -288,19 +396,26 @@ private struct RoomInfoRequest: Identifiable {
 //
 // The empty state is a screen, and this is the one every new reader lands on.
 #Preview("Nothing yet") {
+    @Previewable @State var open: String?
     NavigationStack {
-        RoomListView(session: PreviewFixtures.session(.empty), clearsSelectionOnPop: true)
+        RoomListView(session: PreviewFixtures.session(.empty), selection: $open)
     }
 }
 
-// Dark, where `content-faint`'s worst ground flips to `surface-raised`.
-//
-// The roster is where that matters most: the preview line and the relative
-// time are both faint, and they sit on a row rather than on the page.
+// Dark, where every ground must be the palette's rather than #000.
 #Preview("Waiting, dark") {
+    @Previewable @State var open: String?
     NavigationStack {
-        RoomListView(session: PreviewFixtures.session(), clearsSelectionOnPop: true)
+        RoomListView(session: PreviewFixtures.session(openRoom: false), selection: $open)
     }
     .preferredColorScheme(.dark)
+}
+
+// A fleet: agents with generated tiles, each a colour of its own.
+#Preview("Fleet") {
+    @Previewable @State var open: String?
+    NavigationStack {
+        RoomListView(session: NavigationRevampFixtures.fleetSession(), selection: $open)
+    }
 }
 #endif

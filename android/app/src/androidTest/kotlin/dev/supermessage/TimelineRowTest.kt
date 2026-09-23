@@ -146,7 +146,7 @@ class TimelineRowTest {
      * [resolvedFontFamily], not a copy of the theme's own assertion.
      */
     @Test
-    fun anAgentsMessageRendersInTheSerifFace() {
+    fun anAgentsMessageRendersInTheConversationFace() {
         compose.setContent {
             SupermessageTheme {
                 TimelineRow(
@@ -156,7 +156,7 @@ class TimelineRowTest {
             }
         }
         val node = compose.onNodeWithText("an agent wrote this").fetchSemanticsNode()
-        assertEquals(FontFamily.Serif, resolvedFontFamily(node))
+        assertEquals(FontFamily.SansSerif, resolvedFontFamily(node))
     }
 
     @Test

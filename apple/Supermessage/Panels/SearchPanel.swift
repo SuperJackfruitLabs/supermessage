@@ -14,7 +14,20 @@ struct SearchPanel: View {
     /// panel with no scope to offer and searches everything.
     var scope: Scope?
     let onOpen: (String) -> Void
-    let onClose: () -> Void
+    /// Close the panel. `nil` when search is a destination of its own — the
+    /// Search tab, or the iPad sidebar's — rather than a sheet: there is
+    /// nothing to cancel back to, and the caller owns the navigation stack.
+    let onClose: (() -> Void)?
+
+    init(
+        session: Session, scope: Scope? = nil, onOpen: @escaping (String) -> Void,
+        onClose: (() -> Void)? = nil
+    ) {
+        self.session = session
+        self.scope = scope
+        self.onOpen = onOpen
+        self.onClose = onClose
+    }
 
     /// Where to look. Offered only when there is a room to look in — a
     /// segmented control with one option is a label wearing a control's
@@ -31,7 +44,15 @@ struct SearchPanel: View {
     @State private var narrowed = true
 
     var body: some View {
-        NavigationStack {
+        if onClose == nil {
+            // A destination: the caller's stack is the one this sits in.
+            content
+        } else {
+            NavigationStack { content }
+        }
+    }
+
+    private var content: some View {
             VStack(spacing: 0) {
                 if let scope {
                     Picker("Search in", selection: $narrowed) {
@@ -50,12 +71,16 @@ struct SearchPanel: View {
                 }
                 results
             }
+            .background(Theme.surface)
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
             // Cancel, not Done: nothing here is being composed, and the only
             // thing this button does is abandon the search.
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Cancel", action: onClose) } }
-        }
+            .toolbar {
+                if let onClose {
+                    ToolbarItem(placement: .topBarTrailing) { Button("Cancel", action: onClose) }
+                }
+            }
         .searchable(text: $term)
         .onChange(of: term) { _, next in state = state.typed(next) }
         .onSubmit(of: .search) { Task { await run() } }
@@ -98,7 +123,7 @@ struct SearchPanel: View {
             List(results, id: \.eventId) { result in
                 Button {
                     onOpen(result.roomId)
-                    onClose()
+                    onClose?()
                 } label: {
                     ResultRow(
                         result: result,
@@ -107,7 +132,9 @@ struct SearchPanel: View {
                 }
                 .buttonStyle(.plain)
                 .task { await session.avatars.load(result.roomId) }
+                .listRowBackground(Theme.surface)
             }
+            .paletteListGround()
         }
     }
 
@@ -159,7 +186,6 @@ private struct ResultRow: View {
                 HStack(spacing: 6) {
                     Text(identity?.name ?? result.roomId)
                         .metaFace()
-                        .textCase(.uppercase)
                         .foregroundStyle(Theme.contentMuted)
                         .lineLimit(1)
                     Spacer(minLength: 4)

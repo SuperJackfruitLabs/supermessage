@@ -19,9 +19,12 @@ struct RoomRowView: View {
     /// Whether the room reads as an agent's — `RosterRow.describesAgent`.
     /// "idle" under a room of people says nothing anyone wants to know.
     var describesAgent: Bool = true
+    /// Open this room's info. When `nil` the avatar is not a control — a
+    /// picture that does nothing when tapped should not look tappable.
+    var onOpenInfo: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             // The avatar is the shortcut into room info: it is the one part
             // of the row that is *about* the room rather than about the
             // conversation, so tapping it asks about the room and tapping
@@ -33,7 +36,12 @@ struct RoomRowView: View {
             } else {
                 avatar
             }
-            VStack(alignment: .leading, spacing: 1) {
+
+            // Two lines, and only two: who, and what they last said. The
+            // state is the dot on the avatar and the runtime lives in room
+            // info — the "active · claude-code · foundry" line that used to
+            // sit between them was metadata competing with the conversation.
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(row.identity.name)
                         .nameFace()
@@ -41,52 +49,49 @@ struct RoomRowView: View {
                     if row.affordance == .respondToInvitation {
                         Text("Invitation")
                             .metaFace()
+                            .foregroundStyle(Theme.accent)
                             .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
+                            .padding(.vertical, 1)
                             .overlay(Capsule().stroke(Theme.accent, lineWidth: 1))
                     }
                     Spacer(minLength: 4)
                     if !when.isEmpty {
-                        Text(when).metaFace().foregroundStyle(Theme.contentFaint)
+                        Text(when)
+                            .metaFace()
+                            .foregroundStyle(row.room.unread > 0 ? Theme.accent : Theme.contentFaint)
                     }
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(previewText)
+                        .font(.subheadline)
+                        // The row's amber switch. If it is on screen, the
+                        // operator owes someone an answer.
+                        .foregroundStyle(previewColour)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
                     if row.room.unread > 0 {
                         UnreadBadge(count: row.room.unread)
                     }
                 }
-
-                // State, harness and host on one quiet line. Everything here is
-                // metadata *about* the room; the preview below is the room
-                // itself speaking, and the two should not compete.
-                if let meta = metaLine {
-                    HStack(spacing: 5) {
-                        if drawsState {
-                            Circle()
-                                .fill(dotColour)
-                                .strokeBorder(
-                                    state == .quiet ? Theme.border : .clear,
-                                    lineWidth: 1)
-                                .frame(width: 7, height: 7)
-                        }
-                        Text(meta)
-                            .metaFace()
-                            .foregroundStyle(Theme.contentFaint)
-                            .lineLimit(1)
-                    }
-                }
-
-                if let preview = row.preview {
-                    Text(preview.text)
-                        .font(.subheadline)
-                        // The row's amber switch, and the only place this view
-                        // may use it. If it is on screen, the operator owes
-                        // someone an answer.
-                        .foregroundStyle(preview.pending ? Theme.signal : Theme.contentMuted)
-                        .lineLimit(2)
-                }
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The preview, or the room's role when it has said nothing — never an
+    /// invented placeholder. A room with neither shows an empty line, which
+    /// keeps every row the same height.
+    private var previewText: String {
+        if let preview = row.preview { return preview.text }
+        return row.identity.role ?? " "
+    }
+
+    private var previewColour: Color {
+        guard let preview = row.preview else { return Theme.contentFaint }
+        return preview.pending ? Theme.signal : Theme.contentMuted
     }
 
     /// The state is drawn when the reader wants it and it means something:
@@ -95,55 +100,10 @@ struct RoomRowView: View {
         showsState && (describesAgent || state == .needsYou)
     }
 
-    /// State and runtime, joined only where both exist.
-    ///
-    /// `nil` collapses the line entirely rather than drawing an empty row —
-    /// the same posture as the preview, which says nothing when there is
-    /// nothing to say.
-    private var metaLine: String? {
-        var parts: [String] = []
-        if drawsState { parts.append(state.word) }
-        if let runtime = row.room.runtime {
-            parts.append(runtime.harness)
-            // The host is the section header in the machine view, so repeating
-            // it on every row there would be saying it twice.
-            if !hidesHost { parts.append(runtime.host) }
-        } else if let role = row.identity.role {
-            parts.append(role)
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// Set by the machine view, whose section header already names the host.
-    var hidesHost: Bool = false
-    /// Open this room's info. When `nil` the avatar is not a control — a
-    /// picture that does nothing when tapped should not look tappable.
-    var onOpenInfo: (() -> Void)?
-
-    private var dotColour: Color {
-        switch state {
-        case .needsYou: return Theme.signal
-        case .active: return Theme.ok
-        case .idle: return Theme.contentFaint
-        case .quiet: return .clear
-        }
-    }
-
-    /// The avatar, or the initial the core derived from the *parsed* name.
-    ///
-    /// Never the raw name's first character: for a structured room that is the
-    /// glyph, and taking it directly is the bug `core::room_identity` exists to
-    /// have fixed once.
-    @ViewBuilder private var avatar: some View {
-        ZStack {
-            Circle().fill(Theme.surfaceRaised)
-            if let avatarURI, let image = Self.image(from: avatarURI) {
-                image.resizable().scaledToFill().clipShape(Circle())
-            } else {
-                Text(row.identity.initial).font(.subheadline)
-            }
-        }
-        .frame(width: 34, height: 34)
+    private var avatar: some View {
+        RoomAvatar(
+            roomId: row.room.id, initial: row.identity.initial, avatarURI: avatarURI,
+            describesAgent: describesAgent, state: drawsState ? state : nil)
     }
 
     /// Decode the `data:` URI the core produced. No network, no URL loading —

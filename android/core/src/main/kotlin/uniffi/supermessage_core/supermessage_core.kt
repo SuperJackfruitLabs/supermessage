@@ -1429,6 +1429,71 @@ public object FfiConverterTypePersonDto: FfiConverterRustBuffer<PersonDto> {
 
 
 /**
+ * What a host knows about its own push channel.
+ */
+data class PushRegistration (
+    /**
+     * The device token, as the platform issued it (APNs: hex).
+     */
+    var `pushkey`: kotlin.String, 
+    /**
+     * Which app and environment the gateway should route to —
+     * `dev.supermessage.ios` for production APNs, a `.dev` suffix for the
+     * sandbox. The gateway's configuration names these.
+     */
+    var `appId`: kotlin.String, 
+    var `appDisplayName`: kotlin.String, 
+    var `deviceDisplayName`: kotlin.String, 
+    /**
+     * BCP 47, for the gateway's own wording where it has any.
+     */
+    var `lang`: kotlin.String, 
+    /**
+     * The gateway's `/_matrix/push/v1/notify` URL.
+     */
+    var `gatewayUrl`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePushRegistration: FfiConverterRustBuffer<PushRegistration> {
+    override fun read(buf: ByteBuffer): PushRegistration {
+        return PushRegistration(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PushRegistration) = (
+            FfiConverterString.allocationSize(value.`pushkey`) +
+            FfiConverterString.allocationSize(value.`appId`) +
+            FfiConverterString.allocationSize(value.`appDisplayName`) +
+            FfiConverterString.allocationSize(value.`deviceDisplayName`) +
+            FfiConverterString.allocationSize(value.`lang`) +
+            FfiConverterString.allocationSize(value.`gatewayUrl`)
+    )
+
+    override fun write(value: PushRegistration, buf: ByteBuffer) {
+            FfiConverterString.write(value.`pushkey`, buf)
+            FfiConverterString.write(value.`appId`, buf)
+            FfiConverterString.write(value.`appDisplayName`, buf)
+            FfiConverterString.write(value.`deviceDisplayName`, buf)
+            FfiConverterString.write(value.`lang`, buf)
+            FfiConverterString.write(value.`gatewayUrl`, buf)
+    }
+}
+
+
+
+/**
  * One reaction key aggregated across senders on a message (see
  * `core::timeline::project_reactions`), projected from the SDK's
  * `ReactionsByKeyBySender`.
@@ -2601,7 +2666,9 @@ data class TimelineItemDto (
     /**
      * For `kind == "membership"`: the person the change is about — the
      * event's `state_key` — as a display name, or their user id when they
-     * have none. `None` for every other kind.
+     * have none. `None` for every other kind, and `None` when the subject is
+     * the sender — "joined", "left" — where the sender's resolved profile is
+     * the better name.
      *
      * Distinct from `sender`: an invite, a ban or a removal is sent by
      * someone else, and naming the sender told the room the wrong person had

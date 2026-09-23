@@ -1535,13 +1535,22 @@ fn project_event_item(
 
     // Who a membership change is about: the `state_key`, not the sender
     // (issue #67). Display name first, the user id when there is none.
+    //
+    // Only when the subject is someone *other* than the sender. For "joined",
+    // "left" and "accepted the invite" they are the same person, and the
+    // sender's resolved profile is the better name: the event's own content
+    // often carries no `displayname`, and preferring it put
+    // `@agent_strategy-sam:id.agentpod.dev accepted the invite` beside
+    // `Strategy Sam left the room` in one real room.
     let membership_subject = match event.content() {
-        TimelineItemContent::MembershipChange(change) => Some(
-            change
-                .display_name()
-                .filter(|name| !name.trim().is_empty())
-                .unwrap_or_else(|| change.user_id().to_string()),
-        ),
+        TimelineItemContent::MembershipChange(change) if change.user_id() != event.sender() => {
+            Some(
+                change
+                    .display_name()
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or_else(|| change.user_id().to_string()),
+            )
+        }
         _ => None,
     };
 
@@ -1918,7 +1927,22 @@ impl FocusedTimeline {
             // detached task is left holding an `Arc<Timeline>` (and through
             // it a `Client`) past teardown. The events it loads arrive as
             // ordinary diffs on the stream below.
-            if let Err(err) = paginator.paginate_backwards(INITIAL_PAGE_SIZE).await {
+            //
+            // Joined with `fetch_members`, which is what gives a sender a
+            // name. Sliding sync loads members lazily, so an agent with no
+            // member event in the store had every message headed by its raw
+            // id — `@agent_strategy-sam:id.agentpod.dev` — while the typing
+            // line under the same messages, which resolves members itself,
+            // said "Agent Strategy Sam". The SDK's own doc for
+            // `fetch_members`: without the full member list, "sender profiles
+            // are currently likely not going to be available". Resolved
+            // profiles arrive as ordinary `Set` diffs; a failure leaves them
+            // as the id they already were.
+            let (page, ()) = tokio::join!(
+                paginator.paginate_backwards(INITIAL_PAGE_SIZE),
+                paginator.fetch_members(),
+            );
+            if let Err(err) = page {
                 tracing::warn!(
                     error = %err,
                     subject = %subject,

@@ -13,21 +13,24 @@ apps and the marketing site had three different palettes, three different
 ambers, and a dark accent on mobile that was not even the same hue as its
 own light accent.
 
-## 1. The three faces
+## 1. One voice
 
-Structural, not decorative. This is the identity that travels between
-platforms — not the typefaces, which differ by design.
+*Rewritten 2026-09-23 (see `docs/superpowers/specs/2026-09-23-ios-revamp.md`).*
+It used to be three faces — serif for what an agent wrote, sans for what the
+operator wrote, mono for data — and on a phone that read as a book, a terminal
+and a stock app stacked on one screen. Who said something is now carried by
+the sender's face, badge and card, not by a typeface.
 
-| Face | Means |
+| Face | For |
 |---|---|
-| **Serif** | What an agent wrote. The timeline is a reading surface. |
-| **Sans** | What the operator wrote. A command, not prose. |
-| **Mono** | Data. Sigils, roles, timestamps, counts, code. |
+| **Sans** | Everything said and every label: `body`, `body-own`, `label`, `meta`, `ui`. Sentence case — never set labels in capitals. |
+| **Serif** | `longread` only: the long-form reading view for an agent's report. |
+| **Mono** | Code, paths, ids, recovery keys. Never prose, never labels. |
 
-So `body` is serif and `body-own` is sans, and that pairing is asserted by a
-test in every emitter. Web bundles IBM Plex and Source Serif 4 because its
-CSP is `default-src 'self'`; iOS and Android use the system's own generic
-families, which is what makes Dynamic Type and font scaling free.
+Asserted by `test_the_conversation_has_one_voice` and the emitters' tests.
+Web bundles IBM Plex and Source Serif 4 because its CSP is
+`default-src 'self'`; iOS and Android use the system's own families, which is
+what makes Dynamic Type and font scaling free.
 
 **Never emit a font size to a native platform.** The type roles carry a rem
 size for web and a text-*style* name for iOS and Android. A number in the
@@ -97,12 +100,20 @@ The exception: rendered message content (code spans, code blocks) uses
 `em`-relative radii, because a code span's corner should scale with the
 reader's text. **The radius scale is for chrome.**
 
-## 6. Motion is almost none
+## 6. Motion confirms, it does not decorate
 
+*Rewritten 2026-09-23.* "Almost none" made the app feel inert: a message sent,
+a decision answered and an agent finishing all looked like nothing happened.
 Two durations — `duration-quick` (120ms) and `duration-settle` (200ms) — and
-one easing. They exist so anything added is inside a budget, **not as an
-invitation**. Whether a transition is added at all is still a design
-question, and the answer is usually no.
+one easing remain the budget, and anything that moves must be telling the
+reader something changed:
+
+- a new message arrives; a card expands or collapses; a decision becomes its
+  receipt; an agent's step completes.
+- **Haptics** carry the same events on a phone: light on send, selection on a
+  reaction, warning when a request arrives in the open room, success on an
+  approval or a finished turn.
+- **Reduce Motion is always honoured**, and nothing moves only to be looked at.
 
 ## 7. An icon is a glyph that must not grow
 

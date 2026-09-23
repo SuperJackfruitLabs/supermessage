@@ -59,8 +59,8 @@ data class SupermessageTypography(
  * has to change to prove the operator-face test actually fails.
  */
 object SupermessageThemeFonts {
-    val body: FontFamily = FontFamily.Serif
-    val own: FontFamily = FontFamily.SansSerif
+    val body: FontFamily = ThemeType.body
+    val own: FontFamily = ThemeType.bodyOwn
     val code: FontFamily = FontFamily.Monospace
 }
 

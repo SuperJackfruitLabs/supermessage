@@ -27,7 +27,7 @@ class ThemeTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun agentMessageRendersSerif() {
+    fun agentMessageRendersInTheOneConversationFace() {
         var resolved: FontFamily? = null
         compose.setContent {
             SupermessageTheme {
@@ -39,7 +39,7 @@ class ThemeTest {
             }
         }
         compose.waitForIdle()
-        assertEquals(FontFamily.Serif, resolved)
+        assertEquals(FontFamily.SansSerif, resolved)
     }
 
     @Test

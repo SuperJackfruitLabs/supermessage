@@ -182,6 +182,9 @@ final class TimelineGeometryTests: XCTestCase {
             "-roster.view", "recent",
             "-roster.showsInvitations", "NO",
             "-roster.showsState", "YES",
+            "-roster.filter", "all",
+            "-onboarding.welcomeSeen", "YES",
+            "-onboarding.demoSeen", "YES",
         ]
         app.launch()
 

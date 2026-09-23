@@ -26,6 +26,8 @@ struct TimelineView: View {
     let timeline: TimelineStore
 
     @State private var isAwayFromNewest = false
+    /// Who is in the room: its agents, and who the header names (D11).
+    @State private var cast = RoomCast()
 
     /// What re-marks the room read: a change to the history, or the reader
     /// coming back to the newest end after being away.
@@ -100,16 +102,118 @@ struct TimelineView: View {
             }
             .animation(.snappy(duration: 0.2), value: isAwayFromNewest)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let line = session.typing.line {
-                    Text(line)
-                        .metaFace()
-                        .foregroundStyle(Theme.contentMuted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .background(.bar)
+                // Above the composer: the acknowledgement for an agent, the
+                // typing line for people. Both are pills that float, like the
+                // capsule under them, rather than a grey bar across the page.
+                VStack(alignment: .leading, spacing: 4) {
+                    if let acknowledgement {
+                        AcknowledgementDock(acknowledgement: acknowledgement)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    if let line = session.typing.line {
+                        TypingPill(line: line)
+                            .transition(.opacity)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.bottom, acknowledgement == nil && session.typing.line == nil ? 0 : 4)
+                .animation(.snappy(duration: 0.22), value: acknowledgement)
+                .animation(.snappy(duration: 0.22), value: session.typing.line)
             }
+            .task(id: timeline.roomId) { await loadCast() }
+            // Success when a turn finishes in the room on screen (M2) — only
+            // on the change to finished, never when a room opens onto a turn
+            // that had already ended.
+            .sensoryFeedback(.success, trigger: session.live.finished) { was, now in !was && now }
+    }
+
+    /// What the dock says: "Sent to Atlas" → "Atlas is on it…" → nothing.
+    /// The rules are `Acknowledgement`'s; this only gathers the facts.
+    private var acknowledgement: Acknowledgement? {
+        guard let roomId = timeline.roomId else { return nil }
+        let known = cast.roomId == roomId
+        return Acknowledgement.state(
+            rows: timeline.items, addressee: known ? cast.addressee : nil,
+            agentIds: known ? cast.agentIds : [],
+            sentThisSession: session.typing.hasSent(in: roomId),
+            typingAgents: session.typing.typingAgents,
+            turnInProgress: session.live.inProgress)
+    }
+
+    private func loadCast() async {
+        guard let roomId = timeline.roomId else { return }
+        let row = session.rooms.row(for: roomId)
+        await cast.load(
+            roomId: roomId, headerName: row?.identity.name, isAgentRoom: row?.room.runtime != nil,
+            people: { await session.people() },
+            memberIds: { try? await session.roomInfo(roomId).members.map(\.userId) })
+        // The same name the header uses, on the typing line and on the live
+        // turn — one agent, one name (D11).
+        session.typing.recognise(cast.cast, in: roomId)
+        session.live.setAgentName(cast.counterpart?.name, for: roomId)
+    }
+}
+
+/// "Sent to Atlas", then "Atlas is on it…" (A3).
+///
+/// It replaces "Atlas is typing…" for an agent: an agent that is typing is
+/// working, and saying so is the more useful sentence.
+private struct AcknowledgementDock: View {
+    let acknowledgement: Acknowledgement
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.rendersStill) private var rendersStill
+
+    private var isWorking: Bool {
+        if case .onIt = acknowledgement { return true }
+        return false
+    }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if isWorking {
+                Image(systemName: "ellipsis")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.accent)
+                    .symbolEffect(.variableColor.iterative, isActive: !reduceMotion && !rendersStill)
+            } else {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.ok)
+            }
+            Text(acknowledgement.text)
+                .metaFace()
+                .foregroundStyle(Theme.content)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .floatingCapsule()
+        .contentTransition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+/// Someone — a person — typing, as a quiet pill.
+private struct TypingPill: View {
+    let line: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "ellipsis.bubble")
+                .font(.caption)
+                .foregroundStyle(Theme.contentFaint)
+            Text(line)
+                .metaFace()
+                .foregroundStyle(Theme.contentMuted)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Theme.surfaceSunken, in: Capsule())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -131,5 +235,17 @@ struct TimelineView: View {
     let session = PreviewFixtures.session(.empty)
     return TimelineView(session: session, timeline: session.timeline)
         .previewChrome()
+}
+
+// The dock's two sentences, and the typing pill beneath them.
+#Preview("Acknowledgement") {
+    PreviewGround {
+        VStack(alignment: .leading, spacing: 8) {
+            AcknowledgementDock(acknowledgement: .sent(to: "Atlas"))
+            AcknowledgementDock(acknowledgement: .onIt(["Atlas"]))
+            TypingPill(line: "Krishna is typing…")
+        }
+    }
+    .environment(\.rendersStill, true)
 }
 #endif

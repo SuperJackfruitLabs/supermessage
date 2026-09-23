@@ -73,7 +73,7 @@ struct InvitationView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .background(.bar)
+        .background(Theme.surfaceSunken)
         .task(id: roomId) { if inviter == nil { await loadInviter() } }
     }
 

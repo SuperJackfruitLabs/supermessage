@@ -59,46 +59,50 @@ struct NewRoomPanel: View {
     var body: some View {
         NavigationStack {
             List {
-                if let failure {
-                    Section {
-                        Text(failure).metaFace().foregroundStyle(Theme.danger)
+                Group {
+                    if let failure {
+                        Section {
+                            Text(failure).metaFace().foregroundStyle(Theme.danger)
+                        }
                     }
-                }
 
-                if loading {
-                    Section { ProgressRow(label: "Looking for who you know") }
-                } else if matches.isEmpty {
-                    Section {
-                        ContentUnavailableView(
-                            query.isEmpty ? "Nobody yet" : "No one matching \(query)",
-                            systemImage: "person.2",
-                            description: Text(
-                                query.isEmpty
-                                    ? "Agents and people you share a room with appear here."
-                                    : "Try a name, a machine, or a full address."))
-                    }
-                } else {
-                    Section(query.isEmpty ? "Who you know" : "Matches") {
-                        ForEach(matches, id: \.userId) { person in
-                            Button { Task { await open(person) } } label: {
-                                PersonRow(person: person, busy: busyWith == person.userId)
+                    if loading {
+                        Section { ProgressRow(label: "Looking for who you know") }
+                    } else if matches.isEmpty {
+                        Section {
+                            ContentUnavailableView(
+                                query.isEmpty ? "Nobody yet" : "No one matching \(query)",
+                                systemImage: "person.2",
+                                description: Text(
+                                    query.isEmpty
+                                        ? "Agents and people you share a room with appear here."
+                                        : "Try a name, a machine, or a full address."))
+                        }
+                    } else {
+                        Section(query.isEmpty ? "Who you know" : "Matches") {
+                            ForEach(matches, id: \.userId) { person in
+                                Button { Task { await open(person) } } label: {
+                                    PersonRow(person: person, busy: busyWith == person.userId)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(busyWith != nil)
                             }
-                            .buttonStyle(.plain)
-                            .disabled(busyWith != nil)
+                        }
+                    }
+
+                    Section {
+                        // A row that opens a screen, not a form squeezed into a
+                        // list: joining by address is the rare path, and giving it
+                        // equal weight was half of why this screen read as a
+                        // settings page rather than a way to start talking.
+                        Button { showsAddress = true } label: {
+                            Label("Join by address", systemImage: "number")
                         }
                     }
                 }
-
-                Section {
-                    // A row that opens a screen, not a form squeezed into a
-                    // list: joining by address is the rare path, and giving it
-                    // equal weight was half of why this screen read as a
-                    // settings page rather than a way to start talking.
-                    Button { showsAddress = true } label: {
-                        Label("Join by address", systemImage: "number")
-                    }
-                }
+                .listRowBackground(Theme.surface)
             }
+            .paletteGroupedGround()
             .navigationTitle("New conversation")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -218,38 +222,42 @@ private struct JoinByAddress: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    TextField("#general:supermessage.dev", text: $address)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .focused($focused)
-                        .onSubmit { Task { await join() } }
-                } header: {
-                    Text("Room address")
-                } footer: {
-                    Text("An alias like #general:supermessage.dev, or a room id starting with !.")
-                }
-
-                if let failure {
-                    Text(failure).metaFace().foregroundStyle(Theme.danger)
-                }
-
-                Section {
-                    Button {
-                        Task { await join() }
-                    } label: {
-                        HStack {
-                            Text("Join")
-                            Spacer()
-                            // A busy state on the action itself. Without one,
-                            // a slow homeserver is indistinguishable from a
-                            // dead button.
-                            if busy { ProgressView() }
-                        }
+                Group {
+                    Section {
+                        TextField("#general:supermessage.dev", text: $address)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .focused($focused)
+                            .onSubmit { Task { await join() } }
+                    } header: {
+                        Text("Room address")
+                    } footer: {
+                        Text("An alias like #general:supermessage.dev, or a room id starting with !.")
                     }
-                    .disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    if let failure {
+                        Text(failure).metaFace().foregroundStyle(Theme.danger)
+                    }
+
+                    Section {
+                        Button {
+                            Task { await join() }
+                        } label: {
+                            HStack {
+                                Text("Join")
+                                Spacer()
+                                // A busy state on the action itself. Without one,
+                                // a slow homeserver is indistinguishable from a
+                                // dead button.
+                                if busy { ProgressView() }
+                            }
+                        }
+                        .disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
+                .listRowBackground(Theme.surface)
             }
+            .paletteGroupedGround()
             .navigationTitle("Join a room")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

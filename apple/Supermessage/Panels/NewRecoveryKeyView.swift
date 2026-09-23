@@ -25,27 +25,31 @@ struct NewRecoveryKeyView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Text(key)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                    Button(copied ? "Copied" : "Copy") {
-                        UIPasteboard.general.string = key
-                        copied = true
+                Group {
+                    Section {
+                        Text(key)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                        Button(copied ? "Copied" : "Copy") {
+                            UIPasteboard.general.string = key
+                            copied = true
+                        }
+                    } header: {
+                        Text("Your recovery key")
+                    } footer: {
+                        Text(
+                            "Save this somewhere safe. It is shown once, and it is the only way to "
+                                + "read your encrypted messages on a new device."
+                        )
                     }
-                } header: {
-                    Text("Your recovery key")
-                } footer: {
-                    Text(
-                        "Save this somewhere safe. It is shown once, and it is the only way to "
-                            + "read your encrypted messages on a new device."
-                    )
-                }
 
-                Section {
-                    Button("I've saved it", action: onDone)
+                    Section {
+                        Button("I've saved it", action: onDone)
+                    }
                 }
+                .listRowBackground(Theme.surface)
             }
+            .paletteGroupedGround()
             .navigationTitle("Keep this safe")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled()

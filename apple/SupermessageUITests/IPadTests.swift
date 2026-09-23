@@ -147,6 +147,9 @@ final class IPadTests: XCTestCase {
             "-roster.view", roster,
             "-roster.showsInvitations", "NO",
             "-roster.showsState", "YES",
+            "-roster.filter", "all",
+            "-onboarding.welcomeSeen", "YES",
+            "-onboarding.demoSeen", "YES",
         ]
         app.launch()
         return app

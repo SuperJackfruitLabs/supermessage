@@ -677,6 +677,12 @@ public protocol CoreProtocol : AnyObject {
     func recoveryState() throws  -> String
     
     /**
+     * Register this device's push token with the homeserver, pointed at a
+     * push gateway. `event_id_only`, so no content leaves the homeserver.
+     */
+    func registerPusher(registration: PushRegistration) throws 
+    
+    /**
      * Throw the old identity away and start again, returning the new key.
      *
      * Destructive: deletes the old backup and replaces the cross-signing
@@ -1208,6 +1214,17 @@ open func recoveryState()throws  -> String {
     uniffi_supermessage_ffi_fn_method_core_recovery_state(self.uniffiClonePointer(),$0
     )
 })
+}
+    
+    /**
+     * Register this device's push token with the homeserver, pointed at a
+     * push gateway. `event_id_only`, so no content leaves the homeserver.
+     */
+open func registerPusher(registration: PushRegistration)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_register_pusher(self.uniffiClonePointer(),
+        FfiConverterTypePushRegistration_lower(registration),$0
+    )
+}
 }
     
     /**
@@ -3437,6 +3454,8 @@ fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer
 
 
 
+
+
 /**
  * The user ids a finished message mentions, for `m.mentions`.
  */
@@ -3675,6 +3694,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_register_pusher() != 45337) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_reset_recovery() != 24413) {

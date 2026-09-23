@@ -62,6 +62,7 @@ open class StubCore : CoreInterface {
     override fun sendMessage(roomId: kotlin.String, body: kotlin.String, mentions: List<kotlin.String>): Unit = throw NotImplementedError()
     override fun sendReply(roomId: kotlin.String, body: kotlin.String, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun setRoomNotifications(roomId: kotlin.String, mode: NotificationMode): Unit = throw NotImplementedError()
+    override fun registerPusher(registration: uniffi.supermessage_core.PushRegistration): Unit = throw NotImplementedError()
     override fun setRoomPinned(roomId: kotlin.String, pinned: kotlin.Boolean): Unit = throw NotImplementedError()
     override fun setTyping(roomId: kotlin.String, typing: kotlin.Boolean): Unit = throw NotImplementedError()
     override fun spaceSelect(spaceId: kotlin.String?): Unit = throw NotImplementedError()
