@@ -215,6 +215,9 @@ export interface RoomInfo {
  */
 export type NotificationMode = "default" | "allMessages" | "mentionsOnly" | "muted";
 
+/** Mirrors `core::dto::DeliveryState`. */
+export type DeliveryState = "notSentYet" | "sendingFailed" | "sent";
+
 /**
  * Mirrors `TimelineItemDto` from `src-tauri/src/core/dto.rs`.
  *
@@ -310,7 +313,14 @@ export interface TimelineItem {
   customPayload: unknown;
   timestampMs: number | null;
   isOwn: boolean;
-  sendState: string | null;
+  /**
+   * Where one of this account's own messages is on its way to the
+   * homeserver — mirrors `core::dto::DeliveryState`, serialised camelCase.
+   * `null` for anything that is not a local send. A literal union rather
+   * than `string`, so a misspelled state (a fixture's `"sending"`) is a
+   * type error instead of a message silently drawn as delivered.
+   */
+  sendState: DeliveryState | null;
   /**
    * Present when this item is a reply (`m.in_reply_to`); `null` for an
    * ordinary message and for every non-message `kind`. Mirrors `ReplyToDto`
@@ -349,6 +359,14 @@ export interface TimelineItem {
    * `is_editable()`, asked rather than inferred from `isOwn`.
    */
   editable: boolean;
+  /**
+   * For `kind: "membership"`: the person the change is about (the event's
+   * `state_key`), as a display name or their user id. `null` for every other
+   * kind. Distinct from `sender` — an invite or a ban is sent by someone else
+   * (issue #67). The core already puts this name into the sender fields a
+   * membership row is labelled from, so grouping needs nothing extra.
+   */
+  membershipSubject: string | null;
 }
 
 /** Mirrors `MediaMetaDto` from `src-tauri/src/core/dto.rs`. See {@link TimelineItem.media}. */
@@ -1392,6 +1410,13 @@ export type AgentState = "needsYou" | "active" | "idle" | "quiet";
 export interface RosterRow {
   row: RoomRow;
   state: AgentState;
+  /**
+   * Whether `state`'s activity word (`active`, `idle`, `quiet`) describes
+   * anything — true for an agent's room, false for a room of people, where
+   * "idle" says nothing a reader wants to know. `needsYou` is shown
+   * regardless. Mirrors `core::roster::RosterRow::describes_agent`.
+   */
+  describesAgent: boolean;
 }
 
 /** One section of the roster. */
@@ -1696,6 +1721,9 @@ export function onThought(handler: (payload: LivePayload) => void): Promise<Unli
   return listen<LivePayload>(THOUGHT_EVENT, (event) => handler(event.payload));
 }
 
+/** Mirrors `core::live::ToolPhase`. `unknown` is a status this build was not taught. */
+export type ToolPhase = "queued" | "running" | "done" | "failed" | "unknown";
+
 /**
  * One tool call's state, mirroring `core::live::ToolPayload`.
  *
@@ -1710,8 +1738,16 @@ export interface ToolPayload {
   title: string;
   /** ACP's tool kind, or null. Opaque display text; never switch on it. */
   kind: string | null;
-  /** `pending` | `in_progress` | `completed` | `failed`, or something newer. */
+  /**
+   * ACP's raw status: `pending` | `in_progress` | `completed` | `failed`, or
+   * something newer. Kept for ordering; **not for display** — see `phase`
+   * and `statusLabel`.
+   */
   status: string;
+  /** Where the call is, decided by the core (`core::live::ToolPhase`). Switch on this. */
+  phase: ToolPhase;
+  /** The word to show beside the call ("Queued", "Running", "Done", "Failed", "Working"). */
+  statusLabel: string;
   locations: string[];
   /**
    * What the call was given and what it produced, bounded by the core

@@ -31,6 +31,7 @@ import org.junit.Rule
 import androidx.compose.ui.test.onAllNodesWithText
 import org.junit.Test
 import uniffi.supermessage_core.CustomEventView
+import uniffi.supermessage_core.DeliveryState
 import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.MediaFileLabel
 import uniffi.supermessage_core.ReactionDto
@@ -75,7 +76,7 @@ class TimelineRowTest {
         isOwn: Boolean = false,
         body: String? = "hi",
         timestampMs: ULong? = now.toEpochMilli().toULong(),
-        sendState: String? = null,
+        sendState: DeliveryState? = null,
         reactions: List<ReactionDto> = emptyList(),
         readBy: List<String> = emptyList(),
     ): TimelineRowDto {
@@ -99,7 +100,7 @@ class TimelineRowTest {
             edited = false,
             reactions = reactions,
             readBy = readBy,
-            editable = true,
+            editable = true, membershipSubject = null,
         )
         return TimelineRowDto(
             item = item,

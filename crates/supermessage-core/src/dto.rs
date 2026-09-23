@@ -285,6 +285,27 @@ pub struct ReactionDto {
 /// change kind, a state event's event type, or a custom event's event type.
 /// Both are `None` when the `kind` doesn't need them — see the table in
 /// `docs/matrix-events.md` for the full mapping.
+/// Where one of this account's own messages is on its way to the homeserver.
+///
+/// An enum rather than the string it used to be. As a string, a host matched
+/// on spellings, and a preview fixture that spelled them `"sending"` and
+/// `"failed"` drew both messages as delivered while its snapshot test passed:
+/// the one state a reader must never miss had no working visual check. A
+/// misspelled variant does not compile.
+///
+/// Serialised in camelCase, so the desktop's wire strings (`notSentYet`,
+/// `sendingFailed`, `sent`) are unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase")]
+pub enum DeliveryState {
+    /// Still a local echo; the homeserver has not confirmed it.
+    NotSentYet,
+    /// The send failed. The message is on this device only.
+    SendingFailed,
+    /// The homeserver has it.
+    Sent,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineItemDto {
@@ -367,7 +388,7 @@ pub struct TimelineItemDto {
     pub custom_payload: Option<CustomPayload>,
     pub timestamp_ms: Option<u64>,
     pub is_own: bool,
-    pub send_state: Option<String>,
+    pub send_state: Option<DeliveryState>,
     /// Present when this item is a reply (`m.in_reply_to`); `None` for an
     /// ordinary message and for every non-message `kind`. See [`ReplyToDto`]
     /// for how an unloaded parent is represented.
@@ -406,6 +427,14 @@ pub struct TimelineItemDto {
     /// one already redacted. Offering an Edit that the homeserver then
     /// refuses is worse than not offering it.
     pub editable: bool,
+    /// For `kind == "membership"`: the person the change is about — the
+    /// event's `state_key` — as a display name, or their user id when they
+    /// have none. `None` for every other kind.
+    ///
+    /// Distinct from `sender`: an invite, a ban or a removal is sent by
+    /// someone else, and naming the sender told the room the wrong person had
+    /// been invited (issue #67).
+    pub membership_subject: Option<String>,
 }
 
 /// One member currently typing in a room, projected from the SDK's
@@ -1415,10 +1444,11 @@ mod wire_format_golden {
             reactions: vec![],
             read_by: vec![],
             editable: false,
+            membership_subject: None,
         };
         assert_eq!(
             serde_json::to_string(&item).unwrap(),
-            r#"{"id":"unique-1","eventId":"$e1","kind":"message","msgtype":"m.text","detail":null,"sender":"@a:x.org","senderDisplayName":"A","senderAvatar":null,"body":"hello","formattedBody":null,"media":null,"customPayload":null,"timestampMs":1700000000000,"isOwn":false,"sendState":null,"replyTo":null,"edited":false,"reactions":[],"readBy":[],"editable":false}"#
+            r#"{"id":"unique-1","eventId":"$e1","kind":"message","msgtype":"m.text","detail":null,"sender":"@a:x.org","senderDisplayName":"A","senderAvatar":null,"body":"hello","formattedBody":null,"media":null,"customPayload":null,"timestampMs":1700000000000,"isOwn":false,"sendState":null,"replyTo":null,"edited":false,"reactions":[],"readBy":[],"editable":false,"membershipSubject":null}"#
         );
     }
 
@@ -1765,7 +1795,7 @@ mod wire_format_golden {
         // thing itself.
         let mut echo = a_text_item();
         echo.event_id = None;
-        echo.send_state = Some("notSentYet".into());
+        echo.send_state = Some(DeliveryState::NotSentYet);
         assert!(!TimelineRow::new(echo).can_reply_or_react);
         assert!(TimelineRow::new(a_text_item()).can_reply_or_react);
     }
@@ -1803,6 +1833,7 @@ mod wire_format_golden {
             reactions: vec![],
             read_by: vec![],
             editable: false,
+            membership_subject: None,
         }
     }
 }

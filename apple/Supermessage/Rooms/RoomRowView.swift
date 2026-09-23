@@ -16,6 +16,9 @@ struct RoomRowView: View {
     let when: String
     /// Whether to draw the state dot at all — a reader can turn it off.
     var showsState: Bool = true
+    /// Whether the room reads as an agent's — `RosterRow.describesAgent`.
+    /// "idle" under a room of people says nothing anyone wants to know.
+    var describesAgent: Bool = true
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -56,7 +59,7 @@ struct RoomRowView: View {
                 // itself speaking, and the two should not compete.
                 if let meta = metaLine {
                     HStack(spacing: 5) {
-                        if showsState {
+                        if drawsState {
                             Circle()
                                 .fill(dotColour)
                                 .strokeBorder(
@@ -86,6 +89,12 @@ struct RoomRowView: View {
         .contentShape(.rect)
     }
 
+    /// The state is drawn when the reader wants it and it means something:
+    /// always for a pending decision, otherwise only for an agent's room.
+    private var drawsState: Bool {
+        showsState && (describesAgent || state == .needsYou)
+    }
+
     /// State and runtime, joined only where both exist.
     ///
     /// `nil` collapses the line entirely rather than drawing an empty row —
@@ -93,7 +102,7 @@ struct RoomRowView: View {
     /// nothing to say.
     private var metaLine: String? {
         var parts: [String] = []
-        if showsState { parts.append(state.word) }
+        if drawsState { parts.append(state.word) }
         if let runtime = row.room.runtime {
             parts.append(runtime.harness)
             // The host is the section header in the machine view, so repeating
@@ -181,9 +190,12 @@ private struct UnreadBadge: View {
             row: PreviewFixtures.roomNeedsYou, avatarURI: nil, state: .needsYou, when: "2m")
         RoomRowView(row: PreviewFixtures.roomActive, avatarURI: nil, state: .active, when: "14m")
         RoomRowView(
-            row: PreviewFixtures.roomInvitation, avatarURI: nil, state: .idle, when: "")
+            row: PreviewFixtures.roomInvitation, avatarURI: nil, state: .idle, when: "",
+            describesAgent: false)
         RoomRowView(row: PreviewFixtures.roomQuiet, avatarURI: nil, state: .quiet, when: "3d")
-        RoomRowView(row: PreviewFixtures.roomBare, avatarURI: nil, state: .idle, when: "1h")
+        RoomRowView(
+            row: PreviewFixtures.roomBare, avatarURI: nil, state: .idle, when: "1h",
+            describesAgent: false)
     }
     .listStyle(.plain)
 }

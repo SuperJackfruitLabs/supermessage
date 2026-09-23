@@ -94,12 +94,17 @@ val quickReactions = listOf("✅", "👍", "❌", "👀")
  * so extending it to a third, mutually-exclusive outcome does not fit), so
  * the picker lives on its own small affordance instead. `canReplyOrReact`
  * gates whether it renders at all, the same guard iOS's own menu entry reads.
+ *
+ * [endsRun] is the other half of [continuesRun]: whether the row *below*
+ * this one starts a new run. An own run shows its time once, under its last
+ * message, instead of under every bubble in it — see [MessageBlock].
  */
 @Composable
 fun TimelineRow(
     row: TimelineRowDto,
     now: Instant,
     continuesRun: Boolean = false,
+    endsRun: Boolean = true,
     attribution: String = "",
     avatarUri: (userId: String) -> String? = { null },
     onReact: ((String) -> Unit)? = null,
@@ -119,6 +124,7 @@ fun TimelineRow(
                 muted = view.muted,
                 blocks = view.blocks,
                 continuesRun = continuesRun,
+                endsRun = endsRun,
                 avatarUri = avatarUri,
                 onReact = onReact,
                 modifier = modifier,
@@ -253,12 +259,14 @@ private fun MessageBlock(
     muted: Boolean,
     blocks: List<RichBlock>,
     continuesRun: Boolean,
+    endsRun: Boolean,
     avatarUri: (userId: String) -> String?,
     onReact: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isOwn = row.item.isOwn
     val sendState = SendState(row.item.sendState)
+    val edited = row.item.edited
 
     Column(
         modifier = modifier
@@ -279,7 +287,14 @@ private fun MessageBlock(
                 row.item.timestampMs?.let {
                     Text(clockLabel(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 }
+                if (edited) EditedMarker()
             }
+        } else if (!isOwn && edited) {
+            // A continuation drops its sender line, but "edited" is real
+            // information rather than a repeated header — the desktop keeps
+            // the marker alone in that case (`Timeline.svelte`), and so does
+            // this.
+            EditedMarker()
         }
 
         row.replyQuote?.let { ReplyQuoteBlock(it) }
@@ -319,13 +334,22 @@ private fun MessageBlock(
             }
         }
 
-        if (isOwn) {
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        // The own message's trailing meta line. A run of own messages
+        // carries its time once, under the last of them ([endsRun]) — but a
+        // send that failed or is still in flight is not a timestamp, and
+        // hiding it mid-run would bury a failed send, so those always show.
+        // So does "edited", for the same reason the peer side keeps it.
+        val showsTime = endsRun && row.item.timestampMs != null
+        if (isOwn && (sendState.isWorthShowing || edited || showsTime)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 val failed = sendState == SendState.FAILED
                 val color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
                 sendState.label?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = color) }
-                row.item.timestampMs?.let {
-                    Text(clockLabel(it), style = MaterialTheme.typography.labelSmall, color = color)
+                if (edited) EditedMarker()
+                if (showsTime) {
+                    row.item.timestampMs?.let {
+                        Text(clockLabel(it), style = MaterialTheme.typography.labelSmall, color = color)
+                    }
                 }
             }
         }
@@ -351,6 +375,21 @@ private fun MessageBlock(
             ReactionsRow(row.item.reactions, onReact = onReact, showAddAffordance = canAddReaction)
         }
     }
+}
+
+/**
+ * The quiet "edited" beside a message's time, as the desktop draws it
+ * (`Timeline.svelte`'s sender and trailing meta lines). Words, not a pencil:
+ * a glyph alone reads as an action to take rather than a thing that happened.
+ */
+@Composable
+private fun EditedMarker() {
+    Text(
+        "edited",
+        modifier = Modifier.testTag("edited-marker"),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

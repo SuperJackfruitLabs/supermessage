@@ -57,7 +57,7 @@ class TimelineTest {
             sender = "@a:x", senderDisplayName = null, senderAvatar = null, body = body,
             formattedBody = null, media = null, customPayload = null, timestampMs = timestampMs,
             isOwn = isOwn, sendState = null, replyTo = null, edited = false,
-            reactions = reactions, readBy = emptyList(), editable = editable,
+            reactions = reactions, readBy = emptyList(), editable = editable, membershipSubject = null,
         )
         return TimelineRowDto(
             item = item,
@@ -86,7 +86,7 @@ class TimelineTest {
             sender = "@$sender:x", senderDisplayName = sender, senderAvatar = null, body = null,
             formattedBody = null, media = null, customPayload = null, timestampMs = timestampMs,
             isOwn = false, sendState = null, replyTo = null, edited = false,
-            reactions = emptyList(), readBy = emptyList(), editable = false,
+            reactions = emptyList(), readBy = emptyList(), editable = false, membershipSubject = null,
         )
         return TimelineRowDto(
             item = item,

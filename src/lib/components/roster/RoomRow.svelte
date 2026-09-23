@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AgentState, RoomRow } from "$lib/ipc";
   import { relativeTime } from "../roomIdentity";
+  import { shownState } from "./rosterState";
 
   /**
    * One roster row.
@@ -20,6 +21,12 @@
     row: RoomRow;
     /** The agent state `core::roster` put on this row. */
     state: AgentState;
+    /**
+     * Whether `state`'s activity word describes anything — carried on the
+     * row by `core::roster`. False for a room of people, whose dot and
+     * activity word are then left out; `needsYou` shows regardless.
+     */
+    describesAgent: boolean;
     selected: boolean;
     avatarUrl: string | null;
     /**
@@ -36,7 +43,8 @@
     onAvatarFailed: (roomId: string) => void;
   }
 
-  let { row, state, selected, avatarUrl, now, onSelect, onAvatarFailed }: Props = $props();
+  let { row, state, describesAgent, selected, avatarUrl, now, onSelect, onAvatarFailed }: Props =
+    $props();
 
   // Rooms active within the last 5 minutes render their time in
   // `--color-content-muted`, older ones in `--color-content-faint`. Recency
@@ -55,14 +63,18 @@
    */
   const showRoleTime = $derived(identity.role !== null || time !== null);
   const invited = $derived(row.affordance === "respondToInvitation");
+  /** The state this row may say, or `null` when it says none. */
+  const shown = $derived(shownState(state, describesAgent));
 
   /**
    * The dot's colour, in the vocabulary the console reserves: amber for what
    * is owed, accent for what is alive, a faint mark for what is merely quiet,
    * and nothing at all for silence — absence is not a state worth a mark.
    */
-  function stateClass(value: AgentState): string {
+  function stateClass(value: AgentState | null): string {
     switch (value) {
+      case null:
+        return "bg-transparent";
       case "needsYou":
         return "bg-signal";
       case "active":
@@ -104,7 +116,7 @@
     unread: number,
     pendingDecision: boolean,
     isInvited: boolean,
-    value: AgentState,
+    value: AgentState | null,
   ): string {
     const parts = [name];
     // Right after the name, because it changes what the row *is*: an
@@ -114,7 +126,8 @@
     if (role !== null) parts.push(role);
     if (unread > 0) parts.push(`${unread} unread`);
     if (pendingDecision) parts.push("Approval needed");
-    if (value !== "needsYou") parts.push(stateWord(value));
+    // Nothing for a room the activity word does not describe (`null`).
+    if (value !== null && value !== "needsYou") parts.push(stateWord(value));
     return parts.join(", ");
   }
 </script>
@@ -129,7 +142,7 @@
     room.unread,
     preview?.pending ?? false,
     invited,
-    state,
+    shown,
   )}
   class="flex gap-3 border-l-2 pr-4 pl-[10px] text-left transition-colors {selected
     ? 'border-l-accent bg-surface'
@@ -170,10 +183,12 @@
         `core::roster` and carried on the row. Quiet draws a
         transparent dot rather than nothing, so names stay aligned
         down the column — absence is not a state worth a mark, but it
-        is not a reason to move everything either.
+        is not a reason to move everything either. A room of people
+        (`describesAgent` false) draws the same transparent dot, for
+        the same reason, unless it needs you.
       -->
       <span
-        class="h-1.5 w-1.5 shrink-0 rounded-pill {stateClass(state)}"
+        class="h-1.5 w-1.5 shrink-0 rounded-pill {stateClass(shown)}"
         aria-hidden="true"
       ></span>
       <span class="min-w-0 flex-1 truncate text-ui font-medium text-content"

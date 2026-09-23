@@ -45,6 +45,7 @@ export function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind
     reactions: [],
     readBy: [],
     editable: false,
+    membershipSubject: null,
     ...overrides,
   };
   return row(dto);
@@ -88,7 +89,15 @@ export function membership(id: string, detail: string | null, name: string): Tim
 export function membership(overrides: ItemOverrides): TimelineRow;
 export function membership(idOrOverrides: string | ItemOverrides, detail?: string | null, name?: string): TimelineRow {
   if (typeof idOrOverrides === "string") {
-    return item({ id: idOrOverrides, kind: "membership", detail: detail ?? null, senderDisplayName: name ?? null });
+    // The core names a membership row after its subject, in both the sender
+    // fields and `membershipSubject` (issue #67); the fixture does the same.
+    return item({
+      id: idOrOverrides,
+      kind: "membership",
+      detail: detail ?? null,
+      senderDisplayName: name ?? null,
+      membershipSubject: name ?? null,
+    });
   }
   return item({ kind: "membership", ...idOrOverrides });
 }
@@ -172,13 +181,13 @@ export const dayDivider: TimelineRow = {
 
 /** An own message still in flight. */
 export const ownMessageSending: TimelineRow = {
-  ...message({ id: "own-sending", isOwn: true, body: "Hold — check the 16KB device first.", sendState: "sending" }),
+  ...message({ id: "own-sending", isOwn: true, body: "Hold — check the 16KB device first.", sendState: "notSentYet" }),
   view: bubble("Hold — check the 16KB device first."),
 };
 
 /** An own message the core could not send. */
 export const ownMessageFailed: TimelineRow = {
-  ...message({ id: "own-failed", isOwn: true, body: "Hold — check the 16KB device first.", sendState: "failed" }),
+  ...message({ id: "own-failed", isOwn: true, body: "Hold — check the 16KB device first.", sendState: "sendingFailed" }),
   view: bubble("Hold — check the 16KB device first."),
 };
 

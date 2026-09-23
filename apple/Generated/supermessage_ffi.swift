@@ -2290,7 +2290,17 @@ public enum FfiEvent {
         /**
          * ACP's tool kind, when the harness said. Display text, never
          * switched on.
-         */kind: String?, status: String, 
+         */kind: String?, 
+        /**
+         * ACP's raw status. Display `status_label` instead.
+         */status: String, 
+        /**
+         * Where the call is, decided by the core — a host picks a glyph
+         * and a colour from this and never switches on `status`.
+         */phase: ToolPhase, 
+        /**
+         * The word for `phase`. User-visible copy, rendered as given.
+         */statusLabel: String, 
         /**
          * What the call touched — paths, mostly.
          */locations: [String], 
@@ -2332,7 +2342,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case 6: return .thought(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), text: try FfiConverterString.read(from: &buf), done: try FfiConverterBool.read(from: &buf)
         )
         
-        case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), kind: try FfiConverterOptionString.read(from: &buf), status: try FfiConverterString.read(from: &buf), locations: try FfiConverterSequenceString.read(from: &buf), input: try FfiConverterOptionString.read(from: &buf), output: try FfiConverterOptionString.read(from: &buf)
+        case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), kind: try FfiConverterOptionString.read(from: &buf), status: try FfiConverterString.read(from: &buf), phase: try FfiConverterTypeToolPhase.read(from: &buf), statusLabel: try FfiConverterString.read(from: &buf), locations: try FfiConverterSequenceString.read(from: &buf), input: try FfiConverterOptionString.read(from: &buf), output: try FfiConverterOptionString.read(from: &buf)
         )
         
         case 8: return .attachmentStaged(token: try FfiConverterString.read(from: &buf), filename: try FfiConverterString.read(from: &buf), sizeBytes: try FfiConverterUInt64.read(from: &buf), mime: try FfiConverterString.read(from: &buf)
@@ -2383,7 +2393,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterBool.write(done, into: &buf)
             
         
-        case let .tool(roomId,seq,toolCallId,title,kind,status,locations,input,output):
+        case let .tool(roomId,seq,toolCallId,title,kind,status,phase,statusLabel,locations,input,output):
             writeInt(&buf, Int32(7))
             FfiConverterString.write(roomId, into: &buf)
             FfiConverterUInt64.write(seq, into: &buf)
@@ -2391,6 +2401,8 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterString.write(title, into: &buf)
             FfiConverterOptionString.write(kind, into: &buf)
             FfiConverterString.write(status, into: &buf)
+            FfiConverterTypeToolPhase.write(phase, into: &buf)
+            FfiConverterString.write(statusLabel, into: &buf)
             FfiConverterSequenceString.write(locations, into: &buf)
             FfiConverterOptionString.write(input, into: &buf)
             FfiConverterOptionString.write(output, into: &buf)
@@ -3393,6 +3405,8 @@ fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer
         return seq
     }
 }
+
+
 
 
 

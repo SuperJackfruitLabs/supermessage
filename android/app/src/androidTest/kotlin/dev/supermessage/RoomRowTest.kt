@@ -112,6 +112,24 @@ class RoomRowTest {
         compose.onNodeWithTag("state-dot").assertDoesNotExist()
     }
 
+    /** A room of people does not say "idle" — the word describes agents. */
+    @Test
+    fun aRoomOfPeopleHidesTheActivityWord() {
+        compose.setContent {
+            RoomRow(row = row(), avatarUri = null, state = AgentState.IDLE, `when` = "", describesAgent = false)
+        }
+        compose.onNodeWithTag("state-dot").assertDoesNotExist()
+    }
+
+    /** Owing an answer shows in any room, agent or not. */
+    @Test
+    fun needsYouShowsInARoomOfPeople() {
+        compose.setContent {
+            RoomRow(row = row(), avatarUri = null, state = AgentState.NEEDS_YOU, `when` = "", describesAgent = false)
+        }
+        compose.onNodeWithTag("state-dot").assertIsDisplayed()
+    }
+
     /** A null avatar still draws a row — the sigil fallback, not a blank. */
     @Test
     fun aNullAvatarRendersTheSigilFallbackRow() {

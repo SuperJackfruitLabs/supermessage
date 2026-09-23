@@ -41,7 +41,7 @@ class ReplyTargetTest {
             edited = false,
             reactions = emptyList(),
             readBy = emptyList(),
-            editable = false,
+            editable = false, membershipSubject = null,
         )
         return TimelineRow(
             item = item,

@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -346,18 +347,47 @@ private fun DecisionPrompt(
                 modifier = Modifier.testTag("decision-answered"),
             )
         } else {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            decision.options.forEach { option ->
-                val base = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+        // A row while the options fit, wrapping to the next line when they do
+        // not — `DecisionCard.swift`'s arrangement. A plain `Row` measured the
+        // last option into whatever width was left, and "Reject" drew one
+        // letter per line down the side of the card.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            decision.options.forEachIndexed { index, option ->
+                // One answer leads; the others are there but do not compete.
+                // Every option was the same filled `surfaceVariant` pill, which
+                // made "Reject" exactly as loud as "Approve" — the defect iOS
+                // fixed in `DecisionCard.swift`, fixed the same way here: the
+                // first option filled in `signal`, the rest outlined.
+                //
+                // The primary's label colour is set, not inherited:
+                // `signal-soft` on `signal` is the pair the token contract
+                // holds at 6:1 in every appearance, including dark, where
+                // `signal` is light amber and a white label would vanish.
+                //
+                // Only while answerable. An option nothing can resolve stays
+                // the plain neutral label it always was — a filled amber pill
+                // would claim an affordance this card does not have.
+                val shape = RoundedCornerShape(16.dp)
+                val primary = answerable && index == 0
+                val base = when {
+                    primary -> Modifier.clip(shape).background(SupermessageTheme.colors.signal)
+                    answerable -> Modifier
+                        .clip(shape)
+                        .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), shape)
+                    else -> Modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceVariant)
+                }
                 Text(
                     // `option.label` only. `option.id` is an identifier handed
                     // back verbatim when the reader answers, never rendered —
                     // see `CustomEventDecisionOption`'s own doc.
                     option.label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.labelMedium.let {
+                        if (primary) it.copy(fontWeight = FontWeight.SemiBold) else it
+                    },
+                    color = if (primary) SupermessageTheme.colors.signalSoft else MaterialTheme.colorScheme.onSurface,
                     modifier = (
                         if (answerable) {
                             base.clickable(onClickLabel = option.label) {

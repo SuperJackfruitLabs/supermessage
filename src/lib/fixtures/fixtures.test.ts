@@ -53,8 +53,8 @@ describe("timeline scenarios", () => {
   it("ownMessage scenarios are own, and differ only in send state", () => {
     expect(ownMessageSending.item.isOwn).toBe(true);
     expect(ownMessageFailed.item.isOwn).toBe(true);
-    expect(ownMessageSending.item.sendState).toBe("sending");
-    expect(ownMessageFailed.item.sendState).toBe("failed");
+    expect(ownMessageSending.item.sendState).toBe("notSentYet");
+    expect(ownMessageFailed.item.sendState).toBe("sendingFailed");
     expect(ownMessageSending.item.body).toBe(ownMessageFailed.item.body);
   });
 

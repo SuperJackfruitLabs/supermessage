@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.supermessage_core.ToolPhase
 
 /**
  * Ported from `apple/SupermessageKitTests/LiveStoreTests.swift`.
@@ -71,7 +72,8 @@ class LiveStoreTest {
         val live = store()
         live.handleTool(
             roomId = room, seq = 1uL, toolCallId = "c1", title = "Run tests", kind = "execute",
-            status = "completed", locations = listOf("crates/core"), input = "cargo test", output = "ok",
+            status = "completed", phase = ToolPhase.DONE, statusLabel = "Done", locations = listOf("crates/core"),
+            input = "cargo test", output = "ok",
         )
         live.handleLive(roomId = room, seq = 1uL, text = "", done = true)
 
@@ -116,13 +118,15 @@ class LiveStoreTest {
         // else. A disclosure triangle opening onto an empty box says there
         // is something to see.
         val bare = LiveStore.ToolCall(
-            id = "c1", title = "Read a file", status = "completed", kind = null, locations = emptyList(),
+            id = "c1", title = "Read a file", status = "completed", phase = ToolPhase.DONE, statusLabel = "Done",
+            kind = null, locations = emptyList(),
             input = null, output = null,
         )
         assertFalse(bare.hasDetail)
 
         val touched = LiveStore.ToolCall(
-            id = "c2", title = "Read a file", status = "completed", kind = null,
+            id = "c2", title = "Read a file", status = "completed", phase = ToolPhase.DONE, statusLabel = "Done",
+            kind = null,
             locations = listOf("src/main.rs"), input = null, output = null,
         )
         assertTrue(touched.hasDetail)
@@ -134,15 +138,19 @@ class LiveStoreTest {
         val live = store()
         live.handleTool(
             roomId = room, seq = 1uL, toolCallId = "c1", title = "Run tests", kind = null,
-            status = "in_progress", locations = emptyList(), input = null, output = null,
+            status = "in_progress", phase = ToolPhase.RUNNING, statusLabel = "Running", locations = emptyList(),
+            input = null, output = null,
         )
         live.handleTool(
             roomId = room, seq = 2uL, toolCallId = "c1", title = "Run tests", kind = null,
-            status = "completed", locations = emptyList(), input = null, output = "3 passed",
+            status = "completed", phase = ToolPhase.DONE, statusLabel = "Done", locations = emptyList(),
+            input = null, output = "3 passed",
         )
 
         assertEquals("one call produced two rows", 1, live.tools.value.size)
         assertEquals("completed", live.tools.value[0].status)
+        assertEquals(ToolPhase.DONE, live.tools.value[0].phase)
+        assertEquals("Done", live.tools.value[0].statusLabel)
         assertEquals("3 passed", live.tools.value[0].output)
     }
 }

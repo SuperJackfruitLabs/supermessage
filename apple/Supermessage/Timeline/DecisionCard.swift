@@ -226,10 +226,31 @@ private struct DecisionButtons: View {
     @ViewBuilder
     private var optionButtons: some View {
         ForEach(Array(decision.options.enumerated()), id: \.offset) { index, option in
-            Button(option.label) { tapped(option) }
+            // One answer leads; the others are there but do not compete. Three
+            // filled buttons of equal weight made "Reject" as loud as
+            // "Approve", and their labels inherited the card's dark text —
+            // dark on brown, dark on slate — which at a glance read as
+            // disabled.
+            //
+            // The label colour is set rather than inherited. `signal-soft` on
+            // `signal` is the pair the token contract holds at 6:1 in every
+            // appearance, including dark, where `signal` is light amber and a
+            // white label would vanish.
+            if index == 0 {
+                Button { tapped(option) } label: {
+                    OptionLabel(text: option.label, colour: Theme.signalSoft)
+                }
                 .buttonStyle(.borderedProminent)
-                .tint(index == 0 ? Theme.signal : Theme.contentMuted)
+                .tint(Theme.signal)
                 .disabled(!answerable || sending)
+            } else {
+                Button { tapped(option) } label: {
+                    OptionLabel(text: option.label, colour: Theme.content)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.contentMuted)
+                .disabled(!answerable || sending)
+            }
         }
     }
 
@@ -313,6 +334,23 @@ private struct DecisionButtons: View {
             // Only on success. See `answered`.
             if landed { answered = option }
         }
+    }
+}
+
+/// An option's label, in the colour its button needs.
+///
+/// Set explicitly, which means it no longer dims on its own when the button
+/// is disabled — so it reads `isEnabled` and dims itself. A button that
+/// cannot resolve anything must not look pressable.
+private struct OptionLabel: View {
+    let text: String
+    let colour: Color
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Text(text)
+            .foregroundStyle(colour)
+            .opacity(isEnabled ? 1 : 0.45)
     }
 }
 

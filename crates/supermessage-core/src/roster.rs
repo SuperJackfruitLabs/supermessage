@@ -76,6 +76,22 @@ impl AgentState {
 pub struct RosterRow {
     pub row: RoomRow,
     pub state: AgentState,
+    /// Whether `state`'s activity word (`active`, `idle`, `quiet`) describes
+    /// anything. It does for an agent's room; for a room of people, "idle"
+    /// says nothing a reader wants to know. See [`describes_agent`].
+    ///
+    /// `NeedsYou` is shown regardless: owing an answer is not about agents.
+    pub describes_agent: bool,
+}
+
+/// Whether a room reads as an agent's, as far as the roster can tell.
+///
+/// The room list carries no member list, so this reads the signals it does
+/// have: a bridge runtime (`harness on host`), or a name in the suite's
+/// `<glyph> Name — Role` convention, which is how agent rooms are named here.
+/// A plain name such as `research` is a room of people.
+pub fn describes_agent(row: &RoomRow) -> bool {
+    row.room.runtime.is_some() || row.identity.glyph.is_some() || row.identity.role.is_some()
 }
 
 /// One section of the roster.
@@ -157,6 +173,7 @@ pub fn sections(
         .filter(|row| shows_invitations || !is_invitation(row))
         .map(|row| RosterRow {
             state: state_for(row, now_ms),
+            describes_agent: describes_agent(row),
             row: row.clone(),
         })
         .collect();
@@ -309,6 +326,18 @@ mod tests {
         row.room.membership = Membership::Invited;
         row.affordance = crate::invitation::room_affordance(Membership::Invited);
         row
+    }
+
+    #[test]
+    fn a_room_of_people_is_not_described_as_an_idle_agent() {
+        // A plain name with no runtime: people, not an agent.
+        assert!(!describes_agent(&row("research", Some(NOW))));
+
+        let mut glyphed = row("!g:x", Some(NOW));
+        glyphed.identity = crate::room_identity::parse_room_identity("✳ Atlas — Platform");
+        assert!(describes_agent(&glyphed));
+
+        assert!(describes_agent(&on_host("!h:x", "foundry", Some(NOW))));
     }
 
     #[test]

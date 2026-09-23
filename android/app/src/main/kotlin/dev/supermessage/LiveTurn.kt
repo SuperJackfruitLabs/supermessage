@@ -6,7 +6,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
@@ -25,6 +31,7 @@ import dev.supermessage.kit.StreamingText
 import dev.supermessage.kit.stores.LiveStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import uniffi.supermessage_core.ToolPhase
 
 /**
  * An agent's turn: while it is arriving, and the record of it afterwards.
@@ -159,27 +166,45 @@ fun LiveTurn(
 }
 
 /** One tool call, named and stated. Detail (input/output/locations) is a
- * later phase's concern — this phase only lists what fired. */
+ * later phase's concern — this phase only lists what fired.
+ *
+ * The status is the core's word ([LiveStore.ToolCall.statusLabel]) and the
+ * colour and glyph come from its [ToolPhase]; the raw ACP `status` is never
+ * shown or switched on here. The title takes the row's slack (`weight`):
+ * without it a long title claimed the whole width and the status was
+ * measured into zero, wrapping one character per line. */
 @Composable
 private fun ToolCallRow(tool: LiveStore.ToolCall, modifier: Modifier = Modifier) {
+    val failed = tool.phase == ToolPhase.FAILED
+    val statusColor = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
     Row(
         modifier = modifier.fillMaxWidth().testTag("tool-row"),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             tool.title,
+            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        tool.kind?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        val glyph = when (tool.phase) {
+            ToolPhase.DONE -> Icons.Filled.Check
+            ToolPhase.FAILED -> Icons.Filled.Warning
+            ToolPhase.QUEUED, ToolPhase.RUNNING, ToolPhase.UNKNOWN -> null
+        }
+        if (glyph != null) {
+            // Decorative: the label beside it says the same thing in words.
+            Icon(glyph, contentDescription = null, modifier = Modifier.size(12.dp), tint = statusColor)
         }
         Text(
-            tool.status,
+            tool.statusLabel,
             style = MaterialTheme.typography.labelSmall,
-            color = if (tool.status == "failed") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
+            maxLines = 1,
+            softWrap = false,
+            color = statusColor,
         )
     }
 }

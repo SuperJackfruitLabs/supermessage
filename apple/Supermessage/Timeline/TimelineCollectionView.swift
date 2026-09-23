@@ -168,7 +168,7 @@ struct TimelineCollectionView: UIViewRepresentable {
         /// continues a run. Grouping is resolved once here rather than per
         /// cell, because a cell knows only itself and grouping is a question
         /// about neighbours.
-        private var rowsById: [String: (row: TimelineRow, continuesRun: Bool)] = [:]
+        private var rowsById: [String: (row: TimelineRow, continuesRun: Bool, endsRun: Bool)] = [:]
         /// The sentence for each collapsed membership run, by its id.
         private var runsById: [String: String] = [:]
         /// The history's entry list from the last full pass, so an update
@@ -210,6 +210,7 @@ struct TimelineCollectionView: UIViewRepresentable {
                         TimelineRowView(
                             row: found.row,
                             continuesRun: found.continuesRun,
+                            endsRun: found.endsRun,
                             attribution: self.singleSpeaker
                                 ? found.row.senderShort : found.row.senderName,
                             media: self.session.media,
@@ -338,14 +339,19 @@ struct TimelineCollectionView: UIViewRepresentable {
             // membership line that is no longer drawn on its own.
             let display = TimelineGrouping.collapseMembershipRuns(rows)
 
-            var byId: [String: (row: TimelineRow, continuesRun: Bool)] = [:]
+            var byId: [String: (row: TimelineRow, continuesRun: Bool, endsRun: Bool)] = [:]
             var runs: [String: String] = [:]
             byId.reserveCapacity(rows.count)
             var previous: TimelineRow?
             for entry in display {
                 switch entry {
                 case let .row(row):
-                    byId[row.item.id] = (row, TimelineGrouping.continuesRun(row, after: previous))
+                    let continues = TimelineGrouping.continuesRun(row, after: previous)
+                    // The row above is no longer the last of its run.
+                    if continues, let above = previous, let entry = byId[above.item.id] {
+                        byId[above.item.id] = (entry.row, entry.continuesRun, false)
+                    }
+                    byId[row.item.id] = (row, continues, true)
                     previous = row
                 case let .membershipRun(id, text, _):
                     runs[id] = text
@@ -392,6 +398,7 @@ struct TimelineCollectionView: UIViewRepresentable {
                     if previousSingleSpeaker != singleSpeaker { return true }
                     guard let before = previousRows[id], let after = byId[id] else { return true }
                     return before.row != after.row || before.continuesRun != after.continuesRun
+                        || before.endsRun != after.endsRun
                 case let .membershipRun(id):
                     return previousRuns[id] != runs[id]
                 // The live turn redraws itself: `LiveTurnView` reads the

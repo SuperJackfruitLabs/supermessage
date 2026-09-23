@@ -3,6 +3,7 @@ package dev.supermessage.kit.stores
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import uniffi.supermessage_core.ToolPhase
 
 /**
  * An agent's turn while it is still being written.
@@ -62,7 +63,15 @@ class LiveStore {
     data class ToolCall(
         val id: String,
         val title: String,
+        /** ACP's raw status. Kept for diagnostics; display [statusLabel]. */
         val status: String,
+        /**
+         * Where the call is, decided by the core. A host picks its glyph and
+         * colour from this and never switches on [status].
+         */
+        val phase: ToolPhase,
+        /** The core's word for [phase] — user-visible copy, rendered as given. */
+        val statusLabel: String,
         /** ACP's tool kind, when the harness said. Display text. */
         val kind: String?,
         /** What the call touched — paths, mostly. */
@@ -140,6 +149,8 @@ class LiveStore {
         title: String,
         kind: String?,
         status: String,
+        phase: ToolPhase,
+        statusLabel: String,
         locations: List<String>,
         input: String?,
         output: String?,
@@ -147,7 +158,8 @@ class LiveStore {
         if (!accept(roomId)) return
         beginTurnIfFinished()
         val call = ToolCall(
-            id = toolCallId, title = title, status = status, kind = kind, locations = locations,
+            id = toolCallId, title = title, status = status, phase = phase, statusLabel = statusLabel,
+            kind = kind, locations = locations,
             input = input, output = output,
         )
         val current = _tools.value

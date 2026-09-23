@@ -13,7 +13,7 @@ struct TimelineGroupingTests {
             msgtype: system ? nil : "m.text",
             detail: nil, sender: sender, senderDisplayName: nil, senderAvatar: nil, body: "hi", formattedBody: nil,
             media: nil, customPayload: nil, timestampMs: ms, isOwn: isOwn, sendState: nil,
-            replyTo: nil, edited: false, reactions: [], readBy: [], editable: false)
+            replyTo: nil, edited: false, reactions: [], readBy: [], editable: false, membershipSubject: nil)
         return TimelineRow(
             item: item,
             view: system ? .system(kind: .encryptionEnabled, text: "something happened") : .bubble(muted: false, blocks: []),
@@ -110,7 +110,7 @@ struct MembershipRunTests {
             id: id, eventId: id, kind: "membership", msgtype: nil, detail: verb,
             sender: sender, senderDisplayName: sender, senderAvatar: nil, body: nil, formattedBody: nil,
             media: nil, customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil,
-            replyTo: nil, edited: false, reactions: [], readBy: [], editable: false)
+            replyTo: nil, edited: false, reactions: [], readBy: [], editable: false, membershipSubject: nil)
         row = TimelineRow(
             item: item, view: .system(kind: .membershipChanged(who: sender, detail: verb), text: "\(sender) \(verb)"), senderName: sender,
             senderShort: sender, senderInitial: "?", membershipVerb: verb, replyQuote: nil,
@@ -134,6 +134,17 @@ struct MembershipRunTests {
             return
         }
         #expect(text == "Ganesha, Krishna and 2 others joined the room")
+    }
+
+    @Test("one person changing twice is named once")
+    func namesDistinctPeople() {
+        let rows = [
+            Self.membership("1", "Annapurna", "updated their membership"),
+            Self.membership("2", "Annapurna", "updated their membership"),
+            Self.membership("3", "Surya", "updated their membership"),
+        ]
+        #expect(
+            TimelineGrouping.text(for: rows) == "Annapurna and Surya updated their membership")
     }
 
     @Test("a run of one reads exactly like an ungrouped line")
@@ -182,7 +193,7 @@ struct SilentRowTests {
             id: id, eventId: id, kind: "state", msgtype: nil, detail: nil, sender: "@a:x",
             senderDisplayName: nil, senderAvatar: nil, body: nil, formattedBody: nil, media: nil,
             customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil, replyTo: nil,
-            edited: false, reactions: [], readBy: [], editable: false)
+            edited: false, reactions: [], readBy: [], editable: false, membershipSubject: nil)
         return TimelineRow(
             item: item, view: .none, senderName: "a", senderShort: "a", senderInitial: "?", membershipVerb: nil,
             replyQuote: nil, canReplyOrReact: false, replyPreview: nil)

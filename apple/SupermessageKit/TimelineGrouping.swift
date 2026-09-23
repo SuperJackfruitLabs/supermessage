@@ -111,7 +111,11 @@ public enum TimelineGrouping {
     /// names and one verb without parsing that sentence back apart.
     static func text(for run: [TimelineRow]) -> String {
         let verb = run.first?.membershipVerb ?? "updated their membership"
-        let names = run.map(\.senderShort)
+        // Distinct people, in order. One member can make several changes in
+        // a row, and the desktop and Android both learned this from a real
+        // room: "Annapurna, Annapurna and 1 other updated their membership".
+        var seen = Set<String>()
+        let names = run.map(\.senderShort).filter { seen.insert($0).inserted }
         if names.count <= maxNamed {
             return "\(joined(names)) \(verb)"
         }

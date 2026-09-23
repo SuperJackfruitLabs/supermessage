@@ -777,7 +777,8 @@ class Session(
         is FfiEvent.Tool ->
             live.handleTool(
                 roomId = event.roomId, seq = event.seq, toolCallId = event.toolCallId, title = event.title,
-                kind = event.kind, status = event.status, locations = event.locations, input = event.input,
+                kind = event.kind, status = event.status, phase = event.phase, statusLabel = event.statusLabel,
+                locations = event.locations, input = event.input,
                 output = event.output,
             )
         is FfiEvent.AttachmentStaged -> {

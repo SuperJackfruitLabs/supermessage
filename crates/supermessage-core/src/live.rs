@@ -129,6 +129,50 @@ pub struct ToolUpdateToDeviceEventContent {
     pub output: Option<String>,
 }
 
+/// Where one tool call is, in the reader's terms.
+///
+/// ACP's `status` is wire vocabulary (`in_progress`), and every host used to
+/// print it as it arrived or rewrite it by hand: iOS showed `in_progress`,
+/// Android the same, and the desktop `IN PROGRESS`. The phase is decided
+/// here, once, and a host picks a glyph and a colour from it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase")]
+pub enum ToolPhase {
+    /// `pending`: announced, not started.
+    Queued,
+    /// `in_progress`.
+    Running,
+    /// `completed`.
+    Done,
+    /// `failed`. The one phase a host colours.
+    Failed,
+    /// A status this build was not taught. Shown as neutral, never guessed at.
+    Unknown,
+}
+
+impl ToolPhase {
+    pub fn from_status(status: &str) -> Self {
+        match status {
+            "pending" => Self::Queued,
+            "in_progress" => Self::Running,
+            "completed" => Self::Done,
+            "failed" => Self::Failed,
+            _ => Self::Unknown,
+        }
+    }
+
+    /// The word a host shows beside the call. User-visible copy.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Queued => "Queued",
+            Self::Running => "Running",
+            Self::Done => "Done",
+            Self::Failed => "Failed",
+            Self::Unknown => "Working",
+        }
+    }
+}
+
 /// What the webview is told when a tool call moves.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,7 +182,13 @@ pub struct ToolPayload {
     pub tool_call_id: String,
     pub title: String,
     pub kind: Option<String>,
+    /// ACP's raw status, kept for ordering logic that predates [`ToolPhase`].
+    /// Not for display — see [`Self::phase`] and [`Self::status_label`].
     pub status: String,
+    pub phase: ToolPhase,
+    /// [`ToolPhase::label`], carried so a host renders it rather than
+    /// spelling its own.
+    pub status_label: String,
     pub locations: Vec<String>,
     /// Bounded for display — see [`bound_tool_text`].
     pub input: Option<String>,
@@ -338,6 +388,8 @@ pub fn listen(client: &Client, sink: Arc<dyn EventSink>) -> EventHandlerHandle {
                 tool_call_id: content.tool_call_id,
                 title: content.title,
                 kind: content.kind,
+                phase: ToolPhase::from_status(&content.status),
+                status_label: ToolPhase::from_status(&content.status).label().to_string(),
                 status: content.status,
                 locations: content.locations,
                 input: bound_tool_text(content.input),
@@ -346,6 +398,28 @@ pub fn listen(client: &Client, sink: Arc<dyn EventSink>) -> EventHandlerHandle {
             sink.emit(CoreEvent::Tool(payload));
         },
     )
+}
+
+#[cfg(test)]
+mod tool_phase_tests {
+    use super::*;
+
+    #[test]
+    fn acp_statuses_become_reader_words() {
+        assert_eq!(ToolPhase::from_status("pending"), ToolPhase::Queued);
+        assert_eq!(ToolPhase::from_status("in_progress"), ToolPhase::Running);
+        assert_eq!(ToolPhase::from_status("completed"), ToolPhase::Done);
+        assert_eq!(ToolPhase::from_status("failed"), ToolPhase::Failed);
+        assert_eq!(ToolPhase::from_status("in_progress").label(), "Running");
+        assert_eq!(ToolPhase::from_status("completed").label(), "Done");
+    }
+
+    #[test]
+    fn an_unknown_status_is_neutral_and_never_shown_raw() {
+        let phase = ToolPhase::from_status("paused_for_budget");
+        assert_eq!(phase, ToolPhase::Unknown);
+        assert!(!phase.label().contains('_'));
+    }
 }
 
 #[cfg(test)]

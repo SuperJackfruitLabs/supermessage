@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import dev.supermessage.kit.stores.LiveStore
+import uniffi.supermessage_core.ToolPhase
 
 /**
  * An agent's turn while it is arriving — see `LiveTurn.kt`'s own KDoc and
@@ -94,6 +95,8 @@ class LiveTurnTest {
             id = "call-1",
             title = "Read src/main.ts",
             status = "completed",
+            phase = ToolPhase.DONE,
+            statusLabel = "Done",
             kind = null,
             locations = emptyList(),
             input = null,

@@ -64,7 +64,13 @@ pub enum FfiEvent {
         /// ACP's tool kind, when the harness said. Display text, never
         /// switched on.
         kind: Option<String>,
+        /// ACP's raw status. Display `status_label` instead.
         status: String,
+        /// Where the call is, decided by the core — a host picks a glyph
+        /// and a colour from this and never switches on `status`.
+        phase: supermessage_core::live::ToolPhase,
+        /// The word for `phase`. User-visible copy, rendered as given.
+        status_label: String,
         /// What the call touched — paths, mostly.
         locations: Vec<String>,
         /// What it was given, and what it produced, bounded by the core.
@@ -120,6 +126,8 @@ impl CoreSink for HostSink {
                 title: p.title,
                 kind: p.kind,
                 status: p.status,
+                phase: p.phase,
+                status_label: p.status_label,
                 locations: p.locations,
                 input: p.input,
                 output: p.output,

@@ -60,7 +60,7 @@ struct LiveStoreTests {
         let live = store()
         live.handleTool(
             roomId: room, seq: 1, toolCallId: "c1", title: "Run tests", kind: "execute",
-            status: "completed", locations: ["crates/core"], input: "cargo test", output: "ok")
+            status: "completed", phase: .done, statusLabel: "Done", locations: ["crates/core"], input: "cargo test", output: "ok")
         live.handleLive(roomId: room, seq: 1, text: "", done: true)
 
         #expect(live.tools.count == 1)
@@ -100,12 +100,12 @@ struct LiveStoreTests {
         // else. A disclosure triangle opening onto an empty box says there is
         // something to see.
         let bare = LiveStore.ToolCall(
-            id: "c1", title: "Read a file", status: "completed", kind: nil, locations: [],
+            id: "c1", title: "Read a file", status: "completed", phase: .done, statusLabel: "Done", kind: nil, locations: [],
             input: nil, output: nil)
         #expect(!bare.hasDetail)
 
         let touched = LiveStore.ToolCall(
-            id: "c2", title: "Read a file", status: "completed", kind: nil,
+            id: "c2", title: "Read a file", status: "completed", phase: .done, statusLabel: "Done", kind: nil,
             locations: ["src/main.rs"], input: nil, output: nil)
         #expect(touched.hasDetail)
     }
@@ -115,10 +115,10 @@ struct LiveStoreTests {
         let live = store()
         live.handleTool(
             roomId: room, seq: 1, toolCallId: "c1", title: "Run tests", kind: nil,
-            status: "in_progress", locations: [], input: nil, output: nil)
+            status: "in_progress", phase: .running, statusLabel: "Running", locations: [], input: nil, output: nil)
         live.handleTool(
             roomId: room, seq: 2, toolCallId: "c1", title: "Run tests", kind: nil,
-            status: "completed", locations: [], input: nil, output: "3 passed")
+            status: "completed", phase: .done, statusLabel: "Done", locations: [], input: nil, output: "3 passed")
 
         #expect(live.tools.count == 1, "one call produced two rows")
         #expect(live.tools[0].status == "completed")

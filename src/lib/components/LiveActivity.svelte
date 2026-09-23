@@ -41,14 +41,15 @@
    * — it is the only state here that will still matter after the turn ends.
    */
   const current = $derived.by(() => {
-    const failed = tools.findLast((t) => t.status === "failed");
+    // On `phase`, the core's decision, never on ACP's raw `status` spellings.
+    const failed = tools.findLast((t) => t.phase === "failed");
     if (failed) return failed;
-    const running = tools.findLast((t) => t.status === "pending" || t.status === "in_progress");
+    const running = tools.findLast((t) => t.phase === "queued" || t.phase === "running");
     return running ?? tools.at(-1) ?? null;
   });
 
   /** Everything that finished before the one being named. */
-  const doneCount = $derived(tools.filter((t) => t.status === "completed").length);
+  const doneCount = $derived(tools.filter((t) => t.phase === "done").length);
 </script>
 
 {#if current !== null || thinking !== null}
@@ -65,12 +66,13 @@
   >
     {#if current !== null}
       <!--
-        The status is the verb, so the line reads as a sentence rather than as
-        a field and a value. `failed` is the one that gets colour, because it
-        is the only state a reader may need to act on.
+        The core's `statusLabel` ("Running", "Done", …), shown as given: the
+        host no longer spells its own word from ACP's wire vocabulary, which
+        is how this used to read `IN PROGRESS`. `failed` is the one phase that
+        gets colour, because it is the only state a reader may need to act on.
       -->
-      <span class="shrink-0 uppercase {current.status === 'failed' ? 'text-danger' : ''}">
-        {current.status === "completed" ? "did" : current.status.replace("_", " ")}
+      <span class="shrink-0 {current.phase === 'failed' ? 'text-danger' : ''}">
+        {current.statusLabel}
       </span>
       <span class="min-w-0 truncate">{current.title}</span>
       {#if doneCount > 1}

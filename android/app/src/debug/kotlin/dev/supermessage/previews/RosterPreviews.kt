@@ -35,9 +35,9 @@ internal fun RoomRowStates() {
         androidx.compose.foundation.layout.Column {
             RoomRow(PreviewFixtures.roomNeedsYou, null, AgentState.NEEDS_YOU, "2m")
             RoomRow(PreviewFixtures.roomActive, null, AgentState.ACTIVE, "14m")
-            RoomRow(PreviewFixtures.roomInvitation, null, AgentState.IDLE, "")
+            RoomRow(PreviewFixtures.roomInvitation, null, AgentState.IDLE, "", describesAgent = false)
             RoomRow(PreviewFixtures.roomQuiet, null, AgentState.QUIET, "3d")
-            RoomRow(PreviewFixtures.roomBare, null, AgentState.IDLE, "1h")
+            RoomRow(PreviewFixtures.roomBare, null, AgentState.IDLE, "1h", describesAgent = false)
         }
     }
 }
@@ -56,9 +56,9 @@ internal fun RoomRowStatesDark() {
         androidx.compose.foundation.layout.Column {
             RoomRow(PreviewFixtures.roomNeedsYou, null, AgentState.NEEDS_YOU, "2m")
             RoomRow(PreviewFixtures.roomActive, null, AgentState.ACTIVE, "14m")
-            RoomRow(PreviewFixtures.roomInvitation, null, AgentState.IDLE, "")
+            RoomRow(PreviewFixtures.roomInvitation, null, AgentState.IDLE, "", describesAgent = false)
             RoomRow(PreviewFixtures.roomQuiet, null, AgentState.QUIET, "3d")
-            RoomRow(PreviewFixtures.roomBare, null, AgentState.IDLE, "1h")
+            RoomRow(PreviewFixtures.roomBare, null, AgentState.IDLE, "1h", describesAgent = false)
         }
     }
 }

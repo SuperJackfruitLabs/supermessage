@@ -1,3 +1,4 @@
+import SupermessageFFI
 import SupermessageKit
 import SwiftUI
 
@@ -143,29 +144,38 @@ private struct ToolRow: View {
 
     private var summary: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).imageScale(.small)
-            Text(tool.title).metaFace().lineLimit(1)
-            if let kind = tool.kind {
-                Text(kind).metaFace().foregroundStyle(Theme.contentFaint)
-            }
+            Image(systemName: icon)
+                .imageScale(.small)
+                .foregroundStyle(tool.phase == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.contentMuted))
+                .symbolEffect(.pulse, isActive: tool.phase == .running)
+            // The title can have the line; the status word is short and must
+            // never be what gets squeezed.
+            Text(tool.title).metaFace().lineLimit(1).layoutPriority(0)
             Spacer(minLength: 4)
-            Text(tool.status)
+            // The core's word — "Running", "Done" — rather than ACP's
+            // `in_progress`, and no separate `kind`: the glyph already says
+            // what happened, and `read … read` said it twice.
+            Text(tool.statusLabel)
                 .metaFace()
+                .lineLimit(1)
+                .fixedSize()
+                .layoutPriority(1)
                 .foregroundStyle(
-                    tool.status == "failed"
+                    tool.phase == .failed
                         ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.contentFaint))
         }
         .foregroundStyle(Theme.contentMuted)
+        .accessibilityElement(children: .combine)
     }
 
     /// The status, as a glyph. A list of a dozen identical gears says only
     /// that a dozen things happened.
     private var icon: String {
-        switch tool.status {
-        case "completed": return "checkmark.circle"
-        case "failed": return "xmark.circle"
-        case "in_progress": return "arrow.triangle.2.circlepath"
-        default: return "clock"
+        switch tool.phase {
+        case .done: return "checkmark.circle"
+        case .failed: return "xmark.circle"
+        case .running: return "arrow.triangle.2.circlepath"
+        case .queued, .unknown: return "clock"
         }
     }
 }

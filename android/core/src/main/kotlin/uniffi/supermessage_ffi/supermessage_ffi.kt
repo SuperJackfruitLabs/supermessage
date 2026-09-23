@@ -47,6 +47,7 @@ import uniffi.supermessage_core.FfiConverterTypeRosterView
 import uniffi.supermessage_core.FfiConverterTypeSearchResultDto
 import uniffi.supermessage_core.FfiConverterTypeSpaceSummary
 import uniffi.supermessage_core.FfiConverterTypeTimelineRow
+import uniffi.supermessage_core.FfiConverterTypeToolPhase
 import uniffi.supermessage_core.FfiConverterTypeTypingUserDto
 import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
@@ -60,6 +61,7 @@ import uniffi.supermessage_core.RosterView
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_core.TimelineRow
+import uniffi.supermessage_core.ToolPhase
 import uniffi.supermessage_core.TypingUserDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
@@ -75,6 +77,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferRosterView
 import uniffi.supermessage_core.RustBuffer as RustBufferSearchResultDto
 import uniffi.supermessage_core.RustBuffer as RustBufferSpaceSummary
 import uniffi.supermessage_core.RustBuffer as RustBufferTimelineRow
+import uniffi.supermessage_core.RustBuffer as RustBufferToolPhase
 import uniffi.supermessage_core.RustBuffer as RustBufferTypingUserDto
 
 // This is a helper for safely working with byte buffers returned from the Rust code.
@@ -3694,7 +3697,19 @@ sealed class FfiEvent {
          * switched on.
          */
         val `kind`: kotlin.String?, 
+        /**
+         * ACP's raw status. Display `status_label` instead.
+         */
         val `status`: kotlin.String, 
+        /**
+         * Where the call is, decided by the core — a host picks a glyph
+         * and a colour from this and never switches on `status`.
+         */
+        val `phase`: ToolPhase, 
+        /**
+         * The word for `phase`. User-visible copy, rendered as given.
+         */
+        val `statusLabel`: kotlin.String, 
         /**
          * What the call touched — paths, mostly.
          */
@@ -3758,6 +3773,8 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterString.read(buf),
                 FfiConverterString.read(buf),
                 FfiConverterOptionalString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterTypeToolPhase.read(buf),
                 FfiConverterString.read(buf),
                 FfiConverterSequenceString.read(buf),
                 FfiConverterOptionalString.read(buf),
@@ -3833,6 +3850,8 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 + FfiConverterString.allocationSize(value.`title`)
                 + FfiConverterOptionalString.allocationSize(value.`kind`)
                 + FfiConverterString.allocationSize(value.`status`)
+                + FfiConverterTypeToolPhase.allocationSize(value.`phase`)
+                + FfiConverterString.allocationSize(value.`statusLabel`)
                 + FfiConverterSequenceString.allocationSize(value.`locations`)
                 + FfiConverterOptionalString.allocationSize(value.`input`)
                 + FfiConverterOptionalString.allocationSize(value.`output`)
@@ -3897,6 +3916,8 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterString.write(value.`title`, buf)
                 FfiConverterOptionalString.write(value.`kind`, buf)
                 FfiConverterString.write(value.`status`, buf)
+                FfiConverterTypeToolPhase.write(value.`phase`, buf)
+                FfiConverterString.write(value.`statusLabel`, buf)
                 FfiConverterSequenceString.write(value.`locations`, buf)
                 FfiConverterOptionalString.write(value.`input`, buf)
                 FfiConverterOptionalString.write(value.`output`, buf)
@@ -5037,6 +5058,10 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
         }
     }
 }
+
+
+
+
 
 
 

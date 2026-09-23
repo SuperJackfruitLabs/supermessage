@@ -40,7 +40,7 @@ class TimelineGroupingTest {
                 edited = false,
                 reactions = emptyList(),
                 readBy = emptyList(),
-                editable = false,
+                editable = false, membershipSubject = null,
             )
             return TimelineRow(
                 item = item,
@@ -183,7 +183,7 @@ class MembershipRunTest {
                 edited = false,
                 reactions = emptyList(),
                 readBy = emptyList(),
-                editable = false,
+                editable = false, membershipSubject = null,
             )
             return TimelineRow(
                 item = item,
@@ -310,7 +310,7 @@ class SilentRowTest {
                 edited = false,
                 reactions = emptyList(),
                 readBy = emptyList(),
-                editable = false,
+                editable = false, membershipSubject = null,
             )
             return TimelineRow(
                 item = item,

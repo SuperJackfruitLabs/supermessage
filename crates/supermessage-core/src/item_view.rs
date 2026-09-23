@@ -238,8 +238,27 @@ pub fn attributed_name(item: &TimelineItemDto) -> String {
 /// hypothetical — it is how this was written the first time, and the timeline
 /// silently kept the suffix it was supposed to drop.
 pub fn attributed_parts(item: &TimelineItemDto) -> (String, String, String) {
-    let Some(raw) = item.sender_display_name.as_deref() else {
-        let fallback = item.sender.clone().unwrap_or_else(|| "Someone".to_string());
+    // A membership line is about the person it names, who is not always the
+    // sender: for "was invited", "was banned" or "was removed" the sender is
+    // whoever did it to them (issue #67). The SDK resolves that person from
+    // the event's `state_key` into `membership_subject`.
+    if item.kind == "membership" {
+        if let Some(subject) = item.membership_subject.as_deref() {
+            return if subject.starts_with('@') {
+                parts_for(None, Some(subject))
+            } else {
+                parts_for(Some(subject), None)
+            };
+        }
+    }
+    parts_for(item.sender_display_name.as_deref(), item.sender.as_deref())
+}
+
+fn parts_for(display_name: Option<&str>, user_id: Option<&str>) -> (String, String, String) {
+    let Some(raw) = display_name else {
+        let fallback = user_id
+            .map(str::to_string)
+            .unwrap_or_else(|| "Someone".to_string());
         // A raw id — `@atlas:example.org` — has no glyph to split, and its
         // first character is `@` for every sender there has ever been. So the
         // initial skips it: an entire room of `@` discs distinguishes nobody,
@@ -659,6 +678,7 @@ mod tests {
             reactions: Vec::new(),
             read_by: Vec::new(),
             editable: false,
+            membership_subject: None,
         }
     }
 
@@ -1465,7 +1485,7 @@ mod tests {
     #[test]
     fn can_reply_to_a_message_the_server_has_echoed_back() {
         let mut it = item("message");
-        it.send_state = Some("sent".into());
+        it.send_state = Some(crate::dto::DeliveryState::Sent);
         assert!(can_reply_or_react(&it));
     }
 
@@ -1475,7 +1495,7 @@ mod tests {
         // what the rule reads. The absence of an event id is.
         let mut it = item("message");
         it.event_id = None;
-        it.send_state = Some("notSentYet".into());
+        it.send_state = Some(crate::dto::DeliveryState::NotSentYet);
         assert!(!can_reply_or_react(&it));
     }
 
@@ -1483,7 +1503,7 @@ mod tests {
     fn cannot_reply_to_a_message_whose_send_failed() {
         let mut it = item("message");
         it.event_id = None;
-        it.send_state = Some("sendingFailed".into());
+        it.send_state = Some(crate::dto::DeliveryState::SendingFailed);
         assert!(!can_reply_or_react(&it));
     }
 
@@ -1613,6 +1633,29 @@ mod tests {
     }
 
     // ---- attributedName --------------------------------------------------
+
+    #[test]
+    fn a_membership_line_names_the_person_it_is_about_not_the_sender() {
+        // Issue #67: "Alice was invited" rendered as the inviter's name.
+        let mut it = item("membership");
+        it.detail = Some("invited".into());
+        it.sender_display_name = Some("Inviter".into());
+        it.membership_subject = Some("Invitee".into());
+        let row = crate::dto::TimelineRow::new(it.clone());
+        assert_eq!(row.sender_short, "Invitee");
+        match view_for(&it) {
+            ItemView::System { text, .. } => assert_eq!(text, "Invitee was invited"),
+            other => panic!("expected a system line, got {other:?}"),
+        }
+
+        // No display name for the subject: its id, not the sender's name.
+        it.membership_subject = Some("@invitee:example.org".into());
+        assert_eq!(attributed_name(&it), "@invitee:example.org");
+
+        // Not known at all: the sender, as before.
+        it.membership_subject = None;
+        assert_eq!(attributed_name(&it), "Inviter");
+    }
 
     #[test]
     fn attributed_name_prefers_the_display_name_then_the_id_then_a_placeholder() {

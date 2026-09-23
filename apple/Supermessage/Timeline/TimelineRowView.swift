@@ -25,6 +25,9 @@ struct TimelineRowView: View {
     let row: TimelineRow
     /// Whether the row above already carries this sender's header.
     var continuesRun: Bool = false
+    /// Whether this is the last row of its run — where your own messages
+    /// carry their one timestamp.
+    var endsRun: Bool = true
     /// Who to name, already chosen: the full attribution in a room where
     /// several agents speak, the bare name where one does. Chosen by the list,
     /// which can see every row; a single row cannot.
@@ -65,7 +68,7 @@ struct TimelineRowView: View {
         case let .bubble(muted, blocks):
             MessageBlock(
                 row: row, named: named, muted: muted, blocks: blocks,
-                continuesRun: continuesRun, faces: faces, onReact: onReact
+                continuesRun: continuesRun, endsRun: endsRun, faces: faces, onReact: onReact
             )
 
         case .emote:
@@ -106,6 +109,15 @@ struct TimelineRowView: View {
                 .overlay(Theme.accent)
                 .padding(.vertical, 10)
 
+        // A message this device holds no key for is still a *message*: it was
+        // sent by someone, at a time, into this conversation. Drawn as a
+        // centred grey line it read like "Krishna joined the room" — an event
+        // about the room rather than a gap in it — and with encryption on by
+        // default it is the placeholder a reader meets most.
+        case let .placeholder(.unableToDecrypt, text):
+            UndecryptableRow(
+                row: row, named: named, text: text, continuesRun: continuesRun, faces: faces)
+
         // `kind` ignored, like `.system` above and for the same reason.
         case let .placeholder(_, text):
             SystemLine(text: text)
@@ -128,6 +140,19 @@ struct TimelineRowView: View {
     }
 }
 
+/// "edited", beside a message the SDK has folded an `m.replace` into.
+///
+/// iOS showed nothing at all here while the desktop always has, so an agent
+/// revising a message it had already sent was invisible on a phone.
+private struct EditedMark: View {
+    var body: some View {
+        Text("edited")
+            .metaFace()
+            .foregroundStyle(Theme.contentFaint)
+            .accessibilityLabel("Edited")
+    }
+}
+
 /// A message, peer or own.
 private struct MessageBlock: View {
     let row: TimelineRow
@@ -136,6 +161,7 @@ private struct MessageBlock: View {
     let muted: Bool
     let blocks: [RichBlock]
     let continuesRun: Bool
+    let endsRun: Bool
     let faces: AvatarCache
     var onReact: ((String) -> Void)?
 
@@ -164,6 +190,9 @@ private struct MessageBlock: View {
                     if let timestamp = row.item.timestampMs {
                         Text(Self.time(timestamp)).metaFace().foregroundStyle(Theme.contentFaint)
                     }
+                    if row.item.edited {
+                        EditedMark()
+                    }
                 }
             }
 
@@ -180,11 +209,22 @@ private struct MessageBlock: View {
                 .padding(isOwn ? 10 : 0)
                 .background(isOwn ? Theme.accent.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 12))
 
+            // A continued row has no header to carry the mark, so it goes
+            // under the text instead. An agent quietly rewriting what it said
+            // is exactly what a reader must be able to see.
+            if !isOwn && continuesRun && row.item.edited {
+                EditedMark()
+            }
+
             // Your own side of the conversation, which carried no time and no
             // send state at all — three identical messages were
             // indistinguishable, and a message that never left the phone
             // looked exactly like one that landed.
-            if isOwn {
+            //
+            // One time per run, not one per bubble: ten messages sent in a
+            // minute carried ten identical timestamps. The last of the run
+            // keeps it; a send state or an edit always speaks.
+            if isOwn, endsRun || sendState.isWorthShowing || row.item.edited {
                 HStack(spacing: 5) {
                     if let label = sendState.label {
                         if sendState == .failed {
@@ -192,7 +232,10 @@ private struct MessageBlock: View {
                         }
                         Text(label)
                     }
-                    if let timestamp = row.item.timestampMs {
+                    if row.item.edited {
+                        Text("edited")
+                    }
+                    if endsRun || sendState.isWorthShowing, let timestamp = row.item.timestampMs {
                         Text(Self.time(timestamp))
                     }
                 }
@@ -402,6 +445,49 @@ private struct ReactionQuery: Identifiable {
 
 /// A quiet line about the room rather than in it — a membership change, a
 /// placeholder, a collapsed run.
+/// A message that arrived encrypted for keys this device does not have.
+private struct UndecryptableRow: View {
+    let row: TimelineRow
+    let named: String
+    let text: String
+    let continuesRun: Bool
+    let faces: AvatarCache
+
+    var body: some View {
+        VStack(alignment: row.item.isOwn ? .trailing : .leading, spacing: 4) {
+            if !row.item.isOwn && !continuesRun {
+                HStack(spacing: 6) {
+                    SenderFace(
+                        mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces)
+                    Text(named).nameFace()
+                    if let timestamp = row.item.timestampMs {
+                        Text(MessageBlock.time(timestamp)).metaFace()
+                            .foregroundStyle(Theme.contentFaint)
+                    }
+                }
+            }
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(text)
+                    Text("Encryption recovery in your account can restore older messages.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.contentFaint)
+                }
+            } icon: {
+                Image(systemName: "lock.fill")
+            }
+            .font(.subheadline.italic())
+            .foregroundStyle(Theme.contentMuted)
+            .padding(10)
+            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .frame(maxWidth: .infinity, alignment: row.item.isOwn ? .trailing : .leading)
+        .padding(.top, continuesRun ? 2 : 8)
+        .padding(.bottom, 2)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct SystemLine: View {
     let text: String
 

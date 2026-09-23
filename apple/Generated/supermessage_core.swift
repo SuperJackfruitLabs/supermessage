@@ -2693,12 +2693,28 @@ public func FfiConverterTypeRoomSummary_lower(_ value: RoomSummary) -> RustBuffe
 public struct RosterRow {
     public var row: RoomRow
     public var state: AgentState
+    /**
+     * Whether `state`'s activity word (`active`, `idle`, `quiet`) describes
+     * anything. It does for an agent's room; for a room of people, "idle"
+     * says nothing a reader wants to know. See [`describes_agent`].
+     *
+     * `NeedsYou` is shown regardless: owing an answer is not about agents.
+     */
+    public var describesAgent: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(row: RoomRow, state: AgentState) {
+    public init(row: RoomRow, state: AgentState, 
+        /**
+         * Whether `state`'s activity word (`active`, `idle`, `quiet`) describes
+         * anything. It does for an agent's room; for a room of people, "idle"
+         * says nothing a reader wants to know. See [`describes_agent`].
+         *
+         * `NeedsYou` is shown regardless: owing an answer is not about agents.
+         */describesAgent: Bool) {
         self.row = row
         self.state = state
+        self.describesAgent = describesAgent
     }
 }
 
@@ -2712,12 +2728,16 @@ extension RosterRow: Equatable, Hashable {
         if lhs.state != rhs.state {
             return false
         }
+        if lhs.describesAgent != rhs.describesAgent {
+            return false
+        }
         return true
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(row)
         hasher.combine(state)
+        hasher.combine(describesAgent)
     }
 }
 
@@ -2730,13 +2750,15 @@ public struct FfiConverterTypeRosterRow: FfiConverterRustBuffer {
         return
             try RosterRow(
                 row: FfiConverterTypeRoomRow.read(from: &buf), 
-                state: FfiConverterTypeAgentState.read(from: &buf)
+                state: FfiConverterTypeAgentState.read(from: &buf), 
+                describesAgent: FfiConverterBool.read(from: &buf)
         )
     }
 
     public static func write(_ value: RosterRow, into buf: inout [UInt8]) {
         FfiConverterTypeRoomRow.write(value.row, into: &buf)
         FfiConverterTypeAgentState.write(value.state, into: &buf)
+        FfiConverterBool.write(value.describesAgent, into: &buf)
     }
 }
 
@@ -3248,19 +3270,6 @@ public func FfiConverterTypeSpaceSummary_lower(_ value: SpaceSummary) -> RustBuf
 }
 
 
-/**
- * A single timeline item (message, state event, etc.) as rendered.
- *
- * `kind` is the semantic discriminant projected from the SDK's
- * `TimelineItemContent` (see `core::timeline::classify_content`) — never a
- * raw Matrix event-type string. `msgtype` and `detail` carry the two kinds
- * of extra context a `kind` sometimes needs to be rendered correctly:
- * `msgtype` is only populated for `kind: "message"` (`m.text`, `m.notice`,
- * …); `detail` carries kind-specific context such as a membership change's
- * change kind, a state event's event type, or a custom event's event type.
- * Both are `None` when the `kind` doesn't need them — see the table in
- * `docs/matrix-events.md` for the full mapping.
- */
 public struct TimelineItemDto {
     /**
      * **Identity, not an address.** The SDK's `TimelineItem::unique_id()`.
@@ -3353,7 +3362,7 @@ public struct TimelineItemDto {
     public var customPayload: CustomPayload?
     public var timestampMs: UInt64?
     public var isOwn: Bool
-    public var sendState: String?
+    public var sendState: DeliveryState?
     /**
      * Present when this item is a reply (`m.in_reply_to`); `None` for an
      * ordinary message and for every non-message `kind`. See [`ReplyToDto`]
@@ -3402,6 +3411,16 @@ public struct TimelineItemDto {
      * refuses is worse than not offering it.
      */
     public var editable: Bool
+    /**
+     * For `kind == "membership"`: the person the change is about — the
+     * event's `state_key` — as a display name, or their user id when they
+     * have none. `None` for every other kind.
+     *
+     * Distinct from `sender`: an invite, a ban or a removal is sent by
+     * someone else, and naming the sender told the room the wrong person had
+     * been invited (issue #67).
+     */
+    public var membershipSubject: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -3482,7 +3501,7 @@ public struct TimelineItemDto {
          * room — the webview's custom-event registry
          * (`$lib/components/customEvents.ts`) must render every value out of it
          * as text only, never into `{@html}`, an `href`, an `src`, or a style.
-         */customPayload: CustomPayload?, timestampMs: UInt64?, isOwn: Bool, sendState: String?, 
+         */customPayload: CustomPayload?, timestampMs: UInt64?, isOwn: Bool, sendState: DeliveryState?, 
         /**
          * Present when this item is a reply (`m.in_reply_to`); `None` for an
          * ordinary message and for every non-message `kind`. See [`ReplyToDto`]
@@ -3525,7 +3544,16 @@ public struct TimelineItemDto {
          * same set: a state event of your own is not editable, and neither is
          * one already redacted. Offering an Edit that the homeserver then
          * refuses is worse than not offering it.
-         */editable: Bool) {
+         */editable: Bool, 
+        /**
+         * For `kind == "membership"`: the person the change is about — the
+         * event's `state_key` — as a display name, or their user id when they
+         * have none. `None` for every other kind.
+         *
+         * Distinct from `sender`: an invite, a ban or a removal is sent by
+         * someone else, and naming the sender told the room the wrong person had
+         * been invited (issue #67).
+         */membershipSubject: String?) {
         self.id = id
         self.eventId = eventId
         self.kind = kind
@@ -3546,6 +3574,7 @@ public struct TimelineItemDto {
         self.reactions = reactions
         self.readBy = readBy
         self.editable = editable
+        self.membershipSubject = membershipSubject
     }
 }
 
@@ -3613,6 +3642,9 @@ extension TimelineItemDto: Equatable, Hashable {
         if lhs.editable != rhs.editable {
             return false
         }
+        if lhs.membershipSubject != rhs.membershipSubject {
+            return false
+        }
         return true
     }
 
@@ -3637,6 +3669,7 @@ extension TimelineItemDto: Equatable, Hashable {
         hasher.combine(reactions)
         hasher.combine(readBy)
         hasher.combine(editable)
+        hasher.combine(membershipSubject)
     }
 }
 
@@ -3662,12 +3695,13 @@ public struct FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer {
                 customPayload: FfiConverterOptionTypeCustomPayload.read(from: &buf), 
                 timestampMs: FfiConverterOptionUInt64.read(from: &buf), 
                 isOwn: FfiConverterBool.read(from: &buf), 
-                sendState: FfiConverterOptionString.read(from: &buf), 
+                sendState: FfiConverterOptionTypeDeliveryState.read(from: &buf), 
                 replyTo: FfiConverterOptionTypeReplyToDto.read(from: &buf), 
                 edited: FfiConverterBool.read(from: &buf), 
                 reactions: FfiConverterSequenceTypeReactionDto.read(from: &buf), 
                 readBy: FfiConverterSequenceString.read(from: &buf), 
-                editable: FfiConverterBool.read(from: &buf)
+                editable: FfiConverterBool.read(from: &buf), 
+                membershipSubject: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -3686,12 +3720,13 @@ public struct FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer {
         FfiConverterOptionTypeCustomPayload.write(value.customPayload, into: &buf)
         FfiConverterOptionUInt64.write(value.timestampMs, into: &buf)
         FfiConverterBool.write(value.isOwn, into: &buf)
-        FfiConverterOptionString.write(value.sendState, into: &buf)
+        FfiConverterOptionTypeDeliveryState.write(value.sendState, into: &buf)
         FfiConverterOptionTypeReplyToDto.write(value.replyTo, into: &buf)
         FfiConverterBool.write(value.edited, into: &buf)
         FfiConverterSequenceTypeReactionDto.write(value.reactions, into: &buf)
         FfiConverterSequenceString.write(value.readBy, into: &buf)
         FfiConverterBool.write(value.editable, into: &buf)
+        FfiConverterOptionString.write(value.membershipSubject, into: &buf)
     }
 }
 
@@ -4299,6 +4334,109 @@ public func FfiConverterTypeCustomEventView_lower(_ value: CustomEventView) -> R
 
 
 extension CustomEventView: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * A single timeline item (message, state event, etc.) as rendered.
+ *
+ * `kind` is the semantic discriminant projected from the SDK's
+ * `TimelineItemContent` (see `core::timeline::classify_content`) — never a
+ * raw Matrix event-type string. `msgtype` and `detail` carry the two kinds
+ * of extra context a `kind` sometimes needs to be rendered correctly:
+ * `msgtype` is only populated for `kind: "message"` (`m.text`, `m.notice`,
+ * …); `detail` carries kind-specific context such as a membership change's
+ * change kind, a state event's event type, or a custom event's event type.
+ * Both are `None` when the `kind` doesn't need them — see the table in
+ * `docs/matrix-events.md` for the full mapping.
+ * Where one of this account's own messages is on its way to the homeserver.
+ *
+ * An enum rather than the string it used to be. As a string, a host matched
+ * on spellings, and a preview fixture that spelled them `"sending"` and
+ * `"failed"` drew both messages as delivered while its snapshot test passed:
+ * the one state a reader must never miss had no working visual check. A
+ * misspelled variant does not compile.
+ *
+ * Serialised in camelCase, so the desktop's wire strings (`notSentYet`,
+ * `sendingFailed`, `sent`) are unchanged.
+ */
+
+public enum DeliveryState {
+    
+    /**
+     * Still a local echo; the homeserver has not confirmed it.
+     */
+    case notSentYet
+    /**
+     * The send failed. The message is on this device only.
+     */
+    case sendingFailed
+    /**
+     * The homeserver has it.
+     */
+    case sent
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDeliveryState: FfiConverterRustBuffer {
+    typealias SwiftType = DeliveryState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeliveryState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .notSentYet
+        
+        case 2: return .sendingFailed
+        
+        case 3: return .sent
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: DeliveryState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .notSentYet:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .sendingFailed:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .sent:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeliveryState_lift(_ buf: RustBuffer) throws -> DeliveryState {
+    return try FfiConverterTypeDeliveryState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeliveryState_lower(_ value: DeliveryState) -> RustBuffer {
+    return FfiConverterTypeDeliveryState.lower(value)
+}
+
+
+
+extension DeliveryState: Equatable, Hashable {}
 
 
 
@@ -5634,6 +5772,114 @@ extension SystemKind: Equatable, Hashable {}
 
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Where one tool call is, in the reader's terms.
+ *
+ * ACP's `status` is wire vocabulary (`in_progress`), and every host used to
+ * print it as it arrived or rewrite it by hand: iOS showed `in_progress`,
+ * Android the same, and the desktop `IN PROGRESS`. The phase is decided
+ * here, once, and a host picks a glyph and a colour from it.
+ */
+
+public enum ToolPhase {
+    
+    /**
+     * `pending`: announced, not started.
+     */
+    case queued
+    /**
+     * `in_progress`.
+     */
+    case running
+    /**
+     * `completed`.
+     */
+    case done
+    /**
+     * `failed`. The one phase a host colours.
+     */
+    case failed
+    /**
+     * A status this build was not taught. Shown as neutral, never guessed at.
+     */
+    case unknown
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeToolPhase: FfiConverterRustBuffer {
+    typealias SwiftType = ToolPhase
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ToolPhase {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .queued
+        
+        case 2: return .running
+        
+        case 3: return .done
+        
+        case 4: return .failed
+        
+        case 5: return .unknown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ToolPhase, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .queued:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .running:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .done:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeToolPhase_lift(_ buf: RustBuffer) throws -> ToolPhase {
+    return try FfiConverterTypeToolPhase.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeToolPhase_lower(_ value: ToolPhase) -> RustBuffer {
+    return FfiConverterTypeToolPhase.lower(value)
+}
+
+
+
+extension ToolPhase: Equatable, Hashable {}
+
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -5797,6 +6043,30 @@ fileprivate struct FfiConverterOptionTypeRuntimeDto: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeRuntimeDto.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeDeliveryState: FfiConverterRustBuffer {
+    typealias SwiftType = DeliveryState?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeDeliveryState.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeDeliveryState.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

@@ -66,6 +66,7 @@ struct RoomListView: View {
                             when: RelativeTime.label(
                                 for: entry.row.room.lastActivityMs, now: now),
                             showsState: showsState,
+                            describesAgent: entry.describesAgent,
                             hidesHost: view == .machine,
                             onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
                         )

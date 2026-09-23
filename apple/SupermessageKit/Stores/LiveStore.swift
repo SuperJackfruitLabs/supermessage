@@ -33,7 +33,13 @@ public final class LiveStore {
     public struct ToolCall: Identifiable, Equatable {
         public let id: String
         public let title: String
+        /// ACP's raw status. Not for display — see `phase` and `statusLabel`.
         public let status: String
+        /// Where the call is, decided by the core. Glyph and colour key off
+        /// this, never off `status`.
+        public let phase: ToolPhase
+        /// The core's word for `phase` — "Running", "Done". Rendered as given.
+        public let statusLabel: String
         /// ACP's tool kind, when the harness said. Display text.
         public let kind: String?
         /// What the call touched — paths, mostly.
@@ -101,12 +107,14 @@ public final class LiveStore {
 
     public func handleTool(
         roomId: String, seq: UInt64, toolCallId: String, title: String, kind: String?,
-        status: String, locations: [String], input: String?, output: String?
+        status: String, phase: ToolPhase, statusLabel: String, locations: [String],
+        input: String?, output: String?
     ) {
         guard accept(roomId) else { return }
         beginTurnIfFinished()
         let call = ToolCall(
-            id: toolCallId, title: title, status: status, kind: kind, locations: locations,
+            id: toolCallId, title: title, status: status, phase: phase, statusLabel: statusLabel,
+            kind: kind, locations: locations,
             input: input, output: output)
         if let index = tools.firstIndex(where: { $0.id == toolCallId }) {
             // A call reports again as it progresses — running, then completed.

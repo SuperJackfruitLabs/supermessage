@@ -122,6 +122,7 @@ fun Roster(
                         `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
                         showsState = showsState,
                         hidesHost = hidesHost,
+                        describesAgent = entry.describesAgent,
                         onOpenInfo = { onOpenInfo(roomId) },
                     )
                 }

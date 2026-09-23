@@ -1,13 +1,16 @@
 package dev.supermessage.kit
 
+import uniffi.supermessage_core.DeliveryState
+
 /**
  * What happened to a message this account sent.
  *
- * The core's vocabulary is a string — `"notSentYet"`, `"sendingFailed"`,
- * `"sent"` — and it stays a string on the wire for the reason
- * `ConnectionStore` gives: a value the core owns can gain a case without this
- * app failing to build. This is the reading of it, with `UNKNOWN` as what
- * that costs.
+ * The core says it as a typed [DeliveryState] (it used to be a string —
+ * `"notSentYet"`, `"sendingFailed"`, `"sent"` — which a typo on either side
+ * of the boundary could silently turn into "nothing to show"). This is the
+ * reading of it for display. `UNKNOWN` stays as a case so a caller that has
+ * no item to hand still has something to say; the enum itself cannot produce
+ * it.
  *
  * **Only own messages have one.** A peer's message arrived, which is the
  * only send state a reader could want to know about it.
@@ -53,12 +56,17 @@ enum class SendState {
         }
 
     companion object {
-        operator fun invoke(raw: String?): SendState = when (raw) {
-            "notSentYet" -> SENDING
-            "sendingFailed" -> FAILED
-            "sent" -> SENT
+        /**
+         * `null` is a message that arrived — every peer's message carries it,
+         * and reading it as unknown would mark every incoming bubble.
+         * Exhaustive over [DeliveryState], so a new core case breaks this
+         * build rather than drawing as nothing.
+         */
+        operator fun invoke(state: DeliveryState?): SendState = when (state) {
+            DeliveryState.NOT_SENT_YET -> SENDING
+            DeliveryState.SENDING_FAILED -> FAILED
+            DeliveryState.SENT -> SENT
             null -> SENT
-            else -> UNKNOWN
         }
     }
 }

@@ -174,6 +174,7 @@
         <RoomRow
           row={entry.row}
           state={entry.state}
+          describesAgent={entry.describesAgent}
           selected={entry.row.room.id === roomsStore.selectedId}
           avatarUrl={avatarCache.get(entry.row.room.id)}
           {now}
