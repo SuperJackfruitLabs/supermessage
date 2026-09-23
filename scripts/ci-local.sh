@@ -100,8 +100,9 @@ fi
 if want stories; then
   run "stories: look like the baseline (Linux container)" \
     docker run --rm -v "$ROOT_DIR":/repo -v sm-linux-node-modules:/repo/node_modules \
+      -v sm-pnpm-store:/pnpm-store \
       -w /repo mcr.microsoft.com/playwright:v1.63.0-noble bash -lc \
-      'corepack enable >/dev/null 2>&1 && pnpm install --frozen-lockfile >/dev/null && ./scripts/snapshot-stories.sh'
+      'corepack enable >/dev/null 2>&1 && pnpm install --frozen-lockfile --store-dir /pnpm-store >/dev/null && ./scripts/snapshot-stories.sh'
 fi
 
 # ---- iOS -----------------------------------------------------------------
