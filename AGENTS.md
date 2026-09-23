@@ -227,6 +227,16 @@ Three rules that are not style preferences:
 Amber (`Theme.signal`) means a pending decision and nothing else. Only
 `DecisionCard` may use it.
 
+**Reproducing timeline scrolling without an account:** launch a Debug build
+with `-fixtureTimeline` (a long local room, `Previews/ScrollFixture.swift`) and
+run `SupermessageUITests/TimelineScrollTests` while recording the simulator
+(`xcrun simctl io <device> recordVideo out.mp4`), then read the frames. The
+2026-09-23 scroll bugs were found this way. Two rules they taught: never put
+a SwiftUI animation (`.animation(value:)`, `withAnimation`) where it wraps the
+whole list, and never let the list's cells lie under the navigation bar — a
+hosted cell grows by whatever safe area it overlaps, and the list re-lays its
+neighbours every frame.
+
 The app icon is generated, not hand-drawn. The mark's geometry lives in
 `scripts/tokens/emit_mark.py` and its colours and icon grounds in
 `design/tokens.toml` (`[brand]`); `python3 scripts/generate-tokens.py` writes

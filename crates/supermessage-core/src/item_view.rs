@@ -254,8 +254,39 @@ pub fn attributed_parts(item: &TimelineItemDto) -> (String, String, String) {
     parts_for(item.sender_display_name.as_deref(), item.sender.as_deref())
 }
 
+/// `@agent_strategy-sam:id.agentpod.dev` → `Strategy Sam`.
+///
+/// Only the bridge's `agent_` namespace, and only when something is left
+/// after the prefix; anything else is `None` and keeps its id.
+pub fn agent_name_from_id(user_id: &str) -> Option<String> {
+    let localpart = user_id.strip_prefix('@')?.split(':').next()?;
+    let slug = localpart.strip_prefix("agent_")?;
+    let words: Vec<String> = slug
+        .split(['-', '_', '.'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        })
+        .collect();
+    (!words.is_empty()).then(|| words.join(" "))
+}
+
 fn parts_for(display_name: Option<&str>, user_id: Option<&str>) -> (String, String, String) {
     let Some(raw) = display_name else {
+        // An agent whose profile never resolved — it left the room, or never
+        // set a display name — was headed by its full id on every message:
+        // `@agent_strategy-sam:id.agentpod.dev` under a room called
+        // "Strategy Sam". The bridge's id convention carries the name, so an
+        // agent gets it back; a person's id stays as it is, because nothing
+        // says theirs is a name.
+        if let Some(name) = user_id.and_then(agent_name_from_id) {
+            let initial = crate::room_identity::display_initial(&name);
+            return (name.clone(), name, initial);
+        }
         let fallback = user_id
             .map(str::to_string)
             .unwrap_or_else(|| "Someone".to_string());
@@ -1655,6 +1686,23 @@ mod tests {
         // Not known at all: the sender, as before.
         it.membership_subject = None;
         assert_eq!(attributed_name(&it), "Inviter");
+    }
+
+    #[test]
+    fn an_agent_with_no_profile_is_named_from_its_id() {
+        assert_eq!(
+            agent_name_from_id("@agent_strategy-sam:id.agentpod.dev").as_deref(),
+            Some("Strategy Sam")
+        );
+        assert_eq!(agent_name_from_id("@ana:example.org"), None);
+        assert_eq!(agent_name_from_id("@agent_:example.org"), None);
+
+        let mut it = item("message");
+        it.sender = Some("@agent_strategy-sam:id.agentpod.dev".into());
+        it.sender_display_name = None;
+        let row = crate::dto::TimelineRow::new(it);
+        assert_eq!(row.sender_name, "Strategy Sam");
+        assert_eq!(row.sender_initial, "S");
     }
 
     #[test]

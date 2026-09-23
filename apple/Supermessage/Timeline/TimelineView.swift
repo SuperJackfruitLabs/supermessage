@@ -65,6 +65,15 @@ struct TimelineView: View {
                 // A way back, and only when there is somewhere to go back
                 // from. Scrolling through history with no route home is the
                 // thing that makes a long room feel like a trap.
+                //
+                // The animation is scoped to this button. It used to hang off
+                // the whole timeline (`.animation(value: isAwayFromNewest)`
+                // after the overlay), and the flag flips again and again
+                // during an ordinary scroll: every row the list was resizing
+                // in that instant was animated with it, so rows slid over one
+                // another and gaps opened and closed — the 2026-09-23 screen
+                // recording, reproduced with `-fixtureTimeline`.
+                ZStack {
                 if isAwayFromNewest {
                     Button {
                         NotificationCenter.default.post(name: .scrollTimelineToNewest, object: nil)
@@ -99,8 +108,9 @@ struct TimelineView: View {
                     .transition(.scale.combined(with: .opacity))
                     .accessibilityLabel("Jump to newest")
                 }
+                }
+                .animation(.snappy(duration: 0.2), value: isAwayFromNewest)
             }
-            .animation(.snappy(duration: 0.2), value: isAwayFromNewest)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // Above the composer: the acknowledgement for an agent, the
                 // typing line for people. Both are pills that float, like the

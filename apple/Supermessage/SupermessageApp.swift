@@ -7,7 +7,16 @@ struct SupermessageApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            // A long local room for reproducing scrolling, no account needed.
+            if ProcessInfo.processInfo.arguments.contains("-fixtureTimeline") {
+                ScrollFixtureRoot()
+            } else {
+                RootView()
+            }
+            #else
             RootView()
+            #endif
         }
     }
 }

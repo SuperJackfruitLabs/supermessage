@@ -78,7 +78,26 @@ public enum TimelineGrouping {
     ///
     /// A run of exactly one reads exactly like the ungrouped line the core
     /// already composes, never "Alice and 0 others".
-    public static func collapseMembershipRuns(_ rows: [TimelineRow]) -> [DisplayRow] {
+    /// The id a whole stretch of membership lines collapses under, and the
+    /// key the reader expands it by.
+    public static func stretchId(_ firstRowId: String) -> String { "stretch:\(firstRowId)" }
+
+    /// Whether a membership-run id is a collapsed stretch the reader can open.
+    public static func isStretch(_ id: String) -> Bool { id.hasPrefix("stretch:") }
+
+    /// A stretch that still draws this many lines after the two rules below
+    /// collapses into one summary line.
+    ///
+    /// A room an agent's bridge joined and left repeatedly scrolled back as
+    /// screen after screen of "invited / accepted / left" — the rules merge a
+    /// person's own churn and a crowd sharing one verb, but several people
+    /// interleaving defeated both. Day dividers still break a stretch, so the
+    /// summary is at most one line per day.
+    public static let stretchCollapseThreshold = 3
+
+    public static func collapseMembershipRuns(
+        _ rows: [TimelineRow], expanded: Set<String> = []
+    ) -> [DisplayRow] {
         var out: [DisplayRow] = []
         var stretch: [TimelineRow] = []
 
@@ -99,6 +118,7 @@ public enum TimelineGrouping {
 
         func flushStretch() {
             guard !stretch.isEmpty else { return }
+            let start = out.count
             // Rule 1: consecutive changes about one person.
             var segments: [[TimelineRow]] = []
             for row in stretch {
@@ -125,6 +145,13 @@ public enum TimelineGrouping {
                 }
             }
             emit(run, text(for: run))
+
+            // Rule 3: still a screenful — one summary line, unless opened.
+            let id = stretchId(stretch[0].item.id)
+            if out.count - start >= stretchCollapseThreshold, !expanded.contains(id) {
+                out.removeSubrange(start...)
+                out.append(.membershipRun(id: id, text: stretchText(for: stretch), rows: stretch))
+            }
             stretch = []
         }
 
@@ -138,6 +165,22 @@ public enum TimelineGrouping {
         }
         flushStretch()
         return out
+    }
+
+    /// "7 membership changes · Strategy Sam, Rakesh and 1 other".
+    static func stretchText(for stretch: [TimelineRow]) -> String {
+        var seen = Set<String>()
+        let people = stretch.map(name).filter { seen.insert($0).inserted }
+        let named: String
+        switch people.count {
+        case 0: named = "Someone"
+        case 1: named = people[0]
+        case 2: named = "\(people[0]) and \(people[1])"
+        default:
+            let rest = people.count - 2
+            named = "\(people[0]), \(people[1]) and \(rest) \(rest == 1 ? "other" : "others")"
+        }
+        return "\(stretch.count) membership changes · \(named)"
     }
 
     /// Who a membership change is about, for telling one person's churn from

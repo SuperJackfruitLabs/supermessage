@@ -23,6 +23,13 @@ final class TimeReveal {
     /// leading edge of the time, which is still legible.
     static let width: CGFloat = 68
     var offset: CGFloat = 0
+    /// True while a finger is down: the offset tracks it with no animation.
+    /// On release it springs back — and the spring is applied to the offset
+    /// alone (see `RevealsTime`), never through `withAnimation`, which swept
+    /// every other change landing in that instant into the same animation:
+    /// rows resizing as they scrolled in slid about, and headers crossed the
+    /// messages beneath them.
+    var tracking = false
 }
 
 /// A row that slides left under a reveal, with its time waiting at the
@@ -35,11 +42,17 @@ struct RevealsTime<Content: View>: View {
     let reveal: TimeReveal
     let time: String?
     @ViewBuilder var content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let offset = time == nil ? 0 : reveal.offset
+        let spring: Animation? =
+            reveal.tracking
+            ? nil
+            : reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.32, dampingFraction: 0.86)
         content
-            .offset(x: -offset)
+            // Scoped: only the offset animates, whatever else changes now.
+            .animation(spring) { $0.offset(x: -offset) }
             .overlay(alignment: .trailing) {
                 if let time, offset > 0 {
                     Text(time)
@@ -59,38 +72,7 @@ struct RevealsTime<Content: View>: View {
 
 // MARK: - Arrival (M1)
 
-/// A new message springs in from below, or simply appears under Reduce
-/// Motion.
-///
-/// `active` only for a row that has just arrived into a room already on
-/// screen — never for history, a room switch or a page of backfill, which the
-/// list decides (see `Coordinator.animates`). Everything else renders settled
-/// from its first frame.
-struct SpringIn: ViewModifier {
-    let active: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var settled = false
-
-    func body(content: Content) -> some View {
-        let hidden = active && !settled
-        content
-            .opacity(hidden ? 0 : 1)
-            .offset(y: hidden && !reduceMotion ? 16 : 0)
-            .scaleEffect(hidden && !reduceMotion ? 0.97 : 1, anchor: .bottom)
-            .onAppear {
-                guard active, !settled else { return }
-                withAnimation(
-                    reduceMotion
-                        ? .easeOut(duration: 0.15)
-                        : .spring(response: 0.38, dampingFraction: 0.78)
-                ) { settled = true }
-            }
-    }
-}
-
-extension View {
-    func springsIn(_ active: Bool) -> some View { modifier(SpringIn(active: active)) }
-}
+// Lives on the cell now — see `TimelineList.Coordinator`'s `willDisplay`.
 
 // MARK: - Faces
 

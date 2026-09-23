@@ -74,13 +74,22 @@ struct TimelineCollectionView: View {
     @Binding var isAwayFromNewest: Bool
 
     var body: some View {
+        // **Inside the safe area, not under the bar.** The list used to run
+        // under the navigation bar so text could fade beneath it (D4). But a
+        // hosted cell counts whatever part of it lies under the bar as safe-
+        // area inset and grows by that much: every row swelled as it scrolled
+        // under the bar and shrank as it left, the list re-laid its
+        // neighbours on every frame, and rows slid over one another — the
+        // 2026-09-23 recording, measured with `-fixtureTimeline` as a day
+        // divider going 37 → 138 → 37pt with scroll position. Kept below the
+        // bar, content never reaches it, and the fade sits at the list's own
+        // top edge instead.
         GeometryReader { proxy in
             let obscured = proxy.safeAreaInsets.top
             TimelineList(
                 session: session, timeline: timeline, isAwayFromNewest: $isAwayFromNewest,
                 topObscured: obscured
             )
-            .ignoresSafeArea(.container, edges: .top)
             .overlay(alignment: .top) {
                 // The fade the bar sits on: opaque page colour under the bar
                 // itself, easing to nothing a line below it, so text slides
@@ -93,7 +102,6 @@ struct TimelineCollectionView: View {
                     ], startPoint: .top, endPoint: .bottom
                 )
                 .frame(height: obscured + 28)
-                .ignoresSafeArea(.container, edges: .top)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             }
@@ -276,6 +284,12 @@ struct TimelineList: UIViewRepresentable {
         private var idByEventId: [String: String] = [:]
         /// The sentence for each collapsed membership run, by its id.
         private var runsById: [String: String] = [:]
+        /// Stretches of membership churn the reader has tapped open.
+        private var expandedStretches: Set<String> = []
+        /// The last history applied, so opening a stretch can regroup it
+        /// without waiting for the next update.
+        private var lastApply: (rows: [TimelineRow], isPaginating: Bool, isLive: Bool, isFinished: Bool)?
+        private var forceRegroup = false
         /// The history's entry list from the last full pass, so an update
         /// that only toggles the live turn can be applied without redoing
         /// the grouping.
@@ -325,10 +339,8 @@ struct TimelineList: UIViewRepresentable {
         private func column<Content: View>(
             _ entry: Entry, @ViewBuilder _ content: () -> Content
         ) -> UIHostingConfiguration<some View, EmptyView> {
-            let springs = arriving.remove(entry) != nil
             return UIHostingConfiguration {
                 content()
-                    .springsIn(springs)
                     .scaleEffect(x: 1, y: -1)
                     // The reading column, unchanged: one centred measure so a
                     // phone and an iPad detail pane read the same way, and
@@ -336,7 +348,7 @@ struct TimelineList: UIViewRepresentable {
                     .padding(.horizontal, 16)
                     .frame(maxWidth: 712, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .id(entry)
+                    .ignoresSafeArea()
             }
             .margins(.all, 0)
             .minSize(width: 0, height: 0)
@@ -377,7 +389,24 @@ struct TimelineList: UIViewRepresentable {
 
                 case let .membershipRun(id):
                     guard let text = self.runsById[id] else { return }
-                    cell.contentConfiguration = self.column(entry) { SystemLine(text: text) }
+                    if TimelineGrouping.isStretch(id) {
+                        // A collapsed stretch: tap to see every line.
+                        cell.contentConfiguration = self.column(entry) {
+                            Button { self.expandStretch(id) } label: {
+                                HStack(spacing: 4) {
+                                    SystemLine(text: text).fixedSize(horizontal: false, vertical: true)
+                                    Image(systemName: "chevron.down")
+                                        .imageScale(.small)
+                                        .foregroundStyle(Theme.contentFaint)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows each change")
+                        }
+                    } else {
+                        cell.contentConfiguration = self.column(entry) { SystemLine(text: text) }
+                    }
 
                 case .liveTurn:
                     cell.contentConfiguration = self.column(entry) {
@@ -440,8 +469,10 @@ struct TimelineList: UIViewRepresentable {
             isFinished: Bool
         ) {
             guard let dataSource else { return }
+            lastApply = (rows, isPaginating, isLive, isFinished)
 
-            let historyChanged = revision != appliedRevision || !hasApplied
+            let historyChanged = revision != appliedRevision || !hasApplied || forceRegroup
+            forceRegroup = false
             if !historyChanged, isPaginating == appliedPaginating, isLive == appliedLive,
                 isFinished == appliedFinished
             {
@@ -477,7 +508,7 @@ struct TimelineList: UIViewRepresentable {
             // Collapse membership churn first, so `continuesRun` compares a
             // row against the row *displayed* before it rather than against a
             // membership line that is no longer drawn on its own.
-            let display = TimelineGrouping.collapseMembershipRuns(rows)
+            let display = TimelineGrouping.collapseMembershipRuns(rows, expanded: expandedStretches)
 
             // Faces for readers, from the messages they have sent here. A
             // receipt carries only a user id; the room has usually already
@@ -842,6 +873,56 @@ struct TimelineList: UIViewRepresentable {
             }
         }
 
+        /// Open a collapsed stretch of membership changes in place.
+        private func expandStretch(_ id: String) {
+            guard let last = lastApply else { return }
+            expandedStretches.insert(id)
+            forceRegroup = true
+            selection.selectionChanged()
+            apply(
+                rows: last.rows, revision: appliedRevision, isPaginating: last.isPaginating,
+                isLive: last.isLive, isFinished: last.isFinished)
+        }
+
+        // MARK: Arrival (M1)
+
+        /// A message that has just arrived rises into place.
+        ///
+        /// On the cell, per display, rather than in SwiftUI. The SwiftUI
+        /// version hid a row in `@State` until `onAppear` revealed it — and a
+        /// recycled cell keeps its hosted view's state and does not appear
+        /// again, so a reused row could stay invisible: the blank gaps in the
+        /// scrolling recording of 2026-09-23. This runs fresh for every
+        /// display and puts every other cell back to rest.
+        nonisolated func collectionView(
+            _ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell,
+            forItemAt indexPath: IndexPath
+        ) {
+            MainActor.assumeIsolated {
+                let view = cell.contentView
+                view.layer.removeAllAnimations()
+                guard let entry = dataSource?.itemIdentifier(for: indexPath),
+                    arriving.remove(entry) != nil
+                else {
+                    view.alpha = 1
+                    view.transform = .identity
+                    return
+                }
+                let reduceMotion = UIAccessibility.isReduceMotionEnabled
+                view.alpha = 0
+                // The list is flipped, so "from below" is a negative y here.
+                view.transform = reduceMotion ? .identity : CGAffineTransform(translationX: 0, y: -16)
+                UIView.animate(
+                    withDuration: reduceMotion ? 0.15 : 0.38, delay: 0,
+                    usingSpringWithDamping: reduceMotion ? 1 : 0.78, initialSpringVelocity: 0,
+                    options: [.allowUserInteraction, .beginFromCurrentState]
+                ) {
+                    view.alpha = 1
+                    view.transform = .identity
+                }
+            }
+        }
+
         // MARK: Swipe left for times (T4)
 
         /// A leftward pan anywhere on the list slides every message over and
@@ -859,23 +940,29 @@ struct TimelineList: UIViewRepresentable {
             pan.delegate = self
             pan.cancelsTouchesInView = true
             view.addGestureRecognizer(pan)
-            view.panGestureRecognizer.require(toFail: pan)
+            // Deliberately *not* `panGestureRecognizer.require(toFail: pan)`.
+            // That made every scroll wait for this gesture to decline first,
+            // so a drag stuck and then lurched a screen at a time, and a flick
+            // that curved left was taken for a reveal mid-scroll. The two are
+            // exclusive by default; whichever begins first wins, and this one
+            // begins only on a clearly horizontal drag.
             revealPan = pan
         }
 
         @objc private func revealPanned(_ pan: UIPanGestureRecognizer) {
             let width = TimeReveal.width
             switch pan.state {
+            case .began:
+                reveal.tracking = true
             case .changed:
                 let pulled = max(0, -pan.translation(in: pan.view).x)
                 // Rubber-banded past the full width, so the edge is felt
                 // rather than hit.
                 reveal.offset = pulled <= width ? pulled : width + (pulled - width) * 0.2
             case .ended, .cancelled, .failed:
-                let reduceMotion = UIAccessibility.isReduceMotionEnabled
-                withAnimation(reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.32, dampingFraction: 0.86)) {
-                    reveal.offset = 0
-                }
+                // The spring lives on the offset itself (`RevealsTime`).
+                reveal.tracking = false
+                reveal.offset = 0
             default:
                 break
             }
@@ -941,8 +1028,14 @@ extension TimelineList.Coordinator: UIGestureRecognizerDelegate {
     nonisolated func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
         MainActor.assumeIsolated {
             guard let pan = gesture as? UIPanGestureRecognizer, pan.view != nil else { return true }
+            // Leftward and clearly horizontal — three times as much sideways
+            // as vertical — measured on both the velocity and the distance
+            // so far, so the curve of a thumb flicking up the list is never
+            // read as a reveal.
             let velocity = pan.velocity(in: pan.view)
-            return velocity.x < 0 && abs(velocity.x) > abs(velocity.y) * 1.5
+            let moved = pan.translation(in: pan.view)
+            return velocity.x < 0 && abs(velocity.x) > abs(velocity.y) * 3
+                && moved.x < 0 && abs(moved.x) > abs(moved.y) * 3
         }
     }
 }
@@ -979,3 +1072,4 @@ extension UIViewController {
         session: session, timeline: session.timeline, isAwayFromNewest: $isAwayFromNewest)
 }
 #endif
+

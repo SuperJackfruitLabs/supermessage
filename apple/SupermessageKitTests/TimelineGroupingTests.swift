@@ -137,6 +137,48 @@ struct MembershipRunTests {
         #expect(text == "Ganesha, Krishna and 2 others joined the room")
     }
 
+    @Test("interleaved churn by several people collapses into one line")
+    func collapsesAStretch() {
+        // The shape of the 2026-09-23 recording: two accounts and a person
+        // interleaving, which neither of the first two rules can merge.
+        let rows = [
+            Self.membership("1", "Strategy Sam", "was invited"),
+            Self.membership("2", "Rakesh", "updated their membership"),
+            Self.membership("3", "Strategy Sam", "left the room"),
+            Self.membership("4", "strategy-sam", "was invited"),
+            Self.membership("5", "Strategy Sam", "joined the room"),
+        ]
+        let out = TimelineGrouping.collapseMembershipRuns(rows)
+        #expect(out.count == 1)
+        guard case let .membershipRun(id, text, collapsed) = out.first else {
+            Issue.record("expected one summary line"); return
+        }
+        #expect(TimelineGrouping.isStretch(id))
+        #expect(collapsed.count == 5)
+        #expect(text == "5 membership changes · Strategy Sam, Rakesh and 1 other")
+    }
+
+    @Test("an opened stretch shows its lines again")
+    func expandsAStretch() {
+        let rows = [
+            Self.membership("1", "Strategy Sam", "was invited"),
+            Self.membership("2", "Rakesh", "updated their membership"),
+            Self.membership("3", "Strategy Sam", "left the room"),
+        ]
+        let id = TimelineGrouping.stretchId("1")
+        let out = TimelineGrouping.collapseMembershipRuns(rows, expanded: [id])
+        #expect(out.count == 3)
+    }
+
+    @Test("two lines are not worth collapsing")
+    func leavesAShortStretch() {
+        let rows = [
+            Self.membership("1", "Strategy Sam", "was invited"),
+            Self.membership("2", "Rakesh", "updated their membership"),
+        ]
+        #expect(TimelineGrouping.collapseMembershipRuns(rows).count == 2)
+    }
+
     @Test("one person changing twice is named once")
     func namesDistinctPeople() {
         let rows = [
@@ -268,13 +310,14 @@ struct MembershipChurnTests {
     func churnKeepsNeighboursApart() {
         // Alice's "joined" matches Sam's first change, and Bob's "left" his
         // last: a rule that merged on the verb first would fold one of them
-        // into a sentence about Sam.
+        // into a sentence about Sam. Three lines collapse into a summary
+        // (rule 3), so this reads the stretch as the reader sees it opened.
         let out = TimelineGrouping.collapseMembershipRuns([
             Self.change("1", "Alice", "joined the room"),
             Self.change("2", "Strategy Sam", "joined the room"),
             Self.change("3", "Strategy Sam", "left the room"),
             Self.change("4", "Bob", "left the room"),
-        ])
+        ], expanded: [TimelineGrouping.stretchId("1")])
         #expect(
             Self.texts(out) == [
                 "Alice joined the room",
