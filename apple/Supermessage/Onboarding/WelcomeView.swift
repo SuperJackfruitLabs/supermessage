@@ -61,6 +61,9 @@ struct WelcomeView: View {
             Button(action: onSignIn) {
                 Text("Sign in")
                     .font(.headline)
+                    // Set, not inherited: the ancestor's `content` colour was
+                    // winning, and dark on accent read as disabled.
+                    .foregroundStyle(Theme.accentContent)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
             }

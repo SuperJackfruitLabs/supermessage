@@ -93,6 +93,7 @@ struct LoginView: View {
                     ProgressView()
                 } else {
                     Text("Sign in").frame(maxWidth: .infinity)
+                        .foregroundStyle(Theme.accentContent)
                 }
             }
             .buttonStyle(.borderedProminent)

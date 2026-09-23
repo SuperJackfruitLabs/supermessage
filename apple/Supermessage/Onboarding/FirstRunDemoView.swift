@@ -62,6 +62,7 @@ struct FirstRunDemoView: View {
                                 .multilineTextAlignment(.center)
                             Button(action: onFinish) {
                                 Text("Get started").font(.headline).frame(maxWidth: .infinity)
+                                    .foregroundStyle(Theme.accentContent)
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)

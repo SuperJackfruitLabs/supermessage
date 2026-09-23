@@ -65,7 +65,9 @@ struct InvitationView: View {
             HStack(spacing: 12) {
                 Button("Decline") { Task { await respond(accept: false) } }
                     .buttonStyle(.bordered)
-                Button("Accept") { Task { await respond(accept: true) } }
+                Button { Task { await respond(accept: true) } } label: {
+                    Text("Accept").foregroundStyle(Theme.accentContent)
+                }
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.accent)
             }
