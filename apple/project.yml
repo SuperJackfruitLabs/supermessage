@@ -68,7 +68,7 @@ settings:
     #
     # MARKETING_VERSION is the human one and tracks package.json. CURRENT_PROJECT_VERSION
     # is the build number, which must increase on every upload and never resets.
-    MARKETING_VERSION: 0.0.11
+    MARKETING_VERSION: 0.0.12
     CURRENT_PROJECT_VERSION: 2
 
 packages:
