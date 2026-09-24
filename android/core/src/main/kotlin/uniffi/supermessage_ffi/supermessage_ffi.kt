@@ -931,6 +931,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1058,6 +1060,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_parse_matrix_link(`href`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_peer_color_index(`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     fun uniffi_supermessage_ffi_fn_func_people_label(`userIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_people_matching(`people`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1187,6 +1191,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_display_initial(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_parse_matrix_link(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_peer_color_index(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_people_label(
     ): Short
@@ -1324,6 +1330,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_peer_color_index() != 751.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_people_label() != 2363.toShort()) {
@@ -1540,6 +1549,29 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
  * @suppress
  * */
 object NoPointer
+
+/**
+ * @suppress
+ */
+public object FfiConverterUByte: FfiConverter<UByte, Byte> {
+    override fun lift(value: Byte): UByte {
+        return value.toUByte()
+    }
+
+    override fun read(buf: ByteBuffer): UByte {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: UByte): Byte {
+        return value.toByte()
+    }
+
+    override fun allocationSize(value: UByte) = 1UL
+
+    override fun write(value: UByte, buf: ByteBuffer) {
+        buf.put(value.toByte())
+    }
+}
 
 /**
  * @suppress
@@ -5207,6 +5239,21 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_parse_matrix_link(
         FfiConverterString.lower(`href`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Which of the seven person colours `user_id` is drawn in — see
+         * `core::peer_color`. A free function for the same reason as
+         * `rich_blocks_from_markdown`: every host asks the same question and the
+         * answer must not differ between them.
+         */ fun `peerColorIndex`(`userId`: kotlin.String): kotlin.UByte {
+            return FfiConverterUByte.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_peer_color_index(
+        FfiConverterString.lower(`userId`),_status)
 }
     )
     }

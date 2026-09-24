@@ -7,18 +7,22 @@ struct SupermessageApp: App {
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-            // A long local room for reproducing scrolling, no account needed.
-            if ProcessInfo.processInfo.arguments.contains("-fixtureTimeline")
-                || ProcessInfo.processInfo.arguments.contains("-fixtureStreaming")
-            {
-                ScrollFixtureRoot()
-            } else {
+            Group {
+                #if DEBUG
+                // A long local room for reproducing scrolling, no account needed.
+                if ProcessInfo.processInfo.arguments.contains("-fixtureTimeline")
+                    || ProcessInfo.processInfo.arguments.contains("-fixtureStreaming")
+                {
+                    ScrollFixtureRoot()
+                } else {
+                    RootView()
+                }
+                #else
                 RootView()
+                #endif
             }
-            #else
-            RootView()
-            #endif
+            // Scheme, dark style and accent, from Account → Appearance.
+            .appliesAppearance()
         }
     }
 }

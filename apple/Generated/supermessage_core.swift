@@ -5319,7 +5319,11 @@ public enum ReplyQuoteView {
      * sender but no body — and `label` is the short classification of why,
      * in the same vocabulary this module's placeholders use.
      */
-    case available(sender: String, excerpt: String?, label: String?
+    case available(sender: String, excerpt: String?, label: String?, 
+        /**
+         * The parent sender's Matrix id, for the peer colour — `sender` is
+         * a display name and two people can share one.
+         */senderId: String?
     )
 }
 
@@ -5336,7 +5340,7 @@ public struct FfiConverterTypeReplyQuoteView: FfiConverterRustBuffer {
         
         case 1: return .unavailable
         
-        case 2: return .available(sender: try FfiConverterString.read(from: &buf), excerpt: try FfiConverterOptionString.read(from: &buf), label: try FfiConverterOptionString.read(from: &buf)
+        case 2: return .available(sender: try FfiConverterString.read(from: &buf), excerpt: try FfiConverterOptionString.read(from: &buf), label: try FfiConverterOptionString.read(from: &buf), senderId: try FfiConverterOptionString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -5351,11 +5355,12 @@ public struct FfiConverterTypeReplyQuoteView: FfiConverterRustBuffer {
             writeInt(&buf, Int32(1))
         
         
-        case let .available(sender,excerpt,label):
+        case let .available(sender,excerpt,label,senderId):
             writeInt(&buf, Int32(2))
             FfiConverterString.write(sender, into: &buf)
             FfiConverterOptionString.write(excerpt, into: &buf)
             FfiConverterOptionString.write(label, into: &buf)
+            FfiConverterOptionString.write(senderId, into: &buf)
             
         }
     }

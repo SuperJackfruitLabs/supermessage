@@ -139,6 +139,152 @@ danger = { value = "#b4222a", contrast = [{ against = "surface", min = 4.5 }] }
 ok = { value = "#1d7c59", contrast = [{ against = "surface", min = 4.5 }] }
 scrim = { value = "rgb(34 25 46 / 0.45)", drop = { min = 2.5 } }   # measures 3.07x
 
+# ---------------------------------------------------------------- black ----
+# Dark, with the conversation on true black: for OLED phones, where black is
+# pixels switched off — deeper contrast, and less battery. A reader's choice
+# (Account → Appearance), never a default. The depth story runs the other
+# way here: the reading sheet is the black, and the field around it — header,
+# composer, roster — is the step up, because nothing is darker than off.
+
+[appearance.black.color]
+surface = { value = "#000000" }
+surface-sunken = { value = "#100f17", contrast = [
+  { against = "surface", min = 1.05, max = 1.13 },
+] }
+surface-raised = { value = "#1a1824" }
+border = { value = "#2c2a38" }
+border-strong = { value = "#4a4660" }
+content = { value = "#f4f2fb", contrast = [{ against = "surface", min = 12.0 }] }
+content-muted = { value = "#c6c2d8", contrast = [{ against = "surface", min = 7.0 }] }
+content-faint = { value = "#8e86ab", contrast = [
+  { against = "surface", min = 4.5 },
+  { against = "surface-sunken", min = 4.5 },
+  { against = "surface-raised", min = 4.5 },
+] }
+accent = { value = "#9d8ff0", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#1a1433", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#241c42", contrast = [{ against = "content", min = 4.5 }] }
+signal = { value = "#e8a33d", contrast = [{ against = "signal-soft", min = 6.0 }] }
+signal-soft = { value = "#2a2114" }
+danger = { value = "#ed6e74", contrast = [{ against = "surface", min = 4.5 }] }
+ok = { value = "#70cdab", contrast = [{ against = "surface", min = 4.5 }] }
+scrim = { value = "rgb(0 0 0 / 0.72)", drop = { min = 2.5 } }
+
+# --------------------------------------------------------------- accents ----
+# The accents a reader may choose (Account → Appearance). Violet is the
+# default and lives in the appearances above; each entry here replaces only
+# the three accent roles, per appearance, and carries the same contracts
+# plus one more — the accent itself must read against the page (3.0, a
+# control, not body text). Curated, never a colour wheel: a free choice
+# cannot be held above these floors. Amber is not on the list and never
+# will be — it means "you owe someone an answer", and nothing else.
+
+[accent.blue.light]
+accent = { value = "#2356c2", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#e4ecfb", contrast = [{ against = "content", min = 4.5 }] }
+[accent.blue.paper]
+accent = { value = "#2356c2", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#e3eaf7", contrast = [{ against = "content", min = 4.5 }] }
+[accent.blue.dark]
+accent = { value = "#8ab4ff", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#0d1630", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#1c2a4d", contrast = [{ against = "content", min = 4.5 }] }
+[accent.blue.black]
+accent = { value = "#8ab4ff", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#0d1630", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#16213d", contrast = [{ against = "content", min = 4.5 }] }
+
+[accent.teal.light]
+accent = { value = "#0b6e75", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#ddf1f1", contrast = [{ against = "content", min = 4.5 }] }
+[accent.teal.paper]
+accent = { value = "#0b6e75", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#dcece9", contrast = [{ against = "content", min = 4.5 }] }
+[accent.teal.dark]
+accent = { value = "#5fcfcf", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#062628", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#153739", contrast = [{ against = "content", min = 4.5 }] }
+[accent.teal.black]
+accent = { value = "#5fcfcf", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#062628", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#112c2e", contrast = [{ against = "content", min = 4.5 }] }
+
+[accent.green.light]
+accent = { value = "#2a7a35", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#e2f1e3", contrast = [{ against = "content", min = 4.5 }] }
+[accent.green.paper]
+accent = { value = "#2a7a35", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#e1ecdd", contrast = [{ against = "content", min = 4.5 }] }
+[accent.green.dark]
+accent = { value = "#7fd28a", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#0b2410", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#1a3620", contrast = [{ against = "content", min = 4.5 }] }
+[accent.green.black]
+accent = { value = "#7fd28a", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#0b2410", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#142b19", contrast = [{ against = "content", min = 4.5 }] }
+
+[accent.pink.light]
+accent = { value = "#b2266a", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#fae4ee", contrast = [{ against = "content", min = 4.5 }] }
+[accent.pink.paper]
+accent = { value = "#b2266a", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#f5e3e8", contrast = [{ against = "content", min = 4.5 }] }
+[accent.pink.dark]
+accent = { value = "#f48fc0", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#330a1f", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#3d1b2e", contrast = [{ against = "content", min = 4.5 }] }
+[accent.pink.black]
+accent = { value = "#f48fc0", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#330a1f", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#321625", contrast = [{ against = "content", min = 4.5 }] }
+
+[accent.graphite.light]
+accent = { value = "#45424f", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#ebeaef", contrast = [{ against = "content", min = 4.5 }] }
+[accent.graphite.paper]
+accent = { value = "#45424f", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#ebe8e2", contrast = [{ against = "content", min = 4.5 }] }
+[accent.graphite.dark]
+accent = { value = "#cbc8d8", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#1c1a24", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#2e2a3f", contrast = [{ against = "content", min = 4.5 }] }
+[accent.graphite.black]
+accent = { value = "#cbc8d8", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#1c1a24", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#26242f", contrast = [{ against = "content", min = 4.5 }] }
+
+# ----------------------------------------------------------------- peers ----
+# One colour per person, for their name and the bar on a quote of them —
+# which is what tells "Strategy Sam" from "Strategy Sam (Hermes on Guild)"
+# at a glance in a room full of agents. Seven, as Telegram has, chosen from
+# the user id by the core (`peer_color_index`) so every device agrees. No
+# amber and no orange: amber means one thing. Every entry is text, so every
+# entry clears 4.5 on every ground a name is drawn on.
+
+[peer.light]
+colors = ["#b3261e", "#6a3fc8", "#2d7a36", "#0b6f86", "#2356c2", "#b0306e", "#555266"]
+contrast = [{ against = "surface", min = 4.5 }, { against = "surface-raised", min = 4.5 }]
+[peer.paper]
+colors = ["#b3261e", "#6a3fc8", "#2d7a36", "#0b6f86", "#2356c2", "#b0306e", "#555266"]
+contrast = [{ against = "surface", min = 4.5 }, { against = "surface-raised", min = 4.5 }]
+[peer.dark]
+colors = ["#f28b82", "#b9a4ff", "#7fd28a", "#6cd0e6", "#8ab4ff", "#f48fc0", "#b7b4c7"]
+contrast = [{ against = "surface", min = 4.5 }, { against = "surface-raised", min = 4.5 }]
+[peer.black]
+colors = ["#f28b82", "#b9a4ff", "#7fd28a", "#6cd0e6", "#8ab4ff", "#f48fc0", "#b7b4c7"]
+contrast = [{ against = "surface", min = 4.5 }, { against = "surface-raised", min = 4.5 }]
+
 # ---------------------------------------------------------------- brand ----
 # The mark: two overlapping speech bubbles, one logo on every surface — app
 # icons on all three platforms, both favicons, the landing and docs headers.

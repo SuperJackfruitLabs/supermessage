@@ -376,7 +376,7 @@ enum PreviewFixtures {
                 .text(text: "Agreed — the contract belongs on the token.")])]),
             replyQuote: .available(
                 sender: "Rakesh", excerpt: "Should the contrast contract list every ground?",
-                label: nil))
+                label: nil, senderId: "@rakesh:example.org"))
     }
 
     /// A reply whose parent is gone — redacted, or never paginated in.

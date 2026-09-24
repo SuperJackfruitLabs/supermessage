@@ -41,6 +41,15 @@ struct RoomListView: View {
     @State private var settings: [String: KnownSettings] = [:]
     /// Bumped when a swipe lands, for the haptic.
     @State private var swipeLanded = 0
+    /// Open for a moment after the space changes, so the rows the new space
+    /// brings slide into place rather than the list being swapped under the
+    /// reader. Only then: the roster also reorders on every message, and a
+    /// list that moved each time an agent spoke would be one to chase.
+    ///
+    /// A window rather than `withAnimation` around `select`, because the
+    /// rows do not change there — the core's diff arrives after it.
+    @State private var spaceChanging = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The arrangement, chosen in Account → Roster. "Machine" is no longer
     /// offered — a space is a machine's rooms, and the title chooses spaces —
@@ -83,6 +92,11 @@ struct RoomListView: View {
 
     /// The arrangement, narrowed by the chip. Never re-ordered.
     private var sections: [RosterSection] { filter.apply(arranged) }
+
+    /// What the space animation watches: which rooms, in which sections.
+    private var rowIds: [String] {
+        sections.flatMap { section in [section.id] + section.rows.map(\.row.room.id) }
+    }
 
     private var counts: [RosterFilter: Int] {
         let rows = arranged.flatMap(\.rows)
@@ -144,6 +158,13 @@ struct RoomListView: View {
             }
         }
         .listStyle(.plain)
+        .animation(spaceChanging && !reduceMotion ? .snappy(duration: 0.3) : nil, value: rowIds)
+        .onChange(of: session.spaces.selectedId) { spaceChanging = true }
+        .task(id: spaceChanging) {
+            guard spaceChanging else { return }
+            try? await Task.sleep(for: .milliseconds(800))
+            spaceChanging = false
+        }
         .paletteListGround()
         .sensoryFeedback(.success, trigger: swipeLanded)
         // Still set: it is the back button's title in a room.

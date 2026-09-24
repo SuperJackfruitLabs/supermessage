@@ -19,6 +19,9 @@ struct AccountPanel: View {
     /// rarely changed, which is what an account screen is for.
     @AppStorage("roster.view") private var storedView = RosterChoice.waiting.rawValue
     @AppStorage("roster.showsState") private var showsState = true
+    @AppStorage(AppearanceSettings.modeKey) private var mode = AppearanceMode.system.rawValue
+    @AppStorage(AppearanceSettings.darkStyleKey) private var darkStyle = DarkStyle.tinted.rawValue
+    @AppStorage(AppearanceSettings.accentKey) private var accent = ""
 
     var body: some View {
         NavigationStack {
@@ -49,6 +52,22 @@ struct AccountPanel: View {
                         }
                     } header: {
                         Text("Signed in as")
+                    }
+
+                    Section {
+                        Picker("Appearance", selection: $mode) {
+                            ForEach(AppearanceMode.allCases) { Text($0.label).tag($0.rawValue) }
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityLabel("Appearance")
+                        Picker("Dark style", selection: $darkStyle) {
+                            ForEach(DarkStyle.allCases) { Text($0.label).tag($0.rawValue) }
+                        }
+                        AccentSwatches(selection: $accent)
+                    } header: {
+                        Text("Appearance")
+                    } footer: {
+                        Text("Black is true black in dark mode, for OLED screens. The accent colours buttons, links and your own highlights.")
                     }
 
                     Section {
@@ -118,10 +137,67 @@ struct AccountPanel: View {
     private var initial: String { AccountLabel.initial(of: account?.userId) }
 }
 
+/// The accents, as a row of swatches — the house violet first.
+///
+/// Each swatch is drawn in its own colour for the current appearance, so
+/// what is offered is what will be seen; the selection ring is `content`,
+/// not the accent, because the accent is what is being chosen.
+private struct AccentSwatches: View {
+    @Binding var selection: String
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.themeChoice) private var choice
+
+    private var options: [String] { [""] + ThemeAccents.names }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options, id: \.self) { name in
+                Button {
+                    selection = name
+                } label: {
+                    Circle()
+                        .fill(color(for: name))
+                        .frame(width: 30, height: 30)
+                        .padding(4)
+                        .overlay {
+                            if selection == name {
+                                Circle().strokeBorder(Theme.content, lineWidth: 2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(name.isEmpty ? "Violet" : name.capitalized)
+                .accessibilityAddTraits(selection == name ? .isSelected : [])
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Accent")
+    }
+
+    private func color(for name: String) -> Color {
+        let dark = scheme == .dark
+        let probe = ThemeChoice(darkStyle: choice.darkStyle, accent: name.isEmpty ? nil : name)
+        if let roles = probe.accentRoles(dark: dark) { return roles.accent }
+        let base = dark ? (choice.darkStyle == .black ? ThemeTokens.black : ThemeTokens.dark) : ThemeTokens.paper
+        return base.accent
+    }
+}
+
 #if DEBUG
 // The account, which is two facts and a way out.
 #Preview("Account") {
     AccountPanel(session: PreviewFixtures.session(), onClose: {})
         .previewChrome()
+}
+
+// Dark, Black, teal: the environment alone has to carry the choice to every
+// colour, since a preview has no window for `appliesAppearance` to set.
+#Preview("Account, black and teal") {
+    AccountPanel(session: PreviewFixtures.session(), onClose: {})
+        .previewChrome()
+        .environment(\.themeChoice, ThemeChoice(darkStyle: .black, accent: "teal"))
+        .preferredColorScheme(.dark)
 }
 #endif

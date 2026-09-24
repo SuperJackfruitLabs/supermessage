@@ -66,10 +66,25 @@ struct ChatsToolbar: ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             // Labelled: an icon-only control is announced as "button" and
             // nothing else.
-            Button(action: onCompose) { Image(systemName: "square.and.pencil") }
-                .accessibilityLabel("New conversation")
+            Button(action: onCompose) {
+                Image(systemName: "square.and.pencil")
+                    .font(.body.weight(.medium))
+                    // The glyph's pencil overhangs its square up and to the
+                    // right, so centred by its bounds it reads low-left in a
+                    // round button. Half a point each way puts the square
+                    // at the centre, which is what the eye measures.
+                    .offset(x: -0.5, y: -0.5)
+                    .frame(width: ToolbarGlyph.side, height: ToolbarGlyph.side)
+            }
+            .accessibilityLabel("New conversation")
         }
     }
+}
+
+/// One square for both toolbar items, so the glass around each is the same
+/// circle rather than a capsule sized to whatever the glyph measured.
+private enum ToolbarGlyph {
+    static let side: CGFloat = 30
 }
 
 /// Your initial, in a circle: which account this is, and the way to it.
@@ -84,12 +99,19 @@ private struct AccountButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                Circle().fill(Theme.accent.opacity(0.18))
+                // On iOS 26 the bar puts every item in its own glass circle,
+                // and a second, smaller circle inside it read as a ring off
+                // centre (2026-09-24). There the glass is the disc; before
+                // it, there is no glass and the disc is ours.
+                if #available(iOS 26, *) {
+                } else {
+                    Circle().fill(Theme.accent.opacity(0.18))
+                }
                 Text(AccountLabel.initial(of: userId))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.accent)
             }
-            .frame(width: 30, height: 30)
+            .frame(width: ToolbarGlyph.side, height: ToolbarGlyph.side)
         }
         .accessibilityLabel("Account")
         .task { userId = await session.account()?.userId }

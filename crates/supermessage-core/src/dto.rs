@@ -1756,6 +1756,7 @@ mod wire_format_golden {
                 sender: "Bob".into(),
                 excerpt: Some("the original".into()),
                 label: None,
+                sender_id: Some("@b:x.org".into()),
             })
         );
     }

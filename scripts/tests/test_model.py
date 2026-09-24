@@ -26,8 +26,22 @@ class RealSourceTests(unittest.TestCase):
     def test_the_committed_source_validates(self):
         self.assertIsInstance(load(SOURCE), Tokens)
 
-    def test_all_three_appearances_are_present(self):
-        self.assertEqual(sorted(load(SOURCE).appearances), ["dark", "light", "paper"])
+    def test_all_four_appearances_are_present(self):
+        # `black` is the reader's OLED choice for dark (Account → Appearance).
+        self.assertEqual(
+            sorted(load(SOURCE).appearances), ["black", "dark", "light", "paper"]
+        )
+
+    def test_every_accent_covers_every_appearance(self):
+        tokens = load(SOURCE)
+        for name, per_appearance in tokens.accents.items():
+            self.assertEqual(set(per_appearance), set(tokens.appearances), name)
+
+    def test_seven_person_colours_in_every_appearance(self):
+        tokens = load(SOURCE)
+        self.assertEqual(set(tokens.peers), set(tokens.appearances))
+        for appearance, colours in tokens.peers.items():
+            self.assertEqual(len(colours), 7, appearance)
 
     def test_every_appearance_defines_every_role(self):
         for name, appearance in load(SOURCE).appearances.items():
@@ -44,6 +58,35 @@ class RealSourceTests(unittest.TestCase):
 
 class ValidationTests(unittest.TestCase):
     """Each of these breaks the source on purpose and demands a failure."""
+
+    def test_an_accent_missing_an_appearance_is_an_error(self):
+        broken = copy.deepcopy(raw())
+        del broken["accent"]["teal"]["black"]
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("teal", str(caught.exception))
+        self.assertIn("black", str(caught.exception))
+
+    def test_an_accent_that_vanishes_into_the_page_is_an_error(self):
+        broken = copy.deepcopy(raw())
+        broken["accent"]["blue"]["paper"]["accent"]["value"] = "#f0f0f0"
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("blue.paper.accent", str(caught.exception))
+
+    def test_a_person_colour_that_fails_as_text_is_an_error(self):
+        broken = copy.deepcopy(raw())
+        broken["peer"]["dark"]["colors"][2] = "#2a2a40"
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("peer.dark[2]", str(caught.exception))
+
+    def test_the_person_colour_count_must_match_the_core(self):
+        broken = copy.deepcopy(raw())
+        broken["peer"]["light"]["colors"].pop()
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("modulo 7", str(caught.exception))
 
     def test_a_missing_role_is_an_error(self):
         broken = copy.deepcopy(raw())

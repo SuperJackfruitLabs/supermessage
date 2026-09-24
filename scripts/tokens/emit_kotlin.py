@@ -8,7 +8,7 @@ reader's font-size setting, and it would look like it had worked.
 import textwrap
 
 from .contrast import parse_rgba
-from .model import ROLES, TYPE_ROLES, Appearance, Tokens
+from .model import ACCENT_ROLES, ROLES, TYPE_ROLES, Appearance, Tokens
 
 #: A family becomes a generic FontFamily, resolved by the platform.
 #: Nothing is bundled, for the same reason as on iOS.
@@ -112,6 +112,46 @@ def _metrics_block(tokens: Tokens) -> str:
     return "".join(lines)
 
 
+def _accents_block(tokens: Tokens) -> str:
+    if not tokens.accents:
+        return ""
+    names = sorted(tokens.accents)
+    fields = "".join(f"    val {_camel(r)}: Color,\n" for r in ACCENT_ROLES)
+    lines = [
+        "\n/** The three accent roles, as one accent replaces them. */\n",
+        "@Immutable\n",
+        "data class AccentRoles(\n",
+        fields,
+        ")\n",
+        "\n/**\n * The accents a reader may choose, per appearance. Violet, the default,\n",
+        " * is the appearances' own and is not listed.\n */\n",
+        "object GeneratedAccents {\n",
+        f"    val names = listOf({', '.join(chr(34) + n + chr(34) for n in names)})\n",
+    ]
+    for name in names:
+        lines.append(f"    val {name} = mapOf(\n")
+        for appearance in tokens.appearances:
+            roles = tokens.accents[name][appearance]
+            args = ", ".join(f"{_camel(r)} = {_argb(roles[r])}" for r in ACCENT_ROLES)
+            lines.append(f"        \"{appearance}\" to AccentRoles({args}),\n")
+        lines.append("    )\n")
+    lines.append("}\n")
+    return "".join(lines)
+
+
+def _peers_block(tokens: Tokens) -> str:
+    if not tokens.peers:
+        return ""
+    lines = [
+        "\n/** One colour per person, indexed by the core's `peerColorIndex`. */\n",
+        "object GeneratedPeers {\n",
+    ]
+    for appearance, values in tokens.peers.items():
+        lines.append(f"    val {appearance} = listOf({', '.join(_argb(v) for v in values)})\n")
+    lines.append("}\n")
+    return "".join(lines)
+
+
 def emit_kotlin(tokens: Tokens) -> str:
     light = tokens.appearances["light"]
     members = "".join(
@@ -127,18 +167,16 @@ def emit_kotlin(tokens: Tokens) -> str:
         + members
         + ")\n"
         + "\n/**\n"
-        + " * The three appearances.\n"
+        + " * The appearances.\n"
         + " *\n"
         + ' * Android binds `paper` to light and `dark` to dark: paper is what\n'
-        + ' * "light" means on a phone. There is no picker — see Theme.kt.\n'
+        + ' * "light" means on a phone. See Theme.kt.\n'
         + " */\n"
         + "object GeneratedThemeTokens {\n"
-        + _palette(tokens.appearances["light"])
-        + "\n"
-        + _palette(tokens.appearances["dark"])
-        + "\n"
-        + _palette(tokens.appearances["paper"])
+        + "\n".join(_palette(a) for a in tokens.appearances.values())
         + "}\n"
+        + _accents_block(tokens)
+        + _peers_block(tokens)
         + _type_block(tokens)
         + _metrics_block(tokens)
     )

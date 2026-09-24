@@ -315,7 +315,7 @@ private struct MessageBlock: View {
             // the glyph and a name without it.
             SenderFace(
                 mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces, size: 22)
-            Text(named).nameFace().lineLimit(1)
+            Text(named).nameFace().peerTint(row.item.sender).lineLimit(1)
             if TimelineGrouping.isAgent(row) {
                 AgentLabel()
             }
@@ -399,6 +399,13 @@ private struct ReplyQuote: View {
     let quote: ReplyQuoteView
     var onTap: (() -> Void)?
 
+    /// The quoted sender's own colour, so the rule says whose words these
+    /// are before the name is read — the accent where nobody is known.
+    private var ruleColor: Color {
+        if case let .available(_, _, _, senderId?) = quote { return Theme.peer(senderId) }
+        return Theme.accent.opacity(0.6)
+    }
+
     var body: some View {
         // The rule is an overlay, not a sibling in the HStack. `Rectangle` is a
         // `Shape` and so is infinitely flexible on BOTH axes; pinning only its
@@ -418,9 +425,9 @@ private struct ReplyQuote: View {
                 Text("Original message unavailable")
                     .metaFace()
                     .foregroundStyle(Theme.contentFaint)
-            case let .available(sender, excerpt, label):
+            case let .available(sender, excerpt, label, senderId):
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(sender).metaFace().foregroundStyle(Theme.contentMuted)
+                    Text(sender).metaFace().peerTint(senderId, else: Theme.contentMuted)
                     if let excerpt {
                         Text(excerpt).font(.footnote).lineLimit(2)
                             .foregroundStyle(Theme.contentMuted)
@@ -436,7 +443,7 @@ private struct ReplyQuote: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 10)
         .overlay(alignment: .leading) {
-            Rectangle().fill(Theme.accent.opacity(0.6)).frame(width: 2)
+            Rectangle().fill(ruleColor).frame(width: 2)
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
@@ -556,7 +563,7 @@ private struct UndecryptableRow: View {
                     SenderFace(
                         mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces,
                         size: 22)
-                    Text(named).nameFace()
+                    Text(named).nameFace().peerTint(row.item.sender)
                     if let timestamp = row.item.timestampMs {
                         Text(TimelineTime.short(timestamp)).metaFace()
                             .foregroundStyle(Theme.contentFaint)
@@ -635,7 +642,7 @@ private struct ImageRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(named).nameFace()
+            Text(named).nameFace().peerTint(row.item.sender)
             Group {
                 if let image {
                     Image(uiImage: image)
@@ -986,3 +993,18 @@ private struct MediaFileRow: View {
         .previewChrome()
 }
 #endif
+
+extension View {
+    /// A sender's name in their peer colour — the same one of seven on every
+    /// platform, from the core. Untinted when the sender is not known.
+    @ViewBuilder
+    fileprivate func peerTint(_ userId: String?, else fallback: Color? = nil) -> some View {
+        if let userId {
+            foregroundStyle(Theme.peer(userId))
+        } else if let fallback {
+            foregroundStyle(fallback)
+        } else {
+            self
+        }
+    }
+}

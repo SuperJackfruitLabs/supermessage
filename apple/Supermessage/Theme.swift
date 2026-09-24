@@ -1,3 +1,4 @@
+import SupermessageFFI
 import SwiftUI
 
 /// The palette and type ramp.
@@ -29,17 +30,47 @@ enum Theme {
     /// Resolves a role against the current appearance.
     ///
     /// **iOS binds `paper` to light and `dark` to dark**: paper is what
-    /// "light" means on a phone. That binding is why this needs to know
-    /// nothing beyond `userInterfaceStyle` — there is no third state to
-    /// detect and no picker to read.
+    /// "light" means on a phone. Dark then has a second axis, the account's
+    /// dark style, which picks `black` instead; and the three accent roles
+    /// can be replaced by a curated accent. Both arrive as the
+    /// `ThemeChoiceTrait` — see `Appearance.swift` for why a trait.
     private static func dynamic(_ role: KeyPath<Palette, Color>) -> Color {
         Color(
             UIColor { traits in
-                let palette =
-                    traits.userInterfaceStyle == .dark
-                    ? ThemeTokens.dark
-                    : ThemeTokens.paper
-                return UIColor(palette[keyPath: role])
+                UIColor(palette(for: traits)[keyPath: role])
+            })
+    }
+
+    /// The accent roles, which a chosen accent replaces.
+    private static func accentRole(_ role: KeyPath<AccentPalette, Color>, else fallback: KeyPath<Palette, Color>) -> Color {
+        Color(
+            UIColor { traits in
+                let dark = traits.userInterfaceStyle == .dark
+                if let roles = traits.themeChoice.accentRoles(dark: dark) {
+                    return UIColor(roles[keyPath: role])
+                }
+                return UIColor(palette(for: traits)[keyPath: fallback])
+            })
+    }
+
+    private static func palette(for traits: UITraitCollection) -> Palette {
+        guard traits.userInterfaceStyle == .dark else { return ThemeTokens.paper }
+        return traits.themeChoice.darkStyle == .black ? ThemeTokens.black : ThemeTokens.dark
+    }
+
+    /// A sender's colour: one of seven, by `peer_color_index` in the core so
+    /// every platform gives a person the same one.
+    static func peer(_ userId: String) -> Color {
+        let index = Int(peerColorIndex(userId: userId))
+        return Color(
+            UIColor { traits in
+                let set: [Color]
+                if traits.userInterfaceStyle == .dark {
+                    set = traits.themeChoice.darkStyle == .black ? ThemePeers.black : ThemePeers.dark
+                } else {
+                    set = ThemePeers.paper
+                }
+                return UIColor(set[index % set.count])
             })
     }
 
@@ -69,10 +100,10 @@ enum Theme {
     static let contentFaint = dynamic(\.contentFaint)
 
     /// The chrome hue. Selection, focus, the send button, own bubbles.
-    static let accent = dynamic(\.accent)
+    static let accent = accentRole(\.accent, else: \.accent)
     /// What is legible *on* `accent`.
-    static let accentContent = dynamic(\.accentContent)
-    static let accentSoft = dynamic(\.accentSoft)
+    static let accentContent = accentRole(\.accentContent, else: \.accentContent)
+    static let accentSoft = accentRole(\.accentSoft, else: \.accentSoft)
 
     /// **Amber, and it means exactly one thing: the operator owes someone an
     /// answer.**

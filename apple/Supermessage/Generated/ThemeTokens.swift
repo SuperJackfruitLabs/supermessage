@@ -40,10 +40,10 @@ struct Palette {
     let scrim: Color
 }
 
-/// The three appearances.
+/// The appearances.
 ///
-/// iOS binds `paper` to light and `dark` to dark: paper is what
-/// "light" means on a phone. There is no picker — see Theme.swift.
+/// iOS binds `paper` to light and `dark` (or `black`, the reader's
+/// choice) to dark — see Theme.swift.
 enum ThemeTokens {
     static let light = Palette(
         surface: Color(.sRGB, red: 0.9922, green: 0.9882, blue: 1.0000, opacity: 1),
@@ -101,6 +101,84 @@ enum ThemeTokens {
         ok: Color(.sRGB, red: 0.1137, green: 0.4863, blue: 0.3490, opacity: 1),
         scrim: Color(.sRGB, red: 0.1333, green: 0.0980, blue: 0.1804, opacity: 0.45)
     )
+
+    static let black = Palette(
+        surface: Color(.sRGB, red: 0.0000, green: 0.0000, blue: 0.0000, opacity: 1),
+        surfaceSunken: Color(.sRGB, red: 0.0627, green: 0.0588, blue: 0.0902, opacity: 1),
+        surfaceRaised: Color(.sRGB, red: 0.1020, green: 0.0941, blue: 0.1412, opacity: 1),
+        border: Color(.sRGB, red: 0.1725, green: 0.1647, blue: 0.2196, opacity: 1),
+        borderStrong: Color(.sRGB, red: 0.2902, green: 0.2745, blue: 0.3765, opacity: 1),
+        content: Color(.sRGB, red: 0.9569, green: 0.9490, blue: 0.9843, opacity: 1),
+        contentMuted: Color(.sRGB, red: 0.7765, green: 0.7608, blue: 0.8471, opacity: 1),
+        contentFaint: Color(.sRGB, red: 0.5569, green: 0.5255, blue: 0.6706, opacity: 1),
+        accent: Color(.sRGB, red: 0.6157, green: 0.5608, blue: 0.9412, opacity: 1),
+        accentContent: Color(.sRGB, red: 0.1020, green: 0.0784, blue: 0.2000, opacity: 1),
+        accentSoft: Color(.sRGB, red: 0.1412, green: 0.1098, blue: 0.2588, opacity: 1),
+        signal: Color(.sRGB, red: 0.9098, green: 0.6392, blue: 0.2392, opacity: 1),
+        signalSoft: Color(.sRGB, red: 0.1647, green: 0.1294, blue: 0.0784, opacity: 1),
+        danger: Color(.sRGB, red: 0.9294, green: 0.4314, blue: 0.4549, opacity: 1),
+        ok: Color(.sRGB, red: 0.4392, green: 0.8039, blue: 0.6706, opacity: 1),
+        scrim: Color(.sRGB, red: 0.0000, green: 0.0000, blue: 0.0000, opacity: 0.72)
+    )
+}
+
+/// The three accent roles, as one accent replaces them.
+struct AccentPalette {
+    let accent: Color
+    let accentContent: Color
+    let accentSoft: Color
+}
+
+/// One accent, in every appearance.
+struct AccentSet {
+    let light: AccentPalette
+    let dark: AccentPalette
+    let paper: AccentPalette
+    let black: AccentPalette
+}
+
+/// The accents a reader may choose. Violet, the default, is the
+/// appearances' own and is not listed.
+enum ThemeAccents {
+    static let names = ["blue", "graphite", "green", "pink", "teal"]
+    static let blue = AccentSet(
+        light: AccentPalette(accent: Color(.sRGB, red: 0.1373, green: 0.3373, blue: 0.7608, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.8941, green: 0.9255, blue: 0.9843, opacity: 1)),
+        dark: AccentPalette(accent: Color(.sRGB, red: 0.5412, green: 0.7059, blue: 1.0000, opacity: 1), accentContent: Color(.sRGB, red: 0.0510, green: 0.0863, blue: 0.1882, opacity: 1), accentSoft: Color(.sRGB, red: 0.1098, green: 0.1647, blue: 0.3020, opacity: 1)),
+        paper: AccentPalette(accent: Color(.sRGB, red: 0.1373, green: 0.3373, blue: 0.7608, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.8902, green: 0.9176, blue: 0.9686, opacity: 1)),
+        black: AccentPalette(accent: Color(.sRGB, red: 0.5412, green: 0.7059, blue: 1.0000, opacity: 1), accentContent: Color(.sRGB, red: 0.0510, green: 0.0863, blue: 0.1882, opacity: 1), accentSoft: Color(.sRGB, red: 0.0863, green: 0.1294, blue: 0.2392, opacity: 1))
+    )
+    static let graphite = AccentSet(
+        light: AccentPalette(accent: Color(.sRGB, red: 0.2706, green: 0.2588, blue: 0.3098, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.9216, green: 0.9176, blue: 0.9373, opacity: 1)),
+        dark: AccentPalette(accent: Color(.sRGB, red: 0.7961, green: 0.7843, blue: 0.8471, opacity: 1), accentContent: Color(.sRGB, red: 0.1098, green: 0.1020, blue: 0.1412, opacity: 1), accentSoft: Color(.sRGB, red: 0.1804, green: 0.1647, blue: 0.2471, opacity: 1)),
+        paper: AccentPalette(accent: Color(.sRGB, red: 0.2706, green: 0.2588, blue: 0.3098, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.9216, green: 0.9098, blue: 0.8863, opacity: 1)),
+        black: AccentPalette(accent: Color(.sRGB, red: 0.7961, green: 0.7843, blue: 0.8471, opacity: 1), accentContent: Color(.sRGB, red: 0.1098, green: 0.1020, blue: 0.1412, opacity: 1), accentSoft: Color(.sRGB, red: 0.1490, green: 0.1412, blue: 0.1843, opacity: 1))
+    )
+    static let green = AccentSet(
+        light: AccentPalette(accent: Color(.sRGB, red: 0.1647, green: 0.4784, blue: 0.2078, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.8863, green: 0.9451, blue: 0.8902, opacity: 1)),
+        dark: AccentPalette(accent: Color(.sRGB, red: 0.4980, green: 0.8235, blue: 0.5412, opacity: 1), accentContent: Color(.sRGB, red: 0.0431, green: 0.1412, blue: 0.0627, opacity: 1), accentSoft: Color(.sRGB, red: 0.1020, green: 0.2118, blue: 0.1255, opacity: 1)),
+        paper: AccentPalette(accent: Color(.sRGB, red: 0.1647, green: 0.4784, blue: 0.2078, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.8824, green: 0.9255, blue: 0.8667, opacity: 1)),
+        black: AccentPalette(accent: Color(.sRGB, red: 0.4980, green: 0.8235, blue: 0.5412, opacity: 1), accentContent: Color(.sRGB, red: 0.0431, green: 0.1412, blue: 0.0627, opacity: 1), accentSoft: Color(.sRGB, red: 0.0784, green: 0.1686, blue: 0.0980, opacity: 1))
+    )
+    static let pink = AccentSet(
+        light: AccentPalette(accent: Color(.sRGB, red: 0.6980, green: 0.1490, blue: 0.4157, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.9804, green: 0.8941, blue: 0.9333, opacity: 1)),
+        dark: AccentPalette(accent: Color(.sRGB, red: 0.9569, green: 0.5608, blue: 0.7529, opacity: 1), accentContent: Color(.sRGB, red: 0.2000, green: 0.0392, blue: 0.1216, opacity: 1), accentSoft: Color(.sRGB, red: 0.2392, green: 0.1059, blue: 0.1804, opacity: 1)),
+        paper: AccentPalette(accent: Color(.sRGB, red: 0.6980, green: 0.1490, blue: 0.4157, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.9608, green: 0.8902, blue: 0.9098, opacity: 1)),
+        black: AccentPalette(accent: Color(.sRGB, red: 0.9569, green: 0.5608, blue: 0.7529, opacity: 1), accentContent: Color(.sRGB, red: 0.2000, green: 0.0392, blue: 0.1216, opacity: 1), accentSoft: Color(.sRGB, red: 0.1961, green: 0.0863, blue: 0.1451, opacity: 1))
+    )
+    static let teal = AccentSet(
+        light: AccentPalette(accent: Color(.sRGB, red: 0.0431, green: 0.4314, blue: 0.4588, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.8667, green: 0.9451, blue: 0.9451, opacity: 1)),
+        dark: AccentPalette(accent: Color(.sRGB, red: 0.3725, green: 0.8118, blue: 0.8118, opacity: 1), accentContent: Color(.sRGB, red: 0.0235, green: 0.1490, blue: 0.1569, opacity: 1), accentSoft: Color(.sRGB, red: 0.0824, green: 0.2157, blue: 0.2235, opacity: 1)),
+        paper: AccentPalette(accent: Color(.sRGB, red: 0.0431, green: 0.4314, blue: 0.4588, opacity: 1), accentContent: Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1), accentSoft: Color(.sRGB, red: 0.8627, green: 0.9255, blue: 0.9137, opacity: 1)),
+        black: AccentPalette(accent: Color(.sRGB, red: 0.3725, green: 0.8118, blue: 0.8118, opacity: 1), accentContent: Color(.sRGB, red: 0.0235, green: 0.1490, blue: 0.1569, opacity: 1), accentSoft: Color(.sRGB, red: 0.0667, green: 0.1725, blue: 0.1804, opacity: 1))
+    )
+}
+
+/// One colour per person, indexed by the core's `peerColorIndex`.
+enum ThemePeers {
+    static let light: [Color] = [Color(.sRGB, red: 0.7020, green: 0.1490, blue: 0.1176, opacity: 1), Color(.sRGB, red: 0.4157, green: 0.2471, blue: 0.7843, opacity: 1), Color(.sRGB, red: 0.1765, green: 0.4784, blue: 0.2118, opacity: 1), Color(.sRGB, red: 0.0431, green: 0.4353, blue: 0.5255, opacity: 1), Color(.sRGB, red: 0.1373, green: 0.3373, blue: 0.7608, opacity: 1), Color(.sRGB, red: 0.6902, green: 0.1882, blue: 0.4314, opacity: 1), Color(.sRGB, red: 0.3333, green: 0.3216, blue: 0.4000, opacity: 1)]
+    static let paper: [Color] = [Color(.sRGB, red: 0.7020, green: 0.1490, blue: 0.1176, opacity: 1), Color(.sRGB, red: 0.4157, green: 0.2471, blue: 0.7843, opacity: 1), Color(.sRGB, red: 0.1765, green: 0.4784, blue: 0.2118, opacity: 1), Color(.sRGB, red: 0.0431, green: 0.4353, blue: 0.5255, opacity: 1), Color(.sRGB, red: 0.1373, green: 0.3373, blue: 0.7608, opacity: 1), Color(.sRGB, red: 0.6902, green: 0.1882, blue: 0.4314, opacity: 1), Color(.sRGB, red: 0.3333, green: 0.3216, blue: 0.4000, opacity: 1)]
+    static let dark: [Color] = [Color(.sRGB, red: 0.9490, green: 0.5451, blue: 0.5098, opacity: 1), Color(.sRGB, red: 0.7255, green: 0.6431, blue: 1.0000, opacity: 1), Color(.sRGB, red: 0.4980, green: 0.8235, blue: 0.5412, opacity: 1), Color(.sRGB, red: 0.4235, green: 0.8157, blue: 0.9020, opacity: 1), Color(.sRGB, red: 0.5412, green: 0.7059, blue: 1.0000, opacity: 1), Color(.sRGB, red: 0.9569, green: 0.5608, blue: 0.7529, opacity: 1), Color(.sRGB, red: 0.7176, green: 0.7059, blue: 0.7804, opacity: 1)]
+    static let black: [Color] = [Color(.sRGB, red: 0.9490, green: 0.5451, blue: 0.5098, opacity: 1), Color(.sRGB, red: 0.7255, green: 0.6431, blue: 1.0000, opacity: 1), Color(.sRGB, red: 0.4980, green: 0.8235, blue: 0.5412, opacity: 1), Color(.sRGB, red: 0.4235, green: 0.8157, blue: 0.9020, opacity: 1), Color(.sRGB, red: 0.5412, green: 0.7059, blue: 1.0000, opacity: 1), Color(.sRGB, red: 0.9569, green: 0.5608, blue: 0.7529, opacity: 1), Color(.sRGB, red: 0.7176, green: 0.7059, blue: 0.7804, opacity: 1)]
 }
 
 /// The type ranks.

@@ -112,6 +112,43 @@ def _scale_block(tokens: Tokens, indent: str) -> str:
     return "".join(out)
 
 
+def _peer_block(tokens: Tokens, appearance: str, indent: str) -> str:
+    """`--color-peer-0` … `-6`: one colour per person, indexed by the core."""
+    return "".join(
+        f"{indent}--color-peer-{i}: {value};\n"
+        for i, value in enumerate(tokens.peers.get(appearance, []))
+    )
+
+
+def _accent_vars(tokens: Tokens, accent: str, appearance: str, indent: str) -> str:
+    roles = tokens.accents[accent][appearance]
+    return "".join(f"{indent}--color-{role}: {roles[role]};\n" for role in roles)
+
+
+def _accent_blocks(tokens: Tokens) -> str:
+    """A chosen accent, on top of whichever appearance is in force.
+
+    Emitted after the appearance blocks and with one more attribute in each
+    selector, so it wins on specificity rather than on order: the bare
+    `[data-accent]` for light, the OS's dark under the media query, and
+    each explicit appearance.
+    """
+    out = []
+    for name in sorted(tokens.accents):
+        out.append(f'  :root[data-accent="{name}"] {{\n')
+        out.append(_accent_vars(tokens, name, "light", "    "))
+        out.append("  }\n")
+        out.append("  @media (prefers-color-scheme: dark) {\n")
+        out.append(f'    :root[data-accent="{name}"]:not([data-appearance]) {{\n')
+        out.append(_accent_vars(tokens, name, "dark", "      "))
+        out.append("    }\n  }\n")
+        for appearance in tokens.appearances:
+            out.append(f'  [data-appearance="{appearance}"][data-accent="{name}"] {{\n')
+            out.append(_accent_vars(tokens, name, appearance, "    "))
+            out.append("  }\n")
+    return "".join(out)
+
+
 def emit_app_css(tokens: Tokens) -> str:
     """The desktop app.
 
@@ -124,6 +161,7 @@ def emit_app_css(tokens: Tokens) -> str:
         HEADER
         + "\n@theme {\n"
         + _block(tokens.appearances["light"], "  ")
+        + _peer_block(tokens, "light", "  ")
         + _type_block(tokens, "  ")
         + _scale_block(tokens, "  ")
         + "}\n"
@@ -145,6 +183,7 @@ def emit_app_css(tokens: Tokens) -> str:
         + "  @media (prefers-color-scheme: dark) {\n"
         + "    :root:not([data-appearance]) {\n"
         + _block(tokens.appearances["dark"], "      ")
+        + _peer_block(tokens, "dark", "      ")
         + "    }\n"
         + "  }\n"
         + "\n"
@@ -160,9 +199,11 @@ def emit_app_css(tokens: Tokens) -> str:
         + "".join(
             f'  [data-appearance="{name}"] {{\n'
             + _block(tokens.appearances[name], "    ")
+            + _peer_block(tokens, name, "    ")
             + "  }\n"
-            for name in ("light", "dark", "paper")
+            for name in tokens.appearances
         )
+        + _accent_blocks(tokens)
         + "}\n"
     )
 

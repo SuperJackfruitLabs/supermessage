@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -283,7 +284,11 @@ private fun MessageBlock(
                 // core now hands over the glyph and a name without it, the
                 // way RoomIdentity has always done for the roster.
                 SenderFace(userId = row.item.sender, initial = row.senderInitial, avatarUri = avatarUri)
-                Text(named, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    named,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = row.item.sender?.let { SupermessageTheme.peer(it) } ?: Color.Unspecified,
+                )
                 row.item.timestampMs?.let {
                     Text(clockLabel(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 }
@@ -393,6 +398,13 @@ private fun EditedMarker() {
 }
 
 @Composable
+private fun quoteRuleColor(quote: ReplyQuoteView): Color {
+    val senderId = (quote as? ReplyQuoteView.Available)?.senderId
+        ?: return MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+    return SupermessageTheme.peer(senderId)
+}
+
+@Composable
 private fun ReplyQuoteBlock(quote: ReplyQuoteView, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier.padding(vertical = 2.dp).height(IntrinsicSize.Min),
@@ -402,7 +414,7 @@ private fun ReplyQuoteBlock(quote: ReplyQuoteView, modifier: Modifier = Modifier
             modifier = Modifier
                 .fillMaxHeight()
                 .width(2.dp)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
+                .background(quoteRuleColor(quote)),
         )
         when (quote) {
             // The core folds Unavailable/Pending/Error together, so this is
@@ -416,7 +428,11 @@ private fun ReplyQuoteBlock(quote: ReplyQuoteView, modifier: Modifier = Modifier
 
             is ReplyQuoteView.Available ->
                 Column {
-                    Text(quote.sender, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        quote.sender,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = quote.senderId?.let { SupermessageTheme.peer(it) } ?: Color.Unspecified,
+                    )
                     val excerpt = quote.excerpt
                     val label = quote.label
                     if (excerpt != null) {

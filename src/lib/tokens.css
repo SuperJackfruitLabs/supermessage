@@ -43,6 +43,13 @@
    * it against `content` alone would report 1.00x for a wash that works.
    */
   --color-scrim: rgb(34 28 56 / 0.45);
+  --color-peer-0: #b3261e;
+  --color-peer-1: #6a3fc8;
+  --color-peer-2: #2d7a36;
+  --color-peer-3: #0b6f86;
+  --color-peer-4: #2356c2;
+  --color-peer-5: #b0306e;
+  --color-peer-6: #555266;
 
   /* System stack. On iOS, -apple-system also carries Dynamic Type. */
   --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Roboto, Cantarell, "Noto Sans", Ubuntu, sans-serif;
@@ -146,6 +153,13 @@
        * why measuring it against the ground alone reports 1.00x.
        */
       --color-scrim: rgb(21 17 41 / 0.70);
+      --color-peer-0: #f28b82;
+      --color-peer-1: #b9a4ff;
+      --color-peer-2: #7fd28a;
+      --color-peer-3: #6cd0e6;
+      --color-peer-4: #8ab4ff;
+      --color-peer-5: #f48fc0;
+      --color-peer-6: #b7b4c7;
     }
   }
 
@@ -200,6 +214,13 @@
      * works.
      */
     --color-scrim: rgb(34 28 56 / 0.45);
+    --color-peer-0: #b3261e;
+    --color-peer-1: #6a3fc8;
+    --color-peer-2: #2d7a36;
+    --color-peer-3: #0b6f86;
+    --color-peer-4: #2356c2;
+    --color-peer-5: #b0306e;
+    --color-peer-6: #555266;
   }
   [data-appearance="dark"] {
     --color-surface: #1f1838;
@@ -229,6 +250,13 @@
      * measuring it against the ground alone reports 1.00x.
      */
     --color-scrim: rgb(21 17 41 / 0.70);
+    --color-peer-0: #f28b82;
+    --color-peer-1: #b9a4ff;
+    --color-peer-2: #7fd28a;
+    --color-peer-3: #6cd0e6;
+    --color-peer-4: #8ab4ff;
+    --color-peer-5: #f48fc0;
+    --color-peer-6: #b7b4c7;
   }
   [data-appearance="paper"] {
     --color-surface: #faf8f3;
@@ -247,5 +275,197 @@
     --color-danger: #b4222a;
     --color-ok: #1d7c59;
     --color-scrim: rgb(34 25 46 / 0.45);
+    --color-peer-0: #b3261e;
+    --color-peer-1: #6a3fc8;
+    --color-peer-2: #2d7a36;
+    --color-peer-3: #0b6f86;
+    --color-peer-4: #2356c2;
+    --color-peer-5: #b0306e;
+    --color-peer-6: #555266;
+  }
+  [data-appearance="black"] {
+    --color-surface: #000000;
+    --color-surface-sunken: #100f17;
+    --color-surface-raised: #1a1824;
+    --color-border: #2c2a38;
+    --color-border-strong: #4a4660;
+    --color-content: #f4f2fb;
+    --color-content-muted: #c6c2d8;
+    --color-content-faint: #8e86ab;
+    --color-accent: #9d8ff0;
+    --color-accent-content: #1a1433;
+    --color-accent-soft: #241c42;
+    --color-signal: #e8a33d;
+    --color-signal-soft: #2a2114;
+    --color-danger: #ed6e74;
+    --color-ok: #70cdab;
+    --color-scrim: rgb(0 0 0 / 0.72);
+    --color-peer-0: #f28b82;
+    --color-peer-1: #b9a4ff;
+    --color-peer-2: #7fd28a;
+    --color-peer-3: #6cd0e6;
+    --color-peer-4: #8ab4ff;
+    --color-peer-5: #f48fc0;
+    --color-peer-6: #b7b4c7;
+  }
+  :root[data-accent="blue"] {
+    --color-accent: #2356c2;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #e4ecfb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-accent="blue"]:not([data-appearance]) {
+      --color-accent: #8ab4ff;
+      --color-accent-content: #0d1630;
+      --color-accent-soft: #1c2a4d;
+    }
+  }
+  [data-appearance="light"][data-accent="blue"] {
+    --color-accent: #2356c2;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #e4ecfb;
+  }
+  [data-appearance="dark"][data-accent="blue"] {
+    --color-accent: #8ab4ff;
+    --color-accent-content: #0d1630;
+    --color-accent-soft: #1c2a4d;
+  }
+  [data-appearance="paper"][data-accent="blue"] {
+    --color-accent: #2356c2;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #e3eaf7;
+  }
+  [data-appearance="black"][data-accent="blue"] {
+    --color-accent: #8ab4ff;
+    --color-accent-content: #0d1630;
+    --color-accent-soft: #16213d;
+  }
+  :root[data-accent="graphite"] {
+    --color-accent: #45424f;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #ebeaef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-accent="graphite"]:not([data-appearance]) {
+      --color-accent: #cbc8d8;
+      --color-accent-content: #1c1a24;
+      --color-accent-soft: #2e2a3f;
+    }
+  }
+  [data-appearance="light"][data-accent="graphite"] {
+    --color-accent: #45424f;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #ebeaef;
+  }
+  [data-appearance="dark"][data-accent="graphite"] {
+    --color-accent: #cbc8d8;
+    --color-accent-content: #1c1a24;
+    --color-accent-soft: #2e2a3f;
+  }
+  [data-appearance="paper"][data-accent="graphite"] {
+    --color-accent: #45424f;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #ebe8e2;
+  }
+  [data-appearance="black"][data-accent="graphite"] {
+    --color-accent: #cbc8d8;
+    --color-accent-content: #1c1a24;
+    --color-accent-soft: #26242f;
+  }
+  :root[data-accent="green"] {
+    --color-accent: #2a7a35;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #e2f1e3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-accent="green"]:not([data-appearance]) {
+      --color-accent: #7fd28a;
+      --color-accent-content: #0b2410;
+      --color-accent-soft: #1a3620;
+    }
+  }
+  [data-appearance="light"][data-accent="green"] {
+    --color-accent: #2a7a35;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #e2f1e3;
+  }
+  [data-appearance="dark"][data-accent="green"] {
+    --color-accent: #7fd28a;
+    --color-accent-content: #0b2410;
+    --color-accent-soft: #1a3620;
+  }
+  [data-appearance="paper"][data-accent="green"] {
+    --color-accent: #2a7a35;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #e1ecdd;
+  }
+  [data-appearance="black"][data-accent="green"] {
+    --color-accent: #7fd28a;
+    --color-accent-content: #0b2410;
+    --color-accent-soft: #142b19;
+  }
+  :root[data-accent="pink"] {
+    --color-accent: #b2266a;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #fae4ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-accent="pink"]:not([data-appearance]) {
+      --color-accent: #f48fc0;
+      --color-accent-content: #330a1f;
+      --color-accent-soft: #3d1b2e;
+    }
+  }
+  [data-appearance="light"][data-accent="pink"] {
+    --color-accent: #b2266a;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #fae4ee;
+  }
+  [data-appearance="dark"][data-accent="pink"] {
+    --color-accent: #f48fc0;
+    --color-accent-content: #330a1f;
+    --color-accent-soft: #3d1b2e;
+  }
+  [data-appearance="paper"][data-accent="pink"] {
+    --color-accent: #b2266a;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #f5e3e8;
+  }
+  [data-appearance="black"][data-accent="pink"] {
+    --color-accent: #f48fc0;
+    --color-accent-content: #330a1f;
+    --color-accent-soft: #321625;
+  }
+  :root[data-accent="teal"] {
+    --color-accent: #0b6e75;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #ddf1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-accent="teal"]:not([data-appearance]) {
+      --color-accent: #5fcfcf;
+      --color-accent-content: #062628;
+      --color-accent-soft: #153739;
+    }
+  }
+  [data-appearance="light"][data-accent="teal"] {
+    --color-accent: #0b6e75;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #ddf1f1;
+  }
+  [data-appearance="dark"][data-accent="teal"] {
+    --color-accent: #5fcfcf;
+    --color-accent-content: #062628;
+    --color-accent-soft: #153739;
+  }
+  [data-appearance="paper"][data-accent="teal"] {
+    --color-accent: #0b6e75;
+    --color-accent-content: #ffffff;
+    --color-accent-soft: #dcece9;
+  }
+  [data-appearance="black"][data-accent="teal"] {
+    --color-accent: #5fcfcf;
+    --color-accent-content: #062628;
+    --color-accent-soft: #112c2e;
   }
 }

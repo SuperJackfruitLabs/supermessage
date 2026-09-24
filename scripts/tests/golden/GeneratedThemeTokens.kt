@@ -55,10 +55,10 @@ data class SupermessageColorRoles(
 )
 
 /**
- * The three appearances.
+ * The appearances.
  *
  * Android binds `paper` to light and `dark` to dark: paper is what
- * "light" means on a phone. There is no picker — see Theme.kt.
+ * "light" means on a phone. See Theme.kt.
  */
 object GeneratedThemeTokens {
     val light = SupermessageColorRoles(
@@ -117,6 +117,79 @@ object GeneratedThemeTokens {
         ok = Color(0xFF1D7C59),
         scrim = Color(0x7322192E),
     )
+
+    val black = SupermessageColorRoles(
+        surface = Color(0xFF000000),
+        surfaceSunken = Color(0xFF100F17),
+        surfaceRaised = Color(0xFF1A1824),
+        border = Color(0xFF2C2A38),
+        borderStrong = Color(0xFF4A4660),
+        content = Color(0xFFF4F2FB),
+        contentMuted = Color(0xFFC6C2D8),
+        contentFaint = Color(0xFF8E86AB),
+        accent = Color(0xFF9D8FF0),
+        accentContent = Color(0xFF1A1433),
+        accentSoft = Color(0xFF241C42),
+        signal = Color(0xFFE8A33D),
+        signalSoft = Color(0xFF2A2114),
+        danger = Color(0xFFED6E74),
+        ok = Color(0xFF70CDAB),
+        scrim = Color(0xB8000000),
+    )
+}
+
+/** The three accent roles, as one accent replaces them. */
+@Immutable
+data class AccentRoles(
+    val accent: Color,
+    val accentContent: Color,
+    val accentSoft: Color,
+)
+
+/**
+ * The accents a reader may choose, per appearance. Violet, the default,
+ * is the appearances' own and is not listed.
+ */
+object GeneratedAccents {
+    val names = listOf("blue", "graphite", "green", "pink", "teal")
+    val blue = mapOf(
+        "light" to AccentRoles(accent = Color(0xFF2356C2), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFE4ECFB)),
+        "dark" to AccentRoles(accent = Color(0xFF8AB4FF), accentContent = Color(0xFF0D1630), accentSoft = Color(0xFF1C2A4D)),
+        "paper" to AccentRoles(accent = Color(0xFF2356C2), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFE3EAF7)),
+        "black" to AccentRoles(accent = Color(0xFF8AB4FF), accentContent = Color(0xFF0D1630), accentSoft = Color(0xFF16213D)),
+    )
+    val graphite = mapOf(
+        "light" to AccentRoles(accent = Color(0xFF45424F), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFEBEAEF)),
+        "dark" to AccentRoles(accent = Color(0xFFCBC8D8), accentContent = Color(0xFF1C1A24), accentSoft = Color(0xFF2E2A3F)),
+        "paper" to AccentRoles(accent = Color(0xFF45424F), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFEBE8E2)),
+        "black" to AccentRoles(accent = Color(0xFFCBC8D8), accentContent = Color(0xFF1C1A24), accentSoft = Color(0xFF26242F)),
+    )
+    val green = mapOf(
+        "light" to AccentRoles(accent = Color(0xFF2A7A35), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFE2F1E3)),
+        "dark" to AccentRoles(accent = Color(0xFF7FD28A), accentContent = Color(0xFF0B2410), accentSoft = Color(0xFF1A3620)),
+        "paper" to AccentRoles(accent = Color(0xFF2A7A35), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFE1ECDD)),
+        "black" to AccentRoles(accent = Color(0xFF7FD28A), accentContent = Color(0xFF0B2410), accentSoft = Color(0xFF142B19)),
+    )
+    val pink = mapOf(
+        "light" to AccentRoles(accent = Color(0xFFB2266A), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFFAE4EE)),
+        "dark" to AccentRoles(accent = Color(0xFFF48FC0), accentContent = Color(0xFF330A1F), accentSoft = Color(0xFF3D1B2E)),
+        "paper" to AccentRoles(accent = Color(0xFFB2266A), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFF5E3E8)),
+        "black" to AccentRoles(accent = Color(0xFFF48FC0), accentContent = Color(0xFF330A1F), accentSoft = Color(0xFF321625)),
+    )
+    val teal = mapOf(
+        "light" to AccentRoles(accent = Color(0xFF0B6E75), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFDDF1F1)),
+        "dark" to AccentRoles(accent = Color(0xFF5FCFCF), accentContent = Color(0xFF062628), accentSoft = Color(0xFF153739)),
+        "paper" to AccentRoles(accent = Color(0xFF0B6E75), accentContent = Color(0xFFFFFFFF), accentSoft = Color(0xFFDCECE9)),
+        "black" to AccentRoles(accent = Color(0xFF5FCFCF), accentContent = Color(0xFF062628), accentSoft = Color(0xFF112C2E)),
+    )
+}
+
+/** One colour per person, indexed by the core's `peerColorIndex`. */
+object GeneratedPeers {
+    val light = listOf(Color(0xFFB3261E), Color(0xFF6A3FC8), Color(0xFF2D7A36), Color(0xFF0B6F86), Color(0xFF2356C2), Color(0xFFB0306E), Color(0xFF555266))
+    val paper = listOf(Color(0xFFB3261E), Color(0xFF6A3FC8), Color(0xFF2D7A36), Color(0xFF0B6F86), Color(0xFF2356C2), Color(0xFFB0306E), Color(0xFF555266))
+    val dark = listOf(Color(0xFFF28B82), Color(0xFFB9A4FF), Color(0xFF7FD28A), Color(0xFF6CD0E6), Color(0xFF8AB4FF), Color(0xFFF48FC0), Color(0xFFB7B4C7))
+    val black = listOf(Color(0xFFF28B82), Color(0xFFB9A4FF), Color(0xFF7FD28A), Color(0xFF6CD0E6), Color(0xFF8AB4FF), Color(0xFFF48FC0), Color(0xFFB7B4C7))
 }
 
 /**

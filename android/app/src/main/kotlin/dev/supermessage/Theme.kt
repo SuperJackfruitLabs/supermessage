@@ -8,7 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import uniffi.supermessage_ffi.peerColorIndex
 
 /**
  * The type ramp, and the bridge from this app's colour roles into Material.
@@ -66,6 +68,8 @@ object SupermessageThemeFonts {
 
 private val LocalSupermessageColors =
     staticCompositionLocalOf { GeneratedThemeTokens.paper }
+private val LocalSupermessagePeers =
+    staticCompositionLocalOf { GeneratedPeers.paper }
 private val LocalSupermessageTypography = staticCompositionLocalOf {
     SupermessageTypography(
         body = SupermessageThemeFonts.body,
@@ -88,6 +92,16 @@ object SupermessageTheme {
 
     val typography: SupermessageTypography
         @Composable get() = LocalSupermessageTypography.current
+
+    /**
+     * A sender's colour: one of seven, picked by `peer_color_index` in the
+     * core so a person has the same colour on every platform.
+     */
+    @Composable
+    fun peer(userId: String): Color {
+        val peers = LocalSupermessagePeers.current
+        return peers[peerColorIndex(userId).toInt() % peers.size]
+    }
 }
 
 /**
@@ -190,6 +204,7 @@ fun SupermessageTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Comp
     CompositionLocalProvider(
         LocalSupermessageColors provides colors,
         LocalSupermessageTypography provides typography,
+        LocalSupermessagePeers provides if (darkTheme) GeneratedPeers.dark else GeneratedPeers.paper,
     ) {
         MaterialTheme(colorScheme = colorScheme, content = content)
     }

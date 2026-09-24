@@ -284,6 +284,7 @@
   import Shimmer from "./ai/Shimmer.svelte";
   import { mediaDownload, type CustomEventDecision } from "$lib/ipc";
   import { sendDecisionReply } from "./decisionReply";
+  import { peerColorVar } from "$lib/peerColor";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
   import { QUICK_REACTIONS } from "./emojiPicker";
@@ -1031,7 +1032,12 @@
           -->
           <p class="mb-1 flex items-baseline gap-2 font-sans text-meta tabular-nums text-content-muted">
             {#if !continuesRun}
-              <span class="min-w-0 truncate text-label">
+              <!-- The sender's own colour (`--color-peer-*`, chosen by
+                   user id), so two agents with one name read as two. -->
+              <span
+                class="min-w-0 truncate text-label"
+                style:color={item.sender ? peerColorVar(item.sender) : undefined}
+              >
                 {item.senderDisplayName ?? item.sender ?? "Unknown"}
               </span>
               <span class="shrink-0">{formatTime(item.timestampMs)}</span>
