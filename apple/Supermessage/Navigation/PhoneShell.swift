@@ -20,7 +20,7 @@ struct PhoneShell: View {
     @State private var showsNewRoom = false
     @State private var now = Date()
 
-    private var inboxCount: Int { NeedsYouInbox.from(session.rooms.rooms, now: now).count }
+    private var inboxCount: Int { NeedsYouInbox.from(session.rooms.rooms, now: now).badgeCount }
 
     var body: some View {
         TabView(selection: $tab) {

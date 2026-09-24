@@ -73,6 +73,9 @@ struct TimelineCollectionView: View {
     /// above can offer a way back. Written from scroll callbacks.
     @Binding var isAwayFromNewest: Bool
     @State private var topEdge = TimelineTopEdge.clear
+    /// How far the navigation bar really overlaps the list, measured in
+    /// UIKit. See `TimelineCollection.reportBarOverlap`.
+    @State private var barOverlap: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -87,10 +90,18 @@ struct TimelineCollectionView: View {
         // bar, content never reaches it, and the fade sits at the list's own
         // top edge instead.
         GeometryReader { proxy in
-            let obscured = proxy.safeAreaInsets.top
+            // **Measured, not taken from the safe area.** On iOS 26 the top
+            // safe-area inset SwiftUI reports here is far taller than the bar
+            // the reader can see, so the fade, opaque "under the bar", laid a
+            // blank band over the first ~110pt of the conversation, text cut
+            // at its lower edge (build 16, 2026-09-24). The bar's real bottom
+            // edge, from UIKit, is what the fade and the inset need; the safe
+            // area is only the fallback until that is known.
+            let obscured = barOverlap ?? proxy.safeAreaInsets.top
             TimelineList(
                 session: session, timeline: timeline, isAwayFromNewest: $isAwayFromNewest,
-                topEdge: $topEdge, topObscured: obscured
+                topEdge: $topEdge, topObscured: obscured,
+                onBarOverlap: { value in if barOverlap != value { barOverlap = value } }
             )
             .overlay(alignment: .top) {
                 // The fade the bar sits on: opaque page colour under the bar
@@ -170,6 +181,42 @@ final class TimelineCollection: UICollectionView {
         } else {
             super.layoutSubviews()
         }
+        reportBarOverlap()
+    }
+
+    /// Told how far the navigation bar overlaps this view, when that changes.
+    var onBarOverlap: ((CGFloat) -> Void)?
+    private var reportedOverlap: CGFloat?
+
+    /// Measure the bar against this view, both in window coordinates.
+    ///
+    /// The flip does not matter: converting `bounds` accounts for the
+    /// transform, so `minY` is the top of the list as drawn. Nothing is
+    /// reported until the view is in a window beside a bar it can find — the
+    /// safe-area fallback stands until then, rather than a guessed zero.
+    private func reportBarOverlap() {
+        guard window != nil, let bar = enclosingNavigationBar() else { return }
+        let overlap =
+            bar.isHidden
+            ? 0 : max(0, bar.convert(bar.bounds, to: nil).maxY - convert(bounds, to: nil).minY)
+        if let reportedOverlap, abs(reportedOverlap - overlap) < 0.5 { return }
+        reportedOverlap = overlap
+        onBarOverlap?(overlap)
+    }
+
+    /// The bar of the navigation controller this view is shown in. SwiftUI's
+    /// `NavigationStack` is one underneath, so the responder chain finds it.
+    private func enclosingNavigationBar() -> UINavigationBar? {
+        var responder: UIResponder? = self
+        while let next = responder?.next {
+            if let controller = next as? UIViewController,
+                let bar = controller.navigationController?.navigationBar
+            {
+                return bar
+            }
+            responder = next
+        }
+        return nil
     }
 }
 
@@ -208,6 +255,8 @@ struct TimelineList: UIViewRepresentable {
     /// How much of the top of this view is under the navigation bar, so the
     /// oldest row can come to rest below it.
     var topObscured: CGFloat = 0
+    /// Told the bar's measured overlap whenever it changes.
+    var onBarOverlap: @MainActor (CGFloat) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(session: session, timeline: timeline)
@@ -285,6 +334,12 @@ struct TimelineList: UIViewRepresentable {
     }
 
     func updateUIView(_ view: TimelineCollection, context: Context) {
+        let report = onBarOverlap
+        view.onBarOverlap = { value in
+            // After the layout pass that measured it: SwiftUI state must not
+            // change during a UIKit layout.
+            Task { @MainActor in report(value) }
+        }
         // The far end of the inverted content is the top of the screen, so
         // the room under the bar is the *bottom* inset.
         let bottom = topObscured + 8

@@ -62,9 +62,23 @@ struct RoomListView: View {
     }
 
     /// The core's arrangement — `core::roster` orders and groups.
+    ///
+    /// Invitations are never left in it: when open they are drawn directly
+    /// under their own row (`invitationRows`). Left to the core they came
+    /// after its first section — below Strategy Sam, away from the row that
+    /// had just been tapped to show them (2026-09-24).
     private var arranged: [RosterSection] {
         RosterArrangement.sections(
-            session.rooms.rooms, view: view, showsInvitations: showsInvitations, now: now)
+            session.rooms.rooms, view: view, showsInvitations: false, now: now)
+    }
+
+    /// The invitations, in the core's order, for under their row.
+    private var invitationRows: [RosterRow] {
+        RosterArrangement.sections(
+            session.rooms.rooms, view: view, showsInvitations: true, now: now
+        )
+        .flatMap(\.rows)
+        .filter { $0.row.affordance == .respondToInvitation }
     }
 
     /// The arrangement, narrowed by the chip. Never re-ordered.
@@ -79,7 +93,7 @@ struct RoomListView: View {
     }
 
     private var hiddenInvitations: Int {
-        RosterArrangement.hiddenInvitations(session.rooms.rooms, showsInvitations: showsInvitations)
+        RosterArrangement.hiddenInvitations(session.rooms.rooms, showsInvitations: false)
     }
 
     private var invitationCount: Int {
@@ -107,56 +121,18 @@ struct RoomListView: View {
                 .listRowInsets(EdgeInsets())
             }
 
+            if showsInvitations {
+                Section {
+                    ForEach(invitationRows, id: \.row.room.id) { entry in
+                        rosterRow(entry)
+                    }
+                }
+            }
+
             ForEach(sections, id: \.id) { section in
                 Section {
                     ForEach(section.rows, id: \.row.room.id) { entry in
-                        // The state arrives on the row. Asking per row would
-                        // be a boundary crossing per visible room per
-                        // re-render — see `core::roster::RosterRow`.
-                        RoomRowView(
-                            row: entry.row,
-                            avatarURI: session.avatars.uri(for: entry.row.room.id),
-                            state: entry.state,
-                            when: RelativeTime.label(
-                                for: entry.row.room.lastActivityMs, now: now),
-                            showsState: showsState,
-                            describesAgent: entry.describesAgent,
-                            onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
-                        )
-                        .tag(entry.row.room.id)
-                        .listRowBackground(Theme.surface)
-                        .task { await session.avatars.load(entry.row.room.id) }
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            if entry.row.affordance == .compose {
-                                Button {
-                                    Task { await markRead(entry.row.room.id) }
-                                } label: {
-                                    Label("Mark read", systemImage: "checkmark.message")
-                                }
-                                .tint(Theme.accent)
-                            }
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            if entry.row.affordance == .compose {
-                                let known = settings[entry.row.room.id]
-                                Button {
-                                    Task { await toggleMute(entry.row.room.id) }
-                                } label: {
-                                    known?.muted == true
-                                        ? Label("Unmute", systemImage: "bell")
-                                        : Label("Mute", systemImage: "bell.slash")
-                                }
-                                .tint(Theme.contentMuted)
-                                Button {
-                                    Task { await togglePin(entry.row.room.id) }
-                                } label: {
-                                    known?.pinned == true
-                                        ? Label("Unpin", systemImage: "pin.slash")
-                                        : Label("Pin", systemImage: "pin")
-                                }
-                                .tint(Theme.ok)
-                            }
-                        }
+                        rosterRow(entry)
                     }
                 } header: {
                     if let title = section.title {
@@ -198,8 +174,9 @@ struct RoomListView: View {
                 } actions: {
                     Button("Show all") { storedFilter = RosterFilter.all.rawValue }
                 }
-            } else if sections.isEmpty {
-                // Every room was filtered away. Say so, and say what by.
+            } else if sections.isEmpty, !showsInvitations {
+                // Every room was filtered away. Say so, and say what by —
+                // unless the invitations are open, when they are the list.
                 ContentUnavailableView(
                     "Nothing but invitations", systemImage: "envelope",
                     description: Text("\(hiddenInvitations) waiting — open Invitations above."))
@@ -234,6 +211,69 @@ struct RoomListView: View {
     }
 
     // MARK: - Swipes
+
+    /// One room in the roster, with its swipes. Shared by the core's sections
+    /// and the invitations under their row, so an invitation opens, reads
+    /// and swipes exactly as any other room.
+    @ViewBuilder
+    private func rosterRow(_ entry: RosterRow) -> some View {
+        // The state arrives on the row. Asking per row would
+        // be a boundary crossing per visible room per
+        // re-render — see `core::roster::RosterRow`.
+        RoomRowView(
+            row: entry.row,
+            avatarURI: session.avatars.uri(for: entry.row.room.id),
+            state: entry.state,
+            when: RelativeTime.label(
+                for: entry.row.room.lastActivityMs, now: now),
+            showsState: showsState,
+            describesAgent: entry.describesAgent,
+            onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
+        )
+        .tag(entry.row.room.id)
+        .listRowBackground(Theme.surface)
+        .task { await session.avatars.load(entry.row.room.id) }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            if entry.row.affordance == .compose {
+                Button {
+                    Task { await markRead(entry.row.room.id) }
+                } label: {
+                    Label("Mark read", systemImage: "checkmark.message")
+                }
+                .tint(Theme.accent)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if entry.row.affordance == .respondToInvitation {
+                // Declining is leaving a room one was only invited to. Stale
+                // test invitations are the common case, so it is a swipe away.
+                Button(role: .destructive) {
+                    Task { _ = await session.leaveRoom(entry.row.room.id) }
+                } label: {
+                    Label("Decline", systemImage: "xmark")
+                }
+            }
+            if entry.row.affordance == .compose {
+                let known = settings[entry.row.room.id]
+                Button {
+                    Task { await toggleMute(entry.row.room.id) }
+                } label: {
+                    known?.muted == true
+                        ? Label("Unmute", systemImage: "bell")
+                        : Label("Mute", systemImage: "bell.slash")
+                }
+                .tint(Theme.contentMuted)
+                Button {
+                    Task { await togglePin(entry.row.room.id) }
+                } label: {
+                    known?.pinned == true
+                        ? Label("Unpin", systemImage: "pin.slash")
+                        : Label("Pin", systemImage: "pin")
+                }
+                .tint(Theme.ok)
+            }
+        }
+    }
 
     private func markRead(_ roomId: String) async {
         if await session.rooms.markRead(roomId) { swipeLanded += 1 }

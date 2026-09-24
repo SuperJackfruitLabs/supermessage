@@ -68,9 +68,17 @@ public struct NeedsYouInbox: Equatable, Sendable {
     /// Rooms this account has been invited to, in the core's order.
     public let invitations: [RosterRow]
 
-    /// What the tab's badge says.
+    /// Everything the tab lists.
     public var count: Int { decisions.count + invitations.count }
     public var isEmpty: Bool { count == 0 }
+
+    /// What the tab's badge says: **decisions only.**
+    ///
+    /// It counted invitations too, so ten stale test invitations held the
+    /// badge at 10 for days and it stopped meaning anything (2026-09-24).
+    /// Invitations have their own row at the top of Chats now; the badge is
+    /// for things an agent is waiting on you to decide.
+    public var badgeCount: Int { decisions.count }
 
     /// Built from the flat roster, with invitations shown regardless of the
     /// roster's own "show invitations" preference: an inbox that hid them

@@ -111,6 +111,8 @@ struct RosterViewsTests {
         #expect(inbox.invitations.map(\.row.room.id) == ["d"])
         #expect(inbox.count == 3)
         #expect(!inbox.isEmpty)
+        // The badge is for decisions; invitations have their own row.
+        #expect(inbox.badgeCount == 2)
     }
 
     @Test("an answered decision leaves the inbox, and an empty inbox says so")
@@ -127,6 +129,7 @@ struct RosterViewsTests {
         let inbox = NeedsYouInbox.from([invite], now: Self.now)
         #expect(inbox.decisions.isEmpty)
         #expect(inbox.count == 1)
+        #expect(inbox.badgeCount == 0, "an invitation alone must not light the badge")
     }
 
     // --- agents ------------------------------------------------------------

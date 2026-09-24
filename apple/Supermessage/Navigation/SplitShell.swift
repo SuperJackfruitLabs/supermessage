@@ -42,7 +42,7 @@ struct SplitShell: View {
     /// uselessness. An iPad clears this in landscape and not in portrait.
     static let threeColumnWidth: CGFloat = 1_000
 
-    private var inboxCount: Int { NeedsYouInbox.from(session.rooms.rooms, now: now).count }
+    private var inboxCount: Int { NeedsYouInbox.from(session.rooms.rooms, now: now).badgeCount }
 
     /// The detail column's room, in both directions.
     ///
