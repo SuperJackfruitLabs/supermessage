@@ -109,7 +109,7 @@ struct LiveTurnView: View {
                     // Paced by `StreamingText` rather than drawn straight from
                     // the delta: what arrives in bursts should not appear in
                     // bursts. See that type for why.
-                    StreamingRichView(text: stream.text, revealed: stream.revealed)
+                    StreamingRichView(text: stream.text, revealed: stream.revealed, chunk: stream.chunk)
                 }
             }
             .padding(12)
@@ -389,16 +389,17 @@ private struct Detail: View {
 /// Completed lines render as blocks — markdown through the core's
 /// `richBlocksFromMarkdown`, the parser the landed message uses, drawn by the
 /// same `RichTextView` — and only the line still being written stays plain,
-/// with its newest glyphs fading in (`StreamingTextView`). A line's markup
+/// with its newest chunk fading in (`StreamingTextView`). A line's markup
 /// can only be read once the line is whole, so this is the earliest the
 /// formatting can be right, and the plain tail is one line long at most.
 ///
-/// **Parsed when a line completes, not on every reveal.** The reveal ticks
-/// every 20ms; the completed part changes only at a newline, and the cache
-/// makes every other tick a string comparison.
+/// **Parsed when a line completes, not on every chunk.** The completed part
+/// changes only at a newline, and the cache makes every other chunk a string
+/// comparison.
 struct StreamingRichView: View {
     let text: String
     let revealed: Int
+    var chunk: Int = 0
 
     @State private var cache = MarkdownBlockCache()
 
@@ -409,7 +410,7 @@ struct StreamingRichView: View {
                 RichTextView(blocks: cache.blocks(for: settled))
             }
             if !tail.isEmpty {
-                StreamingTextView(text: tail, revealed: min(revealed, tail.count))
+                StreamingTextView(text: tail, revealed: min(revealed, tail.count), chunk: chunk)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
