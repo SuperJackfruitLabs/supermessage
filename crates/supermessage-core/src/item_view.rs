@@ -54,6 +54,10 @@ pub enum SystemKind {
     /// The boundary the SDK inserts once back-pagination reaches the genuine
     /// start of a room's history.
     TimelineStart,
+    /// A one-line `m.notice`: a bridge or bot speaking about the room —
+    /// "I could not reach this agent: …" — rather than a person or agent
+    /// saying something in it. `who` is the sender, already attributed.
+    Notice { who: String },
 }
 
 /// What a [`ItemView::Placeholder`] stands in for. See [`SystemKind`].
@@ -122,6 +126,10 @@ pub enum ItemView {
         alt: String,
         width: Option<u64>,
         height: Option<u64>,
+        /// What the sender wrote with it — MSC2530: `body` is a caption only
+        /// when a separate `filename` differs from it. `None` for a bare image,
+        /// whose `body` is just its file name.
+        caption: Option<String>,
     },
     /// An `m.file`/`m.audio`/`m.video`: an informative row naming what the
     /// message is. `label` is precomputed so a host needs no msgtype table.
@@ -489,6 +497,24 @@ fn blocks_for(item: &TimelineItemDto) -> Vec<RichBlock> {
     }
 }
 
+/// A notice short and plain enough to be a system line: one line, no
+/// formatting, and not a paragraph.
+fn is_one_line_notice(item: &TimelineItemDto) -> bool {
+    let body = item.body.as_deref().unwrap_or("").trim();
+    !body.is_empty()
+        && !body.contains('\n')
+        && body.chars().count() <= 200
+        && item.formatted_body.is_none()
+}
+
+/// An image's caption, when it has one (MSC2530): `body`, but only when a
+/// separate file name was given and differs from it.
+fn image_caption(item: &TimelineItemDto) -> Option<String> {
+    let body = item.body.as_deref()?.trim();
+    let filename = item.media.as_ref().map(|m| m.filename.as_str())?;
+    (!body.is_empty() && body != filename).then(|| body.to_string())
+}
+
 /// Render decision for `kind: "message"`, switching on `msgtype`.
 fn message_view(item: &TimelineItemDto) -> ItemView {
     let msgtype = item.msgtype.as_deref();
@@ -496,6 +522,17 @@ fn message_view(item: &TimelineItemDto) -> ItemView {
         Some("m.text") => ItemView::Bubble {
             muted: false,
             blocks: blocks_for(item),
+        },
+        // A one-line notice is the room speaking — a bridge's refusal, a bot's
+        // status — and reads as a system line rather than as a message in the
+        // sender's voice (2026-09-24: "Session is busy" drawn as Krishna
+        // saying it). A notice with more to it — a report, a list — keeps its
+        // muted bubble, because flattening it into one grey line would lose it.
+        Some("m.notice") if is_one_line_notice(item) => ItemView::System {
+            kind: SystemKind::Notice {
+                who: item.sender.clone().unwrap_or_default(),
+            },
+            text: item.body.clone().unwrap_or_default().trim().to_string(),
         },
         Some("m.notice") => ItemView::Bubble {
             muted: true,
@@ -511,6 +548,7 @@ fn message_view(item: &TimelineItemDto) -> ItemView {
                 .unwrap_or_else(|| "Image".to_string()),
             width: item.media.as_ref().and_then(|m| m.width),
             height: item.media.as_ref().and_then(|m| m.height),
+            caption: image_caption(item),
         },
         Some(other) if MediaFileLabel::for_msgtype(other).is_some() => {
             let label = MediaFileLabel::for_msgtype(other).expect("guarded by the match arm");
@@ -753,14 +791,69 @@ mod tests {
     }
 
     #[test]
-    fn renders_m_notice_as_a_bubble_muted_not_dropped() {
+    fn a_one_line_notice_is_the_room_speaking_not_the_sender() {
+        // 2026-09-24: the hub's "Session is busy" was drawn as the agent
+        // saying it. As a notice it is a system line.
         let mut it = item("message");
         it.msgtype = Some("m.notice".into());
-        it.body = Some("build ok".into());
+        it.sender = Some("@agent_krishna:id.agentpod.dev".into());
+        it.body = Some("I could not reach this agent: the node is offline".into());
+        assert_eq!(
+            view_for(&it),
+            ItemView::System {
+                kind: SystemKind::Notice {
+                    who: "@agent_krishna:id.agentpod.dev".into()
+                },
+                text: "I could not reach this agent: the node is offline".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_notice_with_more_to_it_keeps_its_muted_bubble() {
+        // A bot's report is content; one grey line would lose it.
+        let mut it = item("message");
+        it.msgtype = Some("m.notice".into());
+        it.body = Some("build ok\n3 warnings".into());
         let ItemView::Bubble { muted, .. } = view_for(&it) else {
             panic!("expected a bubble");
         };
         assert!(muted);
+
+        let mut formatted = item("message");
+        formatted.msgtype = Some("m.notice".into());
+        formatted.body = Some("build ok".into());
+        formatted.formatted_body = Some("<b>build ok</b>".into());
+        assert!(matches!(
+            view_for(&formatted),
+            ItemView::Bubble { muted: true, .. }
+        ));
+    }
+
+    #[test]
+    fn an_image_sent_with_words_carries_them_as_its_caption() {
+        // MSC2530: `body` is the caption when `filename` differs from it.
+        let mut it = item("message");
+        it.msgtype = Some("m.image".into());
+        it.body = Some("What region is this?".into());
+        it.media = Some(media("map.png", Some("image/png"), Some(1024)));
+        let ItemView::Image { alt, caption, .. } = view_for(&it) else {
+            panic!("expected an image");
+        };
+        assert_eq!(alt, "map.png");
+        assert_eq!(caption.as_deref(), Some("What region is this?"));
+    }
+
+    #[test]
+    fn a_bare_image_has_no_caption_its_body_is_only_the_file_name() {
+        let mut it = item("message");
+        it.msgtype = Some("m.image".into());
+        it.body = Some("map.png".into());
+        it.media = Some(media("map.png", Some("image/png"), Some(1024)));
+        let ItemView::Image { caption, .. } = view_for(&it) else {
+            panic!("expected an image");
+        };
+        assert_eq!(caption, None);
     }
 
     #[test]
@@ -861,7 +954,8 @@ mod tests {
             ItemView::Image {
                 alt: "cat.png".into(),
                 width: Some(800),
-                height: Some(600)
+                height: Some(600),
+                caption: None
             }
         );
     }
@@ -876,7 +970,8 @@ mod tests {
             ItemView::Image {
                 alt: "a screenshot".into(),
                 width: None,
-                height: None
+                height: None,
+                caption: None
             }
         );
 
@@ -887,7 +982,8 @@ mod tests {
             ItemView::Image {
                 alt: "Image".into(),
                 width: None,
-                height: None
+                height: None,
+                caption: None
             }
         );
     }

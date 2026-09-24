@@ -24,11 +24,16 @@ public enum SendResult: Equatable, Sendable {
 /// tested against the two narrow seams it touches — `MessageSending` and
 /// `AttachmentStaging` — instead of against the whole of `SessionClient`.
 ///
-/// **Attachment first, and the text only if it went.** The reader wrote the
-/// text *about* the file; a caption that arrives without its picture is the
-/// defect D12 names. Sending the text first and the file second would get the
-/// order of a failure exactly backwards: the part that survives is the part
-/// that makes no sense alone.
+/// **The text rides with the file, as its caption** (MSC2530): one event, so
+/// the words can never arrive without their picture — the defect D12 names —
+/// and an agent gets the picture and the question as one turn. Sent as two
+/// messages, the question reached a bridged agent mid-turn and met "Session
+/// is busy" (2026-09-24).
+///
+/// A reply is the exception: a caption cannot carry `in_reply_to`, so a file
+/// sent while replying goes first and the text follows as the reply — and
+/// only if the file went, for the same reason as always: the part that
+/// survives a failure must not be the part that makes no sense alone.
 @MainActor
 public enum Outbox {
     public static func send(
@@ -37,10 +42,14 @@ public enum Outbox {
     ) async -> SendResult {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasAttachment = staged.isPresent(in: roomId)
+        let replying = replies.pending(for: roomId) != nil
+        let caption = hasAttachment && !replying && !body.isEmpty ? body : nil
 
-        if hasAttachment, let failure = await staged.send(in: roomId) {
+        if hasAttachment, let failure = await staged.send(in: roomId, caption: caption) {
             return .attachmentFailed(failure)
         }
+        // The words went with the file.
+        if caption != nil { return .sent }
         guard !body.isEmpty else { return hasAttachment ? .sent : .nothingToSend }
 
         do {

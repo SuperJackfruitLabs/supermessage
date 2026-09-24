@@ -3271,7 +3271,13 @@ sealed class ItemView {
     data class Image(
         val `alt`: kotlin.String, 
         val `width`: kotlin.ULong?, 
-        val `height`: kotlin.ULong?) : ItemView() {
+        val `height`: kotlin.ULong?, 
+        /**
+         * What the sender wrote with it — MSC2530: `body` is a caption only
+         * when a separate `filename` differs from it. `None` for a bare image,
+         * whose `body` is just its file name.
+         */
+        val `caption`: kotlin.String?) : ItemView() {
         companion object
     }
     
@@ -3363,6 +3369,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterString.read(buf),
                 FfiConverterOptionalULong.read(buf),
                 FfiConverterOptionalULong.read(buf),
+                FfiConverterOptionalString.read(buf),
                 )
             7 -> ItemView.MediaFile(
                 FfiConverterTypeMediaFileLabel.read(buf),
@@ -3425,6 +3432,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 + FfiConverterString.allocationSize(value.`alt`)
                 + FfiConverterOptionalULong.allocationSize(value.`width`)
                 + FfiConverterOptionalULong.allocationSize(value.`height`)
+                + FfiConverterOptionalString.allocationSize(value.`caption`)
             )
         }
         is ItemView.MediaFile -> {
@@ -3493,6 +3501,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterString.write(value.`alt`, buf)
                 FfiConverterOptionalULong.write(value.`width`, buf)
                 FfiConverterOptionalULong.write(value.`height`, buf)
+                FfiConverterOptionalString.write(value.`caption`, buf)
                 Unit
             }
             is ItemView.MediaFile -> {
@@ -4533,6 +4542,16 @@ sealed class SystemKind {
     object TimelineStart : SystemKind()
     
     
+    /**
+     * A one-line `m.notice`: a bridge or bot speaking about the room —
+     * "I could not reach this agent: …" — rather than a person or agent
+     * saying something in it. `who` is the sender, already attributed.
+     */
+    data class Notice(
+        val `who`: kotlin.String) : SystemKind() {
+        companion object
+    }
+    
 
     
     companion object
@@ -4554,6 +4573,9 @@ public object FfiConverterTypeSystemKind : FfiConverterRustBuffer<SystemKind>{
                 FfiConverterOptionalString.read(buf),
                 )
             5 -> SystemKind.TimelineStart
+            6 -> SystemKind.Notice(
+                FfiConverterString.read(buf),
+                )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -4592,6 +4614,13 @@ public object FfiConverterTypeSystemKind : FfiConverterRustBuffer<SystemKind>{
                 4UL
             )
         }
+        is SystemKind.Notice -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`who`)
+            )
+        }
     }
 
     override fun write(value: SystemKind, buf: ByteBuffer) {
@@ -4617,6 +4646,11 @@ public object FfiConverterTypeSystemKind : FfiConverterRustBuffer<SystemKind>{
             }
             is SystemKind.TimelineStart -> {
                 buf.putInt(5)
+                Unit
+            }
+            is SystemKind.Notice -> {
+                buf.putInt(6)
+                FfiConverterString.write(value.`who`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }

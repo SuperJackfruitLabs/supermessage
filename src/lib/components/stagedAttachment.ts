@@ -212,11 +212,11 @@ function isPositiveInteger(value: number | undefined): value is number {
  * The line the strip adds when Send could otherwise be read two ways, or
  * `null` when it could not.
  *
- * Captions are out of scope for this cut (design §1) and an attachment is
- * never sent as a reply (`attachment_send` takes no `in_reply_to`), so a
- * staged file makes Send do exactly one thing — but a composer that *also*
- * holds draft text, or a pending reply target, has two other things on
- * screen that a reader could reasonably expect Send to include. §8 requires
+ * A staged file is sent with the draft as its caption, but never as a reply
+ * (`attachment_send` takes no `in_reply_to`) — so a composer that also holds
+ * a pending reply target has something on screen a reader could reasonably
+ * expect Send to include, and a draft beside a file is worth one line saying
+ * where it goes. §8 requires
  * only that the two readings are never ambiguous at the same moment, so the
  * strip says which one applies, and says it only when there is something to
  * disambiguate: on an otherwise empty composer, "Send file" is already
@@ -231,7 +231,9 @@ export function sendCaveat(hasDraft: boolean, hasReply: boolean): string | null 
   if (hasDraft && hasReply) {
     return "Send sends this file on its own. Your message text and your reply are still waiting.";
   }
-  if (hasDraft) return "Send sends this file, not your message text. The text stays in the draft.";
+  // The draft goes with the file, as its caption (MSC2530) — one message, so
+  // an agent gets the picture and the question as one turn.
+  if (hasDraft) return "Your text goes with this file, as its caption.";
   if (hasReply) return "Send sends this file on its own, not as a reply. Your reply is still waiting.";
   return null;
 }

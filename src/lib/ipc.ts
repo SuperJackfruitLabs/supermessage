@@ -810,7 +810,9 @@ export type SystemKind =
   | { about: "encryptionEnabled" }
   | { about: "roomReplaced" }
   | { about: "membershipChanged"; who: string; detail: string | null }
-  | { about: "timelineStart" };
+  | { about: "timelineStart" }
+  // A one-line `m.notice`: a bridge or bot speaking about the room.
+  | { about: "notice"; who: string };
 
 /** What a placeholder stands in for. See {@link SystemKind}. */
 export type PlaceholderKind =
@@ -844,7 +846,14 @@ export type ItemView =
    */
   | { render: "dateDivider" }
   | { render: "placeholder"; kind: PlaceholderKind; text: string }
-  | { render: "image"; alt: string; width: number | null; height: number | null }
+  | {
+      render: "image";
+      alt: string;
+      width: number | null;
+      height: number | null;
+      /** What the sender wrote with it (MSC2530), or null for a bare image. */
+      caption: string | null;
+    }
   | {
       render: "mediaFile";
       label: "File" | "Audio" | "Video";
@@ -1572,8 +1581,16 @@ export async function attachmentStage(roomId: string): Promise<StagedAttachment 
  *   because a file on disk can grow between staging and sending (a download
  *   completing, a log file, a video still rendering).
  */
-export async function attachmentSend(roomId: string, token: string): Promise<void> {
-  await invoke<void>("attachment_send", { roomId, token });
+/**
+ * `caption` is the text typed with the file. It travels in the same event
+ * (MSC2530), so the words never arrive without their picture.
+ */
+export async function attachmentSend(
+  roomId: string,
+  token: string,
+  caption: string | null = null
+): Promise<void> {
+  await invoke<void>("attachment_send", { roomId, token, caption });
 }
 
 /**

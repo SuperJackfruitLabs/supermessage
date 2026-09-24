@@ -51,11 +51,16 @@ class StagedAttachment(private val client: CoreClient) {
         }
     }
 
-    /** Send it, consuming the token. Returns a message on refusal. */
-    suspend fun send(roomId: String): String? {
+    /**
+     * Send it, consuming the token. Returns a message on refusal.
+     *
+     * [caption] is what the reader typed with the file; it travels in the same
+     * event (MSC2530) rather than as a second message.
+     */
+    suspend fun send(roomId: String, caption: String? = null): String? {
         val staged = _file.value ?: return null
         return try {
-            client.attachmentSend(roomId = roomId, token = staged.token)
+            client.attachmentSend(roomId = roomId, token = staged.token, caption = caption)
             _file.value = null
             null
         } catch (error: FfiException) {

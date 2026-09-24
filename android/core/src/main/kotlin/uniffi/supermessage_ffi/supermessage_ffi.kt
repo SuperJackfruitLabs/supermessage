@@ -964,7 +964,7 @@ internal interface UniffiLib : Library {
     ): RustBufferAccountDto.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_attachment_discard(`ptr`: Pointer,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    fun uniffi_supermessage_ffi_fn_method_core_attachment_send(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_supermessage_ffi_fn_method_core_attachment_send(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`caption`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_attachment_stage_path(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1350,7 +1350,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 20052.toShort()) {
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403.toShort()) {
@@ -1878,8 +1878,11 @@ public interface CoreInterface {
      * is checked against both the focused room and the room the token was
      * staged for — the first catches a stale send, the second a token kept
      * across a room switch.
+     *
+     * `caption` is what the reader typed with the file. It travels in the
+     * same event (MSC2530) rather than as a message of its own.
      */
-    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String)
+    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
     
     /**
      * Stage a file the host has already chosen.
@@ -2323,13 +2326,16 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
      * is checked against both the focused room and the room the token was
      * staged for — the first catches a stale send, the second a token kept
      * across a room switch.
+     *
+     * `caption` is what the reader typed with the file. It travels in the
+     * same event (MSC2530) rather than as a message of its own.
      */
-    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String)
+    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_attachment_send(
-        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`token`),_status)
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`token`),FfiConverterOptionalString.lower(`caption`),_status)
 }
     }
     

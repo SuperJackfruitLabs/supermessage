@@ -525,7 +525,15 @@ impl Core {
     /// is checked against both the focused room and the room the token was
     /// staged for — the first catches a stale send, the second a token kept
     /// across a room switch.
-    pub fn attachment_send(&self, room_id: String, token: String) -> Result<(), FfiError> {
+    ///
+    /// `caption` is what the reader typed with the file. It travels in the
+    /// same event (MSC2530) rather than as a message of its own.
+    pub fn attachment_send(
+        &self,
+        room_id: String,
+        token: String,
+        caption: Option<String>,
+    ) -> Result<(), FfiError> {
         let staged = self.session.staged_attachments();
         let focused = self.session.focused_timeline();
         self.block(supermessage_core::attachments::send_staged(
@@ -534,6 +542,7 @@ impl Core {
             &staged,
             &room_id,
             &token,
+            caption,
         ))?;
         Ok(())
     }

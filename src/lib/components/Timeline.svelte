@@ -1396,6 +1396,11 @@
                       style={imageBoxStyle(view.width, view.height)}
                     ></div>
                   {/if}
+                  {#if view.caption}
+                    <!-- What the sender wrote with it (MSC2530): one
+                         message, the way it was sent. -->
+                    <p class="selectable mt-1 break-words whitespace-pre-wrap">{view.caption}</p>
+                  {/if}
                 {/snippet}
                 {@render messageBlock(row, imageContent)}
               {:else if view.render === "mediaFile"}

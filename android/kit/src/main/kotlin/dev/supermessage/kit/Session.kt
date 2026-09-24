@@ -289,11 +289,17 @@ class Session(
      */
     suspend fun send(text: String, roomId: String): String? {
         val body = text.trim()
+        // The text rides with the file as its caption — one event, so the
+        // words never arrive without their picture and an agent gets both as
+        // one turn. A reply is the exception: a caption cannot carry one.
+        val hasAttachment = staged.file.value != null
+        val caption = if (hasAttachment && body.isNotEmpty() && replies.pending(roomId) == null) body else null
 
-        if (staged.file.value != null) {
-            val failure = staged.send(roomId = roomId)
+        if (hasAttachment) {
+            val failure = staged.send(roomId = roomId, caption = caption)
             if (failure != null) return failure
         }
+        if (caption != null) return null
         if (body.isEmpty()) return null
 
         return try {

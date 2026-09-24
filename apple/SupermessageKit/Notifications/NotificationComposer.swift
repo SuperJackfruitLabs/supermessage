@@ -193,10 +193,10 @@ public enum NotificationComposer {
         case .bubble, .emote:
             guard let text = row.replyPreview else { return nil }
             return message(row, eventId: eventId, roomId: roomId, subtitle: subtitle, body: text)
-        case let .image(alt, _, _):
+        case let .image(alt, _, _, caption):
             return message(
                 row, eventId: eventId, roomId: roomId, subtitle: subtitle,
-                body: row.replyPreview ?? alt)
+                body: caption ?? row.replyPreview ?? alt)
         case let .mediaFile(_, filename, _, _):
             return message(
                 row, eventId: eventId, roomId: roomId, subtitle: subtitle,

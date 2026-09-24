@@ -98,6 +98,11 @@ extension ScrollFixture {
         "When a new line wraps, the history above moves up once, and stays. ",
         "Nothing should snap and then glide back, which is what the old height animation did. ",
         "A second paragraph starts here, so the answer grows by more than one line at a time.\n\n",
+        // Markdown, as Krishna's answers carry it: it must read formatted
+        // while it streams, not as `**` and `-` until the message lands.
+        "**What I observe:**\n\n",
+        "- **Central figures**: two people reading the same soil.\n",
+        "- **Technology on tradition**: a tractor beside a bullock cart.\n\n",
         "Strategy is not only the plan; it is the order in which things are allowed to fail. ",
         "Good plans make the next decision easier, and leave room for the one after it. ",
         "The last sentence closes the turn, and the real message replaces this card. ",

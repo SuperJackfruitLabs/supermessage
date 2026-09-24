@@ -163,7 +163,7 @@ fun TimelineRow(
             )
 
         is ItemView.Image ->
-            ImageRow(named = named, alt = view.alt, width = view.width, height = view.height, modifier = modifier)
+            ImageRow(named = named, alt = view.alt, width = view.width, height = view.height, caption = view.caption, modifier = modifier)
 
         is ItemView.MediaFile ->
             MediaFileRow(label = view.label, filename = view.filename, size = view.size, modifier = modifier)
@@ -593,7 +593,7 @@ private fun SenderFace(userId: String?, initial: String, avatarUri: (userId: Str
  * fails, the alt text is what a reader sees rather than a blank box.
  */
 @Composable
-private fun ImageRow(named: String, alt: String, width: ULong?, height: ULong?, modifier: Modifier = Modifier) {
+private fun ImageRow(named: String, alt: String, width: ULong?, height: ULong?, caption: String?, modifier: Modifier = Modifier) {
     val aspect = if (width != null && height != null && height > 0uL) {
         width.toFloat() / height.toFloat()
     } else {
@@ -618,6 +618,11 @@ private fun ImageRow(named: String, alt: String, width: ULong?, height: ULong?, 
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(8.dp),
             )
+        }
+        // What the sender wrote with it (MSC2530), under the picture: one
+        // message, the way it was sent.
+        if (caption != null) {
+            Text(caption, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.widthIn(max = 320.dp))
         }
     }
 }

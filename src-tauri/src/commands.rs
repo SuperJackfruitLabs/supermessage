@@ -630,11 +630,12 @@ pub async fn attachment_stage(
 pub async fn attachment_send(
     room_id: String,
     token: String,
+    caption: Option<String>,
     session: State<'_, Session>,
     timeline: State<'_, Arc<FocusedTimeline>>,
     staged: State<'_, Arc<StagedAttachments>>,
 ) -> Result<(), CoreError> {
-    attachments::send_staged(&session, &timeline, &staged, &room_id, &token).await
+    attachments::send_staged(&session, &timeline, &staged, &room_id, &token, caption).await
 }
 
 /// Discards a staged file — the "remove" affordance on the composer's staged

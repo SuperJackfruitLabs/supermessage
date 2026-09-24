@@ -56,7 +56,12 @@ public enum Acknowledgement: Equatable, Sendable {
         // Working says itself whether or not the reader just sent: this is
         // the sentence that replaced "Atlas is typing…". In a room of several
         // agents there is no addressee, and whoever is typing is named.
-        if let addressee, turnInProgress || !typingAgents.isEmpty { return .onIt([addressee]) }
+        // **Not while a live turn is on screen.** Its card already says who
+        // is working, for how long, and on what; a pill saying "Krishna is on
+        // it…" under it made four "working" signals at once (2026-09-24). The
+        // pill stays for an agent that only sends typing notices.
+        if turnInProgress { return nil }
+        if let addressee, !typingAgents.isEmpty { return .onIt([addressee]) }
         if addressee == nil, !typingAgents.isEmpty { return .onIt(typingAgents) }
         guard let addressee, sentThisSession, let lastOwn = rows.lastIndex(where: { $0.item.isOwn }) else {
             return nil

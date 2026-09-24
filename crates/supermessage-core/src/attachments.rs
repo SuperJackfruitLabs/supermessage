@@ -623,6 +623,7 @@ pub async fn send_staged(
     staged: &StagedAttachments,
     room_id: &str,
     token: &str,
+    caption: Option<String>,
 ) -> CoreResult<()> {
     let timeline = focused.active_timeline_for(room_id)?;
     let client = session.require_client().await?;
@@ -644,8 +645,14 @@ pub async fn send_staged(
     let mime: Mime = meta.mime.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
     let info = attachment_info_for(&mime, bytes.len() as u64, meta.dimensions());
 
+    // **What the sender typed goes with the file, as its caption** (MSC2530:
+    // the caption is `body`, the file name moves to `filename` — the SDK does
+    // the placing). Sent as a second message it was a second prompt to an
+    // agent, which arrived mid-turn and met "Session is busy" (2026-09-24),
+    // and for a person it split one thought across two bubbles.
     let config = AttachmentConfig {
         info: Some(info),
+        caption: caption_content(caption),
         ..Default::default()
     };
 
@@ -676,6 +683,18 @@ pub async fn send_staged(
     Ok(())
 }
 
+/// The caption as the SDK takes it: markdown, like every other message this
+/// app sends, and nothing at all for text that is only whitespace.
+fn caption_content(
+    caption: Option<String>,
+) -> Option<matrix_sdk::ruma::events::room::message::TextMessageEventContent> {
+    let caption = caption?;
+    let trimmed = caption.trim();
+    (!trimmed.is_empty()).then(|| {
+        matrix_sdk::ruma::events::room::message::TextMessageEventContent::markdown(trimmed)
+    })
+}
+
 impl StagedAttachment {
     fn dimensions(&self) -> Option<(u64, u64)> {
         Some((self.width?, self.height?))
@@ -691,6 +710,17 @@ impl StagedAttachments {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_caption_is_the_typed_text_and_nothing_for_whitespace() {
+        // The words typed with a file ride in its event (MSC2530); an empty
+        // composer sends a bare file, not a file with an empty caption.
+        assert!(super::caption_content(None).is_none());
+        assert!(super::caption_content(Some("   \n ".into())).is_none());
+        let caption = super::caption_content(Some("  What region is this? ".into()))
+            .expect("typed text is a caption");
+        assert_eq!(caption.body, "What region is this?");
+    }
     use super::*;
 
     fn staged_file(token: &str, room_id: &str, at: Instant) -> StagedFile {

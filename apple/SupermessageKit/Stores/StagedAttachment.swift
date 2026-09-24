@@ -115,10 +115,10 @@ public final class StagedAttachment {
     /// A chip that is a failure with no file behind it refuses without asking
     /// the core anything: there is nothing to send, and the caller must not
     /// send the text without it either.
-    public func send(in roomId: String) async -> String? {
+    public func send(in roomId: String, caption: String? = nil) async -> String? {
         guard let file else { return failure?.message }
         do {
-            try await client.attachmentSend(roomId: roomId, token: file.token)
+            try await client.attachmentSend(roomId: roomId, token: file.token, caption: caption)
             self.file = nil
             path = nil
             failure = nil

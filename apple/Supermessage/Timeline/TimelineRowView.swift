@@ -157,9 +157,10 @@ struct TimelineRowView: View {
         case let .placeholder(_, text):
             SystemLine(text: text)
 
-        case let .image(alt, width, height):
+        case let .image(alt, width, height, caption):
             ImageRow(
-                row: row, named: named, alt: alt, width: width, height: height, media: media)
+                row: row, named: named, alt: alt, width: width, height: height, caption: caption,
+                media: media)
 
         case let .mediaFile(label, filename, size, _):
             MediaFileRow(label: label, filename: filename, size: size)
@@ -613,6 +614,9 @@ private struct ImageRow: View {
     let alt: String
     let width: UInt64?
     let height: UInt64?
+    /// What the sender wrote with it (MSC2530), drawn under the picture —
+    /// one message, the way it was sent.
+    let caption: String?
     let media: MediaCache
 
     /// The picture, once it arrives. `nil` while loading *and* when there is
@@ -659,6 +663,13 @@ private struct ImageRow: View {
             }
             .frame(maxWidth: 320)
             .accessibilityLabel(alt)
+            if let caption {
+                Text(caption)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.content)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 320, alignment: .leading)
+            }
         }
         .padding(.vertical, 6)
     }

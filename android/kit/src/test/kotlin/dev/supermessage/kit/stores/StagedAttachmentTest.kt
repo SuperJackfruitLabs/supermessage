@@ -176,7 +176,7 @@ class StagedAttachmentTest {
             discardedTokens.add(token)
         }
 
-        override fun attachmentSend(roomId: String, token: String) {
+        override fun attachmentSend(roomId: String, token: String, caption: String?) {
             sendResult?.invoke()
             sentTokens.add(roomId to token)
         }

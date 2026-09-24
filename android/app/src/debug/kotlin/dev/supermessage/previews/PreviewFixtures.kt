@@ -284,7 +284,7 @@ object PreviewFixtures {
                 "\$img", body = "muster-dark.png", msgtype = "m.image",
                 media = MediaMetaDto("muster-dark.png", "image/png", 184_320uL, 1500uL, 900uL),
             ),
-            ItemView.Image("The muster board in dark", 1500uL, 900uL),
+            ItemView.Image("The muster board in dark", 1500uL, 900uL, null),
         )
 
     val attachment: TimelineRowDto

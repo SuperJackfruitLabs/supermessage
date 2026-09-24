@@ -538,8 +538,11 @@ public protocol CoreProtocol : AnyObject {
      * is checked against both the focused room and the room the token was
      * staged for — the first catches a stale send, the second a token kept
      * across a room switch.
+     *
+     * `caption` is what the reader typed with the file. It travels in the
+     * same event (MSC2530) rather than as a message of its own.
      */
-    func attachmentSend(roomId: String, token: String) throws 
+    func attachmentSend(roomId: String, token: String, caption: String?) throws 
     
     /**
      * Stage a file the host has already chosen.
@@ -957,11 +960,15 @@ open func attachmentDiscard(token: String) {try! rustCall() {
      * is checked against both the focused room and the room the token was
      * staged for — the first catches a stale send, the second a token kept
      * across a room switch.
+     *
+     * `caption` is what the reader typed with the file. It travels in the
+     * same event (MSC2530) rather than as a message of its own.
      */
-open func attachmentSend(roomId: String, token: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+open func attachmentSend(roomId: String, token: String, caption: String?)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_attachment_send(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),
-        FfiConverterString.lower(token),$0
+        FfiConverterString.lower(token),
+        FfiConverterOptionString.lower(caption),$0
     )
 }
 }
@@ -3633,7 +3640,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 20052) {
+    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403) {

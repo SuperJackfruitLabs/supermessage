@@ -4614,7 +4614,12 @@ public enum ItemView {
      * thumbnail's box *before* its bytes are requested, so a lazy list never
      * reflows once they land.
      */
-    case image(alt: String, width: UInt64?, height: UInt64?
+    case image(alt: String, width: UInt64?, height: UInt64?, 
+        /**
+         * What the sender wrote with it — MSC2530: `body` is a caption only
+         * when a separate `filename` differs from it. `None` for a bare image,
+         * whose `body` is just its file name.
+         */caption: String?
     )
     /**
      * An `m.file`/`m.audio`/`m.video`: an informative row naming what the
@@ -4686,7 +4691,7 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         case 5: return .placeholder(kind: try FfiConverterTypePlaceholderKind.read(from: &buf), text: try FfiConverterString.read(from: &buf)
         )
         
-        case 6: return .image(alt: try FfiConverterString.read(from: &buf), width: try FfiConverterOptionUInt64.read(from: &buf), height: try FfiConverterOptionUInt64.read(from: &buf)
+        case 6: return .image(alt: try FfiConverterString.read(from: &buf), width: try FfiConverterOptionUInt64.read(from: &buf), height: try FfiConverterOptionUInt64.read(from: &buf), caption: try FfiConverterOptionString.read(from: &buf)
         )
         
         case 7: return .mediaFile(label: try FfiConverterTypeMediaFileLabel.read(from: &buf), filename: try FfiConverterString.read(from: &buf), size: try FfiConverterOptionUInt64.read(from: &buf), mimetype: try FfiConverterOptionString.read(from: &buf)
@@ -4733,11 +4738,12 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             FfiConverterString.write(text, into: &buf)
             
         
-        case let .image(alt,width,height):
+        case let .image(alt,width,height,caption):
             writeInt(&buf, Int32(6))
             FfiConverterString.write(alt, into: &buf)
             FfiConverterOptionUInt64.write(width, into: &buf)
             FfiConverterOptionUInt64.write(height, into: &buf)
+            FfiConverterOptionString.write(caption, into: &buf)
             
         
         case let .mediaFile(label,filename,size,mimetype):
@@ -5825,6 +5831,13 @@ public enum SystemKind {
      * start of a room's history.
      */
     case timelineStart
+    /**
+     * A one-line `m.notice`: a bridge or bot speaking about the room —
+     * "I could not reach this agent: …" — rather than a person or agent
+     * saying something in it. `who` is the sender, already attributed.
+     */
+    case notice(who: String
+    )
 }
 
 
@@ -5849,6 +5862,9 @@ public struct FfiConverterTypeSystemKind: FfiConverterRustBuffer {
         )
         
         case 5: return .timelineStart
+        
+        case 6: return .notice(who: try FfiConverterString.read(from: &buf)
+        )
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5880,6 +5896,11 @@ public struct FfiConverterTypeSystemKind: FfiConverterRustBuffer {
         case .timelineStart:
             writeInt(&buf, Int32(5))
         
+        
+        case let .notice(who):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(who, into: &buf)
+            
         }
     }
 }

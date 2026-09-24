@@ -14,7 +14,7 @@ import Testing
 /// Records every call, in order, and fails the ones it is told to.
 actor StubOutbox: AttachmentStaging, MessageSending {
     enum Call: Equatable {
-        case stage(String), sendAttachment(String), discard(String)
+        case stage(String), sendAttachment(String, caption: String? = nil), discard(String)
         case message(String, mentions: [String]), reply(String)
     }
 
@@ -45,8 +45,8 @@ actor StubOutbox: AttachmentStaging, MessageSending {
             mime: "image/png", width: nil, height: nil)
     }
 
-    func attachmentSend(roomId: String, token: String) async throws {
-        calls.append(.sendAttachment(token))
+    func attachmentSend(roomId: String, token: String, caption: String?) async throws {
+        calls.append(.sendAttachment(token, caption: caption))
         if failAttachmentSend { throw FfiError.Network(detail: "upload failed") }
     }
 
@@ -89,15 +89,26 @@ struct OutboxTests {
             client: stub)
     }
 
-    @Test("the attachment goes before its text")
-    func attachmentFirst() async {
-        // Mutation seen failing: sending the text before the attachment.
+    @Test("text typed with an attachment goes as its caption, in one event")
+    func textIsTheCaption() async {
+        // 2026-09-24: sent as a second message, the question reached a bridged
+        // agent mid-turn and met "Session is busy". One event, one turn.
         let staged = self.staged
         await staged.stage(path: "/tmp/shot.png", in: room)
         let result = await send("here's the screenshot", staged: staged)
         #expect(result == .sent)
         let calls = await stub.calls
-        #expect(calls == [.stage("/tmp/shot.png"), .sendAttachment("tok-1"), .message("here's the screenshot", mentions: [])])
+        #expect(calls == [.stage("/tmp/shot.png"), .sendAttachment("tok-1", caption: "here's the screenshot")])
+    }
+
+    @Test("an attachment alone has no caption")
+    func bareAttachment() async {
+        let staged = self.staged
+        await staged.stage(path: "/tmp/shot.png", in: room)
+        let result = await send("   ", staged: staged)
+        #expect(result == .sent)
+        let calls = await stub.calls
+        #expect(calls == [.stage("/tmp/shot.png"), .sendAttachment("tok-1", caption: nil)])
     }
 
     @Test("a failed attachment keeps the text back")
@@ -138,13 +149,33 @@ struct OutboxTests {
         #expect(calls == [.stage("/tmp/huge.mov")])
     }
 
-    @Test("a text failure after the attachment went says so, and the chip is gone")
+    @Test("while replying, the file goes first and the text follows as the reply")
+    func replyIsNotACaption() async {
+        // A caption cannot carry `in_reply_to`, so a reply keeps the two-step
+        // send — and the order that keeps a failure's survivor meaningful.
+        let staged = self.staged
+        await staged.stage(path: "/tmp/shot.png", in: room)
+        let replies = ReplyTarget()
+        replies.start(ReplyTargetTests.row(id: "$q", sender: "Ganesha", preview: "the question"), in: room)
+
+        let result = await Outbox.send(
+            text: "here it is", in: room, mentioning: [], staged: staged, replies: replies, client: stub)
+
+        #expect(result == .sent)
+        let calls = await stub.calls
+        #expect(calls == [.stage("/tmp/shot.png"), .sendAttachment("tok-1", caption: nil), .reply("here it is")])
+    }
+
+    @Test("a reply's text failing after the file went says so, and the chip is gone")
     func textFailsAfterAttachment() async {
         let staged = self.staged
         await staged.stage(path: "/tmp/shot.png", in: room)
         await stub.set(failText: true)
+        let replies = ReplyTarget()
+        replies.start(ReplyTargetTests.row(id: "$q", sender: "Ganesha", preview: "the question"), in: room)
 
-        let result = await send("caption", staged: staged)
+        let result = await Outbox.send(
+            text: "here it is", in: room, mentioning: [], staged: staged, replies: replies, client: stub)
 
         guard case .textFailed = result else {
             Issue.record("expected textFailed, got \(result)")
@@ -347,7 +378,7 @@ struct AcknowledgementTests {
         #expect(state([Self.row("1", own: true, sender: "@me:x")]) == .sent(to: "Atlas"))
     }
 
-    @Test("a reaction, typing or a live turn all mean it is on it")
+    @Test("a reaction or typing means it is on it; a live turn shows its own card")
     func onIt() {
         // Mutation seen failing: ignoring reactions (stayed "Sent to").
         let mine = Self.row("1", own: true, sender: "@me:x")
@@ -356,7 +387,8 @@ struct AcknowledgementTests {
             reactions: [ReactionDto(key: "👀", displayKey: "👀", count: 1, byMe: false, senders: ["@atlas:x"])])
         #expect(state([reacted]) == .onIt(["Atlas"]))
         #expect(state([mine], typing: ["Atlas"]) == .onIt(["Atlas"]))
-        #expect(state([mine], live: true) == .onIt(["Atlas"]))
+        // A live turn speaks for itself in its card; no pill under it.
+        #expect(state([mine], live: true) == nil)
     }
 
     @Test("the reader's own reaction is not the agent's")

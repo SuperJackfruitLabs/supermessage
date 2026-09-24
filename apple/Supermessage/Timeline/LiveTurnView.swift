@@ -59,7 +59,11 @@ struct LiveTurnView: View {
             VStack(alignment: .leading, spacing: 8) {
                 header
 
-                if !live.finished {
+                // "Writing the answer" says nothing the answer, streaming in
+                // under it, does not already show — so it goes once the text
+                // is visible. Thinking, a tool call and starting still need
+                // saying, because nothing else on screen shows them.
+                if !live.finished, live.currentStep != nil || stream.text.isEmpty {
                     currentStep
                 }
 
@@ -95,16 +99,17 @@ struct LiveTurnView: View {
                 }
 
                 if !stream.text.isEmpty {
-                    // Plain text, not blocks. Parsing every frame would cost a
-                    // round trip per keystroke of the agent's; the landed
-                    // message renders through the same parser moments later,
-                    // and `whitespace` preservation is what keeps the shape
-                    // steady across that hand-off.
+                    // Formatted as it arrives, through the same parser and
+                    // renderer the landed message uses — so `**What I
+                    // observe:**` is bold while it streams, not raw markup
+                    // that reflows into bold when the message lands
+                    // (2026-09-24). See `StreamingRichView` for how that stays
+                    // cheap at a reveal every 20ms.
                     //
                     // Paced by `StreamingText` rather than drawn straight from
                     // the delta: what arrives in bursts should not appear in
                     // bursts. See that type for why.
-                    StreamingTextView(text: stream.text, revealed: stream.revealed)
+                    StreamingRichView(text: stream.text, revealed: stream.revealed)
                 }
             }
             .padding(12)
@@ -378,3 +383,59 @@ private struct Detail: View {
     .environment(\.rendersStill, true)
 }
 #endif
+
+/// A streaming answer, formatted as it arrives.
+///
+/// Completed lines render as blocks — markdown through the core's
+/// `richBlocksFromMarkdown`, the parser the landed message uses, drawn by the
+/// same `RichTextView` — and only the line still being written stays plain,
+/// with its newest glyphs fading in (`StreamingTextView`). A line's markup
+/// can only be read once the line is whole, so this is the earliest the
+/// formatting can be right, and the plain tail is one line long at most.
+///
+/// **Parsed when a line completes, not on every reveal.** The reveal ticks
+/// every 20ms; the completed part changes only at a newline, and the cache
+/// makes every other tick a string comparison.
+struct StreamingRichView: View {
+    let text: String
+    let revealed: Int
+
+    @State private var cache = MarkdownBlockCache()
+
+    var body: some View {
+        let (settled, tail) = Self.split(text)
+        VStack(alignment: .leading, spacing: 8) {
+            if !settled.isEmpty {
+                RichTextView(blocks: cache.blocks(for: settled))
+            }
+            if !tail.isEmpty {
+                StreamingTextView(text: tail, revealed: min(revealed, tail.count))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Everything up to the last newline, and the line after it.
+    static func split(_ text: String) -> (settled: String, tail: String) {
+        guard let newline = text.lastIndex(of: "\n") else { return ("", text) }
+        let settled = String(text[..<newline]).trimmingCharacters(in: .newlines)
+        let tail = String(text[text.index(after: newline)...])
+        return (settled, tail)
+    }
+}
+
+/// The blocks for the last completed prefix, kept until the prefix changes.
+@MainActor
+final class MarkdownBlockCache {
+    private var source = ""
+    private var cached: [RichBlock] = []
+
+    func blocks(for text: String) -> [RichBlock] {
+        if text != source {
+            source = text
+            cached = richBlocksFromMarkdown(source: text)
+        }
+        return cached
+    }
+}
+

@@ -123,7 +123,7 @@ struct PreviewClient: SessionClient {
     func attachmentStagePath(roomId: String, path: String) async throws -> StagedFile {
         PreviewFixtures.stagedFile
     }
-    func attachmentSend(roomId: String, token: String) async throws {}
+    func attachmentSend(roomId: String, token: String, caption: String?) async throws {}
     func attachmentDiscard(token: String) async {}
 
     // MARK: TimelineSubscribing
@@ -394,7 +394,7 @@ enum PreviewFixtures {
                  media: MediaMetaDto(
                     filename: "muster-dark.png", mimetype: "image/png", size: 184_320,
                     width: 1500, height: 900)),
-            view: .image(alt: "The muster board in dark", width: 1500, height: 900))
+            view: .image(alt: "The muster board in dark", width: 1500, height: 900, caption: nil))
     }
 
     static var attachment: TimelineRow {

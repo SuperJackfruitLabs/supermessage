@@ -183,7 +183,7 @@ class TimelineRowTest {
                 TimelineRow(row = row(view = ItemView.Placeholder(kind = PlaceholderKind.Redacted, text = "placeholder text")), now = now)
                 TimelineRow(row = row(view = ItemView.DateDivider), now = now)
                 TimelineRow(row = row(view = ItemView.UnreadMarker), now = now)
-                TimelineRow(row = row(view = ItemView.Image(alt = "a sunset", width = 100uL, height = 50uL)), now = now)
+                TimelineRow(row = row(view = ItemView.Image(alt = "a sunset", width = 100uL, height = 50uL, caption = null)), now = now)
                 TimelineRow(
                     row = row(
                         view = ItemView.MediaFile(
@@ -260,7 +260,7 @@ class TimelineRowTest {
     fun anImageWithoutBytesShowsItsAlt() {
         compose.setContent {
             TimelineRow(
-                row = row(view = ItemView.Image(alt = "a lighthouse", width = null, height = null)),
+                row = row(view = ItemView.Image(alt = "a lighthouse", width = null, height = null, caption = null)),
                 now = now,
             )
         }
