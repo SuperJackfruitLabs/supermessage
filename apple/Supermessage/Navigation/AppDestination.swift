@@ -64,16 +64,13 @@ struct ChatsToolbar: ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             // Labelled: an icon-only control is announced as "button" and
             // nothing else.
-            Button(action: onCompose) {
-                Image(systemName: "square.and.pencil")
-                    .font(.body.weight(.medium))
-                    // The glyph's pencil overhangs its square up and to the
-                    // right, so centred by its bounds it reads low-left in a
-                    // round button. Half a point each way puts the square
-                    // at the centre, which is what the eye measures.
-                    .offset(x: -0.5, y: -0.5)
-                    .frame(width: ToolbarGlyph.side, height: ToolbarGlyph.side)
-            }
+            //
+            // The stock symbol, unstyled: the bar sizes, centres and tints
+            // it inside its own glass. An earlier frame, weight and
+            // half-point nudge were compensating for a circle the bar now
+            // draws itself (HIG, Toolbars: "Prefer system-provided symbols
+            // without borders").
+            Button(action: onCompose) { Image(systemName: "square.and.pencil") }
             .accessibilityLabel("New conversation")
         }
     }
