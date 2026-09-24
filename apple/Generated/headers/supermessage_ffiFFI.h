@@ -562,6 +562,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_display_initial(RustBuffer name, Rust
 RustBuffer uniffi_supermessage_ffi_fn_func_parse_matrix_link(RustBuffer href, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEER_COLOR_INDEX
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEER_COLOR_INDEX
+uint8_t uniffi_supermessage_ffi_fn_func_peer_color_index(RustBuffer user_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_LABEL
 RustBuffer uniffi_supermessage_ffi_fn_func_people_label(RustBuffer user_ids, RustCallStatus *_Nonnull out_status
@@ -887,6 +892,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_display_initial(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PARSE_MATRIX_LINK
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PARSE_MATRIX_LINK
 uint16_t uniffi_supermessage_ffi_checksum_func_parse_matrix_link(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PEER_COLOR_INDEX
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PEER_COLOR_INDEX
+uint16_t uniffi_supermessage_ffi_checksum_func_peer_color_index(void
     
 );
 #endif

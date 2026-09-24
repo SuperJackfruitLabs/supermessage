@@ -109,7 +109,7 @@ struct LiveTurnView: View {
                     // Paced by `StreamingText` rather than drawn straight from
                     // the delta: what arrives in bursts should not appear in
                     // bursts. See that type for why.
-                    StreamingRichView(text: stream.text, revealed: stream.revealed)
+                    StreamingRichView(text: stream.text, revealed: stream.revealed, chunk: stream.chunk)
                 }
             }
             .padding(12)
@@ -389,30 +389,77 @@ private struct Detail: View {
 /// Completed lines render as blocks — markdown through the core's
 /// `richBlocksFromMarkdown`, the parser the landed message uses, drawn by the
 /// same `RichTextView` — and only the line still being written stays plain,
-/// with its newest glyphs fading in (`StreamingTextView`). A line's markup
+/// with its newest chunk fading in (`StreamingTextView`). A line's markup
 /// can only be read once the line is whole, so this is the earliest the
 /// formatting can be right, and the plain tail is one line long at most.
 ///
-/// **Parsed when a line completes, not on every reveal.** The reveal ticks
-/// every 20ms; the completed part changes only at a newline, and the cache
-/// makes every other tick a string comparison.
+/// **Parsed when a line completes, not on every chunk.** The completed part
+/// changes only at a newline, and the cache makes every other chunk a string
+/// comparison.
 struct StreamingRichView: View {
     let text: String
     let revealed: Int
+    var chunk: Int = 0
 
     @State private var cache = MarkdownBlockCache()
 
     var body: some View {
-        let (settled, tail) = Self.split(text)
+        let (settled, tail) = Self.split(text, arriving: revealed)
         VStack(alignment: .leading, spacing: 8) {
             if !settled.isEmpty {
                 RichTextView(blocks: cache.blocks(for: settled))
             }
             if !tail.isEmpty {
-                StreamingTextView(text: tail, revealed: min(revealed, tail.count))
+                StreamingTextView(text: tail, revealed: min(Self.arrivingCount(text, revealed), tail.count), chunk: chunk)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Everything before the arriving chunk's paragraph, and that paragraph.
+    ///
+    /// Split at the last newline *before* the chunk, not the last newline:
+    /// a sentence that ends its paragraph arrives with its line break, and
+    /// split after it went straight into the parsed blocks and never faded
+    /// (build 19, 2026-09-24). Block markup — a heading, a list, a quote, a
+    /// fence — is the exception: it cannot be shown as plain text without
+    /// reading as raw markup, so those lines settle as soon as they are whole.
+    static func split(_ text: String, arriving: Int) -> (settled: String, tail: String) {
+        let start = text.index(text.endIndex, offsetBy: -min(max(arriving, 0), text.count))
+        guard let newline = text[..<start].lastIndex(of: "\n") else {
+            return blockMarkup(in: text) ? split(text) : ("", trimmedTail(text))
+        }
+        let tail = String(text[text.index(after: newline)...])
+        if blockMarkup(in: tail) { return split(text) }
+        let settled = String(text[..<newline]).trimmingCharacters(in: .newlines)
+        return (settled, trimmedTail(tail))
+    }
+
+    /// How many characters of the arriving chunk are drawn: its trailing line
+    /// breaks are trimmed from the tail, so they do not count.
+    static func arrivingCount(_ text: String, _ revealed: Int) -> Int {
+        var chunk = Substring(text.suffix(max(revealed, 0)))
+        while chunk.last == "\n" { chunk.removeLast() }
+        return chunk.count
+    }
+
+    /// A tail's trailing line breaks would draw as empty lines under it.
+    private static func trimmedTail(_ tail: String) -> String {
+        var tail = tail
+        while tail.last == "\n" { tail.removeLast() }
+        return tail
+    }
+
+    /// Whether any line of `text` opens a block.
+    static func blockMarkup(in text: String) -> Bool {
+        text.split(separator: "\n").contains { line in
+            let line = line.drop { $0 == " " }
+            if ["#", "- ", "* ", "+ ", ">", "```", "|"].contains(where: { line.hasPrefix($0) }) {
+                return true
+            }
+            let digits = line.prefix { $0.isNumber }
+            return !digits.isEmpty && line.dropFirst(digits.count).hasPrefix(". ")
+        }
     }
 
     /// Everything up to the last newline, and the line after it.

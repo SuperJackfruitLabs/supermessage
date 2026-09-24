@@ -34,7 +34,13 @@ struct NeedsYouView: View {
                 }
             }
         }
-        .listStyle(.plain)
+        // `.inset`, not `.plain`: on iOS 26 devices a plain SwiftUI list
+        // leaves the bars' glass one appearance behind after every light/dark
+        // switch — dark glass over a light page — until the list is scrolled
+        // (FB20370553, forum thread 802028; reproduced on a stock list on
+        // iOS 26.6.1, 2026-09-24). `.inset` draws the same full-width rows
+        // without the bug.
+        .listStyle(.inset)
         .paletteListGround()
         .overlay {
             if inbox.isEmpty { CaughtUpView() }
@@ -60,7 +66,7 @@ struct NeedsYouView: View {
                 showsState: showsState,
                 describesAgent: entry.describesAgent)
             .tag(entry.row.room.id)
-            .listRowBackground(Theme.surface)
+            .listRowBackground(Color.clear)  // the list's own ground shows through — see `paletteListGround`
             .task { await session.avatars.load(entry.row.room.id) }
         }
     }

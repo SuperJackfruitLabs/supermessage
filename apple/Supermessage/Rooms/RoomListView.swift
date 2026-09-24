@@ -41,6 +41,7 @@ struct RoomListView: View {
     @State private var settings: [String: KnownSettings] = [:]
     /// Bumped when a swipe lands, for the haptic.
     @State private var swipeLanded = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The arrangement, chosen in Account → Roster. "Machine" is no longer
     /// offered — a space is a machine's rooms, and the title chooses spaces —
@@ -83,6 +84,11 @@ struct RoomListView: View {
 
     /// The arrangement, narrowed by the chip. Never re-ordered.
     private var sections: [RosterSection] { filter.apply(arranged) }
+
+    private var rowIds: [String] { sections.flatMap { $0.rows.map(\.row.room.id) } }
+
+    /// What the list animation watches: which rooms are listed, in no order.
+    private var roomSet: Set<String> { Set(rowIds) }
 
     private var counts: [RosterFilter: Int] {
         let rows = arranged.flatMap(\.rows)
@@ -143,14 +149,32 @@ struct RoomListView: View {
                 }
             }
         }
-        .listStyle(.plain)
+        // `.inset`, not `.plain`: on iOS 26 devices a plain SwiftUI list
+        // leaves the bars' glass one appearance behind after every light/dark
+        // switch — dark glass over a light page — until the list is scrolled
+        // (FB20370553, forum thread 802028; reproduced on a stock list on
+        // iOS 26.6.1, 2026-09-24). `.inset` draws the same full-width rows
+        // without the bug.
+        .listStyle(.inset)
+        // Rooms coming and going slide into place: a space switch, a join,
+        // a leave. Keyed on **which** rooms are listed, not their order, so
+        // the reorder every new message causes stays still — a list that
+        // moved each time an agent spoke would be one to chase.
+        //
+        // Build 19 opened a window on the space id instead, and never
+        // animated: the core applies the filter and sends its diff before
+        // `select` returns, so the rows had already changed by the time the
+        // id did (2026-09-24).
+        .animation(reduceMotion || rowIds.isEmpty ? nil : .snappy(duration: 0.3), value: roomSet)
         .paletteListGround()
         .sensoryFeedback(.success, trigger: swipeLanded)
         // Still set: it is the back button's title in a room.
         .navigationTitle(session.spaces.selectedName.map(SpaceNames.display) ?? "Chats")
         .toolbar {
             ToolbarItem(placement: .principal) {
-                SpaceMenu(spaces: session.spaces, allCount: session.rooms.rooms.count)
+                SpaceMenu(
+                    spaces: session.spaces, allCount: session.rooms.rooms.count,
+                    status: session.connection.subtitle)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -231,7 +255,7 @@ struct RoomListView: View {
             onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
         )
         .tag(entry.row.room.id)
-        .listRowBackground(Theme.surface)
+        .listRowBackground(Color.clear)  // the list's own ground shows through — see `paletteListGround`
         .task { await session.avatars.load(entry.row.room.id) }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if entry.row.affordance == .compose {

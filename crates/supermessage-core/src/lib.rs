@@ -42,6 +42,7 @@ pub mod live;
 pub mod matrix_links;
 pub mod media;
 pub mod mentions;
+pub mod peer_color;
 pub mod people;
 pub mod push;
 pub mod recovery;

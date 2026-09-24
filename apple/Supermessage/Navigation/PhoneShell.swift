@@ -27,9 +27,6 @@ struct PhoneShell: View {
             Tab(AppDestination.chats.title, systemImage: AppDestination.chats.systemImage, value: .chats) {
                 NavigationStack {
                     RoomListView(session: session, selection: $chatsOpen)
-                        .safeAreaInset(edge: .top, spacing: 0) {
-                            ConnectionBar(connection: session.connection)
-                        }
                         .toolbar {
                             ChatsToolbar(
                                 session: session,
@@ -96,3 +93,4 @@ struct PhoneShell: View {
         }
     }
 }
+

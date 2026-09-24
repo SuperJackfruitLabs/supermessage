@@ -1,100 +1,134 @@
 import SupermessageKit
 import SwiftUI
 
-/// An agent's answer as it is being written.
+/// The line of an agent's answer still being written.
 ///
-/// The cursor this replaced — a `▍` after the text — said "still going" and
-/// nothing else, and every delta re-laid the whole paragraph with no sense of
-/// where the new words were. This fades in only the characters that just
-/// arrived: opacity and a two-point rise over about 160ms, which is enough to
-/// draw the eye to the newest words and little enough to disappear into
-/// reading.
+/// **The newest chunk fades in as one.** `StreamingText` hands over a
+/// sentence at a time, and the whole of it goes from clear to settled over
+/// about 450ms — no per-character wave, no typing. The typing effect this
+/// replaced made the app look like it was performing a speed; a sentence
+/// that simply arrives reads as the model having said it (2026-09-24).
 ///
-/// Deliberately **not** `.contentTransition(.opacity)` on the whole `Text`.
-/// That transitions the content of the view, so a string that grows by three
-/// characters re-animates far more of itself than intended — the paragraph
-/// shimmers on every tick. `TextRenderer` works at glyph granularity, which
-/// is the level this actually wants (WWDC24's "Create custom visual effects
-/// with SwiftUI").
+/// **Formatted while unfinished.** Inline markup in the line — `**bold**`,
+/// `_emphasis_`, `` `code` `` — is closed for the moment and rendered, so the
+/// reader never sees asterisks that turn into bold when the closing pair
+/// arrives. A line's block form (a heading, a list) waits for the line to
+/// complete, when `StreamingRichView` hands it to the real parser.
+///
+/// Deliberately **not** `.contentTransition(.opacity)` on the whole `Text`,
+/// which transitions the content of the view and so re-animates far more of
+/// the string than arrived. `TextRenderer` works at glyph granularity, which
+/// is the level this wants (WWDC24's "Create custom visual effects with
+/// SwiftUI").
 struct StreamingTextView: View {
     let text: String
-    /// How many trailing characters are new. See `StreamingText.revealed`.
+    /// How many trailing characters are the chunk still arriving.
     let revealed: Int
+    /// Changes with every chunk; the fade restarts on it.
+    var chunk: Int = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.rendersStill) private var rendersStill
+    /// When the current chunk arrived, for the fade's clock.
+    @State private var arrived = Date.distantPast
+    /// Whether a fade is under way — the clock runs only then.
+    @State private var fading = false
+
+    /// Long enough to be seen as a fade. Build 19's 0.2s, eased hard at the
+    /// start, was two frames of half-opacity and read as the text simply
+    /// appearing (2026-09-24).
+    static let fade: TimeInterval = 0.45
+
+    @ViewBuilder
+    private var content: some View {
+        let formatted = InlineMarkdown.attributed(text)
+        if reduceMotion || rendersStill || revealed == 0 {
+            Text(formatted)
+        } else {
+            let settled = InlineMarkdown.attributed(String(text.dropLast(revealed))).characters.count
+            // Only runs while a fade is under way; paused, it costs nothing
+            // between chunks.
+            SwiftUI.TimelineView(.animation(minimumInterval: nil, paused: !fading)) { context in
+                Text(formatted)
+                    .textRenderer(ArrivingChunk(settled: settled, progress: progress(at: context.date)))
+            }
+        }
+    }
+
+    private func progress(at date: Date) -> Double {
+        min(1, max(0, date.timeIntervalSince(arrived) / Self.fade))
+    }
 
     var body: some View {
-        Text(text)
-            .font(Theme.body)
-            .textRenderer(
-                ArrivingGlyphs(
-                    // Animatable, so SwiftUI interpolates the boundary rather
-                    // than jumping it: the fade runs over the whole tick
-                    // instead of landing in one frame.
-                    settled: Double(max(0, text.count - revealed)),
-                    total: text.count))
-            .animation(.easeOut(duration: 0.16), value: text.count)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        content
+        .font(Theme.body)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: chunk, initial: true) {
+            arrived = Date()
+            fading = true
+        }
+        .task(id: chunk) {
+            try? await Task.sleep(for: .seconds(Self.fade + 0.05))
+            if !Task.isCancelled { fading = false }
+        }
     }
 }
 
-/// Draws a run of text with its newest glyphs still arriving.
+/// Draws a run of text with its newest chunk partway in.
 ///
-/// `settled` is how many glyphs are fully in place, as a `Double` so it can be
-/// animated: SwiftUI drives it from the previous value to the new one, and
-/// each glyph crosses the boundary in turn.
-private struct ArrivingGlyphs: TextRenderer, Animatable {
-    var settled: Double
-    let total: Int
-
-    var animatableData: Double {
-        get { settled }
-        set { settled = newValue }
-    }
+/// Everything before `settled` is simply text; everything after it is drawn
+/// at `progress`'s opacity with a three-point rise, all together.
+private struct ArrivingChunk: TextRenderer {
+    let settled: Int
+    let progress: Double
 
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        // Ease in and out: it starts clear and gathers, rather than being
+        // most of the way there in the first frame.
+        let eased = progress * progress * (3 - 2 * progress)
+        var arriving = context
+        arriving.opacity = eased
+        arriving.translateBy(x: 0, y: (1 - eased) * 3)
+
         var index = 0
         for line in layout {
             for run in line {
                 for glyph in run {
                     defer { index += 1 }
-
-                    // Everything before the boundary is simply text. Drawing
-                    // it through the same per-glyph path as the newest few
-                    // would mean a context copy per glyph for a whole
-                    // conversation's worth of characters.
-                    guard Double(index) >= settled else {
+                    if index < settled {
                         context.draw(glyph)
-                        continue
+                    } else {
+                        arriving.draw(glyph)
                     }
-
-                    // How far this glyph has come, 0 at the boundary and 1 a
-                    // few glyphs past it. Spread over a short run so the
-                    // arrival reads as a wave rather than a hard edge.
-                    let progress = min(1, max(0, (Double(index) - settled) / 6))
-                    let appearing = 1 - progress
-
-                    var copy = context
-                    copy.opacity = 1 - appearing
-                    copy.translateBy(x: 0, y: appearing * 2)
-                    copy.addFilter(.blur(radius: appearing * 1.2))
-                    copy.draw(glyph)
                 }
             }
         }
     }
 }
 
+/// Inline markdown for a line that is not finished yet.
+enum InlineMarkdown {
+    /// `line` with its inline markup rendered, any marker still open closed
+    /// for the moment. Falls back to the plain line when it will not parse.
+    static func attributed(_ line: String) -> AttributedString {
+        let closed = OpenMarkup.close(line)
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: closed, options: options))
+            ?? AttributedString(line)
+    }
+}
+
 #if DEBUG
-// Mid-arrival: the last 18 characters are still fading in.
-//
-// A still frame of an animation is a weak preview by nature — what it can
-// show is the boundary, which is the thing most likely to be wrong: `settled`
-// is `count - revealed`, so an off-by-one here reads as the newest word
-// flickering on every tick.
+// Mid-arrival: the last sentence is still coming in. A still frame renders
+// it settled (`rendersStill`), so what this shows is the formatting of an
+// unfinished line — the bold is closed although its pair has not arrived.
 #Preview("Arriving") {
     PreviewGround {
         StreamingTextView(
-            text: "It is sorted by pending first, then by last activity.", revealed: 18)
+            text: "It is sorted by **pending first, then by last", revealed: 18)
     }
+    .environment(\.rendersStill, true)
 }
 
 // Nothing new: what the reader looks at for all but the last moment of a turn.

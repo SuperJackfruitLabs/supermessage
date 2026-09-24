@@ -3997,7 +3997,12 @@ sealed class ReplyQuoteView {
     data class Available(
         val `sender`: kotlin.String, 
         val `excerpt`: kotlin.String?, 
-        val `label`: kotlin.String?) : ReplyQuoteView() {
+        val `label`: kotlin.String?, 
+        /**
+         * The parent sender's Matrix id, for the peer colour — `sender` is
+         * a display name and two people can share one.
+         */
+        val `senderId`: kotlin.String?) : ReplyQuoteView() {
         companion object
     }
     
@@ -4015,6 +4020,7 @@ public object FfiConverterTypeReplyQuoteView : FfiConverterRustBuffer<ReplyQuote
             1 -> ReplyQuoteView.Unavailable
             2 -> ReplyQuoteView.Available(
                 FfiConverterString.read(buf),
+                FfiConverterOptionalString.read(buf),
                 FfiConverterOptionalString.read(buf),
                 FfiConverterOptionalString.read(buf),
                 )
@@ -4036,6 +4042,7 @@ public object FfiConverterTypeReplyQuoteView : FfiConverterRustBuffer<ReplyQuote
                 + FfiConverterString.allocationSize(value.`sender`)
                 + FfiConverterOptionalString.allocationSize(value.`excerpt`)
                 + FfiConverterOptionalString.allocationSize(value.`label`)
+                + FfiConverterOptionalString.allocationSize(value.`senderId`)
             )
         }
     }
@@ -4051,6 +4058,7 @@ public object FfiConverterTypeReplyQuoteView : FfiConverterRustBuffer<ReplyQuote
                 FfiConverterString.write(value.`sender`, buf)
                 FfiConverterOptionalString.write(value.`excerpt`, buf)
                 FfiConverterOptionalString.write(value.`label`, buf)
+                FfiConverterOptionalString.write(value.`senderId`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }

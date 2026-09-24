@@ -169,19 +169,64 @@ enum TimelineTopEdge: Equatable {
 /// snapping and sliding a line at a time. `StreamProbe` measured it as
 /// visible cells off their layout position in over half of all frames.
 ///
-/// While a turn streams, layout is applied without animation, so a new line
-/// moves the history exactly once. Outside a turn nothing changes: a card
-/// expanding still eases open, and an arrival still rises into place.
+/// While a turn streams, layout is applied without animation, and then the
+/// whole visible stack **glides** up by what the answer grew — every cell
+/// drawn where it was and eased to where it now is, together. The first
+/// fix moved the history in one step, which stopped the stutter but read as
+/// a jump: a sentence arrived and two lines of history leapt up in a single
+/// frame (build 19, 2026-09-24). Moving everything by the same amount at
+/// the same time is what makes it one motion rather than the snap-and-slide
+/// the default animation produced.
+///
+/// Outside a turn nothing changes: a card expanding still eases open, and an
+/// arrival still rises into place.
 final class TimelineCollection: UICollectionView {
     var isStreaming: () -> Bool = { false }
 
+    /// How long the history takes to glide up after the answer grows.
+    static let glide: CFTimeInterval = 0.32
+
     override func layoutSubviews() {
         if isStreaming() {
+            let live = IndexPath(item: 0, section: 0)
+            let before = cellForItem(at: live)?.frame.height
+            // Read before layout: the growth moves the offset when scrolled
+            // back, so asking afterwards could answer for the wrong place.
+            let atNewest = contentOffset.y <= 0.5
             UIView.performWithoutAnimation { super.layoutSubviews() }
+            // Only at the newest message. Scrolled back, the list layout
+            // already keeps the reader's place when the answer grows, and a
+            // glide there slid the history under their thumb on every
+            // sentence (build 20, 2026-09-24).
+            if atNewest, let before, let after = cellForItem(at: live)?.frame.height, after - before > 0.5 {
+                glide(by: after - before)
+            }
         } else {
             super.layoutSubviews()
         }
         reportBarOverlap()
+    }
+
+    /// Draws every visible cell `delta` back toward where it was and lets it
+    /// ease to its place.
+    ///
+    /// Additive, so a second growth mid-glide adds its own offset to the one
+    /// still running rather than restarting it — two sentences close together
+    /// read as one longer move, not a hitch. The model layer is untouched:
+    /// layout, hit-testing and the probe's layout positions stay exact.
+    private func glide(by delta: CGFloat) {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        let animation = CABasicAnimation(keyPath: "transform.translation.y")
+        // The list is flipped: the history moved +delta in its own
+        // coordinates, so it starts at -delta.
+        animation.fromValue = -delta
+        animation.toValue = 0
+        animation.isAdditive = true
+        animation.duration = Self.glide
+        animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
+        for cell in visibleCells {
+            cell.layer.add(animation, forKey: nil)
+        }
     }
 
     /// Told how far the navigation bar overlaps this view, when that changes.
@@ -334,6 +379,9 @@ struct TimelineList: UIViewRepresentable {
     }
 
     func updateUIView(_ view: TimelineCollection, context: Context) {
+        // Again on every update: reading `Theme` here is what re-runs this
+        // when the account's accent or dark style changes.
+        view.backgroundColor = UIColor(Theme.surface)
         let report = onBarOverlap
         view.onBarOverlap = { value in
             // After the layout pass that measured it: SwiftUI state must not

@@ -731,6 +731,15 @@ pub fn parse_matrix_link(
     supermessage_core::matrix_links::parse_matrix_link(&href)
 }
 
+/// Which of the seven person colours `user_id` is drawn in — see
+/// `core::peer_color`. A free function for the same reason as
+/// `rich_blocks_from_markdown`: every host asks the same question and the
+/// answer must not differ between them.
+#[uniffi::export]
+pub fn peer_color_index(user_id: String) -> u8 {
+    supermessage_core::peer_color::peer_color_index(&user_id)
+}
+
 /// The user ids a finished message mentions, for `m.mentions`.
 #[uniffi::export]
 pub fn collect_mentions(

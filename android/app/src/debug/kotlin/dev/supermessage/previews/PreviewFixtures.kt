@@ -266,7 +266,7 @@ object PreviewFixtures {
             ItemView.Bubble(false, paragraph("Agreed — the contract belongs on the token.")),
             replyQuote = ReplyQuoteView.Available(
                 sender = "Rakesh", excerpt = "Should the contrast contract list every ground?",
-                label = null,
+                label = null, senderId = "@rakesh:example.org",
             ),
         )
 

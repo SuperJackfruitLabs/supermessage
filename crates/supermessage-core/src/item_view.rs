@@ -227,6 +227,9 @@ pub enum ReplyQuoteView {
         sender: String,
         excerpt: Option<String>,
         label: Option<String>,
+        /// The parent sender's Matrix id, for the peer colour — `sender` is
+        /// a display name and two people can share one.
+        sender_id: Option<String>,
     },
 }
 
@@ -360,6 +363,7 @@ pub fn reply_quote_view(reply_to: Option<&ReplyToDto>) -> Option<ReplyQuoteView>
             .unwrap_or_else(|| "Someone".to_string()),
         excerpt: reply_to.excerpt.clone(),
         label: reply_to.label.clone(),
+        sender_id: reply_to.sender.clone(),
     })
 }
 
@@ -1539,6 +1543,7 @@ mod tests {
                 sender: "@bob:example.org".into(),
                 excerpt: Some("the original message".into()),
                 label: None,
+                sender_id: Some("@bob:example.org".into()),
             })
         );
     }
@@ -1554,6 +1559,7 @@ mod tests {
                 sender: "Someone".into(),
                 excerpt: Some("the original message".into()),
                 label: None,
+                sender_id: None,
             })
         );
     }
@@ -1568,6 +1574,7 @@ mod tests {
                 sender: "Alice".into(),
                 excerpt: None,
                 label: None,
+                sender_id: Some("@alice:example.org".into()),
             })
         );
     }
@@ -1585,6 +1592,7 @@ mod tests {
                 sender: "Alice".into(),
                 excerpt: None,
                 label: Some("Message deleted".into()),
+                sender_id: Some("@alice:example.org".into()),
             })
         );
     }

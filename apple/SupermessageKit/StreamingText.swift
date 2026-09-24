@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Paces an agent's answer onto the screen.
+/// Paces an agent's answer onto the screen, a phrase at a time.
 ///
 /// **The network must not decide the animation speed.** A model that emits
 /// twenty tokens in one frame and then pauses produces bursts — half a
@@ -12,12 +12,18 @@ import Observation
 /// the view renders is `text`; what arrived is `pending`, and the gap between
 /// them is what keeps the reveal steady whatever the model does.
 ///
-/// **The reveal is timed to the next delta, not to the backlog.** Each delta
-/// is spread over the time the next one is expected to take (a running
-/// average of the gaps so far), so the text finishes just as more arrives.
-/// The version this replaced chose its speed from the backlog alone: a
-/// sentence-sized delta ran out in 0.3s when deltas came every 0.5s, and the
-/// text went stop-go — the second half of the 2026-09-23 Guild stutter.
+/// **A chunk at a time, not a character.** The typing effect this replaced
+/// revealed a few characters every 20ms, which read as the app typing — a
+/// performance of a speed the model does not have, and the line under it
+/// reflowing fifty times a second (2026-09-24). A delta is already about a
+/// sentence (the hub and the Hermes plugin both send one), so each is cut at
+/// its sentence boundaries and each piece lands whole and fades in as one.
+/// Reading follows sentences; this is the unit the eye already uses.
+///
+/// **Chunks are spread over the gap to the next delta.** Each delta's pieces
+/// are timed across the interval the next one is expected to take (a running
+/// average of the gaps so far), so the last lands as more arrives rather than
+/// all at once and then a wait.
 ///
 /// The core already de-duplicates and orders the stream (`live::accept`), and
 /// each delta is the **whole answer so far** rather than an increment — so
@@ -27,12 +33,13 @@ import Observation
 public final class StreamingText {
     /// What is on screen.
     public private(set) var text = ""
-    /// How many characters of `text` are new enough to still be animating in.
-    ///
-    /// The view fades exactly these. Without it the whole paragraph would
-    /// re-animate on every tick — the trap with a plain `contentTransition`,
-    /// which transitions far more of the string than intended.
+    /// How many trailing characters of `text` are the newest chunk. Kept
+    /// until the next chunk replaces it, so the view can finish its fade
+    /// without the chunk moving out from under it; zero once the turn ends.
     public private(set) var revealed = 0
+    /// Bumped with every chunk, so a view can start its fade on the change
+    /// even when two chunks happen to be the same length.
+    public private(set) var chunk = 0
 
     private var pending = ""
     private var task: Task<Void, Never>?
@@ -42,13 +49,6 @@ public final class StreamingText {
     private var lastArrival: ContinuousClock.Instant?
     /// The running estimate of the gap between deltas.
     private var interval = StreamingText.defaultInterval
-    /// Fractional characters owed, so a rate below one per tick still
-    /// reveals evenly rather than rounding up and finishing early.
-    private var credit = 0.0
-
-    /// How long between reveals. Short enough to read as motion rather than
-    /// as steps, long enough that each tick is a frame's worth of work.
-    static let tick = Duration.milliseconds(20)
 
     /// The gap assumed before two deltas have been seen. About what both
     /// the hub and the Hermes plugin produce: a sentence at a time.
@@ -57,6 +57,13 @@ public final class StreamingText {
     /// reveal frantic. Above: a model that pauses to think should not make
     /// the next sentence crawl out over seconds.
     static let intervalRange = 0.15...1.5
+    /// The least time between chunks: long enough for one to finish most of
+    /// its fade before the next starts.
+    static let minimumGap = 0.28
+    /// The longest a chunk may be. A delta with no sentence boundary in its
+    /// first this-many characters is cut at a word instead, so a paragraph
+    /// sent whole does not land as a wall.
+    static let longestChunk = 160
 
     public init() {}
 
@@ -91,7 +98,6 @@ public final class StreamingText {
         if let full { text = full } else { text += pending }
         pending = ""
         revealed = 0
-        credit = 0
     }
 
     public func clear() {
@@ -100,7 +106,6 @@ public final class StreamingText {
         text = ""
         pending = ""
         revealed = 0
-        credit = 0
         lastArrival = nil
         interval = Self.defaultInterval
     }
@@ -109,39 +114,71 @@ public final class StreamingText {
         guard task == nil else { return }
         task = Task { [weak self] in
             while let self, !self.pending.isEmpty {
-                let ticksLeft = (self.deadline - ContinuousClock.now).seconds / Self.tick.seconds
-                let take = Self.take(
-                    backlog: self.pending.count, ticksLeft: ticksLeft, credit: &self.credit)
-                if take > 0 {
-                    let end = self.pending.index(self.pending.startIndex, offsetBy: take)
-                    self.text += self.pending[..<end]
-                    self.pending.removeSubrange(..<end)
-                    self.revealed = take
-                }
-                try? await Task.sleep(for: Self.tick)
+                let length = Self.nextChunk(in: self.pending)
+                let end = self.pending.index(self.pending.startIndex, offsetBy: length)
+                self.text += self.pending[..<end]
+                self.pending.removeSubrange(..<end)
+                self.revealed = length
+                self.chunk &+= 1
+
+                let left = (self.deadline - ContinuousClock.now).seconds
+                let wait = Self.gap(timeLeft: left, chunksLeft: Self.chunkCount(in: self.pending))
+                try? await Task.sleep(for: .seconds(wait))
                 if Task.isCancelled { return }
             }
-            self?.revealed = 0
             self?.task = nil
         }
     }
 
-    /// How many characters to reveal this tick.
-    ///
-    /// The backlog spread evenly over the ticks left before the next delta
-    /// is due, carried as fractional `credit` between ticks. Two floors:
-    /// never slower than one character every other tick — past the deadline
-    /// the text must still move — and never slower than `batch`'s catch-up
-    /// speed once the backlog is large, so a model far ahead of the screen
-    /// is not held back by an optimistic estimate.
-    static func take(backlog: Int, ticksLeft: Double, credit: inout Double) -> Int {
-        guard backlog > 0 else { return 0 }
-        var rate = max(0.5, Double(backlog) / max(1, ticksLeft))
-        if backlog >= 400 { rate = max(rate, Double(batch(forBacklog: backlog))) }
-        credit += rate
-        let whole = min(backlog, Int(credit))
-        credit -= Double(whole)
-        return whole
+    /// How long to wait after a chunk: what is left of the gap, shared among
+    /// the chunks still waiting and the one just shown. Never less than
+    /// `minimumGap`, so a model far ahead of the screen gets a quick cadence
+    /// rather than a flood.
+    static func gap(timeLeft: Double, chunksLeft: Int) -> Double {
+        max(minimumGap, timeLeft / Double(chunksLeft + 1))
+    }
+
+    /// The length of the next chunk of `pending`: up to and including the
+    /// first sentence boundary, or a line break, when there is one within
+    /// `longestChunk`; otherwise the last word boundary before it; otherwise
+    /// everything, when it is short enough to be a phrase.
+    static func nextChunk(in pending: String) -> Int {
+        let chars = Array(pending)
+        guard chars.count > 1 else { return chars.count }
+        let limit = min(chars.count, longestChunk)
+        var i = 0
+        while i < limit {
+            let c = chars[i]
+            if c == "\n" { return i + 1 }
+            if c == "." || c == "!" || c == "?" || c == "…" {
+                // The boundary is the space after the stop: "3.5" and "e.g."
+                // mid-word are not sentence ends, and the space goes with
+                // the sentence it closes rather than opening the next.
+                var j = i + 1
+                while j < chars.count, "\"')]*_".contains(chars[j]) { j += 1 }
+                if j < chars.count, chars[j] == " " || chars[j] == "\n" {
+                    return chars[j] == " " ? j + 1 : j
+                }
+                // A stop at the very end of what has arrived: the sentence
+                // is complete as far as anyone can know.
+                if j == chars.count { return j }
+            }
+            i += 1
+        }
+        if chars.count <= longestChunk { return chars.count }
+        if let space = chars[..<longestChunk].lastIndex(of: " "), space > 0 { return space + 1 }
+        return longestChunk
+    }
+
+    /// How many chunks `pending` will take.
+    static func chunkCount(in pending: String) -> Int {
+        var rest = Substring(pending)
+        var count = 0
+        while !rest.isEmpty {
+            rest = rest.dropFirst(nextChunk(in: String(rest)))
+            count += 1
+        }
+        return count
     }
 
     /// The next estimate of the gap between deltas: a running average,
@@ -149,19 +186,6 @@ public final class StreamingText {
     static func nextInterval(previous: Double, gap: Double) -> Double {
         let clamped = min(max(gap, intervalRange.lowerBound), intervalRange.upperBound)
         return previous * 0.6 + clamped * 0.4
-    }
-
-    /// The catch-up speed for a large backlog: how many characters a tick
-    /// may reveal at least, whatever the estimate says.
-    static func batch(forBacklog backlog: Int) -> Int {
-        let size: Int
-        switch backlog {
-        case ..<20: size = 1
-        case ..<100: size = 2
-        case ..<400: size = 4
-        default: size = 12
-        }
-        return min(size, backlog)
     }
 }
 

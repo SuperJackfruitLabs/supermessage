@@ -107,7 +107,10 @@ fi
 
 # ---- iOS -----------------------------------------------------------------
 if want ios; then
-  SIM="platform=iOS Simulator,name=iPhone 16 Pro"
+  # Overridable: with a newer simulator runtime installed than this Xcode
+  # can run, "iPhone 16 Pro" alone resolves to that runtime and finds
+  # nothing. SIM_DESTINATION="platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6"
+  SIM="${SIM_DESTINATION:-platform=iOS Simulator,name=iPhone 16 Pro}"
   run "ios: generate the project" bash -c 'cd apple && xcodegen generate -q'
   run "ios: kit tests" xcodebuild test -project apple/Supermessage.xcodeproj \
     -scheme SupermessageKit -destination "$SIM" -derivedDataPath "$DERIVED"

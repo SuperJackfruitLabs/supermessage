@@ -25,6 +25,13 @@ ROLES: tuple[str, ...] = (
 
 FAMILIES: tuple[str, ...] = ("sans", "serif", "mono")
 
+#: The roles an accent replaces. Everything else stays the appearance's own.
+ACCENT_ROLES: tuple[str, ...] = ("accent", "accent-content", "accent-soft")
+
+#: How many person colours there are. The core's `peer_color_index` picks
+#: one by `user_id`, modulo this — the two must agree.
+PEER_COUNT = 7
+
 TYPE_ROLES: tuple[str, ...] = (
     "label", "meta", "ui", "ui-lg", "avatar", "body", "longread", "body-own",
 )
@@ -72,10 +79,19 @@ class Brand:
 @dataclass(frozen=True)
 class Tokens:
     appearances: dict[str, Appearance]
+    #: accent name -> appearance name -> role -> value: only the roles the
+    #: accent replaces. `accent_palette` gives the merged whole.
+    accents: dict[str, dict[str, dict[str, str]]] = field(default_factory=dict)
+    #: appearance name -> the person colours, in index order.
+    peers: dict[str, list[str]] = field(default_factory=dict)
     type: dict[str, TypeRole] = field(default_factory=dict)
     scale: dict[str, dict] = field(default_factory=dict)
     breakpoints: dict[str, int] = field(default_factory=dict)
     brand: Brand | None = None
+
+    def accent_palette(self, accent: str, appearance: str) -> dict[str, str]:
+        """Every role, as the appearance has it with the accent applied."""
+        return {**self.appearances[appearance].colors, **self.accents[accent][appearance]}
 
 
 def validate(data: dict) -> None:
@@ -135,12 +151,97 @@ def validate(data: dict) -> None:
                         f"contrast.region_luminance_drop.)"
                     )
 
+    _validate_accents(data)
+    _validate_peers(data)
     _validate_type(data)
     _validate_brand(data)
 
     for required in ("radius", "elevation", "motion", "layout"):
         if required not in data:
             raise TokenError(f"design/tokens.toml has no [{required}] table")
+
+
+def _check(label: str, value: str, rule: dict, colors: dict[str, str]) -> None:
+    against = rule["against"]
+    actual = contrast_ratio(value, colors[against])
+    low, high = rule.get("min"), rule.get("max")
+    if low is not None and actual < low:
+        raise TokenError(
+            f"{label} ({value}) is {actual:.2f}:1 against {against} "
+            f"({colors[against]}); the contract requires at least {low}"
+        )
+    if high is not None and actual > high:
+        raise TokenError(
+            f"{label} ({value}) is {actual:.3f}:1 against {against}; "
+            f"the contract requires at most {high}"
+        )
+
+
+def _validate_accents(data: dict) -> None:
+    """Every accent covers every appearance, with at least the three accent
+    roles, and the palette it makes passes every contract.
+
+    An accent may also replace the grounds and the text greys, so a teal
+    accent stands on teal-tinted grounds rather than violet ones. Whatever
+    it replaces, the **whole merged palette** is re-checked: a ground that
+    moves can break a text contract the accent never mentioned."""
+    appearances = data["appearance"]
+    for name, per_appearance in data.get("accent", {}).items():
+        missing = set(appearances) - set(per_appearance)
+        if missing:
+            raise TokenError(
+                f"accent '{name}' has no values for appearance(s): "
+                f"{', '.join(sorted(missing))}. An accent that exists in one "
+                f"appearance and not another would change on a scheme switch."
+            )
+        for appearance, roles in per_appearance.items():
+            if appearance not in appearances:
+                raise TokenError(f"accent '{name}' names unknown appearance '{appearance}'")
+            absent = set(ACCENT_ROLES) - set(roles)
+            if absent:
+                raise TokenError(
+                    f"accent '{name}.{appearance}' must define "
+                    f"{', '.join(sorted(absent))}"
+                )
+            unknown = set(roles) - set(ROLES)
+            if unknown:
+                raise TokenError(
+                    f"accent '{name}.{appearance}' names unknown role(s): "
+                    f"{', '.join(sorted(unknown))}"
+                )
+            base = appearances[appearance]["color"]
+            colors = {r: spec["value"] for r, spec in base.items()}
+            colors.update({r: spec["value"] for r, spec in roles.items()})
+            for role in ROLES:
+                # The accent's own contracts where it states them, the
+                # appearance's otherwise — each against the merged palette.
+                # A replacement that states no contracts keeps the base's.
+                rules = roles.get(role, {}).get("contrast") or base[role].get("contrast", [])
+                for rule in rules:
+                    _check(f"accent {name}.{appearance}.{role}", colors[role], rule, colors)
+
+
+def _validate_peers(data: dict) -> None:
+    """Every appearance has exactly PEER_COUNT person colours, each clearing
+    every contract — a name is text."""
+    peers = data.get("peer")
+    if peers is None:
+        return
+    appearances = data["appearance"]
+    missing = set(appearances) - set(peers)
+    if missing:
+        raise TokenError(f"[peer] has no colours for appearance(s): {', '.join(sorted(missing))}")
+    for appearance, spec in peers.items():
+        values = spec["colors"]
+        if len(values) != PEER_COUNT:
+            raise TokenError(
+                f"peer.{appearance} has {len(values)} colours; the core picks "
+                f"modulo {PEER_COUNT}, so it must have exactly that many"
+            )
+        colors = {r: s["value"] for r, s in appearances[appearance]["color"].items()}
+        for index, value in enumerate(values):
+            for rule in spec.get("contrast", []):
+                _check(f"peer.{appearance}[{index}]", value, rule, colors)
 
 
 def breakpoints_for(data: dict) -> dict[str, int]:
@@ -299,5 +400,13 @@ def load(path: Path) -> Tokens:
                 comments=comments.get(name, {}),
             )
             for name, table in data["appearance"].items()
-        }
+        },
+        accents={
+            name: {
+                appearance: {role: spec["value"] for role, spec in roles.items()}
+                for appearance, roles in per_appearance.items()
+            }
+            for name, per_appearance in data.get("accent", {}).items()
+        },
+        peers={name: list(spec["colors"]) for name, spec in data.get("peer", {}).items()},
     )

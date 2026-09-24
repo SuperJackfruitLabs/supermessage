@@ -115,6 +115,54 @@ def _metrics_block(tokens: Tokens) -> str:
     return "".join(lines)
 
 
+def _accents_block(tokens: Tokens) -> str:
+    if not tokens.accents:
+        return ""
+    names = sorted(tokens.accents)
+    lines = [
+        "\n/// One accent, in every appearance: the whole palette with the accent\n",
+        "/// applied — its own accent roles, and grounds and greys in its hue.\n",
+        "struct AccentSet {\n",
+    ]
+    for appearance in tokens.appearances:
+        lines.append(f"    let {appearance}: Palette\n")
+    lines += [
+        "}\n",
+        "\n/// The accents a reader may choose. Violet, the default, is the\n",
+        "/// appearances' own and is not listed.\n",
+        "enum ThemeAccents {\n",
+        f"    static let names = [{', '.join(repr(n).replace(chr(39), chr(34)) for n in names)}]\n",
+    ]
+    for name in names:
+        lines.append(f"    static let {name} = AccentSet(\n")
+        apps = list(tokens.appearances)
+        for i, appearance in enumerate(apps):
+            palette = tokens.accent_palette(name, appearance)
+            comma = "," if i < len(apps) - 1 else ""
+            lines.append(f"        {appearance}: Palette(\n")
+            for j, role in enumerate(ROLES):
+                sep = "," if j < len(ROLES) - 1 else ""
+                lines.append(f"            {_camel(role)}: {_literal(palette[role])}{sep}\n")
+            lines.append(f"        ){comma}\n")
+        lines.append("    )\n")
+    lines.append("}\n")
+    return "".join(lines)
+
+
+def _peers_block(tokens: Tokens) -> str:
+    if not tokens.peers:
+        return ""
+    lines = [
+        "\n/// One colour per person, indexed by the core's `peerColorIndex`.\n",
+        "enum ThemePeers {\n",
+    ]
+    for appearance, values in tokens.peers.items():
+        items = ", ".join(_literal(v) for v in values)
+        lines.append(f"    static let {appearance}: [Color] = [{items}]\n")
+    lines.append("}\n")
+    return "".join(lines)
+
+
 def emit_swift(tokens: Tokens) -> str:
     light = tokens.appearances["light"]
     members = "".join(
@@ -127,17 +175,15 @@ def emit_swift(tokens: Tokens) -> str:
         + "struct Palette {\n"
         + members
         + "}\n"
-        + "\n/// The three appearances.\n"
+        + "\n/// The appearances.\n"
         + "///\n"
-        + "/// iOS binds `paper` to light and `dark` to dark: paper is what\n"
-        + '/// "light" means on a phone. There is no picker — see Theme.swift.\n'
+        + "/// iOS binds `paper` to light and `dark` (or `black`, the reader's\n"
+        + "/// choice) to dark — see Theme.swift.\n"
         + "enum ThemeTokens {\n"
-        + _palette(tokens.appearances["light"])
-        + "\n"
-        + _palette(tokens.appearances["dark"])
-        + "\n"
-        + _palette(tokens.appearances["paper"])
+        + "\n".join(_palette(a) for a in tokens.appearances.values())
         + "}\n"
+        + _accents_block(tokens)
+        + _peers_block(tokens)
         + _type_block(tokens)
         + _metrics_block(tokens)
     )

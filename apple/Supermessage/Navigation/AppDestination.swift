@@ -60,16 +60,55 @@ struct ChatsToolbar: ToolbarContent {
     let onCompose: () -> Void
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            AccountButton(session: session, action: onAccount)
-        }
+        account
         ToolbarItem(placement: .topBarTrailing) {
             // Labelled: an icon-only control is announced as "button" and
             // nothing else.
+            //
+            // The stock symbol, unstyled: the bar sizes, centres and tints
+            // it inside its own glass. An earlier frame, weight and
+            // half-point nudge were compensating for a circle the bar now
+            // draws itself (HIG, Toolbars: "Prefer system-provided symbols
+            // without borders").
             Button(action: onCompose) { Image(systemName: "square.and.pencil") }
-                .accessibilityLabel("New conversation")
+            .accessibilityLabel("New conversation")
         }
     }
+
+    /// You, at the leading edge.
+    ///
+    /// **On iOS 26 the bar's own glass is hidden here** and the button draws
+    /// its own glass circle. The bar sizes its glass to the label, and it
+    /// gives text more room across than down — so an initial came out a pill
+    /// beside compose's circle (build 20, 2026-09-24). An icon gets a circle;
+    /// a monogram is not an icon. Apple's own iOS 26 apps take the account
+    /// out of the shared glass the same way.
+    ///
+    /// Guarded by the compiler as well as the OS: the modifier is iOS 26
+    /// SDK, and this machine's Xcode 16.4 has only 18.5's. CI builds with 26.
+    @ToolbarContentBuilder private var account: some ToolbarContent {
+        #if compiler(>=6.2)
+        if #available(iOS 26, *) {
+            ToolbarItem(placement: .topBarLeading) {
+                AccountButton(session: session, action: onAccount)
+            }
+            .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) {
+                AccountButton(session: session, action: onAccount)
+            }
+        }
+        #else
+        ToolbarItem(placement: .topBarLeading) {
+            AccountButton(session: session, action: onAccount)
+        }
+        #endif
+    }
+}
+
+/// The square the compose glyph sits in, and the pre-26 account disc.
+private enum ToolbarGlyph {
+    static let side: CGFloat = 30
 }
 
 /// Your initial, in a circle: which account this is, and the way to it.
@@ -82,17 +121,43 @@ private struct AccountButton: View {
     @State private var userId: String?
 
     var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle().fill(Theme.accent.opacity(0.18))
-                Text(AccountLabel.initial(of: userId))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.accent)
-            }
-            .frame(width: 30, height: 30)
-        }
+        Button(action: action) { label }
+            .buttonStyle(.plain)
         .accessibilityLabel("Account")
         .task { userId = await session.account()?.userId }
+    }
+
+    private var initial: some View {
+        Text(AccountLabel.initial(of: userId))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.accent)
+    }
+
+    /// iOS 26: a glass circle of the bar's own size (44pt), since the bar's
+    /// glass is hidden for this item — see `ChatsToolbar.account`. Before
+    /// it: the tinted disc, as there is no glass to match.
+    @ViewBuilder private var label: some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26, *) {
+            initial
+                .frame(width: 44, height: 44)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .contentShape(Circle())
+        } else {
+            disc
+        }
+        #else
+        disc
+        #endif
+    }
+
+    private var disc: some View {
+        ZStack {
+            Circle().fill(Theme.accent.opacity(0.18))
+            initial
+        }
+        .frame(width: ToolbarGlyph.side, height: ToolbarGlyph.side)
+        .contentShape(Circle())
     }
 }
 

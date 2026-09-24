@@ -399,6 +399,22 @@ fileprivate class UniffiHandleMap<T> {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
     typealias FfiType = UInt16
     typealias SwiftType = UInt16
@@ -3505,6 +3521,19 @@ public func parseMatrixLink(href: String) -> MatrixLinkTarget? {
 })
 }
 /**
+ * Which of the seven person colours `user_id` is drawn in — see
+ * `core::peer_color`. A free function for the same reason as
+ * `rich_blocks_from_markdown`: every host asks the same question and the
+ * answer must not differ between them.
+ */
+public func peerColorIndex(userId: String) -> UInt8 {
+    return try!  FfiConverterUInt8.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_peer_color_index(
+        FfiConverterString.lower(userId),$0
+    )
+})
+}
+/**
  * Name a set of people from their user ids — "Cleaner Cody and 2 others".
  *
  * A free function for the same reason as `rich_blocks_from_markdown`: read
@@ -3614,6 +3643,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_peer_color_index() != 751) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_people_label() != 2363) {

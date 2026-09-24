@@ -139,6 +139,272 @@ danger = { value = "#b4222a", contrast = [{ against = "surface", min = 4.5 }] }
 ok = { value = "#1d7c59", contrast = [{ against = "surface", min = 4.5 }] }
 scrim = { value = "rgb(34 25 46 / 0.45)", drop = { min = 2.5 } }   # measures 3.07x
 
+# ---------------------------------------------------------------- black ----
+# Dark, with the conversation on true black: for OLED phones, where black is
+# pixels switched off — deeper contrast, and less battery. A reader's choice
+# (Account → Appearance), never a default. The depth story runs the other
+# way here: the reading sheet is the black, and the field around it — header,
+# composer, roster — is the step up, because nothing is darker than off.
+
+[appearance.black.color]
+surface = { value = "#000000" }
+surface-sunken = { value = "#100f17", contrast = [
+  { against = "surface", min = 1.05, max = 1.13 },
+] }
+surface-raised = { value = "#1a1824" }
+border = { value = "#2c2a38" }
+border-strong = { value = "#4a4660" }
+content = { value = "#f4f2fb", contrast = [{ against = "surface", min = 12.0 }] }
+content-muted = { value = "#c6c2d8", contrast = [{ against = "surface", min = 7.0 }] }
+content-faint = { value = "#8e86ab", contrast = [
+  { against = "surface", min = 4.5 },
+  { against = "surface-sunken", min = 4.5 },
+  { against = "surface-raised", min = 4.5 },
+] }
+accent = { value = "#9d8ff0", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#1a1433", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#241c42", contrast = [{ against = "content", min = 4.5 }] }
+signal = { value = "#e8a33d", contrast = [{ against = "signal-soft", min = 6.0 }] }
+signal-soft = { value = "#2a2114" }
+danger = { value = "#ed6e74", contrast = [{ against = "surface", min = 4.5 }] }
+ok = { value = "#70cdab", contrast = [{ against = "surface", min = 4.5 }] }
+scrim = { value = "rgb(0 0 0 / 0.72)", drop = { min = 2.5 } }
+
+# --------------------------------------------------------------- accents ----
+# The accents a reader may choose (Account → Appearance). Violet is the
+# default and lives in the appearances above; each entry here replaces only
+# the three accent roles, per appearance, and carries the same contracts
+# plus one more — the accent itself must read against the page (3.0, a
+# control, not body text). Curated, never a colour wheel: a free choice
+# cannot be held above these floors. Amber is not on the list and never
+# will be — it means "you owe someone an answer", and nothing else.
+
+[accent.blue.light]
+surface = { value = "#fbfdff" }
+surface-sunken = { value = "#f0f3fa" }
+surface-raised = { value = "#f9fafd" }
+border = { value = "#dae0eb" }
+border-strong = { value = "#b8c3d6" }
+content = { value = "#13213a" }
+content-muted = { value = "#3d4f70" }
+content-faint = { value = "#5b6f92" }
+accent = { value = "#2356c2", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#e4ecfb", contrast = [{ against = "content", min = 4.5 }] }
+[accent.blue.paper]
+surface = { value = "#f6f8fd" }
+surface-sunken = { value = "#eaeff6" }
+surface-raised = { value = "#f3f6fb" }
+border = { value = "#d4dce9" }
+border-strong = { value = "#b3bfd3" }
+content = { value = "#131e31" }
+content-muted = { value = "#404d62" }
+content-faint = { value = "#5d6b85" }
+accent = { value = "#2356c2", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#e3eaf7", contrast = [{ against = "content", min = 4.5 }] }
+[accent.blue.dark]
+surface = { value = "#161e2e" }
+surface-sunken = { value = "#0f1521" }
+surface-raised = { value = "#1c2536" }
+border = { value = "#2f3849" }
+border-strong = { value = "#465267" }
+content = { value = "#f1f4f8" }
+content-muted = { value = "#bfc6d1" }
+content-faint = { value = "#828d9f" }
+accent = { value = "#8ab4ff", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#0d1630", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#1c2a4d", contrast = [{ against = "content", min = 4.5 }] }
+[accent.blue.black]
+accent = { value = "#8ab4ff", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#0d1630", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#16213d", contrast = [{ against = "content", min = 4.5 }] }
+
+[accent.teal.light]
+surface = { value = "#fafefd" }
+surface-sunken = { value = "#ecf5f5" }
+surface-raised = { value = "#f7fbfb" }
+border = { value = "#d4e3e3" }
+border-strong = { value = "#adc9c8" }
+content = { value = "#002929" }
+content-muted = { value = "#1f5959" }
+content-faint = { value = "#3e7878" }
+accent = { value = "#0b6e75", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#ddf1f1", contrast = [{ against = "content", min = 4.5 }] }
+[accent.teal.paper]
+surface = { value = "#f3fafa" }
+surface-sunken = { value = "#e6f1f1" }
+surface-raised = { value = "#f1f7f7" }
+border = { value = "#cde0e0" }
+border-strong = { value = "#a8c5c4" }
+content = { value = "#002424" }
+content-muted = { value = "#315353" }
+content-faint = { value = "#4a7271" }
+accent = { value = "#0b6e75", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#dcece9", contrast = [{ against = "content", min = 4.5 }] }
+[accent.teal.dark]
+surface = { value = "#072323" }
+surface-sunken = { value = "#051919" }
+surface-raised = { value = "#0e2a2a" }
+border = { value = "#233d3d" }
+border-strong = { value = "#375958" }
+content = { value = "#eff5f5" }
+content-muted = { value = "#bac9c9" }
+content-faint = { value = "#779292" }
+accent = { value = "#5fcfcf", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#062628", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#153739", contrast = [{ against = "content", min = 4.5 }] }
+[accent.teal.black]
+accent = { value = "#5fcfcf", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#062628", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#112c2e", contrast = [{ against = "content", min = 4.5 }] }
+
+[accent.green.light]
+surface = { value = "#fbfdfb" }
+surface-sunken = { value = "#eff5ef" }
+surface-raised = { value = "#f9fbf9" }
+border = { value = "#d9e3da" }
+border-strong = { value = "#b6c8b8" }
+content = { value = "#0d2812" }
+content-muted = { value = "#38583c" }
+content-faint = { value = "#557759" }
+accent = { value = "#2a7a35", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#e2f1e3", contrast = [{ against = "content", min = 4.5 }] }
+[accent.green.paper]
+surface = { value = "#f5faf5" }
+surface-sunken = { value = "#eaf1ea" }
+surface-raised = { value = "#f3f7f3" }
+border = { value = "#d3dfd4" }
+border-strong = { value = "#b2c4b3" }
+content = { value = "#102312" }
+content-muted = { value = "#3e5240" }
+content-faint = { value = "#5a725c" }
+accent = { value = "#2a7a35", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#e1ecdd", contrast = [{ against = "content", min = 4.5 }] }
+[accent.green.dark]
+surface = { value = "#132315" }
+surface-sunken = { value = "#0d190f" }
+surface-raised = { value = "#1a2a1c" }
+border = { value = "#2d3d2e" }
+border-strong = { value = "#445845" }
+content = { value = "#f1f5f1" }
+content-muted = { value = "#bfc9bf" }
+content-faint = { value = "#809282" }
+accent = { value = "#7fd28a", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#0b2410", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#1a3620", contrast = [{ against = "content", min = 4.5 }] }
+[accent.green.black]
+accent = { value = "#7fd28a", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#0b2410", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#142b19", contrast = [{ against = "content", min = 4.5 }] }
+
+[accent.pink.light]
+surface = { value = "#fffcfd" }
+surface-sunken = { value = "#f8f1f4" }
+surface-raised = { value = "#fdf9fb" }
+border = { value = "#e9dce1" }
+border-strong = { value = "#d2bbc5" }
+content = { value = "#331625" }
+content-muted = { value = "#684154" }
+content-faint = { value = "#8a6073" }
+accent = { value = "#b2266a", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#fae4ee", contrast = [{ against = "content", min = 4.5 }] }
+[accent.pink.paper]
+surface = { value = "#fcf6f9" }
+surface-sunken = { value = "#f5ebef" }
+surface-raised = { value = "#faf4f6" }
+border = { value = "#e7d6dd" }
+border-strong = { value = "#cfb6c1" }
+content = { value = "#2c1621" }
+content-muted = { value = "#5d444f" }
+content-faint = { value = "#816270" }
+accent = { value = "#b2266a", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#f5e3e8", contrast = [{ against = "content", min = 4.5 }] }
+[accent.pink.dark]
+surface = { value = "#2a1820" }
+surface-sunken = { value = "#1e1017" }
+surface-raised = { value = "#321e27" }
+border = { value = "#45313a" }
+border-strong = { value = "#634954" }
+content = { value = "#f7f2f4" }
+content-muted = { value = "#cfc1c7" }
+content-faint = { value = "#9b858f" }
+accent = { value = "#f48fc0", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#330a1f", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#3d1b2e", contrast = [{ against = "content", min = 4.5 }] }
+[accent.pink.black]
+accent = { value = "#f48fc0", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#330a1f", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#321625", contrast = [{ against = "content", min = 4.5 }] }
+
+[accent.graphite.light]
+surface = { value = "#fdfcff" }
+surface-sunken = { value = "#f3f3f5" }
+surface-raised = { value = "#fafafd" }
+border = { value = "#e0dfe2" }
+border-strong = { value = "#c2c2c5" }
+content = { value = "#212123" }
+content-muted = { value = "#4f4f51" }
+content-faint = { value = "#6f6e71" }
+accent = { value = "#45424f", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#ebeaef", contrast = [{ against = "content", min = 4.5 }] }
+[accent.graphite.paper]
+surface = { value = "#f8f8fb" }
+surface-sunken = { value = "#eeeef1" }
+surface-raised = { value = "#f6f5f8" }
+border = { value = "#dbdbde" }
+border-strong = { value = "#bebec0" }
+content = { value = "#1e1e20" }
+content-muted = { value = "#4c4c4e" }
+content-faint = { value = "#6b6a6d" }
+accent = { value = "#45424f", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#ffffff", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#ebe8e2", contrast = [{ against = "content", min = 4.5 }] }
+[accent.graphite.dark]
+surface = { value = "#1e1d23" }
+surface-sunken = { value = "#16151a" }
+surface-raised = { value = "#25242a" }
+border = { value = "#38373d" }
+border-strong = { value = "#525157" }
+content = { value = "#f4f3f8" }
+content-muted = { value = "#c5c4cb" }
+content-faint = { value = "#8c8b92" }
+accent = { value = "#cbc8d8", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#1c1a24", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#2e2a3f", contrast = [{ against = "content", min = 4.5 }] }
+[accent.graphite.black]
+accent = { value = "#cbc8d8", contrast = [{ against = "surface", min = 3.0 }] }
+accent-content = { value = "#1c1a24", contrast = [{ against = "accent", min = 4.5 }] }
+accent-soft = { value = "#26242f", contrast = [{ against = "content", min = 4.5 }] }
+
+# ----------------------------------------------------------------- peers ----
+# One colour per person, for their name and the bar on a quote of them —
+# which is what tells "Strategy Sam" from "Strategy Sam (Hermes on Guild)"
+# at a glance in a room full of agents. Seven, as Telegram has, chosen from
+# the user id by the core (`peer_color_index`) so every device agrees. No
+# amber and no orange: amber means one thing. Every entry is text, so every
+# entry clears 4.5 on every ground a name is drawn on.
+
+[peer.light]
+colors = ["#b3261e", "#6a3fc8", "#2d7a36", "#0b6f86", "#2356c2", "#b0306e", "#555266"]
+contrast = [{ against = "surface", min = 4.5 }, { against = "surface-raised", min = 4.5 }]
+[peer.paper]
+colors = ["#b3261e", "#6a3fc8", "#2d7a36", "#0b6f86", "#2356c2", "#b0306e", "#555266"]
+contrast = [{ against = "surface", min = 4.5 }, { against = "surface-raised", min = 4.5 }]
+[peer.dark]
+colors = ["#f28b82", "#b9a4ff", "#7fd28a", "#6cd0e6", "#8ab4ff", "#f48fc0", "#b7b4c7"]
+contrast = [{ against = "surface", min = 4.5 }, { against = "surface-raised", min = 4.5 }]
+[peer.black]
+colors = ["#f28b82", "#b9a4ff", "#7fd28a", "#6cd0e6", "#8ab4ff", "#f48fc0", "#b7b4c7"]
+contrast = [{ against = "surface", min = 4.5 }, { against = "surface-raised", min = 4.5 }]
+
 # ---------------------------------------------------------------- brand ----
 # The mark: two overlapping speech bubbles, one logo on every surface — app
 # icons on all three platforms, both favicons, the landing and docs headers.

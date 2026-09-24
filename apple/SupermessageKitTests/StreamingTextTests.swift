@@ -10,27 +10,6 @@ import Testing
 /// as a fault in the app rather than in the model.
 @MainActor
 struct StreamingTextTests {
-    @Test("a small backlog reveals a character at a time")
-    func slowStream() {
-        #expect(StreamingText.batch(forBacklog: 1) == 1)
-        #expect(StreamingText.batch(forBacklog: 19) == 1)
-    }
-
-    @Test("a bigger backlog reveals faster, so a quick model is not held back")
-    func fastStream() {
-        #expect(StreamingText.batch(forBacklog: 50) == 2)
-        #expect(StreamingText.batch(forBacklog: 200) == 4)
-        #expect(StreamingText.batch(forBacklog: 5_000) == 12)
-    }
-
-    @Test("a batch never overruns what is actually waiting")
-    func neverOverruns() {
-        // The subscript that reveals a batch would trap past the end.
-        for backlog in [0, 1, 2, 3] {
-            #expect(StreamingText.batch(forBacklog: backlog) <= backlog)
-        }
-    }
-
     @Test("the same text twice changes nothing")
     func idempotent() {
         let s = StreamingText()
@@ -72,58 +51,81 @@ struct StreamingTextTests {
         #expect(s.revealed == 0)
     }
 
-    // ─── Timed to the next delta ─────────────────────────────────────────
+    // ─── Chunks ──────────────────────────────────────────────────────────
 
-    /// Run the per-tick rule the way the reveal loop does, and report the
-    /// tick each character landed on.
-    private func reveal(backlog: Int, ticks: Double) -> [Int] {
-        var credit = 0.0
-        var left = backlog
-        var landed: [Int] = []
-        var tick = 0
-        while left > 0, tick < 10_000 {
-            let n = StreamingText.take(backlog: left, ticksLeft: ticks - Double(tick), credit: &credit)
-            landed += Array(repeating: tick, count: n)
-            left -= n
-            tick += 1
+    /// Cut `text` the way the reveal loop does.
+    private func chunks(_ text: String) -> [String] {
+        var rest = Substring(text)
+        var out: [String] = []
+        while !rest.isEmpty {
+            let n = StreamingText.nextChunk(in: String(rest))
+            out.append(String(rest.prefix(n)))
+            rest = rest.dropFirst(n)
         }
-        return landed
+        return out
     }
 
-    @Test("a delta is spread over the gap to the next, not dumped at the backlog's speed")
-    func spreadsOverTheGap() {
-        // 60 characters, next delta due in 25 ticks (0.5s). The old rule
-        // took its speed from the backlog alone, so the finish time was
-        // luck: a 120-character delta at 4 a tick was done by tick 30 of a
-        // 50-tick gap, and the text stood still for the rest.
-        let landed = reveal(backlog: 60, ticks: 25)
-        #expect(landed.count == 60)
-        #expect(landed.last! >= 22, "finished at tick \(landed.last!), idling before the next delta")
-        #expect(landed.last! <= 25, "still revealing at tick \(landed.last!), past the next delta")
+    @Test("a delta is cut at its sentences, each keeping its trailing space")
+    func sentences() {
+        #expect(chunks("First point. Second one! A third? Done.") == [
+            "First point. ", "Second one! ", "A third? ", "Done.",
+        ])
     }
 
-    @Test("a slow rate stays even rather than bursting")
-    func evenAtSlowRates() {
-        // 10 characters over 25 ticks: a character every 2-3 ticks, never
-        // two in one tick and never a long hole.
-        let landed = reveal(backlog: 10, ticks: 25)
-        #expect(Set(landed).count == landed.count, "two characters landed in one tick")
-        let gaps = zip(landed.dropFirst(), landed).map { $0 - $1 }
-        #expect(gaps.allSatisfy { $0 <= 3 }, "uneven gaps \(gaps)")
+    @Test("a number or an abbreviation is not a sentence end")
+    func notEveryStop() {
+        #expect(chunks("Version 3.5 is out, e.g.in beta. Next.") == [
+            "Version 3.5 is out, e.g.in beta. ", "Next.",
+        ])
     }
 
-    @Test("past the deadline the text still moves")
-    func movesPastTheDeadline() {
-        var credit = 0.0
-        var total = 0
-        for _ in 0..<10 { total += StreamingText.take(backlog: 50, ticksLeft: -5, credit: &credit) }
-        #expect(total >= 5)
+    @Test("a closing quote or bracket stays with its sentence")
+    func closers() {
+        #expect(chunks("He said \"stop.\" Then (quietly.) left.") == [
+            "He said \"stop.\" ", "Then (quietly.) ", "left.",
+        ])
+        #expect(chunks("**Bold.** Plain.") == ["**Bold.** ", "Plain."])
     }
 
-    @Test("a large backlog catches up whatever the estimate")
-    func catchesUp() {
-        var credit = 0.0
-        #expect(StreamingText.take(backlog: 5_000, ticksLeft: 1_000, credit: &credit) >= 12)
+    @Test("a line break ends a chunk, so a list lands an item at a time")
+    func lines() {
+        #expect(chunks("- one\n- two\n- three") == ["- one\n", "- two\n", "- three"])
+    }
+
+    @Test("a phrase with no boundary lands whole")
+    func phrase() {
+        #expect(chunks("still thinking about") == ["still thinking about"])
+    }
+
+    @Test("a run-on paragraph is cut at a word rather than landing as a wall")
+    func runOn() {
+        let words = Array(repeating: "word", count: 80).joined(separator: " ")
+        let cut = chunks(words)
+        #expect(cut.count > 1)
+        #expect(cut.allSatisfy { $0.count <= StreamingText.longestChunk })
+        #expect(cut.dropLast().allSatisfy { $0.hasSuffix(" ") }, "cut mid-word: \(cut)")
+        #expect(cut.joined() == words)
+    }
+
+    @Test("chunks never lose or repeat a character")
+    func lossless() {
+        let text = "A. B! C? \"D.\" (e.) 3.14 …and so… on\nnext line. " + String(repeating: "x", count: 400)
+        #expect(chunks(text).joined() == text)
+        #expect(StreamingText.chunkCount(in: text) == chunks(text).count)
+    }
+
+    // ─── Timing ─────────────────────────────────────────────────────────
+
+    @Test("chunks share the gap to the next delta")
+    func sharesTheGap() {
+        // 1.2s left, two more chunks after this one: 0.4s each.
+        #expect(abs(StreamingText.gap(timeLeft: 1.2, chunksLeft: 2) - 0.4) < 0.001)
+    }
+
+    @Test("past the deadline, or with a big backlog, chunks still keep a readable cadence")
+    func minimumGap() {
+        #expect(StreamingText.gap(timeLeft: -1, chunksLeft: 3) == StreamingText.minimumGap)
+        #expect(StreamingText.gap(timeLeft: 0.5, chunksLeft: 40) == StreamingText.minimumGap)
     }
 
     @Test("the gap estimate follows the stream, within bounds")
@@ -135,11 +137,15 @@ struct StreamingTextTests {
         #expect(StreamingText.nextInterval(previous: 0.5, gap: 0) >= StreamingText.intervalRange.lowerBound * 0.4)
     }
 
-    @Test("a take never overruns what is waiting")
-    func takeNeverOverruns() {
-        for backlog in 0..<5 {
-            var credit = 3.7
-            #expect(StreamingText.take(backlog: backlog, ticksLeft: 0.1, credit: &credit) <= backlog)
-        }
+    @Test("the first chunk is on screen at once, whole")
+    func firstChunkImmediately() async {
+        let s = StreamingText()
+        s.accept("One sentence. Another one.")
+        // The loop's first pass runs before its first sleep.
+        await Task.yield()
+        #expect(s.text == "One sentence. ")
+        #expect(s.revealed == "One sentence. ".count)
+        #expect(s.chunk == 1)
+        s.clear()
     }
 }

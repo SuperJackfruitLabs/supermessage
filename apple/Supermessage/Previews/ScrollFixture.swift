@@ -148,6 +148,33 @@ struct ScrollFixtureRoot: View {
             await ScrollFixture.seed(session)
             if streams { await ScrollFixture.stream(session) }
         }
+        .task { await cycleAppearance() }
+    }
+
+    /// `-appearanceCycle`: steps through appearance settings while the app
+    /// runs, three seconds apart, so a switch can be seen — and screenshot —
+    /// the way a reader makes one. A preview renders one choice from
+    /// scratch and cannot show a change failing to reach something already
+    /// on screen, which is the bug build 19 shipped.
+    private func cycleAppearance() async {
+        guard ProcessInfo.processInfo.arguments.contains("-appearanceCycle") else { return }
+        let steps: [(mode: String, style: String, accent: String)] = [
+            ("dark", "tinted", ""), ("light", "tinted", ""), ("dark", "tinted", "teal"),
+            ("light", "tinted", "teal"), ("dark", "black", "teal"), ("dark", "tinted", "pink"),
+        ]
+        let defaults = UserDefaults.standard
+        for step in steps {
+            defaults.set(step.mode, forKey: AppearanceSettings.modeKey)
+            defaults.set(step.style, forKey: AppearanceSettings.darkStyleKey)
+            defaults.set(step.accent, forKey: AppearanceSettings.accentKey)
+            print("appearance-cycle \(step.mode) \(step.style) \(step.accent.isEmpty ? "violet" : step.accent)")
+            try? await Task.sleep(for: .seconds(3))
+        }
+        // Leave nothing behind: the preview snapshots run in this app, read
+        // the same defaults, and would render in the last colour cycled to.
+        for key in [AppearanceSettings.modeKey, AppearanceSettings.darkStyleKey, AppearanceSettings.accentKey] {
+            defaults.removeObject(forKey: key)
+        }
     }
 }
 #endif
