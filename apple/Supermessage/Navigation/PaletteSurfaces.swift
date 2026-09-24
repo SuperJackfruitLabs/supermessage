@@ -14,6 +14,25 @@ extension View {
     func paletteListGround() -> some View {
         scrollContentBackground(.hidden)
             .background(Theme.surface)
+            .softEdgesUnderBars()
+    }
+
+    /// iOS 26: rows blur and fade as they pass under the floating bars,
+    /// said explicitly. The build 20 screenshot had a row sharp right up to
+    /// the tab bar's edge (2026-09-24); `.soft` is the style Apple gives
+    /// iPhone scroll views, stated here so a list on a painted ground cannot
+    /// fall back to anything else. Compiler-guarded: iOS 26 SDK.
+    @ViewBuilder
+    fileprivate func softEdgesUnderBars() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26, *) {
+            scrollEdgeEffectStyle(.soft, for: .all)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
     }
 
     /// A grouped list — a panel of settings or details — whose rows sit on

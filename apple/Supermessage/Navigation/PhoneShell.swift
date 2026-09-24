@@ -72,6 +72,7 @@ struct PhoneShell: View {
             }
         }
         .tint(Theme.accent)
+        .minimizesTabBarOnScroll()
         // A room asked for from outside — a notification, a widget, a Live
         // Activity or a `supermessage://` link. Always opened in Chats, so
         // Back lands somewhere that lists it. `initial: true` so a request
@@ -94,5 +95,24 @@ struct PhoneShell: View {
             ) { showsNewRoom = false }
             .paletteSheet()
         }
+    }
+}
+
+extension View {
+    /// iOS 26: the tab bar shrinks to its selected tab while a list scrolls
+    /// down and comes back on scrolling up or a tap — room for another row or
+    /// two on a 13 mini. Guarded by the compiler too: the modifier is iOS 26
+    /// SDK and this machine's Xcode is 16.4.
+    @ViewBuilder
+    fileprivate func minimizesTabBarOnScroll() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26, *) {
+            tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
     }
 }
