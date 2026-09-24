@@ -33,6 +33,16 @@ final class StreamProbe {
     /// Frames in which a history cell's drawn position moved more than
     /// `jumpThreshold` since the frame before.
     private(set) var jumps = 0
+    /// Frames in which, scrolled back from the newest message and with no
+    /// finger or momentum moving the list, a history cell moved on screen.
+    /// The reader is reading there; nothing should move.
+    private(set) var awayMoves = 0
+    /// Frames the probe saw scrolled back and at rest, so a run that never
+    /// scrolled back cannot pass the check above.
+    private(set) var awayFrames = 0
+    /// Growths of the live turn, on screen, while scrolled back and at rest:
+    /// the case that moved the history. Zero means the check tested nothing.
+    private(set) var awayGrowths = 0
     private(set) var finished = false
 
     /// About half a line of body text. A 0.32s glide of two lines moves at
@@ -41,11 +51,12 @@ final class StreamProbe {
 
     private var lastHeight: CGFloat?
     private var lastDrawnY: CGFloat?
+    private var lastAway: (item: IndexPath, y: CGFloat)?
     private weak var list: UICollectionView?
     private var link: CADisplayLink?
 
     var summary: String {
-        "stream-probe finished=\(finished) animating=\(animatingFrames) jumps=\(jumps) growths=\(growths)"
+        "stream-probe finished=\(finished) animating=\(animatingFrames) jumps=\(jumps) awayMoves=\(awayMoves) awayFrames=\(awayFrames) awayGrowths=\(awayGrowths) growths=\(growths)"
     }
 
     func watch(_ list: UICollectionView) {
@@ -80,9 +91,27 @@ final class StreamProbe {
         } else {
             lastDrawnY = nil
         }
+        // Scrolled back and at rest: the first visible history cell must
+        // stay put while the answer grows below.
+        let resting = !list.isTracking && !list.isDragging && !list.isDecelerating
+        if list.contentOffset.y > 20, resting,
+            let item = list.indexPathsForVisibleItems.filter({ $0.item > 0 }).min(),
+            let cell = list.cellForItem(at: item),
+            let drawn = cell.layer.presentation()?.frame
+        {
+            awayFrames += 1
+            let y = list.convert(drawn, to: nil).minY
+            if let last = lastAway, last.item == item, abs(y - last.y) > 0.5 { awayMoves += 1 }
+            lastAway = (item, y)
+        } else {
+            lastAway = nil
+        }
         // The live turn is item 0: the newest end of the inverted list.
         if let live = list.cellForItem(at: IndexPath(item: 0, section: 0)) {
-            if let last = lastHeight, live.frame.height > last { growths += 1 }
+            if let last = lastHeight, live.frame.height > last {
+                growths += 1
+                if lastAway != nil { awayGrowths += 1 }
+            }
             lastHeight = live.frame.height
         }
     }

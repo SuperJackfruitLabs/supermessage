@@ -190,8 +190,15 @@ final class TimelineCollection: UICollectionView {
         if isStreaming() {
             let live = IndexPath(item: 0, section: 0)
             let before = cellForItem(at: live)?.frame.height
+            // Read before layout: the growth moves the offset when scrolled
+            // back, so asking afterwards could answer for the wrong place.
+            let atNewest = contentOffset.y <= 0.5
             UIView.performWithoutAnimation { super.layoutSubviews() }
-            if let before, let after = cellForItem(at: live)?.frame.height, after - before > 0.5 {
+            // Only at the newest message. Scrolled back, the list layout
+            // already keeps the reader's place when the answer grows, and a
+            // glide there slid the history under their thumb on every
+            // sentence (build 20, 2026-09-24).
+            if atNewest, let before, let after = cellForItem(at: live)?.frame.height, after - before > 0.5 {
                 glide(by: after - before)
             }
         } else {
