@@ -61,13 +61,13 @@
   // rooms are agents, and what they send is long-form prose — plans,
   // findings, reports — while what the operator sends is a command. So a
   // peer message is an editorial block (no bubble, no border, no fill,
-  // left-aligned, serif `--text-body` at a `68ch` measure, a mono sender
-  // line above it) and an own message keeps a tight right-aligned bubble
+  // left-aligned, sans `--text-body` at a `68ch` measure, a sender line
+  // above it) and an own message keeps a tight right-aligned bubble
   // (`--color-accent-soft` ground, `--color-content` text, 6px radius, sans
   // `--text-body-own`, `52ch`). *You type, they write.*
   //   - The asymmetry is one of **register, not geometry** (spec §6.3.0),
-  //     and that distinction is the whole of it: sans against serif, tight
-  //     against airy, a ground against no ground. Every row — peer block,
+  //     and that distinction is the whole of it: tight against airy, a
+  //     ground against no ground — never a typeface. Every row — peer block,
   //     own bubble, divider, log line, emote, dispatch card — lays out
   //     inside *one* centred `72ch` reading column, and "right-aligned"
   //     means against that column's right edge, never the viewport's. See
@@ -94,9 +94,9 @@
   //     the rest of the file as CSS and fail the whole component with
   //     "`<script>` was left open". Name it in prose, as here.
   //     `ch` resolves against the *element's own* font, so each block also
-  //     carries the face its body is set in (`font-serif` for a peer,
-  //     `font-sans` for an own message) and the chrome inside it names its
-  //     own face explicitly rather than inheriting.
+  //     carries the face its body is set in (`font-sans` for both since the
+  //     one-voice rewrite, docs/design-language.md §1) and the chrome inside
+  //     it names its own face explicitly rather than inheriting.
   //   - `continuesRun` (from `timelineGrouping.ts`, see its doc comment)
   //     collapses a sender run: the sender line and the timestamp are
   //     suppressed and the gap above tightens from 32px to 20px, so five
@@ -110,12 +110,13 @@
   //     message and must stay looser than it — see `messageBlock`, which
   //     explains what went wrong when the padding was 2px and the rhythm
   //     was really being carried by the hover-only actions row.
-  //   - Mono means machine, serif means prose (spec §5.3). System lines,
-  //     placeholders, ids and timestamps are mono; message bodies are
-  //     serif; chrome is sans. No mono rank is ever italic — `app.css` sets
+  //   - One voice (docs/design-language.md §1): message bodies, system
+  //     lines, placeholders, labels and timestamps are all sans (timestamps
+  //     `tabular-nums`); mono is only for code, paths, ids and keys. Nothing
+  //     is ever set in capitals. No mono rank is ever italic — `app.css` sets
   //     `font-synthesis: none` and no mono italic is bundled, so an italic
   //     mono string would simply render upright. Italic survives only where
-  //     a real italic file exists for the face: serif emotes and `<em>`
+  //     a real italic file exists for the face: sans emotes and `<em>`
   //     inside a message body.
   //
   // The dispatch card (spec §7) is this design's signature element and the
@@ -138,9 +139,9 @@
   //   - **Amber (`--color-signal`) appears here and nowhere else in the
   //     application** (spec §3, §7.1), and only when
   //     `view.view.decision !== null`: the left edge, the ground and the
-  //     `AWAITING YOUR DECISION` label all switch together. Amber means the
+  //     "Awaiting your decision" label all switch together. Amber means the
   //     operator owes someone an answer — never a warning, an error, or the
-  //     newer-schema note, which stays a faint mono line.
+  //     newer-schema note, which stays a faint line.
   //   - **The `placeholder` status is not a card**, just the same quiet
   //     centred system line every other unrenderable item gets. A type we
   //     cannot render is not worth a bordered object.
@@ -937,8 +938,8 @@
     `<table>` regrows the document past the viewport. See the `<style>`
     block's comment for the measured regression.
 
-    The block also carries its own face (`font-serif` peer, `font-sans`
-    own) rather than leaving it to a descendant, because `ch` resolves
+    The block also carries its own face (`font-sans`, peer and own alike)
+    rather than leaving it to a descendant, because `ch` resolves
     against the element's own font: `68ch` has to be 68 characters of the
     face the prose is actually set in, or it is not a reading measure.
     Every piece of chrome nested inside names its face explicitly.
@@ -1010,12 +1011,12 @@
       <div
         class="flex min-w-0 flex-col text-content {item.isOwn
           ? 'max-w-[52ch] rounded-control bg-accent-soft px-3 py-2 font-sans text-body-own'
-          : 'max-w-[68ch] font-serif text-body'}"
+          : 'max-w-[68ch] font-sans text-body'}"
       >
         {#if !item.isOwn && (!continuesRun || item.edited)}
           <!--
             The peer sender line: name and timestamp on one baseline, both
-            mono, per spec §6.3. The timestamp sits immediately after the
+            sans (timestamp `tabular-nums`), design-language §1. The timestamp sits immediately after the
             name rather than pushed to the block's right edge — the block is
             shrink-to-fit, so a right edge would wander with the message's
             own width and strand the time far from the name it belongs to.
@@ -1028,14 +1029,14 @@
             the message was edited, which is real information and not "the
             timestamp": that case renders the marker alone.
           -->
-          <p class="mb-1 flex items-baseline gap-2 font-mono text-meta text-content-muted">
+          <p class="mb-1 flex items-baseline gap-2 font-sans text-meta tabular-nums text-content-muted">
             {#if !continuesRun}
-              <span class="min-w-0 truncate text-label uppercase">
+              <span class="min-w-0 truncate text-label">
                 {item.senderDisplayName ?? item.sender ?? "Unknown"}
               </span>
               <span class="shrink-0">{formatTime(item.timestampMs)}</span>
             {/if}
-            <!-- Mono rank, so no italic — see spec §6.3. -->
+            <!-- A meta rank, so no italic. -->
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
@@ -1055,7 +1056,7 @@
           -->
           {#if failed || sending || item.edited || !continuesRun}
             <p
-              class="mt-1 flex items-baseline justify-end gap-2 font-mono text-meta {failed
+              class="mt-1 flex items-baseline justify-end gap-2 font-sans text-meta tabular-nums {failed
                 ? 'text-danger'
                 : 'text-content-muted'}"
             >
@@ -1179,19 +1180,17 @@
           599px from the message it answered, in the very case where it
           quotes its parent by name, and the pane read as two unrelated
           columns with a void between them that grew with the window. The
-          own/peer asymmetry this design wants is one of *register* — sans
-          against serif, tight against airy, a ground against no ground —
+          own/peer asymmetry this design wants is one of *register* — tight
+          against airy, a ground against no ground (one face for both, docs/design-language.md §1) —
           and every bit of that survives inside a shared column. The
           horizontal distance was never carrying meaning.
 
-          `font-serif text-body` on the column is load-bearing, not
+          `font-sans text-body` on the column is load-bearing, not
           inherited decoration: `ch` resolves against the element's own
-          font, so this is what makes the column's `72ch` and the peer
-          block's `68ch` the same unit and the two numbers actually
-          comparable (566px and 535px, measured). Measured in the inherited
-          16px sans instead, `72ch` would be ~691px — a coincidence rather
-          than a relationship, and wide enough to reopen the gap this
-          exists to close. Nothing depends on inheriting the face: every
+          font and size, so this is what makes the column's `72ch` and the
+          peer block's `68ch` the same unit and the two numbers actually
+          comparable. Measured in the inherited 16px instead, `72ch` would
+          be a coincidence rather than a relationship. Nothing depends on inheriting the face: every
           descendant already names its own (`messageBlock`, `logLine`, the
           date divider, the emote and the dispatch card all set theirs).
 
@@ -1239,7 +1238,7 @@
         -->
         <div
           data-testid="timeline-row"
-          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-serif text-body lg:max-w-[calc(72ch+4rem)] lg:px-8"
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-sans text-body lg:max-w-[calc(72ch+4rem)] lg:px-8"
         >
           {#if row.type === "membershipGroup"}
             <!--
@@ -1265,7 +1264,7 @@
               <div class="relative flex items-center justify-center py-5" role="separator">
                 <span class="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true"></span>
                 <span
-                  class="relative bg-surface px-3 font-mono text-label uppercase text-content-muted"
+                  class="relative bg-surface px-3 font-sans text-label tabular-nums text-content-muted"
                 >
                   {formatDate(item.timestampMs)}
                 </span>
@@ -1329,10 +1328,10 @@
                 {@render messageBlock(row, bubbleContent)}
               {:else if view.render === "emote"}
                 <!--
-                  Centred, serif *italic* — the one italic that survives in
+                  Centred, sans *italic* — the one italic that survives in
                   this file alongside `<em>` inside a message body, because
-                  the serif's italic is genuinely bundled (spec §6.3) and an
-                  emote is prose about the sender rather than a mono rank.
+                  the sans italic is genuinely bundled (`app.css`) and an
+                  emote is prose about the sender rather than a label.
                 -->
                 <div class="flex justify-center px-4 py-2">
                   <!-- `break-words` + `min-w-0`, same discipline as every
@@ -1341,7 +1340,7 @@
                        long space-free run in either would otherwise override
                        this flex item's own `max-width`. -->
                   <p
-                    class="selectable min-w-0 max-w-[68ch] text-center font-serif text-body break-words text-content-muted italic"
+                    class="selectable min-w-0 max-w-[68ch] text-center font-sans text-body break-words text-content-muted italic"
                   >
                     {item.senderDisplayName ?? item.sender ?? "Someone"}
                     {item.body}
@@ -1360,8 +1359,8 @@
                   {#if failed}
                     <!-- Never a broken-image icon: any failure — nothing
                          renderable, a rejected fetch, or the <img> itself
-                         failing to decode — lands here. Mono and unitalicised
-                         like every other placeholder rank (spec §6.3), since
+                         failing to decode — lands here. Sans and unitalicised
+                         like every other placeholder (design-language §1), since
                          what this line is really saying is "there is an image
                          here that could not be shown".
 
@@ -1369,7 +1368,7 @@
                          bubble, for the ground reason `replyQuote` sets
                          out. -->
                     <p
-                      class="selectable font-mono text-meta break-words {item.isOwn
+                      class="selectable font-sans text-meta break-words {item.isOwn
                         ? 'text-content-muted'
                         : 'text-content-faint'}"
                     >
@@ -1397,6 +1396,11 @@
                       style={imageBoxStyle(view.width, view.height)}
                     ></div>
                   {/if}
+                  {#if view.caption}
+                    <!-- What the sender wrote with it (MSC2530): one
+                         message, the way it was sent. -->
+                    <p class="selectable mt-1 break-words whitespace-pre-wrap">{view.caption}</p>
+                  {/if}
                 {/snippet}
                 {@render messageBlock(row, imageContent)}
               {:else if view.render === "mediaFile"}
@@ -1408,9 +1412,9 @@
                   a file you can save is a file you can open, which is the part
                   that was actually missing.
 
-                  Filename in sans, the kind/size line in mono (spec §6.3) —
-                  both named explicitly rather than inherited, since a peer
-                  block sets serif on itself for its `ch` measure. The icon
+                  Filename and the kind/size line both in sans (design-language
+                  §1: mono is never a label) — named explicitly rather than
+                  inherited, since a block sets its face for its `ch` measure. The icon
                   and the sub-label both used to be `accent-content`-derived,
                   which only worked against the accent-filled own bubble that
                   no longer exists.
@@ -1418,7 +1422,7 @@
                 {#snippet mediaFileContent()}
                   <div class="selectable flex items-center gap-2">
                     <span
-                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-control font-mono text-ui font-medium text-content-muted {item.isOwn
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-control font-sans text-ui font-medium text-content-muted {item.isOwn
                         ? 'bg-surface'
                         : 'bg-surface-sunken'}"
                       aria-hidden="true"
@@ -1431,7 +1435,7 @@
                       <span class="block truncate font-sans text-ui font-medium">
                         {view.filename}
                       </span>
-                      <span class="mt-0.5 block font-mono text-meta text-content-muted">
+                      <span class="mt-0.5 block font-sans text-meta tabular-nums text-content-muted">
                         {view.label}{view.size != null ? ` · ${formatFileSize(view.size)}` : ""}
                       </span>
                     </span>
@@ -1446,7 +1450,7 @@
                   </div>
                   {#if saveNote?.eventId === item.eventId}
                     <p
-                      class="mt-1 font-mono text-meta {saveNote.failed
+                      class="mt-1 font-sans text-meta {saveNote.failed
                         ? 'text-destructive'
                         : 'text-content-muted'}"
                     >
@@ -1496,12 +1500,12 @@
                     rather than shrinking to its content, and `min-w-0` is the
                     other half of the layout-blowout guard the block comment
                     on the style rules at the foot of this file describes.
-                    `font-serif` on the wrapper both sets the face card values
+                    `font-sans` on the wrapper both sets the face card values
                     are read in and makes `68ch` resolve against that face, so
                     a card is exactly as wide as a peer message.
                   -->
                   <div class="flex justify-start pt-8">
-                    <div class="group relative min-w-0 max-w-[68ch] flex-1 font-serif text-body text-content">
+                    <div class="group relative min-w-0 max-w-[68ch] flex-1 font-sans text-body text-content">
                       <DispatchCard
                         {view}
                         {decision}
@@ -1614,11 +1618,11 @@
    * them.
    *
    * Neither the face nor the size is set here, on purpose: the enclosing
-   * message block (`messageBlock` in the markup above) already sets serif
+   * message block (`messageBlock` in the markup above) already sets sans
    * `--text-body` for a peer and sans `--text-body-own` for an own
    * message, and everything below is expressed in `em` so it scales with
    * whichever it inherited. `code`/`pre` are the deliberate exception —
-   * they force `--font-mono` regardless, because a code span in a serif
+   * they force `--font-mono` regardless, because a code span in a prose
    * paragraph is still machine text (spec §5.3).
    *
    * Colors are `--color-*` tokens from `src/app.css`, per the same
@@ -1791,15 +1795,13 @@
    * overlay-scrollbar webview is nothing until you touch it — the same deal
    * `pre` has had all along.
    *
-   * **Type ranks.** Cells leave the serif reading rank for `--font-sans`:
-   * serif is this app's face for *prose you read*, and a table is data you
-   * scan (spec §4). Not mono either — mono is reserved here for machine
+   * **Type ranks.** Cells stay in `--font-sans`, the
+   * one voice (docs/design-language.md §1). Not mono — mono is reserved here for machine
    * text, and a whole table set in it reads as a code block and costs about
    * a sixth more width per column; `code` inside a cell still switches to
    * mono under its own rule below, which is exactly the distinction worth
-   * keeping visible. Header cells *are* labels, so they take the mono
-   * label treatment the date divider and the dispatch card already use —
-   * uppercase, letter-spaced, 500. `tabular-nums` because the first column
+   * keeping visible. Header cells are labels, so they are sans,
+   * sentence case as written, 600 — never capitals, never mono. `tabular-nums` because the first column
    * of an agent's table is nearly always a row number.
    *
    * **Grid, and why its colour is a `currentColor` mix rather than
@@ -1852,18 +1854,10 @@
    * centred header sitting over left-aligned data breaks the column's
    * reading edge, which is the one thing a scanned table cannot afford.
    *
-   * The padding numbers differ from the body cells' only because they are
-   * expressed in this rank's own, smaller `em` — 0.9/1.15em of 10.53px
-   * lands at 9.48px/12.11px against a body cell's 9.45px/12.15px, i.e. the
-   * same painted gutter. The header row still comes out 4px shorter (35px
-   * against 39px), which is the label rank being smaller and is meant. */
+   * Same size and padding as the body cells: weight and the tint carry
+   * the header, not a smaller capitalised rank. */
   :global(.message-html thead th) {
-    font-family: var(--font-mono);
-    font-size: 0.78em;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 0.9em 1.15em;
+    font-weight: 600;
     background: color-mix(in srgb, currentColor 6%, transparent);
   }
 
@@ -1871,8 +1865,8 @@
     margin: 0;
   }
 
-  /* Paragraph rhythm, widened from 0.4em since the bodies became serif at
-   * a 1.62 line-height: a multi-paragraph agent report rendered as one
+  /* Paragraph rhythm, widened from 0.4em when the bodies moved to a
+   * 1.62 line-height: a multi-paragraph agent report rendered as one
    * undifferentiated slab, which is the opposite of what a reading measure
    * is for. Checked at 15px/1.62 against a real three-paragraph report.
    * This is the *inside* of a message; the gap *between* messages is set

@@ -64,7 +64,8 @@ public protocol SpaceSelecting: Sendable {
 /// `StagedAttachment`.
 public protocol AttachmentStaging: Sendable {
     func attachmentStagePath(roomId: String, path: String) async throws -> StagedFile
-    func attachmentSend(roomId: String, token: String) async throws
+    /// `caption` travels in the same event as the file (MSC2530).
+    func attachmentSend(roomId: String, token: String, caption: String?) async throws
     func attachmentDiscard(token: String) async
 }
 

@@ -123,7 +123,7 @@ struct PreviewClient: SessionClient {
     func attachmentStagePath(roomId: String, path: String) async throws -> StagedFile {
         PreviewFixtures.stagedFile
     }
-    func attachmentSend(roomId: String, token: String) async throws {}
+    func attachmentSend(roomId: String, token: String, caption: String?) async throws {}
     func attachmentDiscard(token: String) async {}
 
     // MARK: TimelineSubscribing
@@ -223,7 +223,7 @@ enum PreviewFixtures {
         isOwn: Bool = false,
         kind: String = "message",
         msgtype: String? = "m.text",
-        sendState: String? = nil,
+        sendState: DeliveryState? = nil,
         reactions: [ReactionDto] = [],
         media: MediaMetaDto? = nil,
         replyTo: ReplyToDto? = nil,
@@ -234,7 +234,7 @@ enum PreviewFixtures {
             senderDisplayName: nil, senderAvatar: nil, body: body, formattedBody: nil,
             media: media, customPayload: nil, timestampMs: ms, isOwn: isOwn,
             sendState: sendState, replyTo: replyTo, edited: edited, reactions: reactions,
-            readBy: [], editable: !isOwn ? false : true)
+            readBy: [], editable: !isOwn ? false : true, membershipSubject: nil)
     }
 
     /// A timeline row as `TimelineRow::new` would build it.
@@ -293,7 +293,7 @@ enum PreviewFixtures {
     static var ownSending: TimelineRow {
         row(
             item(id: "$own1", sender: "@rakesh:example.org", body: "Merging it.",
-                 isOwn: true, sendState: "sending"),
+                 isOwn: true, sendState: .notSentYet),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Merging it.")])]),
             senderName: "Rakesh", senderShort: "Rakesh", senderInitial: "R",
             canReplyOrReact: false)
@@ -302,7 +302,7 @@ enum PreviewFixtures {
     static var ownFailed: TimelineRow {
         row(
             item(id: "$own2", sender: "@rakesh:example.org", body: "Merging it.",
-                 isOwn: true, sendState: "failed"),
+                 isOwn: true, sendState: .sendingFailed),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Merging it.")])]),
             senderName: "Rakesh", senderShort: "Rakesh", senderInitial: "R",
             canReplyOrReact: false)
@@ -394,7 +394,7 @@ enum PreviewFixtures {
                  media: MediaMetaDto(
                     filename: "muster-dark.png", mimetype: "image/png", size: 184_320,
                     width: 1500, height: 900)),
-            view: .image(alt: "The muster board in dark", width: 1500, height: 900))
+            view: .image(alt: "The muster board in dark", width: 1500, height: 900, caption: nil))
     }
 
     static var attachment: TimelineRow {
@@ -808,7 +808,7 @@ enum PreviewFixtures {
         if tools {
             live.handleTool(
                 roomId: roomId, seq: seq, toolCallId: "c1", title: "read docs/tech-stack.md",
-                kind: "read", status: "completed", locations: ["docs/tech-stack.md"],
+                kind: "read", status: "completed", phase: .done, statusLabel: "Done", locations: ["docs/tech-stack.md"],
                 input: nil, output: nil)
             seq += 1
             // `LiveActivity` on the web names the *last failed* tool ahead of
@@ -817,14 +817,14 @@ enum PreviewFixtures {
             // shows whether iOS does the same.
             live.handleTool(
                 roomId: roomId, seq: seq, toolCallId: "c2", title: "write src/lib/tokens.css",
-                kind: "write", status: "failed", locations: ["src/lib/tokens.css"],
+                kind: "write", status: "failed", phase: .failed, statusLabel: "Failed", locations: ["src/lib/tokens.css"],
                 input: nil, output: "permission denied")
             seq += 1
             live.handleTool(
                 roomId: roomId, seq: seq, toolCallId: "c3",
                 title: "regenerate every design-token target and diff the checked-in output "
                     + "against the source that produces it",
-                kind: "run", status: "in_progress", locations: [], input: nil, output: nil)
+                kind: "run", status: "in_progress", phase: .running, statusLabel: "Running", locations: [], input: nil, output: nil)
             seq += 1
         }
         if answering {

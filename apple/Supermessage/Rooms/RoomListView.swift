@@ -9,81 +9,150 @@ import SwiftUI
 /// makes none of the decisions itself.
 struct RoomListView: View {
     let session: Session
-    /// Whether a `nil` from the list means "popped back to the roster".
+    /// The open room, in whichever sense the shell means it.
     ///
-    /// Decided by the view that owns the `NavigationSplitView`, not read from
-    /// the environment here: **a column reports its own width**, and a sidebar
-    /// on an iPad is compact. Asking inside this view gave the answer for the
-    /// sidebar rather than for the window, so an iPad would have obeyed a `nil`
-    /// and closed the room the reader was in.
-    let clearsSelectionOnPop: Bool
+    /// On an iPad this is `RoomsStore.selectedId`, because the detail column
+    /// shows the selected room. On a phone each tab owns its own stack, so
+    /// the Chats tab passes its own state and a room opened from the Needs
+    /// you tab cannot also push itself onto Chats.
+    ///
+    /// Decided by the view that owns the navigation, not read from the
+    /// environment here: **a column reports its own width**, and a sidebar on
+    /// an iPad is compact. Asking inside this view gave the answer for the
+    /// sidebar rather than for the window.
+    @Binding var selection: String?
 
     /// The arrangement the app opens on, and the filters, all remembered.
     @AppStorage("roster.view") private var storedView = RosterChoice.waiting.rawValue
-    @AppStorage("roster.showsInvitations") private var showsInvitations = false
+    /// Whether the invitations row is open. Not stored: invitations are
+    /// something to act on, and a list that opened with them spread across
+    /// its top every launch would bury the conversations.
+    @State private var showsInvitations = false
     @AppStorage("roster.showsState") private var showsState = true
+    @AppStorage("roster.filter") private var storedFilter = RosterFilter.all.rawValue
 
-    @State private var showsSettings = false
     /// Re-read on every roster change so "2m" does not sit at "2m" all day.
     @State private var now = Date()
     /// The room whose info panel is open from the roster, if any.
     @State private var infoRequest: RoomInfoRequest?
+    /// What a swipe learned about a room's settings, so its next swipe can
+    /// say "Unmute" rather than "Mute". Only ever filled by a swipe that
+    /// asked the core — never guessed.
+    @State private var settings: [String: KnownSettings] = [:]
+    /// Bumped when a swipe lands, for the haptic.
+    @State private var swipeLanded = 0
 
-    private var view: RosterChoice { RosterChoice(rawValue: storedView) ?? .waiting }
+    /// The arrangement, chosen in Account → Roster. "Machine" is no longer
+    /// offered — a space is a machine's rooms, and the title chooses spaces —
+    /// so a stored choice of it reads as the default.
+    private var view: RosterChoice {
+        let stored = RosterChoice(rawValue: storedView) ?? .waiting
+        return RosterChoice.offered.contains(stored) ? stored : .waiting
+    }
+    /// The chip in force. A filter that is no longer offered as a chip —
+    /// Agents and Needs you, which are tabs — reads as All, so a stored
+    /// choice from before cannot leave the list narrowed with no chip lit.
+    private var filter: RosterFilter {
+        let stored = RosterFilter(rawValue: storedFilter) ?? .all
+        return RosterFilterChips.offered.contains(stored) ? stored : .all
+    }
 
-    private var sections: [RosterSection] {
+    private var filterBinding: Binding<RosterFilter> {
+        Binding(get: { filter }, set: { storedFilter = $0.rawValue })
+    }
+
+    /// The core's arrangement — `core::roster` orders and groups.
+    ///
+    /// Invitations are never left in it: when open they are drawn directly
+    /// under their own row (`invitationRows`). Left to the core they came
+    /// after its first section — below Strategy Sam, away from the row that
+    /// had just been tapped to show them (2026-09-24).
+    private var arranged: [RosterSection] {
         RosterArrangement.sections(
-            session.rooms.rooms, view: view, showsInvitations: showsInvitations, now: now)
+            session.rooms.rooms, view: view, showsInvitations: false, now: now)
+    }
+
+    /// The invitations, in the core's order, for under their row.
+    private var invitationRows: [RosterRow] {
+        RosterArrangement.sections(
+            session.rooms.rooms, view: view, showsInvitations: true, now: now
+        )
+        .flatMap(\.rows)
+        .filter { $0.row.affordance == .respondToInvitation }
+    }
+
+    /// The arrangement, narrowed by the chip. Never re-ordered.
+    private var sections: [RosterSection] { filter.apply(arranged) }
+
+    private var counts: [RosterFilter: Int] {
+        let rows = arranged.flatMap(\.rows)
+        return Dictionary(
+            uniqueKeysWithValues: RosterFilter.allCases.map { chip in
+                (chip, rows.filter(chip.admits).count)
+            })
     }
 
     private var hiddenInvitations: Int {
-        RosterArrangement.hiddenInvitations(session.rooms.rooms, showsInvitations: showsInvitations)
+        RosterArrangement.hiddenInvitations(session.rooms.rooms, showsInvitations: false)
+    }
+
+    private var invitationCount: Int {
+        session.rooms.rooms.filter { $0.affordance == .respondToInvitation }.count
     }
 
     var body: some View {
-        List(selection: selectionBinding) {
+        List(selection: $selection) {
             Section {
                 EmptyView()
             } header: {
-                // Inside the scroll content on purpose — see SpacePillStrip.
-                if !session.spaces.spaces.isEmpty {
-                    SpacePillStrip(spaces: session.spaces, allCount: session.rooms.rooms.count)
-                        .textCase(nil)
-                        .listRowInsets(EdgeInsets())
+                // Inside the scroll content on purpose: present the moment
+                // the reader arrives, and giving its height back as soon as
+                // they scroll. Spaces are chosen from the title — see
+                // `SpaceMenu`.
+                VStack(alignment: .leading, spacing: 0) {
+                    if !session.rooms.rooms.isEmpty {
+                        RosterFilterChips(selection: filterBinding, counts: counts)
+                    }
+                    if invitationCount > 0 {
+                        InvitationsRow(count: invitationCount, isOpen: $showsInvitations)
+                    }
+                }
+                .textCase(nil)
+                .listRowInsets(EdgeInsets())
+            }
+
+            if showsInvitations {
+                Section {
+                    ForEach(invitationRows, id: \.row.room.id) { entry in
+                        rosterRow(entry)
+                    }
                 }
             }
 
             ForEach(sections, id: \.id) { section in
                 Section {
                     ForEach(section.rows, id: \.row.room.id) { entry in
-                        // The state arrives on the row. Asking per row would
-                        // be a boundary crossing per visible room per
-                        // re-render — see `core::roster::RosterRow`.
-                        RoomRowView(
-                            row: entry.row,
-                            avatarURI: session.avatars.uri(for: entry.row.room.id),
-                            state: entry.state,
-                            when: RelativeTime.label(
-                                for: entry.row.room.lastActivityMs, now: now),
-                            showsState: showsState,
-                            hidesHost: view == .machine,
-                            onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
-                        )
-                        .tag(entry.row.room.id)
-                        .task { await session.avatars.load(entry.row.room.id) }
+                        rosterRow(entry)
                     }
                 } header: {
                     if let title = section.title {
-                        SectionHeader(title: title, detail: section.detail, attention: section.attention)
+                        SectionHeader(
+                            title: SpaceNames.display(title), detail: section.detail,
+                            attention: section.attention)
                     }
                 }
             }
         }
         .listStyle(.plain)
+        .paletteListGround()
+        .sensoryFeedback(.success, trigger: swipeLanded)
+        // Still set: it is the back button's title in a room.
+        .navigationTitle(session.spaces.selectedName.map(SpaceNames.display) ?? "Chats")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { arrangementMenu }
+            ToolbarItem(placement: .principal) {
+                SpaceMenu(spaces: session.spaces, allCount: session.rooms.rooms.count)
+            }
         }
-        .navigationTitle(session.spaces.selectedName ?? "All rooms")
         .navigationBarTitleDisplayMode(.inline)
         // A roster that says "2m" forever is lying by the time you look again.
         .task(id: session.rooms.rooms.count) { now = Date() }
@@ -96,21 +165,22 @@ struct RoomListView: View {
                 ContentUnavailableView(
                     "No rooms yet", systemImage: "tray",
                     description: Text("Rooms appear here as they sync."))
-            } else if sections.isEmpty {
-                // Every room was filtered away. Say so, and say what by.
+            } else if sections.isEmpty, filter != .all {
+                // The chip left nothing. Say which chip, and offer the way back.
+                ContentUnavailableView {
+                    Label(emptyTitle, systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text(emptyDescription)
+                } actions: {
+                    Button("Show all") { storedFilter = RosterFilter.all.rawValue }
+                }
+            } else if sections.isEmpty, !showsInvitations {
+                // Every room was filtered away. Say so, and say what by —
+                // unless the invitations are open, when they are the list.
                 ContentUnavailableView(
                     "Nothing but invitations", systemImage: "envelope",
-                    description: Text("\(hiddenInvitations) waiting. Turn them on to see them."))
+                    description: Text("\(hiddenInvitations) waiting — open Invitations above."))
             }
-        }
-        .sheet(isPresented: $showsSettings) {
-            RosterSettings(
-                view: $storedView, showsInvitations: $showsInvitations, showsState: $showsState,
-                invitationCount: session.rooms.rooms.filter {
-                    $0.affordance == .respondToInvitation
-                }.count
-            ) { showsSettings = false }
-            .presentationDetents([.medium])
         }
         // Reached by tapping a row's avatar. Presented from the roster rather
         // than by opening the room first: asking what a room *is* should not
@@ -118,62 +188,126 @@ struct RoomListView: View {
         .sheet(item: $infoRequest) { request in
             RoomInfoPanel(session: session, roomId: request.id) { infoRequest = nil }
                 .presentationDetents([.large, .medium])
+                .paletteSheet()
         }
     }
 
-/// The arrangement switcher, in the toolbar with search and compose.
-    ///
-    /// It used to be a segmented control pinned inside the list, which meant
-    /// the roster carried a second permanent bar of chrome above it, and the
-    /// one control that is *not* about the list's contents was the one
-    /// sitting in them. A menu also has room to name each arrangement
-    /// properly, which three segments never did.
-    private var arrangementMenu: some View {
-        Menu {
-            Picker("Arrangement", selection: $storedView) {
-                ForEach(RosterChoice.allCases, id: \.rawValue) { option in
-                    Text(option.title).tag(option.rawValue)
+    private var emptyTitle: String {
+        switch filter {
+        case .all: return "Nothing here"
+        case .unread: return "Nothing unread"
+        case .agents: return "No agents here"
+        case .needsYou: return "You're all caught up"
+        }
+    }
+
+    private var emptyDescription: String {
+        switch filter {
+        case .all: return ""
+        case .unread: return "Every room is read."
+        case .agents: return "No room here reads as an agent's."
+        case .needsYou: return "Nothing is waiting on you."
+        }
+    }
+
+    // MARK: - Swipes
+
+    /// One room in the roster, with its swipes. Shared by the core's sections
+    /// and the invitations under their row, so an invitation opens, reads
+    /// and swipes exactly as any other room.
+    @ViewBuilder
+    private func rosterRow(_ entry: RosterRow) -> some View {
+        // The state arrives on the row. Asking per row would
+        // be a boundary crossing per visible room per
+        // re-render — see `core::roster::RosterRow`.
+        RoomRowView(
+            row: entry.row,
+            avatarURI: session.avatars.uri(for: entry.row.room.id),
+            state: entry.state,
+            when: RelativeTime.label(
+                for: entry.row.room.lastActivityMs, now: now),
+            showsState: showsState,
+            describesAgent: entry.describesAgent,
+            onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
+        )
+        .tag(entry.row.room.id)
+        .listRowBackground(Theme.surface)
+        .task { await session.avatars.load(entry.row.room.id) }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            if entry.row.affordance == .compose {
+                Button {
+                    Task { await markRead(entry.row.room.id) }
+                } label: {
+                    Label("Mark read", systemImage: "checkmark.message")
                 }
-            }
-            .pickerStyle(.inline)
-
-            Divider()
-
-            Button("Roster options") { showsSettings = true }
-        } label: {
-            // Admits to what is being withheld. Hidden must never mean gone:
-            // a roster that silently drops a room you were invited to is a
-            // roster that lost it.
-            if hiddenInvitations > 0 {
-                Label("\(hiddenInvitations)", systemImage: "envelope")
-                    .labelStyle(.titleAndIcon)
-            } else {
-                Image(systemName: "line.3.horizontal.decrease.circle")
+                .tint(Theme.accent)
             }
         }
-        .accessibilityLabel(
-            hiddenInvitations > 0
-                ? "Roster options, \(hiddenInvitations) invitations hidden" : "Roster options")
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if entry.row.affordance == .respondToInvitation {
+                // Declining is leaving a room one was only invited to. Stale
+                // test invitations are the common case, so it is a swipe away.
+                Button(role: .destructive) {
+                    Task { _ = await session.leaveRoom(entry.row.room.id) }
+                } label: {
+                    Label("Decline", systemImage: "xmark")
+                }
+            }
+            if entry.row.affordance == .compose {
+                let known = settings[entry.row.room.id]
+                Button {
+                    Task { await toggleMute(entry.row.room.id) }
+                } label: {
+                    known?.muted == true
+                        ? Label("Unmute", systemImage: "bell")
+                        : Label("Mute", systemImage: "bell.slash")
+                }
+                .tint(Theme.contentMuted)
+                Button {
+                    Task { await togglePin(entry.row.room.id) }
+                } label: {
+                    known?.pinned == true
+                        ? Label("Unpin", systemImage: "pin.slash")
+                        : Label("Pin", systemImage: "pin")
+                }
+                .tint(Theme.ok)
+            }
+        }
     }
 
-    /// Selection, in both directions.
-    ///
-    /// **The `set` used to drop `nil` on the floor.** A collapsed
-    /// `NavigationSplitView` navigates by selection and writes `nil` back when
-    /// it pops — swallowing that left the row highlighted after coming back,
-    /// and left `List`'s idea of its selection disagreeing with ours, so
-    /// tapping the same room again produced no change and it would not reopen.
-    private var selectionBinding: Binding<String?> {
-        Binding(
-            get: { session.rooms.selectedId },
-            set: { next in
-                if let id = next {
-                    session.rooms.select(id)
-                } else if clearsSelectionOnPop {
-                    session.rooms.deselect()
-                }
-            })
+    private func markRead(_ roomId: String) async {
+        if await session.rooms.markRead(roomId) { swipeLanded += 1 }
     }
+
+    /// Mute, or unmute a room that is muted.
+    ///
+    /// Asks the core what the room is set to first. The roster row does not
+    /// carry it, and toggling a setting the view only believes it knows is
+    /// how a "Mute" button unmutes something.
+    private func toggleMute(_ roomId: String) async {
+        guard let info = try? await session.roomInfo(roomId) else { return }
+        let next = RoomToggles.nextNotificationMode(from: info.notifications)
+        if await session.setNotifications(next, in: roomId) {
+            settings[roomId] = KnownSettings(muted: next == .muted, pinned: info.pinned)
+            swipeLanded += 1
+        }
+    }
+
+    private func togglePin(_ roomId: String) async {
+        guard let info = try? await session.roomInfo(roomId) else { return }
+        let next = !info.pinned
+        if await session.setPinned(next, in: roomId) {
+            settings[roomId] = KnownSettings(muted: info.notifications == .muted, pinned: next)
+            swipeLanded += 1
+        }
+    }
+
+}
+
+/// A room's notification and pin settings, as a swipe last heard them.
+private struct KnownSettings {
+    let muted: Bool
+    let pinned: Bool
 }
 
 /// A section heading: what it is, how much of it, and whether it wants you.
@@ -194,72 +328,40 @@ private struct SectionHeader: View {
     }
 }
 
-/// What the roster opens on, and what it leaves out.
-private struct RosterSettings: View {
-    @Binding var view: String
-    @Binding var showsInvitations: Bool
-    @Binding var showsState: Bool
-    let invitationCount: Int
-    let onClose: () -> Void
+/// "Invitations · 2", at the top of the list when there are any.
+///
+/// Invitations used to be hidden behind a switch in a sheet, with the only
+/// sign of them an envelope that replaced the options button's icon — which
+/// then read as a second messaging action beside compose (2026-09-24). They
+/// are something to act on, so they are a row in the list, as Messages does
+/// with unknown senders and WhatsApp with its archive. Tapping it opens the
+/// core's invitations section in place.
+private struct InvitationsRow: View {
+    let count: Int
+    @Binding var isOpen: Bool
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Open the roster on") {
-                    ForEach(RosterChoice.allCases, id: \.rawValue) { option in
-                        Button { view = option.rawValue } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(option.title).foregroundStyle(Theme.content)
-                                    Text(blurb(for: option))
-                                        .metaFace()
-                                        .foregroundStyle(Theme.contentMuted)
-                                }
-                                Spacer()
-                                if view == option.rawValue {
-                                    Image(systemName: "checkmark").foregroundStyle(Theme.accent)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section("Show") {
-                    Toggle(isOn: $showsInvitations) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Invitations")
-                            Text(
-                                invitationCount == 1
-                                    ? "1 pending" : "\(invitationCount) pending"
-                            )
-                            .metaFace()
-                            .foregroundStyle(Theme.contentMuted)
-                        }
-                    }
-                    Toggle(isOn: $showsState) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Agent state")
-                            Text("the dot and its word")
-                                .metaFace()
-                                .foregroundStyle(Theme.contentMuted)
-                        }
-                    }
-                }
+        Button {
+            isOpen.toggle()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "envelope")
+                    .foregroundStyle(Theme.accent)
+                Text(count == 1 ? "1 invitation" : "\(count) invitations")
+                    .foregroundStyle(Theme.content)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.contentMuted)
+                    .rotationEffect(.degrees(isOpen ? 180 : 0))
             }
-            .navigationTitle("Roster")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onClose) }
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
-    }
-
-    private func blurb(for option: RosterChoice) -> String {
-        switch option {
-        case .recent: return "newest first"
-        case .waiting: return "what needs an answer, then the rest"
-        case .machine: return "grouped by the machine it runs on"
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(count == 1 ? "1 invitation" : "\(count) invitations")
+        .accessibilityHint(isOpen ? "Hides them" : "Shows them")
     }
 }
 
@@ -270,16 +372,12 @@ private struct RoomInfoRequest: Identifiable {
 }
 
 #if DEBUG
-// The roster as a reader meets it: five rooms, one of them owing an answer.
-//
-// `clearsSelectionOnPop` is `true` here, which is the iPhone's answer. The
-// iPad passes `false`, and the reason is recorded on the property: a column
-// reports its own width, so asking inside this view gave the sidebar's answer
-// rather than the window's and an iPad obeyed a `nil` selection by closing
-// the room the reader was in.
+// The roster as a reader meets it: five rooms, one of them owing an answer,
+// two lines each, the state as a dot on the avatar.
 #Preview("Waiting") {
+    @Previewable @State var open: String?
     NavigationStack {
-        RoomListView(session: PreviewFixtures.session(), clearsSelectionOnPop: true)
+        RoomListView(session: PreviewFixtures.session(openRoom: false), selection: $open)
     }
 }
 
@@ -287,19 +385,26 @@ private struct RoomInfoRequest: Identifiable {
 //
 // The empty state is a screen, and this is the one every new reader lands on.
 #Preview("Nothing yet") {
+    @Previewable @State var open: String?
     NavigationStack {
-        RoomListView(session: PreviewFixtures.session(.empty), clearsSelectionOnPop: true)
+        RoomListView(session: PreviewFixtures.session(.empty), selection: $open)
     }
 }
 
-// Dark, where `content-faint`'s worst ground flips to `surface-raised`.
-//
-// The roster is where that matters most: the preview line and the relative
-// time are both faint, and they sit on a row rather than on the page.
+// Dark, where every ground must be the palette's rather than #000.
 #Preview("Waiting, dark") {
+    @Previewable @State var open: String?
     NavigationStack {
-        RoomListView(session: PreviewFixtures.session(), clearsSelectionOnPop: true)
+        RoomListView(session: PreviewFixtures.session(openRoom: false), selection: $open)
     }
     .preferredColorScheme(.dark)
+}
+
+// A fleet: agents with generated tiles, each a colour of its own.
+#Preview("Fleet") {
+    @Previewable @State var open: String?
+    NavigationStack {
+        RoomListView(session: NavigationRevampFixtures.fleetSession(), selection: $open)
+    }
 }
 #endif

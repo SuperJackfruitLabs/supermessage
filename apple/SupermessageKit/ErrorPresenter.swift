@@ -23,8 +23,12 @@ public enum ErrorPresenter {
             // The homeserver's own words when it has any: "connection refused"
             // tells an operator more than "something went wrong" ever will.
             return detail.isEmpty ? "Can't reach the homeserver." : detail
-        case .Store:
-            return "Couldn't read this device's local store."
+        case let .Store(detail):
+            // The core's words when it has any. `Store` covers the keychain,
+            // the SQLite store *and* a file the composer could not read, and
+            // one generic sentence for all three sent a failed image upload
+            // to look like a corrupted database.
+            return detail.isEmpty ? "Couldn't read this device's local store." : detail
         case .Protocol:
             return "The homeserver sent something this app didn't understand."
         case .NotReady:

@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.supermessage_core.DeliveryState
 
 /** The one place a chat app must not be ambiguous. */
 class SendStateTest {
@@ -11,9 +12,9 @@ class SendStateTest {
     /** "the core's vocabulary reads across" */
     @Test
     fun readsTheWire() {
-        assertEquals(SendState.SENDING, SendState("notSentYet"))
-        assertEquals(SendState.FAILED, SendState("sendingFailed"))
-        assertEquals(SendState.SENT, SendState("sent"))
+        assertEquals(SendState.SENDING, SendState(DeliveryState.NOT_SENT_YET))
+        assertEquals(SendState.FAILED, SendState(DeliveryState.SENDING_FAILED))
+        assertEquals(SendState.SENT, SendState(DeliveryState.SENT))
     }
 
     /** "a message with no send state has arrived" */
@@ -28,8 +29,10 @@ class SendStateTest {
     /** "a state this build has not been taught is not guessed at" */
     @Test
     fun unknownStaysUnknown() {
-        assertEquals(SendState.UNKNOWN, SendState("somethingNew"))
-        assertFalse(SendState("somethingNew").isWorthShowing)
+        // The typed boundary cannot produce it any more, but the case stays
+        // quiet for any caller that reaches for it.
+        assertFalse(SendState.UNKNOWN.isWorthShowing)
+        assertEquals(null, SendState.UNKNOWN.label)
     }
 
     /** "a failed message always says so" */

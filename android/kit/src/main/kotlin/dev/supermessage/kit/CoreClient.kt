@@ -245,8 +245,8 @@ class CoreClient(
     suspend fun attachmentStagePath(roomId: String, path: String): StagedFile =
         run { it.attachmentStagePath(roomId, path) }
 
-    suspend fun attachmentSend(roomId: String, token: String) {
-        run { it.attachmentSend(roomId, token) }
+    suspend fun attachmentSend(roomId: String, token: String, caption: String?) {
+        run { it.attachmentSend(roomId, token, caption) }
     }
 
     suspend fun attachmentDiscard(token: String) {

@@ -14,57 +14,83 @@ struct AccountPanel: View {
     @State private var account: AccountDto?
     @State private var confirmingSignOut = false
     @State private var showingRecovery = false
+    /// The roster's arrangement and whether it shows agent state. Here
+    /// rather than behind a button beside compose: both are chosen once and
+    /// rarely changed, which is what an account screen is for.
+    @AppStorage("roster.view") private var storedView = RosterChoice.waiting.rawValue
+    @AppStorage("roster.showsState") private var showsState = true
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle().fill(Theme.surfaceRaised)
-                            Text(initial).font(.headline)
-                        }
-                        .frame(width: 44, height: 44)
+                Group {
+                    Section {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle().fill(Theme.surfaceRaised)
+                                Text(initial).font(.headline)
+                            }
+                            .frame(width: 44, height: 44)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(name).font(.headline)
-                            if let account {
-                                Text(account.userId)
-                                    .metaFace()
-                                    .foregroundStyle(Theme.contentMuted)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(name).font(.headline)
+                                if let account {
+                                    Text(account.userId)
+                                        .metaFace()
+                                        .foregroundStyle(Theme.contentMuted)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
                             }
                         }
+                        if let account {
+                            LabeledContent("Homeserver", value: account.homeserver)
+                                .metaFace()
+                        }
+                    } header: {
+                        Text("Signed in as")
                     }
-                    if let account {
-                        LabeledContent("Homeserver", value: account.homeserver)
-                            .metaFace()
+
+                    Section {
+                        Picker("Order rooms by", selection: $storedView) {
+                            ForEach(RosterChoice.offered, id: \.rawValue) { option in
+                                Text(option == .waiting ? "Waiting first" : "Most recent")
+                                    .tag(option.rawValue)
+                            }
+                        }
+                        Toggle("Agent state", isOn: $showsState)
+                    } header: {
+                        Text("Chats")
+                    } footer: {
+                        Text("Waiting first puts what needs an answer at the top. Agent state is the dot and word beside an agent's name.")
                     }
-                } header: {
-                    Text("Signed in as")
-                }
 
-                Section {
-                    // Beside `Sign out` because it is the same rarely-visited
-                    // class of account action — and because the day it is
-                    // needed is the day someone is setting up a new device and
-                    // looking for exactly this.
-                    Button("Encryption recovery") { showingRecovery = true }
-                }
+                    Section {
+                        // Beside `Sign out` because it is the same rarely-visited
+                        // class of account action — and because the day it is
+                        // needed is the day someone is setting up a new device and
+                        // looking for exactly this.
+                        Button("Encryption recovery") { showingRecovery = true }
+                    }
 
-                Section {
-                    Button("Sign out", role: .destructive) { confirmingSignOut = true }
-                } footer: {
-                    // Said plainly, because it is true and because signing out
-                    // of this app is not the small thing it is elsewhere: the
-                    // encrypted store goes with it.
-                    Text("Signing out removes this account and its messages from this device.")
+                    Section {
+                        // Red by hand, like Leave room: the root's
+                        // `.foregroundStyle(Theme.content)` outranks the role.
+                        Button("Sign out", role: .destructive) { confirmingSignOut = true }
+                            .foregroundStyle(Theme.danger)
+                    } footer: {
+                        // Said plainly, because it is true and because signing out
+                        // of this app is not the small thing it is elsewhere: the
+                        // encrypted store goes with it.
+                        Text("Signing out removes this account and its messages from this device.")
+                    }
                 }
+                .listRowBackground(Theme.surface)
             }
             .sheet(isPresented: $showingRecovery) {
                 RecoveryView(session: session) { showingRecovery = false }
             }
+            .paletteGroupedGround()
             .navigationTitle("Account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -87,21 +113,14 @@ struct AccountPanel: View {
 
     /// The local part of the Matrix id — `@rakesh:id.agentpod.dev` is a name
     /// and an address, and only the first half is worth a headline.
-    private var name: String {
-        guard let id = account?.userId, id.hasPrefix("@"), let colon = id.firstIndex(of: ":") else {
-            return account?.userId ?? "Signed in"
-        }
-        return String(id[id.index(after: id.startIndex)..<colon])
-    }
+    private var name: String { AccountLabel.name(of: account?.userId) }
 
-    private var initial: String {
-        name.first.map { String($0).uppercased() } ?? "?"
-    }
+    private var initial: String { AccountLabel.initial(of: account?.userId) }
 }
 
 #if DEBUG
 // The account, which is two facts and a way out.
-#Preview {
+#Preview("Account") {
     AccountPanel(session: PreviewFixtures.session(), onClose: {})
         .previewChrome()
 }

@@ -25,6 +25,9 @@ struct TimelineRowView: View {
     let row: TimelineRow
     /// Whether the row above already carries this sender's header.
     var continuesRun: Bool = false
+    /// Whether this is the last row of its run — where your own messages
+    /// carry their one timestamp.
+    var endsRun: Bool = true
     /// Who to name, already chosen: the full attribution in a room where
     /// several agents speak, the bare name where one does. Chosen by the list,
     /// which can see every row; a single row cannot.
@@ -32,15 +35,29 @@ struct TimelineRowView: View {
     let media: MediaCache
     /// Senders' faces, keyed by `mxc:` URI.
     let faces: AvatarCache
+    /// Whether the reply quote only repeats the row directly above, and so
+    /// is left off (D6). Decided by the list, which can see that row.
+    var hidesQuote: Bool = false
+    /// Who has read up to this message, with the faces the room has shown
+    /// for them. Resolved by the list, which has seen their messages.
+    var readers: [ReaderFace] = []
+    /// Briefly true after the reader jumped here from a reply quote (T5).
+    var highlighted: Bool = false
     /// Start a reply to this row. `nil` in contexts with no composer.
     var onReply: (() -> Void)?
     /// Add or remove one of this account's reactions.
     var onReact: ((String) -> Void)?
+    /// Jump to the message this one quotes. `nil` where there is nowhere to
+    /// jump — a preview, a context-menu lift.
+    var onQuoteTap: (() -> Void)?
     /// Answering a decision on a suite event. Separate from `onReact` because
     /// a reaction annotates an event and a decision resolves something on
     /// another plane — the row cannot supply the latter's subject, so the card
     /// hands it back up.
     var onDecide: ((GateAnswer) async -> Bool)?
+    /// Drawn between the sender's name and what they said: the reasoning
+    /// and steps that led to an agent's answer. See `WhatIDidFooter`.
+    var prelude: AnyView?
 
     private var item: TimelineItemDto { row.item }
 
@@ -48,34 +65,44 @@ struct TimelineRowView: View {
     /// built without an opinion still names its sender.
     private var named: String { attribution.isEmpty ? row.senderName : attribution }
 
-    /// The day a divider names — "Today" and "Yesterday" where those apply,
-    /// because a date is harder to place than a word.
+    /// The day a divider names — "Today", "Yesterday", "15 September" — in
+    /// sentence case. See `TimelineDay`.
     static func day(_ ms: UInt64?) -> String {
-        guard let ms else { return "" }
-        let date = Date(timeIntervalSince1970: Double(ms) / 1000)
-        let formatter = DateFormatter()
-        formatter.doesRelativeDateFormatting = true
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter.string(from: date)
+        TimelineDay.label(ms)
     }
 
     var body: some View {
+        content
+            // A wash behind the row the reader just jumped to from a quote,
+            // which fades on its own: it answers "which one?" and then gets
+            // out of the way.
+            .background {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.accentSoft)
+                    .padding(.horizontal, -8)
+                    .opacity(highlighted ? 1 : 0)
+                    .animation(.easeOut(duration: highlighted ? 0.15 : 0.8), value: highlighted)
+            }
+    }
+
+    @ViewBuilder private var content: some View {
         switch row.view {
         case let .bubble(muted, blocks):
             MessageBlock(
                 row: row, named: named, muted: muted, blocks: blocks,
-                continuesRun: continuesRun, faces: faces, onReact: onReact
+                continuesRun: continuesRun, endsRun: endsRun, hidesQuote: hidesQuote,
+                readers: readers, faces: faces, onReact: onReact, onQuoteTap: onQuoteTap,
+                prelude: prelude
             )
 
         case .emote:
-            // Centred serif italic: an emote is prose *about* its sender
-            // rather than something they said.
+            // Centred italic: an emote is prose *about* its sender rather
+            // than something they said.
             Text("\(named) \(item.body ?? "")")
                 .font(Theme.body.italic())
                 .foregroundStyle(Theme.contentMuted)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
 
         // `kind` ignored here, and that is the correct reading of it: this
         // host renders the English the core already composed. The field
@@ -89,30 +116,51 @@ struct TimelineRowView: View {
             // the core because it reads a clock and a locale — the core sends
             // the timestamp, which is all it can honestly know.
             HStack(spacing: 10) {
-                VStack { Divider() }
+                VStack { Divider().overlay(Theme.border) }
                 Text(Self.day(item.timestampMs))
-                    .metaFace()
-                    .textCase(.uppercase)
+                    .font(ThemeType.meta.weight(.medium))
                     .foregroundStyle(Theme.contentMuted)
                     .fixedSize()
-                VStack { Divider() }
+                VStack { Divider().overlay(Theme.border) }
             }
-            .padding(.vertical, 10)
+            .padding(.top, 14)
+            .padding(.bottom, 6)
+            .accessibilityElement(children: .combine)
 
         case .unreadMarker:
-            // No label. The divider says it, and a caption repeated at every
-            // scroll position would be chrome pretending to be content.
-            Divider()
-                .overlay(Theme.accent)
-                .padding(.vertical, 10)
+            // Labelled, briefly. It was a bare accent line on the theory that
+            // the line says it; read cold it said nothing, and looked like a
+            // stray divider between a message and its reply (2026-09-24).
+            // One word at the trailing end, as Slack does — enough to name
+            // the line without a banner across the conversation.
+            HStack(spacing: 8) {
+                VStack { Divider().overlay(Theme.accent) }
+                Text("New")
+                    .metaFace()
+                    .foregroundStyle(Theme.accent)
+                    .fixedSize()
+            }
+            .padding(.vertical, 10)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("New messages")
+
+        // A message this device holds no key for is still a *message*: it was
+        // sent by someone, at a time, into this conversation. Drawn as a
+        // centred grey line it read like "Krishna joined the room" — an event
+        // about the room rather than a gap in it — and with encryption on by
+        // default it is the placeholder a reader meets most.
+        case let .placeholder(.unableToDecrypt, text):
+            UndecryptableRow(
+                row: row, named: named, text: text, continuesRun: continuesRun, faces: faces)
 
         // `kind` ignored, like `.system` above and for the same reason.
         case let .placeholder(_, text):
             SystemLine(text: text)
 
-        case let .image(alt, width, height):
+        case let .image(alt, width, height, caption):
             ImageRow(
-                row: row, named: named, alt: alt, width: width, height: height, media: media)
+                row: row, named: named, alt: alt, width: width, height: height, caption: caption,
+                media: media)
 
         case let .mediaFile(label, filename, size, _):
             MediaFileRow(label: label, filename: filename, size: size)
@@ -128,7 +176,32 @@ struct TimelineRowView: View {
     }
 }
 
+/// "edited", beside a message the SDK has folded an `m.replace` into.
+///
+/// iOS showed nothing at all here while the desktop always has, so an agent
+/// revising a message it had already sent was invisible on a phone.
+private struct EditedMark: View {
+    var body: some View {
+        Text("edited")
+            .metaFace()
+            .foregroundStyle(Theme.contentFaint)
+            .accessibilityLabel("Edited")
+    }
+}
+
 /// A message, peer or own.
+///
+/// **A peer's message is a card** (T1): a soft raised surface at a readable
+/// measure, under a header that names the sender, shows their face, and says
+/// **Agent** when they are one. It used to be bare prose on the page, which
+/// made an agent's report and a colleague's one-liner the same object, and
+/// said nothing about which of them was a delegated participant.
+///
+/// **Your own is a tinted bubble** on the trailing side, as before.
+///
+/// Reactions hang off the bubble's bottom corner, overlapping it slightly, so
+/// they read as belonging to *this* message rather than as a row of controls
+/// under the timestamp (D8).
 private struct MessageBlock: View {
     let row: TimelineRow
     /// Chosen by the list — see `TimelineRowView.attribution`.
@@ -136,55 +209,67 @@ private struct MessageBlock: View {
     let muted: Bool
     let blocks: [RichBlock]
     let continuesRun: Bool
+    let endsRun: Bool
+    let hidesQuote: Bool
+    let readers: [ReaderFace]
     let faces: AvatarCache
     var onReact: ((String) -> Void)?
+    var onQuoteTap: (() -> Void)?
+    var prelude: AnyView?
+
+    @State private var reading = false
 
     private var isOwn: Bool { row.item.isOwn }
     private var sendState: SendState { SendState(row.item.sendState) }
+    private var isLong: Bool { TimelineGrouping.isLongRead(row) }
 
     var body: some View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
             if !isOwn && !continuesRun {
-                HStack(spacing: 6) {
-                    // A face, where the sender has one. In a room with a
-                    // single agent the name alone was enough; in a room with
-                    // four it is four near-identical grey headers, and a
-                    // reader scanning back for who said what has to read
-                    // rather than glance.
-                    // `row.senderInitial`, not `named.first`. For an agent
-                    // the first character of the attribution is the glyph, so
-                    // taking it here drew the symbol in the disc and left it
-                    // in the name beside it: `✳ ✳ Atlas — Platform`, under
-                    // every message. The core now hands over the glyph and a
-                    // name without it, the way `RoomIdentity` has always done
-                    // for the roster.
-                    SenderFace(
-                        mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces)
-                    Text(named).nameFace()
-                    if let timestamp = row.item.timestampMs {
-                        Text(Self.time(timestamp)).metaFace().foregroundStyle(Theme.contentFaint)
-                    }
+                header
+            }
+
+            // An agent reasons, then answers, so the record of its reasoning
+            // reads first — under its name, above what it said — as it does
+            // in ChatGPT, Claude and assistant-ui. It used to be a footnote
+            // under the answer, which put the conclusion before the working.
+            if let prelude {
+                prelude
+            }
+
+            // The bubble, with its reactions pulled up over its bottom edge.
+            // Negative spacing rather than an overlay, so the chips still take
+            // their height in the row and never overlap the next message.
+            VStack(alignment: isOwn ? .trailing : .leading, spacing: -8) {
+                bubble
+                if !row.item.reactions.isEmpty {
+                    ReactionRow(reactions: row.item.reactions, onReact: onReact)
+                        .padding(.horizontal, 10)
                 }
             }
 
-            if let quote = row.replyQuote {
-                ReplyQuote(quote: quote)
+            // A continued row has no header to carry the mark, so it goes
+            // under the text instead. An agent quietly rewriting what it said
+            // is exactly what a reader must be able to see.
+            if !isOwn && continuesRun && row.item.edited {
+                EditedMark()
             }
-
-            RichTextView(blocks: blocks)
-                // Own messages arrive from the core verbatim — never parsed as
-                // markdown, because "you type, they write": a stray asterisk
-                // must not change what you appear to have said.
-                .font(isOwn ? Theme.own : Theme.body)
-                .foregroundStyle(muted && !isOwn ? AnyShapeStyle(Theme.contentMuted) : AnyShapeStyle(Theme.content))
-                .padding(isOwn ? 10 : 0)
-                .background(isOwn ? Theme.accent.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 12))
 
             // Your own side of the conversation, which carried no time and no
             // send state at all — three identical messages were
             // indistinguishable, and a message that never left the phone
             // looked exactly like one that landed.
-            if isOwn {
+            //
+            // One time per run, not one per bubble: ten messages sent in a
+            // minute carried ten identical timestamps. The last of the run
+            // keeps it; a send state or an edit always speaks.
+            //
+            // Receipts sit on the same line as a few small faces (D7). Only
+            // under your own messages, and only where a receipt actually
+            // points: a receipt names the latest event a member has read, so
+            // this lands on the newest thing they have seen and stays off
+            // everything older.
+            if isOwn, endsRun || sendState.isWorthShowing || row.item.edited || !readers.isEmpty {
                 HStack(spacing: 5) {
                     if let label = sendState.label {
                         if sendState == .failed {
@@ -192,8 +277,14 @@ private struct MessageBlock: View {
                         }
                         Text(label)
                     }
-                    if let timestamp = row.item.timestampMs {
-                        Text(Self.time(timestamp))
+                    if row.item.edited {
+                        Text("edited")
+                    }
+                    if endsRun || sendState.isWorthShowing, let timestamp = row.item.timestampMs {
+                        Text(TimelineTime.short(timestamp))
+                    }
+                    if !readers.isEmpty {
+                        ReaderStack(readers: readers, faces: faces)
                     }
                 }
                 .metaFace()
@@ -201,38 +292,112 @@ private struct MessageBlock: View {
                 // here is a quiet timestamp.
                 .foregroundStyle(sendState == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.contentFaint))
             }
-
-            // Only under your own messages, and only where a receipt
-            // actually points: a receipt names the latest event a member has
-            // read, so this lands on the newest thing they have seen and
-            // stays off everything older. Under someone else's message it
-            // would be telling a reader what they already know.
-            if isOwn, !row.item.readBy.isEmpty {
-                Text("Read by \(peopleLabel(userIds: row.item.readBy))")
-                    .metaFace()
-                    .foregroundStyle(Theme.contentFaint)
-            }
-
-            if !row.item.reactions.isEmpty {
-                ReactionRow(reactions: row.item.reactions, onReact: onReact)
-            }
         }
         .frame(maxWidth: .infinity, alignment: isOwn ? .trailing : .leading)
-        // A continued row sits closer to the one above it: the gap is what
-        // says "same turn" once the header is gone.
-        .padding(.top, continuesRun ? 2 : 8)
-        .padding(.bottom, 2)
+        // The rhythm (T2): two points inside a run, twelve between turns. The
+        // gap is what says "same turn" once the header is gone.
+        .padding(.top, continuesRun ? 2 : 12)
+        .sheet(isPresented: $reading) {
+            LongReadSheet(title: named, blocks: blocks)
+        }
     }
 
-    static func time(_ ms: UInt64) -> String {
-        let date = Date(timeIntervalSince1970: Double(ms) / 1000)
-        return date.formatted(date: .omitted, time: .shortened)
+    private var header: some View {
+        HStack(spacing: 6) {
+            // A face, where the sender has one. In a room with four agents,
+            // four near-identical grey headers made a reader scanning back
+            // for who said what read rather than glance.
+            //
+            // `row.senderInitial`, not `named.first`. For an agent the first
+            // character of the attribution is the glyph, so taking it here
+            // drew the symbol in the disc and left it in the name beside it:
+            // `✳ ✳ Atlas — Platform`, under every message. The core hands over
+            // the glyph and a name without it.
+            SenderFace(
+                mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces, size: 22)
+            Text(named).nameFace().lineLimit(1)
+            if TimelineGrouping.isAgent(row) {
+                AgentLabel()
+            }
+            if let timestamp = row.item.timestampMs {
+                Text(TimelineTime.short(timestamp)).metaFace().foregroundStyle(Theme.contentFaint)
+            }
+            if row.item.edited {
+                EditedMark()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var bubble: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let quote = row.replyQuote, !hidesQuote {
+                ReplyQuote(quote: quote, onTap: onQuoteTap)
+            }
+
+            if isLong {
+                // The card shows the opening of a report and fades; the whole
+                // of it is one tap away, set for reading. A 4,000-word report
+                // drawn in full in the timeline is a room nobody can scroll
+                // past.
+                //
+                // `fixedSize` first: the text lays out at its full height and
+                // the frame then *cuts* it. Without it the 320pt frame was a
+                // height offer, and every paragraph shrank to fit it — each
+                // one truncated to a line or two with "…", which read as a
+                // broken message rather than the opening of a long one.
+                text
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxHeight: 320, alignment: .top)
+                    .clipped()
+                    .mask {
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black, location: 0.72),
+                                .init(color: .clear, location: 1),
+                            ], startPoint: .top, endPoint: .bottom)
+                    }
+                Button {
+                    reading = true
+                } label: {
+                    Label("Read", systemImage: "book")
+                        .font(ThemeType.ui.weight(.semibold))
+                }
+                .buttonStyle(.borderless)
+                .tint(Theme.accent)
+                .accessibilityHint("Opens the whole message in a reading view")
+            } else {
+                text
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            isOwn ? AnyShapeStyle(Theme.accent.opacity(0.13)) : AnyShapeStyle(Theme.surfaceRaised),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(maxWidth: isOwn ? MessageMeasure.own : MessageMeasure.card, alignment: isOwn ? .trailing : .leading)
+    }
+
+    private var text: some View {
+        RichTextView(blocks: blocks)
+            // Own messages arrive from the core verbatim — never parsed as
+            // markdown, because "you type, they write": a stray asterisk
+            // must not change what you appear to have said.
+            .font(isOwn ? Theme.own : Theme.body)
+            .foregroundStyle(muted && !isOwn ? AnyShapeStyle(Theme.contentMuted) : AnyShapeStyle(Theme.content))
     }
 }
 
 /// The quoted parent of a reply, as the core resolved it.
+///
+/// Tappable when the list can find the parent (T5): the timeline scrolls to it
+/// and lights it briefly. When the parent is not loaded the tap does nothing —
+/// there is nowhere to go, and a jump that lands on the wrong message is worse
+/// than one that does not happen.
 private struct ReplyQuote: View {
     let quote: ReplyQuoteView
+    var onTap: (() -> Void)?
 
     var body: some View {
         // The rule is an overlay, not a sibling in the HStack. `Rectangle` is a
@@ -255,9 +420,10 @@ private struct ReplyQuote: View {
                     .foregroundStyle(Theme.contentFaint)
             case let .available(sender, excerpt, label):
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(sender).metaFace().textCase(.uppercase)
+                    Text(sender).metaFace().foregroundStyle(Theme.contentMuted)
                     if let excerpt {
                         Text(excerpt).font(.footnote).lineLimit(2)
+                            .foregroundStyle(Theme.contentMuted)
                     } else if let label {
                         // A ready parent with nothing to quote — redacted, a
                         // sticker, undecryptable. The label says which, in the
@@ -273,6 +439,11 @@ private struct ReplyQuote: View {
             Rectangle().fill(Theme.accent.opacity(0.6)).frame(width: 2)
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap?() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(onTap == nil ? [] : [.isButton])
+        .accessibilityHint(onTap == nil ? "" : "Shows the original message")
     }
 }
 
@@ -284,11 +455,17 @@ private struct ReactionRow: View {
     /// asking says who, because a row of names is wider than the message it
     /// hangs under.
     @State private var asking: ReactionQuery?
+    /// Bumped on every tap, so the selection haptic fires once per toggle
+    /// (M2) rather than on every redraw.
+    @State private var taps = 0
 
     var body: some View {
         HStack(spacing: 4) {
             ForEach(reactions, id: \.key) { reaction in
-                Button { onReact?(reaction.key) } label: {
+                Button {
+                    taps += 1
+                    onReact?(reaction.key)
+                } label: {
                     chip(reaction)
                 }
                 .buttonStyle(.plain)
@@ -306,6 +483,7 @@ private struct ReactionRow: View {
                 .onLongPressGesture { asking = ReactionQuery(reaction: reaction) }
             }
         }
+        .sensoryFeedback(.selection, trigger: taps)
         .popover(item: $asking) { query in
             VStack(alignment: .leading, spacing: 4) {
                 Text(query.reaction.displayKey).font(.title3)
@@ -345,52 +523,15 @@ private struct ReactionRow: View {
         // message read as a toolbar. Only the reader's own reaction is drawn
         // with an edge, because that is the one distinction a chip must make.
         .background(
-            reaction.byMe ? Theme.accent.opacity(0.16) : Theme.surfaceRaised,
+            reaction.byMe ? Theme.accentSoft : Theme.surfaceRaised,
             in: Capsule())
         .overlay(
             Capsule().strokeBorder(
                 reaction.byMe ? Theme.accent.opacity(0.55) : .clear, lineWidth: 1))
-    }
-}
-
-/// A sender's face beside their name, or the initial of the name itself.
-///
-/// Small — 18pt, the cap height of the name it sits beside — because this is
-/// an aid to scanning, not a portrait. A face that competes with the message
-/// makes the timeline a contact list.
-private struct SenderFace: View {
-    let mxcUri: String?
-    let initial: String
-    let faces: AvatarCache
-
-    var body: some View {
-        ZStack {
-            if let mxcUri, let uri = faces.uri(for: mxcUri),
-                let image = RoomRowView.image(from: uri)
-            {
-                image.resizable().scaledToFill()
-            } else {
-                Circle().fill(Theme.surfaceRaised)
-                Text(letter).font(.system(size: 10, weight: .medium))
-            }
-        }
-        .frame(width: 18, height: 18)
-        .clipShape(Circle())
-        .task(id: mxcUri) {
-            guard let mxcUri else { return }
-            await faces.load(mxcUri)
-        }
-    }
-
-    /// What the disc shows.
-    ///
-    /// Still reduced to one character here rather than trusted whole: the
-    /// core's `sender_initial` is already a single glyph or letter, but a
-    /// glyph can be a multi-code-point cluster and this frame is 18pt. Taking
-    /// the first `Character` — a grapheme cluster in Swift, not a scalar —
-    /// keeps a ZWJ sequence intact instead of rendering half of it.
-    private var letter: String {
-        initial.first.map { String($0) } ?? "?"
+        // A ring of the page around each chip, so where it overlaps the
+        // bubble's corner the two stay separate shapes.
+        .padding(2)
+        .background(Theme.surface, in: Capsule())
     }
 }
 
@@ -400,17 +541,69 @@ private struct ReactionQuery: Identifiable {
     var id: String { reaction.key }
 }
 
+/// A message that arrived encrypted for keys this device does not have.
+private struct UndecryptableRow: View {
+    let row: TimelineRow
+    let named: String
+    let text: String
+    let continuesRun: Bool
+    let faces: AvatarCache
+
+    var body: some View {
+        VStack(alignment: row.item.isOwn ? .trailing : .leading, spacing: 4) {
+            if !row.item.isOwn && !continuesRun {
+                HStack(spacing: 6) {
+                    SenderFace(
+                        mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces,
+                        size: 22)
+                    Text(named).nameFace()
+                    if let timestamp = row.item.timestampMs {
+                        Text(TimelineTime.short(timestamp)).metaFace()
+                            .foregroundStyle(Theme.contentFaint)
+                    }
+                }
+            }
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(text)
+                    Text("Encryption recovery in your account can restore older messages.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.contentFaint)
+                }
+            } icon: {
+                Image(systemName: "lock.fill")
+            }
+            .font(.subheadline.italic())
+            .foregroundStyle(Theme.contentMuted)
+            .padding(10)
+            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: row.item.isOwn ? .trailing : .leading)
+        .padding(.top, continuesRun ? 2 : 12)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// A quiet line about the room rather than in it — a membership change, a
 /// placeholder, a collapsed run.
+///
+/// **One line, four points above and below** (D5, T2). These were drawn
+/// roughly a hundred and thirty points apart, which made a room's membership
+/// churn the tallest thing in it. At the accessibility sizes the line may
+/// wrap rather than truncate, because a sentence cut in half says nothing.
 struct SystemLine: View {
     let text: String
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Text(text)
             .metaFace()
             .foregroundStyle(Theme.contentFaint)
+            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+            .truncationMode(.middle)
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
     }
 }
 
@@ -421,6 +614,9 @@ private struct ImageRow: View {
     let alt: String
     let width: UInt64?
     let height: UInt64?
+    /// What the sender wrote with it (MSC2530), drawn under the picture —
+    /// one message, the way it was sent.
+    let caption: String?
     let media: MediaCache
 
     /// The picture, once it arrives. `nil` while loading *and* when there is
@@ -467,6 +663,13 @@ private struct ImageRow: View {
             }
             .frame(maxWidth: 320)
             .accessibilityLabel(alt)
+            if let caption {
+                Text(caption)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.content)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 320, alignment: .leading)
+            }
         }
         .padding(.vertical, 6)
     }
@@ -675,5 +878,111 @@ private struct MediaFileRow: View {
             row: PreviewFixtures.card, media: PreviewFixtures.mediaCache(),
             faces: PreviewFixtures.faceCache(), onDecide: { _ in true })
     }
+}
+
+// An agent's card, the same agent continuing, and a colleague (T1, T2).
+//
+// The badge is on the agent and not on Krishna; the second agent message has
+// no header and sits two points under the first; Krishna's turn opens twelve
+// points further down.
+#Preview("Agent cards") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return PreviewGround(width: 390) {
+        VStack(alignment: .leading, spacing: 0) {
+            TimelineRowView(
+                row: PreviewFixtures.agentMessage, attribution: "Atlas", media: media, faces: faces)
+            TimelineRowView(
+                row: PreviewFixtures.agentFollowUp, continuesRun: true, attribution: "Atlas",
+                media: media, faces: faces)
+            TimelineRowView(row: PreviewFixtures.colleagueMessage, media: media, faces: faces)
+        }
+    }
+}
+
+// A report past six hundred characters: the card's opening fades out and a
+// Read button opens the whole of it in the serif long-read view.
+#Preview("Long report") {
+    PreviewGround(width: 390) {
+        TimelineRowView(
+            row: PreviewFixtures.agentReport, attribution: "Atlas",
+            media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
+    }
+}
+
+// Receipts as faces beside the time (D7), not "Read by …" sentences, and own
+// reactions hung on the bubble's corner (D8).
+#Preview("Receipts and corner reactions") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return PreviewGround(width: 390) {
+        VStack(alignment: .leading, spacing: 0) {
+            TimelineRowView(row: PreviewFixtures.ownWithReactions, media: media, faces: faces)
+            TimelineRowView(
+                row: PreviewFixtures.ownRead, media: media, faces: faces,
+                readers: PreviewFixtures.readers)
+            TimelineRowView(row: PreviewFixtures.withReactions, media: media, faces: faces)
+        }
+    }
+}
+
+// A reply directly under its parent drops the quote (D6); the same reply with
+// something between them keeps it. And the row a quote tap lands on, lit.
+#Preview("Reply beside its parent") {
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return PreviewGround(width: 390) {
+        VStack(alignment: .leading, spacing: 0) {
+            TimelineRowView(
+                row: PreviewFixtures.replyParent, media: media, faces: faces, highlighted: true)
+            TimelineRowView(row: PreviewFixtures.reply, media: media, faces: faces, hidesQuote: true)
+            TimelineRowView(row: PreviewFixtures.noticed, media: media, faces: faces)
+            TimelineRowView(row: PreviewFixtures.reply, media: media, faces: faces, onQuoteTap: {})
+        }
+    }
+}
+
+// Membership churn collapsed to one line each, four points apart (D5), and a
+// day divider in sentence case (D7).
+#Preview("System lines") {
+    PreviewGround(width: 390) {
+        VStack(spacing: 0) {
+            TimelineRowView(
+                row: PreviewFixtures.dayDivider, media: PreviewFixtures.mediaCache(),
+                faces: PreviewFixtures.faceCache())
+            ForEach(PreviewFixtures.churnLines, id: \.self) { line in
+                SystemLine(text: line)
+            }
+            TimelineRowView(
+                row: PreviewFixtures.agentMessage, attribution: "Atlas",
+                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
+        }
+    }
+}
+
+// The rows mid-swipe, times out at the trailing edge (T4).
+#Preview("Times revealed") {
+    let reveal = TimeReveal()
+    reveal.offset = TimeReveal.width
+    let media = PreviewFixtures.mediaCache()
+    let faces = PreviewFixtures.faceCache()
+    return PreviewGround(width: 390) {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(
+                [PreviewFixtures.agentMessage, PreviewFixtures.ownRead, PreviewFixtures.colleagueMessage],
+                id: \.item.id
+            ) { row in
+                RevealsTime(reveal: reveal, time: row.item.timestampMs.map(TimelineTime.short)) {
+                    TimelineRowView(row: row, attribution: row.senderShort, media: media, faces: faces)
+                }
+            }
+        }
+    }
+}
+
+// The long-read sheet on its own: New York, a reading measure.
+#Preview("Long read") {
+    LongReadSheet(title: "Atlas", blocks: PreviewFixtures.reportBlocks)
+        .previewChrome()
 }
 #endif

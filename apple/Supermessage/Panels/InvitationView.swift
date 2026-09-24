@@ -65,7 +65,9 @@ struct InvitationView: View {
             HStack(spacing: 12) {
                 Button("Decline") { Task { await respond(accept: false) } }
                     .buttonStyle(.bordered)
-                Button("Accept") { Task { await respond(accept: true) } }
+                Button { Task { await respond(accept: true) } } label: {
+                    Text("Accept").foregroundStyle(Theme.accentContent)
+                }
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.accent)
             }
@@ -73,7 +75,7 @@ struct InvitationView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .background(.bar)
+        .background(Theme.surfaceSunken)
         .task(id: roomId) { if inviter == nil { await loadInviter() } }
     }
 

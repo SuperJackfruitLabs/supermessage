@@ -67,15 +67,15 @@
   does.
 -->
 <div
-  class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-content-muted"
+  class="flex items-baseline gap-3 border-b border-border px-3 py-2 font-sans text-content-muted"
 >
   <span
-    class="min-w-0 flex-1 text-label uppercase break-words"
+    class="min-w-0 flex-1 text-label break-words"
     title={view.eventType}
   >
     {view.label}
   </span>
-  <span class="shrink-0 text-meta">{formatTime(item.timestampMs)}</span>
+  <span class="shrink-0 text-meta tabular-nums">{formatTime(item.timestampMs)}</span>
 </div>
 {#if view.view.status === "rendered"}
   <!--
@@ -95,10 +95,10 @@
 
     - A fixed `9ch` is narrower than most real labels,
       and `overflow-wrap` then breaks them mid-word —
-      `REQUEST`/`ED BY`, and at the 60-char bound a
+      `Request`/`ed by`, and at the 60-char bound a
       twelve-line syllable ladder. `min-w-[9ch]` keeps
       the spec's column rank for a short label like
-      `NOTE`; `max-w-[16ch]` bounds it; between them
+      `Note`; `max-w-[16ch]` bounds it; between them
       an ordinary multi-word label wraps at its spaces
       and only a single over-long *word* still breaks,
       which is `break-words`' (`overflow-wrap:
@@ -112,16 +112,16 @@
       would stop being a grid.
 
     `ch` resolves against the element's own font, so
-    the two caps are on the `dt`, which is the mono
-    one — 9ch of mono, as the spec means it, not 9ch
-    of the serif the card is set in.
+    the two caps are on the `dt`, which is set in the
+    label rank — 9ch of that, not 9ch of the body
+    size the card is set in.
   -->
   <dl
     class="selectable m-0 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 px-3 py-2"
   >
     {#each view.view.fields as field, i (i)}
       <dt
-        class="min-w-[9ch] max-w-[16ch] font-mono text-label uppercase break-words text-content-muted"
+        class="min-w-[9ch] max-w-[16ch] font-sans text-label break-words text-content-muted"
       >
         {field.label}
       </dt>
@@ -142,7 +142,7 @@
     -->
     <details class="border-t border-border px-3 py-2">
       <summary
-        class="cursor-pointer font-mono text-label uppercase text-content-muted"
+        class="cursor-pointer font-sans text-label text-content-muted"
       >
         Reasoning
       </summary>
@@ -155,10 +155,9 @@
   {/if}
   {#if view.view.newerVersion}
     <!--
-      Mono and emphatically *not* amber: this is a
-      note, not a decision, and amber is reserved
-      (spec §3). Not italic either — no mono italic is
-      bundled (spec §6.3).
+      Emphatically *not* amber: this is a note, not a
+      decision, and amber is reserved (spec §3). Not
+      italic either — a meta line never is.
 
       `--color-content-muted`, not `faint`, and that
       is a measured floor rather than a preference:
@@ -168,7 +167,7 @@
       the log's faint rows sit on. `muted` on the same
       ground is 8.21:1.
     -->
-    <p class="px-3 pb-2 font-mono text-meta text-content-muted">
+    <p class="px-3 pb-2 font-sans text-meta text-content-muted">
       Shown from a newer version of this event
     </p>
   {/if}
@@ -176,7 +175,7 @@
   <!-- status === "fallbackBody": the plain-text
        `content.body` Matrix convention puts on every
        suite custom event, for a type this build has
-       no renderer for. Serif, no field grid (spec
+       no renderer for. Body text, no field grid (spec
        §7) — it is prose, not data. -->
   <p class="selectable px-3 py-2 whitespace-pre-wrap break-words">
     {view.view.text}
@@ -202,7 +201,7 @@
       alongside this card's left edge and ground. It
       says the operator owes someone an answer.
     -->
-    <p class="mt-2 font-mono text-label uppercase text-signal">
+    <p class="mt-2 font-sans text-label text-signal">
       Awaiting your decision
     </p>
     <div class="mt-1.5 flex flex-wrap gap-2">

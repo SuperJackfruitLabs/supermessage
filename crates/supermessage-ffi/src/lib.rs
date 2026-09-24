@@ -329,6 +329,16 @@ impl Core {
         Ok(())
     }
 
+    /// Register this device's push token with the homeserver, pointed at a
+    /// push gateway. `event_id_only`, so no content leaves the homeserver.
+    pub fn register_pusher(
+        &self,
+        registration: supermessage_core::push::PushRegistration,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.register_pusher(&registration))?;
+        Ok(())
+    }
+
     /// Pin or unpin a room — the `m.favourite` tag, so it travels between
     /// clients.
     pub fn set_room_pinned(&self, room_id: String, pinned: bool) -> Result<(), FfiError> {
@@ -515,7 +525,15 @@ impl Core {
     /// is checked against both the focused room and the room the token was
     /// staged for — the first catches a stale send, the second a token kept
     /// across a room switch.
-    pub fn attachment_send(&self, room_id: String, token: String) -> Result<(), FfiError> {
+    ///
+    /// `caption` is what the reader typed with the file. It travels in the
+    /// same event (MSC2530) rather than as a message of its own.
+    pub fn attachment_send(
+        &self,
+        room_id: String,
+        token: String,
+        caption: Option<String>,
+    ) -> Result<(), FfiError> {
         let staged = self.session.staged_attachments();
         let focused = self.session.focused_timeline();
         self.block(supermessage_core::attachments::send_staged(
@@ -524,6 +542,7 @@ impl Core {
             &staged,
             &room_id,
             &token,
+            caption,
         ))?;
         Ok(())
     }

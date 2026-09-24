@@ -26,10 +26,32 @@ export function liveTool(overrides: Partial<LiveTool> = {}): LiveTool {
     toolCallId: "call-1",
     title: "read docs/tech-stack.md",
     kind: "read",
-    status: "in_progress",
+    ...toolStatus("in_progress"),
     locations: [],
     ...overrides,
   };
+}
+
+/**
+ * ACP's raw status with the phase and label the core derives from it
+ * (`core::live::ToolPhase::from_status` / `label`), so a fixture cannot pair
+ * a status with a phase the core would never send alongside it.
+ */
+export function toolStatus(
+  status: string,
+): Pick<LiveTool, "status" | "phase" | "statusLabel"> {
+  switch (status) {
+    case "pending":
+      return { status, phase: "queued", statusLabel: "Queued" };
+    case "in_progress":
+      return { status, phase: "running", statusLabel: "Running" };
+    case "completed":
+      return { status, phase: "done", statusLabel: "Done" };
+    case "failed":
+      return { status, phase: "failed", statusLabel: "Failed" };
+    default:
+      return { status, phase: "unknown", statusLabel: "Working" };
+  }
 }
 
 // ───────────────────────────── typing ─────────────────────────────
@@ -99,17 +121,17 @@ export const toolsRunning: LiveTool[] = [liveTool()];
  * turn ends. This fixture is the one that shows that rule working.
  */
 export const toolsWithFailure: LiveTool[] = [
-  liveTool({ toolCallId: "c1", title: "read docs/tech-stack.md", status: "completed" }),
-  liveTool({ toolCallId: "c2", title: "write src/lib/tokens.css", status: "failed" }),
-  liveTool({ toolCallId: "c3", title: "run pnpm check", status: "in_progress" }),
+  liveTool({ toolCallId: "c1", title: "read docs/tech-stack.md", ...toolStatus("completed") }),
+  liveTool({ toolCallId: "c2", title: "write src/lib/tokens.css", ...toolStatus("failed") }),
+  liveTool({ toolCallId: "c3", title: "run pnpm check", ...toolStatus("in_progress") }),
 ];
 
 /** Past two completed, so the "N done" counter appears. */
 export const toolsManyDone: LiveTool[] = [
-  liveTool({ toolCallId: "c1", title: "read a", status: "completed" }),
-  liveTool({ toolCallId: "c2", title: "read b", status: "completed" }),
-  liveTool({ toolCallId: "c3", title: "read c", status: "completed" }),
-  liveTool({ toolCallId: "c4", title: "run the token generator", status: "in_progress" }),
+  liveTool({ toolCallId: "c1", title: "read a", ...toolStatus("completed") }),
+  liveTool({ toolCallId: "c2", title: "read b", ...toolStatus("completed") }),
+  liveTool({ toolCallId: "c3", title: "read c", ...toolStatus("completed") }),
+  liveTool({ toolCallId: "c4", title: "run the token generator", ...toolStatus("in_progress") }),
 ];
 
 /** A tool title long enough to need the row's `truncate`. */

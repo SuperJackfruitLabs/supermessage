@@ -55,7 +55,7 @@
   start where that conversation starts rather than at the pane's edge.
 -->
 <div
-  class="h-6 shrink-0 bg-surface-sunken px-4 font-mono text-meta text-content-faint"
+  class="h-6 shrink-0 bg-surface-sunken px-4 text-meta text-content-faint"
   aria-live="polite"
 >
   <div class="mx-auto flex h-full w-full max-w-[72ch] items-center">

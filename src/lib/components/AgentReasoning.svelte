@@ -116,7 +116,7 @@
   <div class="shrink-0 bg-surface-sunken px-4 lg:px-8">
     <Collapsible.Root bind:open>
       <Collapsible.Trigger
-        class="flex w-full items-center gap-2 py-1 text-left font-mono text-meta text-content-muted transition-colors hover:text-content"
+        class="flex w-full items-center gap-2 py-1 text-left text-meta text-content-muted transition-colors hover:text-content"
       >
         {#if streaming !== null}
           <!-- The sweep says *this* is being written; a pulse would only say something is. -->

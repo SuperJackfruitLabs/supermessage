@@ -1429,6 +1429,71 @@ public object FfiConverterTypePersonDto: FfiConverterRustBuffer<PersonDto> {
 
 
 /**
+ * What a host knows about its own push channel.
+ */
+data class PushRegistration (
+    /**
+     * The device token, as the platform issued it (APNs: hex).
+     */
+    var `pushkey`: kotlin.String, 
+    /**
+     * Which app and environment the gateway should route to —
+     * `dev.supermessage.ios` for production APNs, a `.dev` suffix for the
+     * sandbox. The gateway's configuration names these.
+     */
+    var `appId`: kotlin.String, 
+    var `appDisplayName`: kotlin.String, 
+    var `deviceDisplayName`: kotlin.String, 
+    /**
+     * BCP 47, for the gateway's own wording where it has any.
+     */
+    var `lang`: kotlin.String, 
+    /**
+     * The gateway's `/_matrix/push/v1/notify` URL.
+     */
+    var `gatewayUrl`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePushRegistration: FfiConverterRustBuffer<PushRegistration> {
+    override fun read(buf: ByteBuffer): PushRegistration {
+        return PushRegistration(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PushRegistration) = (
+            FfiConverterString.allocationSize(value.`pushkey`) +
+            FfiConverterString.allocationSize(value.`appId`) +
+            FfiConverterString.allocationSize(value.`appDisplayName`) +
+            FfiConverterString.allocationSize(value.`deviceDisplayName`) +
+            FfiConverterString.allocationSize(value.`lang`) +
+            FfiConverterString.allocationSize(value.`gatewayUrl`)
+    )
+
+    override fun write(value: PushRegistration, buf: ByteBuffer) {
+            FfiConverterString.write(value.`pushkey`, buf)
+            FfiConverterString.write(value.`appId`, buf)
+            FfiConverterString.write(value.`appDisplayName`, buf)
+            FfiConverterString.write(value.`deviceDisplayName`, buf)
+            FfiConverterString.write(value.`lang`, buf)
+            FfiConverterString.write(value.`gatewayUrl`, buf)
+    }
+}
+
+
+
+/**
  * One reaction key aggregated across senders on a message (see
  * `core::timeline::project_reactions`), projected from the SDK's
  * `ReactionsByKeyBySender`.
@@ -2168,7 +2233,15 @@ public object FfiConverterTypeRoomSummary: FfiConverterRustBuffer<RoomSummary> {
  */
 data class RosterRow (
     var `row`: RoomRow, 
-    var `state`: AgentState
+    var `state`: AgentState, 
+    /**
+     * Whether `state`'s activity word (`active`, `idle`, `quiet`) describes
+     * anything. It does for an agent's room; for a room of people, "idle"
+     * says nothing a reader wants to know. See [`describes_agent`].
+     *
+     * `NeedsYou` is shown regardless: owing an answer is not about agents.
+     */
+    var `describesAgent`: kotlin.Boolean
 ) {
     
     companion object
@@ -2182,17 +2255,20 @@ public object FfiConverterTypeRosterRow: FfiConverterRustBuffer<RosterRow> {
         return RosterRow(
             FfiConverterTypeRoomRow.read(buf),
             FfiConverterTypeAgentState.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
     override fun allocationSize(value: RosterRow) = (
             FfiConverterTypeRoomRow.allocationSize(value.`row`) +
-            FfiConverterTypeAgentState.allocationSize(value.`state`)
+            FfiConverterTypeAgentState.allocationSize(value.`state`) +
+            FfiConverterBoolean.allocationSize(value.`describesAgent`)
     )
 
     override fun write(value: RosterRow, buf: ByteBuffer) {
             FfiConverterTypeRoomRow.write(value.`row`, buf)
             FfiConverterTypeAgentState.write(value.`state`, buf)
+            FfiConverterBoolean.write(value.`describesAgent`, buf)
     }
 }
 
@@ -2446,19 +2522,6 @@ public object FfiConverterTypeSpaceSummary: FfiConverterRustBuffer<SpaceSummary>
 
 
 
-/**
- * A single timeline item (message, state event, etc.) as rendered.
- *
- * `kind` is the semantic discriminant projected from the SDK's
- * `TimelineItemContent` (see `core::timeline::classify_content`) — never a
- * raw Matrix event-type string. `msgtype` and `detail` carry the two kinds
- * of extra context a `kind` sometimes needs to be rendered correctly:
- * `msgtype` is only populated for `kind: "message"` (`m.text`, `m.notice`,
- * …); `detail` carries kind-specific context such as a membership change's
- * change kind, a state event's event type, or a custom event's event type.
- * Both are `None` when the `kind` doesn't need them — see the table in
- * `docs/matrix-events.md` for the full mapping.
- */
 data class TimelineItemDto (
     /**
      * **Identity, not an address.** The SDK's `TimelineItem::unique_id()`.
@@ -2551,7 +2614,7 @@ data class TimelineItemDto (
     var `customPayload`: CustomPayload?, 
     var `timestampMs`: kotlin.ULong?, 
     var `isOwn`: kotlin.Boolean, 
-    var `sendState`: kotlin.String?, 
+    var `sendState`: DeliveryState?, 
     /**
      * Present when this item is a reply (`m.in_reply_to`); `None` for an
      * ordinary message and for every non-message `kind`. See [`ReplyToDto`]
@@ -2599,7 +2662,19 @@ data class TimelineItemDto (
      * one already redacted. Offering an Edit that the homeserver then
      * refuses is worse than not offering it.
      */
-    var `editable`: kotlin.Boolean
+    var `editable`: kotlin.Boolean, 
+    /**
+     * For `kind == "membership"`: the person the change is about — the
+     * event's `state_key` — as a display name, or their user id when they
+     * have none. `None` for every other kind, and `None` when the subject is
+     * the sender — "joined", "left" — where the sender's resolved profile is
+     * the better name.
+     *
+     * Distinct from `sender`: an invite, a ban or a removal is sent by
+     * someone else, and naming the sender told the room the wrong person had
+     * been invited (issue #67).
+     */
+    var `membershipSubject`: kotlin.String?
 ) {
     
     companion object
@@ -2625,12 +2700,13 @@ public object FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer<TimelineIt
             FfiConverterOptionalTypeCustomPayload.read(buf),
             FfiConverterOptionalULong.read(buf),
             FfiConverterBoolean.read(buf),
-            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalTypeDeliveryState.read(buf),
             FfiConverterOptionalTypeReplyToDto.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterSequenceTypeReactionDto.read(buf),
             FfiConverterSequenceString.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
@@ -2649,12 +2725,13 @@ public object FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer<TimelineIt
             FfiConverterOptionalTypeCustomPayload.allocationSize(value.`customPayload`) +
             FfiConverterOptionalULong.allocationSize(value.`timestampMs`) +
             FfiConverterBoolean.allocationSize(value.`isOwn`) +
-            FfiConverterOptionalString.allocationSize(value.`sendState`) +
+            FfiConverterOptionalTypeDeliveryState.allocationSize(value.`sendState`) +
             FfiConverterOptionalTypeReplyToDto.allocationSize(value.`replyTo`) +
             FfiConverterBoolean.allocationSize(value.`edited`) +
             FfiConverterSequenceTypeReactionDto.allocationSize(value.`reactions`) +
             FfiConverterSequenceString.allocationSize(value.`readBy`) +
-            FfiConverterBoolean.allocationSize(value.`editable`)
+            FfiConverterBoolean.allocationSize(value.`editable`) +
+            FfiConverterOptionalString.allocationSize(value.`membershipSubject`)
     )
 
     override fun write(value: TimelineItemDto, buf: ByteBuffer) {
@@ -2672,12 +2749,13 @@ public object FfiConverterTypeTimelineItemDto: FfiConverterRustBuffer<TimelineIt
             FfiConverterOptionalTypeCustomPayload.write(value.`customPayload`, buf)
             FfiConverterOptionalULong.write(value.`timestampMs`, buf)
             FfiConverterBoolean.write(value.`isOwn`, buf)
-            FfiConverterOptionalString.write(value.`sendState`, buf)
+            FfiConverterOptionalTypeDeliveryState.write(value.`sendState`, buf)
             FfiConverterOptionalTypeReplyToDto.write(value.`replyTo`, buf)
             FfiConverterBoolean.write(value.`edited`, buf)
             FfiConverterSequenceTypeReactionDto.write(value.`reactions`, buf)
             FfiConverterSequenceString.write(value.`readBy`, buf)
             FfiConverterBoolean.write(value.`editable`, buf)
+            FfiConverterOptionalString.write(value.`membershipSubject`, buf)
     }
 }
 
@@ -3074,6 +3152,69 @@ public object FfiConverterTypeCustomEventView : FfiConverterRustBuffer<CustomEve
 
 
 /**
+ * A single timeline item (message, state event, etc.) as rendered.
+ *
+ * `kind` is the semantic discriminant projected from the SDK's
+ * `TimelineItemContent` (see `core::timeline::classify_content`) — never a
+ * raw Matrix event-type string. `msgtype` and `detail` carry the two kinds
+ * of extra context a `kind` sometimes needs to be rendered correctly:
+ * `msgtype` is only populated for `kind: "message"` (`m.text`, `m.notice`,
+ * …); `detail` carries kind-specific context such as a membership change's
+ * change kind, a state event's event type, or a custom event's event type.
+ * Both are `None` when the `kind` doesn't need them — see the table in
+ * `docs/matrix-events.md` for the full mapping.
+ * Where one of this account's own messages is on its way to the homeserver.
+ *
+ * An enum rather than the string it used to be. As a string, a host matched
+ * on spellings, and a preview fixture that spelled them `"sending"` and
+ * `"failed"` drew both messages as delivered while its snapshot test passed:
+ * the one state a reader must never miss had no working visual check. A
+ * misspelled variant does not compile.
+ *
+ * Serialised in camelCase, so the desktop's wire strings (`notSentYet`,
+ * `sendingFailed`, `sent`) are unchanged.
+ */
+
+enum class DeliveryState {
+    
+    /**
+     * Still a local echo; the homeserver has not confirmed it.
+     */
+    NOT_SENT_YET,
+    /**
+     * The send failed. The message is on this device only.
+     */
+    SENDING_FAILED,
+    /**
+     * The homeserver has it.
+     */
+    SENT;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDeliveryState: FfiConverterRustBuffer<DeliveryState> {
+    override fun read(buf: ByteBuffer) = try {
+        DeliveryState.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: DeliveryState) = 4UL
+
+    override fun write(value: DeliveryState, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
  * The render decision for one item.
  */
 sealed class ItemView {
@@ -3130,7 +3271,13 @@ sealed class ItemView {
     data class Image(
         val `alt`: kotlin.String, 
         val `width`: kotlin.ULong?, 
-        val `height`: kotlin.ULong?) : ItemView() {
+        val `height`: kotlin.ULong?, 
+        /**
+         * What the sender wrote with it — MSC2530: `body` is a caption only
+         * when a separate `filename` differs from it. `None` for a bare image,
+         * whose `body` is just its file name.
+         */
+        val `caption`: kotlin.String?) : ItemView() {
         companion object
     }
     
@@ -3222,6 +3369,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterString.read(buf),
                 FfiConverterOptionalULong.read(buf),
                 FfiConverterOptionalULong.read(buf),
+                FfiConverterOptionalString.read(buf),
                 )
             7 -> ItemView.MediaFile(
                 FfiConverterTypeMediaFileLabel.read(buf),
@@ -3284,6 +3432,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 + FfiConverterString.allocationSize(value.`alt`)
                 + FfiConverterOptionalULong.allocationSize(value.`width`)
                 + FfiConverterOptionalULong.allocationSize(value.`height`)
+                + FfiConverterOptionalString.allocationSize(value.`caption`)
             )
         }
         is ItemView.MediaFile -> {
@@ -3352,6 +3501,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterString.write(value.`alt`, buf)
                 FfiConverterOptionalULong.write(value.`width`, buf)
                 FfiConverterOptionalULong.write(value.`height`, buf)
+                FfiConverterOptionalString.write(value.`caption`, buf)
                 Unit
             }
             is ItemView.MediaFile -> {
@@ -4392,6 +4542,16 @@ sealed class SystemKind {
     object TimelineStart : SystemKind()
     
     
+    /**
+     * A one-line `m.notice`: a bridge or bot speaking about the room —
+     * "I could not reach this agent: …" — rather than a person or agent
+     * saying something in it. `who` is the sender, already attributed.
+     */
+    data class Notice(
+        val `who`: kotlin.String) : SystemKind() {
+        companion object
+    }
+    
 
     
     companion object
@@ -4413,6 +4573,9 @@ public object FfiConverterTypeSystemKind : FfiConverterRustBuffer<SystemKind>{
                 FfiConverterOptionalString.read(buf),
                 )
             5 -> SystemKind.TimelineStart
+            6 -> SystemKind.Notice(
+                FfiConverterString.read(buf),
+                )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -4451,6 +4614,13 @@ public object FfiConverterTypeSystemKind : FfiConverterRustBuffer<SystemKind>{
                 4UL
             )
         }
+        is SystemKind.Notice -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`who`)
+            )
+        }
     }
 
     override fun write(value: SystemKind, buf: ByteBuffer) {
@@ -4478,7 +4648,68 @@ public object FfiConverterTypeSystemKind : FfiConverterRustBuffer<SystemKind>{
                 buf.putInt(5)
                 Unit
             }
+            is SystemKind.Notice -> {
+                buf.putInt(6)
+                FfiConverterString.write(value.`who`, buf)
+                Unit
+            }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+/**
+ * Where one tool call is, in the reader's terms.
+ *
+ * ACP's `status` is wire vocabulary (`in_progress`), and every host used to
+ * print it as it arrived or rewrite it by hand: iOS showed `in_progress`,
+ * Android the same, and the desktop `IN PROGRESS`. The phase is decided
+ * here, once, and a host picks a glyph and a colour from it.
+ */
+
+enum class ToolPhase {
+    
+    /**
+     * `pending`: announced, not started.
+     */
+    QUEUED,
+    /**
+     * `in_progress`.
+     */
+    RUNNING,
+    /**
+     * `completed`.
+     */
+    DONE,
+    /**
+     * `failed`. The one phase a host colours.
+     */
+    FAILED,
+    /**
+     * A status this build was not taught. Shown as neutral, never guessed at.
+     */
+    UNKNOWN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeToolPhase: FfiConverterRustBuffer<ToolPhase> {
+    override fun read(buf: ByteBuffer) = try {
+        ToolPhase.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ToolPhase) = 4UL
+
+    override fun write(value: ToolPhase, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
     }
 }
 
@@ -4704,6 +4935,38 @@ public object FfiConverterOptionalTypeRuntimeDto: FfiConverterRustBuffer<Runtime
         } else {
             buf.put(1)
             FfiConverterTypeRuntimeDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeDeliveryState: FfiConverterRustBuffer<DeliveryState?> {
+    override fun read(buf: ByteBuffer): DeliveryState? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeDeliveryState.read(buf)
+    }
+
+    override fun allocationSize(value: DeliveryState?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeDeliveryState.allocationSize(value)
+        }
+    }
+
+    override fun write(value: DeliveryState?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeDeliveryState.write(value, buf)
         }
     }
 }

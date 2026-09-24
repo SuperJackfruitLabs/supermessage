@@ -377,13 +377,23 @@
    * it belonged to and not the new strip — the same "don't touch state that
    * has moved on during an await" rule `send` applies to the draft.
    */
-  async function sendStaged(sentRoomId: string, attachment: StagedAttachment): Promise<void> {
+  async function sendStaged(
+    sentRoomId: string,
+    attachment: StagedAttachment,
+    caption: string | null = null
+  ): Promise<void> {
     stopTyping(sentRoomId);
     sending = true;
     failure = null;
     try {
-      await attachmentSend(sentRoomId, attachment.token);
+      await attachmentSend(sentRoomId, attachment.token, caption);
       attachments.takeToken(attachment.token);
+      // The draft went as the caption, so it has been sent: clear it, in the
+      // room it was written in (the reader may have moved on meanwhile).
+      if (caption !== null) {
+        if (roomId === sentRoomId) value = "";
+        else drafts.setDraftFor(sentRoomId, "");
+      }
     } catch (err) {
       console.error("failed to send attachment", err);
       failure = attachmentFailure(err, "send");
@@ -497,15 +507,16 @@
     if (!canSend) return;
     const body = trimmed;
     const sentRoomId = roomId;
-    // The attachment wins whenever there is one: Send is repurposed rather
-    // than disabled while a file is staged (see this file's top-of-script
-    // comment), and the strip says so in as many words whenever there is
-    // draft text that could make the question ambiguous. The draft is left
-    // exactly where it is — this cut sends a file *or* a message, never one
-    // captioned with the other.
+    // The attachment wins whenever there is one, and the draft goes with it
+    // as its caption (MSC2530): one event, so the words never arrive without
+    // their picture, and an agent gets the picture and the question as one
+    // turn — sent as two messages, the question met "Session is busy"
+    // (2026-09-24). A reply is the exception: a caption cannot carry one, so
+    // the draft then stays where it is, and the strip says so.
     const attachment = attachments.stagedFor(sentRoomId);
     if (attachment !== null) {
-      await sendStaged(sentRoomId, attachment);
+      const caption = body !== "" && !replyTargetStore.get(sentRoomId) ? body : null;
+      await sendStaged(sentRoomId, attachment, caption);
       return;
     }
     // Snapshot *before* the `await` below: if the reader switches rooms
@@ -625,7 +636,7 @@
 {#if failure}
   <div class="shrink-0 bg-surface-sunken px-4 py-2">
     <div class="mx-auto flex w-full max-w-[72ch] flex-col gap-0.5">
-    <span class="font-mono text-label text-danger uppercase">{failure.label}</span>
+    <span class="text-label text-danger">{failure.label}</span>
     <p class="selectable text-ui text-content" role="alert">{failure.message}</p>
     </div>
   </div>
@@ -697,7 +708,7 @@
     **A glyph, not an icon.** Spec §11 ships no icon set and lists the two
     characters in use (`✕`, `›`); one control is not a reason to start one,
     and a paperclip emoji would be a third typeface's worth of colour
-    rendering in a monochrome console. `+` in mono is the same vernacular as
+    rendering in a monochrome console. `+` is the same vernacular as
     the `›` prompt beside it.
 
     **A glyph is not a label**, so the accessible name is a real one and the
@@ -731,14 +742,14 @@
     disabled={staging}
     aria-label="Attach a file"
     title="Attach a file — or drop one on the window"
-    class="flex shrink-0 items-center justify-center rounded-control px-2.5 py-2 font-mono text-ui-lg text-content-muted transition-colors hover:bg-surface hover:text-content disabled:text-content-faint disabled:hover:bg-transparent"
+    class="flex shrink-0 items-center justify-center rounded-control px-2.5 py-2 text-ui-lg text-content-muted transition-colors hover:bg-surface hover:text-content disabled:text-content-faint disabled:hover:bg-transparent"
   >
     <span aria-hidden="true">+</span>
   </button>
   <div
     class="flex min-w-0 flex-1 items-end gap-1.5 rounded-control px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
   >
-    <span class="shrink-0 pb-1.5 font-mono text-content-faint" aria-hidden="true">›</span>
+    <span class="shrink-0 pb-1.5 text-content-faint" aria-hidden="true">›</span>
     <textarea
       bind:this={input}
       bind:value
@@ -815,7 +826,7 @@
       colour is an alpha over an accent ground, which is precisely the case
       an rgba-parsing probe gets wrong.
     -->
-    <span aria-hidden="true" class="font-mono opacity-80">⏎</span>
+    <span aria-hidden="true" class="opacity-80">⏎</span>
   </button>
   </div>
 </div>

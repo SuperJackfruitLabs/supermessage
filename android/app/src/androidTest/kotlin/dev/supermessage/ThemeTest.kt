@@ -27,7 +27,7 @@ class ThemeTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun agentMessageRendersSerif() {
+    fun agentMessageRendersInTheOneConversationFace() {
         var resolved: FontFamily? = null
         compose.setContent {
             SupermessageTheme {
@@ -39,7 +39,7 @@ class ThemeTest {
             }
         }
         compose.waitForIdle()
-        assertEquals(FontFamily.Serif, resolved)
+        assertEquals(FontFamily.SansSerif, resolved)
     }
 
     @Test
@@ -75,13 +75,16 @@ class ThemeTest {
     }
 
     /**
-     * `own` and `body` must be distinguishable faces, not the same face
-     * wearing two names — the exact mistake the brief's mandated mutation
-     * (making `own` serif too) reproduces.
+     * One conversational voice (docs/design-language.md §1, 2026-09-23):
+     * what an agent wrote and what you wrote share a face, and both come
+     * from the generated tokens rather than a literal here. Who said it is
+     * carried by the sender's card and badge.
      */
     @Test
-    fun ownAndBodyAreDifferentFaces() {
-        assertNotEquals(SupermessageThemeFonts.body, SupermessageThemeFonts.own)
+    fun ownAndBodyShareTheGeneratedFace() {
+        assertEquals(ThemeType.body, SupermessageThemeFonts.body)
+        assertEquals(ThemeType.bodyOwn, SupermessageThemeFonts.own)
+        assertEquals(SupermessageThemeFonts.body, SupermessageThemeFonts.own)
     }
 
     /**

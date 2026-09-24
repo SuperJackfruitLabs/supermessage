@@ -52,18 +52,217 @@ import UIKit
 /// Rows stay SwiftUI — each cell hosts `TimelineRowView` through
 /// `UIHostingConfiguration` — so nothing about how a message *looks* moves to
 /// UIKit. Only the scrolling does.
-struct TimelineCollectionView: UIViewRepresentable {
+///
+/// ## Under the navigation bar (D4)
+///
+/// The list used to stop at the bar's lower edge, so a message scrolling up
+/// was cut off mid-line against it with no edge effect at all. It now runs
+/// **under** the bar — the glass on iOS 26, the translucent bar before it —
+/// with the content inset keeping the oldest row clear of it, and a fade in
+/// the page's own colour where the two meet. UIKit's own scroll-edge effect is
+/// turned off rather than trusted: it draws at the scroll view's top, which in
+/// an inverted list is the bottom of the screen.
+///
+/// The bar keeps its touches: it is drawn above this content by the
+/// navigation container, which is not the arrangement that swallowed them
+/// (see below).
+struct TimelineCollectionView: View {
     let session: Session
     let timeline: TimelineStore
     /// Raised while the reader is away from the newest message, so the view
     /// above can offer a way back. Written from scroll callbacks.
     @Binding var isAwayFromNewest: Bool
+    @State private var topEdge = TimelineTopEdge.clear
+    /// How far the navigation bar really overlaps the list, measured in
+    /// UIKit. See `TimelineCollection.reportBarOverlap`.
+    @State private var barOverlap: CGFloat?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        // **Inside the safe area, not under the bar.** The list used to run
+        // under the navigation bar so text could fade beneath it (D4). But a
+        // hosted cell counts whatever part of it lies under the bar as safe-
+        // area inset and grows by that much: every row swelled as it scrolled
+        // under the bar and shrank as it left, the list re-laid its
+        // neighbours on every frame, and rows slid over one another — the
+        // 2026-09-23 recording, measured with `-fixtureTimeline` as a day
+        // divider going 37 → 138 → 37pt with scroll position. Kept below the
+        // bar, content never reaches it, and the fade sits at the list's own
+        // top edge instead.
+        GeometryReader { proxy in
+            // **Measured, not taken from the safe area.** On iOS 26 the top
+            // safe-area inset SwiftUI reports here is far taller than the bar
+            // the reader can see, so the fade, opaque "under the bar", laid a
+            // blank band over the first ~110pt of the conversation, text cut
+            // at its lower edge (build 16, 2026-09-24). The bar's real bottom
+            // edge, from UIKit, is what the fade and the inset need; the safe
+            // area is only the fallback until that is known.
+            let obscured = barOverlap ?? proxy.safeAreaInsets.top
+            TimelineList(
+                session: session, timeline: timeline, isAwayFromNewest: $isAwayFromNewest,
+                topEdge: $topEdge, topObscured: obscured,
+                onBarOverlap: { value in if barOverlap != value { barOverlap = value } }
+            )
+            .overlay(alignment: .top) {
+                // The fade the bar sits on: opaque page colour under the bar
+                // itself, easing to nothing below it, so text slides out of
+                // view instead of being sliced by an edge.
+                //
+                // **Only as tall as the moment needs.** It used to be 28pt at
+                // 85% whatever the list was doing, and at rest that veiled
+                // the top two lines of whatever the reader was looking at
+                // (2026-09-23 screenshot). Now: the full fade while the list
+                // is moving, when text really is sliding under the edge; a
+                // feather at rest; nothing when nothing is beneath it.
+                //
+                // Opaque exactly as far as the bar reaches, then fading over
+                // `fadeHeight` and no further. The midpoint used to sit at a
+                // fixed 55% of the whole height, so the fade reaching below
+                // the bar grew with the bar — two lines veiled at rest on a
+                // phone whose bar is tall (2026-09-24, IMG_7586 and 7588).
+                let total = obscured + topEdge.fadeHeight
+                LinearGradient(
+                    stops: [
+                        .init(color: Theme.surface, location: 0),
+                        .init(color: Theme.surface, location: total > 0 ? obscured / total : 0),
+                        .init(color: Theme.surface.opacity(0), location: 1),
+                    ], startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: total)
+                .opacity(topEdge == .clear && obscured == 0 ? 0 : 1)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: topEdge)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+        .background(Theme.surface)
+    }
+}
+
+/// What is at the top edge of the timeline, which decides how much fade it
+/// wears.
+enum TimelineTopEdge: Equatable {
+    /// The oldest loaded message is in full view: nothing to fade.
+    case clear
+    /// History continues above the edge and the list is still.
+    case resting
+    /// The reader is scrolling: text is sliding under the edge.
+    case moving
+
+    var fadeHeight: CGFloat {
+        switch self {
+        case .clear: 0
+        case .resting: 10
+        case .moving: 28
+        }
+    }
+}
+
+/// The timeline's collection view: one that does not animate its own
+/// resizing while an answer is streaming.
+///
+/// A hosted cell whose SwiftUI content changes size asks the list to resize
+/// it, and the list **animates** that resize. For a streaming answer that is
+/// the stutter of the 2026-09-23 Guild recording: every wrap onto a new line
+/// was laid out at once — the text already spilling past its card — while
+/// the cells glided to their new places over the next frames, the history
+/// snapping and sliding a line at a time. `StreamProbe` measured it as
+/// visible cells off their layout position in over half of all frames.
+///
+/// While a turn streams, layout is applied without animation, so a new line
+/// moves the history exactly once. Outside a turn nothing changes: a card
+/// expanding still eases open, and an arrival still rises into place.
+final class TimelineCollection: UICollectionView {
+    var isStreaming: () -> Bool = { false }
+
+    override func layoutSubviews() {
+        if isStreaming() {
+            UIView.performWithoutAnimation { super.layoutSubviews() }
+        } else {
+            super.layoutSubviews()
+        }
+        reportBarOverlap()
+    }
+
+    /// Told how far the navigation bar overlaps this view, when that changes.
+    var onBarOverlap: ((CGFloat) -> Void)?
+    private var reportedOverlap: CGFloat?
+
+    /// Measure the bar against this view, both in window coordinates.
+    ///
+    /// The flip does not matter: converting `bounds` accounts for the
+    /// transform, so `minY` is the top of the list as drawn. Nothing is
+    /// reported until the view is in a window beside a bar it can find — the
+    /// safe-area fallback stands until then, rather than a guessed zero.
+    private func reportBarOverlap() {
+        guard window != nil, let bar = enclosingNavigationBar() else { return }
+        let overlap =
+            bar.isHidden
+            ? 0 : max(0, bar.convert(bar.bounds, to: nil).maxY - convert(bounds, to: nil).minY)
+        if let reportedOverlap, abs(reportedOverlap - overlap) < 0.5 { return }
+        reportedOverlap = overlap
+        onBarOverlap?(overlap)
+    }
+
+    /// The bar of the navigation controller this view is shown in. SwiftUI's
+    /// `NavigationStack` is one underneath, so the responder chain finds it.
+    private func enclosingNavigationBar() -> UINavigationBar? {
+        var responder: UIResponder? = self
+        while let next = responder?.next {
+            if let controller = next as? UIViewController,
+                let bar = controller.navigationController?.navigationBar
+            {
+                return bar
+            }
+            responder = next
+        }
+        return nil
+    }
+}
+
+/// A tap anywhere on the timeline that ends editing, and does nothing else.
+///
+/// `cancelsTouchesInView = false` and simultaneous recognition, so it only
+/// ever *adds* the dismissal: every control, link and gesture beneath it
+/// behaves exactly as it would without it.
+@MainActor
+final class KeyboardDismissTap: NSObject, UIGestureRecognizerDelegate {
+    private static let shared = KeyboardDismissTap()
+
+    static func make() -> UITapGestureRecognizer {
+        let tap = UITapGestureRecognizer(target: shared, action: #selector(tapped(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = shared
+        return tap
+    }
+
+    @objc private func tapped(_ tap: UITapGestureRecognizer) {
+        tap.view?.window?.endEditing(true)
+    }
+
+    nonisolated func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool { true }
+}
+
+/// The collection view itself. See `TimelineCollectionView`.
+struct TimelineList: UIViewRepresentable {
+    let session: Session
+    let timeline: TimelineStore
+    @Binding var isAwayFromNewest: Bool
+    @Binding var topEdge: TimelineTopEdge
+    /// How much of the top of this view is under the navigation bar, so the
+    /// oldest row can come to rest below it.
+    var topObscured: CGFloat = 0
+    /// Told the bar's measured overlap whenever it changes.
+    var onBarOverlap: @MainActor (CGFloat) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(session: session, timeline: timeline)
     }
 
-    func makeUIView(context: Context) -> UICollectionView {
+    func makeUIView(context: Context) -> TimelineCollection {
         var configuration = UICollectionLayoutListConfiguration(appearance: .plain)
         configuration.showsSeparators = false
         configuration.backgroundColor = .clear
@@ -76,10 +275,19 @@ struct TimelineCollectionView: UIViewRepresentable {
             coordinator?.swipeToReply(at: indexPath)
         }
 
-        let view = UICollectionView(
+        let view = TimelineCollection(
             frame: .zero,
             collectionViewLayout: UICollectionViewCompositionalLayout.list(using: configuration))
-        view.backgroundColor = .clear
+        view.isStreaming = { [session] in session.live.isLive && !session.live.finished }
+        // The page's own colour, never the system's (D9): a clear list over a
+        // container that fell back to `systemBackground` was pure black in
+        // dark mode.
+        view.backgroundColor = UIColor(Theme.surface)
+        // The insets are set by hand, from what SwiftUI says is obscured.
+        // UIKit's automatic adjustment reads the safe area in the view's own
+        // coordinates, and in an inverted view those are upside down.
+        view.contentInsetAdjustmentBehavior = .never
+        Self.disableSystemEdgeEffects(view)
         view.delegate = context.coordinator
         view.alwaysBounceVertical = true
         // Drag the conversation to put the keyboard away, the way Messages
@@ -93,6 +301,12 @@ struct TimelineCollectionView: UIViewRepresentable {
         // interactive tracking is what keeps the two moving together instead
         // of the keyboard snapping away on the first pixel.
         view.keyboardDismissMode = .interactive
+        // And a tap on the conversation puts it away, as in WhatsApp,
+        // Telegram and Signal — dragging was the only way, and a reader who
+        // just wants to see the whole screen should not have to scroll for
+        // it. It never takes the touch: a link, a quote or a button under the
+        // finger still gets its tap.
+        view.addGestureRecognizer(KeyboardDismissTap.make())
         // The inversion itself. Everything else in this file follows from it.
         view.transform = CGAffineTransform(scaleX: 1, y: -1)
         // It would otherwise run down the leading edge and travel backwards.
@@ -104,6 +318,7 @@ struct TimelineCollectionView: UIViewRepresentable {
         view.contentInset.top = 16
 
         context.coordinator.attach(to: view)
+        context.coordinator.installTimeReveal(on: view)
         // Posted by the jump-to-newest button, which lives in the SwiftUI view
         // above and has no other way to reach this scroll view.
         NotificationCenter.default.addObserver(
@@ -112,10 +327,26 @@ struct TimelineCollectionView: UIViewRepresentable {
             guard let view else { return }
             MainActor.assumeIsolated { Self.scrollToNewest(view) }
         }
+        #if DEBUG
+        if StreamProbe.isOn { StreamProbe.shared.watch(view) }
+        #endif
         return view
     }
 
-    func updateUIView(_ view: UICollectionView, context: Context) {
+    func updateUIView(_ view: TimelineCollection, context: Context) {
+        let report = onBarOverlap
+        view.onBarOverlap = { value in
+            // After the layout pass that measured it: SwiftUI state must not
+            // change during a UIKit layout.
+            Task { @MainActor in report(value) }
+        }
+        // The far end of the inverted content is the top of the screen, so
+        // the room under the bar is the *bottom* inset.
+        let bottom = topObscured + 8
+        if view.contentInset.bottom != bottom {
+            view.contentInset.bottom = bottom
+            view.verticalScrollIndicatorInsets.bottom = topObscured
+        }
         context.coordinator.onDistanceChanged = { away in
             // Guarded: SwiftUI forbids mutating state during an update, and
             // the scroll callbacks that drive this can land inside one.
@@ -123,10 +354,38 @@ struct TimelineCollectionView: UIViewRepresentable {
                 DispatchQueue.main.async { isAwayFromNewest = away }
             }
         }
+        context.coordinator.onTopEdgeChanged = { edge in
+            if topEdge != edge {
+                DispatchQueue.main.async { topEdge = edge }
+            }
+        }
         context.coordinator.apply(
             rows: timeline.items, revision: timeline.revision,
             isPaginating: timeline.isPaginating, isLive: session.live.isLive,
             isFinished: session.live.finished)
+        // After the layout this update causes: a room that has just opened,
+        // or history that just arrived, changes what is beneath the edge
+        // without any scroll to report it.
+        DispatchQueue.main.async { [weak view, coordinator = context.coordinator] in
+            if let view { coordinator.refreshTopEdge(view) }
+        }
+    }
+
+    /// Turn off UIKit's scroll-edge effect on iOS 26.
+    ///
+    /// It is drawn at the scroll view's top and bottom in the scroll view's
+    /// own coordinates, so in an inverted list the blur meant for the bar
+    /// lands over the composer, and the bar gets the one meant for the
+    /// bottom. The fade in `TimelineCollectionView` replaces it. Compiled only
+    /// by an SDK that has the API: CI builds with iOS 26's, a local Xcode 16
+    /// with iOS 18's.
+    static func disableSystemEdgeEffects(_ view: UIScrollView) {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            view.topEdgeEffect.isHidden = true
+            view.bottomEdgeEffect.isHidden = true
+        }
+        #endif
     }
 
     /// Bring the newest message back into view.
@@ -164,13 +423,36 @@ struct TimelineCollectionView: UIViewRepresentable {
         /// Weak, and only for presenting from — the list owns the coordinator.
         private weak var list: UICollectionView?
 
-        /// The rows behind the identifiers in the snapshot, and whether each
-        /// continues a run. Grouping is resolved once here rather than per
-        /// cell, because a cell knows only itself and grouping is a question
-        /// about neighbours.
-        private var rowsById: [String: (row: TimelineRow, continuesRun: Bool)] = [:]
+        /// Everything the list decided about one row by looking at its
+        /// neighbours — a cell knows only itself, and every one of these is a
+        /// question about the rows around it.
+        struct Placement: Equatable {
+            let row: TimelineRow
+            /// The row above carries this sender's header.
+            var continuesRun: Bool
+            /// The last of its run, where own messages carry their time.
+            var endsRun: Bool
+            /// The quote only repeats the row directly above (D6).
+            var hidesQuote: Bool
+            /// Whose read receipts point here, with faces (D7).
+            var readers: [ReaderFace]
+        }
+
+        /// The rows behind the identifiers in the snapshot. Grouping is
+        /// resolved once here rather than per cell.
+        private var rowsById: [String: Placement] = [:]
+        /// Row identity by event id, so a reply quote can find its parent
+        /// (T5). Only rows this device has loaded are in it, which is the
+        /// point: a parent that is not here is not jumped to.
+        private var idByEventId: [String: String] = [:]
         /// The sentence for each collapsed membership run, by its id.
         private var runsById: [String: String] = [:]
+        /// Stretches of membership churn the reader has tapped open.
+        private var expandedStretches: Set<String> = []
+        /// The last history applied, so opening a stretch can regroup it
+        /// without waiting for the next update.
+        private var lastApply: (rows: [TimelineRow], isPaginating: Bool, isLive: Bool, isFinished: Bool)?
+        private var forceRegroup = false
         /// The history's entry list from the last full pass, so an update
         /// that only toggles the live turn can be applied without redoing
         /// the grouping.
@@ -186,14 +468,59 @@ struct TimelineCollectionView: UIViewRepresentable {
         /// come off every attribution in the room.
         private var singleSpeaker = true
         private var writerName = "Agent"
+        /// The row that carries the finished turn's record: the newest
+        /// message from someone else, which is the answer the turn produced.
+        private var recordAnchorId: String?
         /// Told when the reader moves away from, or back to, the newest
         /// message. Exact in an inverted list, where the bottom is the origin.
         var onDistanceChanged: ((Bool) -> Void)?
         private var wasAway = false
+        /// Told when what sits at the top edge changes. See `TimelineTopEdge`.
+        var onTopEdgeChanged: ((TimelineTopEdge) -> Void)?
+        private var topEdge = TimelineTopEdge.clear
+        /// Entries that arrived in the last animated pass and have not been
+        /// drawn yet — the only ones that spring in (M1).
+        private var arriving: Set<Entry> = []
+        /// The row a quote tap just landed on, lit until the timer clears it.
+        private var highlightedId: String?
+        private var highlightTask: Task<Void, Never>?
+        /// The leftward swipe that shows every message's time (T4).
+        let reveal = TimeReveal()
+        private var revealPan: UIPanGestureRecognizer?
+        fileprivate let selection = UISelectionFeedbackGenerator()
 
         init(session: Session, timeline: TimelineStore) {
             self.session = session
             self.timeline = timeline
+        }
+
+        /// A cell's content in the reading column, the right way up.
+        ///
+        /// The flip is applied to the content rather than to
+        /// `cell.contentView`, because `UIHostingConfiguration` replaces that
+        /// view when assigned — a transform set on it beforehand is
+        /// discarded, which showed up as reused cells rendering upside down
+        /// while freshly created ones were fine.
+        ///
+        /// `.minSize(height: 0)` because a list cell's default minimum is
+        /// 44pt: a one-line membership row was drawn in a 44pt cell, and a few
+        /// of them stacked were most of the "130pt apart" in D5.
+        private func column<Content: View>(
+            _ entry: Entry, @ViewBuilder _ content: () -> Content
+        ) -> UIHostingConfiguration<some View, EmptyView> {
+            return UIHostingConfiguration {
+                content()
+                    .scaleEffect(x: 1, y: -1)
+                    // The reading column, unchanged: one centred measure so a
+                    // phone and an iPad detail pane read the same way, and
+                    // prose never set flush to an edge.
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: 712, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .ignoresSafeArea()
+            }
+            .margins(.all, 0)
+            .minSize(width: 0, height: 0)
         }
 
         func attach(to view: UICollectionView) {
@@ -206,56 +533,59 @@ struct TimelineCollectionView: UIViewRepresentable {
                 switch entry {
                 case let .row(id):
                     guard let found = self.rowsById[id] else { return }
-                    cell.contentConfiguration = UIHostingConfiguration {
-                        TimelineRowView(
-                            row: found.row,
-                            continuesRun: found.continuesRun,
-                            attribution: self.singleSpeaker
-                                ? found.row.senderShort : found.row.senderName,
-                            media: self.session.media,
-                            faces: self.session.faces,
-                            onReply: { self.startReply(found.row) },
-                            onReact: { key in self.react(found.row, key) },
-                            onDecide: { answer in await self.decide(found.row, answer) }
-                        )
-                            // Turn the row back the right way up. Applied to
-                            // the content rather than to `cell.contentView`,
-                            // because `UIHostingConfiguration` replaces that
-                            // view when assigned — a transform set on it
-                            // beforehand is discarded, which showed up as
-                            // reused cells rendering upside down while freshly
-                            // created ones were fine.
-                            .scaleEffect(x: 1, y: -1)
-                            // The reading column, unchanged: one centred
-                            // measure so a phone and an iPad detail pane read
-                            // the same way, and prose never set flush to an
-                            // edge.
-                            .padding(.horizontal, 16)
-                            .frame(maxWidth: 712, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .center)
+                    let row = found.row
+                    let parent = row.item.replyTo?.eventId
+                    let canJump = parent.flatMap { self.idByEventId[$0] } != nil
+                    cell.contentConfiguration = self.column(entry) {
+                        RevealsTime(reveal: self.reveal, time: Self.revealedTime(row)) {
+                            TimelineRowView(
+                                row: row,
+                                continuesRun: found.continuesRun,
+                                endsRun: found.endsRun,
+                                attribution: self.singleSpeaker ? row.senderShort : row.senderName,
+                                media: self.session.media,
+                                faces: self.session.faces,
+                                hidesQuote: found.hidesQuote,
+                                readers: found.readers,
+                                highlighted: self.highlightedId == id,
+                                onReply: { self.startReply(row) },
+                                onReact: { key in self.react(row, key) },
+                                onQuoteTap: canJump ? { self.jumpToParent(of: row) } : nil,
+                                onDecide: { answer in await self.decide(row, answer) },
+                                // Always given to the answer's row: the
+                                // footer draws nothing until the turn is
+                                // finished, and observes the store itself.
+                                prelude: id == self.recordAnchorId
+                                    ? AnyView(WhatIDidFooter(live: self.session.live)) : nil
+                            )
+                        }
                     }
-                    .margins(.all, 0)
 
                 case let .membershipRun(id):
                     guard let text = self.runsById[id] else { return }
-                    cell.contentConfiguration = UIHostingConfiguration {
-                        SystemLine(text: text)
-                            .scaleEffect(x: 1, y: -1)
-                            .padding(.horizontal, 16)
-                            .frame(maxWidth: 712, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .center)
+                    if TimelineGrouping.isStretch(id) {
+                        // A collapsed stretch: tap to see every line.
+                        cell.contentConfiguration = self.column(entry) {
+                            Button { self.expandStretch(id) } label: {
+                                HStack(spacing: 4) {
+                                    SystemLine(text: text).fixedSize(horizontal: false, vertical: true)
+                                    Image(systemName: "chevron.down")
+                                        .imageScale(.small)
+                                        .foregroundStyle(Theme.contentFaint)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows each change")
+                        }
+                    } else {
+                        cell.contentConfiguration = self.column(entry) { SystemLine(text: text) }
                     }
-                    .margins(.all, 0)
 
                 case .liveTurn:
-                    cell.contentConfiguration = UIHostingConfiguration {
+                    cell.contentConfiguration = self.column(entry) {
                         LiveTurnView(live: self.session.live, writerName: self.writerName)
-                            .scaleEffect(x: 1, y: -1)
-                            .padding(.horizontal, 16)
-                            .frame(maxWidth: 712, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .margins(.all, 0)
 
                 case .paginating:
                     cell.contentConfiguration = UIHostingConfiguration {
@@ -271,6 +601,15 @@ struct TimelineCollectionView: UIViewRepresentable {
             dataSource = UICollectionViewDiffableDataSource<Int, Entry>(collectionView: view) {
                 view, indexPath, entry in
                 view.dequeueConfiguredReusableCell(using: cell, for: indexPath, item: entry)
+            }
+        }
+
+        /// The time a leftward swipe shows beside a row, or `nil` for a row
+        /// that is about the list rather than in it.
+        static func revealedTime(_ row: TimelineRow) -> String? {
+            switch row.view {
+            case .dateDivider, .unreadMarker, .system, .none: return nil
+            default: return row.item.timestampMs.map(TimelineTime.short)
             }
         }
 
@@ -299,8 +638,10 @@ struct TimelineCollectionView: UIViewRepresentable {
             isFinished: Bool
         ) {
             guard let dataSource else { return }
+            lastApply = (rows, isPaginating, isLive, isFinished)
 
-            let historyChanged = revision != appliedRevision || !hasApplied
+            let historyChanged = revision != appliedRevision || !hasApplied || forceRegroup
+            forceRegroup = false
             if !historyChanged, isPaginating == appliedPaginating, isLive == appliedLive,
                 isFinished == appliedFinished
             {
@@ -336,20 +677,52 @@ struct TimelineCollectionView: UIViewRepresentable {
             // Collapse membership churn first, so `continuesRun` compares a
             // row against the row *displayed* before it rather than against a
             // membership line that is no longer drawn on its own.
-            let display = TimelineGrouping.collapseMembershipRuns(rows)
+            let display = TimelineGrouping.collapseMembershipRuns(rows, expanded: expandedStretches)
 
-            var byId: [String: (row: TimelineRow, continuesRun: Bool)] = [:]
+            // Faces for readers, from the messages they have sent here. A
+            // receipt carries only a user id; the room has usually already
+            // shown that person's face beside something they said.
+            var facesBySender: [String: ReaderFace] = [:]
+            for row in rows {
+                guard let sender = row.item.sender, facesBySender[sender] == nil,
+                    row.item.kind == "message"
+                else { continue }
+                facesBySender[sender] = ReaderFace(
+                    userId: sender, mxcUri: row.item.senderAvatar, initial: row.senderInitial)
+            }
+
+            var byId: [String: Placement] = [:]
+            var byEventId: [String: String] = [:]
             var runs: [String: String] = [:]
             byId.reserveCapacity(rows.count)
             var previous: TimelineRow?
+            // The nearest row above that is an event, for the quote check:
+            // the unread marker can sit between a message and the reply
+            // quoting it, and the quote then repeated the line right above.
+            var previousEvent: TimelineRow?
             for entry in display {
                 switch entry {
                 case let .row(row):
-                    byId[row.item.id] = (row, TimelineGrouping.continuesRun(row, after: previous))
+                    let continues = TimelineGrouping.continuesRun(row, after: previous)
+                    // The row above is no longer the last of its run.
+                    if continues, let above = previous, var placement = byId[above.item.id] {
+                        placement.endsRun = false
+                        byId[above.item.id] = placement
+                    }
+                    let readers = row.item.readBy.map {
+                        facesBySender[$0] ?? ReaderFace(userId: $0, mxcUri: nil, initial: nil)
+                    }
+                    byId[row.item.id] = Placement(
+                        row: row, continuesRun: continues, endsRun: true,
+                        hidesQuote: TimelineGrouping.quoteRepeatsPrevious(row, after: previousEvent),
+                        readers: readers)
+                    if let eventId = row.item.eventId { byEventId[eventId] = row.item.id }
                     previous = row
+                    if row.item.eventId != nil { previousEvent = row }
                 case let .membershipRun(id, text, _):
                     runs[id] = text
                     previous = nil
+                    previousEvent = nil
                 }
             }
             let previousRows = rowsById
@@ -357,6 +730,7 @@ struct TimelineCollectionView: UIViewRepresentable {
             let previousSingleSpeaker = singleSpeaker
 
             rowsById = byId
+            idByEventId = byEventId
             runsById = runs
             singleSpeaker = TimelineGrouping.hasSingleSpeaker(rows)
 
@@ -372,6 +746,17 @@ struct TimelineCollectionView: UIViewRepresentable {
             var snap = snapshot(
                 entries: displayEntries, isPaginating: isPaginating, isLive: isLive,
                 isFinished: isFinished)
+
+            // Which row carries the turn's record. When a newer answer takes
+            // it, both rows must be redrawn: one gains it, one gives it up.
+            let previousAnchor = recordAnchorId
+            recordAnchorId = displayEntries.lazy.compactMap { entry -> String? in
+                guard case let .row(id) = entry, let row = byId[id]?.row,
+                    case .bubble = row.view, !row.item.isOwn
+                else { return nil }
+                return id
+            }.first
+            let anchorMoved = previousAnchor != recordAnchorId
 
             // Reconfigure rather than reload: an identity that survived should
             // update in place, which is the point of the identity this list is
@@ -390,8 +775,9 @@ struct TimelineCollectionView: UIViewRepresentable {
                 switch entry {
                 case let .row(id):
                     if previousSingleSpeaker != singleSpeaker { return true }
+                    if anchorMoved, id == previousAnchor || id == recordAnchorId { return true }
                     guard let before = previousRows[id], let after = byId[id] else { return true }
-                    return before.row != after.row || before.continuesRun != after.continuesRun
+                    return before != after
                 case let .membershipRun(id):
                     return previousRuns[id] != runs[id]
                 // The live turn redraws itself: `LiveTurnView` reads the
@@ -402,9 +788,12 @@ struct TimelineCollectionView: UIViewRepresentable {
             }
             if !changed.isEmpty { snap.reconfigureItems(changed) }
 
-            let arrived = snap.itemIdentifiers.filter { !existing.contains($0) }.count
-            dataSource.apply(
-                snap, animatingDifferences: animates(arrived: arrived, had: existing.count))
+            let arrivals = snap.itemIdentifiers.filter { !existing.contains($0) }
+            let animated = animates(arrived: arrivals.count, had: existing.count)
+            // Only messages spring in; a spinner or a turn card arriving is
+            // not news in the same way.
+            arriving = animated ? Set(arrivals.filter { if case .row = $0 { true } else { false } }) : []
+            dataSource.apply(snap, animatingDifferences: animated)
         }
 
         /// Whether an update to the history should animate.
@@ -429,38 +818,68 @@ struct TimelineCollectionView: UIViewRepresentable {
             return arrived > 0 && arrived <= 3
         }
 
-        /// The snapshot for a given entry list, with the two transient rows
-        /// that bracket it.
+        /// The snapshot for a given entry list, with the transient rows that
+        /// bracket it.
         ///
-        /// **Where the turn card goes depends on whether it has finished.**
-        /// Index 0 is the bottom of the screen, because the list is inverted.
+        /// **Where the turn goes depends on whether it has finished.** Index
+        /// 0 is the bottom of the screen, because the list is inverted.
         ///
         /// A turn *in progress* belongs at the bottom: it is the newest thing
         /// in the room, still being written, and the message it becomes has
         /// not arrived.
         ///
-        /// A turn that has *finished* belongs above the message it produced.
-        /// The reasoning and the tool calls happened before the answer, and
-        /// drawing them under it says they happened after — which is what the
-        /// room looked like: an answer, and then, below it, the thinking that
-        /// led to it.
+        /// A turn that has *finished* has no row: its record — "Thought for
+        /// 12s · 4 steps" — is drawn inside the answer's own row, between the
+        /// agent's name and the text (`recordAnchorId`). Reasoning comes
+        /// before the answer because it happened first. It was once a whole
+        /// card above the message, which read as a second reply, and then a
+        /// footnote under it, which put the conclusion before the working;
+        /// inside the row it is neither.
         private func snapshot(
             entries: [Entry], isPaginating: Bool, isLive: Bool, isFinished: Bool
         ) -> NSDiffableDataSourceSnapshot<Int, Entry> {
             var snapshot = NSDiffableDataSourceSnapshot<Int, Entry>()
             snapshot.appendSections([0])
             if isLive, !isFinished { snapshot.appendItems([.liveTurn]) }
-            if isLive, isFinished, let newest = entries.first {
-                // The newest message stays at the bottom; the record of the
-                // turn sits immediately older than it.
-                snapshot.appendItems([newest])
-                snapshot.appendItems([.liveTurn])
-                snapshot.appendItems(Array(entries.dropFirst()))
-            } else {
-                snapshot.appendItems(entries)
-            }
+            // A finished turn's record is not a row of its own: it is drawn
+            // inside its answer's row (`recordAnchorId`), above the text.
+            snapshot.appendItems(entries)
             if isPaginating { snapshot.appendItems([.paginating]) }
             return snapshot
+        }
+
+        /// Scroll to the message a reply quotes and light it briefly (T5).
+        ///
+        /// Does nothing when the parent is not loaded — the quote then offers
+        /// no tap at all, so this is only a guard against a row that left
+        /// between the tap and now.
+        fileprivate func jumpToParent(of row: TimelineRow) {
+            guard let parent = row.item.replyTo?.eventId, let id = idByEventId[parent],
+                let list, let dataSource,
+                let indexPath = dataSource.indexPath(for: .row(id))
+            else { return }
+            let reduceMotion = UIAccessibility.isReduceMotionEnabled
+            list.scrollToItem(at: indexPath, at: .centeredVertically, animated: !reduceMotion)
+            setHighlight(id)
+            highlightTask?.cancel()
+            highlightTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(1.4))
+                guard !Task.isCancelled else { return }
+                self?.setHighlight(nil)
+            }
+        }
+
+        private func setHighlight(_ id: String?) {
+            guard let dataSource else { return }
+            // Deduplicated: the same id twice — a second tap on the same
+            // quote — would be a non-unique reconfigure, which traps.
+            let changed = Set([highlightedId, id].compactMap { $0 }).map(Entry.row)
+            highlightedId = id
+            var snap = dataSource.snapshot()
+            let present = changed.filter { snap.indexOfItem($0) != nil }
+            guard !present.isEmpty else { return }
+            snap.reconfigureItems(present)
+            dataSource.apply(snap, animatingDifferences: false)
         }
 
         /// Start a reply to `row`, for the composer to pick up.
@@ -521,8 +940,12 @@ struct TimelineCollectionView: UIViewRepresentable {
         @discardableResult
         fileprivate func decide(_ row: TimelineRow, _ answer: GateAnswer) async -> Bool {
             guard let roomId = timeline.roomId else { return false }
+            guard let gateId = answer.subject else {
+                // A permission request: the option, as a plain reply.
+                return await session.answerPermission(optionId: answer.optionId, in: roomId)
+            }
             return await session.answerGate(
-                row.item.eventId, gateId: answer.subject, optionId: answer.optionId,
+                row.item.eventId, gateId: gateId, optionId: answer.optionId,
                 comment: answer.comment, prompt: answer.prompt, in: roomId)
         }
 
@@ -577,7 +1000,14 @@ struct TimelineCollectionView: UIViewRepresentable {
                         let reactions = UIMenu(
                             title: "", options: .displayInline,
                             children: quickReactions.map { emoji in
-                                UIAction(title: emoji) { _ in self.react(row, emoji) }
+                                UIAction(title: emoji) { _ in
+                                    // A reaction is a selection (M2). The
+                                    // chips under a message fire their own
+                                    // through `.sensoryFeedback`; this is the
+                                    // menu's strip, which is UIKit's.
+                                    self.selection.selectionChanged()
+                                    self.react(row, emoji)
+                                }
                             })
                         reactions.preferredElementSize = .small
                         actions.append(reactions)
@@ -619,6 +1049,104 @@ struct TimelineCollectionView: UIViewRepresentable {
             }
         }
 
+        /// Open a collapsed stretch of membership changes in place.
+        private func expandStretch(_ id: String) {
+            guard let last = lastApply else { return }
+            expandedStretches.insert(id)
+            forceRegroup = true
+            selection.selectionChanged()
+            apply(
+                rows: last.rows, revision: appliedRevision, isPaginating: last.isPaginating,
+                isLive: last.isLive, isFinished: last.isFinished)
+        }
+
+        // MARK: Arrival (M1)
+
+        /// A message that has just arrived rises into place.
+        ///
+        /// On the cell, per display, rather than in SwiftUI. The SwiftUI
+        /// version hid a row in `@State` until `onAppear` revealed it — and a
+        /// recycled cell keeps its hosted view's state and does not appear
+        /// again, so a reused row could stay invisible: the blank gaps in the
+        /// scrolling recording of 2026-09-23. This runs fresh for every
+        /// display and puts every other cell back to rest.
+        nonisolated func collectionView(
+            _ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell,
+            forItemAt indexPath: IndexPath
+        ) {
+            MainActor.assumeIsolated {
+                // A row coming into view can be what first puts history
+                // beneath the top edge — a turn growing, say — with no scroll.
+                refreshTopEdge(collectionView)
+                let view = cell.contentView
+                view.layer.removeAllAnimations()
+                guard let entry = dataSource?.itemIdentifier(for: indexPath),
+                    arriving.remove(entry) != nil
+                else {
+                    view.alpha = 1
+                    view.transform = .identity
+                    return
+                }
+                let reduceMotion = UIAccessibility.isReduceMotionEnabled
+                view.alpha = 0
+                // The list is flipped, so "from below" is a negative y here.
+                view.transform = reduceMotion ? .identity : CGAffineTransform(translationX: 0, y: -16)
+                UIView.animate(
+                    withDuration: reduceMotion ? 0.15 : 0.38, delay: 0,
+                    usingSpringWithDamping: reduceMotion ? 1 : 0.78, initialSpringVelocity: 0,
+                    options: [.allowUserInteraction, .beginFromCurrentState]
+                ) {
+                    view.alpha = 1
+                    view.transform = .identity
+                }
+            }
+        }
+
+        // MARK: Swipe left for times (T4)
+
+        /// A leftward pan anywhere on the list slides every message over and
+        /// shows its time at the trailing edge, the way Messages does, and
+        /// springs back on release.
+        ///
+        /// **Leftward only, and only when mostly horizontal.** The list's own
+        /// swipe-to-reply is a *rightward* swipe on a cell, and scrolling is
+        /// vertical; this declines both before it begins, so neither has
+        /// anything to arbitrate. The scroll view's pan waits for this one to
+        /// decline, which it does at the same movement threshold at which it
+        /// would begin — a vertical drag is not held up by it.
+        func installTimeReveal(on view: UICollectionView) {
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(revealPanned(_:)))
+            pan.delegate = self
+            pan.cancelsTouchesInView = true
+            view.addGestureRecognizer(pan)
+            // Deliberately *not* `panGestureRecognizer.require(toFail: pan)`.
+            // That made every scroll wait for this gesture to decline first,
+            // so a drag stuck and then lurched a screen at a time, and a flick
+            // that curved left was taken for a reveal mid-scroll. The two are
+            // exclusive by default; whichever begins first wins, and this one
+            // begins only on a clearly horizontal drag.
+            revealPan = pan
+        }
+
+        @objc private func revealPanned(_ pan: UIPanGestureRecognizer) {
+            let width = TimeReveal.width
+            switch pan.state {
+            case .began:
+                reveal.tracking = true
+            case .changed:
+                let pulled = max(0, -pan.translation(in: pan.view).x)
+                // Rubber-banded past the full width, so the edge is felt
+                // rather than hit.
+                reveal.offset = pulled <= width ? pulled : width + (pulled - width) * 0.2
+            case .ended, .cancelled, .failed:
+                // The spring lives on the offset itself (`RevealsTime`).
+                reveal.tracking = false
+                reveal.offset = 0
+            default:
+                break
+            }
+        }
+
         func swipeToReply(at indexPath: IndexPath) -> UISwipeActionsConfiguration? {
             guard let row = row(at: indexPath), row.canReplyOrReact else { return nil }
             let reply = UIContextualAction(style: .normal, title: "Reply") {
@@ -655,6 +1183,7 @@ struct TimelineCollectionView: UIViewRepresentable {
                 let distanceFromTop =
                     scrollView.contentSize.height - scrollView.contentOffset.y
                     - scrollView.bounds.height
+                updateTopEdge(distanceFromTop: distanceFromTop, in: scrollView)
 
                 guard
                     TimelineFollow.wantsOlderHistory(
@@ -669,6 +1198,66 @@ struct TimelineCollectionView: UIViewRepresentable {
 
                 Task { await timeline.paginateBack() }
             }
+        }
+
+        nonisolated func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            MainActor.assumeIsolated { refreshTopEdge(scrollView) }
+        }
+
+        nonisolated func scrollViewDidEndDragging(
+            _ scrollView: UIScrollView, willDecelerate decelerate: Bool
+        ) {
+            MainActor.assumeIsolated { refreshTopEdge(scrollView) }
+        }
+
+        nonisolated func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            MainActor.assumeIsolated { refreshTopEdge(scrollView) }
+        }
+
+        nonisolated func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+            MainActor.assumeIsolated { refreshTopEdge(scrollView) }
+        }
+
+        func refreshTopEdge(_ scrollView: UIScrollView) {
+            updateTopEdge(
+                distanceFromTop: scrollView.contentSize.height - scrollView.contentOffset.y
+                    - scrollView.bounds.height,
+                in: scrollView)
+        }
+
+        /// Recompute what sits at the top edge. Something is beneath it when
+        /// the far end of the content is further away than the room left for
+        /// it (the bottom inset, in this inverted view).
+        private func updateTopEdge(distanceFromTop: CGFloat, in scrollView: UIScrollView) {
+            let beneath = distanceFromTop > -scrollView.adjustedContentInset.bottom + 1
+            // "Moving" read from the scroll view itself on every call, not
+            // from begin/end callbacks: a fling interrupted by the keyboard or
+            // an offset change never reports its end, and a flag set on begin
+            // then stayed set — the tall fade stuck on a still list.
+            let moving = scrollView.isTracking || scrollView.isDecelerating
+            let edge: TimelineTopEdge = !beneath ? .clear : moving ? .moving : .resting
+            if edge != topEdge {
+                topEdge = edge
+                onTopEdgeChanged?(edge)
+            }
+        }
+    }
+}
+
+extension TimelineList.Coordinator: UIGestureRecognizerDelegate {
+    /// Begin only for a leftward, mostly horizontal drag. Anything else is a
+    /// scroll or a swipe to reply, and belongs to those.
+    nonisolated func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+        MainActor.assumeIsolated {
+            guard let pan = gesture as? UIPanGestureRecognizer, pan.view != nil else { return true }
+            // Leftward and clearly horizontal — three times as much sideways
+            // as vertical — measured on both the velocity and the distance
+            // so far, so the curve of a thumb flicking up the list is never
+            // read as a reveal.
+            let velocity = pan.velocity(in: pan.view)
+            let moved = pan.translation(in: pan.view)
+            return velocity.x < 0 && abs(velocity.x) > abs(velocity.y) * 3
+                && moved.x < 0 && abs(moved.x) > abs(moved.y) * 3
         }
     }
 }
@@ -705,3 +1294,4 @@ extension UIViewController {
         session: session, timeline: session.timeline, isAwayFromNewest: $isAwayFromNewest)
 }
 #endif
+

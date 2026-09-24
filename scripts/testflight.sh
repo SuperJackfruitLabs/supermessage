@@ -50,16 +50,24 @@ echo "==> building the release XCFramework"
 
 echo "==> archiving"
 rm -rf "$ARCHIVE" "$EXPORT"
+# Signed manually, with the distribution identity and App Store profile this
+# job already installed — the same pair the export uses.
+#
+# It was automatic, with `-allowProvisioningUpdates`: every runner starts with
+# an empty keychain, so every archive asked Apple for a fresh *development*
+# certificate. Four runs on 2026-09-23 reached the account's certificate cap
+# and the fifth failed with "Choose a certificate to revoke". Manual signing
+# never asks Apple for anything.
 xcodebuild archive \
     -project apple/Supermessage.xcodeproj \
     -scheme Supermessage \
     -configuration Release \
     -destination 'generic/platform=iOS' \
     -archivePath "$ARCHIVE" \
-    -allowProvisioningUpdates \
-    -authenticationKeyPath "$KEY" \
-    -authenticationKeyID "$ASC_KEY_ID" \
-    -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+    CODE_SIGN_STYLE=Manual \
+    CODE_SIGN_IDENTITY="Apple Distribution" \
+    DEVELOPMENT_TEAM=N2QQPW2BRJ \
+    SM_APP_PROFILE="supermessage iOS App Store" \
     -quiet
 
 # What actually shipped, read back from the archive rather than from the

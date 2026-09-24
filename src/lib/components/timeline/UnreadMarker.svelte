@@ -11,6 +11,6 @@
 
 <div class="flex items-center gap-3 py-2" data-testid="unread-marker">
   <span class="h-px flex-1 bg-accent/40"></span>
-  <span class="font-mono text-meta uppercase tracking-wide text-accent">New</span>
+  <span class="font-sans text-meta text-accent">New</span>
   <span class="h-px flex-1 bg-accent/40"></span>
 </div>

@@ -137,6 +137,7 @@ describe("replyTargetStore: fromItem", () => {
       reactions: [],
       readBy: [],
       editable: false,
+      membershipSubject: null,
       ...overrides,
     };
   }

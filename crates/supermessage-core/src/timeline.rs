@@ -309,7 +309,7 @@ pub fn project_item_parts(
     custom_payload: Option<serde_json::Value>,
     timestamp_ms: Option<u64>,
     is_own: bool,
-    send_state: Option<&str>,
+    send_state: Option<crate::dto::DeliveryState>,
     reply_to: Option<ReplyToDto>,
     edited: bool,
     reactions: Vec<ReactionDto>,
@@ -325,13 +325,14 @@ pub fn project_item_parts(
         sender_display_name: sender_display_name.map(str::to_string),
         sender_avatar: sender_avatar.map(str::to_string),
         editable,
+        membership_subject: None,
         body: body.map(str::to_string),
         formatted_body: formatted_body.map(str::to_string),
         media,
         custom_payload: custom_payload.map(crate::dto::CustomPayload),
         timestamp_ms,
         is_own,
-        send_state: send_state.map(str::to_string),
+        send_state,
         reply_to,
         edited,
         reactions,
@@ -848,11 +849,12 @@ pub fn timeline_event_filter(event: &AnySyncTimelineEvent, rules: &RoomVersionRu
 /// Exhaustive and wildcard-free on purpose: if the SDK ever adds an
 /// `EventSendState` variant, this must fail to compile rather than silently
 /// misreport a message's delivery state.
-fn send_state_name(state: &EventSendState) -> &'static str {
+fn send_state_name(state: &EventSendState) -> crate::dto::DeliveryState {
+    use crate::dto::DeliveryState;
     match state {
-        EventSendState::NotSentYet { .. } => "notSentYet",
-        EventSendState::SendingFailed { .. } => "sendingFailed",
-        EventSendState::Sent { .. } => "sent",
+        EventSendState::NotSentYet { .. } => DeliveryState::NotSentYet,
+        EventSendState::SendingFailed { .. } => DeliveryState::SendingFailed,
+        EventSendState::Sent { .. } => DeliveryState::Sent,
     }
 }
 
@@ -1531,7 +1533,28 @@ fn project_event_item(
     let reactions = project_reactions(&reaction_entries, own_user.as_str());
     let read_by = read_by(event, own_user);
 
-    project_item_parts(
+    // Who a membership change is about: the `state_key`, not the sender
+    // (issue #67). Display name first, the user id when there is none.
+    //
+    // Only when the subject is someone *other* than the sender. For "joined",
+    // "left" and "accepted the invite" they are the same person, and the
+    // sender's resolved profile is the better name: the event's own content
+    // often carries no `displayname`, and preferring it put
+    // `@agent_strategy-sam:id.agentpod.dev accepted the invite` beside
+    // `Strategy Sam left the room` in one real room.
+    let membership_subject = match event.content() {
+        TimelineItemContent::MembershipChange(change) if change.user_id() != event.sender() => {
+            Some(
+                change
+                    .display_name()
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or_else(|| change.user_id().to_string()),
+            )
+        }
+        _ => None,
+    };
+
+    let mut dto = project_item_parts(
         &id,
         event_id.as_deref(),
         kind,
@@ -1552,7 +1575,9 @@ fn project_event_item(
         edited,
         reactions,
         read_by,
-    )
+    );
+    dto.membership_subject = membership_subject;
+    dto
 }
 
 /// Project an SDK virtual item (date divider, read marker, timeline start)
@@ -1902,7 +1927,22 @@ impl FocusedTimeline {
             // detached task is left holding an `Arc<Timeline>` (and through
             // it a `Client`) past teardown. The events it loads arrive as
             // ordinary diffs on the stream below.
-            if let Err(err) = paginator.paginate_backwards(INITIAL_PAGE_SIZE).await {
+            //
+            // Joined with `fetch_members`, which is what gives a sender a
+            // name. Sliding sync loads members lazily, so an agent with no
+            // member event in the store had every message headed by its raw
+            // id — `@agent_strategy-sam:id.agentpod.dev` — while the typing
+            // line under the same messages, which resolves members itself,
+            // said "Agent Strategy Sam". The SDK's own doc for
+            // `fetch_members`: without the full member list, "sender profiles
+            // are currently likely not going to be available". Resolved
+            // profiles arrive as ordinary `Set` diffs; a failure leaves them
+            // as the id they already were.
+            let (page, ()) = tokio::join!(
+                paginator.paginate_backwards(INITIAL_PAGE_SIZE),
+                paginator.fetch_members(),
+            );
+            if let Err(err) = page {
                 tracing::warn!(
                     error = %err,
                     subject = %subject,
@@ -3878,7 +3918,7 @@ mod tests {
     fn send_state_names_are_mapped_to_the_wire_vocabulary() {
         assert_eq!(
             send_state_name(&EventSendState::NotSentYet { progress: None }),
-            "notSentYet"
+            crate::dto::DeliveryState::NotSentYet
         );
         assert_eq!(
             send_state_name(&EventSendState::Sent {
@@ -3886,7 +3926,7 @@ mod tests {
                     .unwrap()
                     .to_owned(),
             }),
-            "sent"
+            crate::dto::DeliveryState::Sent
         );
         // `SendingFailed`'s wire mapping only depends on the variant, not
         // the error payload, so any `matrix_sdk::Error` value nothing else
@@ -3898,7 +3938,7 @@ mod tests {
                 error,
                 is_recoverable: false
             }),
-            "sendingFailed"
+            crate::dto::DeliveryState::SendingFailed
         );
     }
 

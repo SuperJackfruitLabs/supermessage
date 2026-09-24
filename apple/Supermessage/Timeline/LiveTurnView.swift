@@ -1,3 +1,4 @@
+import SupermessageFFI
 import SupermessageKit
 import SwiftUI
 
@@ -16,43 +17,58 @@ import SwiftUI
 ///
 /// The reasoning is collapsed by default: it is context, not the answer, and
 /// an operator scanning a room wants the conclusion first.
+///
+/// ## An activity card (A2)
+///
+/// Shaped as a card that answers, in order, the questions a reader waiting on
+/// an agent has: who, is it still going, for how long, what is it doing right
+/// now, how far has it got, and did anything fail. The individual tool calls
+/// are one tap away rather than a growing list: a dozen rows of `read …`
+/// says only that a dozen things happened.
 struct LiveTurnView: View {
     let live: LiveStore
     let writerName: String
 
     @State private var showsThought = false
+    @State private var showsSteps = false
     /// Whether the reader has asked for less movement.
     ///
-    /// The spinner beside "writing…" is the only moving part of this view,
-    /// and it says exactly what the word beside it already says. Redundant
-    /// motion is the easiest kind to drop, and dropping it costs a reader
-    /// nothing: the label stays.
+    /// The running indicator beside the current step is the only moving part
+    /// of this view, and it says exactly what the word beside it already
+    /// says. Redundant motion is the easiest kind to drop, and dropping it
+    /// costs a reader nothing: the label stays.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Whether a still frame is being taken of this view.
     ///
     /// Separate from `reduceMotion`, which is read-only — SwiftUI owns it,
     /// and `.environment(\.rendersStill, true)` does not compile.
     /// So a preview cannot ask for the accessible rendering, and needs its
-    /// own way to say "nothing that never settles".
+    /// own way to say "nothing that never settles". It also stops the clock:
+    /// a still frame measures elapsed time to the turn's last event rather
+    /// than to whenever the shutter happened to open.
     @Environment(\.rendersStill) private var rendersStill
     /// Paces the answer onto the screen — see `StreamingText`.
     @State private var stream = StreamingText()
 
+    /// The header's name for the agent when the room has one (D11), and the
+    /// timeline's attribution otherwise.
+    private var name: String { live.agentName ?? writerName }
+
     var body: some View {
         if live.isLive {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text(writerName).metaFace().textCase(.uppercase)
-                    // What this is: a turn in progress, or the record of the
-                    // one that just finished. Saying "writing…" over a
-                    // finished turn would be the app claiming something that
-                    // is no longer true.
-                    Text(live.finished ? "last turn" : "writing…")
-                        .metaFace()
-                        .foregroundStyle(Theme.contentMuted)
-                    if !live.finished && !reduceMotion && !rendersStill {
-                        ProgressView().controlSize(.mini)
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                header
+
+                // "Writing the answer" says nothing the answer, streaming in
+                // under it, does not already show — so it goes once the text
+                // is visible. Thinking, a tool call and starting still need
+                // saying, because nothing else on screen shows them.
+                if !live.finished, live.currentStep != nil || stream.text.isEmpty {
+                    currentStep
+                }
+
+                if !live.tools.isEmpty {
+                    stepSummary
                 }
 
                 if let thought = live.thought {
@@ -67,24 +83,43 @@ struct LiveTurnView: View {
                     }
                 }
 
-                ForEach(live.tools) { tool in
-                    ToolRow(tool: tool)
+                if !live.tools.isEmpty {
+                    DisclosureGroup(isExpanded: $showsSteps) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(live.tools) { tool in
+                                ToolRow(tool: tool)
+                            }
+                        }
+                        .padding(.top, 4)
+                    } label: {
+                        Text(live.tools.count == 1 ? "1 step" : "All \(live.tools.count) steps")
+                            .metaFace()
+                            .foregroundStyle(Theme.contentMuted)
+                    }
                 }
 
                 if !stream.text.isEmpty {
-                    // Plain text, not blocks. Parsing every frame would cost a
-                    // round trip per keystroke of the agent's; the landed
-                    // message renders through the same parser moments later,
-                    // and `whitespace` preservation is what keeps the shape
-                    // steady across that hand-off.
+                    // Formatted as it arrives, through the same parser and
+                    // renderer the landed message uses — so `**What I
+                    // observe:**` is bold while it streams, not raw markup
+                    // that reflows into bold when the message lands
+                    // (2026-09-24). See `StreamingRichView` for how that stays
+                    // cheap at a reveal every 20ms.
                     //
                     // Paced by `StreamingText` rather than drawn straight from
                     // the delta: what arrives in bursts should not appear in
                     // bursts. See that type for why.
-                    StreamingTextView(text: stream.text, revealed: stream.revealed)
+                    StreamingRichView(text: stream.text, revealed: stream.revealed)
                 }
             }
-            .padding(.vertical, 8)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Theme.border, lineWidth: 1)
+            )
+            .padding(.vertical, 6)
             // A finished turn steps back: it is a record beside the
             // conversation rather than something happening in it.
             .opacity(live.finished ? 0.85 : 1)
@@ -99,6 +134,85 @@ struct LiveTurnView: View {
                 stream.accept(next)
             }
             .task(id: writerName) { stream.clear() }
+        }
+    }
+
+    /// Who, whether they are still at it, and for how long.
+    private var header: some View {
+        HStack(spacing: 6) {
+            Text(name).nameFace().lineLimit(1)
+            Spacer(minLength: 8)
+            // What this is: a turn in progress, or the record of the one that
+            // just finished. Saying "Working" over a finished turn would be
+            // the app claiming something that is no longer true.
+            Text(live.finished ? "Done" : "Working")
+                .metaFace()
+                .foregroundStyle(live.finished ? Theme.ok : Theme.accent)
+            elapsed
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var elapsed: some View {
+        if rendersStill || live.finished {
+            // Still: to the turn's last event (or its end), never to `Date()`.
+            elapsedLabel(at: live.lastActivityAt ?? .distantPast)
+        } else {
+            SwiftUI.TimelineView(.periodic(from: live.startedAt ?? .now, by: 1)) { context in
+                elapsedLabel(at: context.date)
+            }
+        }
+    }
+
+    @ViewBuilder private func elapsedLabel(at now: Date) -> some View {
+        if let seconds = live.elapsed(at: now) {
+            Text("· " + ElapsedTime.label(seconds))
+                .metaFace()
+                .monospacedDigit()
+                .foregroundStyle(Theme.contentMuted)
+        }
+    }
+
+    /// What the agent is doing this moment, with the one moving part.
+    private var currentStep: some View {
+        HStack(spacing: 8) {
+            if reduceMotion || rendersStill {
+                Image(systemName: "circle.dotted")
+                    .imageScale(.small)
+                    .foregroundStyle(Theme.accent)
+            } else {
+                ProgressView().controlSize(.mini).tint(Theme.accent)
+            }
+            Text(currentStepTitle)
+                .font(.subheadline)
+                .foregroundStyle(Theme.content)
+                .lineLimit(2)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var currentStepTitle: String {
+        if let step = live.currentStep { return step.title }
+        if live.answer != nil { return "Writing the answer" }
+        if live.thought != nil { return "Thinking" }
+        return "Starting"
+    }
+
+    /// How far it has got, and what went wrong — the failure first in the
+    /// reader's eye, because it is the one state that still matters once the
+    /// turn has ended.
+    private var stepSummary: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            let done = live.completedSteps
+            Label(done == 1 ? "1 step done" : "\(done) steps done", systemImage: "checkmark.circle")
+                .metaFace()
+                .foregroundStyle(Theme.contentMuted)
+            if let failed = live.failedStep {
+                Label("\(failed.title) failed", systemImage: "xmark.circle")
+                    .metaFace()
+                    .foregroundStyle(Theme.danger)
+                    .lineLimit(2)
+            }
         }
     }
 }
@@ -143,29 +257,38 @@ private struct ToolRow: View {
 
     private var summary: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).imageScale(.small)
-            Text(tool.title).metaFace().lineLimit(1)
-            if let kind = tool.kind {
-                Text(kind).metaFace().foregroundStyle(Theme.contentFaint)
-            }
+            Image(systemName: icon)
+                .imageScale(.small)
+                .foregroundStyle(tool.phase == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.contentMuted))
+                .symbolEffect(.pulse, isActive: tool.phase == .running)
+            // The title can have the line; the status word is short and must
+            // never be what gets squeezed.
+            Text(tool.title).metaFace().lineLimit(1).layoutPriority(0)
             Spacer(minLength: 4)
-            Text(tool.status)
+            // The core's word — "Running", "Done" — rather than ACP's
+            // `in_progress`, and no separate `kind`: the glyph already says
+            // what happened, and `read … read` said it twice.
+            Text(tool.statusLabel)
                 .metaFace()
+                .lineLimit(1)
+                .fixedSize()
+                .layoutPriority(1)
                 .foregroundStyle(
-                    tool.status == "failed"
+                    tool.phase == .failed
                         ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.contentFaint))
         }
         .foregroundStyle(Theme.contentMuted)
+        .accessibilityElement(children: .combine)
     }
 
     /// The status, as a glyph. A list of a dozen identical gears says only
     /// that a dozen things happened.
     private var icon: String {
-        switch tool.status {
-        case "completed": return "checkmark.circle"
-        case "failed": return "xmark.circle"
-        case "in_progress": return "arrow.triangle.2.circlepath"
-        default: return "clock"
+        switch tool.phase {
+        case .done: return "checkmark.circle"
+        case .failed: return "xmark.circle"
+        case .running: return "arrow.triangle.2.circlepath"
+        case .queued, .unknown: return "clock"
         }
     }
 }
@@ -184,7 +307,6 @@ private struct Detail: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .metaFace()
-                .textCase(.uppercase)
                 .foregroundStyle(Theme.contentFaint)
             Text(text)
                 .font(.system(.caption, design: .monospaced))
@@ -242,4 +364,78 @@ private struct Detail: View {
     }
     .environment(\.rendersStill, true)
 }
+
+// A long turn: 1m 04s in, two steps done, one failed, one running. The clock
+// is the fixture's, so the elapsed time is the same on every render.
+#Preview("Activity card") {
+    PreviewGround {
+        LiveTurnView(live: ComposerRevampFixtures.longTurn(), writerName: "Atlas")
+    }
+    .environment(\.rendersStill, true)
+}
+
+// The record of that turn once it has finished: "Done", how long it took,
+// and the failure still named.
+#Preview("Activity card, finished") {
+    PreviewGround {
+        LiveTurnView(live: ComposerRevampFixtures.longTurn(finished: true), writerName: "Atlas")
+    }
+    .environment(\.rendersStill, true)
+}
 #endif
+
+/// A streaming answer, formatted as it arrives.
+///
+/// Completed lines render as blocks — markdown through the core's
+/// `richBlocksFromMarkdown`, the parser the landed message uses, drawn by the
+/// same `RichTextView` — and only the line still being written stays plain,
+/// with its newest glyphs fading in (`StreamingTextView`). A line's markup
+/// can only be read once the line is whole, so this is the earliest the
+/// formatting can be right, and the plain tail is one line long at most.
+///
+/// **Parsed when a line completes, not on every reveal.** The reveal ticks
+/// every 20ms; the completed part changes only at a newline, and the cache
+/// makes every other tick a string comparison.
+struct StreamingRichView: View {
+    let text: String
+    let revealed: Int
+
+    @State private var cache = MarkdownBlockCache()
+
+    var body: some View {
+        let (settled, tail) = Self.split(text)
+        VStack(alignment: .leading, spacing: 8) {
+            if !settled.isEmpty {
+                RichTextView(blocks: cache.blocks(for: settled))
+            }
+            if !tail.isEmpty {
+                StreamingTextView(text: tail, revealed: min(revealed, tail.count))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Everything up to the last newline, and the line after it.
+    static func split(_ text: String) -> (settled: String, tail: String) {
+        guard let newline = text.lastIndex(of: "\n") else { return ("", text) }
+        let settled = String(text[..<newline]).trimmingCharacters(in: .newlines)
+        let tail = String(text[text.index(after: newline)...])
+        return (settled, tail)
+    }
+}
+
+/// The blocks for the last completed prefix, kept until the prefix changes.
+@MainActor
+final class MarkdownBlockCache {
+    private var source = ""
+    private var cached: [RichBlock] = []
+
+    func blocks(for text: String) -> [RichBlock] {
+        if text != source {
+            source = text
+            cached = richBlocksFromMarkdown(source: text)
+        }
+        return cached
+    }
+}
+

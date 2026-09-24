@@ -33,7 +33,13 @@ public final class LiveStore {
     public struct ToolCall: Identifiable, Equatable {
         public let id: String
         public let title: String
+        /// ACP's raw status. Not for display — see `phase` and `statusLabel`.
         public let status: String
+        /// Where the call is, decided by the core. Glyph and colour key off
+        /// this, never off `status`.
+        public let phase: ToolPhase
+        /// The core's word for `phase` — "Running", "Done". Rendered as given.
+        public let statusLabel: String
         /// ACP's tool kind, when the harness said. Display text.
         public let kind: String?
         /// What the call touched — paths, mostly.
@@ -59,7 +65,82 @@ public final class LiveStore {
     private var answerSeq: UInt64 = 0
     private var thoughtSeq: UInt64 = 0
 
-    public init() {}
+    // MARK: - Time
+
+    /// When this turn's first delta arrived — the reader's clock, not the
+    /// agent's. `nil` when nothing is live.
+    ///
+    /// The reader's clock because the question the activity card answers is
+    /// "how long have I been waiting", and the events carry no timestamp of
+    /// their own to disagree with it.
+    public private(set) var startedAt: Date?
+    /// When the turn finished, so a finished card shows how long it took
+    /// rather than a number that keeps climbing.
+    public private(set) var endedAt: Date?
+    /// When anything last arrived for this turn. What a still rendering
+    /// measures against, since it cannot ask for the time.
+    public private(set) var lastActivityAt: Date?
+
+    private let clock: @MainActor () -> Date
+
+    /// - Parameter clock: the time source, injectable so a test can say how
+    ///   long a turn took without waiting for it.
+    public init(clock: @escaping @MainActor () -> Date = { Date() }) {
+        self.clock = clock
+    }
+
+    /// How long the turn has run at `now`: to its end once it has one.
+    public func elapsed(at now: Date) -> TimeInterval? {
+        guard let startedAt else { return nil }
+        return max(0, (endedAt ?? now).timeIntervalSince(startedAt))
+    }
+
+    private func noteActivity() {
+        let now = clock()
+        if startedAt == nil { startedAt = now }
+        lastActivityAt = now
+    }
+
+    private func noteFinished() {
+        if !finished { endedAt = clock() }
+        finished = true
+    }
+
+    // MARK: - Steps
+
+    /// The step being worked on: the latest running call, else the latest
+    /// queued one. `nil` between steps.
+    public var currentStep: ToolCall? {
+        tools.last { $0.phase == .running } ?? tools.last { $0.phase == .queued }
+    }
+
+    /// How many steps have completed.
+    public var completedSteps: Int {
+        tools.filter { $0.phase == .done }.count
+    }
+
+    /// The latest step that failed — the one state that still matters after
+    /// the turn ends, so the card names it ahead of any running one.
+    public var failedStep: ToolCall? {
+        tools.last { $0.phase == .failed }
+    }
+
+    /// Whether a turn is streaming and has not finished.
+    public var inProgress: Bool { isLive && !finished }
+
+    // MARK: - Who
+
+    /// What to call the agent, by room — set by the view that knows the
+    /// room's header (D11). Keyed by room, not cleared by `focus`, for the
+    /// same race `TypingStore.recognise` records.
+    private var agentNames: [String: String] = [:]
+
+    public func setAgentName(_ name: String?, for roomId: String) {
+        agentNames[roomId] = name
+    }
+
+    /// The header's name for the agent in the focused room, when it has one.
+    public var agentName: String? { roomId.flatMap { agentNames[$0] } }
 
     /// Whether there is anything to show — a turn in progress, or the record
     /// of the one that just ended.
@@ -75,10 +156,11 @@ public final class LiveStore {
             // starts, or when the reader leaves the room.
             answer = nil
             answerSeq = 0
-            finished = true
+            noteFinished()
             return
         }
         beginTurnIfFinished()
+        noteActivity()
         guard seq >= answerSeq else { return }
         answerSeq = seq
         answer = text
@@ -90,10 +172,11 @@ public final class LiveStore {
             // Kept, for the same reason as the tool calls above: reasoning
             // that vanishes the moment the answer appears is reasoning nobody
             // has had time to read.
-            finished = true
+            noteFinished()
             return
         }
         beginTurnIfFinished()
+        noteActivity()
         guard seq >= thoughtSeq else { return }
         thoughtSeq = seq
         thought = text
@@ -101,12 +184,15 @@ public final class LiveStore {
 
     public func handleTool(
         roomId: String, seq: UInt64, toolCallId: String, title: String, kind: String?,
-        status: String, locations: [String], input: String?, output: String?
+        status: String, phase: ToolPhase, statusLabel: String, locations: [String],
+        input: String?, output: String?
     ) {
         guard accept(roomId) else { return }
         beginTurnIfFinished()
+        noteActivity()
         let call = ToolCall(
-            id: toolCallId, title: title, status: status, kind: kind, locations: locations,
+            id: toolCallId, title: title, status: status, phase: phase, statusLabel: statusLabel,
+            kind: kind, locations: locations,
             input: input, output: output)
         if let index = tools.firstIndex(where: { $0.id == toolCallId }) {
             // A call reports again as it progresses — running, then completed.
@@ -117,10 +203,54 @@ public final class LiveStore {
         }
     }
 
-    /// Focus a room, discarding anything belonging to the last one.
+    /// Focus a room, putting the last one's finished turn aside.
+    ///
+    /// **A finished turn's record outlives leaving its room.** It used to be
+    /// discarded on every focus change, so opening another chat and coming
+    /// back lost "What I thought" — an agent's reasoning, which is written
+    /// nowhere else (2026-09-24, IMG_7586 → 7587). A turn still in progress
+    /// is not kept: its remaining deltas are addressed to a room this store
+    /// is no longer listening to, so the record would stop mid-sentence.
     public func focus(_ roomId: String?) {
+        if let current = self.roomId, finished, isLive {
+            keep(Record(thought: thought, tools: tools, startedAt: startedAt, endedAt: endedAt,
+                        lastActivityAt: lastActivityAt), for: current)
+        }
         self.roomId = roomId
-        clear()
+        reset()
+        if let roomId, let record = records[roomId] {
+            thought = record.thought
+            tools = record.tools
+            startedAt = record.startedAt
+            endedAt = record.endedAt
+            lastActivityAt = record.lastActivityAt
+            finished = true
+        }
+    }
+
+    /// A room's last finished turn, kept while the reader is elsewhere.
+    private struct Record {
+        let thought: String?
+        let tools: [ToolCall]
+        let startedAt: Date?
+        let endedAt: Date?
+        let lastActivityAt: Date?
+    }
+
+    /// The kept records, and the order they were kept in, oldest first.
+    /// Bounded, so a session that visits every room holds a handful of
+    /// reasoning texts rather than all of them.
+    private var records: [String: Record] = [:]
+    private var recordOrder: [String] = []
+    static let keptRecords = 20
+
+    private func keep(_ record: Record, for roomId: String) {
+        records[roomId] = record
+        recordOrder.removeAll { $0 == roomId }
+        recordOrder.append(roomId)
+        while recordOrder.count > Self.keptRecords {
+            records[recordOrder.removeFirst()] = nil
+        }
     }
 
     /// The first delta of a new turn clears the last one's record.
@@ -129,16 +259,28 @@ public final class LiveStore {
     /// has to survive the end of its own turn. It ends when it is replaced.
     private func beginTurnIfFinished() {
         guard finished else { return }
-        clear()
+        reset()
+        if let roomId { records[roomId] = nil }
     }
 
+    /// Forget everything, kept records included — signing out.
     public func clear() {
+        reset()
+        records = [:]
+        recordOrder = []
+    }
+
+    /// Forget the turn on screen.
+    private func reset() {
         answer = nil
         thought = nil
         tools = []
         answerSeq = 0
         thoughtSeq = 0
         finished = false
+        startedAt = nil
+        endedAt = nil
+        lastActivityAt = nil
     }
 
     /// Whether this belongs to the room on screen.

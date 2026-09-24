@@ -12,6 +12,11 @@ public enum RosterChoice: String, CaseIterable, Sendable {
     case waiting
     case machine
 
+    /// The arrangements a phone offers. Machine is the core's, and the
+    /// desktop's, but on a phone the space in the title already is a
+    /// machine's rooms — AgentPod files each node's agents in its own space.
+    public static let offered: [RosterChoice] = [.recent, .waiting]
+
     public var title: String {
         switch self {
         case .recent: return "Recent"

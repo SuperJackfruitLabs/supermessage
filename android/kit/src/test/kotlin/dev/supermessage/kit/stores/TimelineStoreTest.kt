@@ -42,7 +42,7 @@ class TimelineStoreTest {
                 sender = "@a:x", senderDisplayName = null, senderAvatar = null, body = "hi",
                 formattedBody = null, media = null, customPayload = null, timestampMs = 0uL,
                 isOwn = false, sendState = null, replyTo = null, edited = false,
-                reactions = emptyList(), readBy = emptyList(), editable = false,
+                reactions = emptyList(), readBy = emptyList(), editable = false, membershipSubject = null,
             ),
             view = ItemView.Bubble(muted = false, blocks = emptyList()),
             senderName = "@a:x",

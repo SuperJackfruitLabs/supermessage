@@ -19,7 +19,7 @@
 {#if quote}
   <!--
     A 2px rail rather than a filled inset, matching the composer's
-    "REPLYING TO" strip (spec §6.4) so the same relationship reads the
+    "Replying to" strip (spec §6.4) so the same relationship reads the
     same way in both places. No own/peer colour split any more: the own
     bubble is `--color-accent-soft` with `--color-content` text, not the
     accent fill it used to be, so `--color-content-muted` on
@@ -36,14 +36,14 @@
         top-of-script doc comment for why `break-words` *does* matter,
         genuinely, on the two lines below that actually allow wrapping.
       -->
-      <p class="truncate font-mono text-label uppercase">{quote.sender}</p>
+      <p class="truncate font-sans text-label">{quote.sender}</p>
       {#if quote.excerpt}
         <!-- `quote.excerpt` is already truncated in the core
              (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) — `break-words`
              here guards against a long space-free run within that bound,
              not the length itself. See this file's top-of-script doc
              comment. -->
-        <p class="mt-0.5 line-clamp-2 font-serif text-ui break-words">{quote.excerpt}</p>
+        <p class="mt-0.5 line-clamp-2 font-sans text-ui break-words">{quote.excerpt}</p>
       {:else if quote.label}
         <!-- The parent loaded but had nothing to quote (redacted, a
              sticker, a poll, undecryptable, ...) — `quote.label` is the
@@ -52,8 +52,8 @@
              vocabulary `core::item_view::view_for`'s own placeholders already use. Fixes
              the review finding that this used to render as a bare sender
              name with no indication why. -->
-        <!-- Mono, and *not* italic: these two lines share the placeholder
-             vocabulary, and no mono italic is bundled — see this file's
+        <!-- Sans, and *not* italic: these two lines share the placeholder
+             vocabulary, which is never italic — see this file's
              top-of-script doc comment and spec §6.3.
 
              `faint` only on a peer block; `muted` inside an own bubble.
@@ -70,7 +70,7 @@
              token-pair calculator gives for `faint` on `surface` (4.92)
              do not describe this ground at all. -->
         <p
-          class="mt-0.5 font-mono text-meta break-words {isOwn
+          class="mt-0.5 font-sans text-meta break-words {isOwn
             ? 'text-content-muted'
             : 'text-content-faint'}"
         >
@@ -79,7 +79,7 @@
       {/if}
     {:else}
       <p
-        class="font-mono text-meta break-words {isOwn
+        class="font-sans text-meta break-words {isOwn
           ? 'text-content-muted'
           : 'text-content-faint'}"
       >

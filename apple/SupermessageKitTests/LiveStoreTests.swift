@@ -60,7 +60,7 @@ struct LiveStoreTests {
         let live = store()
         live.handleTool(
             roomId: room, seq: 1, toolCallId: "c1", title: "Run tests", kind: "execute",
-            status: "completed", locations: ["crates/core"], input: "cargo test", output: "ok")
+            status: "completed", phase: .done, statusLabel: "Done", locations: ["crates/core"], input: "cargo test", output: "ok")
         live.handleLive(roomId: room, seq: 1, text: "", done: true)
 
         #expect(live.tools.count == 1)
@@ -100,12 +100,12 @@ struct LiveStoreTests {
         // else. A disclosure triangle opening onto an empty box says there is
         // something to see.
         let bare = LiveStore.ToolCall(
-            id: "c1", title: "Read a file", status: "completed", kind: nil, locations: [],
+            id: "c1", title: "Read a file", status: "completed", phase: .done, statusLabel: "Done", kind: nil, locations: [],
             input: nil, output: nil)
         #expect(!bare.hasDetail)
 
         let touched = LiveStore.ToolCall(
-            id: "c2", title: "Read a file", status: "completed", kind: nil,
+            id: "c2", title: "Read a file", status: "completed", phase: .done, statusLabel: "Done", kind: nil,
             locations: ["src/main.rs"], input: nil, output: nil)
         #expect(touched.hasDetail)
     }
@@ -115,13 +115,82 @@ struct LiveStoreTests {
         let live = store()
         live.handleTool(
             roomId: room, seq: 1, toolCallId: "c1", title: "Run tests", kind: nil,
-            status: "in_progress", locations: [], input: nil, output: nil)
+            status: "in_progress", phase: .running, statusLabel: "Running", locations: [], input: nil, output: nil)
         live.handleTool(
             roomId: room, seq: 2, toolCallId: "c1", title: "Run tests", kind: nil,
-            status: "completed", locations: [], input: nil, output: "3 passed")
+            status: "completed", phase: .done, statusLabel: "Done", locations: [], input: nil, output: "3 passed")
 
         #expect(live.tools.count == 1, "one call produced two rows")
         #expect(live.tools[0].status == "completed")
         #expect(live.tools[0].output == "3 passed")
+    }
+
+    // --- leaving and coming back ----------------------------------------
+
+    @Test("a finished turn's reasoning survives leaving the room")
+    func survivesLeaving() {
+        let live = store()
+        live.handleThought(roomId: room, seq: 1, text: "Weighing two options.", done: false)
+        live.handleLive(roomId: room, seq: 1, text: "Option B.", done: false)
+        live.handleLive(roomId: room, seq: 2, text: "", done: true)
+
+        live.focus("!other:x.org")
+        #expect(!live.isLive, "another room's record is not this one's")
+
+        live.focus(room)
+        #expect(live.thought == "Weighing two options.", "coming back lost the reasoning")
+        #expect(live.finished)
+        #expect(live.answer == nil, "the answer is the room's message now, not the card's")
+    }
+
+    @Test("a turn left mid-way is not kept")
+    func unfinishedIsNotKept() {
+        let live = store()
+        live.handleThought(roomId: room, seq: 1, text: "Half a thou", done: false)
+        live.focus("!other:x.org")
+        live.focus(room)
+        #expect(!live.isLive, "a record frozen mid-sentence came back")
+    }
+
+    @Test("the next turn replaces the kept record")
+    func nextTurnReplaces() {
+        let live = store()
+        live.handleThought(roomId: room, seq: 1, text: "First turn.", done: false)
+        live.handleLive(roomId: room, seq: 1, text: "", done: true)
+        live.focus("!other:x.org")
+        live.focus(room)
+        live.handleThought(roomId: room, seq: 1, text: "Second turn.", done: false)
+        #expect(live.thought == "Second turn.")
+        live.handleLive(roomId: room, seq: 1, text: "", done: true)
+        live.focus("!other:x.org")
+        live.focus(room)
+        #expect(live.thought == "Second turn.")
+    }
+
+    @Test("signing out forgets every kept record")
+    func signOutForgets() {
+        let live = store()
+        live.handleThought(roomId: room, seq: 1, text: "Private reasoning.", done: false)
+        live.handleLive(roomId: room, seq: 1, text: "", done: true)
+        live.focus("!other:x.org")
+        live.clear()
+        live.focus(room)
+        #expect(!live.isLive)
+    }
+
+    @Test("only so many rooms are remembered")
+    func bounded() {
+        let live = LiveStore()
+        let rooms = (0...LiveStore.keptRecords).map { "!r\($0):x.org" }
+        for id in rooms {
+            live.focus(id)
+            live.handleThought(roomId: id, seq: 1, text: "Reasoning in \(id)", done: false)
+            live.handleLive(roomId: id, seq: 1, text: "", done: true)
+        }
+        live.focus("!elsewhere:x.org")
+        live.focus(rooms[0])
+        #expect(!live.isLive, "the oldest record should have been let go")
+        live.focus(rooms.last!)
+        #expect(live.thought == "Reasoning in \(rooms.last!)")
     }
 }

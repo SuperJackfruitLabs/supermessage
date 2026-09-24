@@ -38,7 +38,7 @@ class EditTargetTest {
             edited = false,
             reactions = emptyList(),
             readBy = emptyList(),
-            editable = editable,
+            editable = editable, membershipSubject = null,
         )
         return TimelineRow(
             item = item,

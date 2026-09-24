@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AgentState, RoomRow } from "$lib/ipc";
   import { relativeTime } from "../roomIdentity";
+  import { shownState } from "./rosterState";
 
   /**
    * One roster row.
@@ -20,6 +21,12 @@
     row: RoomRow;
     /** The agent state `core::roster` put on this row. */
     state: AgentState;
+    /**
+     * Whether `state`'s activity word describes anything — carried on the
+     * row by `core::roster`. False for a room of people, whose dot and
+     * activity word are then left out; `needsYou` shows regardless.
+     */
+    describesAgent: boolean;
     selected: boolean;
     avatarUrl: string | null;
     /**
@@ -36,7 +43,8 @@
     onAvatarFailed: (roomId: string) => void;
   }
 
-  let { row, state, selected, avatarUrl, now, onSelect, onAvatarFailed }: Props = $props();
+  let { row, state, describesAgent, selected, avatarUrl, now, onSelect, onAvatarFailed }: Props =
+    $props();
 
   // Rooms active within the last 5 minutes render their time in
   // `--color-content-muted`, older ones in `--color-content-faint`. Recency
@@ -55,14 +63,18 @@
    */
   const showRoleTime = $derived(identity.role !== null || time !== null);
   const invited = $derived(row.affordance === "respondToInvitation");
+  /** The state this row may say, or `null` when it says none. */
+  const shown = $derived(shownState(state, describesAgent));
 
   /**
    * The dot's colour, in the vocabulary the console reserves: amber for what
    * is owed, accent for what is alive, a faint mark for what is merely quiet,
    * and nothing at all for silence — absence is not a state worth a mark.
    */
-  function stateClass(value: AgentState): string {
+  function stateClass(value: AgentState | null): string {
     switch (value) {
+      case null:
+        return "bg-transparent";
       case "needsYou":
         return "bg-signal";
       case "active":
@@ -104,7 +116,7 @@
     unread: number,
     pendingDecision: boolean,
     isInvited: boolean,
-    value: AgentState,
+    value: AgentState | null,
   ): string {
     const parts = [name];
     // Right after the name, because it changes what the row *is*: an
@@ -114,7 +126,8 @@
     if (role !== null) parts.push(role);
     if (unread > 0) parts.push(`${unread} unread`);
     if (pendingDecision) parts.push("Approval needed");
-    if (value !== "needsYou") parts.push(stateWord(value));
+    // Nothing for a room the activity word does not describe (`null`).
+    if (value !== null && value !== "needsYou") parts.push(stateWord(value));
     return parts.join(", ");
   }
 </script>
@@ -129,7 +142,7 @@
     room.unread,
     preview?.pending ?? false,
     invited,
-    state,
+    shown,
   )}
   class="flex gap-3 border-l-2 pr-4 pl-[10px] text-left transition-colors {selected
     ? 'border-l-accent bg-surface'
@@ -170,10 +183,12 @@
         `core::roster` and carried on the row. Quiet draws a
         transparent dot rather than nothing, so names stay aligned
         down the column — absence is not a state worth a mark, but it
-        is not a reason to move everything either.
+        is not a reason to move everything either. A room of people
+        (`describesAgent` false) draws the same transparent dot, for
+        the same reason, unless it needs you.
       -->
       <span
-        class="h-1.5 w-1.5 shrink-0 rounded-pill {stateClass(state)}"
+        class="h-1.5 w-1.5 shrink-0 rounded-pill {stateClass(shown)}"
         aria-hidden="true"
       ></span>
       <span class="min-w-0 flex-1 truncate text-ui font-medium text-content"
@@ -188,7 +203,7 @@
           the filled accent pill is the unread number's.
         -->
         <span
-          class="shrink-0 rounded-pill border border-accent px-1.5 py-0.5 font-mono text-meta text-accent"
+          class="shrink-0 rounded-pill border border-accent px-1.5 py-0.5 text-meta text-accent"
         >
           Invitation
         </span>
@@ -204,16 +219,16 @@
           worded reading of the same number where it isn't.
         -->
         <span
-          class="shrink-0 rounded-pill bg-accent px-1.5 py-0.5 font-mono text-meta text-accent-content"
+          class="shrink-0 rounded-pill bg-accent px-1.5 py-0.5 text-meta tabular-nums text-accent-content"
         >
           {room.unread}
         </span>
       {/if}
     </span>
     {#if showRoleTime}
-      <span class="mt-0.5 flex min-w-0 items-baseline gap-1 font-mono text-meta text-content-muted">
+      <span class="mt-0.5 flex min-w-0 items-baseline gap-1 text-meta tabular-nums text-content-muted">
         {#if identity.role !== null}
-          <span class="truncate text-label uppercase">{identity.role}</span>
+          <span class="truncate text-label">{identity.role}</span>
         {/if}
         {#if identity.role !== null && time !== null}
           <span aria-hidden="true">·</span>
@@ -247,18 +262,11 @@
         reader actually sees, exactly as every other roster string
         here does.
 
-        **Sans, not mono**, even though `--text-meta`'s own scale
-        entry is a mono rank and the role line directly above it is
-        mono. §5.3 is the tiebreaker: mono means machine, serif means
-        prose, sans means chrome. A preview is a fragment of something
-        a person or an agent wrote — prose — so mono is wrong by the
-        design's own rule, and rendered it looked wrong for exactly
-        that reason: three stacked mono lines made a conversation read
-        like terminal output. Not serif either: serif says "read this
-        at length", which a truncated one-liner in a scanning surface
-        is not. Sans is the face for chrome, and this line is prose
-        *quoted into* chrome. It also happens to fit noticeably more
-        characters in the same column than mono did.
+        **Sans**, like the role line above it and everything else
+        said or labelled (docs/design-language.md §1: one voice, mono
+        only for code, paths, ids and keys). A preview is a fragment of
+        something a person or an agent wrote; rendered in mono, three
+        stacked lines made a conversation read like terminal output.
       -->
       <span
         class="mt-0.5 block truncate font-sans text-meta {preview.pending

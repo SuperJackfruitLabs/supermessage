@@ -47,7 +47,7 @@
     role="status"
   >
     <span
-      class="font-mono text-label uppercase {state === 'error'
+      class="text-label {state === 'error'
         ? 'text-danger'
         : 'text-content-muted'}"
     >

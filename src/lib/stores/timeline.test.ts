@@ -66,6 +66,7 @@ function dto(id: string): TimelineItem {
     reactions: [],
     readBy: [],
     editable: false,
+    membershipSubject: null,
   };
 }
 

@@ -131,6 +131,8 @@ describe("liveStore: tool calls", () => {
     input: null,
     output: null,
     status: "in_progress",
+    phase: "running",
+    statusLabel: "Running",
     locations: ["src/main.ts"],
     ...over,
   });
@@ -146,10 +148,18 @@ describe("liveStore: tool calls", () => {
     const store = createLiveStore({ onLive: makeChannel().onLive, onTool: tools.onLive });
 
     tools.emit(tool());
-    tools.emit(tool({ seq: 2, status: "completed" }));
+    tools.emit(tool({ seq: 2, status: "completed", phase: "done", statusLabel: "Done" }));
 
     expect(store.tools(ROOM)).toEqual([
-      { toolCallId: "c1", title: "Read src/main.ts", kind: "read", status: "completed", locations: ["src/main.ts"] },
+      {
+        toolCallId: "c1",
+        title: "Read src/main.ts",
+        kind: "read",
+        status: "completed",
+        phase: "done",
+        statusLabel: "Done",
+        locations: ["src/main.ts"],
+      },
     ]);
   });
 
@@ -159,7 +169,7 @@ describe("liveStore: tool calls", () => {
 
     tools.emit(tool({ toolCallId: "first", seq: 1 }));
     tools.emit(tool({ toolCallId: "second", seq: 2 }));
-    tools.emit(tool({ toolCallId: "first", seq: 3, status: "completed" }));
+    tools.emit(tool({ toolCallId: "first", seq: 3, status: "completed", phase: "done", statusLabel: "Done" }));
 
     expect(store.tools(ROOM).map((t) => t.toolCallId)).toEqual(["first", "second"]);
   });
@@ -170,10 +180,11 @@ describe("liveStore: tool calls", () => {
     const tools = makeChannel<ToolPayload>();
     const store = createLiveStore({ onLive: makeChannel().onLive, onTool: tools.onLive });
 
-    tools.emit(tool({ seq: 5, status: "completed" }));
-    tools.emit(tool({ seq: 4, status: "in_progress" }));
+    tools.emit(tool({ seq: 5, status: "completed", phase: "done", statusLabel: "Done" }));
+    tools.emit(tool({ seq: 4, status: "in_progress", phase: "running", statusLabel: "Running" }));
 
     expect(store.tools(ROOM)[0]!.status).toBe("completed");
+    expect(store.tools(ROOM)[0]!.phase).toBe("done");
   });
 
   it("forgets a room's tools when its turn ends", () => {

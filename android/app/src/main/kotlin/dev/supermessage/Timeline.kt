@@ -183,6 +183,17 @@ fun Timeline(
         }
         out
     }
+    // The mirror of `continuesRun`: a row ends its run when the row after
+    // it (in time) does not continue it. Derived from the same rule rather
+    // than a second one, so the two can never disagree about where a run is.
+    val endsRun = remember(revision) {
+        val out = HashMap<String, Boolean>(rows.size)
+        for (i in rows.indices) {
+            val next = rows.getOrNull(i + 1)
+            out[rows[i].item.id] = next == null || !TimelineGrouping.continuesRun(next, rows[i])
+        }
+        out
+    }
     val singleSpeaker = remember(revision) { TimelineGrouping.hasSingleSpeaker(rows) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -308,6 +319,7 @@ fun Timeline(
                     row = row,
                     now = Instant.now(),
                     continuesRun = continuesRun[row.item.id] ?: false,
+                    endsRun = endsRun[row.item.id] ?: true,
                     attribution = if (singleSpeaker) row.senderShort else row.senderName,
                     onReact = { key -> onReact(row, key) },
                     onDecide = { answer -> onDecide(row, answer) },

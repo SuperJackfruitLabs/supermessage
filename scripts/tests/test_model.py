@@ -163,12 +163,16 @@ class TypeTests(unittest.TestCase):
         with self.assertRaises(TokenError):
             validate(broken)
 
-    def test_body_is_serif_and_body_own_is_sans(self):
-        # The structural rule the whole language rests on: serif is what an
-        # agent wrote, sans is what the operator wrote.
+    def test_the_conversation_has_one_voice(self):
+        # Agent and operator text share a face; the serif is kept for the
+        # long-form reading view only, and mono never sets prose or labels.
         types = load(SOURCE).type
-        self.assertEqual(types["body"].family, "serif")
+        self.assertEqual(types["body"].family, "sans")
         self.assertEqual(types["body-own"].family, "sans")
+        self.assertEqual(types["longread"].family, "serif")
+        for role in ("label", "meta"):
+            with self.subTest(role=role):
+                self.assertNotEqual(types[role].family, "mono")
 
 class LayoutTests(unittest.TestCase):
     def test_the_breakpoint_is_computed_not_read(self):

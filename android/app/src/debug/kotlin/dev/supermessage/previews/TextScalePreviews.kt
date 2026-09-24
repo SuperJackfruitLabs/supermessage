@@ -49,7 +49,7 @@ internal fun RoomRowStatesLarge() {
         Column {
             RoomRow(PreviewFixtures.roomNeedsYou, null, AgentState.NEEDS_YOU, "2m")
             RoomRow(PreviewFixtures.roomActive, null, AgentState.ACTIVE, "14m")
-            RoomRow(PreviewFixtures.roomInvitation, null, AgentState.IDLE, "")
+            RoomRow(PreviewFixtures.roomInvitation, null, AgentState.IDLE, "", describesAgent = false)
         }
     }
 }
@@ -70,7 +70,7 @@ internal fun RoomRowStatesHuge() {
 }
 
 /** Three buttons that have to fit a row, or stop trying to. */
-@Preview(name = "Card, pending, 2x", showBackground = true, heightDp = 640, fontScale = 2.0f)
+@Preview(name = "Card, pending, 2x", showBackground = true, heightDp = 720, fontScale = 2.0f)
 @Composable
 internal fun CardPendingHuge() {
     PreviewGround {

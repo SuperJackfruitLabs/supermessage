@@ -61,7 +61,25 @@ REFERENCES = ROOT / "apple/SupermessagePreviewTests/previews"
 # frame captured before its `.task` lands, and those four take their state
 # from an `initialState` argument instead, so the first frame is already the
 # one the name promises. There is no race left to lose.
-UNSTABLE: set[str] = set()
+# Frames caught mid-animation, so the same code renders a few different
+# pixels run to run (measured: 5 px locally, 0.01-13% on CI).
+UNSTABLE: set[str] = {
+    # The Working pill pulses.
+    "Supermessage_RoomScreen.swift_Header_statuses.png",
+    "Supermessage_RoomScreen.swift_Header_statuses_dark.png",
+    # The demo types its first message in.
+    "Supermessage_FirstRunDemoView.swift_First-run_demo.png",
+    "Supermessage_FirstRunDemoView.swift_First-run_demo_dark.png",
+    # Stages its refused attachment in a task, so the chip lands after or
+    # before the capture.
+    "Supermessage_ComposerView.swift_Attachment_refused.png",
+    # The mark scales in on appear; CI caught it mid-scale (0.10%).
+    "Supermessage_WelcomeView.swift_Welcome.png",
+    "Supermessage_WelcomeView.swift_Welcome_dark.png",
+    # The stub session answers the recovery check asynchronously; the frame
+    # lands on "Checking…" or on "covered" depending on which wins.
+    "Supermessage_RecoveryView.swift_Checking.png",
+}
 
 RECORD = "./scripts/snapshot-previews.sh --record"
 

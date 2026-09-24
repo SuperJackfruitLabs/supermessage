@@ -102,7 +102,7 @@ KNOWN_UNSEEDED = {
     "live-agentreasoning--streaming-long",
     # ── iOS ──────────────────────────────────────────────────────────────
     "Supermessage_ComposerView.swift_Attachment_staged",
-    "Supermessage_SpacePillStrip.swift_Three_spaces",
+    "Supermessage_SpaceMenu.swift_Three_spaces",
     # Both of NewRoomPanel's previews load their people in a `.task`, so the
     # two capture the same loading frame and differ in nothing.
     "Supermessage_NewRoomPanel.swift_Known_people",

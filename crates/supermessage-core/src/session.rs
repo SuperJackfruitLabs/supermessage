@@ -813,6 +813,20 @@ impl Session {
     ///
     /// A tag rather than anything local, so a room pinned here is pinned in
     /// Element too. See [`crate::room_info::RoomInfoDto::pinned`].
+    /// Ask the homeserver to push this account's notifications to a gateway,
+    /// for this device. See `core::push`.
+    pub async fn register_pusher(
+        &self,
+        registration: &crate::push::PushRegistration,
+    ) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        client
+            .pusher()
+            .set(crate::push::pusher_for(registration), false)
+            .await
+            .map_err(|e| CoreError::Network(e.to_string()))
+    }
+
     pub async fn set_room_pinned(&self, room_id: &str, pinned: bool) -> CoreResult<()> {
         let client = self.require_client().await?;
         let parsed_room_id =

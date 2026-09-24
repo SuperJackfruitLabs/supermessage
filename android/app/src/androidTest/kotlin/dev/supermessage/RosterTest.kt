@@ -47,7 +47,7 @@ class RosterTest {
     private fun section(id: String, title: String, entryName: String, entryId: String = "!$entryName:x") =
         RosterSection(
             id = id, title = title, detail = null,
-            rows = listOf(RosterRow(row = row(entryId, entryName), state = AgentState.ACTIVE)),
+            rows = listOf(RosterRow(row = row(entryId, entryName), state = AgentState.ACTIVE, describesAgent = true)),
             attention = false,
         )
 

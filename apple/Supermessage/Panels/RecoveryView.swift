@@ -66,22 +66,26 @@ struct RecoveryView: View {
     var body: some View {
         NavigationStack {
             List {
-                if let freshKey {
-                    freshKeySection(freshKey)
-                } else if state == "unknown" {
-                    // Never "not set up": offering a second key to somebody who
-                    // has one is how the first is orphaned.
-                    Section { Text("Checking this account…") }
-                } else if stranded {
-                    strandedSections
-                } else {
-                    coveredSection
-                }
+                Group {
+                    if let freshKey {
+                        freshKeySection(freshKey)
+                    } else if state == "unknown" {
+                        // Never "not set up": offering a second key to somebody who
+                        // has one is how the first is orphaned.
+                        Section { Text("Checking this account…") }
+                    } else if stranded {
+                        strandedSections
+                    } else {
+                        coveredSection
+                    }
 
-                if let failure {
-                    Section { Text(failure).foregroundStyle(Theme.danger).metaFace() }
+                    if let failure {
+                        Section { Text(failure).foregroundStyle(Theme.danger).metaFace() }
+                    }
                 }
+                .listRowBackground(Theme.surface)
             }
+            .paletteGroupedGround()
             .navigationTitle("Encryption recovery")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -154,6 +158,8 @@ struct RecoveryView: View {
             if resetting {
                 SecureField("Your password", text: $password)
                 Button("Start over", role: .destructive) { Task { await reset() } }
+                    // Red by hand: the root's foregroundStyle outranks the role.
+                    .foregroundStyle(Theme.danger)
                     .disabled(busy || password.isEmpty)
                 Button("Cancel") {
                     resetting = false

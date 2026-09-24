@@ -31,6 +31,7 @@ import org.junit.Rule
 import androidx.compose.ui.test.onAllNodesWithText
 import org.junit.Test
 import uniffi.supermessage_core.CustomEventView
+import uniffi.supermessage_core.DeliveryState
 import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.MediaFileLabel
 import uniffi.supermessage_core.ReactionDto
@@ -75,7 +76,7 @@ class TimelineRowTest {
         isOwn: Boolean = false,
         body: String? = "hi",
         timestampMs: ULong? = now.toEpochMilli().toULong(),
-        sendState: String? = null,
+        sendState: DeliveryState? = null,
         reactions: List<ReactionDto> = emptyList(),
         readBy: List<String> = emptyList(),
     ): TimelineRowDto {
@@ -99,7 +100,7 @@ class TimelineRowTest {
             edited = false,
             reactions = reactions,
             readBy = readBy,
-            editable = true,
+            editable = true, membershipSubject = null,
         )
         return TimelineRowDto(
             item = item,
@@ -145,7 +146,7 @@ class TimelineRowTest {
      * [resolvedFontFamily], not a copy of the theme's own assertion.
      */
     @Test
-    fun anAgentsMessageRendersInTheSerifFace() {
+    fun anAgentsMessageRendersInTheConversationFace() {
         compose.setContent {
             SupermessageTheme {
                 TimelineRow(
@@ -155,7 +156,7 @@ class TimelineRowTest {
             }
         }
         val node = compose.onNodeWithText("an agent wrote this").fetchSemanticsNode()
-        assertEquals(FontFamily.Serif, resolvedFontFamily(node))
+        assertEquals(FontFamily.SansSerif, resolvedFontFamily(node))
     }
 
     @Test
@@ -182,7 +183,7 @@ class TimelineRowTest {
                 TimelineRow(row = row(view = ItemView.Placeholder(kind = PlaceholderKind.Redacted, text = "placeholder text")), now = now)
                 TimelineRow(row = row(view = ItemView.DateDivider), now = now)
                 TimelineRow(row = row(view = ItemView.UnreadMarker), now = now)
-                TimelineRow(row = row(view = ItemView.Image(alt = "a sunset", width = 100uL, height = 50uL)), now = now)
+                TimelineRow(row = row(view = ItemView.Image(alt = "a sunset", width = 100uL, height = 50uL, caption = null)), now = now)
                 TimelineRow(
                     row = row(
                         view = ItemView.MediaFile(
@@ -259,7 +260,7 @@ class TimelineRowTest {
     fun anImageWithoutBytesShowsItsAlt() {
         compose.setContent {
             TimelineRow(
-                row = row(view = ItemView.Image(alt = "a lighthouse", width = null, height = null)),
+                row = row(view = ItemView.Image(alt = "a lighthouse", width = null, height = null, caption = null)),
                 now = now,
             )
         }

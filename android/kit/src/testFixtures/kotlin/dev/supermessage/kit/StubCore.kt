@@ -29,7 +29,7 @@ import uniffi.supermessage_ffi.*
 open class StubCore : CoreInterface {
     override fun account(): AccountDto = throw NotImplementedError()
     override fun attachmentDiscard(token: kotlin.String): Unit = throw NotImplementedError()
-    override fun attachmentSend(roomId: kotlin.String, token: kotlin.String): Unit = throw NotImplementedError()
+    override fun attachmentSend(roomId: kotlin.String, token: kotlin.String, caption: kotlin.String?): Unit = throw NotImplementedError()
     override fun attachmentStagePath(roomId: kotlin.String, path: kotlin.String): StagedFile = throw NotImplementedError()
     override fun connectionState(): ConnectionState = throw NotImplementedError()
     override fun createRoom(name: kotlin.String, invite: List<kotlin.String>, isDirect: kotlin.Boolean): kotlin.String = throw NotImplementedError()
@@ -62,6 +62,7 @@ open class StubCore : CoreInterface {
     override fun sendMessage(roomId: kotlin.String, body: kotlin.String, mentions: List<kotlin.String>): Unit = throw NotImplementedError()
     override fun sendReply(roomId: kotlin.String, body: kotlin.String, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun setRoomNotifications(roomId: kotlin.String, mode: NotificationMode): Unit = throw NotImplementedError()
+    override fun registerPusher(registration: uniffi.supermessage_core.PushRegistration): Unit = throw NotImplementedError()
     override fun setRoomPinned(roomId: kotlin.String, pinned: kotlin.Boolean): Unit = throw NotImplementedError()
     override fun setTyping(roomId: kotlin.String, typing: kotlin.Boolean): Unit = throw NotImplementedError()
     override fun spaceSelect(spaceId: kotlin.String?): Unit = throw NotImplementedError()

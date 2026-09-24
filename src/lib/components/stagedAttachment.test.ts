@@ -173,10 +173,12 @@ describe("sendCaveat", () => {
     expect(sendCaveat(false, false)).toBeNull();
   });
 
-  it("names the draft text Send is not going to include", () => {
+  it("says the draft goes with the file, as its caption", () => {
+    // One event (MSC2530): sent as two, the words reached a bridged agent
+    // mid-turn and met "Session is busy".
     const caveat = sendCaveat(true, false);
-    expect(caveat).toMatch(/not your message text/i);
-    expect(caveat).toMatch(/stays in the draft/i);
+    expect(caveat).toMatch(/caption/i);
+    expect(caveat).not.toMatch(/stays in the draft/i);
   });
 
   it("names the reply the attachment will not be", () => {

@@ -58,8 +58,16 @@ fun RoomRow(
     `when`: String,
     showsState: Boolean = true,
     hidesHost: Boolean = false,
+    /**
+     * The core's `RosterRow.describesAgent`: whether [state]'s activity word
+     * (`active`, `idle`, `quiet`) says anything about this room. For a room
+     * of people it does not, and "idle" under a friend's name is noise.
+     * `NEEDS_YOU` shows regardless — owing an answer is not about agents.
+     */
+    describesAgent: Boolean = true,
     onOpenInfo: (() -> Unit)? = null,
 ) {
+    val stateShown = showsState && (describesAgent || state == AgentState.NEEDS_YOU)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -121,12 +129,12 @@ fun RoomRow(
             // the room, kept off the preview's line below so the two never
             // compete. `null` collapses the line entirely rather than
             // drawing an empty one, the same posture as the preview.
-            metaLine(row = row, state = state, showsState = showsState, hidesHost = hidesHost)?.let { meta ->
+            metaLine(row = row, state = state, showsState = stateShown, hidesHost = hidesHost)?.let { meta ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    if (showsState) {
+                    if (stateShown) {
                         StateDot(state)
                     }
                     Text(

@@ -43,7 +43,7 @@ struct ReplyTargetTests {
             sender: "@a:x",
             senderDisplayName: sender, senderAvatar: nil, body: "body", formattedBody: nil, media: nil,
             customPayload: nil, timestampMs: 1, isOwn: false, sendState: nil, replyTo: nil,
-            edited: false, reactions: [], readBy: [], editable: false)
+            edited: false, reactions: [], readBy: [], editable: false, membershipSubject: nil)
         return TimelineRow(
             item: item, view: .bubble(muted: false, blocks: []), senderName: sender, senderShort: sender, senderInitial: "?",
             membershipVerb: nil, replyQuote: nil, canReplyOrReact: true, replyPreview: preview)

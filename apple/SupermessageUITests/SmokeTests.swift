@@ -141,7 +141,12 @@ final class SmokeTests: XCTestCase {
 
         // Search, which used to leave the untouched empty state on screen while
         // it worked. Each state must say which one it is.
-        app.buttons["magnifyingglass"].tap()
+        //
+        // A tab of its own now, with the search role: on iPhone it is the
+        // tab bar's trailing button rather than a toolbar icon.
+        let searchTab = app.tabBars.buttons["Search"]
+        XCTAssertTrue(searchTab.waitForExistence(timeout: 10), "no Search tab")
+        searchTab.tap()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no search field")
         attach(XCUIScreen.main.screenshot(), named: "panel-search-idle")
@@ -159,7 +164,17 @@ final class SmokeTests: XCTestCase {
         field.typeText("\n")
         Thread.sleep(forTimeInterval: 5)
         attach(XCUIScreen.main.screenshot(), named: "panel-search-results")
-        dismissSheet(app)
+
+        // The other two destinations, photographed on the way back to Chats.
+        for tab in ["Needs you", "Agents"] {
+            let button = app.tabBars.buttons[tab]
+            XCTAssertTrue(button.waitForExistence(timeout: 10), "no \(tab) tab")
+            button.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            attach(XCUIScreen.main.screenshot(), named: "tab-\(tab.lowercased().replacingOccurrences(of: " ", with: "-"))")
+        }
+        app.tabBars.buttons["Chats"].tap()
+        Thread.sleep(forTimeInterval: 1)
 
         // The account screen, and the only way out of the app. `signOut` was
         // implemented, tested, and reachable from nowhere.
@@ -175,7 +190,7 @@ final class SmokeTests: XCTestCase {
         attach(XCUIScreen.main.screenshot(), named: "panel-account")
         dismissSheet(app)
 
-        app.buttons["square.and.pencil"].tap()
+        app.buttons["New conversation"].tap()
         Thread.sleep(forTimeInterval: 2)
         attach(XCUIScreen.main.screenshot(), named: "panel-new-room")
         dismissSheet(app)
@@ -320,6 +335,13 @@ final class SmokeTests: XCTestCase {
             "-roster.view", roster,
             "-roster.showsInvitations", "NO",
             "-roster.showsState", "YES",
+            // A chip left on from a previous run would hide the room every
+            // test opens.
+            "-roster.filter", "all",
+            // The first-run welcome and demo are for people, not for a
+            // restored session under test.
+            "-onboarding.welcomeSeen", "YES",
+            "-onboarding.demoSeen", "YES",
         ]
         app.launch()
         return app

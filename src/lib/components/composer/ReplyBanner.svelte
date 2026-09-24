@@ -18,11 +18,11 @@
 <div class="shrink-0 border-l-2 border-l-accent bg-surface-sunken px-4 py-2">
   <div class="mx-auto flex w-full max-w-[72ch] items-start gap-2">
   <div class="min-w-0 flex-1">
-    <p class="truncate font-mono text-label text-content-muted uppercase">
+    <p class="truncate text-label text-content-muted">
       Replying to {sender}
     </p>
     {#if excerpt}
-      <p class="mt-0.5 truncate font-serif text-meta text-content-muted">{excerpt}</p>
+      <p class="mt-0.5 truncate font-sans text-meta text-content-muted">{excerpt}</p>
     {/if}
   </div>
   <button

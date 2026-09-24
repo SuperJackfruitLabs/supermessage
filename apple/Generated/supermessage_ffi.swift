@@ -538,8 +538,11 @@ public protocol CoreProtocol : AnyObject {
      * is checked against both the focused room and the room the token was
      * staged for — the first catches a stale send, the second a token kept
      * across a room switch.
+     *
+     * `caption` is what the reader typed with the file. It travels in the
+     * same event (MSC2530) rather than as a message of its own.
      */
-    func attachmentSend(roomId: String, token: String) throws 
+    func attachmentSend(roomId: String, token: String, caption: String?) throws 
     
     /**
      * Stage a file the host has already chosen.
@@ -675,6 +678,12 @@ public protocol CoreProtocol : AnyObject {
      * is how the first one is orphaned.
      */
     func recoveryState() throws  -> String
+    
+    /**
+     * Register this device's push token with the homeserver, pointed at a
+     * push gateway. `event_id_only`, so no content leaves the homeserver.
+     */
+    func registerPusher(registration: PushRegistration) throws 
     
     /**
      * Throw the old identity away and start again, returning the new key.
@@ -951,11 +960,15 @@ open func attachmentDiscard(token: String) {try! rustCall() {
      * is checked against both the focused room and the room the token was
      * staged for — the first catches a stale send, the second a token kept
      * across a room switch.
+     *
+     * `caption` is what the reader typed with the file. It travels in the
+     * same event (MSC2530) rather than as a message of its own.
      */
-open func attachmentSend(roomId: String, token: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+open func attachmentSend(roomId: String, token: String, caption: String?)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_attachment_send(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),
-        FfiConverterString.lower(token),$0
+        FfiConverterString.lower(token),
+        FfiConverterOptionString.lower(caption),$0
     )
 }
 }
@@ -1208,6 +1221,17 @@ open func recoveryState()throws  -> String {
     uniffi_supermessage_ffi_fn_method_core_recovery_state(self.uniffiClonePointer(),$0
     )
 })
+}
+    
+    /**
+     * Register this device's push token with the homeserver, pointed at a
+     * push gateway. `event_id_only`, so no content leaves the homeserver.
+     */
+open func registerPusher(registration: PushRegistration)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_register_pusher(self.uniffiClonePointer(),
+        FfiConverterTypePushRegistration_lower(registration),$0
+    )
+}
 }
     
     /**
@@ -2290,7 +2314,17 @@ public enum FfiEvent {
         /**
          * ACP's tool kind, when the harness said. Display text, never
          * switched on.
-         */kind: String?, status: String, 
+         */kind: String?, 
+        /**
+         * ACP's raw status. Display `status_label` instead.
+         */status: String, 
+        /**
+         * Where the call is, decided by the core — a host picks a glyph
+         * and a colour from this and never switches on `status`.
+         */phase: ToolPhase, 
+        /**
+         * The word for `phase`. User-visible copy, rendered as given.
+         */statusLabel: String, 
         /**
          * What the call touched — paths, mostly.
          */locations: [String], 
@@ -2332,7 +2366,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case 6: return .thought(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), text: try FfiConverterString.read(from: &buf), done: try FfiConverterBool.read(from: &buf)
         )
         
-        case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), kind: try FfiConverterOptionString.read(from: &buf), status: try FfiConverterString.read(from: &buf), locations: try FfiConverterSequenceString.read(from: &buf), input: try FfiConverterOptionString.read(from: &buf), output: try FfiConverterOptionString.read(from: &buf)
+        case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), kind: try FfiConverterOptionString.read(from: &buf), status: try FfiConverterString.read(from: &buf), phase: try FfiConverterTypeToolPhase.read(from: &buf), statusLabel: try FfiConverterString.read(from: &buf), locations: try FfiConverterSequenceString.read(from: &buf), input: try FfiConverterOptionString.read(from: &buf), output: try FfiConverterOptionString.read(from: &buf)
         )
         
         case 8: return .attachmentStaged(token: try FfiConverterString.read(from: &buf), filename: try FfiConverterString.read(from: &buf), sizeBytes: try FfiConverterUInt64.read(from: &buf), mime: try FfiConverterString.read(from: &buf)
@@ -2383,7 +2417,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterBool.write(done, into: &buf)
             
         
-        case let .tool(roomId,seq,toolCallId,title,kind,status,locations,input,output):
+        case let .tool(roomId,seq,toolCallId,title,kind,status,phase,statusLabel,locations,input,output):
             writeInt(&buf, Int32(7))
             FfiConverterString.write(roomId, into: &buf)
             FfiConverterUInt64.write(seq, into: &buf)
@@ -2391,6 +2425,8 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterString.write(title, into: &buf)
             FfiConverterOptionString.write(kind, into: &buf)
             FfiConverterString.write(status, into: &buf)
+            FfiConverterTypeToolPhase.write(phase, into: &buf)
+            FfiConverterString.write(statusLabel, into: &buf)
             FfiConverterSequenceString.write(locations, into: &buf)
             FfiConverterOptionString.write(input, into: &buf)
             FfiConverterOptionString.write(output, into: &buf)
@@ -3423,6 +3459,10 @@ fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer
 
 
 
+
+
+
+
 /**
  * The user ids a finished message mentions, for `m.mentions`.
  */
@@ -3600,7 +3640,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 20052) {
+    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403) {
@@ -3661,6 +3701,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_register_pusher() != 45337) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_reset_recovery() != 24413) {

@@ -39,6 +39,7 @@ import uniffi.supermessage_core.FfiConverterTypeMatrixLinkTarget
 import uniffi.supermessage_core.FfiConverterTypeMentionable
 import uniffi.supermessage_core.FfiConverterTypeNotificationMode
 import uniffi.supermessage_core.FfiConverterTypePersonDto
+import uniffi.supermessage_core.FfiConverterTypePushRegistration
 import uniffi.supermessage_core.FfiConverterTypeRichBlock
 import uniffi.supermessage_core.FfiConverterTypeRoomInfoDto
 import uniffi.supermessage_core.FfiConverterTypeRoomRow
@@ -47,11 +48,13 @@ import uniffi.supermessage_core.FfiConverterTypeRosterView
 import uniffi.supermessage_core.FfiConverterTypeSearchResultDto
 import uniffi.supermessage_core.FfiConverterTypeSpaceSummary
 import uniffi.supermessage_core.FfiConverterTypeTimelineRow
+import uniffi.supermessage_core.FfiConverterTypeToolPhase
 import uniffi.supermessage_core.FfiConverterTypeTypingUserDto
 import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
+import uniffi.supermessage_core.PushRegistration
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomRow
@@ -60,6 +63,7 @@ import uniffi.supermessage_core.RosterView
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_core.TimelineRow
+import uniffi.supermessage_core.ToolPhase
 import uniffi.supermessage_core.TypingUserDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
@@ -67,6 +71,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferMatrixLinkTarget
 import uniffi.supermessage_core.RustBuffer as RustBufferMentionable
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationMode
 import uniffi.supermessage_core.RustBuffer as RustBufferPersonDto
+import uniffi.supermessage_core.RustBuffer as RustBufferPushRegistration
 import uniffi.supermessage_core.RustBuffer as RustBufferRichBlock
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomInfoDto
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomRow
@@ -75,6 +80,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferRosterView
 import uniffi.supermessage_core.RustBuffer as RustBufferSearchResultDto
 import uniffi.supermessage_core.RustBuffer as RustBufferSpaceSummary
 import uniffi.supermessage_core.RustBuffer as RustBufferTimelineRow
+import uniffi.supermessage_core.RustBuffer as RustBufferToolPhase
 import uniffi.supermessage_core.RustBuffer as RustBufferTypingUserDto
 
 // This is a helper for safely working with byte buffers returned from the Rust code.
@@ -923,6 +929,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -956,7 +964,7 @@ internal interface UniffiLib : Library {
     ): RustBufferAccountDto.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_attachment_discard(`ptr`: Pointer,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    fun uniffi_supermessage_ffi_fn_method_core_attachment_send(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_supermessage_ffi_fn_method_core_attachment_send(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`caption`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_attachment_stage_path(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -998,6 +1006,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_recovery_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_register_pusher(`ptr`: Pointer,`registration`: RustBufferPushRegistration.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_reset_recovery(`ptr`: Pointer,`password`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_restore_session(`ptr`: Pointer,`sink`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1236,6 +1246,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_recovery_state(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_register_pusher(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_reset_recovery(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_restore_session(
@@ -1338,7 +1350,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 20052.toShort()) {
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403.toShort()) {
@@ -1399,6 +1411,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_register_pusher() != 45337.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_reset_recovery() != 24413.toShort()) {
@@ -1863,8 +1878,11 @@ public interface CoreInterface {
      * is checked against both the focused room and the room the token was
      * staged for — the first catches a stale send, the second a token kept
      * across a room switch.
+     *
+     * `caption` is what the reader typed with the file. It travels in the
+     * same event (MSC2530) rather than as a message of its own.
      */
-    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String)
+    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
     
     /**
      * Stage a file the host has already chosen.
@@ -2000,6 +2018,12 @@ public interface CoreInterface {
      * is how the first one is orphaned.
      */
     fun `recoveryState`(): kotlin.String
+    
+    /**
+     * Register this device's push token with the homeserver, pointed at a
+     * push gateway. `event_id_only`, so no content leaves the homeserver.
+     */
+    fun `registerPusher`(`registration`: PushRegistration)
     
     /**
      * Throw the old identity away and start again, returning the new key.
@@ -2302,13 +2326,16 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
      * is checked against both the focused room and the room the token was
      * staged for — the first catches a stale send, the second a token kept
      * across a room switch.
+     *
+     * `caption` is what the reader typed with the file. It travels in the
+     * same event (MSC2530) rather than as a message of its own.
      */
-    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String)
+    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_attachment_send(
-        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`token`),_status)
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`token`),FfiConverterOptionalString.lower(`caption`),_status)
 }
     }
     
@@ -2657,6 +2684,22 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     }
     )
     }
+    
+
+    
+    /**
+     * Register this device's push token with the homeserver, pointed at a
+     * push gateway. `event_id_only`, so no content leaves the homeserver.
+     */
+    @Throws(FfiException::class)override fun `registerPusher`(`registration`: PushRegistration)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_register_pusher(
+        it, FfiConverterTypePushRegistration.lower(`registration`),_status)
+}
+    }
+    
     
 
     
@@ -3694,7 +3737,19 @@ sealed class FfiEvent {
          * switched on.
          */
         val `kind`: kotlin.String?, 
+        /**
+         * ACP's raw status. Display `status_label` instead.
+         */
         val `status`: kotlin.String, 
+        /**
+         * Where the call is, decided by the core — a host picks a glyph
+         * and a colour from this and never switches on `status`.
+         */
+        val `phase`: ToolPhase, 
+        /**
+         * The word for `phase`. User-visible copy, rendered as given.
+         */
+        val `statusLabel`: kotlin.String, 
         /**
          * What the call touched — paths, mostly.
          */
@@ -3758,6 +3813,8 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterString.read(buf),
                 FfiConverterString.read(buf),
                 FfiConverterOptionalString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterTypeToolPhase.read(buf),
                 FfiConverterString.read(buf),
                 FfiConverterSequenceString.read(buf),
                 FfiConverterOptionalString.read(buf),
@@ -3833,6 +3890,8 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 + FfiConverterString.allocationSize(value.`title`)
                 + FfiConverterOptionalString.allocationSize(value.`kind`)
                 + FfiConverterString.allocationSize(value.`status`)
+                + FfiConverterTypeToolPhase.allocationSize(value.`phase`)
+                + FfiConverterString.allocationSize(value.`statusLabel`)
                 + FfiConverterSequenceString.allocationSize(value.`locations`)
                 + FfiConverterOptionalString.allocationSize(value.`input`)
                 + FfiConverterOptionalString.allocationSize(value.`output`)
@@ -3897,6 +3956,8 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterString.write(value.`title`, buf)
                 FfiConverterOptionalString.write(value.`kind`, buf)
                 FfiConverterString.write(value.`status`, buf)
+                FfiConverterTypeToolPhase.write(value.`phase`, buf)
+                FfiConverterString.write(value.`statusLabel`, buf)
                 FfiConverterSequenceString.write(value.`locations`, buf)
                 FfiConverterOptionalString.write(value.`input`, buf)
                 FfiConverterOptionalString.write(value.`output`, buf)
@@ -5037,6 +5098,14 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
         }
     }
 }
+
+
+
+
+
+
+
+
 
 
 

@@ -128,7 +128,13 @@ fn project_member_parts(
         // agent was named two ways three centimetres apart on one screen.
         display_name: display_name
             .as_deref()
-            .map(crate::display_name::sender_label),
+            .map(crate::display_name::sender_label)
+            // An agent whose profile never resolved gets the name its id
+            // carries, as the timeline already gives it. The panel listed
+            // Strategy Sam as `@agent_strategy-sam:id.agentpod.dev` beneath a
+            // room called Strategy Sam (2026-09-24 screenshot). A person's
+            // id stays as it is: nothing says theirs is a name.
+            .or_else(|| crate::item_view::agent_name_from_id(user_id)),
         avatar_url,
     }
 }
@@ -292,6 +298,19 @@ mod tests {
             display_name.map(str::to_string),
             avatar_url.map(str::to_string),
         )
+    }
+
+    #[test]
+    fn an_agent_without_a_profile_is_named_from_its_id() {
+        let agent = member("@agent_strategy-sam:id.agentpod.dev", None, None);
+        assert_eq!(agent.display_name.as_deref(), Some("Strategy Sam"));
+        // A person's id is not a name, so it is left for the client's
+        // `userId` fallback rather than prettified into a guess.
+        let person = member("@rakesh:id.agentpod.dev", None, None);
+        assert_eq!(person.display_name, None);
+        // A profile name, when there is one, wins.
+        let named = member("@agent_strategy-sam:id.agentpod.dev", Some("Sam"), None);
+        assert_eq!(named.display_name.as_deref(), Some("Sam"));
     }
 
     #[test]

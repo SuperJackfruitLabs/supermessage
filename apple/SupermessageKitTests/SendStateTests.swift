@@ -1,3 +1,4 @@
+import SupermessageFFI
 import Testing
 
 @testable import SupermessageKit
@@ -6,9 +7,9 @@ import Testing
 struct SendStateTests {
     @Test("the core's vocabulary reads across")
     func readsTheWire() {
-        #expect(SendState("notSentYet") == .sending)
-        #expect(SendState("sendingFailed") == .failed)
-        #expect(SendState("sent") == .sent)
+        #expect(SendState(.notSentYet) == .sending)
+        #expect(SendState(.sendingFailed) == .failed)
+        #expect(SendState(.sent) == .sent)
     }
 
     @Test("a message with no send state has arrived")
@@ -17,12 +18,6 @@ struct SendStateTests {
         // definition. Reading that as "unknown" would put a marker under every
         // incoming message in the room.
         #expect(SendState(nil) == .sent)
-    }
-
-    @Test("a state this build has not been taught is not guessed at")
-    func unknownStaysUnknown() {
-        #expect(SendState("somethingNew") == .unknown)
-        #expect(!SendState("somethingNew").isWorthShowing)
     }
 
     @Test("a failed message always says so")

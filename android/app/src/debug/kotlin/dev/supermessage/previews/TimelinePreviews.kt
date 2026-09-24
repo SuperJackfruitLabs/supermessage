@@ -70,6 +70,28 @@ internal fun SendStates() {
 }
 
 /**
+ * A run of own messages, and an edited message on each side.
+ *
+ * An own run carries its time once, under the last bubble (`endsRun`), while
+ * "edited" stays on every message it is true of — on a peer continuation it is
+ * the whole meta line. `Timeline` derives both flags from the list; they are
+ * passed here the way it would pass them.
+ */
+@Preview(name = "Own run and edits", showBackground = true, heightDp = 360)
+@Composable
+internal fun OwnRunAndEdits() {
+    PreviewGround {
+        Column {
+            TimelineRow(row = PreviewFixtures.message, now = NOW, attribution = "Atlas — Platform")
+            TimelineRow(row = PreviewFixtures.peerEdited, now = NOW, continuesRun = true)
+            TimelineRow(row = PreviewFixtures.ownFirst, now = NOW, endsRun = false)
+            TimelineRow(row = PreviewFixtures.ownEdited, now = NOW, continuesRun = true, endsRun = false)
+            TimelineRow(row = PreviewFixtures.ownLast, now = NOW, continuesRun = true)
+        }
+    }
+}
+
+/**
  * A reply whose parent is there, and one whose parent is gone.
  *
  * `ReplyQuoteView.Unavailable` is real and common — the parent was redacted,

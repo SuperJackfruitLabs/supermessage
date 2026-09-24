@@ -3,11 +3,13 @@ import SupermessageFFI
 
 /// What happened to a message this account sent.
 ///
-/// The core's vocabulary is a string — `"notSentYet"`, `"sendingFailed"`,
-/// `"sent"` — and it stays a string on the wire for the reason
-/// `ConnectionStore` gives: a value the core owns can gain a case without this
-/// app failing to build. This is the reading of it, with `unknown` as what
-/// that costs.
+/// The core hands over a `DeliveryState` enum. It used to be a string, kept
+/// so a new core value could not break this build — but the core ships inside
+/// this app, so there is no version skew to survive, and the string's real
+/// cost showed up instead: a preview fixture spelled it `"sending"` and
+/// `"failed"`, both rows fell through to "unknown", and the snapshot of the
+/// one state a reader must never miss drew two delivered messages. A new
+/// core case now fails to compile here, which is the point.
 ///
 /// **Only own messages have one.** A peer's message arrived, which is the only
 /// send state a reader could want to know about it.
@@ -20,17 +22,14 @@ public enum SendState: Equatable, Sendable {
     /// It did not go. **The one state a reader must never miss**, because the
     /// message is sitting on this phone looking exactly like one that landed.
     case failed
-    /// A state this build has not been taught. Drawn as nothing rather than
-    /// guessed at.
-    case unknown
 
-    public init(_ raw: String?) {
-        switch raw {
-        case "notSentYet": self = .sending
-        case "sendingFailed": self = .failed
-        case "sent": self = .sent
-        case nil: self = .sent
-        default: self = .unknown
+    public init(_ state: DeliveryState?) {
+        switch state {
+        case .notSentYet: self = .sending
+        case .sendingFailed: self = .failed
+        // A peer's message carries no send state: it is on the server by
+        // definition.
+        case .sent, nil: self = .sent
         }
     }
 
@@ -41,7 +40,7 @@ public enum SendState: Equatable, Sendable {
     public var isWorthShowing: Bool {
         switch self {
         case .failed, .sending: return true
-        case .sent, .unknown: return false
+        case .sent: return false
         }
     }
 
@@ -51,7 +50,7 @@ public enum SendState: Equatable, Sendable {
         switch self {
         case .sending: return "Sending…"
         case .failed: return "Not sent"
-        case .sent, .unknown: return nil
+        case .sent: return nil
         }
     }
 }

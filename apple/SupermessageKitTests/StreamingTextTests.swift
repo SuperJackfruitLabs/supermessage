@@ -71,4 +71,75 @@ struct StreamingTextTests {
         #expect(s.text.isEmpty)
         #expect(s.revealed == 0)
     }
+
+    // ─── Timed to the next delta ─────────────────────────────────────────
+
+    /// Run the per-tick rule the way the reveal loop does, and report the
+    /// tick each character landed on.
+    private func reveal(backlog: Int, ticks: Double) -> [Int] {
+        var credit = 0.0
+        var left = backlog
+        var landed: [Int] = []
+        var tick = 0
+        while left > 0, tick < 10_000 {
+            let n = StreamingText.take(backlog: left, ticksLeft: ticks - Double(tick), credit: &credit)
+            landed += Array(repeating: tick, count: n)
+            left -= n
+            tick += 1
+        }
+        return landed
+    }
+
+    @Test("a delta is spread over the gap to the next, not dumped at the backlog's speed")
+    func spreadsOverTheGap() {
+        // 60 characters, next delta due in 25 ticks (0.5s). The old rule
+        // took its speed from the backlog alone, so the finish time was
+        // luck: a 120-character delta at 4 a tick was done by tick 30 of a
+        // 50-tick gap, and the text stood still for the rest.
+        let landed = reveal(backlog: 60, ticks: 25)
+        #expect(landed.count == 60)
+        #expect(landed.last! >= 22, "finished at tick \(landed.last!), idling before the next delta")
+        #expect(landed.last! <= 25, "still revealing at tick \(landed.last!), past the next delta")
+    }
+
+    @Test("a slow rate stays even rather than bursting")
+    func evenAtSlowRates() {
+        // 10 characters over 25 ticks: a character every 2-3 ticks, never
+        // two in one tick and never a long hole.
+        let landed = reveal(backlog: 10, ticks: 25)
+        #expect(Set(landed).count == landed.count, "two characters landed in one tick")
+        let gaps = zip(landed.dropFirst(), landed).map { $0 - $1 }
+        #expect(gaps.allSatisfy { $0 <= 3 }, "uneven gaps \(gaps)")
+    }
+
+    @Test("past the deadline the text still moves")
+    func movesPastTheDeadline() {
+        var credit = 0.0
+        var total = 0
+        for _ in 0..<10 { total += StreamingText.take(backlog: 50, ticksLeft: -5, credit: &credit) }
+        #expect(total >= 5)
+    }
+
+    @Test("a large backlog catches up whatever the estimate")
+    func catchesUp() {
+        var credit = 0.0
+        #expect(StreamingText.take(backlog: 5_000, ticksLeft: 1_000, credit: &credit) >= 12)
+    }
+
+    @Test("the gap estimate follows the stream, within bounds")
+    func intervalEstimate() {
+        var estimate = StreamingText.defaultInterval
+        for _ in 0..<20 { estimate = StreamingText.nextInterval(previous: estimate, gap: 0.3) }
+        #expect(abs(estimate - 0.3) < 0.01)
+        #expect(StreamingText.nextInterval(previous: 0.5, gap: 30) <= StreamingText.intervalRange.upperBound)
+        #expect(StreamingText.nextInterval(previous: 0.5, gap: 0) >= StreamingText.intervalRange.lowerBound * 0.4)
+    }
+
+    @Test("a take never overruns what is waiting")
+    func takeNeverOverruns() {
+        for backlog in 0..<5 {
+            var credit = 3.7
+            #expect(StreamingText.take(backlog: backlog, ticksLeft: 0.1, credit: &credit) <= backlog)
+        }
+    }
 }

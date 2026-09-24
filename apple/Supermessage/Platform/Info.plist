@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The keys GENERATE_INFOPLIST_FILE cannot write. Xcode merges this file
+	  with the generated one; everything else stays in project.yml as
+	  INFOPLIST_KEY_* settings.
+	-->
+
+	<!--
+	  The push gateway's /_matrix/push/v1/notify URL, from the
+	  SM_PUSH_GATEWAY_URL build setting. EMPTY by default, and empty means no
+	  pusher is registered: no gateway is deployed (AGENTS.md), and a pusher
+	  pointing nowhere is the homeserver retrying into a void.
+	-->
+	<key>SMPushGatewayURL</key>
+	<string>$(SM_PUSH_GATEWAY_URL)</string>
+
+	<!-- An agent's turn on the Lock Screen and in the Dynamic Island. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+
+	<!-- supermessage://open?room=<id>, which widgets and Live Activities open. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.supermessage.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>supermessage</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

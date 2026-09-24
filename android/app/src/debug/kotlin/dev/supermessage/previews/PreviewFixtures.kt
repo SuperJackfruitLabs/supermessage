@@ -6,6 +6,7 @@ import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.CustomEventField
 import uniffi.supermessage_core.CustomEventView
+import uniffi.supermessage_core.DeliveryState
 import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.MediaFileLabel
 import uniffi.supermessage_core.MediaMetaDto
@@ -33,6 +34,7 @@ import uniffi.supermessage_core.RuntimeDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
+import uniffi.supermessage_core.ToolPhase
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 
 /**
@@ -92,7 +94,7 @@ object PreviewFixtures {
         isOwn: Boolean = false,
         kind: String = "message",
         msgtype: String? = "m.text",
-        sendState: String? = null,
+        sendState: DeliveryState? = null,
         reactions: List<ReactionDto> = emptyList(),
         media: MediaMetaDto? = null,
         replyTo: ReplyToDto? = null,
@@ -102,7 +104,7 @@ object PreviewFixtures {
         senderDisplayName = null, senderAvatar = null, body = body, formattedBody = null,
         media = media, customPayload = null, timestampMs = atMs, isOwn = isOwn,
         sendState = sendState, replyTo = replyTo, edited = edited, reactions = reactions,
-        readBy = emptyList(), editable = isOwn,
+        readBy = emptyList(), editable = isOwn, membershipSubject = null,
     )
 
     /**
@@ -150,18 +152,42 @@ object PreviewFixtures {
         get() = row(
             item(
                 "\$own1", sender = "@rakesh:example.org", body = "Merging it.", isOwn = true,
-                sendState = "sending",
+                sendState = DeliveryState.NOT_SENT_YET,
             ),
             ItemView.Bubble(false, paragraph("Merging it.")),
             senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
             canReplyOrReact = false,
         )
 
+    /** A peer's continuation that was edited — its only meta is the marker. */
+    val peerEdited: TimelineRowDto
+        get() = row(
+            item("\$m3", body = "Actually, the diff has one line in it.", edited = true),
+            ItemView.Bubble(false, paragraph("Actually, the diff has one line in it.")),
+        )
+
+    /** Three own messages in one run; the middle one edited. */
+    val ownFirst: TimelineRowDto
+        get() = ownInRun("\$own3", "Looking now.")
+
+    val ownEdited: TimelineRowDto
+        get() = ownInRun("\$own4", "That line is the new token.", edited = true)
+
+    val ownLast: TimelineRowDto
+        get() = ownInRun("\$own5", "Merging it.")
+
+    private fun ownInRun(id: String, body: String, edited: Boolean = false): TimelineRowDto =
+        row(
+            item(id, sender = "@rakesh:example.org", body = body, isOwn = true, edited = edited),
+            ItemView.Bubble(false, paragraph(body)),
+            senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
+        )
+
     val ownFailed: TimelineRowDto
         get() = row(
             item(
                 "\$own2", sender = "@rakesh:example.org", body = "Merging it.", isOwn = true,
-                sendState = "failed",
+                sendState = DeliveryState.SENDING_FAILED,
             ),
             ItemView.Bubble(false, paragraph("Merging it.")),
             senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
@@ -258,7 +284,7 @@ object PreviewFixtures {
                 "\$img", body = "muster-dark.png", msgtype = "m.image",
                 media = MediaMetaDto("muster-dark.png", "image/png", 184_320uL, 1500uL, 900uL),
             ),
-            ItemView.Image("The muster board in dark", 1500uL, 900uL),
+            ItemView.Image("The muster board in dark", 1500uL, 900uL, null),
         )
 
     val attachment: TimelineRowDto
@@ -471,7 +497,7 @@ object PreviewFixtures {
         get() = listOf(
             RosterSection(
                 id = "waiting", title = "Waiting on you", detail = "1 needs you",
-                rows = listOf(RosterRow(roomNeedsYou, AgentState.NEEDS_YOU)),
+                rows = listOf(RosterRow(roomNeedsYou, AgentState.NEEDS_YOU, describesAgent = true)),
                 // The one section allowed to draw attention, because it is the
                 // one holding a pending decision.
                 attention = true,
@@ -479,10 +505,10 @@ object PreviewFixtures {
             RosterSection(
                 id = "everything", title = "Everything else", detail = null,
                 rows = listOf(
-                    RosterRow(roomActive, AgentState.ACTIVE),
-                    RosterRow(roomInvitation, AgentState.IDLE),
-                    RosterRow(roomQuiet, AgentState.QUIET),
-                    RosterRow(roomBare, AgentState.IDLE),
+                    RosterRow(roomActive, AgentState.ACTIVE, describesAgent = true),
+                    RosterRow(roomInvitation, AgentState.IDLE, describesAgent = false),
+                    RosterRow(roomQuiet, AgentState.QUIET, describesAgent = true),
+                    RosterRow(roomBare, AgentState.IDLE, describesAgent = false),
                 ),
                 attention = false,
             ),
@@ -645,7 +671,8 @@ object PreviewFixtures {
         get() = listOf(
             LiveStore.ToolCall(
                 id = "c1", title = "read docs/tech-stack.md", status = "completed",
-                kind = "read", locations = listOf("docs/tech-stack.md"), input = null,
+                phase = ToolPhase.DONE, statusLabel = "Done", kind = "read",
+                locations = listOf("docs/tech-stack.md"), input = null,
                 output = null,
             ),
             // The web's LiveActivity names the *last failed* tool ahead of any
@@ -654,14 +681,16 @@ object PreviewFixtures {
             // whether Android does the same.
             LiveStore.ToolCall(
                 id = "c2", title = "write src/lib/tokens.css", status = "failed",
-                kind = "write", locations = listOf("src/lib/tokens.css"), input = null,
+                phase = ToolPhase.FAILED, statusLabel = "Failed", kind = "write",
+                locations = listOf("src/lib/tokens.css"), input = null,
                 output = "permission denied",
             ),
             LiveStore.ToolCall(
                 id = "c3",
                 title = "regenerate every design-token target and diff the checked-in " +
                     "output against the source that produces it",
-                status = "in_progress", kind = "run", locations = emptyList(), input = null,
+                status = "in_progress", phase = ToolPhase.RUNNING, statusLabel = "Running", kind = "run",
+                locations = emptyList(), input = null,
                 output = null,
             ),
         )

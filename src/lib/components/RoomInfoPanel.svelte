@@ -205,8 +205,8 @@
 
     {#if info.topic}
       <div class="border-b border-border px-4 py-3">
-        <h3 class="mb-1 font-mono text-label text-content-muted uppercase">Topic</h3>
-        <p class="selectable font-serif text-body break-words text-content">{info.topic}</p>
+        <h3 class="mb-1 text-label text-content-muted">Topic</h3>
+        <p class="selectable font-sans text-body break-words text-content">{info.topic}</p>
       </div>
     {/if}
 
@@ -281,7 +281,7 @@
     </div>
 
     <div class="min-h-0 flex-1 px-4 py-3">
-      <h3 class="mb-2 font-mono text-label text-content-muted uppercase">
+      <h3 class="mb-2 text-label tabular-nums text-content-muted">
         {info.activeMemberCount}
         {info.activeMemberCount === 1 ? "member" : "members"}
       </h3>

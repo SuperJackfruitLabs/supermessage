@@ -329,7 +329,7 @@ void uniffi_supermessage_ffi_fn_method_core_attachment_discard(void*_Nonnull ptr
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_SEND
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_SEND
-void uniffi_supermessage_ffi_fn_method_core_attachment_send(void*_Nonnull ptr, RustBuffer room_id, RustBuffer token, RustCallStatus *_Nonnull out_status
+void uniffi_supermessage_ffi_fn_method_core_attachment_send(void*_Nonnull ptr, RustBuffer room_id, RustBuffer token, RustBuffer caption, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_STAGE_PATH
@@ -430,6 +430,11 @@ void uniffi_supermessage_ffi_fn_method_core_recover_with_key(void*_Nonnull ptr, 
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RECOVERY_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RECOVERY_STATE
 RustBuffer uniffi_supermessage_ffi_fn_method_core_recovery_state(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REGISTER_PUSHER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REGISTER_PUSHER
+void uniffi_supermessage_ffi_fn_method_core_register_pusher(void*_Nonnull ptr, RustBuffer registration, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RESET_RECOVERY
@@ -1056,6 +1061,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_recover_with_key(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_RECOVERY_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_RECOVERY_STATE
 uint16_t uniffi_supermessage_ffi_checksum_method_core_recovery_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REGISTER_PUSHER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REGISTER_PUSHER
+uint16_t uniffi_supermessage_ffi_checksum_method_core_register_pusher(void
     
 );
 #endif

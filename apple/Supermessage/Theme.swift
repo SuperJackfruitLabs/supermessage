@@ -100,31 +100,27 @@ enum Theme {
     // Each style says what it is *for*, not what it looks like, so a caller
     // picks by meaning and the ramp stays consistent.
 
-    /// What an agent wrote. Serif, because the timeline is a reading surface.
-    static let body = Font.system(.body, design: .serif)
-    /// What the operator wrote. Sans — a command, not prose.
-    static let own = Font.system(.body)
-    /// Sigils, roles, timestamps, counts. Data.
-    ///
-    /// **Monospaced on Paper, plain on Slate**, and that is a legibility
-    /// decision rather than a stylistic one: SF Mono at caption size on a dark
-    /// ground loses its counters and greys out, while on warm paper it reads
-    /// as the record-keeping it is. Tabular figures are kept either way, so
-    /// columns of timestamps still line up.
+    /// Anything said in a conversation, by an agent or by you. One face:
+    /// who said it is carried by the sender's badge and card, not by a
+    /// typeface. From the generated ramp, so every platform agrees.
+    static let body = ThemeType.body
+    /// What you wrote. The same face as `body`; kept as its own name because
+    /// your text is never parsed as markdown.
+    static let own = ThemeType.bodyOwn
+    /// The long-form reading view for an agent's report — the one place the
+    /// serif survives.
+    static let longread = ThemeType.longread
+
+    /// Timestamps, counts, receipts. Sans with tabular figures, so columns of
+    /// times still line up, in either appearance. Mono made every line of
+    /// metadata read as a terminal beside the prose.
     static func meta(dark: Bool) -> Font {
-        Font.system(.caption, design: dark ? .default : .monospaced).monospacedDigit()
+        ThemeType.meta.monospacedDigit()
     }
 
-    /// A room or agent name.
-    ///
-    /// **Serif on Paper, sans on Slate.** The serif name is what makes the
-    /// roster read as a record rather than a chat app, and it rhymes with the
-    /// timeline's prose; on Slate the same face goes thin and the sans holds
-    /// up better.
+    /// A room, person or agent name. Semibold sans in both appearances.
     static func name(dark: Bool) -> Font {
-        dark
-            ? Font.system(.subheadline, weight: .semibold)
-            : Font.system(.subheadline, design: .serif, weight: .semibold)
+        Font.system(.subheadline, weight: .semibold)
     }
 
     /// Which appearance-dependent face a view wants.

@@ -128,9 +128,9 @@ object GeneratedThemeTokens {
  * and would look correct to whoever wrote it.
  */
 object ThemeType {
-    val label = FontFamily.Monospace
+    val label = FontFamily.SansSerif
     const val labelStyle = "labelSmall"
-    val meta = FontFamily.Monospace
+    val meta = FontFamily.SansSerif
     const val metaStyle = "labelMedium"
     val ui = FontFamily.SansSerif
     const val uiStyle = "bodySmall"
@@ -138,8 +138,10 @@ object ThemeType {
     const val uiLgStyle = "titleSmall"
     val avatar = FontFamily.SansSerif
     const val avatarStyle = "headlineSmall"
-    val body = FontFamily.Serif
+    val body = FontFamily.SansSerif
     const val bodyStyle = "bodyLarge"
+    val longread = FontFamily.Serif
+    const val longreadStyle = "bodyLarge"
     val bodyOwn = FontFamily.SansSerif
     const val bodyOwnStyle = "bodyMedium"
 }
