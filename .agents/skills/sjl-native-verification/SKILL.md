@@ -7,7 +7,9 @@ license: MIT
 Establish the requested behavior, product revision, affected hosts and available
 test environment. Read AGENTS.md and inspect both the UI caller and its core
 implementation. Registration, generated declarations and a dated parity report
-do not prove a reachable or working interaction.
+do not prove a reachable or working interaction. Before reporting that a checkout, file or result is absent, list the working
+directory: a search for the names you expected shows only that those patterns
+matched nothing.
 
 ## Trace the boundary
 
