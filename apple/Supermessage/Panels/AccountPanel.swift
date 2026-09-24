@@ -145,7 +145,7 @@ struct AccountPanel: View {
 private struct AccentSwatches: View {
     @Binding var selection: String
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.themeChoice) private var choice
+    private var choice: ThemeChoice { ThemeState.shared.choice }
 
     private var options: [String] { [""] + ThemeAccents.names }
 
@@ -189,12 +189,4 @@ private struct AccentSwatches: View {
         .previewChrome()
 }
 
-// Dark, Black, teal: the environment alone has to carry the choice to every
-// colour, since a preview has no window for `appliesAppearance` to set.
-#Preview("Account, black and teal") {
-    AccountPanel(session: PreviewFixtures.session(), onClose: {})
-        .previewChrome()
-        .environment(\.themeChoice, ThemeChoice(darkStyle: .black, accent: "teal"))
-        .preferredColorScheme(.dark)
-}
 #endif

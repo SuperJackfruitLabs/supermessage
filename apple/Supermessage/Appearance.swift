@@ -43,16 +43,11 @@ enum DarkStyle: String, CaseIterable, Identifiable {
     var label: String { self == .tinted ? "Tinted" : "Black" }
 }
 
-/// The resolved choice, carried as a UIKit trait so dynamic colours can see
-/// it.
+/// The account's choice of dark style and accent.
 ///
-/// **Why a trait and not a global.** `Theme`'s colours are `UIColor`
-/// providers, and UIKit only re-runs a provider when the trait collection
-/// changes. A global the provider read would be right for every colour
-/// resolved *after* the change and wrong for every one already on screen
-/// until something else happened to redraw it. As a trait, setting it is
-/// the change, and everything re-resolves together.
-struct ThemeChoice: Equatable, Sendable {
+/// Read by `Theme` from `ThemeState`, not carried as a trait — see
+/// `Theme.dynamic` for what the trait route did on iOS 26.
+struct ThemeChoice: Hashable, Sendable {
     var darkStyle: DarkStyle
     /// A name from `ThemeAccents.names`, or `nil` for the house violet.
     var accent: String?
@@ -71,45 +66,31 @@ struct ThemeChoice: Equatable, Sendable {
     }
 }
 
-struct ThemeChoiceTrait: UITraitDefinition {
-    static let defaultValue = ThemeChoice.standard
-    static let affectsColorAppearance = true
-    static let name = "SupermessageThemeChoice"
-}
+/// The choice in force. Observable, so a body that reads a `Theme` colour
+/// is redrawn when it changes; set only by `appliesAppearance`.
+@Observable
+final class ThemeState: @unchecked Sendable {
+    static let shared = ThemeState()
+    var choice: ThemeChoice
+    /// The scheme the root sees. `nil` outside the app (previews, tests),
+    /// where colours stay dynamic — see `ThemeColors`.
+    var scheme: ColorScheme?
 
-extension UITraitCollection {
-    var themeChoice: ThemeChoice { self[ThemeChoiceTrait.self] }
-}
-
-extension UIMutableTraits {
-    var themeChoice: ThemeChoice {
-        get { self[ThemeChoiceTrait.self] }
-        set { self[ThemeChoiceTrait.self] = newValue }
-    }
-}
-
-private struct ThemeChoiceKey: EnvironmentKey {
-    static let defaultValue = ThemeChoice.standard
-}
-
-/// Bridged so SwiftUI's environment and UIKit's traits are one value: a
-/// `Color` built from a `UIColor` provider resolves against a trait
-/// collection SwiftUI makes from the environment, and this is how the
-/// choice gets into it.
-extension ThemeChoiceKey: UITraitBridgedEnvironmentKey {
-    static func read(from traitCollection: UITraitCollection) -> ThemeChoice {
-        traitCollection.themeChoice
-    }
-
-    static func write(to mutableTraits: inout UIMutableTraits, value: ThemeChoice) {
-        mutableTraits.themeChoice = value
-    }
-}
-
-extension EnvironmentValues {
-    var themeChoice: ThemeChoice {
-        get { self[ThemeChoiceKey.self] }
-        set { self[ThemeChoiceKey.self] = newValue }
+    /// Starts on the stored choice, so the first frame is not drawn in the
+    /// house violet and then repainted.
+    private init() {
+        // Under tests, the house theme: previews and UI tests render in this
+        // app and must not take whatever accent the simulator last stored.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            choice = .standard
+            return
+        }
+        let defaults = UserDefaults.standard
+        let accent = defaults.string(forKey: AppearanceSettings.accentKey) ?? ""
+        choice = ThemeChoice(
+            darkStyle: DarkStyle(rawValue: defaults.string(forKey: AppearanceSettings.darkStyleKey) ?? "")
+                ?? .tinted,
+            accent: accent.isEmpty ? nil : accent)
     }
 }
 
@@ -135,38 +116,48 @@ enum AppearanceSettings {
 }
 
 private struct AppliesAppearance: ViewModifier {
+    static let underTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
     @AppStorage(AppearanceSettings.modeKey) private var mode = AppearanceMode.system.rawValue
     @AppStorage(AppearanceSettings.darkStyleKey) private var darkStyle = DarkStyle.tinted.rawValue
     @AppStorage(AppearanceSettings.accentKey) private var accent = ""
+    /// Right here at the root, where it has always been right; recorded so
+    /// the colours below do not have to ask UIKit (see `ThemeColors`).
+    @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
         let choice = ThemeChoice(
             darkStyle: DarkStyle(rawValue: darkStyle) ?? .tinted,
             accent: accent.isEmpty ? nil : accent)
         content
-            .environment(\.themeChoice, choice)
+            #if DEBUG
+            .task { await AppearanceCycleShell.run() }
+            #endif
+            .onChange(of: choice, initial: true) {
+                guard !Self.underTest else { return }
+                ThemeState.shared.choice = choice
+            }
+            .onChange(of: scheme, initial: true) {
+                // Not under tests: previews render in this app, each in its
+                // own scheme, and a scheme recorded here would paint every
+                // dark preview in the host's light (2026-09-25). Unrecorded,
+                // colours stay dynamic — see `ThemeColors`.
+                guard !Self.underTest else { return }
+                ThemeState.shared.scheme = scheme
+            }
             .background(
-                WindowTraits(
-                    choice: choice,
-                    style: (AppearanceMode(rawValue: mode) ?? .system).interfaceStyle))
+                WindowTraits(style: (AppearanceMode(rawValue: mode) ?? .system).interfaceStyle))
     }
 }
 
-/// Puts the choice on the window as well as in the environment.
+/// Puts the scheme on the window.
 ///
-/// **The scheme is set on the window, not with `.preferredColorScheme`.**
-/// Build 19 used the modifier, and after a change the page followed it while
-/// the system chrome did not: in light, the header buttons, the title and
-/// the tab bar were drawn dark, and in dark, light (2026-09-24). Everything
-/// in a window reads `overrideUserInterfaceStyle`, the chrome included, so
-/// setting it there cannot leave a part behind.
-///
-/// The environment reaches SwiftUI views and the UIKit views SwiftUI hosts;
-/// the window override reaches what SwiftUI does not own — the timeline's
-/// collection view and its cells, sheets' presentation chrome, the keyboard
-/// accessory. Both, so there is no surface left on the old accent.
+/// **Set on the window, not with `.preferredColorScheme`.** Build 19 used
+/// the modifier; the window is the one place every part of the app,
+/// UIKit's included, reads the scheme from. (The glass lagging a switch in
+/// builds 19 and 20 turned out to be the plain list style — see
+/// `RoomListView` — not either way of setting it.)
 private struct WindowTraits: UIViewRepresentable {
-    let choice: ThemeChoice
     let style: UIUserInterfaceStyle
 
     func makeUIView(context: Context) -> Applier {
@@ -176,7 +167,6 @@ private struct WindowTraits: UIViewRepresentable {
     }
 
     func updateUIView(_ view: Applier, context: Context) {
-        view.choice = choice
         view.style = style
         view.apply()
     }
@@ -184,7 +174,6 @@ private struct WindowTraits: UIViewRepresentable {
     /// Applies as soon as it joins a window, so a launch does not draw one
     /// frame in the phone's scheme before the account's.
     final class Applier: UIView {
-        var choice = ThemeChoice.standard
         var style = UIUserInterfaceStyle.unspecified
 
         override func didMoveToWindow() {
@@ -193,16 +182,8 @@ private struct WindowTraits: UIViewRepresentable {
         }
 
         func apply() {
-            guard let window else { return }
-            if window.overrideUserInterfaceStyle != style {
-                window.overrideUserInterfaceStyle = style
-            }
-            // Compared against the window's resolved traits: reading an
-            // override that was never set throws rather than returning the
-            // default.
-            if window.traitCollection.themeChoice != choice {
-                window.traitOverrides.themeChoice = choice
-            }
+            guard let window, window.overrideUserInterfaceStyle != style else { return }
+            window.overrideUserInterfaceStyle = style
         }
     }
 }

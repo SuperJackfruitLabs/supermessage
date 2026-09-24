@@ -30,7 +30,10 @@ xcodegen generate > /dev/null
 # The newest booted-or-available iPhone. Resolved rather than hard-coded, for
 # the reason CI's own simulator step gives: the runtime set is tied to the
 # Xcode that ships it and neither is ours to pin.
-UDID=$(xcrun simctl list devices available --json | python3 -c '
+# Overridable, for a machine with a newer simulator runtime than its Xcode
+# renders the baseline with (the newest phone would then be on that runtime).
+UDID="${PREVIEW_UDID:-}"
+[ -n "$UDID" ] || UDID=$(xcrun simctl list devices available --json | python3 -c '
 import json, sys
 devices = json.load(sys.stdin)["devices"]
 phones = [d for runtime, ds in devices.items() if "iOS" in runtime

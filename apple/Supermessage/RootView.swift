@@ -54,7 +54,7 @@ struct RootView: View {
         // without it there the catalogue would show a colour the app does
         // not have — which is the exact failure the fixture work spent a day
         // on.
-        .tint(Theme.accent)
+        .tint(Theme.tint)
         // And every piece of text that does not say otherwise.
         //
         // The 51 explicit `foregroundStyle` sites are only half of it: text
@@ -98,6 +98,16 @@ struct SignedInView: View {
                 SplitShell(session: session, showsAccount: $showsAccount)
             }
         }
+        #if DEBUG
+        // `-openAccount`: Account over the shell at launch, for the
+        // on-device appearance check (`AppearanceCycleShell`).
+        .task {
+            if ProcessInfo.processInfo.arguments.contains("-openAccount") {
+                try? await Task.sleep(for: .seconds(2))
+                showsAccount = true
+            }
+        }
+        #endif
         .sheet(isPresented: $showsAccount) {
             AccountPanel(session: session) { showsAccount = false }
                 .paletteSheet()
@@ -141,6 +151,23 @@ extension View {
                 NewRecoveryKeyView(key: key) { session.clearNewRecoveryKey() }
                     .paletteSheet()
             }
+        }
+    }
+}
+
+/// What the connection is doing, when it is worth saying — the small line
+/// under the Chats title, where Mail says "Updated just now" (HIG: a
+/// subtitle for status, not branding). `nil` when live: a status line that
+/// always reads "Connected" is noise.
+extension ConnectionStore {
+    var subtitle: String? {
+        guard isWorthShowing else { return nil }
+        switch state {
+        case .live: return nil
+        case .connecting: return "Connecting…"
+        case .offline: return "Offline"
+        case .error: return "Reconnecting…"
+        case let .unknown(raw): return raw
         }
     }
 }

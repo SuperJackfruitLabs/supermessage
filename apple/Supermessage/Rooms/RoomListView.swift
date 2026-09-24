@@ -149,7 +149,13 @@ struct RoomListView: View {
                 }
             }
         }
-        .listStyle(.plain)
+        // `.inset`, not `.plain`: on iOS 26 devices a plain SwiftUI list
+        // leaves the bars' glass one appearance behind after every light/dark
+        // switch — dark glass over a light page — until the list is scrolled
+        // (FB20370553, forum thread 802028; reproduced on a stock list on
+        // iOS 26.6.1, 2026-09-24). `.inset` draws the same full-width rows
+        // without the bug.
+        .listStyle(.inset)
         // Rooms coming and going slide into place: a space switch, a join,
         // a leave. Keyed on **which** rooms are listed, not their order, so
         // the reorder every new message causes stays still — a list that
@@ -166,7 +172,9 @@ struct RoomListView: View {
         .navigationTitle(session.spaces.selectedName.map(SpaceNames.display) ?? "Chats")
         .toolbar {
             ToolbarItem(placement: .principal) {
-                SpaceMenu(spaces: session.spaces, allCount: session.rooms.rooms.count)
+                SpaceMenu(
+                    spaces: session.spaces, allCount: session.rooms.rooms.count,
+                    status: session.connection.subtitle)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -247,7 +255,7 @@ struct RoomListView: View {
             onOpenInfo: { infoRequest = RoomInfoRequest(id: entry.row.room.id) }
         )
         .tag(entry.row.room.id)
-        .listRowBackground(Theme.surface)
+        .listRowBackground(Color.clear)  // the list's own ground shows through — see `paletteListGround`
         .task { await session.avatars.load(entry.row.room.id) }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if entry.row.affordance == .compose {

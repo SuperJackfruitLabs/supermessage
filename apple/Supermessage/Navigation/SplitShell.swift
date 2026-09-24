@@ -69,8 +69,9 @@ struct SplitShell: View {
         NavigationSplitView(columnVisibility: $columns) {
             sidebar
                 .safeAreaInset(edge: .top, spacing: 0) {
+                    // The connection now shows under the Chats title
+                    // (`SpaceMenu`), on the phone and here alike.
                     VStack(spacing: 0) {
-                        ConnectionBar(connection: session.connection)
                         SidebarDestinations(selection: $destination, inboxCount: inboxCount)
                     }
                     .background(Theme.surface)

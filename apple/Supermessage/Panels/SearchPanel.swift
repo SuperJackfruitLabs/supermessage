@@ -132,7 +132,7 @@ struct SearchPanel: View {
                 }
                 .buttonStyle(.plain)
                 .task { await session.avatars.load(result.roomId) }
-                .listRowBackground(Theme.surface)
+                .listRowBackground(Color.clear)  // the list's own ground shows through — see `paletteListGround`
             }
             .paletteListGround()
         }

@@ -25,11 +25,27 @@ struct SpaceMenu: View {
             set: { id in Task { await spaces.select(id) } })
     }
 
+    /// The connection, when it is not live — "Connecting…", "Offline".
+    var status: String? = nil
+
+    @ViewBuilder private var statusLine: some View {
+        if let status {
+            Text(status)
+                .font(.caption2)
+                .foregroundStyle(Theme.contentMuted)
+                .lineLimit(1)
+                .transition(.opacity)
+        }
+    }
+
     var body: some View {
         if spaces.spaces.isEmpty {
             // Most accounts have no spaces: then there is nothing to choose,
             // and the title is only a title.
-            Text("Chats").font(.headline)
+            VStack(spacing: 0) {
+                Text("Chats").font(.headline)
+                statusLine
+            }
         } else {
             Menu {
                 Picker("Space", selection: selection) {
@@ -47,14 +63,17 @@ struct SpaceMenu: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Theme.contentMuted)
+                VStack(spacing: 0) {
+                    HStack(spacing: 4) {
+                        Text(title)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.contentMuted)
+                    }
+                    statusLine
                 }
                 .foregroundStyle(Theme.content)
                 // A fixed width, not a maximum. The bar measures its centre
@@ -65,7 +84,7 @@ struct SpaceMenu: View {
                 // a longer name truncates in the middle inside it.
                 .frame(width: 220)
             }
-            .accessibilityLabel("Space: \(title)")
+            .accessibilityLabel("Space: \(title)" + (status.map { ", \($0)" } ?? ""))
             .accessibilityHint("Shows the rooms of one space")
         }
     }

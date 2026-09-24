@@ -93,6 +93,19 @@ enum NavigationRevampFixtures {
     }
 
     @MainActor static func fleetSession() -> Session { session(rows: fleet) }
+
+    /// The fleet and twenty more quiet rooms: a list long enough to run
+    /// under the tab bar, as a real account's does.
+    @MainActor static func longFleetSession() -> Session {
+        let extra = (1...20).map { i in
+            PreviewFixtures.roomRow(
+                id: "!quiet\(i):example.org", rawName: "Quiet room \(i)", glyph: nil,
+                name: "Quiet room \(i)", role: nil, initial: "Q",
+                preview: RoomPreview(text: "Nothing new here.", pending: false),
+                unread: 0, lastActivityMs: ago(Double(60 * 24 + i)))
+        }
+        return session(rows: fleet + extra)
+    }
     @MainActor static func caughtUpSession() -> Session { session(rows: caughtUp) }
 }
 #endif

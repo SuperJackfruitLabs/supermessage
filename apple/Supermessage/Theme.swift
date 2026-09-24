@@ -14,6 +14,50 @@ import SwiftUI
 /// mono for data and sigils, and one colour reserved for one meaning. The
 /// faces are the system's — `.serif` resolves to New York, `.monospaced` to SF
 /// Mono — so Dynamic Type comes free and nothing is bundled.
+/// One `Color` per role per choice per scheme, made once.
+///
+/// **In the app the scheme is given, not asked for.** A `UIColor` provider
+/// asks the trait collection of whatever UIKit container is resolving it,
+/// and on iOS 26 the containers inside the tab view are a scheme behind when
+/// SwiftUI redraws: the room list resolved the old scheme's colour on every
+/// switch and was never asked again (phone log, 2026-09-24 — SwiftUI said
+/// dark, the colour came back light). So the root, which is always right,
+/// records the scheme in `ThemeState`, and each colour is built for it. Any
+/// body that reads one is redrawn when it changes.
+///
+/// Where nothing records it — a preview, a test host — the scheme is `nil`
+/// and the colour stays dynamic, which is how previews have always rendered.
+enum ThemeColors {
+    private struct Key: Hashable {
+        let role: KeyPath<Palette, Color>
+        let choice: ThemeChoice
+        let scheme: ColorScheme?
+    }
+
+    nonisolated(unsafe) private static var made: [Key: Color] = [:]
+    private static let lock = NSLock()
+
+    static func color(
+        _ role: KeyPath<Palette, Color>, for choice: ThemeChoice, scheme: ColorScheme?
+    ) -> Color {
+        let key = Key(role: role, choice: choice, scheme: scheme)
+        lock.lock()
+        defer { lock.unlock() }
+        if let color = made[key] { return color }
+        let color: Color
+        if let scheme {
+            color = choice.palette(dark: scheme == .dark)[keyPath: role]
+        } else {
+            color = Color(
+                UIColor { traits in
+                    UIColor(choice.palette(dark: traits.userInterfaceStyle == .dark)[keyPath: role])
+                })
+        }
+        made[key] = color
+        return color
+    }
+}
+
 enum Theme {
     // MARK: - Colour
     //
@@ -32,28 +76,41 @@ enum Theme {
     /// **iOS binds `paper` to light and `dark` to dark**: paper is what
     /// "light" means on a phone. Dark then has a second axis, the account's
     /// dark style, which picks `black` instead; and a curated accent brings
-    /// its own palette — its accent, and grounds and greys in its hue. Both arrive as the
-    /// `ThemeChoiceTrait` — see `Appearance.swift` for why a trait.
+    /// its own palette — its accent, and grounds and greys in its hue.
+    ///
+    /// **Neither input travels as a trait.** Light or dark is recorded by
+    /// the root — see `ThemeColors` for why UIKit is not asked. The
+    /// account's choice is not a trait either: build 20 carried it as a custom trait bridged into SwiftUI, and
+    /// on iOS 26 a scheme switch then resolved every colour against the old
+    /// scheme — SwiftUI said light, the colours came back dark (phone log,
+    /// 2026-09-24). The choice is read from `ThemeState` instead; reading it
+    /// in a view's body is what makes that view redraw when it changes, and
+    /// each choice gets its own `Color`, so a new one is never mistaken for
+    /// the old.
     private static func dynamic(_ role: KeyPath<Palette, Color>) -> Color {
-        Color(
-            UIColor { traits in
-                UIColor(palette(for: traits)[keyPath: role])
-            })
-    }
-
-    private static func palette(for traits: UITraitCollection) -> Palette {
-        traits.themeChoice.palette(dark: traits.userInterfaceStyle == .dark)
+        let state = ThemeState.shared
+        return ThemeColors.color(role, for: state.choice, scheme: state.scheme)
     }
 
     /// A sender's colour: one of seven, by `peer_color_index` in the core so
     /// every platform gives a person the same one.
     static func peer(_ userId: String) -> Color {
         let index = Int(peerColorIndex(userId: userId))
+        let choice = ThemeState.shared.choice
+        if let scheme = ThemeState.shared.scheme {
+            let set: [Color]
+            if scheme == .dark {
+                set = choice.darkStyle == .black ? ThemePeers.black : ThemePeers.dark
+            } else {
+                set = ThemePeers.paper
+            }
+            return set[index % set.count]
+        }
         return Color(
             UIColor { traits in
                 let set: [Color]
                 if traits.userInterfaceStyle == .dark {
-                    set = traits.themeChoice.darkStyle == .black ? ThemePeers.black : ThemePeers.dark
+                    set = choice.darkStyle == .black ? ThemePeers.black : ThemePeers.dark
                 } else {
                     set = ThemePeers.paper
                 }
@@ -62,14 +119,14 @@ enum Theme {
     }
 
     /// The page itself.
-    static let surface = dynamic(\.surface)
+    static var surface: Color { dynamic(\.surface) }
     /// The field the reading sheet sits on: roster, header, composer.
-    static let surfaceSunken = dynamic(\.surfaceSunken)
+    static var surfaceSunken: Color { dynamic(\.surfaceSunken) }
     /// Behind a chip, a segmented control, an avatar with no picture.
-    static let surfaceRaised = dynamic(\.surfaceRaised)
+    static var surfaceRaised: Color { dynamic(\.surfaceRaised) }
     /// Hairlines and dividers.
-    static let border = dynamic(\.border)
-    static let borderStrong = dynamic(\.borderStrong)
+    static var border: Color { dynamic(\.border) }
+    static var borderStrong: Color { dynamic(\.borderStrong) }
 
     /// The three text ranks, and the app now uses them.
     ///
@@ -82,15 +139,25 @@ enum Theme {
     /// `content-faint` carries one against all three grounds rather than
     /// only the reading surface. Before this the contracts were asserted at
     /// build time and governed nothing on iOS.
-    static let content = dynamic(\.content)
-    static let contentMuted = dynamic(\.contentMuted)
-    static let contentFaint = dynamic(\.contentFaint)
+    static var content: Color { dynamic(\.content) }
+    static var contentMuted: Color { dynamic(\.contentMuted) }
+    static var contentFaint: Color { dynamic(\.contentFaint) }
 
     /// The chrome hue. Selection, focus, the send button, own bubbles.
-    static let accent = dynamic(\.accent)
+    static var accent: Color { dynamic(\.accent) }
+    /// `accent` as the app's tint: a dynamic colour UIKit resolves itself.
+    ///
+    /// The tint reaches UIKit controls — a menu picker's label, a toggle —
+    /// and those draw it at the instant light and dark switch. Given the
+    /// per-scheme `accent`, which SwiftUI swaps a moment later, a picker in
+    /// Account kept the old scheme's pink after every switch (phone,
+    /// 2026-09-25). Same cause as `paletteListGround`.
+    static var tint: Color {
+        ThemeColors.color(\.accent, for: ThemeState.shared.choice, scheme: nil)
+    }
     /// What is legible *on* `accent`.
-    static let accentContent = dynamic(\.accentContent)
-    static let accentSoft = dynamic(\.accentSoft)
+    static var accentContent: Color { dynamic(\.accentContent) }
+    static var accentSoft: Color { dynamic(\.accentSoft) }
 
     /// **Amber, and it means exactly one thing: the operator owes someone an
     /// answer.**
@@ -99,19 +166,19 @@ enum Theme {
     /// badges, not on hover, not on warnings, not on the connection bar. Any
     /// other use is a review defect. If you are reaching for this and you
     /// are not drawing a decision, reach for something else.
-    static let signal = dynamic(\.signal)
+    static var signal: Color { dynamic(\.signal) }
     /// The ground a pending decision sits on. `signal` clears 6:1 against
     /// it — not 4.5 — because it carries the 10px label.
-    static let signalSoft = dynamic(\.signalSoft)
+    static var signalSoft: Color { dynamic(\.signalSoft) }
 
-    static let danger = dynamic(\.danger)
+    static var danger: Color { dynamic(\.danger) }
     /// A room that is working. Never amber — this is good news, and amber is
     /// reserved for what a reader owes.
-    static let ok = dynamic(\.ok)
+    static var ok: Color { dynamic(\.ok) }
 
     /// The veil behind a panel presented over the roster rather than beside
     /// it. Not a fifth hue: the ramp's own end used as a wash.
-    static let scrim = dynamic(\.scrim)
+    static var scrim: Color { dynamic(\.scrim) }
 
     // MARK: - Type
     //

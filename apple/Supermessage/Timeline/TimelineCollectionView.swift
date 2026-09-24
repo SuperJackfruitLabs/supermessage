@@ -379,6 +379,9 @@ struct TimelineList: UIViewRepresentable {
     }
 
     func updateUIView(_ view: TimelineCollection, context: Context) {
+        // Again on every update: reading `Theme` here is what re-runs this
+        // when the account's accent or dark style changes.
+        view.backgroundColor = UIColor(Theme.surface)
         let report = onBarOverlap
         view.onBarOverlap = { value in
             // After the layout pass that measured it: SwiftUI state must not
