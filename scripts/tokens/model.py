@@ -79,7 +79,8 @@ class Brand:
 @dataclass(frozen=True)
 class Tokens:
     appearances: dict[str, Appearance]
-    #: accent name -> appearance name -> accent role -> value.
+    #: accent name -> appearance name -> role -> value: only the roles the
+    #: accent replaces. `accent_palette` gives the merged whole.
     accents: dict[str, dict[str, dict[str, str]]] = field(default_factory=dict)
     #: appearance name -> the person colours, in index order.
     peers: dict[str, list[str]] = field(default_factory=dict)
@@ -87,6 +88,10 @@ class Tokens:
     scale: dict[str, dict] = field(default_factory=dict)
     breakpoints: dict[str, int] = field(default_factory=dict)
     brand: Brand | None = None
+
+    def accent_palette(self, accent: str, appearance: str) -> dict[str, str]:
+        """Every role, as the appearance has it with the accent applied."""
+        return {**self.appearances[appearance].colors, **self.accents[accent][appearance]}
 
 
 def validate(data: dict) -> None:
@@ -173,8 +178,13 @@ def _check(label: str, value: str, rule: dict, colors: dict[str, str]) -> None:
 
 
 def _validate_accents(data: dict) -> None:
-    """Every accent covers every appearance, with all three roles, and each
-    role passes its contracts on the palette it would be dropped into."""
+    """Every accent covers every appearance, with at least the three accent
+    roles, and the palette it makes passes every contract.
+
+    An accent may also replace the grounds and the text greys, so a teal
+    accent stands on teal-tinted grounds rather than violet ones. Whatever
+    it replaces, the **whole merged palette** is re-checked: a ground that
+    moves can break a text contract the accent never mentioned."""
     appearances = data["appearance"]
     for name, per_appearance in data.get("accent", {}).items():
         missing = set(appearances) - set(per_appearance)
@@ -187,16 +197,28 @@ def _validate_accents(data: dict) -> None:
         for appearance, roles in per_appearance.items():
             if appearance not in appearances:
                 raise TokenError(f"accent '{name}' names unknown appearance '{appearance}'")
-            if set(roles) != set(ACCENT_ROLES):
+            absent = set(ACCENT_ROLES) - set(roles)
+            if absent:
                 raise TokenError(
-                    f"accent '{name}.{appearance}' must define exactly "
-                    f"{', '.join(ACCENT_ROLES)}"
+                    f"accent '{name}.{appearance}' must define "
+                    f"{', '.join(sorted(absent))}"
                 )
-            colors = {r: spec["value"] for r, spec in appearances[appearance]["color"].items()}
+            unknown = set(roles) - set(ROLES)
+            if unknown:
+                raise TokenError(
+                    f"accent '{name}.{appearance}' names unknown role(s): "
+                    f"{', '.join(sorted(unknown))}"
+                )
+            base = appearances[appearance]["color"]
+            colors = {r: spec["value"] for r, spec in base.items()}
             colors.update({r: spec["value"] for r, spec in roles.items()})
-            for role, spec in roles.items():
-                for rule in spec.get("contrast", []):
-                    _check(f"accent {name}.{appearance}.{role}", spec["value"], rule, colors)
+            for role in ROLES:
+                # The accent's own contracts where it states them, the
+                # appearance's otherwise — each against the merged palette.
+                # A replacement that states no contracts keeps the base's.
+                rules = roles.get(role, {}).get("contrast") or base[role].get("contrast", [])
+                for rule in rules:
+                    _check(f"accent {name}.{appearance}.{role}", colors[role], rule, colors)
 
 
 def _validate_peers(data: dict) -> None:

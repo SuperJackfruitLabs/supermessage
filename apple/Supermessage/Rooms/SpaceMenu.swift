@@ -57,7 +57,13 @@ struct SpaceMenu: View {
                         .foregroundStyle(Theme.contentMuted)
                 }
                 .foregroundStyle(Theme.content)
-                .frame(maxWidth: 220)
+                // A fixed width, not a maximum. The bar measures its centre
+                // item once for the title it had, and on a switch from
+                // "Chats" to a machine's name it clipped the new one at both
+                // ends for seconds until it measured again (2026-09-24). One
+                // width for every title leaves it nothing to re-measure;
+                // a longer name truncates in the middle inside it.
+                .frame(width: 220)
             }
             .accessibilityLabel("Space: \(title)")
             .accessibilityHint("Shows the rooms of one space")

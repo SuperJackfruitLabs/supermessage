@@ -33,8 +33,9 @@ import Observation
 public final class StreamingText {
     /// What is on screen.
     public private(set) var text = ""
-    /// How many trailing characters of `text` are the chunk still fading in.
-    /// Zero when nothing is arriving.
+    /// How many trailing characters of `text` are the newest chunk. Kept
+    /// until the next chunk replaces it, so the view can finish its fade
+    /// without the chunk moving out from under it; zero once the turn ends.
     public private(set) var revealed = 0
     /// Bumped with every chunk, so a view can start its fade on the change
     /// even when two chunks happen to be the same length.
@@ -58,7 +59,7 @@ public final class StreamingText {
     static let intervalRange = 0.15...1.5
     /// The least time between chunks: long enough for one to finish most of
     /// its fade before the next starts.
-    static let minimumGap = 0.14
+    static let minimumGap = 0.28
     /// The longest a chunk may be. A delta with no sentence boundary in its
     /// first this-many characters is cut at a word instead, so a paragraph
     /// sent whole does not land as a wall.
@@ -125,7 +126,6 @@ public final class StreamingText {
                 try? await Task.sleep(for: .seconds(wait))
                 if Task.isCancelled { return }
             }
-            self?.revealed = 0
             self?.task = nil
         }
     }

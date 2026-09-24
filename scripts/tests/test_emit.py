@@ -111,14 +111,14 @@ class SwiftTests(unittest.TestCase):
         self.assertIn("opacity: 0.7", self.swift)
 
     def test_opaque_roles_are_fully_opaque(self):
-        # Every colour but each appearance's scrim is opaque: fifteen roles
-        # per appearance, three per accent per appearance, and every person
-        # colour.
+        # Every colour but each scrim is opaque: fifteen roles per
+        # appearance, the same fifteen per accent per appearance (an accent
+        # is a whole palette), and every person colour.
         tokens = load(SOURCE)
         appearances = len(tokens.appearances)
         expected = (
             15 * appearances
-            + 3 * len(tokens.accents) * appearances
+            + 15 * len(tokens.accents) * appearances
             + sum(len(colours) for colours in tokens.peers.values())
         )
         self.assertEqual(self.swift.count("opacity: 1"), expected)

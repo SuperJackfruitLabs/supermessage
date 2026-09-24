@@ -21,10 +21,10 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         }
     }
 
-    /// What `.preferredColorScheme` takes; `nil` follows the phone.
-    var colorScheme: ColorScheme? {
+    /// What the window is told. `.unspecified` follows the phone.
+    var interfaceStyle: UIUserInterfaceStyle {
         switch self {
-        case .system: nil
+        case .system: .unspecified
         case .light: .light
         case .dark: .dark
         }
@@ -59,11 +59,15 @@ struct ThemeChoice: Equatable, Sendable {
 
     static let standard = ThemeChoice(darkStyle: .tinted, accent: nil)
 
-    /// The palette's accent roles, in the appearance the traits describe.
-    func accentRoles(dark: Bool) -> AccentPalette? {
-        guard let accent, let set = ThemeAccents.set(named: accent) else { return nil }
-        if dark { return darkStyle == .black ? set.black : set.dark }
-        return set.paper
+    /// The whole palette for this choice, light or dark.
+    ///
+    /// Black keeps its black grounds whatever the accent — that is what
+    /// choosing it means — and takes only the accent's own roles.
+    func palette(dark: Bool) -> Palette {
+        let set = accent.flatMap(ThemeAccents.set(named:))
+        guard dark else { return set?.paper ?? ThemeTokens.paper }
+        if darkStyle == .black { return set?.black ?? ThemeTokens.black }
+        return set?.dark ?? ThemeTokens.dark
     }
 }
 
@@ -141,12 +145,21 @@ private struct AppliesAppearance: ViewModifier {
             accent: accent.isEmpty ? nil : accent)
         content
             .environment(\.themeChoice, choice)
-            .preferredColorScheme(AppearanceMode(rawValue: mode)?.colorScheme)
-            .background(WindowTraits(choice: choice))
+            .background(
+                WindowTraits(
+                    choice: choice,
+                    style: (AppearanceMode(rawValue: mode) ?? .system).interfaceStyle))
     }
 }
 
 /// Puts the choice on the window as well as in the environment.
+///
+/// **The scheme is set on the window, not with `.preferredColorScheme`.**
+/// Build 19 used the modifier, and after a change the page followed it while
+/// the system chrome did not: in light, the header buttons, the title and
+/// the tab bar were drawn dark, and in dark, light (2026-09-24). Everything
+/// in a window reads `overrideUserInterfaceStyle`, the chrome included, so
+/// setting it there cannot leave a part behind.
 ///
 /// The environment reaches SwiftUI views and the UIKit views SwiftUI hosts;
 /// the window override reaches what SwiftUI does not own — the timeline's
@@ -154,22 +167,42 @@ private struct AppliesAppearance: ViewModifier {
 /// accessory. Both, so there is no surface left on the old accent.
 private struct WindowTraits: UIViewRepresentable {
     let choice: ThemeChoice
+    let style: UIUserInterfaceStyle
 
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+    func makeUIView(context: Context) -> Applier {
+        let view = Applier()
         view.isUserInteractionEnabled = false
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) {
-        let choice = choice
-        // The window is not there on the first update; a hop gets it.
-        DispatchQueue.main.async {
+    func updateUIView(_ view: Applier, context: Context) {
+        view.choice = choice
+        view.style = style
+        view.apply()
+    }
+
+    /// Applies as soon as it joins a window, so a launch does not draw one
+    /// frame in the phone's scheme before the account's.
+    final class Applier: UIView {
+        var choice = ThemeChoice.standard
+        var style = UIUserInterfaceStyle.unspecified
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            apply()
+        }
+
+        func apply() {
+            guard let window else { return }
+            if window.overrideUserInterfaceStyle != style {
+                window.overrideUserInterfaceStyle = style
+            }
             // Compared against the window's resolved traits: reading an
             // override that was never set throws rather than returning the
             // default.
-            guard let window = view.window, window.traitCollection.themeChoice != choice else { return }
-            window.traitOverrides.themeChoice = choice
+            if window.traitCollection.themeChoice != choice {
+                window.traitOverrides.themeChoice = choice
+            }
         }
     }
 }

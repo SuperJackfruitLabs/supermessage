@@ -11,7 +11,7 @@ import XCTest
 /// in one streamed answer. After: 13, the live card's own entrance.
 @MainActor
 final class StreamingStutterTests: XCTestCase {
-    func testStreamingMovesTheHistoryOnlyInSteps() {
+    func testStreamingGlidesTheHistory() {
         let app = XCUIApplication()
         app.launchArguments += ["-fixtureStreaming"]
         app.launch()
@@ -29,11 +29,11 @@ final class StreamingStutterTests: XCTestCase {
         // wrapped onto new lines while it streamed.
         XCTAssertGreaterThanOrEqual(
             Self.count("growths", in: label), 8, "the answer barely grew — nothing was tested (\(label))")
-        // The live card animating in is allowed (a fraction of a second);
-        // the list gliding after every line is not.
-        XCTAssertLessThan(
-            Self.count("animating", in: label), 30,
-            "the list animated its resizing while the answer streamed (\(label))")
+        // The history glides as the answer grows; it must never leap. One
+        // jump is allowed for the live card first appearing.
+        XCTAssertLessThanOrEqual(
+            Self.count("jumps", in: label), 1,
+            "the history jumped rather than glided while the answer streamed (\(label))")
     }
 
     private static func count(_ key: String, in label: String) -> Int {

@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// **The newest chunk fades in as one.** `StreamingText` hands over a
 /// sentence at a time, and the whole of it goes from clear to settled over
-/// about 200ms — no per-character wave, no typing. The typing effect this
+/// about 450ms — no per-character wave, no typing. The typing effect this
 /// replaced made the app look like it was performing a speed; a sentence
 /// that simply arrives reads as the model having said it (2026-09-24).
 ///
@@ -34,7 +34,10 @@ struct StreamingTextView: View {
     /// Whether a fade is under way — the clock runs only then.
     @State private var fading = false
 
-    static let fade: TimeInterval = 0.2
+    /// Long enough to be seen as a fade. Build 19's 0.2s, eased hard at the
+    /// start, was two frames of half-opacity and read as the text simply
+    /// appearing (2026-09-24).
+    static let fade: TimeInterval = 0.45
 
     @ViewBuilder
     private var content: some View {
@@ -74,18 +77,18 @@ struct StreamingTextView: View {
 /// Draws a run of text with its newest chunk partway in.
 ///
 /// Everything before `settled` is simply text; everything after it is drawn
-/// at `progress`'s opacity with a two-point rise, all together.
+/// at `progress`'s opacity with a three-point rise, all together.
 private struct ArrivingChunk: TextRenderer {
     let settled: Int
     let progress: Double
 
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
-        // Ease out: most of the change early, so a chunk is legible within
-        // the first half of its fade.
-        let eased = 1 - pow(1 - progress, 3)
+        // Ease in and out: it starts clear and gathers, rather than being
+        // most of the way there in the first frame.
+        let eased = progress * progress * (3 - 2 * progress)
         var arriving = context
         arriving.opacity = eased
-        arriving.translateBy(x: 0, y: (1 - eased) * 2)
+        arriving.translateBy(x: 0, y: (1 - eased) * 3)
 
         var index = 0
         for line in layout {

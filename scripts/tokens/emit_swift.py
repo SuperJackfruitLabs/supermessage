@@ -9,7 +9,7 @@ like it had worked.
 import textwrap
 
 from .contrast import parse_rgba
-from .model import ACCENT_ROLES, ROLES, TYPE_ROLES, Appearance, Tokens
+from .model import ROLES, TYPE_ROLES, Appearance, Tokens
 
 #: A family becomes a *design*, never a face name. The system
 #: resolves .serif to New York and .monospaced to SF Mono, which is
@@ -118,18 +118,14 @@ def _metrics_block(tokens: Tokens) -> str:
 def _accents_block(tokens: Tokens) -> str:
     if not tokens.accents:
         return ""
-    fields = "".join(f"    let {_camel(r)}: Color\n" for r in ACCENT_ROLES)
     names = sorted(tokens.accents)
     lines = [
-        "\n/// The three accent roles, as one accent replaces them.\n",
-        "struct AccentPalette {\n",
-        fields,
-        "}\n",
-        "\n/// One accent, in every appearance.\n",
+        "\n/// One accent, in every appearance: the whole palette with the accent\n",
+        "/// applied — its own accent roles, and grounds and greys in its hue.\n",
         "struct AccentSet {\n",
     ]
     for appearance in tokens.appearances:
-        lines.append(f"    let {appearance}: AccentPalette\n")
+        lines.append(f"    let {appearance}: Palette\n")
     lines += [
         "}\n",
         "\n/// The accents a reader may choose. Violet, the default, is the\n",
@@ -141,10 +137,13 @@ def _accents_block(tokens: Tokens) -> str:
         lines.append(f"    static let {name} = AccentSet(\n")
         apps = list(tokens.appearances)
         for i, appearance in enumerate(apps):
-            roles = tokens.accents[name][appearance]
-            args = ", ".join(f"{_camel(r)}: {_literal(roles[r])}" for r in ACCENT_ROLES)
+            palette = tokens.accent_palette(name, appearance)
             comma = "," if i < len(apps) - 1 else ""
-            lines.append(f"        {appearance}: AccentPalette({args}){comma}\n")
+            lines.append(f"        {appearance}: Palette(\n")
+            for j, role in enumerate(ROLES):
+                sep = "," if j < len(ROLES) - 1 else ""
+                lines.append(f"            {_camel(role)}: {_literal(palette[role])}{sep}\n")
+            lines.append(f"        ){comma}\n")
         lines.append("    )\n")
     lines.append("}\n")
     return "".join(lines)

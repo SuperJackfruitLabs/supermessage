@@ -74,6 +74,22 @@ class ValidationTests(unittest.TestCase):
             validate(broken)
         self.assertIn("blue.paper.accent", str(caught.exception))
 
+    def test_an_accent_ground_that_breaks_a_text_contract_is_an_error(self):
+        # The accent states no contract for `content-faint`; moving the
+        # ground under it must still be checked against the base's.
+        broken = copy.deepcopy(raw())
+        broken["accent"]["teal"]["dark"]["surface-raised"]["value"] = "#4a6a6a"
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("teal.dark", str(caught.exception))
+
+    def test_an_accent_naming_an_unknown_role_is_an_error(self):
+        broken = copy.deepcopy(raw())
+        broken["accent"]["teal"]["dark"]["backdrop"] = {"value": "#000000"}
+        with self.assertRaises(TokenError) as caught:
+            validate(broken)
+        self.assertIn("backdrop", str(caught.exception))
+
     def test_a_person_colour_that_fails_as_text_is_an_error(self):
         broken = copy.deepcopy(raw())
         broken["peer"]["dark"]["colors"][2] = "#2a2a40"

@@ -118,8 +118,8 @@ struct StreamingTextTests {
 
     @Test("chunks share the gap to the next delta")
     func sharesTheGap() {
-        // 0.6s left, two more chunks after this one: 0.2s each.
-        #expect(abs(StreamingText.gap(timeLeft: 0.6, chunksLeft: 2) - 0.2) < 0.001)
+        // 1.2s left, two more chunks after this one: 0.4s each.
+        #expect(abs(StreamingText.gap(timeLeft: 1.2, chunksLeft: 2) - 0.4) < 0.001)
     }
 
     @Test("past the deadline, or with a big backlog, chunks still keep a readable cadence")

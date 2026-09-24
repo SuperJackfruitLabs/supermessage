@@ -177,11 +177,8 @@ private struct AccentSwatches: View {
     }
 
     private func color(for name: String) -> Color {
-        let dark = scheme == .dark
-        let probe = ThemeChoice(darkStyle: choice.darkStyle, accent: name.isEmpty ? nil : name)
-        if let roles = probe.accentRoles(dark: dark) { return roles.accent }
-        let base = dark ? (choice.darkStyle == .black ? ThemeTokens.black : ThemeTokens.dark) : ThemeTokens.paper
-        return base.accent
+        ThemeChoice(darkStyle: choice.darkStyle, accent: name.isEmpty ? nil : name)
+            .palette(dark: scheme == .dark).accent
     }
 }
 

@@ -8,7 +8,7 @@ reader's font-size setting, and it would look like it had worked.
 import textwrap
 
 from .contrast import parse_rgba
-from .model import ACCENT_ROLES, ROLES, TYPE_ROLES, Appearance, Tokens
+from .model import ROLES, TYPE_ROLES, Appearance, Tokens
 
 #: A family becomes a generic FontFamily, resolved by the platform.
 #: Nothing is bundled, for the same reason as on iOS.
@@ -116,24 +116,21 @@ def _accents_block(tokens: Tokens) -> str:
     if not tokens.accents:
         return ""
     names = sorted(tokens.accents)
-    fields = "".join(f"    val {_camel(r)}: Color,\n" for r in ACCENT_ROLES)
     lines = [
-        "\n/** The three accent roles, as one accent replaces them. */\n",
-        "@Immutable\n",
-        "data class AccentRoles(\n",
-        fields,
-        ")\n",
-        "\n/**\n * The accents a reader may choose, per appearance. Violet, the default,\n",
-        " * is the appearances' own and is not listed.\n */\n",
+        "\n/**\n * The accents a reader may choose, per appearance: the whole palette\n",
+        " * with the accent applied. Violet, the default, is the appearances'\n",
+        " * own and is not listed.\n */\n",
         "object GeneratedAccents {\n",
         f"    val names = listOf({', '.join(chr(34) + n + chr(34) for n in names)})\n",
     ]
     for name in names:
         lines.append(f"    val {name} = mapOf(\n")
         for appearance in tokens.appearances:
-            roles = tokens.accents[name][appearance]
-            args = ", ".join(f"{_camel(r)} = {_argb(roles[r])}" for r in ACCENT_ROLES)
-            lines.append(f"        \"{appearance}\" to AccentRoles({args}),\n")
+            palette = tokens.accent_palette(name, appearance)
+            lines.append(f"        \"{appearance}\" to SupermessageColorRoles(\n")
+            for role in ROLES:
+                lines.append(f"            {_camel(role)} = {_argb(palette[role])},\n")
+            lines.append("        ),\n")
         lines.append("    )\n")
     lines.append("}\n")
     return "".join(lines)
