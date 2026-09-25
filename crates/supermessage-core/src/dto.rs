@@ -1745,7 +1745,10 @@ mod wire_format_golden {
         let mut noop = a_text_item();
         noop.kind = "membership".into();
         noop.detail = Some("none".into());
-        assert_eq!(TimelineRow::new(noop).view, crate::item_view::ItemView::None);
+        assert_eq!(
+            TimelineRow::new(noop).view,
+            crate::item_view::ItemView::None
+        );
     }
 
     #[test]
