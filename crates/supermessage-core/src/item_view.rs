@@ -670,6 +670,15 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
             ),
         },
 
+        // `MembershipChange::None`: a join -> join that changed neither
+        // membership nor profile. The homeserver writes one whenever a client
+        // re-PUTs an unchanged display name, which the AgentPod hub did on
+        // every node reconnect. There is nothing to tell the reader.
+        //
+        // "error", "notImplemented" and "unknown" stay visible: those are
+        // transitions the SDK could not name, which may be a real kick or ban.
+        "membership" if item.detail.as_deref() == Some("none") => ItemView::None,
+
         "membership" => ItemView::System {
             kind: SystemKind::MembershipChanged {
                 who: attributed_name(item),
@@ -1284,6 +1293,41 @@ mod tests {
             "updated their membership"
         );
         assert_eq!(membership_verb(None), "updated their membership");
+    }
+
+    #[test]
+    fn suppresses_a_membership_event_that_changed_nothing() {
+        // `MembershipChange::None`: a join -> join with no profile change.
+        // The AgentPod hub used to rewrite an agent's unchanged display name
+        // on every node reconnect, and each rewrite landed as one of these —
+        // eight "updated their membership" lines in one room in one day.
+        let mut it = item("membership");
+        it.detail = Some("none".into());
+        it.sender_display_name = Some("Krishna".into());
+        assert_eq!(view_for(&it), ItemView::None);
+    }
+
+    #[test]
+    fn keeps_membership_events_the_sdk_could_not_classify_visible() {
+        // Unlike "none", these may be real transitions the SDK failed to
+        // name. Hiding them could hide a kick or a ban, so they keep the
+        // generic line.
+        for detail in ["error", "notImplemented", "unknown"] {
+            let mut it = item("membership");
+            it.detail = Some(detail.into());
+            it.sender_display_name = Some("Alice".into());
+            assert_eq!(
+                view_for(&it),
+                ItemView::System {
+                    kind: SystemKind::MembershipChanged {
+                        who: "Alice".into(),
+                        detail: Some(detail.into())
+                    },
+                    text: "Alice updated their membership".into()
+                },
+                "for {detail}"
+            );
+        }
     }
 
     #[test]

@@ -1738,6 +1738,20 @@ mod wire_format_golden {
     }
 
     #[test]
+    fn a_membership_row_that_changed_nothing_draws_nothing() {
+        // iOS and Android drop `ItemView::None` rows before grouping
+        // membership runs, so this is what keeps a join -> join with no
+        // profile change off their screens.
+        let mut noop = a_text_item();
+        noop.kind = "membership".into();
+        noop.detail = Some("none".into());
+        assert_eq!(
+            TimelineRow::new(noop).view,
+            crate::item_view::ItemView::None
+        );
+    }
+
+    #[test]
     fn a_row_carries_its_reply_quote_only_when_it_is_a_reply() {
         assert_eq!(TimelineRow::new(a_text_item()).reply_quote, None);
 

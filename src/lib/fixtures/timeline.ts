@@ -52,25 +52,38 @@ export function item(overrides: Partial<TimelineItem> & Pick<TimelineItem, "kind
 }
 
 /**
- * Wrap a DTO the way the core does. The grouper reads `senderName` and
- * `membershipVerb`; the rest is carried through untouched, so it is filled
- * with the cheapest thing that type-checks rather than with a second
- * implementation of `view_for`.
+ * Wrap a DTO the way the core does. The grouper reads `senderName`,
+ * `membershipVerb`, and whether a membership row's `view` is `none`; the rest
+ * is carried through untouched, so it is filled with the cheapest thing that
+ * type-checks rather than with a second implementation of `view_for`.
+ *
+ * A membership row gets a `system` view because that is what the core gives
+ * every membership change it wants drawn, and the grouper drops the ones it
+ * does not. A test for a row the core hides overrides `view` itself.
  */
 export function row(dto: TimelineItem): TimelineRow {
+  const senderName = dto.senderDisplayName ?? dto.sender ?? "Someone";
+  const membershipVerb =
+    dto.kind === "membership"
+      ? (FIXTURE_VERBS[dto.detail ?? ""] ?? "updated their membership")
+      : null;
   return {
     item: dto,
-    view: { render: "none" },
-    senderName: dto.senderDisplayName ?? dto.sender ?? "Someone",
-    senderShort: dto.senderDisplayName ?? dto.sender ?? "Someone",
+    view:
+      membershipVerb === null
+        ? { render: "none" }
+        : {
+            render: "system",
+            kind: { about: "membershipChanged", who: senderName, detail: dto.detail },
+            text: `${senderName} ${membershipVerb}`,
+          },
+    senderName,
+    senderShort: senderName,
     // The cheapest thing that type-checks, like `view` above: nothing on this
     // platform draws a sender face, so a real initial here would be a second
     // implementation of `room_identity::sender_face_parts` with no reader.
     senderInitial: "?",
-    membershipVerb:
-      dto.kind === "membership"
-        ? (FIXTURE_VERBS[dto.detail ?? ""] ?? "updated their membership")
-        : null,
+    membershipVerb,
     replyQuote: null,
     canReplyOrReact: true,
     replyPreview: null,
