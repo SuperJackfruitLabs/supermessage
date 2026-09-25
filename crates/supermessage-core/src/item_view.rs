@@ -670,6 +670,15 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
             ),
         },
 
+        // `MembershipChange::None`: a join -> join that changed neither
+        // membership nor profile. The homeserver writes one whenever a client
+        // re-PUTs an unchanged display name, which the AgentPod hub did on
+        // every node reconnect. There is nothing to tell the reader.
+        //
+        // "error", "notImplemented" and "unknown" stay visible: those are
+        // transitions the SDK could not name, which may be a real kick or ban.
+        "membership" if item.detail.as_deref() == Some("none") => ItemView::None,
+
         "membership" => ItemView::System {
             kind: SystemKind::MembershipChanged {
                 who: attributed_name(item),

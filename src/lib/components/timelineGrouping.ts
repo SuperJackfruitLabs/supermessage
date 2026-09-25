@@ -309,6 +309,12 @@ export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisp
 
   for (const row of source) {
     const item = row.item;
+    // A membership row the core marked `none` (a join -> join that changed
+    // nothing, say) is absent, not an unnamed change: grouping it would turn
+    // it back into "Krishna updated their membership". Skipping it here also
+    // keeps it from splitting the run on either side. iOS and Android drop
+    // `none` rows before grouping for the same reason.
+    if (item.kind === "membership" && row.view.render === "none") continue;
     const continuesMembershipRun =
       item.kind === "membership" && (run.length === 0 || run[0]!.item.detail === item.detail);
     if (continuesMembershipRun) {
