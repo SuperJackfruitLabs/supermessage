@@ -1287,6 +1287,41 @@ mod tests {
     }
 
     #[test]
+    fn suppresses_a_membership_event_that_changed_nothing() {
+        // `MembershipChange::None`: a join -> join with no profile change.
+        // The AgentPod hub used to rewrite an agent's unchanged display name
+        // on every node reconnect, and each rewrite landed as one of these —
+        // eight "updated their membership" lines in one room in one day.
+        let mut it = item("membership");
+        it.detail = Some("none".into());
+        it.sender_display_name = Some("Krishna".into());
+        assert_eq!(view_for(&it), ItemView::None);
+    }
+
+    #[test]
+    fn keeps_membership_events_the_sdk_could_not_classify_visible() {
+        // Unlike "none", these may be real transitions the SDK failed to
+        // name. Hiding them could hide a kick or a ban, so they keep the
+        // generic line.
+        for detail in ["error", "notImplemented", "unknown"] {
+            let mut it = item("membership");
+            it.detail = Some(detail.into());
+            it.sender_display_name = Some("Alice".into());
+            assert_eq!(
+                view_for(&it),
+                ItemView::System {
+                    kind: SystemKind::MembershipChanged {
+                        who: "Alice".into(),
+                        detail: Some(detail.into())
+                    },
+                    text: "Alice updated their membership".into()
+                },
+                "for {detail}"
+            );
+        }
+    }
+
+    #[test]
     fn suppresses_profile_changes_by_default() {
         assert_eq!(view_for(&item("profileChange")), ItemView::None);
     }

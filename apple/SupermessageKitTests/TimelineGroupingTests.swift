@@ -265,6 +265,28 @@ struct SilentRowTests {
         ])
         #expect(out.count == 1, "an invisible row split a run that a reader sees as one")
     }
+
+    @Test("a membership change the core silenced is not drawn as one")
+    func silentMembershipRowsAreDropped() {
+        // A join -> join that changed nothing arrives as kind "membership"
+        // with view `.none`. Filtering on kind instead of view would turn it
+        // back into "Krishna updated their membership".
+        var noop = MembershipRunTests.membership("s", "Krishna", "updated their membership")
+        noop.item.detail = "none"
+        noop.view = .none
+        let out = TimelineGrouping.collapseMembershipRuns([
+            MembershipRunTests.membership("1", "Ganesha", "joined the room"),
+            noop,
+            MembershipRunTests.membership("2", "Annapurna", "joined the room"),
+        ])
+        #expect(out.count == 1)
+        guard case let .membershipRun(_, text, rows) = out.first else {
+            Issue.record("expected one membership run")
+            return
+        }
+        #expect(text == "Ganesha and Annapurna joined the room")
+        #expect(rows.map(\.item.id) == ["1", "2"])
+    }
 }
 
 /// One person's churn, collapsed across verbs.

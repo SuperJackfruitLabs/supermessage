@@ -154,6 +154,25 @@ describe("groupTimelineItems", () => {
     expect(rows[0]).toMatchObject({ text: "Alice and Bob updated their membership" });
   });
 
+  it("drops a membership row the core marked as drawing nothing", () => {
+    // A join -> join with no profile change (`MembershipChange::None`). The
+    // core decides it is noise by giving it `render: "none"`; grouping must
+    // not turn it back into "Krishna updated their membership".
+    const noop = { ...membership("m1", "none", "Krishna"), view: { render: "none" } as const };
+    expect(groupTimelineItems([noop])).toEqual([]);
+  });
+
+  it("does not let a hidden membership row split the run around it", () => {
+    const noop = { ...membership("m2", "none", "Krishna"), view: { render: "none" } as const };
+    const rows = groupTimelineItems([
+      membership("m1", "joined", "Alice"),
+      noop,
+      membership("m3", "joined", "Bob"),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice and Bob joined the room" });
+  });
+
   it("falls back to the raw sender id when a member has no display name", () => {
     const rows = groupTimelineItems([
       item({ id: "m1", kind: "membership", detail: "left", sender: "@bob:example.org" }),
