@@ -593,6 +593,7 @@ struct TimelineList: UIViewRepresentable {
                                 attribution: self.singleSpeaker ? row.senderShort : row.senderName,
                                 media: self.session.media,
                                 faces: self.session.faces,
+                                voice: self.session.voice,
                                 hidesQuote: found.hidesQuote,
                                 readers: found.readers,
                                 highlighted: self.highlightedId == id,

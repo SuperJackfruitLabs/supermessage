@@ -43,29 +43,32 @@ extension PreviewFixtures {
     static let transcriptHindi = transcript(
         "कल सुबह दस बजे टीम की बैठक है", language: "hi", seconds: 4)
 
-    static func voiceNote(id: String, sender: String, isOwn: Bool) -> TimelineItemDto {
+    static func voiceNote(
+        id: String, sender: String, isOwn: Bool, audio: AudioView = PreviewFixtures.voiceAudio()
+    ) -> TimelineItemDto {
         item(
-            id: id, sender: sender, body: "Voice message.m4a", isOwn: isOwn, msgtype: "m.audio",
+            id: id, sender: sender, body: audio.filename, isOwn: isOwn, msgtype: "m.audio",
             media: MediaMetaDto(
-                filename: "Voice message.m4a", mimetype: "audio/mp4", size: 68_400, width: nil,
-                height: nil))
+                filename: audio.filename, mimetype: audio.mimetype, size: audio.size, width: nil,
+                height: nil,
+                audio: AudioMetaDto(
+                    isVoice: audio.isVoice, durationMs: audio.durationMs, waveform: audio.waveform)))
     }
 
     /// Your own voice note, as the recorder sends it.
     static var ownVoiceNote: TimelineRow {
         row(
             voiceNote(id: "$note", sender: "@me:example.org", isOwn: true),
-            view: .mediaFile(
-                label: .audio, filename: "Voice message.m4a", size: 68_400, mimetype: "audio/mp4"),
+            view: .audio(audio: voiceAudio()),
             senderName: "You", senderShort: "You", senderInitial: "Y")
     }
 
     /// Krishna's voice note.
     static var colleagueVoiceNote: TimelineRow {
-        row(
-            voiceNote(id: "$note", sender: "@krishna:example.org", isOwn: false),
-            view: .mediaFile(
-                label: .audio, filename: "Voice message.m4a", size: 31_200, mimetype: "audio/mp4"),
+        let audio = voiceAudio(ms: 12_000, label: "0:12", spoken: "12 seconds", size: 31_200, seed: 5)
+        return row(
+            voiceNote(id: "$note-krishna", sender: "@krishna:example.org", isOwn: false, audio: audio),
+            view: .audio(audio: audio),
             senderName: "Krishna", senderShort: "Krishna", senderInitial: "K")
     }
 

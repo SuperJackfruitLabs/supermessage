@@ -1,9 +1,10 @@
 import AVFoundation
 import Foundation
 import Observation
+import SupermessageKit
 
-/// Records a voice message to an `.m4a` in this app's temporary directory,
-/// with its length and a waveform.
+/// Records a voice message — Opus, in a CAF file — in this app's temporary
+/// directory, with its length and a waveform.
 ///
 /// What happens next is the ordinary attachment path — the composer stages
 /// the file with `session.staged.stage` — plus one step: the staged file is
@@ -84,20 +85,16 @@ final class VoiceRecorder {
             try audio.setActive(true)
 
             // Its own folder, so the name can be plain: the recipient sees
-            // the filename, and "Voice message.m4a" says what it is where a
-            // UUID would not.
+            // the filename, and "Voice message" says what it is where a UUID
+            // would not.
             let folder = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let url = folder.appendingPathComponent("Voice message.m4a")
+            let url = folder.appendingPathComponent(VoiceRecordingFormat.fileName)
 
-            let settings: [String: Any] = [
-                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                AVSampleRateKey: 44_100,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-            ]
-            let recorder = try AVAudioRecorder(url: url, settings: settings)
+            // Opus in CAF, which the core sends as Ogg/Opus — see
+            // `VoiceRecordingFormat` for why not AAC any more.
+            let recorder = try AVAudioRecorder(url: url, settings: VoiceRecordingFormat.settings)
             recorder.isMeteringEnabled = true
             guard recorder.record() else {
                 failure = "Couldn't start recording."

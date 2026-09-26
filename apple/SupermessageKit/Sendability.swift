@@ -41,6 +41,9 @@ extension MediaFileLabel: @retroactive @unchecked Sendable {}
 extension NotificationMode: @retroactive @unchecked Sendable {}
 extension PersonDto: @retroactive @unchecked Sendable {}
 extension AgentState: @retroactive @unchecked Sendable {}
+extension AudioMetaDto: @retroactive @unchecked Sendable {}
+extension AudioView: @retroactive @unchecked Sendable {}
+extension PlayableAudio: @retroactive @unchecked Sendable {}
 extension RosterRow: @retroactive @unchecked Sendable {}
 extension RosterSection: @retroactive @unchecked Sendable {}
 extension MediaMetaDto: @retroactive @unchecked Sendable {}

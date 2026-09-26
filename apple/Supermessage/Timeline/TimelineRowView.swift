@@ -35,6 +35,9 @@ struct TimelineRowView: View {
     let media: MediaCache
     /// Senders' faces, keyed by `mxc:` URI.
     let faces: AvatarCache
+    /// Plays voice notes, one at a time. `nil` where a row is drawn outside
+    /// the conversation — a context-menu lift — and its note cannot play.
+    var voice: VoicePlayer?
     /// Whether the reply quote only repeats the row directly above, and so
     /// is left off (D6). Decided by the list, which can see that row.
     var hidesQuote: Bool = false
@@ -164,6 +167,14 @@ struct TimelineRowView: View {
 
         case let .mediaFile(label, filename, size, _):
             MediaFileRow(label: label, filename: filename, size: size, isOwn: item.isOwn)
+
+        // A voice note, or any audio: a player on the sender's side. See
+        // `VoiceNoteBubble`.
+        case let .audio(audio):
+            AudioRow(
+                row: row, named: named, audio: audio, continuesRun: continuesRun,
+                endsRun: endsRun, faces: faces, voice: voice ?? InertVoice.player,
+                onReact: onReact)
 
         // What a voice note said, under the note on the note's side. No
         // header, no reactions: it belongs to the note, not to the agent that
@@ -738,6 +749,89 @@ private struct ImageRow: View {
         guard let width, let height, height > 0 else { return 4.0 / 3.0 }
         return CGFloat(width) / CGFloat(height)
     }
+}
+
+/// A voice note or audio message: the player, on its sender's side, under
+/// their header when it starts a turn — the same frame a message has, because
+/// a voice note *is* the message.
+private struct AudioRow: View {
+    let row: TimelineRow
+    let named: String
+    let audio: AudioView
+    let continuesRun: Bool
+    let endsRun: Bool
+    let faces: AvatarCache
+    let voice: VoicePlayer
+    var onReact: ((String) -> Void)?
+
+    private var isOwn: Bool { row.item.isOwn }
+    private var sendState: SendState { SendState(row.item.sendState) }
+
+    var body: some View {
+        VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
+            if !isOwn && !continuesRun {
+                HStack(spacing: 6) {
+                    SenderFace(
+                        mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces,
+                        size: 22)
+                    Text(named).nameFace().peerTint(row.item.sender).lineLimit(1)
+                    if TimelineGrouping.isAgent(row) {
+                        AgentLabel()
+                    }
+                    if let timestamp = row.item.timestampMs {
+                        Text(TimelineTime.short(timestamp)).metaFace()
+                            .foregroundStyle(Theme.contentFaint)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+
+            VStack(alignment: isOwn ? .trailing : .leading, spacing: -8) {
+                VoiceNoteBubble(audio: audio, eventId: row.item.eventId, isOwn: isOwn, player: voice)
+                if !row.item.reactions.isEmpty {
+                    ReactionRow(reactions: row.item.reactions, onReact: onReact)
+                        .padding(.horizontal, 10)
+                }
+            }
+
+            if let caption = audio.caption {
+                Text(caption)
+                    .font(isOwn ? Theme.own : Theme.body)
+                    .foregroundStyle(Theme.content)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 300, alignment: isOwn ? .trailing : .leading)
+            }
+
+            // Your own note's time and send state, as under your messages: a
+            // note that never left the phone must not look like one that did.
+            if isOwn, endsRun || sendState.isWorthShowing {
+                HStack(spacing: 5) {
+                    if let label = sendState.label {
+                        if sendState == .failed {
+                            Image(systemName: "exclamationmark.circle")
+                        }
+                        Text(label)
+                    }
+                    if let timestamp = row.item.timestampMs {
+                        Text(TimelineTime.short(timestamp))
+                    }
+                }
+                .metaFace()
+                .foregroundStyle(sendState == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.contentFaint))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: isOwn ? .trailing : .leading)
+        .padding(.top, continuesRun ? 2 : 12)
+    }
+}
+
+/// The player a row falls back on when it is drawn outside a session: it
+/// fetches nothing, so its notes show as notes and do not play.
+@MainActor
+enum InertVoice {
+    static let player = VoicePlayer(client: NoAudio())
+
+    private struct NoAudio: AudioFetching {}
 }
 
 private struct MediaFileRow: View {

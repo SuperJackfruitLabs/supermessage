@@ -200,8 +200,11 @@ struct ComposerView: View {
         switch trailing {
         case .mic:
             MicButton(isRecording: recorder.isRecording) {
+                // A note playing aloud would be recorded into the new one.
+                session.voice.stop()
                 Task { await recorder.start(held: false) }
             } holdBegan: {
+                session.voice.stop()
                 Task { await recorder.start(held: true) }
             } holdEnded: { cancelled in
                 if !recorder.isRecording {

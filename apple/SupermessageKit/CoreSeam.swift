@@ -32,9 +32,9 @@ import SupermessageFFI
 //
 //     grep -oE "client\.[a-zA-Z]+" SupermessageKit/Stores/*.swift
 //
-// Two of `CoreClient`'s 38 public methods appear in no protocol below, and it
+// Two of `CoreClient`'s 39 public methods appear in no protocol below, and it
 // is not an oversight: `connectionState()` and `inviteUser(roomId:userId:)`
-// have no callers anywhere in the Kit, the app, or the tests. 36 + 2 = 38,
+// have no callers anywhere in the Kit, the app, or the tests. 37 + 2 = 39,
 // which is the arithmetic that says nothing was missed by accident.
 
 // MARK: - What the stores call
@@ -48,6 +48,20 @@ public protocol AvatarFetching: Sendable {
 /// `MediaCache`.
 public protocol MediaFetching: Sendable {
     func mediaFetch(eventId: String) async throws -> String?
+}
+
+/// `VoicePlayer`.
+public protocol AudioFetching: Sendable {
+    /// An audio message's file, ready for `AVAudioPlayer`. `opusInCaf` asks
+    /// the core to remux an Ogg/Opus note into CAF, the only container
+    /// AVFoundation plays Opus from.
+    func mediaAudio(eventId: String, opusInCaf: Bool) async throws -> PlayableAudio?
+}
+
+extension AudioFetching {
+    /// A seam with no audio behind it: every note fails to load, which is
+    /// what a preview or a stub that never asked for audio should show.
+    public func mediaAudio(eventId: String, opusInCaf: Bool) async throws -> PlayableAudio? { nil }
 }
 
 /// `RoomsStore`.
@@ -159,7 +173,7 @@ public protocol AccountDirectory: Sendable {
 /// composition rather than one flat protocol is what keeps each store's
 /// dependency honest: `MediaCache` takes `any MediaFetching` and cannot
 /// reach a room list through it.
-public typealias SessionClient = AvatarFetching & MediaFetching & RoomsSnapshotting
+public typealias SessionClient = AvatarFetching & MediaFetching & AudioFetching & RoomsSnapshotting
     & SpaceSelecting & AttachmentStaging & TimelineSubscribing & SessionAuthenticating
     & MessageSending & RoomMembership & RoomAdministering & AccountDirectory
 

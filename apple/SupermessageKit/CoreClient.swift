@@ -278,6 +278,10 @@ public actor CoreClient {
         try await run { try $0.mediaFetch(eventId: eventId) }
     }
 
+    public func mediaAudio(eventId: String, opusInCaf: Bool) async throws -> PlayableAudio? {
+        try await run { try $0.mediaAudio(eventId: eventId, opusInCaf: opusInCaf) }
+    }
+
     public func attachmentStagePath(roomId: String, path: String) async throws -> StagedFile {
         try await run { try $0.attachmentStagePath(roomId: roomId, path: path) }
     }
