@@ -52,36 +52,60 @@ struct TurnErrorPresentationTests {
         return card
     }
 
-    @Test("collapsed, only the model that was asked for is shown")
-    func collapsed() {
-        let shown = TurnErrorPresentation.attemptsToShow(Self.card, expanded: false)
-        #expect(shown.map(\.source) == ["kimi-coding / k2p6"])
-    }
-
-    @Test("expanded, the whole chain is shown in order")
-    func expanded() {
-        let shown = TurnErrorPresentation.attemptsToShow(Self.card, expanded: true)
+    // The headline already says the first attempt. Listing it again under the
+    // headline said the same thing twice, and "2 more attempts" beside it read
+    // as if the card were hiding the cause.
+    @Test("the fallbacks are the attempts after the headline's own")
+    func fallbacks() {
         #expect(
-            shown.map(\.source) == [
-                "kimi-coding / k2p6", "opencode-go / hy3-preview", "opencode-go / qwen3.7-plus",
+            TurnErrorPresentation.fallbacks(Self.card).map(\.source) == [
+                "opencode-go / hy3-preview", "opencode-go / qwen3.7-plus",
             ])
     }
 
-    @Test("the disclosure counts the lines it hides")
-    func moreLabel() {
-        #expect(TurnErrorPresentation.moreAttemptsLabel(Self.card) == "2 more attempts")
-        let two = Self.with(attempts: Array(Self.card.attempts.prefix(2)))
-        #expect(TurnErrorPresentation.moreAttemptsLabel(two) == "1 more attempt")
+    @Test("collapsed, no attempt is repeated under the headline")
+    func collapsed() {
+        #expect(TurnErrorPresentation.attemptsToShow(Self.card, expanded: false).isEmpty)
     }
 
-    @Test("with one attempt or none there is nothing to disclose")
+    @Test("expanded, the fallbacks are shown in order")
+    func expanded() {
+        #expect(
+            TurnErrorPresentation.attemptsToShow(Self.card, expanded: true).map(\.source) == [
+                "opencode-go / hy3-preview", "opencode-go / qwen3.7-plus",
+            ])
+    }
+
+    @Test("the disclosure says how many models the agent fell back to")
+    func moreLabel() {
+        #expect(TurnErrorPresentation.moreAttemptsLabel(Self.card) == "Fell back to 2 models")
+        let two = Self.with(attempts: Array(Self.card.attempts.prefix(2)))
+        #expect(TurnErrorPresentation.moreAttemptsLabel(two) == "Fell back to 1 model")
+    }
+
+    @Test("with no fallback there is nothing to disclose")
     func nothingToDisclose() {
         let one = Self.with(attempts: Array(Self.card.attempts.prefix(1)))
         #expect(TurnErrorPresentation.moreAttemptsLabel(one) == nil)
-        #expect(TurnErrorPresentation.attemptsToShow(one, expanded: false).count == 1)
+        #expect(TurnErrorPresentation.attemptsToShow(one, expanded: true).isEmpty)
         let none = Self.with(attempts: [])
         #expect(TurnErrorPresentation.moreAttemptsLabel(none) == nil)
-        #expect(TurnErrorPresentation.attemptsToShow(none, expanded: true).isEmpty)
+        #expect(TurnErrorPresentation.repeatsLabel(none) == nil)
+    }
+
+    @Test("the headline's model retried is said once, not hidden")
+    func repeats() {
+        var asked = Self.card.attempts[0]
+        asked.count = 3
+        #expect(TurnErrorPresentation.repeatsLabel(Self.with(attempts: [asked])) == "Tried 3 times")
+        #expect(TurnErrorPresentation.repeatsLabel(Self.card) == nil)
+    }
+
+    @Test("an attempt list that does not start with the headline's model is shown whole")
+    func notHeadlineFirst() {
+        let other = Self.with(attempts: Array(Self.card.attempts.dropFirst()))
+        #expect(TurnErrorPresentation.fallbacks(other).count == 2)
+        #expect(TurnErrorPresentation.repeatsLabel(other) == nil)
     }
 
     @Test("a folded line says how many times, a single one says nothing")

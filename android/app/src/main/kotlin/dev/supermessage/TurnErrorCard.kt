@@ -52,7 +52,21 @@ fun TurnErrorCardView(card: TurnErrorCard, modifier: Modifier = Modifier) {
         SelectionContainer {
             Text(card.message, style = MaterialTheme.typography.bodyMedium)
         }
-        for (attempt in card.attempts) {
+        // The headline already names the first attempt, the model that was
+        // asked for; under it go only the models the agent fell back to, and
+        // a retried first model is said once. Same rules as iOS's
+        // TurnErrorPresentation and the web's turnErrorView.ts.
+        val first = card.attempts.firstOrNull()
+        val headlineIsFirst = first != null && card.source != null && first.source == card.source
+        val fallbacks = if (headlineIsFirst) card.attempts.drop(1) else card.attempts
+        if (headlineIsFirst && first!!.count > 1u) {
+            Text(
+                "Tried ${first.count} times",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        for (attempt in fallbacks) {
             val count = if (attempt.count > 1u) " ×${attempt.count}" else ""
             Text(
                 "${attempt.source} · ${attempt.label}$count",

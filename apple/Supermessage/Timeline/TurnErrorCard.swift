@@ -86,8 +86,15 @@ struct TurnErrorCardView: View {
 
     @ViewBuilder
     private var attempts: some View {
-        if !card.attempts.isEmpty {
+        let more = TurnErrorPresentation.moreAttemptsLabel(card)
+        let repeats = TurnErrorPresentation.repeatsLabel(card)
+        if more != nil || repeats != nil {
             VStack(alignment: .leading, spacing: 3) {
+                if let repeats {
+                    Text(verbatim: repeats)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.contentMuted)
+                }
                 ForEach(
                     Array(TurnErrorPresentation.attemptsToShow(card, expanded: expanded).enumerated()),
                     id: \.offset
@@ -98,7 +105,7 @@ struct TurnErrorCardView: View {
                         attempt: attempt,
                         showsMessage: expanded && attempt.message != card.message)
                 }
-                if let more = TurnErrorPresentation.moreAttemptsLabel(card) {
+                if let more {
                     // No animation: this is a self-sizing cell in the
                     // timeline's collection view, and an animated resize
                     // there re-lays its neighbours every frame.

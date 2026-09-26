@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TurnErrorCard } from "$lib/ipc";
-  import { attemptCount, attemptsToShow, moreAttemptsLabel } from "../turnErrorView";
+  import { attemptCount, attemptsToShow, moreAttemptsLabel, repeatsLabel } from "../turnErrorView";
 
   /**
    * An agent's failed turn — `ItemView` `turnError`.
@@ -19,6 +19,7 @@
   let expanded = $state(false);
   const more = $derived(moreAttemptsLabel(card));
   const shown = $derived(attemptsToShow(card, expanded));
+  const repeats = $derived(repeatsLabel(card));
 </script>
 
 <div class="turn-error-card font-sans" data-testid="turn-error-card">
@@ -27,7 +28,10 @@
     {#if card.source}<span class="text-content-muted">· {card.source}</span>{/if}
   </p>
   <p class="selectable m-0 mt-1 break-words whitespace-pre-wrap text-content">{card.message}</p>
-  {#if card.attempts.length > 0}
+  {#if repeats}
+    <p class="m-0 mt-1 text-meta text-content-muted">{repeats}</p>
+  {/if}
+  {#if shown.length > 0}
     <ul class="m-0 mt-2 list-none space-y-0.5 p-0 text-meta text-content-muted">
       {#each shown as attempt, i (i)}
         {@const count = attemptCount(attempt)}
@@ -37,16 +41,16 @@
         </li>
       {/each}
     </ul>
-    {#if more}
-      <button
-        type="button"
-        class="mt-1 rounded-control text-meta text-content-muted transition-colors hover:text-content"
-        aria-expanded={expanded}
-        onclick={() => (expanded = !expanded)}
-      >
-        {expanded ? "Show fewer" : more}
-      </button>
-    {/if}
+  {/if}
+  {#if more}
+    <button
+      type="button"
+      class="mt-1 rounded-control text-meta text-content-muted transition-colors hover:text-content"
+      aria-expanded={expanded}
+      onclick={() => (expanded = !expanded)}
+    >
+      {expanded ? "Show fewer" : more}
+    </button>
   {/if}
 </div>
 
