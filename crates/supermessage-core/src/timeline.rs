@@ -756,6 +756,31 @@ fn turn_error_from_raw(
     crate::turn_error::parse_turn_error(content.get(crate::turn_error::TURN_ERROR_KEY)?)
 }
 
+/// The voice transcript a notice's raw event carries under
+/// [`crate::voice_transcript::VOICE_TRANSCRIPT_KEY`], if it carries a valid
+/// one.
+///
+/// [`turn_error_from_raw`]'s twin, with its reasons: `original_json()` is
+/// where the key survives the SDK's parsing (and decryption), and a cheap text
+/// search keeps every other message from paying for a parse. Any failure is
+/// `None`, and the notice renders as the ordinary notice it also is.
+fn voice_transcript_from_raw(
+    raw: Option<&Raw<AnySyncTimelineEvent>>,
+) -> Option<crate::voice_transcript::VoiceNoteTranscript> {
+    let raw = raw?;
+    if !raw
+        .json()
+        .get()
+        .contains(crate::voice_transcript::VOICE_TRANSCRIPT_KEY)
+    {
+        return None;
+    }
+    let content: serde_json::Value = raw.get_field("content").ok()??;
+    crate::voice_transcript::parse_voice_transcript(
+        content.get(crate::voice_transcript::VOICE_TRANSCRIPT_KEY)?,
+    )
+}
+
 /// The sentence a decision leaves in the room.
 ///
 /// Derived from `option_id` rather than from the option's label, because a
@@ -1669,7 +1694,19 @@ pub fn project_item(item: &TimelineItem, own_user: &UserId) -> Option<TimelineRo
             } else {
                 None
             };
-            TimelineRow::with_turn_error(dto, turn_error)
+            // The same, for the hub's transcript notice. A message carrying
+            // both keys is a failure first: the card is the louder news.
+            let transcript = if dto.kind == "message" && turn_error.is_none() {
+                voice_transcript_from_raw(event.original_json())
+            } else {
+                None
+            };
+            match transcript {
+                Some(transcript) => {
+                    TimelineRow::with_voice_transcript(dto, Some(transcript), own_user.as_str())
+                }
+                None => TimelineRow::with_turn_error(dto, turn_error),
+            }
         }
         TimelineItemKind::Virtual(virtual_item) => {
             TimelineRow::new(project_virtual_item(item, virtual_item))
@@ -3505,6 +3542,140 @@ mod tests {
         )
         .unwrap();
         assert_eq!(turn_error_from_raw(Some(&raw)), None);
+    }
+
+    // `voice_transcript_from_raw`: the raw-event half of the transcript. The
+    // parsing is tested in `crate::voice_transcript`; these pin that the key
+    // is found where the hub puts it — on a notice that replies to the note —
+    // and that every miss is `None`.
+
+    fn hub_transcript(transcript: serde_json::Value) -> Raw<AnySyncTimelineEvent> {
+        let event = serde_json::json!({
+            "type": "m.room.message",
+            "event_id": "$transcript",
+            "sender": "@agentpod:id.agentpod.dev",
+            "origin_server_ts": 1_700_000_000_000_u64,
+            "content": {
+                "msgtype": "m.notice",
+                "body": "Transcript: कल सुबह दस बजे टीम की बैठक है",
+                "m.relates_to": { "m.in_reply_to": { "event_id": "$note" } },
+                "dev.agentpod.voice_transcript": transcript,
+            }
+        });
+        serde_json::from_str(&event.to_string())
+            .expect("hand-built raw sync timeline event JSON must deserialize")
+    }
+
+    fn transcript_notice(reply_to: Option<ReplyToDto>, is_own: bool) -> TimelineItemDto {
+        project_item_parts(
+            "id",
+            Some("$transcript"),
+            "message",
+            Some("m.notice"),
+            None,
+            Some("@agentpod:id.agentpod.dev"),
+            None,
+            None,
+            false,
+            Some("Transcript: कल सुबह दस बजे टीम की बैठक है"),
+            None,
+            None,
+            None,
+            Some(1_700_000_000_000),
+            is_own,
+            None,
+            reply_to,
+            false,
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
+    fn note_by(sender: &str) -> ReplyToDto {
+        ReplyToDto {
+            event_id: "$note".into(),
+            available: true,
+            sender: Some(sender.into()),
+            sender_display_name: None,
+            excerpt: None,
+            label: Some("Audio".into()),
+        }
+    }
+
+    #[test]
+    fn voice_transcript_from_raw_reads_the_transcript_off_the_hubs_notice() {
+        let raw = hub_transcript(serde_json::json!({
+            "schema_version": 1,
+            "text": "कल सुबह दस बजे टीम की बैठक है",
+            "language": "hi",
+            "seconds": 4,
+        }));
+        let transcript =
+            voice_transcript_from_raw(Some(&raw)).expect("the hub's transcript must be found");
+        assert_eq!(transcript.text, "कल सुबह दस बजे टीम की बैठक है");
+        assert_eq!(transcript.caption, "Transcript · hi · 0:04");
+    }
+
+    #[test]
+    fn voice_transcript_from_raw_is_none_for_a_malformed_key_and_the_row_stays_a_notice() {
+        let raw = hub_transcript(serde_json::json!({ "schema_version": 2, "text": "hi" }));
+        let transcript = voice_transcript_from_raw(Some(&raw));
+        assert_eq!(transcript, None);
+        let row = TimelineRow::with_voice_transcript(
+            transcript_notice(Some(note_by("@me:x.org")), false),
+            transcript,
+            "@me:x.org",
+        );
+        assert!(
+            matches!(row.view, crate::item_view::ItemView::System { .. }),
+            "a malformed transcript must fall back to the one-line notice, got {:?}",
+            row.view
+        );
+    }
+
+    #[test]
+    fn voice_transcript_from_raw_is_none_without_the_key_or_without_an_event() {
+        assert_eq!(voice_transcript_from_raw(None), None);
+        let raw: Raw<AnySyncTimelineEvent> = serde_json::from_str(
+            r#"{
+                "type": "m.room.message",
+                "event_id": "$mention",
+                "sender": "@alice:example.org",
+                "origin_server_ts": 1700000000000,
+                "content": { "msgtype": "m.notice", "body": "see dev.agentpod.voice_transcript" }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(voice_transcript_from_raw(Some(&raw)), None);
+    }
+
+    #[test]
+    fn a_transcript_is_drawn_on_the_side_of_the_note_it_replies_to() {
+        let raw = hub_transcript(serde_json::json!({ "schema_version": 1, "text": "hello" }));
+        let transcript = voice_transcript_from_raw(Some(&raw));
+        let side = |reply_to: Option<ReplyToDto>, is_own: bool| {
+            let row = TimelineRow::with_voice_transcript(
+                transcript_notice(reply_to, is_own),
+                transcript.clone(),
+                "@me:x.org",
+            );
+            match row.view {
+                crate::item_view::ItemView::VoiceTranscript { on_own_note, .. } => on_own_note,
+                other => panic!("expected a transcript, got {other:?}"),
+            }
+        };
+        // Under my note, though an agent posted it.
+        assert!(side(Some(note_by("@me:x.org")), false));
+        // Under someone else's note.
+        assert!(!side(Some(note_by("@alice:x.org")), false));
+        // The note never loaded, or it is no reply at all: the notice's own
+        // side stands in.
+        let mut unloaded = note_by("@me:x.org");
+        unloaded.available = false;
+        unloaded.sender = None;
+        assert!(!side(Some(unloaded.clone()), false));
+        assert!(side(Some(unloaded), true));
+        assert!(!side(None, false));
     }
 
     #[test]

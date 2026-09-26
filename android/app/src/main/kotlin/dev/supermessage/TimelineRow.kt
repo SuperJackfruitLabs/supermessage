@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -167,7 +168,16 @@ fun TimelineRow(
             ImageRow(named = named, alt = view.alt, width = view.width, height = view.height, caption = view.caption, modifier = modifier)
 
         is ItemView.MediaFile ->
-            MediaFileRow(label = view.label, filename = view.filename, size = view.size, modifier = modifier)
+            MediaFileRow(
+                label = view.label,
+                filename = view.filename,
+                size = view.size,
+                // Your own file on your side, as your bubbles are — which is
+                // where a voice note's transcript is drawn under it.
+                modifier = modifier
+                    .fillMaxWidth()
+                    .wrapContentWidth(if (row.item.isOwn) Alignment.End else Alignment.Start),
+            )
 
         // A suite event — a Superpipeline card or run, a permission request,
         // station status. `DecisionCard` renders the whole fallback-chain
@@ -184,6 +194,11 @@ fun TimelineRow(
         // An agent's failed turn, as the card the core parsed off the hub's
         // message. See `TurnErrorCardView`.
         is ItemView.TurnError -> TurnErrorCardView(card = view.card, modifier = modifier)
+
+        // What a voice note said, under the note on the note's side. No
+        // header: it belongs to the note, not to the agent that posted it.
+        is ItemView.VoiceTranscript ->
+            VoiceTranscriptView(transcript = view.transcript, onOwnNote = view.onOwnNote, modifier = modifier)
 
         // Deliberately nothing. A row for this would still occupy layout
         // space — "deliberately silent should mean absent, not empty" is

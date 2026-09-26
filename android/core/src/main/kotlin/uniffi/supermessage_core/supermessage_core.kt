@@ -3122,6 +3122,78 @@ public object FfiConverterTypeTypingUserDto: FfiConverterRustBuffer<TypingUserDt
 
 
 /**
+ * A voice note's transcript, ready to draw.
+ */
+data class VoiceNoteTranscript (
+    /**
+     * What was said, trimmed. Never empty. Selectable text, drawn as-is.
+     */
+    var `text`: kotlin.String, 
+    /**
+     * The language the transcriber detected — `"en"`, `"hi"` — as the hub
+     * wrote it. `None` when it did not say.
+     */
+    var `language`: kotlin.String?, 
+    /**
+     * The note's length in whole seconds, when the hub said.
+     */
+    var `seconds`: kotlin.UInt?, 
+    /**
+     * `seconds` as `m:ss` — `"0:42"`, `"12:05"`. `None` with `seconds`.
+     */
+    var `duration`: kotlin.String?, 
+    /**
+     * The block's small heading: `"Transcript"`, then ` · language` and
+     * ` · duration` for whichever the hub gave — `"Transcript · hi · 0:42"`.
+     */
+    var `caption`: kotlin.String, 
+    /**
+     * What a screen reader says for the whole block — `"Transcript of voice
+     * note: …"` with the text.
+     */
+    var `accessibilityLabel`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeVoiceNoteTranscript: FfiConverterRustBuffer<VoiceNoteTranscript> {
+    override fun read(buf: ByteBuffer): VoiceNoteTranscript {
+        return VoiceNoteTranscript(
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: VoiceNoteTranscript) = (
+            FfiConverterString.allocationSize(value.`text`) +
+            FfiConverterOptionalString.allocationSize(value.`language`) +
+            FfiConverterOptionalUInt.allocationSize(value.`seconds`) +
+            FfiConverterOptionalString.allocationSize(value.`duration`) +
+            FfiConverterString.allocationSize(value.`caption`) +
+            FfiConverterString.allocationSize(value.`accessibilityLabel`)
+    )
+
+    override fun write(value: VoiceNoteTranscript, buf: ByteBuffer) {
+            FfiConverterString.write(value.`text`, buf)
+            FfiConverterOptionalString.write(value.`language`, buf)
+            FfiConverterOptionalUInt.write(value.`seconds`, buf)
+            FfiConverterOptionalString.write(value.`duration`, buf)
+            FfiConverterString.write(value.`caption`, buf)
+            FfiConverterString.write(value.`accessibilityLabel`, buf)
+    }
+}
+
+
+
+/**
  * What an agent is doing, as far as the roster can honestly tell.
  *
  * Not a health check. The roster does not know whether a process is running
@@ -3514,6 +3586,25 @@ sealed class ItemView {
         companion object
     }
     
+    /**
+     * What a voice note said: the hub's transcript notice, which replies to
+     * the note and carried the structured `dev.agentpod.voice_transcript`
+     * beside its `Transcript: …` fallback body.
+     *
+     * The transcript belongs to the note, not to the agent that posted it,
+     * so a host draws it on the **note's** side of the timeline, directly
+     * under it: `on_own_note` is whether the replied-to note is the reader's
+     * own. When the note's details never loaded, it falls back to whether
+     * the notice itself is the reader's — the side any reply of theirs takes.
+     * See `crate::voice_transcript`. A notice whose key did not parse is
+     * never this: it stays the ordinary notice of its body.
+     */
+    data class VoiceTranscript(
+        val `transcript`: VoiceNoteTranscript, 
+        val `onOwnNote`: kotlin.Boolean) : ItemView() {
+        companion object
+    }
+    
     object None : ItemView()
     
     
@@ -3563,7 +3654,11 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
             10 -> ItemView.TurnError(
                 FfiConverterTypeTurnErrorCard.read(buf),
                 )
-            11 -> ItemView.None
+            11 -> ItemView.VoiceTranscript(
+                FfiConverterTypeVoiceNoteTranscript.read(buf),
+                FfiConverterBoolean.read(buf),
+                )
+            12 -> ItemView.None
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -3647,6 +3742,14 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 + FfiConverterTypeTurnErrorCard.allocationSize(value.`card`)
             )
         }
+        is ItemView.VoiceTranscript -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeVoiceNoteTranscript.allocationSize(value.`transcript`)
+                + FfiConverterBoolean.allocationSize(value.`onOwnNote`)
+            )
+        }
         is ItemView.None -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
@@ -3715,8 +3818,14 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterTypeTurnErrorCard.write(value.`card`, buf)
                 Unit
             }
-            is ItemView.None -> {
+            is ItemView.VoiceTranscript -> {
                 buf.putInt(11)
+                FfiConverterTypeVoiceNoteTranscript.write(value.`transcript`, buf)
+                FfiConverterBoolean.write(value.`onOwnNote`, buf)
+                Unit
+            }
+            is ItemView.None -> {
+                buf.putInt(12)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -4962,6 +5071,38 @@ public object FfiConverterTypeTurnErrorKind: FfiConverterRustBuffer<TurnErrorKin
 }
 
 
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalUInt: FfiConverterRustBuffer<kotlin.UInt?> {
+    override fun read(buf: ByteBuffer): kotlin.UInt? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterUInt.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.UInt?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterUInt.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.UInt?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterUInt.write(value, buf)
+        }
+    }
+}
 
 
 

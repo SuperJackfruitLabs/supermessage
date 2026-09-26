@@ -890,6 +890,28 @@ export interface TurnErrorCard {
 }
 
 /**
+ * What a voice note said — `core::voice_transcript::VoiceNoteTranscript`.
+ *
+ * Parsed strictly by the core from the `dev.agentpod.voice_transcript` key on
+ * the hub's transcript notice. Every string here came from whoever sent the
+ * notice: render as text only, never `{@html}`, an `href`, a `src` or a style.
+ */
+export interface VoiceNoteTranscript {
+  /** What was said, trimmed. Never empty. */
+  text: string;
+  /** The detected language as the hub wrote it — "en", "hi". */
+  language: string | null;
+  /** The note's length in whole seconds. */
+  seconds: number | null;
+  /** `seconds` as `m:ss` — "0:42". */
+  duration: string | null;
+  /** "Transcript · hi · 0:42" — only the parts the hub gave. */
+  caption: string;
+  /** "Transcript of voice note: …". */
+  accessibilityLabel: string;
+}
+
+/**
  * The render decision for one item, made by `core::item_view::view_for`.
  */
 export type ItemView =
@@ -926,6 +948,12 @@ export type ItemView =
   | { render: "customEvent"; view: CustomEventView; label: string; eventType: string }
   /** An agent's turn failed; see {@link TurnErrorCard}. */
   | { render: "turnError"; card: TurnErrorCard }
+  /**
+   * The hub's transcript of a voice note; see {@link VoiceNoteTranscript}.
+   * `onOwnNote`: the note it replies to is the reader's own, so it is drawn
+   * on the trailing side, under that note.
+   */
+  | { render: "voiceTranscript"; transcript: VoiceNoteTranscript; onOwnNote: boolean }
   | { render: "none" };
 
 /**

@@ -163,7 +163,13 @@ struct TimelineRowView: View {
                 media: media)
 
         case let .mediaFile(label, filename, size, _):
-            MediaFileRow(label: label, filename: filename, size: size)
+            MediaFileRow(label: label, filename: filename, size: size, isOwn: item.isOwn)
+
+        // What a voice note said, under the note on the note's side. No
+        // header, no reactions: it belongs to the note, not to the agent that
+        // posted it. See `VoiceTranscriptView`.
+        case let .voiceTranscript(transcript, onOwnNote):
+            VoiceTranscriptView(transcript: transcript, onOwnNote: onOwnNote)
 
         case let .customEvent(view, label, eventType):
             CustomEventCard(
@@ -738,6 +744,9 @@ private struct MediaFileRow: View {
     let label: MediaFileLabel
     let filename: String
     let size: UInt64?
+    /// Your own file sits on your side, as your bubbles do — which is also
+    /// where its transcript, when it is a voice note, is drawn under it.
+    var isOwn = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -748,7 +757,10 @@ private struct MediaFileRow: View {
             }
         }
         .padding(10)
-        .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+        .background(
+            isOwn ? AnyShapeStyle(Theme.accent.opacity(0.13)) : AnyShapeStyle(Theme.surfaceRaised),
+            in: RoundedRectangle(cornerRadius: 8))
+        .frame(maxWidth: .infinity, alignment: isOwn ? .trailing : .leading)
         .padding(.vertical, 6)
     }
 

@@ -194,3 +194,40 @@ fn turn_error_card() {
         ]
     );
 }
+
+/// The transcripts in `VoiceTranscriptFixtures.swift` (iOS) and
+/// `fixtures/voiceTranscript.ts` (web), parsed from the payloads the hub would
+/// send, so the captions those fixtures hard-code are the core's.
+#[test]
+fn voice_transcripts() {
+    use supermessage_core::voice_transcript::parse_voice_transcript;
+
+    let parse = |payload: serde_json::Value| parse_voice_transcript(&payload).expect("parses");
+
+    let short = parse(serde_json::json!({
+        "schema_version": 1, "text": "Can you move the review to Thursday?",
+        "language": "en", "seconds": 42,
+    }));
+    assert_eq!(short.caption, "Transcript · en · 0:42");
+    assert_eq!(
+        short.accessibility_label,
+        "Transcript of voice note: Can you move the review to Thursday?"
+    );
+
+    let long = parse(serde_json::json!({
+        "schema_version": 1, "text": "x", "language": "en", "seconds": 138,
+    }));
+    assert_eq!(long.caption, "Transcript · en · 2:18");
+
+    let bare =
+        parse(serde_json::json!({ "schema_version": 1, "text": "Running ten minutes late." }));
+    assert_eq!(bare.caption, "Transcript");
+    assert_eq!(bare.duration, None);
+
+    let hindi = parse(serde_json::json!({
+        "schema_version": 1, "text": "कल सुबह दस बजे टीम की बैठक है",
+        "language": "hi", "seconds": 4,
+    }));
+    assert_eq!(hindi.caption, "Transcript · hi · 0:04");
+    assert_eq!(hindi.duration.as_deref(), Some("0:04"));
+}

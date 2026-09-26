@@ -78,3 +78,4 @@ extension TypingUserDto: @retroactive @unchecked Sendable {}
 extension TurnErrorAttempt: @retroactive @unchecked Sendable {}
 extension TurnErrorCard: @retroactive @unchecked Sendable {}
 extension TurnErrorKind: @retroactive @unchecked Sendable {}
+extension VoiceNoteTranscript: @retroactive @unchecked Sendable {}

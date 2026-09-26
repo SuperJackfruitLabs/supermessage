@@ -904,6 +904,23 @@ impl TimelineRow {
         turn_error: Option<crate::turn_error::TurnErrorCard>,
     ) -> Self {
         let view = crate::item_view::view_for_with_turn_error(&item, turn_error);
+        Self::with_view(item, view)
+    }
+
+    /// [`Self::new`], for an item whose raw event carried a voice transcript.
+    /// `own_user` is the reader's Matrix id: the transcript is drawn on the
+    /// side of the note it replies to. Carried in the view for the reason
+    /// [`Self::with_turn_error`] gives.
+    pub fn with_voice_transcript(
+        item: TimelineItemDto,
+        transcript: Option<crate::voice_transcript::VoiceNoteTranscript>,
+        own_user: &str,
+    ) -> Self {
+        let view = crate::item_view::view_for_with_voice_transcript(&item, transcript, own_user);
+        Self::with_view(item, view)
+    }
+
+    fn with_view(item: TimelineItemDto, view: crate::item_view::ItemView) -> Self {
         let (sender_name, sender_short, sender_initial) = crate::item_view::attributed_parts(&item);
         let membership_verb = (item.kind == "membership")
             .then(|| crate::item_view::membership_verb(item.detail.as_deref()));
