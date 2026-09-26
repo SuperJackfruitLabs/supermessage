@@ -12,6 +12,12 @@
    * small caption and the words in the muted rank, set off by the same 2px
    * rail a reply's quote uses, because a transcript is a quote of the note.
    *
+   * No wider than the note it quotes: `AudioPlayer` is a 20rem object, frame
+   * included, and so is the widest transcript. Under an own note both share
+   * the trailing edge; under a peer's both share the leading one; a long
+   * transcript meets the note at its other edge too, instead of spreading
+   * past it across the column.
+   *
    * Every string came from whoever sent the notice, so every one is
    * plain-text interpolation — never `{@html}`, an `href`, a `src` or a
    * style — and `break-words` keeps a long unbroken run inside the column.
@@ -37,7 +43,7 @@
 
 <div class="flex pt-1 {transcriptSide(onOwnNote) === 'end' ? 'justify-end' : 'justify-start'}">
   <div
-    class="voice-transcript min-w-0 border-l-2 border-border pl-2 font-sans {onOwnNote ? 'max-w-[52ch]' : 'max-w-[68ch]'}"
+    class="voice-transcript min-w-0 max-w-[20rem] border-l-2 border-border pl-2 font-sans"
     data-testid="voice-transcript"
     role="group"
     aria-label={transcript.accessibilityLabel}

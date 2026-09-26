@@ -37,9 +37,8 @@
 </Story>
 
 <!--
-  A two-minute note in a narrow window: six lines, then Show more. At the
-  full 68ch measure this transcript is exactly six lines and the clamp hides
-  nothing, so no disclosure is offered — the check is measured, not guessed.
+  A two-minute note: six lines at the note's 20rem width, then Show more.
+  Whether the disclosure is offered is measured, not guessed from length.
 -->
 <Story name="Long, clamped">
   {#snippet template()}

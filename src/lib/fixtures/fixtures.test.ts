@@ -9,6 +9,8 @@
 import { describe, expect, it } from "vitest";
 
 import { SENDER_RUN_WINDOW_MS } from "$lib/components/timelineGrouping";
+import { progressOf } from "$lib/components/audioPlayerView";
+import * as audio from "./audio";
 import {
   connectionError,
   connectionLive,
@@ -113,5 +115,35 @@ describe("connection scenarios", () => {
   it("connectionError carries a message, since that is the state that has one", () => {
     expect(connectionError.message).toBeTruthy();
     expect(connectionLive.message).toBeNull();
+  });
+});
+
+describe("audio scenarios", () => {
+  it("the playing and paused scenarios are part way, not at either end", () => {
+    for (const p of [audio.playbackPlaying, audio.playbackPaused, audio.playbackLongPlaying]) {
+      const progress = progressOf(p.positionMs, p.durationMs);
+      expect(progress).toBeGreaterThan(0.1);
+      expect(progress).toBeLessThan(0.9);
+    }
+  });
+
+  it("the long note is 4:59 with the core's full 120 bars", () => {
+    expect(audio.voiceNoteLong.lengthLabel).toBe("4:59");
+    expect(audio.voiceNoteLong.waveform).toHaveLength(120);
+  });
+
+  it("the no-waveform note has none, and the file is not a voice note", () => {
+    expect(audio.voiceNoteNoWaveform.waveform).toBeNull();
+    expect(audio.audioFile.isVoice).toBe(false);
+    expect(audio.audioFile.title).toBe(audio.audioFile.filename);
+  });
+
+  it("waveform levels are in the core's 0..1", () => {
+    const levels = [...(audio.voiceNoteShort.waveform ?? []), ...(audio.voiceNoteLong.waveform ?? [])];
+    expect(levels.length).toBeGreaterThan(0);
+    for (const level of levels) {
+      expect(level).toBeGreaterThanOrEqual(0);
+      expect(level).toBeLessThanOrEqual(1);
+    }
   });
 });
