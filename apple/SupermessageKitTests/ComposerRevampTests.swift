@@ -433,6 +433,30 @@ struct AcknowledgementTests {
         #expect(state([mine], live: true) == nil)
     }
 
+    @Test("the agent's done or failed mark ends it, with or without a reply")
+    func finishedMark() {
+        // krishna, 2026-09-26 15:06: "Okay" got ✅ and, on purpose, no reply
+        // (the agent chose NO_REPLY). The dock read ✅ as "on it" and said
+        // "Krishna is on it…" until the room was left. 👀 is working; ✅ and ❌
+        // are the AgentPod hub saying the turn is over.
+        for mark in ["✅", "❌"] {
+            let marked = Self.row(
+                "1", own: true, sender: "@me:x",
+                reactions: [ReactionDto(key: mark, displayKey: mark, count: 1, byMe: false, senders: ["@atlas:x"])])
+            #expect(state([marked]) == nil, "\(mark) should end the dock")
+        }
+        // The reader's own ✅ is not the agent's verdict.
+        let mine = Self.row(
+            "1", own: true, sender: "@me:x",
+            reactions: [ReactionDto(key: "✅", displayKey: "✅", count: 1, byMe: true, senders: ["@me:x"])])
+        #expect(state([mine]) == .sent(to: "Atlas"))
+        // Typing still says working, whatever mark is there.
+        let done = Self.row(
+            "1", own: true, sender: "@me:x",
+            reactions: [ReactionDto(key: "✅", displayKey: "✅", count: 1, byMe: false, senders: ["@atlas:x"])])
+        #expect(state([done], typing: ["Atlas"]) == .onIt(["Atlas"]))
+    }
+
     @Test("the reader's own reaction is not the agent's")
     func ownReaction() {
         let reacted = Self.row(
