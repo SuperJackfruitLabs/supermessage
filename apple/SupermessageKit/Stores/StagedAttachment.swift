@@ -57,6 +57,18 @@ public final class StagedAttachment {
     public private(set) var roomId: String?
     /// Why the last stage or send did not work, drawn on the chip.
     public private(set) var failure: Failure?
+    /// The staged file is a recording, sent as a voice message: its length
+    /// and waveform. Kept so a re-stage after a failed send marks it again.
+    public private(set) var voice: VoiceMark?
+
+    public struct VoiceMark: Equatable, Sendable {
+        public let durationMs: UInt64
+        public let waveform: [Float]
+        public init(durationMs: UInt64, waveform: [Float]) {
+            self.durationMs = durationMs
+            self.waveform = waveform
+        }
+    }
 
     private let client: any AttachmentStaging
 
@@ -102,6 +114,19 @@ public final class StagedAttachment {
         }
     }
 
+    /// Mark what is staged in `roomId` as a voice message.
+    ///
+    /// Sent without it, a recording is a plain audio file: other clients draw
+    /// a file row, and Hermes — which transcribes only messages flagged as
+    /// voice — never transcribes it (2026-09-26). A failed mark is not a
+    /// failed attachment: the recording still sends, as a file.
+    public func markVoice(_ mark: VoiceMark, in roomId: String) async {
+        guard self.roomId == roomId, let file else { return }
+        voice = mark
+        try? await client.attachmentMarkVoice(
+            roomId: roomId, token: file.token, durationMs: mark.durationMs, waveform: mark.waveform)
+    }
+
     /// Record a refusal that happened before the core was ever asked — the
     /// picker's bytes could not be read, or copied.
     public func refuse(filename: String, message: String, in roomId: String) async {
@@ -122,6 +147,7 @@ public final class StagedAttachment {
             self.file = nil
             path = nil
             failure = nil
+            voice = nil
             self.roomId = nil
             return nil
         } catch {
@@ -142,6 +168,12 @@ public final class StagedAttachment {
         guard let path else { return }
         if let fresh = try? await client.attachmentStagePath(roomId: roomId, path: path) {
             file = fresh
+            // The mark lived on the old token; the retry must still be a
+            // voice message.
+            if let voice {
+                try? await client.attachmentMarkVoice(
+                    roomId: roomId, token: fresh.token, durationMs: voice.durationMs, waveform: voice.waveform)
+            }
         }
     }
 
@@ -152,6 +184,7 @@ public final class StagedAttachment {
         file = nil
         path = nil
         failure = nil
+        voice = nil
         roomId = nil
     }
 

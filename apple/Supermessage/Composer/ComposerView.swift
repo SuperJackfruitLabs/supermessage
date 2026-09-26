@@ -296,14 +296,17 @@ struct ComposerView: View {
         }
     }
 
-    /// Stop the recording and send it as an attachment.
+    /// Stop the recording and send it as a voice message.
     ///
-    /// Staged and sent through exactly the path a picked file takes; the core
-    /// sniffs `audio/mp4` and sends `m.audio`. The field is empty whenever the
-    /// mic is offered, so there is no text to go with it.
+    /// Staged through the path a picked file takes, then marked as a voice
+    /// message with its length and waveform — without the mark it went as a
+    /// plain audio file that Hermes never transcribed. The field is empty
+    /// whenever the mic is offered, so there is no text to go with it.
     private func sendRecording() async {
-        guard let url = recorder.finish() else { return }
-        guard await session.staged.stage(path: url.path, in: roomId) == nil else { return }
+        guard let recording = recorder.finish() else { return }
+        guard await session.staged.stage(path: recording.url.path, in: roomId) == nil else { return }
+        await session.staged.markVoice(
+            .init(durationMs: recording.durationMs, waveform: recording.waveform), in: roomId)
         sending = true
         defer { sending = false }
         if await session.send(text: "", in: roomId) == .sent {

@@ -547,6 +547,30 @@ impl Core {
         Ok(())
     }
 
+    /// Mark a staged recording as a voice message (MSC3245), with its length
+    /// in milliseconds and a waveform of levels between 0 and 1.
+    ///
+    /// Call between staging and sending. Sent without it, a recording is a
+    /// plain audio file: other clients draw a file row, and Hermes never
+    /// transcribes it.
+    pub fn attachment_mark_voice(
+        &self,
+        room_id: String,
+        token: String,
+        duration_ms: u64,
+        waveform: Vec<f32>,
+    ) -> Result<(), FfiError> {
+        self.session.staged_attachments().mark_voice(
+            &token,
+            &room_id,
+            supermessage_core::attachments::VoiceNote {
+                duration_ms,
+                waveform,
+            },
+        )?;
+        Ok(())
+    }
+
     /// Throw a staged file away without sending it.
     pub fn attachment_discard(&self, token: String) {
         self.session.staged_attachments().discard(&token);

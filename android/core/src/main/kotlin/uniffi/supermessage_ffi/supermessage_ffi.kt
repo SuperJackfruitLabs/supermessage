@@ -933,6 +933,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -965,6 +967,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_account(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferAccountDto.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_attachment_discard(`ptr`: Pointer,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`durationMs`: Long,`waveform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_attachment_send(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`caption`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1210,6 +1214,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_attachment_discard(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_attachment_send(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path(
@@ -1357,6 +1363,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice() != 59336.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541.toShort()) {
@@ -1645,6 +1654,29 @@ public object FfiConverterULong: FfiConverter<ULong, Long> {
 /**
  * @suppress
  */
+public object FfiConverterFloat: FfiConverter<Float, Float> {
+    override fun lift(value: Float): Float {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Float {
+        return buf.getFloat()
+    }
+
+    override fun lower(value: Float): Float {
+        return value
+    }
+
+    override fun allocationSize(value: Float) = 4UL
+
+    override fun write(value: Float, buf: ByteBuffer) {
+        buf.putFloat(value)
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
     override fun lift(value: Byte): Boolean {
         return value.toInt() != 0
@@ -1902,6 +1934,16 @@ public interface CoreInterface {
      * Throw a staged file away without sending it.
      */
     fun `attachmentDiscard`(`token`: kotlin.String)
+    
+    /**
+     * Mark a staged recording as a voice message (MSC3245), with its length
+     * in milliseconds and a waveform of levels between 0 and 1.
+     *
+     * Call between staging and sending. Sent without it, a recording is a
+     * plain audio file: other clients draw a file row, and Hermes never
+     * transcribes it.
+     */
+    fun `attachmentMarkVoice`(`roomId`: kotlin.String, `token`: kotlin.String, `durationMs`: kotlin.ULong, `waveform`: List<kotlin.Float>)
     
     /**
      * Upload and send the staged file `token` names.
@@ -2345,6 +2387,26 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_attachment_discard(
         it, FfiConverterString.lower(`token`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Mark a staged recording as a voice message (MSC3245), with its length
+     * in milliseconds and a waveform of levels between 0 and 1.
+     *
+     * Call between staging and sending. Sent without it, a recording is a
+     * plain audio file: other clients draw a file row, and Hermes never
+     * transcribes it.
+     */
+    @Throws(FfiException::class)override fun `attachmentMarkVoice`(`roomId`: kotlin.String, `token`: kotlin.String, `durationMs`: kotlin.ULong, `waveform`: List<kotlin.Float>)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`token`),FfiConverterULong.lower(`durationMs`),FfiConverterSequenceFloat.lower(`waveform`),_status)
 }
     }
     
@@ -4791,6 +4853,34 @@ public object FfiConverterOptionalTypeMatrixLinkTarget: FfiConverterRustBuffer<M
         } else {
             buf.put(1)
             FfiConverterTypeMatrixLinkTarget.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceFloat: FfiConverterRustBuffer<List<kotlin.Float>> {
+    override fun read(buf: ByteBuffer): List<kotlin.Float> {
+        val len = buf.getInt()
+        return List<kotlin.Float>(len) {
+            FfiConverterFloat.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.Float>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterFloat.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.Float>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterFloat.write(it, buf)
         }
     }
 }

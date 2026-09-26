@@ -15,6 +15,7 @@ import Testing
 actor StubOutbox: AttachmentStaging, MessageSending {
     enum Call: Equatable {
         case stage(String), sendAttachment(String, caption: String? = nil), discard(String)
+        case markVoice(String, durationMs: UInt64, points: Int)
         case message(String, mentions: [String]), reply(String)
     }
 
@@ -52,6 +53,10 @@ actor StubOutbox: AttachmentStaging, MessageSending {
 
     func attachmentDiscard(token: String) async {
         calls.append(.discard(token))
+    }
+
+    func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64, waveform: [Float]) async throws {
+        calls.append(.markVoice(token, durationMs: durationMs, points: waveform.count))
     }
 
     func sendMessage(roomId: String, body: String, mentions: [String]) async throws {
@@ -225,6 +230,43 @@ struct StagedAttachmentTests {
         #expect(!staged.blocksSend(in: room), "a re-staged file can be retried")
         let calls = await stub.calls
         #expect(calls.contains(.discard("tok-1")), "a live token would be orphaned in the core")
+    }
+
+    @Test("a recording is marked as a voice message on the token it was staged with")
+    func marksVoice() async {
+        // Unmarked, a recording went as a plain audio file: Hermes never
+        // transcribed it (Writer Quill, 2026-09-26).
+        let staged = StagedAttachment(client: stub)
+        await staged.stage(path: "/tmp/Voice message.m4a", in: room)
+        await staged.markVoice(.init(durationMs: 4_200, waveform: [0.1, 0.5, 0.9]), in: room)
+
+        let calls = await stub.calls
+        #expect(calls.contains(.markVoice("tok-1", durationMs: 4_200, points: 3)))
+        #expect(staged.voice?.durationMs == 4_200)
+    }
+
+    @Test("a failed send re-marks the fresh token, so the retry is still a voice message")
+    func restagedVoiceIsMarkedAgain() async {
+        // Mutation seen failing: re-staging without re-marking — the retry
+        // went as a plain file.
+        let staged = StagedAttachment(client: stub)
+        await staged.stage(path: "/tmp/Voice message.m4a", in: room)
+        await staged.markVoice(.init(durationMs: 1_000, waveform: []), in: room)
+        await stub.set(failAttachmentSend: true)
+
+        _ = await staged.send(in: room)
+
+        let calls = await stub.calls
+        #expect(calls.contains(.markVoice("tok-2", durationMs: 1_000, points: 0)))
+    }
+
+    @Test("marking in another room does nothing")
+    func markVoiceIsRoomScoped() async {
+        let staged = StagedAttachment(client: stub)
+        await staged.stage(path: "/tmp/Voice message.m4a", in: room)
+        await staged.markVoice(.init(durationMs: 1_000, waveform: []), in: "!other:x")
+        let calls = await stub.calls
+        #expect(!calls.contains { if case .markVoice = $0 { return true } else { return false } })
     }
 
     @Test("when the file cannot be staged again, the chip stays and says why")
