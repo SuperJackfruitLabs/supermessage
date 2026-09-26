@@ -23,6 +23,7 @@
 use crate::custom_events::{default_registry, resolve_custom_event, CustomEventView};
 use crate::dto::{ReplyToDto, TimelineItemDto};
 use crate::rich::{blocks_from_markdown, blocks_from_sanitised_html, RichBlock};
+use crate::turn_error::TurnErrorCard;
 
 /// What a [`ItemView::System`] line is *about*, independent of its wording.
 ///
@@ -170,6 +171,17 @@ pub enum ItemView {
         /// hands the bidi algorithm a hostile string and lets a crafted type
         /// reorder itself on screen.
         event_type: String,
+    },
+    /// An agent's turn failed, and the message saying so carried the
+    /// structured `dev.agentpod.turn_error` card beside its readable body.
+    ///
+    /// `card` is already decided — the kind's wording, the headline, the
+    /// fallback chain with repeats folded — so a host draws it and never
+    /// reads the payload. See `crate::turn_error`. A message whose card did
+    /// not parse is never this: it stays the ordinary [`Self::Bubble`] of its
+    /// body, which is a complete sentence on its own.
+    TurnError {
+        card: TurnErrorCard,
     },
     None,
 }
@@ -618,6 +630,27 @@ pub fn custom_event_label(
     match event_type.and_then(|t| registry.get(t)) {
         Some(renderer) => renderer.label().to_string(),
         None => display_event_type(event_type),
+    }
+}
+
+/// The render decision for `item`, given the turn error card its raw event
+/// carried, if any.
+///
+/// The card is passed in rather than read off `item` because it comes from
+/// the raw event (`timeline::turn_error_from_raw`), which the DTO does not
+/// carry. Only a text or notice message becomes a card — the msgtypes the hub
+/// posts a failure as. On anything else the card is ignored and the item gets
+/// the view it would have had without one, so a card attached to an image or
+/// a state event cannot hide what that event is.
+pub fn view_for_with_turn_error(
+    item: &TimelineItemDto,
+    turn_error: Option<TurnErrorCard>,
+) -> ItemView {
+    let is_text = item.kind == "message"
+        && matches!(item.msgtype.as_deref(), Some("m.text") | Some("m.notice"));
+    match turn_error {
+        Some(card) if is_text => ItemView::TurnError { card },
+        _ => view_for(item),
     }
 }
 
@@ -1864,5 +1897,107 @@ mod tests {
 
         it.sender = None;
         assert_eq!(attributed_name(&it), "Someone");
+    }
+
+    // ---- turn error ------------------------------------------------------
+
+    fn a_turn_error() -> TurnErrorCard {
+        crate::turn_error::parse_turn_error(&serde_json::json!({
+            "schema_version": 1,
+            "kind": "quota",
+            "message": "You've reached your weekly (7-day) usage limit.",
+            "harness": "openclaw",
+            "provider": "kimi-coding",
+            "model": "k2p6",
+        }))
+        .expect("a valid card")
+    }
+
+    fn the_hubs_message() -> TimelineItemDto {
+        let mut it = item("message");
+        it.msgtype = Some("m.text".into());
+        it.sender = Some("@agent_krishna:id.agentpod.dev".into());
+        it.body =
+            Some("This agent reported an error: You've reached your weekly usage limit.".into());
+        it
+    }
+
+    #[test]
+    fn a_message_carrying_a_turn_error_card_is_drawn_as_the_card() {
+        assert_eq!(
+            view_for_with_turn_error(&the_hubs_message(), Some(a_turn_error())),
+            ItemView::TurnError {
+                card: a_turn_error()
+            }
+        );
+    }
+
+    #[test]
+    fn a_notice_carrying_a_card_is_drawn_as_the_card_too() {
+        // Not a system line: a one-line notice would otherwise become one.
+        let mut it = the_hubs_message();
+        it.msgtype = Some("m.notice".into());
+        assert!(matches!(
+            view_for_with_turn_error(&it, Some(a_turn_error())),
+            ItemView::TurnError { .. }
+        ));
+    }
+
+    #[test]
+    fn without_a_card_the_same_message_is_the_ordinary_bubble() {
+        // What a malformed key comes to: the parser returned `None`, and the
+        // message is drawn exactly as a message with no key at all.
+        let it = the_hubs_message();
+        assert_eq!(view_for_with_turn_error(&it, None), view_for(&it));
+        assert!(matches!(
+            view_for_with_turn_error(&it, None),
+            ItemView::Bubble { muted: false, .. }
+        ));
+    }
+
+    #[test]
+    fn a_card_cannot_hide_what_a_non_text_event_is() {
+        let mut image = the_hubs_message();
+        image.msgtype = Some("m.image".into());
+        assert!(matches!(
+            view_for_with_turn_error(&image, Some(a_turn_error())),
+            ItemView::Image { .. }
+        ));
+
+        let mut state = item("state");
+        state.detail = Some("m.room.encryption".into());
+        assert_eq!(
+            view_for_with_turn_error(&state, Some(a_turn_error())),
+            view_for(&state)
+        );
+    }
+
+    #[test]
+    fn a_row_built_with_a_card_carries_it_in_its_view() {
+        let row =
+            crate::dto::TimelineRow::with_turn_error(the_hubs_message(), Some(a_turn_error()));
+        let ItemView::TurnError { card } = &row.view else {
+            panic!("expected a turn error, got {:?}", row.view);
+        };
+        assert_eq!(card.headline, "Usage limit reached · kimi-coding / k2p6");
+        // Everything else about the row is what it always was: the body is
+        // still there for a reply preview or a notification.
+        assert_eq!(row.sender_name, "Krishna");
+        assert!(row.reply_preview.is_some());
+
+        let plain = crate::dto::TimelineRow::new(the_hubs_message());
+        assert!(matches!(plain.view, ItemView::Bubble { .. }));
+    }
+
+    #[test]
+    fn a_turn_error_view_is_tagged_for_a_host_to_switch_on() {
+        let json = serde_json::to_value(ItemView::TurnError {
+            card: a_turn_error(),
+        })
+        .unwrap();
+        assert_eq!(json["render"], "turnError");
+        assert_eq!(json["card"]["label"], "Usage limit reached");
+        assert_eq!(json["card"]["source"], "kimi-coding / k2p6");
+        assert_eq!(json["card"]["attempts"], serde_json::json!([]));
     }
 }

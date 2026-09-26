@@ -2892,6 +2892,168 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
 
 
 /**
+ * One model the harness tried, with any identical attempts directly after
+ * it folded in.
+ */
+data class TurnErrorAttempt (
+    var `provider`: kotlin.String, 
+    var `model`: kotlin.String, 
+    /**
+     * `provider / model`, composed once so every host writes it the same
+     * way.
+     */
+    var `source`: kotlin.String, 
+    var `kind`: TurnErrorKind, 
+    /**
+     * [`TurnErrorKind::label`] for `kind`.
+     */
+    var `label`: kotlin.String, 
+    var `message`: kotlin.String, 
+    /**
+     * How many consecutive, identical attempts this line stands for — the
+     * same provider, model, kind and message. Never zero. A host shows "×N"
+     * when it is above one.
+     */
+    var `count`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnErrorAttempt: FfiConverterRustBuffer<TurnErrorAttempt> {
+    override fun read(buf: ByteBuffer): TurnErrorAttempt {
+        return TurnErrorAttempt(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeTurnErrorKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnErrorAttempt) = (
+            FfiConverterString.allocationSize(value.`provider`) +
+            FfiConverterString.allocationSize(value.`model`) +
+            FfiConverterString.allocationSize(value.`source`) +
+            FfiConverterTypeTurnErrorKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterString.allocationSize(value.`message`) +
+            FfiConverterUInt.allocationSize(value.`count`)
+    )
+
+    override fun write(value: TurnErrorAttempt, buf: ByteBuffer) {
+            FfiConverterString.write(value.`provider`, buf)
+            FfiConverterString.write(value.`model`, buf)
+            FfiConverterString.write(value.`source`, buf)
+            FfiConverterTypeTurnErrorKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterString.write(value.`message`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
+    }
+}
+
+
+
+/**
+ * A failed turn, ready to draw.
+ */
+data class TurnErrorCard (
+    var `kind`: TurnErrorKind, 
+    /**
+     * [`TurnErrorKind::label`] for `kind` — "Usage limit reached".
+     */
+    var `label`: kotlin.String, 
+    /**
+     * `provider / model` for the model that was asked for, or whichever of
+     * the two the sender gave. `None` when it gave neither.
+     */
+    var `source`: kotlin.String?, 
+    /**
+     * `label`, then ` · source` when there is one — "Usage limit reached ·
+     * kimi-coding / k2p6". The card's first line.
+     */
+    var `headline`: kotlin.String, 
+    /**
+     * The provider's own words. Never empty.
+     */
+    var `message`: kotlin.String, 
+    /**
+     * Which harness ran the turn — "openclaw", "claude-code".
+     */
+    var `harness`: kotlin.String, 
+    var `provider`: kotlin.String?, 
+    var `model`: kotlin.String?, 
+    /**
+     * Whether AgentPod thinks trying again could work. `None` when it did
+     * not say.
+     */
+    var `retryable`: kotlin.Boolean?, 
+    /**
+     * The fallback chain, in order: the first is the model that was asked
+     * for, the rest what the harness fell back to. Consecutive repeats are
+     * already folded — see [`TurnErrorAttempt::count`]. Empty when the
+     * sender listed none.
+     */
+    var `attempts`: List<TurnErrorAttempt>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnErrorCard: FfiConverterRustBuffer<TurnErrorCard> {
+    override fun read(buf: ByteBuffer): TurnErrorCard {
+        return TurnErrorCard(
+            FfiConverterTypeTurnErrorKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalBoolean.read(buf),
+            FfiConverterSequenceTypeTurnErrorAttempt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnErrorCard) = (
+            FfiConverterTypeTurnErrorKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterOptionalString.allocationSize(value.`source`) +
+            FfiConverterString.allocationSize(value.`headline`) +
+            FfiConverterString.allocationSize(value.`message`) +
+            FfiConverterString.allocationSize(value.`harness`) +
+            FfiConverterOptionalString.allocationSize(value.`provider`) +
+            FfiConverterOptionalString.allocationSize(value.`model`) +
+            FfiConverterOptionalBoolean.allocationSize(value.`retryable`) +
+            FfiConverterSequenceTypeTurnErrorAttempt.allocationSize(value.`attempts`)
+    )
+
+    override fun write(value: TurnErrorCard, buf: ByteBuffer) {
+            FfiConverterTypeTurnErrorKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterOptionalString.write(value.`source`, buf)
+            FfiConverterString.write(value.`headline`, buf)
+            FfiConverterString.write(value.`message`, buf)
+            FfiConverterString.write(value.`harness`, buf)
+            FfiConverterOptionalString.write(value.`provider`, buf)
+            FfiConverterOptionalString.write(value.`model`, buf)
+            FfiConverterOptionalBoolean.write(value.`retryable`, buf)
+            FfiConverterSequenceTypeTurnErrorAttempt.write(value.`attempts`, buf)
+    }
+}
+
+
+
+/**
  * One member currently typing in a room, projected from the SDK's
  * `Vec<OwnedUserId>` (`Room::subscribe_to_typing_notifications`) plus a
  * best-effort local member-list lookup for a display name — see
@@ -3337,6 +3499,21 @@ sealed class ItemView {
         companion object
     }
     
+    /**
+     * An agent's turn failed, and the message saying so carried the
+     * structured `dev.agentpod.turn_error` card beside its readable body.
+     *
+     * `card` is already decided — the kind's wording, the headline, the
+     * fallback chain with repeats folded — so a host draws it and never
+     * reads the payload. See `crate::turn_error`. A message whose card did
+     * not parse is never this: it stays the ordinary [`Self::Bubble`] of its
+     * body, which is a complete sentence on its own.
+     */
+    data class TurnError(
+        val `card`: TurnErrorCard) : ItemView() {
+        companion object
+    }
+    
     object None : ItemView()
     
     
@@ -3383,7 +3560,10 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterString.read(buf),
                 FfiConverterString.read(buf),
                 )
-            10 -> ItemView.None
+            10 -> ItemView.TurnError(
+                FfiConverterTypeTurnErrorCard.read(buf),
+                )
+            11 -> ItemView.None
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -3460,6 +3640,13 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 + FfiConverterString.allocationSize(value.`eventType`)
             )
         }
+        is ItemView.TurnError -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeTurnErrorCard.allocationSize(value.`card`)
+            )
+        }
         is ItemView.None -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
@@ -3523,8 +3710,13 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterString.write(value.`eventType`, buf)
                 Unit
             }
-            is ItemView.None -> {
+            is ItemView.TurnError -> {
                 buf.putInt(10)
+                FfiConverterTypeTurnErrorCard.write(value.`card`, buf)
+                Unit
+            }
+            is ItemView.None -> {
+                buf.putInt(11)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -4725,6 +4917,54 @@ public object FfiConverterTypeToolPhase: FfiConverterRustBuffer<ToolPhase> {
 
 
 
+/**
+ * Why the turn failed, as AgentPod classifies it.
+ *
+ * A wire value this build has never heard of is [`Self::Unknown`], never a
+ * parse failure: a new kind is an additive change and the message it
+ * arrives on is still worth drawing as a card.
+ */
+
+enum class TurnErrorKind {
+    
+    QUOTA,
+    RATE_LIMIT,
+    AUTH,
+    BAD_REQUEST,
+    CONTEXT_EXHAUSTED,
+    TIMEOUT,
+    PROVIDER_UNAVAILABLE,
+    REFUSAL,
+    MAX_TOKENS,
+    CANCELLED,
+    NODE_OFFLINE,
+    HARNESS_EXITED,
+    UNKNOWN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnErrorKind: FfiConverterRustBuffer<TurnErrorKind> {
+    override fun read(buf: ByteBuffer) = try {
+        TurnErrorKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: TurnErrorKind) = 4UL
+
+    override fun write(value: TurnErrorKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 
 /**
  * @suppress
@@ -4751,6 +4991,38 @@ public object FfiConverterOptionalULong: FfiConverterRustBuffer<kotlin.ULong?> {
         } else {
             buf.put(1)
             FfiConverterULong.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalBoolean: FfiConverterRustBuffer<kotlin.Boolean?> {
+    override fun read(buf: ByteBuffer): kotlin.Boolean? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterBoolean.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.Boolean?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterBoolean.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.Boolean?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterBoolean.write(value, buf)
         }
     }
 }
@@ -5291,6 +5563,34 @@ public object FfiConverterSequenceTypeRosterRow: FfiConverterRustBuffer<List<Ros
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeRosterRow.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeTurnErrorAttempt: FfiConverterRustBuffer<List<TurnErrorAttempt>> {
+    override fun read(buf: ByteBuffer): List<TurnErrorAttempt> {
+        val len = buf.getInt()
+        return List<TurnErrorAttempt>(len) {
+            FfiConverterTypeTurnErrorAttempt.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<TurnErrorAttempt>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeTurnErrorAttempt.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<TurnErrorAttempt>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeTurnErrorAttempt.write(it, buf)
         }
     }
 }

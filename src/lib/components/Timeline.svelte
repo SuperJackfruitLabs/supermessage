@@ -296,6 +296,7 @@
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
   import DispatchCard from "./timeline/DispatchCard.svelte";
+  import TurnErrorCard from "./timeline/TurnErrorCard.svelte";
   import LogLine from "./timeline/LogLine.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
@@ -1542,6 +1543,18 @@
                     </div>
                   </div>
                 {/if}
+              {:else if view.render === "turnError"}
+                <!--
+                  An agent's failed turn, drawn from the card the core parsed
+                  off the hub's message (`core::turn_error`). Inside the
+                  sender's message block, because it *is* their message — the
+                  one other clients show as its plain body — with the same
+                  reactions and actions any message has.
+                -->
+                {#snippet turnErrorContent()}
+                  <TurnErrorCard card={view.card} />
+                {/snippet}
+                {@render messageBlock(row, turnErrorContent)}
               {:else if view.render === "unreadMarker"}
                 <!--
                   Where you left off. A rule with a word on it, in the accent

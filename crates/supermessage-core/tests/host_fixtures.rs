@@ -128,3 +128,69 @@ fn sender_parts_split_the_glyph_off() {
     assert_eq!(initial, "✳");
     assert_eq!(name, "Atlas — Platform");
 }
+
+/// krishna's failed turn, in `TurnErrorFixtures.swift` (iOS),
+/// `TurnErrorPresentationTests.swift` (iOS kit) and `fixtures/turnError.ts`
+/// (web). Parsed from the payload the hub sent, so the strings those fixtures
+/// hard-code are the ones the core actually produces.
+#[test]
+fn turn_error_card() {
+    use supermessage_core::turn_error::{parse_turn_error, TurnErrorKind};
+
+    let routed = "Request is missing x-opencode-session and cannot be routed efficiently.";
+    let qwen = serde_json::json!({
+        "provider": "opencode-go", "model": "qwen3.7-plus", "kind": "bad_request", "message": routed,
+    });
+    let payload = serde_json::json!({
+        "schema_version": 1,
+        "kind": "quota",
+        "message": "You've reached your weekly (7-day) usage limit.",
+        "harness": "openclaw",
+        "provider": "kimi-coding",
+        "model": "k2p6",
+        "retryable": false,
+        "attempts": [
+            { "provider": "kimi-coding", "model": "k2p6", "kind": "quota",
+              "message": "You've reached your weekly (7-day) usage limit." },
+            { "provider": "opencode-go", "model": "hy3-preview", "kind": "bad_request", "message": routed },
+            qwen.clone(), qwen.clone(), qwen.clone(), qwen,
+        ]
+    });
+    let card = parse_turn_error(&payload).expect("the hub's card parses");
+
+    assert_eq!(card.label, "Usage limit reached");
+    assert_eq!(card.source.as_deref(), Some("kimi-coding / k2p6"));
+    assert_eq!(card.headline, "Usage limit reached · kimi-coding / k2p6");
+    assert_eq!(
+        card.message,
+        "You've reached your weekly (7-day) usage limit."
+    );
+    let lines: Vec<(&str, TurnErrorKind, &str, u32)> = card
+        .attempts
+        .iter()
+        .map(|a| (a.source.as_str(), a.kind, a.label.as_str(), a.count))
+        .collect();
+    assert_eq!(
+        lines,
+        vec![
+            (
+                "kimi-coding / k2p6",
+                TurnErrorKind::Quota,
+                "Usage limit reached",
+                1
+            ),
+            (
+                "opencode-go / hy3-preview",
+                TurnErrorKind::BadRequest,
+                "Request rejected",
+                1
+            ),
+            (
+                "opencode-go / qwen3.7-plus",
+                TurnErrorKind::BadRequest,
+                "Request rejected",
+                4
+            ),
+        ]
+    );
+}

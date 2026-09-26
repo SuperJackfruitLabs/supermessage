@@ -25,6 +25,17 @@ where the decision was made, not in a separate audit tool.
 A request whose options are missing or malformed renders as a **description of the request**
 rather than as a card with no buttons. An unanswerable prompt is worse than a plain sentence.
 
+## When a turn fails
+
+An agent that could not finish — a usage limit, a rate limit, a model that refused the request —
+posts one message saying so. Where AgentPod attached the details, it renders as an error card
+rather than as a plain message: what went wrong ("Usage limit reached · kimi-coding / k2p6"), the
+provider's own words, and every model the agent fell back to, with repeated identical attempts
+folded into one line ("×4").
+
+Other clients see the same message as a readable sentence. A card whose details are missing or
+malformed is shown as that sentence here too.
+
 ## Live output
 
 While an agent is working, partial text streams in over to-device messages — the answer as it is

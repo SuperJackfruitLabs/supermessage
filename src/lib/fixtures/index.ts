@@ -28,3 +28,4 @@ export * from "./live";
 export * from "./rooms";
 export * from "./spaces";
 export * from "./timeline";
+export * from "./turnError";
