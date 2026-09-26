@@ -179,6 +179,11 @@ fun TimelineRow(
                     .wrapContentWidth(if (row.item.isOwn) Alignment.End else Alignment.Start),
             )
 
+        // `m.audio`: a player, not a file row. Voice note or audio file is
+        // the core's call (`audio.isVoice`); see `AudioNote`.
+        is ItemView.Audio ->
+            AudioRow(row = row, audio = view.audio, named = named, continuesRun = continuesRun, modifier = modifier)
+
         // A suite event — a Superpipeline card or run, a permission request,
         // station status. `DecisionCard` renders the whole fallback-chain
         // decision; see its own doc for the three states it handles.
@@ -662,7 +667,7 @@ private fun ImageRow(named: String, alt: String, width: ULong?, height: ULong?, 
     }
 }
 
-/** An informative row naming what an `m.file`/`m.audio`/`m.video` message is. */
+/** An informative row naming what an `m.file`/`m.video` message is. `m.audio` is [AudioRow]. */
 @Composable
 private fun MediaFileRow(label: MediaFileLabel, filename: String, size: ULong?, modifier: Modifier = Modifier) {
     Row(

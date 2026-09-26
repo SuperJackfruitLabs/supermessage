@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
+import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_ffi.FfiEvent
@@ -555,6 +556,15 @@ class Session(
     } catch (e: Exception) {
         null
     }
+
+    /**
+     * An audio message's bytes, ready for `MediaPlayer`: Ogg/Opus stays Ogg,
+     * because Android's player opens it natively (`opusInCaf = false` — the
+     * remux exists for AVFoundation). Throws what the core throws; the player
+     * ([VoicePlayback]) turns any failure into "Can't play".
+     */
+    suspend fun playableAudio(eventId: String): PlayableAudio? =
+        client.mediaAudio(eventId = eventId, opusInCaf = false)
 
     /** Everyone this account shares a room with, agents first. */
     suspend fun people(): List<PersonDto> = try {

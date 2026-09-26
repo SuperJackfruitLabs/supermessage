@@ -62,6 +62,7 @@ class PreviewScreenshotTest(
             "LiveTurnThinking",     // streaming text
             "TimelineLive",         // a live turn arriving
             "TimelinePaginating",   // isPaginating = true
+            "VoiceLoading",         // a voice note fetching its file
         )
 
         @BeforeClass
