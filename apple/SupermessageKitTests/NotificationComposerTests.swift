@@ -264,6 +264,15 @@ struct NotificationComposerTests {
         #expect(timeline([row]).first?.body == "Usage limit reached · kimi-coding / k2p6")
     }
 
+    @Test("a voice note's transcript does not notify a second time")
+    func voiceTranscript() {
+        // The hub posts it after the note; the note was the interruption.
+        let view = ItemView.voiceTranscript(
+            transcript: VoiceTranscriptPresentationTests.transcript, onOwnNote: false)
+        let row = timelineRow("$v", view: view, preview: "Transcript: Can you move the review to Thursday?")
+        #expect(timeline([row]).isEmpty)
+    }
+
     @Test("system rows do not notify")
     func systemRows() {
         let row = timelineRow("$s", view: .system(kind: .membershipChanged(who: "Atlas", detail: nil), text: "Atlas joined"))

@@ -327,6 +327,11 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_account(void*_Nonnull ptr, Rus
 void uniffi_supermessage_ffi_fn_method_core_attachment_discard(void*_Nonnull ptr, RustBuffer token, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_MARK_VOICE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_MARK_VOICE
+void uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(void*_Nonnull ptr, RustBuffer room_id, RustBuffer token, uint64_t duration_ms, RustBuffer waveform, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_SEND
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_SEND
 void uniffi_supermessage_ffi_fn_method_core_attachment_send(void*_Nonnull ptr, RustBuffer room_id, RustBuffer token, RustBuffer caption, RustCallStatus *_Nonnull out_status
@@ -946,6 +951,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_account(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_DISCARD
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_DISCARD
 uint16_t uniffi_supermessage_ffi_checksum_method_core_attachment_discard(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_MARK_VOICE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ATTACHMENT_MARK_VOICE
+uint16_t uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice(void
     
 );
 #endif

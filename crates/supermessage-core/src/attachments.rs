@@ -120,6 +120,23 @@ pub struct StagedAttachment {
     pub height: Option<u64>,
 }
 
+/// A recording the host marked as a voice message (MSC3245), with what a
+/// client needs to draw it as one: its length and a waveform.
+///
+/// Sent without these, a recording is a plain `m.audio` file. Element and
+/// most clients then draw a file row, not a voice bubble, and Hermes — which
+/// transcribes only messages flagged as voice — treats it as an attachment
+/// and never transcribes it (Writer Quill, 2026-09-26). The hub's own
+/// transcription reads `info.duration` to state the length and to refuse an
+/// over-long note before downloading it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceNote {
+    pub duration_ms: u64,
+    /// Levels between 0 and 1, oldest first. Empty is allowed: the flag and
+    /// the length still go.
+    pub waveform: Vec<f32>,
+}
+
 /// A staged file: the metadata the webview holds a token for, plus the two
 /// things it must never be told — where the file is, and which room it was
 /// staged against.
@@ -129,6 +146,8 @@ struct StagedFile {
     room_id: String,
     meta: StagedAttachment,
     staged_at: Instant,
+    /// Set by [`StagedAttachments::mark_voice`].
+    voice: Option<VoiceNote>,
 }
 
 /// The token -> staged file map. Registered as Tauri managed state, and
@@ -177,6 +196,30 @@ impl StagedAttachments {
         entries.insert(entry.meta.token.clone(), entry);
     }
 
+    /// Marks the staged file `token` as a voice message. Checked against
+    /// `room_id` like a send, so a token kept across a room switch cannot be
+    /// marked for the wrong room.
+    pub fn mark_voice(&self, token: &str, room_id: &str, voice: VoiceNote) -> CoreResult<()> {
+        let mut entries = self.lock();
+        let entry = entries.get_mut(token).ok_or(CoreError::UnknownAttachment)?;
+        if entry.room_id != room_id {
+            return Err(CoreError::RoomChanged {
+                requested: room_id.to_string(),
+                focused: entry.room_id.clone(),
+            });
+        }
+        entry.voice = Some(VoiceNote {
+            duration_ms: voice.duration_ms,
+            // Into 0..=1, which is all the SDK accepts; a NaN is silence.
+            waveform: voice
+                .waveform
+                .into_iter()
+                .map(|v| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) })
+                .collect(),
+        });
+        Ok(())
+    }
+
     /// Consumes `token` for a send into `room_id`, returning the path and
     /// metadata.
     ///
@@ -205,7 +248,7 @@ impl StagedAttachments {
         token: &str,
         room_id: &str,
         now: Instant,
-    ) -> CoreResult<(PathBuf, StagedAttachment)> {
+    ) -> CoreResult<(PathBuf, StagedAttachment, Option<VoiceNote>)> {
         let mut entries = self.lock();
         entries.retain(|_, e| !is_expired(e, now));
 
@@ -220,7 +263,7 @@ impl StagedAttachments {
         let entry = entries
             .remove(token)
             .expect("entry was present under the same lock a moment ago");
-        Ok((entry.path, entry.meta))
+        Ok((entry.path, entry.meta, entry.voice))
     }
 
     /// Discards `token`. Silent about a token that is already gone —
@@ -469,6 +512,35 @@ fn attachment_info_for(
     }
 }
 
+/// The info a staged file is sent with: a voice message's when the host
+/// marked it as one and it is audio, else [`attachment_info_for`]'s.
+///
+/// Only audio: the SDK flags voice only on `m.audio`, and would turn a voice
+/// info on any other family into an empty one, size and all.
+fn send_info(
+    mime: &Mime,
+    size_bytes: u64,
+    dimensions: Option<(u64, u64)>,
+    voice: Option<&VoiceNote>,
+) -> AttachmentInfo {
+    match voice {
+        Some(voice) if mime.type_() == mime::AUDIO => voice_info(size_bytes, voice),
+        _ => attachment_info_for(mime, size_bytes, dimensions),
+    }
+}
+
+/// A voice message's info: the SDK's `Voice` variant is what adds the
+/// MSC3245 flag, and a length with a waveform adds MSC1767's audio block and
+/// `info.duration`. Only for an audio file — a voice flag on anything else
+/// would draw a bubble no player can play.
+fn voice_info(size_bytes: u64, voice: &VoiceNote) -> AttachmentInfo {
+    AttachmentInfo::Voice(BaseAudioInfo {
+        duration: Some(std::time::Duration::from_millis(voice.duration_ms)),
+        size: UInt::new(size_bytes),
+        waveform: Some(voice.waveform.clone()),
+    })
+}
+
 /// Renders a byte count the way the refusal message needs it: binary units,
 /// one decimal place. Homeserver limits are powers of two (Synapse's default
 /// is 52428800), so decimal units would make a file of exactly the limit
@@ -582,6 +654,7 @@ pub async fn stage_path(
             room_id: room_id.to_string(),
             meta: meta.clone(),
             staged_at: Instant::now(),
+            voice: None,
         },
         Instant::now(),
     );
@@ -628,7 +701,7 @@ pub async fn send_staged(
     let timeline = focused.active_timeline_for(room_id)?;
     let client = session.require_client().await?;
 
-    let (path, meta) = staged.take_for_send(token, room_id)?;
+    let (path, meta, voice) = staged.take_for_send(token, room_id)?;
 
     let metadata = tokio::fs::metadata(&path)
         .await
@@ -643,7 +716,7 @@ pub async fn send_staged(
     // what crossed IPC and what the recipient will see in `info.mimetype`, so
     // parsing it back is the one thing that guarantees those agree.
     let mime: Mime = meta.mime.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
-    let info = attachment_info_for(&mime, bytes.len() as u64, meta.dimensions());
+    let info = send_info(&mime, bytes.len() as u64, meta.dimensions(), voice.as_ref());
 
     // **What the sender typed goes with the file, as its caption** (MSC2530:
     // the caption is `body`, the file name moves to `filename` — the SDK does
@@ -703,7 +776,11 @@ impl StagedAttachment {
 
 impl StagedAttachments {
     /// [`Self::take_for_send_at`] against the wall clock.
-    fn take_for_send(&self, token: &str, room_id: &str) -> CoreResult<(PathBuf, StagedAttachment)> {
+    fn take_for_send(
+        &self,
+        token: &str,
+        room_id: &str,
+    ) -> CoreResult<(PathBuf, StagedAttachment, Option<VoiceNote>)> {
         self.take_for_send_at(token, room_id, Instant::now())
     }
 }
@@ -736,6 +813,7 @@ mod tests {
                 height: Some(20),
             },
             staged_at: at,
+            voice: None,
         }
     }
 
@@ -793,7 +871,7 @@ mod tests {
         let now = Instant::now();
         staged.insert_at(staged_file("tok", "!a:x.org", now), now);
 
-        let (path, _) = staged
+        let (path, _, _) = staged
             .take_for_send_at("tok", "!a:x.org", now)
             .expect("the first send resolves the token");
         assert_eq!(path, PathBuf::from("/private/somewhere/secret.png"));
@@ -1125,7 +1203,7 @@ mod tests {
         let now = Instant::now();
         staged.insert_at(staged_file("tok", "!a:x.org", now), now);
 
-        let (path, meta) = staged.take_for_send_at("tok", "!a:x.org", now).unwrap();
+        let (path, meta, _) = staged.take_for_send_at("tok", "!a:x.org", now).unwrap();
         assert_eq!(path, PathBuf::from("/private/somewhere/secret.png"));
         let serialized = serde_json::to_string(&meta).unwrap();
         assert!(
@@ -1149,5 +1227,106 @@ mod tests {
         assert_eq!(object.len(), 4);
         assert!(!object.contains_key("width"));
         assert!(!object.contains_key("height"));
+    }
+
+    // ---- voice messages ----------------------------------------------------
+
+    #[test]
+    fn a_marked_recording_is_sent_as_a_voice_message_with_its_length_and_waveform() {
+        // Unmarked, a recording went as a plain m.audio file: Hermes never
+        // transcribed it and the hub could not state its length (2026-09-26).
+        let staged = StagedAttachments::default();
+        let now = Instant::now();
+        staged.insert_at(staged_file("tok", "!a:x.org", now), now);
+        staged
+            .mark_voice(
+                "tok",
+                "!a:x.org",
+                VoiceNote {
+                    duration_ms: 4_200,
+                    waveform: vec![0.0, 0.5, 1.7, -0.2],
+                },
+            )
+            .unwrap();
+        let (_, _, voice) = staged.take_for_send_at("tok", "!a:x.org", now).unwrap();
+        let voice = voice.expect("the mark travels with the token");
+        assert_eq!(voice.duration_ms, 4_200);
+        // Clamped into 0..=1, which is all the SDK accepts.
+        assert_eq!(voice.waveform, vec![0.0, 0.5, 1.0, 0.0]);
+
+        match voice_info(1234, &voice) {
+            AttachmentInfo::Voice(info) => {
+                assert_eq!(info.duration, Some(std::time::Duration::from_millis(4_200)));
+                assert_eq!(info.size, UInt::new(1234));
+                assert_eq!(info.waveform.as_deref(), Some(&[0.0, 0.5, 1.0, 0.0][..]));
+            }
+            other => panic!("expected a voice message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn marking_is_room_bound_and_needs_a_live_token() {
+        let staged = StagedAttachments::default();
+        let now = Instant::now();
+        staged.insert_at(staged_file("tok", "!a:x.org", now), now);
+        let note = VoiceNote {
+            duration_ms: 1_000,
+            waveform: vec![],
+        };
+        assert!(matches!(
+            staged.mark_voice("tok", "!b:x.org", note.clone()),
+            Err(CoreError::RoomChanged { .. })
+        ));
+        assert!(matches!(
+            staged.mark_voice("never-minted", "!a:x.org", note),
+            Err(CoreError::UnknownAttachment)
+        ));
+        let (_, _, voice) = staged.take_for_send_at("tok", "!a:x.org", now).unwrap();
+        assert!(
+            voice.is_none(),
+            "an unmarked file stays an ordinary attachment"
+        );
+    }
+
+    #[test]
+    fn a_voice_mark_is_honoured_only_on_audio() {
+        let note = VoiceNote {
+            duration_ms: 2_000,
+            waveform: vec![0.5, f32::NAN],
+        };
+        let audio: Mime = "audio/mp4".parse().unwrap();
+        assert!(matches!(
+            send_info(&audio, 10, None, Some(&note)),
+            AttachmentInfo::Voice(_)
+        ));
+        assert!(matches!(
+            send_info(&audio, 10, None, None),
+            AttachmentInfo::Audio(_)
+        ));
+        // A mark on an image would lose the image's size and dimensions.
+        let png: Mime = "image/png".parse().unwrap();
+        assert!(matches!(
+            send_info(&png, 10, Some((2, 3)), Some(&note)),
+            AttachmentInfo::Image(BaseImageInfo { width: Some(_), .. })
+        ));
+    }
+
+    #[test]
+    fn a_nan_level_is_marked_as_silence() {
+        let staged = StagedAttachments::default();
+        let now = Instant::now();
+        staged.insert_at(staged_file("tok", "!a:x.org", now), now);
+        staged
+            .mark_voice(
+                "tok",
+                "!a:x.org",
+                VoiceNote {
+                    duration_ms: 1,
+                    waveform: vec![f32::NAN, 0.25],
+                },
+            )
+            .unwrap();
+        let (_, _, voice) = staged.take_for_send_at("tok", "!a:x.org", now).unwrap();
+        assert_eq!(voice.unwrap().waveform, vec![0.0, 0.25]);
     }
 }

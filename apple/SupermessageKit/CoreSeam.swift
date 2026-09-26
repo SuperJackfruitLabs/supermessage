@@ -67,6 +67,14 @@ public protocol AttachmentStaging: Sendable {
     /// `caption` travels in the same event as the file (MSC2530).
     func attachmentSend(roomId: String, token: String, caption: String?) async throws
     func attachmentDiscard(token: String) async
+    /// Mark a staged recording as a voice message: its length and waveform.
+    func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64, waveform: [Float]) async throws
+}
+
+extension AttachmentStaging {
+    /// A seam that does not know voice messages sends recordings as plain
+    /// audio files — what every seam did before voice messages existed.
+    public func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64, waveform: [Float]) async throws {}
 }
 
 /// `TimelineStore`.

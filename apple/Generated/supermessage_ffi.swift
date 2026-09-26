@@ -463,6 +463,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
+    typealias FfiType = Float
+    typealias SwiftType = Float
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
+        return try lift(readFloat(&buf))
+    }
+
+    public static func write(_ value: Float, into buf: inout [UInt8]) {
+        writeFloat(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -546,6 +562,16 @@ public protocol CoreProtocol : AnyObject {
      * Throw a staged file away without sending it.
      */
     func attachmentDiscard(token: String) 
+    
+    /**
+     * Mark a staged recording as a voice message (MSC3245), with its length
+     * in milliseconds and a waveform of levels between 0 and 1.
+     *
+     * Call between staging and sending. Sent without it, a recording is a
+     * plain audio file: other clients draw a file row, and Hermes never
+     * transcribes it.
+     */
+    func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64, waveform: [Float]) throws 
     
     /**
      * Upload and send the staged file `token` names.
@@ -965,6 +991,24 @@ open func account()throws  -> AccountDto {
 open func attachmentDiscard(token: String) {try! rustCall() {
     uniffi_supermessage_ffi_fn_method_core_attachment_discard(self.uniffiClonePointer(),
         FfiConverterString.lower(token),$0
+    )
+}
+}
+    
+    /**
+     * Mark a staged recording as a voice message (MSC3245), with its length
+     * in milliseconds and a waveform of levels between 0 and 1.
+     *
+     * Call between staging and sending. Sent without it, a recording is a
+     * plain audio file: other clients draw a file row, and Hermes never
+     * transcribes it.
+     */
+open func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64, waveform: [Float])throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(token),
+        FfiConverterUInt64.lower(durationMs),
+        FfiConverterSequenceFloat.lower(waveform),$0
     )
 }
 }
@@ -3149,6 +3193,31 @@ fileprivate struct FfiConverterOptionTypeMatrixLinkTarget: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
+    typealias SwiftType = [Float]
+
+    public static func write(_ value: [Float], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterFloat.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Float] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Float]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterFloat.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -3670,6 +3739,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice() != 59336) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541) {

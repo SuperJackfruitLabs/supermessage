@@ -290,6 +290,12 @@ public actor CoreClient {
         await run { $0.attachmentDiscard(token: token) }
     }
 
+    public func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64, waveform: [Float]) async throws {
+        try await run {
+            try $0.attachmentMarkVoice(roomId: roomId, token: token, durationMs: durationMs, waveform: waveform)
+        }
+    }
+
     // MARK: - Search
 
     public func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {

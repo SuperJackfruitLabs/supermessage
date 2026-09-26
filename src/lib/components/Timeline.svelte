@@ -297,6 +297,7 @@
   import RichText from "./RichText.svelte";
   import DispatchCard from "./timeline/DispatchCard.svelte";
   import TurnErrorCard from "./timeline/TurnErrorCard.svelte";
+  import VoiceTranscript from "./timeline/VoiceTranscript.svelte";
   import LogLine from "./timeline/LogLine.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
@@ -1555,6 +1556,15 @@
                   <TurnErrorCard card={view.card} />
                 {/snippet}
                 {@render messageBlock(row, turnErrorContent)}
+              {:else if view.render === "voiceTranscript"}
+                <!--
+                  What a voice note said, from the hub's transcript notice
+                  (`core::voice_transcript`). Deliberately *not* a
+                  `messageBlock`: it belongs to the note it replies to, not to
+                  the agent that posted it, so it carries no sender line and
+                  sits on the note's side, directly under it.
+                -->
+                <VoiceTranscript transcript={view.transcript} onOwnNote={view.onOwnNote} />
               {:else if view.render === "unreadMarker"}
                 <!--
                   Where you left off. A rule with a word on it, in the accent

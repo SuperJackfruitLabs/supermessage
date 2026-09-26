@@ -24,6 +24,7 @@ use crate::custom_events::{default_registry, resolve_custom_event, CustomEventVi
 use crate::dto::{ReplyToDto, TimelineItemDto};
 use crate::rich::{blocks_from_markdown, blocks_from_sanitised_html, RichBlock};
 use crate::turn_error::TurnErrorCard;
+use crate::voice_transcript::VoiceNoteTranscript;
 
 /// What a [`ItemView::System`] line is *about*, independent of its wording.
 ///
@@ -182,6 +183,22 @@ pub enum ItemView {
     /// body, which is a complete sentence on its own.
     TurnError {
         card: TurnErrorCard,
+    },
+    /// What a voice note said: the hub's transcript notice, which replies to
+    /// the note and carried the structured `dev.agentpod.voice_transcript`
+    /// beside its `Transcript: …` fallback body.
+    ///
+    /// The transcript belongs to the note, not to the agent that posted it,
+    /// so a host draws it on the **note's** side of the timeline, directly
+    /// under it: `on_own_note` is whether the replied-to note is the reader's
+    /// own. When the note's details never loaded, it falls back to whether
+    /// the notice itself is the reader's — the side any reply of theirs takes.
+    /// See `crate::voice_transcript`. A notice whose key did not parse is
+    /// never this: it stays the ordinary notice of its body.
+    VoiceTranscript {
+        transcript: VoiceNoteTranscript,
+        #[serde(rename = "onOwnNote")]
+        on_own_note: bool,
     },
     None,
 }
@@ -651,6 +668,42 @@ pub fn view_for_with_turn_error(
     match turn_error {
         Some(card) if is_text => ItemView::TurnError { card },
         _ => view_for(item),
+    }
+}
+
+/// The render decision for `item`, given the voice transcript its raw event
+/// carried, if any. `own_user` is the reader's Matrix id, for the side the
+/// transcript is drawn on.
+///
+/// Like [`view_for_with_turn_error`], and for the same reason: only a text or
+/// notice message becomes a transcript — the hub posts an `m.notice` — and on
+/// anything else the transcript is ignored.
+pub fn view_for_with_voice_transcript(
+    item: &TimelineItemDto,
+    transcript: Option<VoiceNoteTranscript>,
+    own_user: &str,
+) -> ItemView {
+    let is_text = item.kind == "message"
+        && matches!(item.msgtype.as_deref(), Some("m.text") | Some("m.notice"));
+    match transcript {
+        Some(transcript) if is_text => ItemView::VoiceTranscript {
+            transcript,
+            on_own_note: transcript_is_on_own_note(item, own_user),
+        },
+        _ => view_for(item),
+    }
+}
+
+/// Whether the note a transcript replies to is the reader's own.
+///
+/// Read off the reply's loaded parent when there is one. When there is not —
+/// the parent never loaded, or the notice is not a reply at all — the notice's
+/// own side stands in, which is where any other reply of its sender's is
+/// drawn.
+fn transcript_is_on_own_note(item: &TimelineItemDto, own_user: &str) -> bool {
+    match item.reply_to.as_ref() {
+        Some(reply) if reply.available => reply.sender.as_deref() == Some(own_user),
+        _ => item.is_own,
     }
 }
 
@@ -1999,5 +2052,86 @@ mod tests {
         assert_eq!(json["card"]["label"], "Usage limit reached");
         assert_eq!(json["card"]["source"], "kimi-coding / k2p6");
         assert_eq!(json["card"]["attempts"], serde_json::json!([]));
+    }
+
+    // ---- voice transcript -------------------------------------------------
+
+    fn a_transcript() -> VoiceNoteTranscript {
+        crate::voice_transcript::parse_voice_transcript(&serde_json::json!({
+            "schema_version": 1,
+            "text": "Can you move the review to Thursday?",
+            "language": "en",
+            "seconds": 42,
+        }))
+        .expect("a valid transcript")
+    }
+
+    fn the_hubs_notice() -> TimelineItemDto {
+        let mut it = item("message");
+        it.msgtype = Some("m.notice".into());
+        it.sender = Some("@agentpod:id.agentpod.dev".into());
+        it.body = Some("Transcript: Can you move the review to Thursday?".into());
+        it.reply_to = Some(ReplyToDto {
+            event_id: "$note".into(),
+            available: true,
+            sender: Some("@me:x.org".into()),
+            sender_display_name: Some("Me".into()),
+            excerpt: None,
+            label: Some("Audio".into()),
+        });
+        it
+    }
+
+    #[test]
+    fn a_notice_carrying_a_transcript_is_drawn_as_the_transcript_not_its_body() {
+        // Without the key this one-line notice is a centred system line,
+        // detached from the note.
+        assert!(matches!(
+            view_for(&the_hubs_notice()),
+            ItemView::System { .. }
+        ));
+        assert_eq!(
+            view_for_with_voice_transcript(&the_hubs_notice(), Some(a_transcript()), "@me:x.org"),
+            ItemView::VoiceTranscript {
+                transcript: a_transcript(),
+                on_own_note: true
+            }
+        );
+    }
+
+    #[test]
+    fn without_a_transcript_the_notice_is_what_it_always_was() {
+        let it = the_hubs_notice();
+        assert_eq!(
+            view_for_with_voice_transcript(&it, None, "@me:x.org"),
+            view_for(&it)
+        );
+    }
+
+    #[test]
+    fn a_transcript_cannot_hide_what_a_non_text_event_is() {
+        let mut audio = the_hubs_notice();
+        audio.msgtype = Some("m.audio".into());
+        assert_eq!(
+            view_for_with_voice_transcript(&audio, Some(a_transcript()), "@me:x.org"),
+            view_for(&audio)
+        );
+        let state = item("state");
+        assert_eq!(
+            view_for_with_voice_transcript(&state, Some(a_transcript()), "@me:x.org"),
+            view_for(&state)
+        );
+    }
+
+    #[test]
+    fn a_transcript_view_is_tagged_for_a_host_to_switch_on() {
+        let json = serde_json::to_value(ItemView::VoiceTranscript {
+            transcript: a_transcript(),
+            on_own_note: true,
+        })
+        .unwrap();
+        assert_eq!(json["render"], "voiceTranscript");
+        assert_eq!(json["onOwnNote"], true);
+        assert_eq!(json["transcript"]["caption"], "Transcript · en · 0:42");
     }
 }

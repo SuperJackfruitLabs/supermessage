@@ -4575,6 +4575,149 @@ public func FfiConverterTypeTypingUserDto_lower(_ value: TypingUserDto) -> RustB
     return FfiConverterTypeTypingUserDto.lower(value)
 }
 
+
+/**
+ * A voice note's transcript, ready to draw.
+ */
+public struct VoiceNoteTranscript {
+    /**
+     * What was said, trimmed. Never empty. Selectable text, drawn as-is.
+     */
+    public var text: String
+    /**
+     * The language the transcriber detected — `"en"`, `"hi"` — as the hub
+     * wrote it. `None` when it did not say.
+     */
+    public var language: String?
+    /**
+     * The note's length in whole seconds, when the hub said.
+     */
+    public var seconds: UInt32?
+    /**
+     * `seconds` as `m:ss` — `"0:42"`, `"12:05"`. `None` with `seconds`.
+     */
+    public var duration: String?
+    /**
+     * The block's small heading: `"Transcript"`, then ` · language` and
+     * ` · duration` for whichever the hub gave — `"Transcript · hi · 0:42"`.
+     */
+    public var caption: String
+    /**
+     * What a screen reader says for the whole block — `"Transcript of voice
+     * note: …"` with the text.
+     */
+    public var accessibilityLabel: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What was said, trimmed. Never empty. Selectable text, drawn as-is.
+         */text: String, 
+        /**
+         * The language the transcriber detected — `"en"`, `"hi"` — as the hub
+         * wrote it. `None` when it did not say.
+         */language: String?, 
+        /**
+         * The note's length in whole seconds, when the hub said.
+         */seconds: UInt32?, 
+        /**
+         * `seconds` as `m:ss` — `"0:42"`, `"12:05"`. `None` with `seconds`.
+         */duration: String?, 
+        /**
+         * The block's small heading: `"Transcript"`, then ` · language` and
+         * ` · duration` for whichever the hub gave — `"Transcript · hi · 0:42"`.
+         */caption: String, 
+        /**
+         * What a screen reader says for the whole block — `"Transcript of voice
+         * note: …"` with the text.
+         */accessibilityLabel: String) {
+        self.text = text
+        self.language = language
+        self.seconds = seconds
+        self.duration = duration
+        self.caption = caption
+        self.accessibilityLabel = accessibilityLabel
+    }
+}
+
+
+
+extension VoiceNoteTranscript: Equatable, Hashable {
+    public static func ==(lhs: VoiceNoteTranscript, rhs: VoiceNoteTranscript) -> Bool {
+        if lhs.text != rhs.text {
+            return false
+        }
+        if lhs.language != rhs.language {
+            return false
+        }
+        if lhs.seconds != rhs.seconds {
+            return false
+        }
+        if lhs.duration != rhs.duration {
+            return false
+        }
+        if lhs.caption != rhs.caption {
+            return false
+        }
+        if lhs.accessibilityLabel != rhs.accessibilityLabel {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+        hasher.combine(language)
+        hasher.combine(seconds)
+        hasher.combine(duration)
+        hasher.combine(caption)
+        hasher.combine(accessibilityLabel)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoiceNoteTranscript: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoiceNoteTranscript {
+        return
+            try VoiceNoteTranscript(
+                text: FfiConverterString.read(from: &buf), 
+                language: FfiConverterOptionString.read(from: &buf), 
+                seconds: FfiConverterOptionUInt32.read(from: &buf), 
+                duration: FfiConverterOptionString.read(from: &buf), 
+                caption: FfiConverterString.read(from: &buf), 
+                accessibilityLabel: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VoiceNoteTranscript, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterOptionString.write(value.language, into: &buf)
+        FfiConverterOptionUInt32.write(value.seconds, into: &buf)
+        FfiConverterOptionString.write(value.duration, into: &buf)
+        FfiConverterString.write(value.caption, into: &buf)
+        FfiConverterString.write(value.accessibilityLabel, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoiceNoteTranscript_lift(_ buf: RustBuffer) throws -> VoiceNoteTranscript {
+    return try FfiConverterTypeVoiceNoteTranscript.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoiceNoteTranscript_lower(_ value: VoiceNoteTranscript) -> RustBuffer {
+    return FfiConverterTypeVoiceNoteTranscript.lower(value)
+}
+
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
@@ -4997,6 +5140,21 @@ public enum ItemView {
      */
     case turnError(card: TurnErrorCard
     )
+    /**
+     * What a voice note said: the hub's transcript notice, which replies to
+     * the note and carried the structured `dev.agentpod.voice_transcript`
+     * beside its `Transcript: …` fallback body.
+     *
+     * The transcript belongs to the note, not to the agent that posted it,
+     * so a host draws it on the **note's** side of the timeline, directly
+     * under it: `on_own_note` is whether the replied-to note is the reader's
+     * own. When the note's details never loaded, it falls back to whether
+     * the notice itself is the reader's — the side any reply of theirs takes.
+     * See `crate::voice_transcript`. A notice whose key did not parse is
+     * never this: it stays the ordinary notice of its body.
+     */
+    case voiceTranscript(transcript: VoiceNoteTranscript, onOwnNote: Bool
+    )
     case none
 }
 
@@ -5038,7 +5196,10 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         case 10: return .turnError(card: try FfiConverterTypeTurnErrorCard.read(from: &buf)
         )
         
-        case 11: return .none
+        case 11: return .voiceTranscript(transcript: try FfiConverterTypeVoiceNoteTranscript.read(from: &buf), onOwnNote: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 12: return .none
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5106,8 +5267,14 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             FfiConverterTypeTurnErrorCard.write(card, into: &buf)
             
         
-        case .none:
+        case let .voiceTranscript(transcript,onOwnNote):
             writeInt(&buf, Int32(11))
+            FfiConverterTypeVoiceNoteTranscript.write(transcript, into: &buf)
+            FfiConverterBool.write(onOwnNote, into: &buf)
+            
+        
+        case .none:
+            writeInt(&buf, Int32(12))
         
         }
     }
@@ -6527,6 +6694,30 @@ public func FfiConverterTypeTurnErrorKind_lower(_ value: TurnErrorKind) -> RustB
 extension TurnErrorKind: Equatable, Hashable {}
 
 
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = UInt32?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt32.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
 
 #if swift(>=5.8)
 @_documentation(visibility: private)

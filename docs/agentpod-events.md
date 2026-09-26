@@ -107,6 +107,37 @@ A key that does not parse leaves the message as the ordinary bubble of its
 key, so every value is bounded again here and drawn as text only. The ❌
 reaction the hub puts on the prompting message is unaffected.
 
+## 4. The voice transcript — a key on a reply to the note
+
+**Sending.** A recording from iOS goes as an MSC3245 voice message:
+`m.audio` with `org.matrix.msc3245.voice`, MSC1767's
+`org.matrix.msc1767.audio` block (duration and a waveform) and `info.duration`
+in milliseconds (`core::attachments::StagedAttachments::mark_voice`, FFI
+`attachment_mark_voice`). Hermes transcribes only audio flagged as voice, and
+the hub reads `info.duration` to refuse a note over five minutes before
+downloading it. Android and the desktop do not record.
+
+**Receiving.** Once the hub has transcribed a note, it posts an `m.notice`
+that **replies** to it (`m.relates_to.m.in_reply_to`), whose `body` is
+`Transcript: <text>` and whose `content` carries `dev.agentpod.voice_transcript`,
+parsed by `core::voice_transcript` and drawn as `ItemView::VoiceTranscript`: a
+quiet block directly under the note, on the note's side (trailing under your
+own note, `onOwnNote`), captioned "Transcript · hi · 0:42", clamped to six
+lines with "Show more". Without the key the same notice is a one-line system
+line from the agent, detached from the note.
+
+| Field | Effect |
+|---|---|
+| `schema_version` | Must be exactly `1`, or the key is ignored. Read strictly, unlike the turn error card: the `body` beside it already says the whole transcript. |
+| `text` | Required, non-empty once trimmed, at most 20000 characters (code points). Selectable. |
+| `language` | Optional, at most 16 ASCII letters, digits, `-`, `_` or spaces; anything else refuses the key. The caption's middle part. |
+| `seconds` | Optional integer `0..=3600`. Drawn as `m:ss`. |
+
+Present-but-invalid optional fields refuse the whole key; `null` is absent.
+The side comes from the reply's parent sender when the parent loaded, and
+from the notice's own sender otherwise. On iOS a transcript does not raise a
+notification of its own — the note already did.
+
 ## Adding a field
 
 1. Add it to the wire struct in `core::live` or to the renderer in

@@ -207,6 +207,11 @@ public enum NotificationComposer {
             return message(
                 row, eventId: eventId, roomId: roomId, subtitle: subtitle,
                 body: row.replyPreview ?? card.headline)
+        // What a voice note said, posted after the note. The note itself
+        // already notified (or was the reader's own), so the transcript
+        // arriving is not news worth a second interruption.
+        case .voiceTranscript:
+            return nil
         case .system, .unreadMarker, .placeholder, .dateDivider, .none:
             return nil
         }

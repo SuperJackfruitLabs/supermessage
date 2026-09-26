@@ -36,6 +36,15 @@ folded into one line ("×4").
 Other clients see the same message as a readable sentence. A card whose details are missing or
 malformed is shown as that sentence here too.
 
+## Voice notes
+
+A voice note recorded on iPhone is sent as a Matrix voice message, with its length and a
+waveform, so agents that transcribe voice will pick it up. When AgentPod posts the
+transcript, it appears directly under the note it belongs to — under your own note on your
+side — with a small "Transcript" caption, the detected language and the note's length. A long
+transcript opens at six lines with **Show more**. Other clients see the same transcript as a
+plain reply that starts "Transcript:".
+
 ## Live output
 
 While an agent is working, partial text streams in over to-device messages — the answer as it is
