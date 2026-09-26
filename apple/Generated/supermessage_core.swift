@@ -4130,6 +4130,327 @@ public func FfiConverterTypeTimelineRow_lower(_ value: TimelineRow) -> RustBuffe
 
 
 /**
+ * One model the harness tried, with any identical attempts directly after
+ * it folded in.
+ */
+public struct TurnErrorAttempt {
+    public var provider: String
+    public var model: String
+    /**
+     * `provider / model`, composed once so every host writes it the same
+     * way.
+     */
+    public var source: String
+    public var kind: TurnErrorKind
+    /**
+     * [`TurnErrorKind::label`] for `kind`.
+     */
+    public var label: String
+    public var message: String
+    /**
+     * How many consecutive, identical attempts this line stands for — the
+     * same provider, model, kind and message. Never zero. A host shows "×N"
+     * when it is above one.
+     */
+    public var count: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(provider: String, model: String, 
+        /**
+         * `provider / model`, composed once so every host writes it the same
+         * way.
+         */source: String, kind: TurnErrorKind, 
+        /**
+         * [`TurnErrorKind::label`] for `kind`.
+         */label: String, message: String, 
+        /**
+         * How many consecutive, identical attempts this line stands for — the
+         * same provider, model, kind and message. Never zero. A host shows "×N"
+         * when it is above one.
+         */count: UInt32) {
+        self.provider = provider
+        self.model = model
+        self.source = source
+        self.kind = kind
+        self.label = label
+        self.message = message
+        self.count = count
+    }
+}
+
+
+
+extension TurnErrorAttempt: Equatable, Hashable {
+    public static func ==(lhs: TurnErrorAttempt, rhs: TurnErrorAttempt) -> Bool {
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.model != rhs.model {
+            return false
+        }
+        if lhs.source != rhs.source {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.label != rhs.label {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
+        if lhs.count != rhs.count {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(provider)
+        hasher.combine(model)
+        hasher.combine(source)
+        hasher.combine(kind)
+        hasher.combine(label)
+        hasher.combine(message)
+        hasher.combine(count)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnErrorAttempt: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnErrorAttempt {
+        return
+            try TurnErrorAttempt(
+                provider: FfiConverterString.read(from: &buf), 
+                model: FfiConverterString.read(from: &buf), 
+                source: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeTurnErrorKind.read(from: &buf), 
+                label: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf), 
+                count: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnErrorAttempt, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.provider, into: &buf)
+        FfiConverterString.write(value.model, into: &buf)
+        FfiConverterString.write(value.source, into: &buf)
+        FfiConverterTypeTurnErrorKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterUInt32.write(value.count, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnErrorAttempt_lift(_ buf: RustBuffer) throws -> TurnErrorAttempt {
+    return try FfiConverterTypeTurnErrorAttempt.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnErrorAttempt_lower(_ value: TurnErrorAttempt) -> RustBuffer {
+    return FfiConverterTypeTurnErrorAttempt.lower(value)
+}
+
+
+/**
+ * A failed turn, ready to draw.
+ */
+public struct TurnErrorCard {
+    public var kind: TurnErrorKind
+    /**
+     * [`TurnErrorKind::label`] for `kind` — "Usage limit reached".
+     */
+    public var label: String
+    /**
+     * `provider / model` for the model that was asked for, or whichever of
+     * the two the sender gave. `None` when it gave neither.
+     */
+    public var source: String?
+    /**
+     * `label`, then ` · source` when there is one — "Usage limit reached ·
+     * kimi-coding / k2p6". The card's first line.
+     */
+    public var headline: String
+    /**
+     * The provider's own words. Never empty.
+     */
+    public var message: String
+    /**
+     * Which harness ran the turn — "openclaw", "claude-code".
+     */
+    public var harness: String
+    public var provider: String?
+    public var model: String?
+    /**
+     * Whether AgentPod thinks trying again could work. `None` when it did
+     * not say.
+     */
+    public var retryable: Bool?
+    /**
+     * The fallback chain, in order: the first is the model that was asked
+     * for, the rest what the harness fell back to. Consecutive repeats are
+     * already folded — see [`TurnErrorAttempt::count`]. Empty when the
+     * sender listed none.
+     */
+    public var attempts: [TurnErrorAttempt]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: TurnErrorKind, 
+        /**
+         * [`TurnErrorKind::label`] for `kind` — "Usage limit reached".
+         */label: String, 
+        /**
+         * `provider / model` for the model that was asked for, or whichever of
+         * the two the sender gave. `None` when it gave neither.
+         */source: String?, 
+        /**
+         * `label`, then ` · source` when there is one — "Usage limit reached ·
+         * kimi-coding / k2p6". The card's first line.
+         */headline: String, 
+        /**
+         * The provider's own words. Never empty.
+         */message: String, 
+        /**
+         * Which harness ran the turn — "openclaw", "claude-code".
+         */harness: String, provider: String?, model: String?, 
+        /**
+         * Whether AgentPod thinks trying again could work. `None` when it did
+         * not say.
+         */retryable: Bool?, 
+        /**
+         * The fallback chain, in order: the first is the model that was asked
+         * for, the rest what the harness fell back to. Consecutive repeats are
+         * already folded — see [`TurnErrorAttempt::count`]. Empty when the
+         * sender listed none.
+         */attempts: [TurnErrorAttempt]) {
+        self.kind = kind
+        self.label = label
+        self.source = source
+        self.headline = headline
+        self.message = message
+        self.harness = harness
+        self.provider = provider
+        self.model = model
+        self.retryable = retryable
+        self.attempts = attempts
+    }
+}
+
+
+
+extension TurnErrorCard: Equatable, Hashable {
+    public static func ==(lhs: TurnErrorCard, rhs: TurnErrorCard) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.label != rhs.label {
+            return false
+        }
+        if lhs.source != rhs.source {
+            return false
+        }
+        if lhs.headline != rhs.headline {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
+        if lhs.harness != rhs.harness {
+            return false
+        }
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.model != rhs.model {
+            return false
+        }
+        if lhs.retryable != rhs.retryable {
+            return false
+        }
+        if lhs.attempts != rhs.attempts {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(label)
+        hasher.combine(source)
+        hasher.combine(headline)
+        hasher.combine(message)
+        hasher.combine(harness)
+        hasher.combine(provider)
+        hasher.combine(model)
+        hasher.combine(retryable)
+        hasher.combine(attempts)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnErrorCard: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnErrorCard {
+        return
+            try TurnErrorCard(
+                kind: FfiConverterTypeTurnErrorKind.read(from: &buf), 
+                label: FfiConverterString.read(from: &buf), 
+                source: FfiConverterOptionString.read(from: &buf), 
+                headline: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf), 
+                harness: FfiConverterString.read(from: &buf), 
+                provider: FfiConverterOptionString.read(from: &buf), 
+                model: FfiConverterOptionString.read(from: &buf), 
+                retryable: FfiConverterOptionBool.read(from: &buf), 
+                attempts: FfiConverterSequenceTypeTurnErrorAttempt.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnErrorCard, into buf: inout [UInt8]) {
+        FfiConverterTypeTurnErrorKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterOptionString.write(value.source, into: &buf)
+        FfiConverterString.write(value.headline, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterString.write(value.harness, into: &buf)
+        FfiConverterOptionString.write(value.provider, into: &buf)
+        FfiConverterOptionString.write(value.model, into: &buf)
+        FfiConverterOptionBool.write(value.retryable, into: &buf)
+        FfiConverterSequenceTypeTurnErrorAttempt.write(value.attempts, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnErrorCard_lift(_ buf: RustBuffer) throws -> TurnErrorCard {
+    return try FfiConverterTypeTurnErrorCard.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnErrorCard_lower(_ value: TurnErrorCard) -> RustBuffer {
+    return FfiConverterTypeTurnErrorCard.lower(value)
+}
+
+
+/**
  * One member currently typing in a room, projected from the SDK's
  * `Vec<OwnedUserId>` (`Room::subscribe_to_typing_notifications`) plus a
  * best-effort local member-list lookup for a display name — see
@@ -4664,6 +4985,18 @@ public enum ItemView {
          * reorder itself on screen.
          */eventType: String
     )
+    /**
+     * An agent's turn failed, and the message saying so carried the
+     * structured `dev.agentpod.turn_error` card beside its readable body.
+     *
+     * `card` is already decided — the kind's wording, the headline, the
+     * fallback chain with repeats folded — so a host draws it and never
+     * reads the payload. See `crate::turn_error`. A message whose card did
+     * not parse is never this: it stays the ordinary [`Self::Bubble`] of its
+     * body, which is a complete sentence on its own.
+     */
+    case turnError(card: TurnErrorCard
+    )
     case none
 }
 
@@ -4702,7 +5035,10 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         case 9: return .customEvent(view: try FfiConverterTypeCustomEventView.read(from: &buf), label: try FfiConverterString.read(from: &buf), eventType: try FfiConverterString.read(from: &buf)
         )
         
-        case 10: return .none
+        case 10: return .turnError(card: try FfiConverterTypeTurnErrorCard.read(from: &buf)
+        )
+        
+        case 11: return .none
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -4765,8 +5101,13 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             FfiConverterString.write(eventType, into: &buf)
             
         
-        case .none:
+        case let .turnError(card):
             writeInt(&buf, Int32(10))
+            FfiConverterTypeTurnErrorCard.write(card, into: &buf)
+            
+        
+        case .none:
+            writeInt(&buf, Int32(11))
         
         }
     }
@@ -6039,6 +6380,154 @@ extension ToolPhase: Equatable, Hashable {}
 
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Why the turn failed, as AgentPod classifies it.
+ *
+ * A wire value this build has never heard of is [`Self::Unknown`], never a
+ * parse failure: a new kind is an additive change and the message it
+ * arrives on is still worth drawing as a card.
+ */
+
+public enum TurnErrorKind {
+    
+    case quota
+    case rateLimit
+    case auth
+    case badRequest
+    case contextExhausted
+    case timeout
+    case providerUnavailable
+    case refusal
+    case maxTokens
+    case cancelled
+    case nodeOffline
+    case harnessExited
+    case unknown
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnErrorKind: FfiConverterRustBuffer {
+    typealias SwiftType = TurnErrorKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnErrorKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .quota
+        
+        case 2: return .rateLimit
+        
+        case 3: return .auth
+        
+        case 4: return .badRequest
+        
+        case 5: return .contextExhausted
+        
+        case 6: return .timeout
+        
+        case 7: return .providerUnavailable
+        
+        case 8: return .refusal
+        
+        case 9: return .maxTokens
+        
+        case 10: return .cancelled
+        
+        case 11: return .nodeOffline
+        
+        case 12: return .harnessExited
+        
+        case 13: return .unknown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TurnErrorKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .quota:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .rateLimit:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .auth:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .badRequest:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .contextExhausted:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .timeout:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .providerUnavailable:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .refusal:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .maxTokens:
+            writeInt(&buf, Int32(9))
+        
+        
+        case .cancelled:
+            writeInt(&buf, Int32(10))
+        
+        
+        case .nodeOffline:
+            writeInt(&buf, Int32(11))
+        
+        
+        case .harnessExited:
+            writeInt(&buf, Int32(12))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(13))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnErrorKind_lift(_ buf: RustBuffer) throws -> TurnErrorKind {
+    return try FfiConverterTypeTurnErrorKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnErrorKind_lower(_ value: TurnErrorKind) -> RustBuffer {
+    return FfiConverterTypeTurnErrorKind.lower(value)
+}
+
+
+
+extension TurnErrorKind: Equatable, Hashable {}
+
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -6058,6 +6547,30 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
+    typealias SwiftType = Bool?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterBool.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterBool.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -6499,6 +7012,31 @@ fileprivate struct FfiConverterSequenceTypeRosterRow: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRosterRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTurnErrorAttempt: FfiConverterRustBuffer {
+    typealias SwiftType = [TurnErrorAttempt]
+
+    public static func write(_ value: [TurnErrorAttempt], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTurnErrorAttempt.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TurnErrorAttempt] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TurnErrorAttempt]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTurnErrorAttempt.read(from: &buf))
         }
         return seq
     }
