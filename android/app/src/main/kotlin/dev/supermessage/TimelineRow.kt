@@ -181,6 +181,10 @@ fun TimelineRow(
                 onDecide = onDecide,
             )
 
+        // An agent's failed turn, as the card the core parsed off the hub's
+        // message. See `TurnErrorCardView`.
+        is ItemView.TurnError -> TurnErrorCardView(card = view.card, modifier = modifier)
+
         // Deliberately nothing. A row for this would still occupy layout
         // space — "deliberately silent should mean absent, not empty" is
         // `TimelineGrouping`'s reason for filtering `None` out upstream, and

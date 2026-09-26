@@ -729,6 +729,33 @@ fn custom_message_payload(
     (payload, body)
 }
 
+/// The turn error card a message's raw event carries under
+/// [`crate::turn_error::TURN_ERROR_KEY`], if it carries a valid one.
+///
+/// `raw` is `EventTimelineItem::original_json()` — the same seam
+/// [`custom_message_payload`] reads, for the same reason: the SDK's parsed
+/// message content keeps `body` and `msgtype` and discards every other key.
+/// For an encrypted room it is the decrypted event, so the card survives
+/// encryption. `None` for a local echo, which the hub never is.
+///
+/// A cheap text search on the raw JSON runs first, because this is called
+/// for every message projected — including each re-projection a reaction or
+/// a read receipt causes — and almost none of them carry the key. Only a
+/// message that mentions it pays for parsing its `content`.
+///
+/// Any failure — no `content`, no key, a key that is not the card — is
+/// `None`, and the message renders as the ordinary message it also is.
+fn turn_error_from_raw(
+    raw: Option<&Raw<AnySyncTimelineEvent>>,
+) -> Option<crate::turn_error::TurnErrorCard> {
+    let raw = raw?;
+    if !raw.json().get().contains(crate::turn_error::TURN_ERROR_KEY) {
+        return None;
+    }
+    let content: serde_json::Value = raw.get_field("content").ok()??;
+    crate::turn_error::parse_turn_error(content.get(crate::turn_error::TURN_ERROR_KEY)?)
+}
+
 /// The sentence a decision leaves in the room.
 ///
 /// Derived from `option_id` rather than from the option's label, because a
@@ -1631,10 +1658,23 @@ fn project_virtual_item(
 pub fn project_item(item: &TimelineItem, own_user: &UserId) -> Option<TimelineRow> {
     // The single point where an item acquires its render decision. Everything
     // downstream carries the pair, so no host ever asks for one per row.
-    Some(TimelineRow::new(match item.kind() {
-        TimelineItemKind::Event(event) => project_event_item(item, event, own_user),
-        TimelineItemKind::Virtual(virtual_item) => project_virtual_item(item, virtual_item),
-    }))
+    Some(match item.kind() {
+        TimelineItemKind::Event(event) => {
+            let dto = project_event_item(item, event, own_user);
+            // Read only for a message: the card rides on the hub's
+            // `m.room.message`, and `view_for_with_turn_error` ignores it on
+            // anything else anyway.
+            let turn_error = if dto.kind == "message" {
+                turn_error_from_raw(event.original_json())
+            } else {
+                None
+            };
+            TimelineRow::with_turn_error(dto, turn_error)
+        }
+        TimelineItemKind::Virtual(virtual_item) => {
+            TimelineRow::new(project_virtual_item(item, virtual_item))
+        }
+    })
 }
 
 /// Project a raw batch of SDK diffs into the wire ops for one envelope.
@@ -3359,6 +3399,112 @@ mod tests {
         let content = serde_json::Value::String("x".repeat(10));
         let size = serde_json::to_string(&content).unwrap().len();
         assert_eq!(bound_custom_payload(content.clone(), size), Some(content));
+    }
+
+    // `turn_error_from_raw`: the raw-event half of the turn error card. The
+    // parsing itself is tested in `crate::turn_error`; these pin that the
+    // key is found where the hub puts it and that every miss is `None`.
+
+    fn hub_message(turn_error: serde_json::Value) -> Raw<AnySyncTimelineEvent> {
+        // Through text, as the SDK itself builds one: `Raw` wraps a
+        // `RawValue`, which is made from JSON text.
+        let event = serde_json::json!({
+            "type": "m.room.message",
+            "event_id": "$err",
+            "sender": "@agent_krishna:id.agentpod.dev",
+            "origin_server_ts": 1_700_000_000_000_u64,
+            "content": {
+                "msgtype": "m.text",
+                "body": "This agent reported an error: You've reached your weekly (7-day) usage limit.",
+                "dev.agentpod.turn_error": turn_error,
+            }
+        });
+        serde_json::from_str(&event.to_string())
+            .expect("hand-built raw sync timeline event JSON must deserialize")
+    }
+
+    #[test]
+    fn turn_error_from_raw_reads_the_card_off_the_hubs_message() {
+        let raw = hub_message(serde_json::json!({
+            "schema_version": 1,
+            "kind": "quota",
+            "message": "You've reached your weekly (7-day) usage limit.",
+            "harness": "openclaw",
+            "provider": "kimi-coding",
+            "model": "k2p6",
+            "retryable": false,
+        }));
+        let card = turn_error_from_raw(Some(&raw)).expect("the hub's card must be found");
+        assert_eq!(card.headline, "Usage limit reached · kimi-coding / k2p6");
+    }
+
+    #[test]
+    fn turn_error_from_raw_is_none_for_a_malformed_key_and_the_row_stays_a_message() {
+        let raw = hub_message(serde_json::json!({ "kind": "quota" }));
+        let card = turn_error_from_raw(Some(&raw));
+        assert_eq!(card, None);
+
+        let dto = project_item_parts(
+            "id",
+            Some("$err"),
+            "message",
+            Some("m.text"),
+            None,
+            Some("@agent_krishna:id.agentpod.dev"),
+            None,
+            None,
+            false,
+            Some("This agent reported an error: something"),
+            None,
+            None,
+            None,
+            Some(1_700_000_000_000),
+            false,
+            None,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        );
+        let row = TimelineRow::with_turn_error(dto, card);
+        assert!(
+            matches!(row.view, crate::item_view::ItemView::Bubble { .. }),
+            "a malformed card must fall back to the message, got {:?}",
+            row.view
+        );
+    }
+
+    #[test]
+    fn turn_error_from_raw_is_none_without_the_key_or_without_an_event() {
+        assert_eq!(turn_error_from_raw(None), None);
+        let plain: Raw<AnySyncTimelineEvent> = serde_json::from_str(
+            r#"{
+                "type": "m.room.message",
+                "event_id": "$plain",
+                "sender": "@alice:example.org",
+                "origin_server_ts": 1700000000000,
+                "content": { "msgtype": "m.text", "body": "hello" }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(turn_error_from_raw(Some(&plain)), None);
+    }
+
+    #[test]
+    fn turn_error_from_raw_ignores_the_key_anywhere_but_content() {
+        // The pre-filter is a text search; the card is still only read from
+        // `content`, so mentioning the key in a body is not a card.
+        let raw: Raw<AnySyncTimelineEvent> = serde_json::from_str(
+            r#"{
+                "type": "m.room.message",
+                "event_id": "$mention",
+                "sender": "@alice:example.org",
+                "origin_server_ts": 1700000000000,
+                "content": { "msgtype": "m.text", "body": "what is dev.agentpod.turn_error?" }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(turn_error_from_raw(Some(&raw)), None);
     }
 
     #[test]

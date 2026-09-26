@@ -170,9 +170,56 @@ struct TimelineRowView: View {
                 view: view, label: label, eventType: eventType, senderName: named,
                 onDecide: onDecide)
 
+        case let .turnError(card):
+            TurnErrorRow(
+                row: row, named: named, card: card, faces: faces, onReact: onReact)
+
         case .none:
             EmptyView()
         }
+    }
+}
+
+/// An agent's failed turn, under the agent's own header — it is their
+/// message, the one other clients show as its plain body — with the
+/// reactions any message has. The card itself is `TurnErrorCardView`.
+///
+/// Always headed: a failure is never the continuation of the answer above
+/// it, which is why `TimelineGrouping` only runs bubbles together.
+private struct TurnErrorRow: View {
+    let row: TimelineRow
+    let named: String
+    let card: TurnErrorCard
+    let faces: AvatarCache
+    var onReact: ((String) -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                SenderFace(
+                    mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces,
+                    size: 22)
+                Text(named).nameFace().peerTint(row.item.sender).lineLimit(1)
+                if TimelineGrouping.isAgent(row) {
+                    AgentLabel()
+                }
+                if let timestamp = row.item.timestampMs {
+                    Text(TimelineTime.short(timestamp)).metaFace()
+                        .foregroundStyle(Theme.contentFaint)
+                }
+            }
+            .accessibilityElement(children: .combine)
+
+            VStack(alignment: .leading, spacing: -8) {
+                TurnErrorCardView(card: card)
+                if !row.item.reactions.isEmpty {
+                    ReactionRow(reactions: row.item.reactions, onReact: onReact)
+                        .padding(.horizontal, 10)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 12)
     }
 }
 

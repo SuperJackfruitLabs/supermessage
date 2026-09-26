@@ -244,6 +244,26 @@ struct NotificationComposerTests {
         #expect(timeline([timelineRow("$t", view: view)]).isEmpty)
     }
 
+    @Test("a failed turn notifies like the message it is, in the hub's own words")
+    func turnError() {
+        // The reader asked for something and it did not happen: that is worth
+        // an interruption, and the body the hub wrote already says what went
+        // wrong in a sentence.
+        let row = timelineRow(
+            "$e", view: .turnError(card: TurnErrorPresentationTests.card),
+            preview: "This agent reported an error: You've reached your weekly usage limit.")
+        let note = timeline([row]).first
+        #expect(note?.category == .message)
+        #expect(note?.body == "This agent reported an error: You've reached your weekly usage limit.")
+    }
+
+    @Test("a failed turn with no body to preview still says what failed")
+    func turnErrorWithoutPreview() {
+        let row = timelineRow(
+            "$e", view: .turnError(card: TurnErrorPresentationTests.card), preview: nil)
+        #expect(timeline([row]).first?.body == "Usage limit reached · kimi-coding / k2p6")
+    }
+
     @Test("system rows do not notify")
     func systemRows() {
         let row = timelineRow("$s", view: .system(kind: .membershipChanged(who: "Atlas", detail: nil), text: "Atlas joined"))

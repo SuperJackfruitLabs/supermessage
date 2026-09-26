@@ -201,6 +201,12 @@ public enum NotificationComposer {
             return message(
                 row, eventId: eventId, roomId: roomId, subtitle: subtitle,
                 body: row.replyPreview ?? filename)
+        // A failed turn is a message — the one other clients show as its
+        // body — and the reader is waiting on the answer it replaces.
+        case let .turnError(card):
+            return message(
+                row, eventId: eventId, roomId: roomId, subtitle: subtitle,
+                body: row.replyPreview ?? card.headline)
         case .system, .unreadMarker, .placeholder, .dateDivider, .none:
             return nil
         }

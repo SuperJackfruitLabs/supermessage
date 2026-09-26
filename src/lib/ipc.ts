@@ -828,6 +828,68 @@ export type PlaceholderKind =
 
 
 /**
+ * Why an agent's turn failed — `core::turn_error::TurnErrorKind`. A kind the
+ * core does not know arrives as `"unknown"`.
+ */
+export type TurnErrorKind =
+  | "quota"
+  | "rateLimit"
+  | "auth"
+  | "badRequest"
+  | "contextExhausted"
+  | "timeout"
+  | "providerUnavailable"
+  | "refusal"
+  | "maxTokens"
+  | "cancelled"
+  | "nodeOffline"
+  | "harnessExited"
+  | "unknown";
+
+/**
+ * One model a failed turn tried, with identical attempts directly after it
+ * folded in — `core::turn_error::TurnErrorAttempt`.
+ */
+export interface TurnErrorAttempt {
+  provider: string;
+  model: string;
+  /** `provider / model`, composed by the core. */
+  source: string;
+  kind: TurnErrorKind;
+  /** The kind's wording — "Request rejected". Render this, never `kind`. */
+  label: string;
+  message: string;
+  /** How many identical attempts in a row this line stands for. Never 0. */
+  count: number;
+}
+
+/**
+ * A failed turn, ready to draw — `core::turn_error::TurnErrorCard`.
+ *
+ * Parsed and bounded by the core from the `dev.agentpod.turn_error` key the
+ * hub puts on its error message. Every string here came from whoever sent the
+ * message: render as text only, never `{@html}`, an `href`, a `src` or a
+ * style.
+ */
+export interface TurnErrorCard {
+  kind: TurnErrorKind;
+  /** "Usage limit reached". */
+  label: string;
+  /** "kimi-coding / k2p6", or null when the sender named neither. */
+  source: string | null;
+  /** "Usage limit reached · kimi-coding / k2p6" — the card's first line. */
+  headline: string;
+  /** The provider's own words. Never empty. */
+  message: string;
+  harness: string;
+  provider: string | null;
+  model: string | null;
+  retryable: boolean | null;
+  /** The fallback chain, first the model asked for. May be empty. */
+  attempts: TurnErrorAttempt[];
+}
+
+/**
  * The render decision for one item, made by `core::item_view::view_for`.
  */
 export type ItemView =
@@ -862,6 +924,8 @@ export type ItemView =
       mimetype: string | null;
     }
   | { render: "customEvent"; view: CustomEventView; label: string; eventType: string }
+  /** An agent's turn failed; see {@link TurnErrorCard}. */
+  | { render: "turnError"; card: TurnErrorCard }
   | { render: "none" };
 
 /**

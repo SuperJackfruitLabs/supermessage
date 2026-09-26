@@ -890,7 +890,20 @@ impl TimelineRow {
     /// to arrive with the item rather than be fetchable. That is the whole
     /// reason this is a row and not a bare DTO.
     pub fn new(item: TimelineItemDto) -> Self {
-        let view = crate::item_view::view_for(&item);
+        Self::with_turn_error(item, None)
+    }
+
+    /// [`Self::new`], for an item whose raw event carried a turn error card.
+    ///
+    /// The card travels in the view — `ItemView::TurnError` — rather than as
+    /// a field on the item: a host only ever needs it to draw, and a field on
+    /// [`TimelineItemDto`] would change the desktop's frozen wire format and
+    /// every host's fixtures for something the view already carries.
+    pub fn with_turn_error(
+        item: TimelineItemDto,
+        turn_error: Option<crate::turn_error::TurnErrorCard>,
+    ) -> Self {
+        let view = crate::item_view::view_for_with_turn_error(&item, turn_error);
         let (sender_name, sender_short, sender_initial) = crate::item_view::attributed_parts(&item);
         let membership_verb = (item.kind == "membership")
             .then(|| crate::item_view::membership_verb(item.detail.as_deref()));

@@ -83,6 +83,30 @@ The client renders it on both hosts today. **Until AgentPod includes it, the
 card looks exactly as it does now.** The live card's reasoning is the stopgap,
 and it is bounded by the next turn.
 
+## 3. The turn error card — a key on an ordinary message
+
+When a turn fails, the hub posts **one** `m.room.message` (`m.text`) whose
+`body` is a complete sentence for any client — "This agent reported an error:
+You've reached your weekly (7-day) usage limit…". The same event's `content`
+carries `dev.agentpod.turn_error` (agentpod `TurnErrorCard`,
+`packages/contract/src/matrix-events.ts`), parsed by `core::turn_error` and
+drawn as `ItemView::TurnError` instead of the plain bubble.
+
+| Field | Effect |
+|---|---|
+| `schema_version` | Required and numeric, or the key is ignored. Above `1` is read best-effort, without a "newer version" note: the `body` beside it is always complete. |
+| `kind` | The headline's wording — `quota` is "Usage limit reached", `bad_request` "Request rejected", and so on (`TurnErrorKind::label`). A kind this build does not know reads "Error". |
+| `message` | The card's body text, bounded at 4000 characters, selectable. Required. |
+| `harness` | Required, bounded at 100. Carried on the card; not drawn today. |
+| `provider` / `model` | The headline's second half — "· kimi-coding / k2p6". Bounded at 200 each. |
+| `retryable` | Carried; not drawn today. A non-boolean is absent. |
+| `attempts[]` | The fallback chain, first the model asked for. Malformed entries are skipped, at most 16 are read, and consecutive identical attempts (same provider, model, kind and message) fold into one line with a count — "×4". Collapsed to its first line when there is more than one. |
+
+A key that does not parse leaves the message as the ordinary bubble of its
+`body`; it never drops or blanks the message. Anyone in the room can send this
+key, so every value is bounded again here and drawn as text only. The ❌
+reaction the hub puts on the prompting message is unaffected.
+
 ## Adding a field
 
 1. Add it to the wire struct in `core::live` or to the renderer in

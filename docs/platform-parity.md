@@ -83,6 +83,7 @@ states.
 | Timeline row | `timeline/*` (6 components) | `TimelineRowView` 9 | `TimelineRow` 8 |
 | Whole timeline | `Timeline` (no catalogue) | `TimelineView` 2, `TimelineCollectionView` 1 | `Timeline` 3 |
 | Decision card | `timeline/DispatchCard` 5 | `CustomEventCard` 6 | `DecisionCard` 6 |
+| Turn error card | `timeline/TurnErrorCard` (no catalogue) | `TurnErrorCardView` 3 | folded into `TimelineRow` (`TurnErrorCardView`, every attempt listed, no disclosure) |
 | Log line / placeholder | `timeline/LogLine` 5 | folded into `TimelineRowView` | folded into `TimelineRow` |
 | Unread marker | `timeline/UnreadMarker` 1 | folded into `TimelineRowView` | folded into `TimelineRow` |
 | Rich text | `RichText` (no catalogue) | `RichTextView` 2 | `RichText` 2 |

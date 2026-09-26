@@ -75,3 +75,6 @@ extension TimelineItemDto: @retroactive @unchecked Sendable {}
 extension TimelineRow: @retroactive @unchecked Sendable {}
 extension TimelineSnapshot: @retroactive @unchecked Sendable {}
 extension TypingUserDto: @retroactive @unchecked Sendable {}
+extension TurnErrorAttempt: @retroactive @unchecked Sendable {}
+extension TurnErrorCard: @retroactive @unchecked Sendable {}
+extension TurnErrorKind: @retroactive @unchecked Sendable {}
