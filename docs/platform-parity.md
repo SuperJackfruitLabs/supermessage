@@ -84,6 +84,7 @@ states.
 | Whole timeline | `Timeline` (no catalogue) | `TimelineView` 2, `TimelineCollectionView` 1 | `Timeline` 3 |
 | Decision card | `timeline/DispatchCard` 5 | `CustomEventCard` 6 | `DecisionCard` 6 |
 | Turn error card | `timeline/TurnErrorCard` (no catalogue) | `TurnErrorCardView` 3 | folded into `TimelineRow` (`TurnErrorCardView`, every attempt listed, no disclosure) |
+| Voice note / audio player | `timeline/AudioPlayer` 13 | `VoiceNoteView` 4 (every state per frame) | `AudioPreviews` 11 |
 | Voice transcript | `timeline/VoiceTranscript` 4 | `VoiceTranscriptView` 6 | `VoiceTranscriptView` (no catalogue) |
 | Log line / placeholder | `timeline/LogLine` 5 | folded into `TimelineRowView` | folded into `TimelineRow` |
 | Unread marker | `timeline/UnreadMarker` 1 | folded into `TimelineRowView` | folded into `TimelineRow` |
