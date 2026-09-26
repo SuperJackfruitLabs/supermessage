@@ -36,10 +36,14 @@
   {/snippet}
 </Story>
 
-<!-- A two-minute note: six lines, then Show more. -->
+<!--
+  A two-minute note in a narrow window: six lines, then Show more. At the
+  full 68ch measure this transcript is exactly six lines and the clamp hides
+  nothing, so no disclosure is offered — the check is measured, not guessed.
+-->
 <Story name="Long, clamped">
   {#snippet template()}
-    <div class="w-[72ch] max-w-full font-sans">
+    <div class="w-[44ch] max-w-full font-sans">
       <VoiceTranscript transcript={voiceTranscriptLong} onOwnNote={false} />
     </div>
   {/snippet}
