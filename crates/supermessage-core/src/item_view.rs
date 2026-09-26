@@ -20,6 +20,7 @@
 //! that state events are suppressed unless they change something the reader
 //! must know about.
 
+use crate::audio::{audio_view, AudioView};
 use crate::custom_events::{default_registry, resolve_custom_event, CustomEventView};
 use crate::dto::{ReplyToDto, TimelineItemDto};
 use crate::rich::{blocks_from_markdown, blocks_from_sanitised_html, RichBlock};
@@ -133,8 +134,17 @@ pub enum ItemView {
         /// whose `body` is just its file name.
         caption: Option<String>,
     },
-    /// An `m.file`/`m.audio`/`m.video`: an informative row naming what the
-    /// message is. `label` is precomputed so a host needs no msgtype table.
+    /// An `m.audio`, drawn as a player: a voice note (MSC3245) as a voice
+    /// bubble, any other audio file as a player with its name. Everything a
+    /// host shows — the length, the bars, what a screen reader says — is on
+    /// `audio`. See `crate::audio`.
+    Audio {
+        audio: AudioView,
+    },
+    /// An `m.file`/`m.video`: an informative row naming what the message is.
+    /// `label` is precomputed so a host needs no msgtype table. (`m.audio` was
+    /// one of these until it became [`Self::Audio`]; the label keeps its
+    /// `Audio` case for the reply-quote and preview vocabulary.)
     MediaFile {
         label: MediaFileLabel,
         filename: String,
@@ -583,6 +593,21 @@ fn message_view(item: &TimelineItemDto) -> ItemView {
             height: item.media.as_ref().and_then(|m| m.height),
             caption: image_caption(item),
         },
+        Some("m.audio") => {
+            let media = item.media.as_ref();
+            ItemView::Audio {
+                audio: audio_view(
+                    media.and_then(|m| m.audio.as_ref()),
+                    media
+                        .map(|m| m.filename.clone())
+                        .or_else(|| item.body.clone())
+                        .unwrap_or_else(|| MediaFileLabel::Audio.as_str().to_string()),
+                    media.and_then(|m| m.size),
+                    media.and_then(|m| m.mimetype.clone()),
+                    image_caption(item),
+                ),
+            }
+        }
         Some(other) if MediaFileLabel::for_msgtype(other).is_some() => {
             let label = MediaFileLabel::for_msgtype(other).expect("guarded by the match arm");
             ItemView::MediaFile {
@@ -857,6 +882,7 @@ mod tests {
             size,
             width: None,
             height: None,
+            audio: None,
         }
     }
 
@@ -1088,7 +1114,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_file_audio_video_as_an_informative_row_not_a_bare_placeholder() {
+    fn renders_file_and_video_as_an_informative_row_not_a_bare_placeholder() {
         let mut file = item("message");
         file.msgtype = Some("m.file".into());
         file.body = Some("report.pdf".into());
@@ -1100,19 +1126,6 @@ mod tests {
                 filename: "report.pdf".into(),
                 size: Some(2048),
                 mimetype: Some("application/pdf".into()),
-            }
-        );
-
-        let mut audio = item("message");
-        audio.msgtype = Some("m.audio".into());
-        audio.body = Some("voice.ogg".into());
-        assert_eq!(
-            view_for(&audio),
-            ItemView::MediaFile {
-                label: MediaFileLabel::Audio,
-                filename: "voice.ogg".into(),
-                size: None,
-                mimetype: None,
             }
         );
 
@@ -2133,5 +2146,82 @@ mod tests {
         assert_eq!(json["render"], "voiceTranscript");
         assert_eq!(json["onOwnNote"], true);
         assert_eq!(json["transcript"]["caption"], "Transcript · en · 0:42");
+    }
+
+    // ---- viewFor: audio ---------------------------------------------------
+
+    fn voice_note(meta: Option<crate::dto::AudioMetaDto>) -> TimelineItemDto {
+        let mut it = item("message");
+        it.msgtype = Some("m.audio".into());
+        it.body = Some("Voice message.ogg".into());
+        let mut m = media("Voice message.ogg", Some("audio/ogg"), Some(7_992));
+        m.audio = meta;
+        it.media = Some(m);
+        it
+    }
+
+    #[test]
+    fn a_voice_note_is_a_player_carrying_its_length_and_bars() {
+        let it = voice_note(Some(crate::dto::AudioMetaDto {
+            is_voice: true,
+            duration_ms: Some(7_400),
+            waveform: Some(vec![0.0, 0.5, 1.0]),
+        }));
+        let ItemView::Audio { audio } = view_for(&it) else {
+            panic!("expected a player, got {:?}", view_for(&it));
+        };
+        assert!(audio.is_voice);
+        assert_eq!(audio.title, "Voice message");
+        assert_eq!(audio.length_label.as_deref(), Some("0:07"));
+        assert_eq!(audio.waveform, Some(vec![0.0, 0.5, 1.0]));
+        assert_eq!(audio.filename, "Voice message.ogg");
+        assert_eq!(audio.size, Some(7_992));
+        assert_eq!(audio.mimetype.as_deref(), Some("audio/ogg"));
+        assert_eq!(audio.caption, None);
+    }
+
+    #[test]
+    fn an_audio_file_is_a_player_under_its_own_name() {
+        let mut it = voice_note(Some(crate::dto::AudioMetaDto {
+            is_voice: false,
+            duration_ms: None,
+            waveform: None,
+        }));
+        it.media.as_mut().unwrap().filename = "song.mp3".into();
+        let ItemView::Audio { audio } = view_for(&it) else {
+            panic!("expected a player");
+        };
+        assert!(!audio.is_voice);
+        assert_eq!(audio.title, "song.mp3");
+        assert_eq!(audio.accessibility_label, "Audio, song.mp3");
+    }
+
+    #[test]
+    fn an_audio_event_with_no_media_block_still_names_itself() {
+        let mut it = item("message");
+        it.msgtype = Some("m.audio".into());
+        let ItemView::Audio { audio } = view_for(&it) else {
+            panic!("expected a player");
+        };
+        assert!(!audio.is_voice);
+        assert_eq!(audio.filename, "Audio");
+    }
+
+    #[test]
+    fn a_voice_note_with_words_carries_them_as_its_caption() {
+        let mut it = voice_note(None);
+        it.body = Some("listen to this".into());
+        let ItemView::Audio { audio } = view_for(&it) else {
+            panic!("expected a player");
+        };
+        assert_eq!(audio.caption.as_deref(), Some("listen to this"));
+    }
+
+    #[test]
+    fn an_audio_view_is_tagged_for_a_host_to_switch_on() {
+        let json = serde_json::to_value(view_for(&voice_note(None))).unwrap();
+        assert_eq!(json["render"], "audio");
+        assert_eq!(json["audio"]["title"], "Voice message.ogg");
+        assert_eq!(json["audio"]["filename"], "Voice message.ogg");
     }
 }

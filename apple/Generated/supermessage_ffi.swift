@@ -688,6 +688,18 @@ public protocol CoreProtocol : AnyObject {
     func markRoomRead(roomId: String) throws 
     
     /**
+     * An audio message's file, fetched, decrypted, and ready for this host's
+     * player. `None` when `event_id` is not an audio message in the focused
+     * room.
+     *
+     * `opus_in_caf`: the host's player reads Opus only from CAF — true on
+     * iOS (AVFoundation plays no Ogg), false on Android (MediaPlayer plays
+     * Ogg). An Ogg/Opus voice note is then remuxed, not transcoded. See
+     * `core::audio::playable_audio`.
+     */
+    func mediaAudio(eventId: String, opusInCaf: Bool) throws  -> PlayableAudio?
+    
+    /**
      * An event's media as a `data:` URI, fetched and decrypted.
      *
      * There is deliberately no `media_download` here, unlike the desktop
@@ -1225,6 +1237,25 @@ open func markRoomRead(roomId: String)throws  {try rustCallWithError(FfiConverte
         FfiConverterString.lower(roomId),$0
     )
 }
+}
+    
+    /**
+     * An audio message's file, fetched, decrypted, and ready for this host's
+     * player. `None` when `event_id` is not an audio message in the focused
+     * room.
+     *
+     * `opus_in_caf`: the host's player reads Opus only from CAF — true on
+     * iOS (AVFoundation plays no Ogg), false on Android (MediaPlayer plays
+     * Ogg). An Ogg/Opus voice note is then remuxed, not transcoded. See
+     * `core::audio::playable_audio`.
+     */
+open func mediaAudio(eventId: String, opusInCaf: Bool)throws  -> PlayableAudio? {
+    return try  FfiConverterOptionTypePlayableAudio.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_media_audio(self.uniffiClonePointer(),
+        FfiConverterString.lower(eventId),
+        FfiConverterBool.lower(opusInCaf),$0
+    )
+})
 }
     
     /**
@@ -3193,6 +3224,30 @@ fileprivate struct FfiConverterOptionTypeMatrixLinkTarget: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypePlayableAudio: FfiConverterRustBuffer {
+    typealias SwiftType = PlayableAudio?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePlayableAudio.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePlayableAudio.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
     typealias SwiftType = [Float]
 
@@ -3548,6 +3603,21 @@ fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer
 
 
 
+
+
+/**
+ * A playing note's position as the clock under it reads — `"0:06"`,
+ * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
+ * rest arrives already formatted on `AudioView`; this is for the one number
+ * that changes while it plays, so every host ticks over at the same instant.
+ */
+public func audioClockLabel(ms: UInt64) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_audio_clock_label(
+        FfiConverterUInt64.lower(ms),$0
+    )
+})
+}
 /**
  * The user ids a finished message mentions, for `m.mentions`.
  */
@@ -3705,6 +3775,9 @@ private var initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_collect_mentions() != 57065) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3793,6 +3866,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_mark_room_read() != 2656) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_media_audio() != 15242) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_media_fetch() != 27382) {

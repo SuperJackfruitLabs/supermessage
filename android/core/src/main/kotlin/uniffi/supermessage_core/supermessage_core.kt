@@ -974,6 +974,29 @@ public object FfiConverterULong: FfiConverter<ULong, Long> {
 /**
  * @suppress
  */
+public object FfiConverterFloat: FfiConverter<Float, Float> {
+    override fun lift(value: Float): Float {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Float {
+        return buf.getFloat()
+    }
+
+    override fun lower(value: Float): Float {
+        return value
+    }
+
+    override fun allocationSize(value: Float) = 4UL
+
+    override fun write(value: Float, buf: ByteBuffer) {
+        buf.putFloat(value)
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
     override fun lift(value: Byte): Boolean {
         return value.toInt() != 0
@@ -1051,6 +1074,25 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
+/**
+ * @suppress
+ */
+public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+    override fun read(buf: ByteBuffer): ByteArray {
+        val len = buf.getInt()
+        val byteArr = ByteArray(len)
+        buf.get(byteArr)
+        return byteArr
+    }
+    override fun allocationSize(value: ByteArray): ULong {
+        return 4UL + value.size.toULong()
+    }
+    override fun write(value: ByteArray, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        buf.put(value)
+    }
+}
+
 
 
 /**
@@ -1089,6 +1131,146 @@ public object FfiConverterTypeAccountDto: FfiConverterRustBuffer<AccountDto> {
     override fun write(value: AccountDto, buf: ByteBuffer) {
             FfiConverterString.write(value.`userId`, buf)
             FfiConverterString.write(value.`homeserver`, buf)
+    }
+}
+
+
+
+/**
+ * What an `m.audio` event says about itself beyond being a file: the
+ * MSC3245 voice flag, the length, and the MSC3246 waveform — already
+ * normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
+ * every value in it is the sender's to choose.
+ */
+data class AudioMetaDto (
+    var `isVoice`: kotlin.Boolean, 
+    var `durationMs`: kotlin.ULong?, 
+    var `waveform`: List<kotlin.Float>?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAudioMetaDto: FfiConverterRustBuffer<AudioMetaDto> {
+    override fun read(buf: ByteBuffer): AudioMetaDto {
+        return AudioMetaDto(
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalSequenceFloat.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AudioMetaDto) = (
+            FfiConverterBoolean.allocationSize(value.`isVoice`) +
+            FfiConverterOptionalULong.allocationSize(value.`durationMs`) +
+            FfiConverterOptionalSequenceFloat.allocationSize(value.`waveform`)
+    )
+
+    override fun write(value: AudioMetaDto, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`isVoice`, buf)
+            FfiConverterOptionalULong.write(value.`durationMs`, buf)
+            FfiConverterOptionalSequenceFloat.write(value.`waveform`, buf)
+    }
+}
+
+
+
+/**
+ * An `m.audio` message, ready to draw as a player.
+ */
+data class AudioView (
+    /**
+     * Flagged as a voice message (MSC3245). A host draws a voice bubble for
+     * this and an audio-file player, with its file name, for anything else.
+     */
+    var `isVoice`: kotlin.Boolean, 
+    /**
+     * The length, from the event. `None` when the sender did not say; a
+     * host then learns it from its player once the file is open, and formats
+     * it with [`audio_clock_label`] like any other time.
+     */
+    var `durationMs`: kotlin.ULong?, 
+    /**
+     * `duration_ms` as the reader sees it at rest: `"0:07"`, `"1:05"`,
+     * `"1:02:03"`. Rounded to the nearest second, and never `"0:00"` for a
+     * note that has any sound in it.
+     */
+    var `lengthLabel`: kotlin.String?, 
+    /**
+     * Bars between 0 and 1, oldest first, at most [`WAVEFORM_MAX_BARS`].
+     * `None` when the event carried none: a host draws a neutral, even set of
+     * bars rather than inventing a shape.
+     */
+    var `waveform`: List<kotlin.Float>?, 
+    /**
+     * What to call it: `"Voice message"` for a voice note, the file's name
+     * otherwise.
+     */
+    var `title`: kotlin.String, 
+    var `filename`: kotlin.String, 
+    var `size`: kotlin.ULong?, 
+    var `mimetype`: kotlin.String?, 
+    /**
+     * What the sender wrote with it (MSC2530), when anything.
+     */
+    var `caption`: kotlin.String?, 
+    /**
+     * What a screen reader says for the player at rest: `"Voice message, 7
+     * seconds"`. The platform's own hint ("double-tap to play") is the
+     * host's to add.
+     */
+    var `accessibilityLabel`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAudioView: FfiConverterRustBuffer<AudioView> {
+    override fun read(buf: ByteBuffer): AudioView {
+        return AudioView(
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalSequenceFloat.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AudioView) = (
+            FfiConverterBoolean.allocationSize(value.`isVoice`) +
+            FfiConverterOptionalULong.allocationSize(value.`durationMs`) +
+            FfiConverterOptionalString.allocationSize(value.`lengthLabel`) +
+            FfiConverterOptionalSequenceFloat.allocationSize(value.`waveform`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterString.allocationSize(value.`filename`) +
+            FfiConverterOptionalULong.allocationSize(value.`size`) +
+            FfiConverterOptionalString.allocationSize(value.`mimetype`) +
+            FfiConverterOptionalString.allocationSize(value.`caption`) +
+            FfiConverterString.allocationSize(value.`accessibilityLabel`)
+    )
+
+    override fun write(value: AudioView, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`isVoice`, buf)
+            FfiConverterOptionalULong.write(value.`durationMs`, buf)
+            FfiConverterOptionalString.write(value.`lengthLabel`, buf)
+            FfiConverterOptionalSequenceFloat.write(value.`waveform`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterString.write(value.`filename`, buf)
+            FfiConverterOptionalULong.write(value.`size`, buf)
+            FfiConverterOptionalString.write(value.`mimetype`, buf)
+            FfiConverterOptionalString.write(value.`caption`, buf)
+            FfiConverterString.write(value.`accessibilityLabel`, buf)
     }
 }
 
@@ -1276,7 +1458,12 @@ data class MediaMetaDto (
      * The image's pixel height, from `ImageInfo`. Same scoping as
      * [`Self::width`].
      */
-    var `height`: kotlin.ULong?
+    var `height`: kotlin.ULong?, 
+    /**
+     * For `m.audio` only: whether it is a voice note, its length, and its
+     * waveform. `None` for every other msgtype. See `core::audio`.
+     */
+    var `audio`: AudioMetaDto?
 ) {
     
     companion object
@@ -1293,6 +1480,7 @@ public object FfiConverterTypeMediaMetaDto: FfiConverterRustBuffer<MediaMetaDto>
             FfiConverterOptionalULong.read(buf),
             FfiConverterOptionalULong.read(buf),
             FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalTypeAudioMetaDto.read(buf),
         )
     }
 
@@ -1301,7 +1489,8 @@ public object FfiConverterTypeMediaMetaDto: FfiConverterRustBuffer<MediaMetaDto>
             FfiConverterOptionalString.allocationSize(value.`mimetype`) +
             FfiConverterOptionalULong.allocationSize(value.`size`) +
             FfiConverterOptionalULong.allocationSize(value.`width`) +
-            FfiConverterOptionalULong.allocationSize(value.`height`)
+            FfiConverterOptionalULong.allocationSize(value.`height`) +
+            FfiConverterOptionalTypeAudioMetaDto.allocationSize(value.`audio`)
     )
 
     override fun write(value: MediaMetaDto, buf: ByteBuffer) {
@@ -1310,6 +1499,7 @@ public object FfiConverterTypeMediaMetaDto: FfiConverterRustBuffer<MediaMetaDto>
             FfiConverterOptionalULong.write(value.`size`, buf)
             FfiConverterOptionalULong.write(value.`width`, buf)
             FfiConverterOptionalULong.write(value.`height`, buf)
+            FfiConverterOptionalTypeAudioMetaDto.write(value.`audio`, buf)
     }
 }
 
@@ -1423,6 +1613,61 @@ public object FfiConverterTypePersonDto: FfiConverterRustBuffer<PersonDto> {
             FfiConverterString.write(value.`initial`, buf)
             FfiConverterOptionalTypeRuntimeDto.write(value.`runtime`, buf)
             FfiConverterOptionalString.write(value.`avatarUrl`, buf)
+    }
+}
+
+
+
+/**
+ * Audio bytes a host's player can open, and what they are.
+ */
+data class PlayableAudio (
+    var `data`: kotlin.ByteArray, 
+    /**
+     * What `data` is, sniffed from the bytes: `audio/ogg`, `audio/x-caf`,
+     * `audio/mp4`… — never the sender's claim when the bytes say otherwise.
+     */
+    var `mimetype`: kotlin.String, 
+    /**
+     * The extension a player that goes by file name needs: `ogg`, `caf`,
+     * `m4a`…
+     */
+    var `fileExtension`: kotlin.String, 
+    /**
+     * The length read from the file itself, when the container says it
+     * exactly (Ogg and CAF Opus). A host prefers its player's own once open.
+     */
+    var `durationMs`: kotlin.ULong?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePlayableAudio: FfiConverterRustBuffer<PlayableAudio> {
+    override fun read(buf: ByteBuffer): PlayableAudio {
+        return PlayableAudio(
+            FfiConverterByteArray.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PlayableAudio) = (
+            FfiConverterByteArray.allocationSize(value.`data`) +
+            FfiConverterString.allocationSize(value.`mimetype`) +
+            FfiConverterString.allocationSize(value.`fileExtension`) +
+            FfiConverterOptionalULong.allocationSize(value.`durationMs`)
+    )
+
+    override fun write(value: PlayableAudio, buf: ByteBuffer) {
+            FfiConverterByteArray.write(value.`data`, buf)
+            FfiConverterString.write(value.`mimetype`, buf)
+            FfiConverterString.write(value.`fileExtension`, buf)
+            FfiConverterOptionalULong.write(value.`durationMs`, buf)
     }
 }
 
@@ -3516,8 +3761,21 @@ sealed class ItemView {
     }
     
     /**
-     * An `m.file`/`m.audio`/`m.video`: an informative row naming what the
-     * message is. `label` is precomputed so a host needs no msgtype table.
+     * An `m.audio`, drawn as a player: a voice note (MSC3245) as a voice
+     * bubble, any other audio file as a player with its name. Everything a
+     * host shows — the length, the bars, what a screen reader says — is on
+     * `audio`. See `crate::audio`.
+     */
+    data class Audio(
+        val `audio`: AudioView) : ItemView() {
+        companion object
+    }
+    
+    /**
+     * An `m.file`/`m.video`: an informative row naming what the message is.
+     * `label` is precomputed so a host needs no msgtype table. (`m.audio` was
+     * one of these until it became [`Self::Audio`]; the label keeps its
+     * `Audio` case for the reply-quote and preview vocabulary.)
      */
     data class MediaFile(
         val `label`: MediaFileLabel, 
@@ -3639,26 +3897,29 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterOptionalULong.read(buf),
                 FfiConverterOptionalString.read(buf),
                 )
-            7 -> ItemView.MediaFile(
+            7 -> ItemView.Audio(
+                FfiConverterTypeAudioView.read(buf),
+                )
+            8 -> ItemView.MediaFile(
                 FfiConverterTypeMediaFileLabel.read(buf),
                 FfiConverterString.read(buf),
                 FfiConverterOptionalULong.read(buf),
                 FfiConverterOptionalString.read(buf),
                 )
-            8 -> ItemView.DateDivider
-            9 -> ItemView.CustomEvent(
+            9 -> ItemView.DateDivider
+            10 -> ItemView.CustomEvent(
                 FfiConverterTypeCustomEventView.read(buf),
                 FfiConverterString.read(buf),
                 FfiConverterString.read(buf),
                 )
-            10 -> ItemView.TurnError(
+            11 -> ItemView.TurnError(
                 FfiConverterTypeTurnErrorCard.read(buf),
                 )
-            11 -> ItemView.VoiceTranscript(
+            12 -> ItemView.VoiceTranscript(
                 FfiConverterTypeVoiceNoteTranscript.read(buf),
                 FfiConverterBoolean.read(buf),
                 )
-            12 -> ItemView.None
+            13 -> ItemView.None
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -3708,6 +3969,13 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 + FfiConverterOptionalULong.allocationSize(value.`width`)
                 + FfiConverterOptionalULong.allocationSize(value.`height`)
                 + FfiConverterOptionalString.allocationSize(value.`caption`)
+            )
+        }
+        is ItemView.Audio -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeAudioView.allocationSize(value.`audio`)
             )
         }
         is ItemView.MediaFile -> {
@@ -3794,8 +4062,13 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 FfiConverterOptionalString.write(value.`caption`, buf)
                 Unit
             }
-            is ItemView.MediaFile -> {
+            is ItemView.Audio -> {
                 buf.putInt(7)
+                FfiConverterTypeAudioView.write(value.`audio`, buf)
+                Unit
+            }
+            is ItemView.MediaFile -> {
+                buf.putInt(8)
                 FfiConverterTypeMediaFileLabel.write(value.`label`, buf)
                 FfiConverterString.write(value.`filename`, buf)
                 FfiConverterOptionalULong.write(value.`size`, buf)
@@ -3803,29 +4076,29 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 Unit
             }
             is ItemView.DateDivider -> {
-                buf.putInt(8)
+                buf.putInt(9)
                 Unit
             }
             is ItemView.CustomEvent -> {
-                buf.putInt(9)
+                buf.putInt(10)
                 FfiConverterTypeCustomEventView.write(value.`view`, buf)
                 FfiConverterString.write(value.`label`, buf)
                 FfiConverterString.write(value.`eventType`, buf)
                 Unit
             }
             is ItemView.TurnError -> {
-                buf.putInt(10)
+                buf.putInt(11)
                 FfiConverterTypeTurnErrorCard.write(value.`card`, buf)
                 Unit
             }
             is ItemView.VoiceTranscript -> {
-                buf.putInt(11)
+                buf.putInt(12)
                 FfiConverterTypeVoiceNoteTranscript.write(value.`transcript`, buf)
                 FfiConverterBoolean.write(value.`onOwnNote`, buf)
                 Unit
             }
             is ItemView.None -> {
-                buf.putInt(12)
+                buf.putInt(13)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -5206,6 +5479,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeAudioMetaDto: FfiConverterRustBuffer<AudioMetaDto?> {
+    override fun read(buf: ByteBuffer): AudioMetaDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeAudioMetaDto.read(buf)
+    }
+
+    override fun allocationSize(value: AudioMetaDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeAudioMetaDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: AudioMetaDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeAudioMetaDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeCustomEventDecision: FfiConverterRustBuffer<CustomEventDecision?> {
     override fun read(buf: ByteBuffer): CustomEventDecision? {
         if (buf.get().toInt() == 0) {
@@ -5430,6 +5735,38 @@ public object FfiConverterOptionalTypeReplyQuoteView: FfiConverterRustBuffer<Rep
 /**
  * @suppress
  */
+public object FfiConverterOptionalSequenceFloat: FfiConverterRustBuffer<List<kotlin.Float>?> {
+    override fun read(buf: ByteBuffer): List<kotlin.Float>? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterSequenceFloat.read(buf)
+    }
+
+    override fun allocationSize(value: List<kotlin.Float>?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterSequenceFloat.allocationSize(value)
+        }
+    }
+
+    override fun write(value: List<kotlin.Float>?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterSequenceFloat.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeCustomPayload: FfiConverterRustBuffer<CustomPayload?> {
     override fun read(buf: ByteBuffer): CustomPayload? {
         if (buf.get().toInt() == 0) {
@@ -5452,6 +5789,34 @@ public object FfiConverterOptionalTypeCustomPayload: FfiConverterRustBuffer<Cust
         } else {
             buf.put(1)
             FfiConverterTypeCustomPayload.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceFloat: FfiConverterRustBuffer<List<kotlin.Float>> {
+    override fun read(buf: ByteBuffer): List<kotlin.Float> {
+        val len = buf.getInt()
+        return List<kotlin.Float>(len) {
+            FfiConverterFloat.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.Float>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterFloat.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.Float>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterFloat.write(it, buf)
         }
     }
 }

@@ -417,6 +417,11 @@ void uniffi_supermessage_ffi_fn_method_core_logout(void*_Nonnull ptr, RustCallSt
 void uniffi_supermessage_ffi_fn_method_core_mark_room_read(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEDIA_AUDIO
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEDIA_AUDIO
+RustBuffer uniffi_supermessage_ffi_fn_method_core_media_audio(void*_Nonnull ptr, RustBuffer event_id, int8_t opus_in_caf, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEDIA_FETCH
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEDIA_FETCH
 RustBuffer uniffi_supermessage_ffi_fn_method_core_media_fetch(void*_Nonnull ptr, RustBuffer event_id, RustCallStatus *_Nonnull out_status
@@ -550,6 +555,11 @@ void uniffi_supermessage_ffi_fn_init_callback_vtable_eventsink(UniffiVTableCallb
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_HOSTSECRETSTORE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_HOSTSECRETSTORE
 void uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(UniffiVTableCallbackInterfaceHostSecretStore* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_AUDIO_CLOCK_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_AUDIO_CLOCK_LABEL
+RustBuffer uniffi_supermessage_ffi_fn_func_audio_clock_label(uint64_t ms, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_COLLECT_MENTIONS
@@ -882,6 +892,12 @@ void ffi_supermessage_ffi_rust_future_free_void(uint64_t handle
 void ffi_supermessage_ffi_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_AUDIO_CLOCK_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_AUDIO_CLOCK_LABEL
+uint16_t uniffi_supermessage_ffi_checksum_func_audio_clock_label(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_COLLECT_MENTIONS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_COLLECT_MENTIONS
 uint16_t uniffi_supermessage_ffi_checksum_func_collect_mentions(void
@@ -1059,6 +1075,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_logout(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MARK_ROOM_READ
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MARK_ROOM_READ
 uint16_t uniffi_supermessage_ffi_checksum_method_core_mark_room_read(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MEDIA_AUDIO
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MEDIA_AUDIO
+uint16_t uniffi_supermessage_ffi_checksum_method_core_media_audio(void
     
 );
 #endif

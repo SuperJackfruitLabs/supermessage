@@ -447,6 +447,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
+    typealias FfiType = Float
+    typealias SwiftType = Float
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
+        return try lift(readFloat(&buf))
+    }
+
+    public static func write(_ value: Float, into buf: inout [UInt8]) {
+        writeFloat(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -506,6 +522,24 @@ fileprivate struct FfiConverterString: FfiConverter {
         let len = Int32(value.utf8.count)
         writeInt(&buf, len)
         writeBytes(&buf, value.utf8)
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterData: FfiConverterRustBuffer {
+    typealias SwiftType = Data
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+        let len: Int32 = try readInt(&buf)
+        return Data(try readBytes(&buf, count: Int(len)))
+    }
+
+    public static func write(_ value: Data, into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        writeBytes(&buf, value)
     }
 }
 
@@ -588,6 +622,281 @@ public func FfiConverterTypeAccountDto_lift(_ buf: RustBuffer) throws -> Account
 #endif
 public func FfiConverterTypeAccountDto_lower(_ value: AccountDto) -> RustBuffer {
     return FfiConverterTypeAccountDto.lower(value)
+}
+
+
+/**
+ * What an `m.audio` event says about itself beyond being a file: the
+ * MSC3245 voice flag, the length, and the MSC3246 waveform — already
+ * normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
+ * every value in it is the sender's to choose.
+ */
+public struct AudioMetaDto {
+    public var isVoice: Bool
+    public var durationMs: UInt64?
+    public var waveform: [Float]?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(isVoice: Bool, durationMs: UInt64?, waveform: [Float]?) {
+        self.isVoice = isVoice
+        self.durationMs = durationMs
+        self.waveform = waveform
+    }
+}
+
+
+
+extension AudioMetaDto: Equatable, Hashable {
+    public static func ==(lhs: AudioMetaDto, rhs: AudioMetaDto) -> Bool {
+        if lhs.isVoice != rhs.isVoice {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        if lhs.waveform != rhs.waveform {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(isVoice)
+        hasher.combine(durationMs)
+        hasher.combine(waveform)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAudioMetaDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AudioMetaDto {
+        return
+            try AudioMetaDto(
+                isVoice: FfiConverterBool.read(from: &buf), 
+                durationMs: FfiConverterOptionUInt64.read(from: &buf), 
+                waveform: FfiConverterOptionSequenceFloat.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AudioMetaDto, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.isVoice, into: &buf)
+        FfiConverterOptionUInt64.write(value.durationMs, into: &buf)
+        FfiConverterOptionSequenceFloat.write(value.waveform, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAudioMetaDto_lift(_ buf: RustBuffer) throws -> AudioMetaDto {
+    return try FfiConverterTypeAudioMetaDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAudioMetaDto_lower(_ value: AudioMetaDto) -> RustBuffer {
+    return FfiConverterTypeAudioMetaDto.lower(value)
+}
+
+
+/**
+ * An `m.audio` message, ready to draw as a player.
+ */
+public struct AudioView {
+    /**
+     * Flagged as a voice message (MSC3245). A host draws a voice bubble for
+     * this and an audio-file player, with its file name, for anything else.
+     */
+    public var isVoice: Bool
+    /**
+     * The length, from the event. `None` when the sender did not say; a
+     * host then learns it from its player once the file is open, and formats
+     * it with [`audio_clock_label`] like any other time.
+     */
+    public var durationMs: UInt64?
+    /**
+     * `duration_ms` as the reader sees it at rest: `"0:07"`, `"1:05"`,
+     * `"1:02:03"`. Rounded to the nearest second, and never `"0:00"` for a
+     * note that has any sound in it.
+     */
+    public var lengthLabel: String?
+    /**
+     * Bars between 0 and 1, oldest first, at most [`WAVEFORM_MAX_BARS`].
+     * `None` when the event carried none: a host draws a neutral, even set of
+     * bars rather than inventing a shape.
+     */
+    public var waveform: [Float]?
+    /**
+     * What to call it: `"Voice message"` for a voice note, the file's name
+     * otherwise.
+     */
+    public var title: String
+    public var filename: String
+    public var size: UInt64?
+    public var mimetype: String?
+    /**
+     * What the sender wrote with it (MSC2530), when anything.
+     */
+    public var caption: String?
+    /**
+     * What a screen reader says for the player at rest: `"Voice message, 7
+     * seconds"`. The platform's own hint ("double-tap to play") is the
+     * host's to add.
+     */
+    public var accessibilityLabel: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Flagged as a voice message (MSC3245). A host draws a voice bubble for
+         * this and an audio-file player, with its file name, for anything else.
+         */isVoice: Bool, 
+        /**
+         * The length, from the event. `None` when the sender did not say; a
+         * host then learns it from its player once the file is open, and formats
+         * it with [`audio_clock_label`] like any other time.
+         */durationMs: UInt64?, 
+        /**
+         * `duration_ms` as the reader sees it at rest: `"0:07"`, `"1:05"`,
+         * `"1:02:03"`. Rounded to the nearest second, and never `"0:00"` for a
+         * note that has any sound in it.
+         */lengthLabel: String?, 
+        /**
+         * Bars between 0 and 1, oldest first, at most [`WAVEFORM_MAX_BARS`].
+         * `None` when the event carried none: a host draws a neutral, even set of
+         * bars rather than inventing a shape.
+         */waveform: [Float]?, 
+        /**
+         * What to call it: `"Voice message"` for a voice note, the file's name
+         * otherwise.
+         */title: String, filename: String, size: UInt64?, mimetype: String?, 
+        /**
+         * What the sender wrote with it (MSC2530), when anything.
+         */caption: String?, 
+        /**
+         * What a screen reader says for the player at rest: `"Voice message, 7
+         * seconds"`. The platform's own hint ("double-tap to play") is the
+         * host's to add.
+         */accessibilityLabel: String) {
+        self.isVoice = isVoice
+        self.durationMs = durationMs
+        self.lengthLabel = lengthLabel
+        self.waveform = waveform
+        self.title = title
+        self.filename = filename
+        self.size = size
+        self.mimetype = mimetype
+        self.caption = caption
+        self.accessibilityLabel = accessibilityLabel
+    }
+}
+
+
+
+extension AudioView: Equatable, Hashable {
+    public static func ==(lhs: AudioView, rhs: AudioView) -> Bool {
+        if lhs.isVoice != rhs.isVoice {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        if lhs.lengthLabel != rhs.lengthLabel {
+            return false
+        }
+        if lhs.waveform != rhs.waveform {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.filename != rhs.filename {
+            return false
+        }
+        if lhs.size != rhs.size {
+            return false
+        }
+        if lhs.mimetype != rhs.mimetype {
+            return false
+        }
+        if lhs.caption != rhs.caption {
+            return false
+        }
+        if lhs.accessibilityLabel != rhs.accessibilityLabel {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(isVoice)
+        hasher.combine(durationMs)
+        hasher.combine(lengthLabel)
+        hasher.combine(waveform)
+        hasher.combine(title)
+        hasher.combine(filename)
+        hasher.combine(size)
+        hasher.combine(mimetype)
+        hasher.combine(caption)
+        hasher.combine(accessibilityLabel)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAudioView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AudioView {
+        return
+            try AudioView(
+                isVoice: FfiConverterBool.read(from: &buf), 
+                durationMs: FfiConverterOptionUInt64.read(from: &buf), 
+                lengthLabel: FfiConverterOptionString.read(from: &buf), 
+                waveform: FfiConverterOptionSequenceFloat.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                filename: FfiConverterString.read(from: &buf), 
+                size: FfiConverterOptionUInt64.read(from: &buf), 
+                mimetype: FfiConverterOptionString.read(from: &buf), 
+                caption: FfiConverterOptionString.read(from: &buf), 
+                accessibilityLabel: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AudioView, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.isVoice, into: &buf)
+        FfiConverterOptionUInt64.write(value.durationMs, into: &buf)
+        FfiConverterOptionString.write(value.lengthLabel, into: &buf)
+        FfiConverterOptionSequenceFloat.write(value.waveform, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.filename, into: &buf)
+        FfiConverterOptionUInt64.write(value.size, into: &buf)
+        FfiConverterOptionString.write(value.mimetype, into: &buf)
+        FfiConverterOptionString.write(value.caption, into: &buf)
+        FfiConverterString.write(value.accessibilityLabel, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAudioView_lift(_ buf: RustBuffer) throws -> AudioView {
+    return try FfiConverterTypeAudioView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAudioView_lower(_ value: AudioView) -> RustBuffer {
+    return FfiConverterTypeAudioView.lower(value)
 }
 
 
@@ -904,6 +1213,11 @@ public struct MediaMetaDto {
      * [`Self::width`].
      */
     public var height: UInt64?
+    /**
+     * For `m.audio` only: whether it is a voice note, its length, and its
+     * waveform. `None` for every other msgtype. See `core::audio`.
+     */
+    public var audio: AudioMetaDto?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -935,12 +1249,17 @@ public struct MediaMetaDto {
         /**
          * The image's pixel height, from `ImageInfo`. Same scoping as
          * [`Self::width`].
-         */height: UInt64?) {
+         */height: UInt64?, 
+        /**
+         * For `m.audio` only: whether it is a voice note, its length, and its
+         * waveform. `None` for every other msgtype. See `core::audio`.
+         */audio: AudioMetaDto?) {
         self.filename = filename
         self.mimetype = mimetype
         self.size = size
         self.width = width
         self.height = height
+        self.audio = audio
     }
 }
 
@@ -963,6 +1282,9 @@ extension MediaMetaDto: Equatable, Hashable {
         if lhs.height != rhs.height {
             return false
         }
+        if lhs.audio != rhs.audio {
+            return false
+        }
         return true
     }
 
@@ -972,6 +1294,7 @@ extension MediaMetaDto: Equatable, Hashable {
         hasher.combine(size)
         hasher.combine(width)
         hasher.combine(height)
+        hasher.combine(audio)
     }
 }
 
@@ -987,7 +1310,8 @@ public struct FfiConverterTypeMediaMetaDto: FfiConverterRustBuffer {
                 mimetype: FfiConverterOptionString.read(from: &buf), 
                 size: FfiConverterOptionUInt64.read(from: &buf), 
                 width: FfiConverterOptionUInt64.read(from: &buf), 
-                height: FfiConverterOptionUInt64.read(from: &buf)
+                height: FfiConverterOptionUInt64.read(from: &buf), 
+                audio: FfiConverterOptionTypeAudioMetaDto.read(from: &buf)
         )
     }
 
@@ -997,6 +1321,7 @@ public struct FfiConverterTypeMediaMetaDto: FfiConverterRustBuffer {
         FfiConverterOptionUInt64.write(value.size, into: &buf)
         FfiConverterOptionUInt64.write(value.width, into: &buf)
         FfiConverterOptionUInt64.write(value.height, into: &buf)
+        FfiConverterOptionTypeAudioMetaDto.write(value.audio, into: &buf)
     }
 }
 
@@ -1237,6 +1562,115 @@ public func FfiConverterTypePersonDto_lift(_ buf: RustBuffer) throws -> PersonDt
 #endif
 public func FfiConverterTypePersonDto_lower(_ value: PersonDto) -> RustBuffer {
     return FfiConverterTypePersonDto.lower(value)
+}
+
+
+/**
+ * Audio bytes a host's player can open, and what they are.
+ */
+public struct PlayableAudio {
+    public var data: Data
+    /**
+     * What `data` is, sniffed from the bytes: `audio/ogg`, `audio/x-caf`,
+     * `audio/mp4`… — never the sender's claim when the bytes say otherwise.
+     */
+    public var mimetype: String
+    /**
+     * The extension a player that goes by file name needs: `ogg`, `caf`,
+     * `m4a`…
+     */
+    public var fileExtension: String
+    /**
+     * The length read from the file itself, when the container says it
+     * exactly (Ogg and CAF Opus). A host prefers its player's own once open.
+     */
+    public var durationMs: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(data: Data, 
+        /**
+         * What `data` is, sniffed from the bytes: `audio/ogg`, `audio/x-caf`,
+         * `audio/mp4`… — never the sender's claim when the bytes say otherwise.
+         */mimetype: String, 
+        /**
+         * The extension a player that goes by file name needs: `ogg`, `caf`,
+         * `m4a`…
+         */fileExtension: String, 
+        /**
+         * The length read from the file itself, when the container says it
+         * exactly (Ogg and CAF Opus). A host prefers its player's own once open.
+         */durationMs: UInt64?) {
+        self.data = data
+        self.mimetype = mimetype
+        self.fileExtension = fileExtension
+        self.durationMs = durationMs
+    }
+}
+
+
+
+extension PlayableAudio: Equatable, Hashable {
+    public static func ==(lhs: PlayableAudio, rhs: PlayableAudio) -> Bool {
+        if lhs.data != rhs.data {
+            return false
+        }
+        if lhs.mimetype != rhs.mimetype {
+            return false
+        }
+        if lhs.fileExtension != rhs.fileExtension {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(data)
+        hasher.combine(mimetype)
+        hasher.combine(fileExtension)
+        hasher.combine(durationMs)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayableAudio: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayableAudio {
+        return
+            try PlayableAudio(
+                data: FfiConverterData.read(from: &buf), 
+                mimetype: FfiConverterString.read(from: &buf), 
+                fileExtension: FfiConverterString.read(from: &buf), 
+                durationMs: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlayableAudio, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.data, into: &buf)
+        FfiConverterString.write(value.mimetype, into: &buf)
+        FfiConverterString.write(value.fileExtension, into: &buf)
+        FfiConverterOptionUInt64.write(value.durationMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayableAudio_lift(_ buf: RustBuffer) throws -> PlayableAudio {
+    return try FfiConverterTypePlayableAudio.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayableAudio_lower(_ value: PlayableAudio) -> RustBuffer {
+    return FfiConverterTypePlayableAudio.lower(value)
 }
 
 
@@ -5086,8 +5520,18 @@ public enum ItemView {
          */caption: String?
     )
     /**
-     * An `m.file`/`m.audio`/`m.video`: an informative row naming what the
-     * message is. `label` is precomputed so a host needs no msgtype table.
+     * An `m.audio`, drawn as a player: a voice note (MSC3245) as a voice
+     * bubble, any other audio file as a player with its name. Everything a
+     * host shows — the length, the bars, what a screen reader says — is on
+     * `audio`. See `crate::audio`.
+     */
+    case audio(audio: AudioView
+    )
+    /**
+     * An `m.file`/`m.video`: an informative row naming what the message is.
+     * `label` is precomputed so a host needs no msgtype table. (`m.audio` was
+     * one of these until it became [`Self::Audio`]; the label keeps its
+     * `Audio` case for the reply-quote and preview vocabulary.)
      */
     case mediaFile(label: MediaFileLabel, filename: String, size: UInt64?, mimetype: String?
     )
@@ -5185,21 +5629,24 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         case 6: return .image(alt: try FfiConverterString.read(from: &buf), width: try FfiConverterOptionUInt64.read(from: &buf), height: try FfiConverterOptionUInt64.read(from: &buf), caption: try FfiConverterOptionString.read(from: &buf)
         )
         
-        case 7: return .mediaFile(label: try FfiConverterTypeMediaFileLabel.read(from: &buf), filename: try FfiConverterString.read(from: &buf), size: try FfiConverterOptionUInt64.read(from: &buf), mimetype: try FfiConverterOptionString.read(from: &buf)
+        case 7: return .audio(audio: try FfiConverterTypeAudioView.read(from: &buf)
         )
         
-        case 8: return .dateDivider
-        
-        case 9: return .customEvent(view: try FfiConverterTypeCustomEventView.read(from: &buf), label: try FfiConverterString.read(from: &buf), eventType: try FfiConverterString.read(from: &buf)
+        case 8: return .mediaFile(label: try FfiConverterTypeMediaFileLabel.read(from: &buf), filename: try FfiConverterString.read(from: &buf), size: try FfiConverterOptionUInt64.read(from: &buf), mimetype: try FfiConverterOptionString.read(from: &buf)
         )
         
-        case 10: return .turnError(card: try FfiConverterTypeTurnErrorCard.read(from: &buf)
+        case 9: return .dateDivider
+        
+        case 10: return .customEvent(view: try FfiConverterTypeCustomEventView.read(from: &buf), label: try FfiConverterString.read(from: &buf), eventType: try FfiConverterString.read(from: &buf)
         )
         
-        case 11: return .voiceTranscript(transcript: try FfiConverterTypeVoiceNoteTranscript.read(from: &buf), onOwnNote: try FfiConverterBool.read(from: &buf)
+        case 11: return .turnError(card: try FfiConverterTypeTurnErrorCard.read(from: &buf)
         )
         
-        case 12: return .none
+        case 12: return .voiceTranscript(transcript: try FfiConverterTypeVoiceNoteTranscript.read(from: &buf), onOwnNote: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 13: return .none
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5243,8 +5690,13 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             FfiConverterOptionString.write(caption, into: &buf)
             
         
-        case let .mediaFile(label,filename,size,mimetype):
+        case let .audio(audio):
             writeInt(&buf, Int32(7))
+            FfiConverterTypeAudioView.write(audio, into: &buf)
+            
+        
+        case let .mediaFile(label,filename,size,mimetype):
+            writeInt(&buf, Int32(8))
             FfiConverterTypeMediaFileLabel.write(label, into: &buf)
             FfiConverterString.write(filename, into: &buf)
             FfiConverterOptionUInt64.write(size, into: &buf)
@@ -5252,29 +5704,29 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             
         
         case .dateDivider:
-            writeInt(&buf, Int32(8))
+            writeInt(&buf, Int32(9))
         
         
         case let .customEvent(view,label,eventType):
-            writeInt(&buf, Int32(9))
+            writeInt(&buf, Int32(10))
             FfiConverterTypeCustomEventView.write(view, into: &buf)
             FfiConverterString.write(label, into: &buf)
             FfiConverterString.write(eventType, into: &buf)
             
         
         case let .turnError(card):
-            writeInt(&buf, Int32(10))
+            writeInt(&buf, Int32(11))
             FfiConverterTypeTurnErrorCard.write(card, into: &buf)
             
         
         case let .voiceTranscript(transcript,onOwnNote):
-            writeInt(&buf, Int32(11))
+            writeInt(&buf, Int32(12))
             FfiConverterTypeVoiceNoteTranscript.write(transcript, into: &buf)
             FfiConverterBool.write(onOwnNote, into: &buf)
             
         
         case .none:
-            writeInt(&buf, Int32(12))
+            writeInt(&buf, Int32(13))
         
         }
     }
@@ -6794,6 +7246,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeAudioMetaDto: FfiConverterRustBuffer {
+    typealias SwiftType = AudioMetaDto?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAudioMetaDto.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAudioMetaDto.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeCustomEventDecision: FfiConverterRustBuffer {
     typealias SwiftType = CustomEventDecision?
 
@@ -6962,6 +7438,30 @@ fileprivate struct FfiConverterOptionTypeReplyQuoteView: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionSequenceFloat: FfiConverterRustBuffer {
+    typealias SwiftType = [Float]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceFloat.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceFloat.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeCustomPayload: FfiConverterRustBuffer {
     typealias SwiftType = CustomPayload?
 
@@ -6980,6 +7480,31 @@ fileprivate struct FfiConverterOptionTypeCustomPayload: FfiConverterRustBuffer {
         case 1: return try FfiConverterTypeCustomPayload.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
+    typealias SwiftType = [Float]
+
+    public static func write(_ value: [Float], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterFloat.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Float] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Float]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterFloat.read(from: &buf))
+        }
+        return seq
     }
 }
 

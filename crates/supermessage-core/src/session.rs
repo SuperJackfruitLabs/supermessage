@@ -715,6 +715,36 @@ impl Session {
         Ok(Some(path.display().to_string()))
     }
 
+    /// An `m.audio`'s file, fetched (and decrypted, in an encrypted room, by
+    /// the SDK's media API from the keys on the event's own source) and made
+    /// playable for this host. `Ok(None)` when `event_id` is not an audio
+    /// message in the focused room.
+    ///
+    /// `opus_in_caf` is the host saying its player reads Opus only from CAF
+    /// (AVFoundation; a WebKit without Ogg). See `core::audio::playable_audio`.
+    /// The SDK's media store caches the download, so a second play of the
+    /// same note costs a remux of a few kilobytes and no network.
+    pub async fn audio_playable(
+        &self,
+        event_id: &str,
+        opus_in_caf: bool,
+    ) -> CoreResult<Option<crate::audio::PlayableAudio>> {
+        let client = self.require_client().await?;
+        let parsed_event_id =
+            EventId::parse(event_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let Some((source, declared)) = self.focused.audio_source(&parsed_event_id).await? else {
+            return Ok(None);
+        };
+        let bytes = media::message_media_file(&client, source).await?;
+        // The remux walks every packet; off the runtime's worker threads.
+        let playable = tokio::task::spawn_blocking(move || {
+            crate::audio::playable_audio(bytes, declared.as_deref(), opus_in_caf)
+        })
+        .await
+        .map_err(|e| CoreError::Protocol(format!("could not prepare that audio: {e}")))??;
+        Ok(Some(playable))
+    }
+
     pub async fn media_fetch(&self, event_id: &str) -> CoreResult<Option<String>> {
         let client = self.require_client().await?;
         let parsed_event_id =
