@@ -7,7 +7,7 @@ import SupermessageFFI
 /// ```
 /// send ──▶ Sent to Atlas ──(reacts · types · starts a turn)──▶ Atlas is on it…
 ///                 │                                                  │
-///                 └──────────────(Atlas's message lands)─────────────┴──▶ nothing
+///                 └──(Atlas's message lands, or ✅ / ❌ on it)────────┴──▶ nothing
 /// ```
 ///
 /// Derived, not stored: every input is already on screen somewhere — the
@@ -73,7 +73,22 @@ public enum Acknowledgement: Equatable, Sendable {
             return agentIds.isEmpty || agentIds.contains(sender)
         }
         if answered { return nil }
+        // The AgentPod hub marks the message a turn answered: 👀 while it
+        // works, ✅ when it is done, ❌ when it failed. A turn can end with no
+        // reply at all — the agent chose silence (OpenClaw's NO_REPLY) and
+        // the hub says done with ✅ alone — so a finished mark ends the dock
+        // just as a reply would. Read as "on it", it said "Krishna is on it…"
+        // for a turn that was over (2026-09-26).
+        if finishedByAnyoneElse(rows[lastOwn]) { return nil }
         return reactedToByAnyoneElse(rows[lastOwn]) ? .onIt([addressee]) : .sent(to: addressee)
+    }
+
+    /// The hub's marks for a turn that is over.
+    static let finishedMarks: Set<String> = ["✅", "❌"]
+
+    /// Whether someone other than the reader has marked `row` done or failed.
+    static func finishedByAnyoneElse(_ row: TimelineRow) -> Bool {
+        row.item.reactions.contains { finishedMarks.contains($0.key) && $0.count > ($0.byMe ? 1 : 0) }
     }
 
     /// Whether someone other than the reader has reacted to `row`. A reaction
