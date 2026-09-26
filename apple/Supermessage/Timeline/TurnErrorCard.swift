@@ -46,12 +46,13 @@ struct TurnErrorCardView: View {
             // The leading edge, as the web's card has it. An overlay, not an
             // HStack sibling: a `Rectangle` in a stack takes every point of
             // height a self-sizing cell offers (see `ReplyQuote`).
-            UnevenRoundedRectangle(
-                topLeadingRadius: Metrics.radiusCard, bottomLeadingRadius: Metrics.radiusCard
-            )
-            .fill(Theme.danger)
-            .frame(width: 3)
+            Rectangle()
+                .fill(Theme.danger)
+                .frame(width: 3)
         }
+        // Clipped to the card, so the edge follows its corners instead of
+        // standing proud of them.
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusCard))
         .overlay(RoundedRectangle(cornerRadius: Metrics.radiusCard).stroke(Theme.border, lineWidth: 1))
         .frame(maxWidth: MessageMeasure.card, alignment: .leading)
     }
@@ -143,8 +144,10 @@ private struct AttemptLine: View {
 
     private var summary: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
+            // Footnote-sized, not `Theme.code`: at callout size a model id
+            // outweighed the message above it and truncated in the middle.
             Text(attempt.source)
-                .font(Theme.code)
+                .font(.system(.footnote, design: .monospaced))
                 .foregroundStyle(Theme.content)
                 .lineLimit(1)
                 .truncationMode(.middle)
