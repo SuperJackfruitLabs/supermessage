@@ -81,6 +81,11 @@ a pending decision and nothing else, and every value comes from
 - P2 Local notifications for messages and requests while the app is alive,
   with actions: Allow once / Reject (authentication required) on permission
   requests; gates open the app.
+  *Amended 2026-09-27 (operator decision):* gates now carry Approve, Request
+  changes (typed feedback) and Reject actions as well as Open, all requiring
+  authentication and none foregrounding the app; answers from any
+  notification are sent with no room open, including from a background
+  launch of a killed app.
 - P3 Live Activity: an agent working, step count, on the Lock Screen and
   Dynamic Island.
 - P4 Widgets: Needs you count, agent status.

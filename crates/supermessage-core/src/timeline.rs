@@ -954,6 +954,57 @@ pub(crate) fn gate_decision_content(
     content
 }
 
+/// A gate decision's `content`, validated — the whole of what either send
+/// path puts on the wire.
+///
+/// Shared by [`FocusedTimeline::send_gate_decision`] (a gate answered from its
+/// card, in the open room) and `Session::send_gate_decision_to` (a gate
+/// answered from a notification, with no room open). One builder is what
+/// keeps the two from drifting: the Application Service resolves on these
+/// exact fields, and a decision that differs by where it was tapped is a gate
+/// that resolves from one surface and silently not from the other.
+///
+/// `option_id` is validated here rather than only at the far end. The bridge
+/// would refuse an unknown id anyway, but silently: the reader would see their
+/// tap land as a message and the gate stay open, with nothing to explain why.
+pub(crate) fn gate_decision_request(
+    gate_id: &str,
+    option_id: &str,
+    comment: Option<&str>,
+    in_reply_to: &str,
+    prompt: &str,
+) -> CoreResult<serde_json::Value> {
+    if !crate::custom_events::GATE_OPTION_IDS.contains(&option_id) {
+        return Err(CoreError::Protocol(format!(
+            "not a gate decision: {option_id}"
+        )));
+    }
+    if gate_id.is_empty() {
+        return Err(CoreError::Protocol("a decision needs a gate".into()));
+    }
+    let event_id = EventId::parse(in_reply_to).map_err(|e| CoreError::Protocol(e.to_string()))?;
+    Ok(gate_decision_content(
+        gate_id,
+        option_id,
+        comment,
+        event_id.as_str(),
+        &gate_decision_body(option_id, prompt),
+    ))
+}
+
+/// An AgentPod permission answer's `content`: the chosen option's name as a
+/// plain message, exactly what the composer would send for the same text
+/// ([`mentioning_message`] with nobody mentioned).
+///
+/// A permission request has no gate to resolve — the hub's matcher reads the
+/// room — so the answer is the text itself, as the desktop (`decisionReply.ts`)
+/// and Element send it. Named separately from the composer's path so the
+/// notification send (`Session::send_permission_answer`) and the in-room one
+/// share a single definition of what an answer is.
+pub(crate) fn permission_answer_content(option_id: &str) -> RoomMessageEventContent {
+    mentioning_message(option_id, &[])
+}
+
 /// The event filter every room's `Timeline` is built with
 /// ([`FocusedTimeline::subscribe`]) — `matrix_sdk_ui`'s own
 /// [`default_event_filter`] plus one addition: an event whose content ruma
@@ -2672,24 +2723,12 @@ impl FocusedTimeline {
         in_reply_to: &str,
         prompt: &str,
     ) -> CoreResult<()> {
-        if !crate::custom_events::GATE_OPTION_IDS.contains(&option_id) {
-            return Err(CoreError::Protocol(format!(
-                "not a gate decision: {option_id}"
-            )));
-        }
-        if gate_id.is_empty() {
-            return Err(CoreError::Protocol("a decision needs a gate".into()));
-        }
-        let event_id =
-            EventId::parse(in_reply_to).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        // Built — and so validated — before the focus check: a bad option id
+        // is the caller's bug and should say so, not surface as "no room is
+        // focused". The same builder serves `Session::send_gate_decision_to`,
+        // which is what keeps the two paths' bytes identical.
+        let content = gate_decision_request(gate_id, option_id, comment, in_reply_to, prompt)?;
         let timeline = self.active_timeline_for(room_id)?;
-        let content = gate_decision_content(
-            gate_id,
-            option_id,
-            comment,
-            event_id.as_str(),
-            &gate_decision_body(option_id, prompt),
-        );
         timeline
             .room()
             .send_raw("m.room.message", content)
@@ -6157,6 +6196,37 @@ mod gate_decision_tests {
             .await
             .expect_err("must refuse");
         assert!(!matches!(err, CoreError::NotReady));
+    }
+
+    #[test]
+    fn the_shared_builder_is_the_content_builder_plus_the_sentence() {
+        // `gate_decision_request` is what both send paths put on the wire; it
+        // must be exactly the pinned content, with the derived sentence.
+        assert_eq!(
+            gate_decision_request("gate_4e8b", "reject", None, GATE_EVENT, "Ship it?").unwrap(),
+            gate_decision_content(
+                "gate_4e8b",
+                "reject",
+                None,
+                GATE_EVENT,
+                &gate_decision_body("reject", "Ship it?"),
+            )
+        );
+    }
+
+    #[test]
+    fn the_shared_builder_refuses_a_reference_that_is_not_an_event_id() {
+        let err = gate_decision_request("gate_4e8b", "approve", None, "not-an-event", "…")
+            .expect_err("a decision must reference the gate's event");
+        assert!(matches!(err, CoreError::Protocol(_)));
+    }
+
+    #[test]
+    fn a_permission_answer_is_the_options_name_as_a_plain_message() {
+        assert_eq!(
+            serde_json::to_value(permission_answer_content("Allow once")).unwrap(),
+            serde_json::json!({ "msgtype": "m.text", "body": "Allow once" })
+        );
     }
 
     #[tokio::test]

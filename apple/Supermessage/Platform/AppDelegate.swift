@@ -66,31 +66,67 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         [.banner, .list, .sound]
     }
 
+    /// A notification's action. The system waits for this to return before
+    /// it considers the action handled — and, for an app it launched in the
+    /// background to deliver the action, before it suspends it again.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
     ) async {
         let action = response.actionIdentifier
+        let typed = (response as? UNTextInputNotificationResponse)?.userText
         // Decoded here, off the main actor, so nothing non-Sendable crosses.
         let decoded = NotificationKeys.response(
-            actionIdentifier: action, userInfo: response.notification.request.content.userInfo)
+            actionIdentifier: action, userInfo: response.notification.request.content.userInfo,
+            userText: typed)
         await respond(decoded)
     }
 
     private func respond(_ decoded: NotificationKeys.Response) async {
-        if case let .open(roomId) = decoded {
-            NotificationRouter.shared.request(roomId: roomId)
+        switch decoded {
+        case .ignore:
             return
+        case let .open(roomId):
+            NotificationRouter.shared.request(roomId: roomId)
+        case let .answer(answer):
+            await send(answer)
         }
-        // An action can wake an app that is not running; its session starts
-        // when the views do. Wait a little for it rather than dropping the
-        // answer — and say so if it never comes.
-        for _ in 0..<40 where platform == nil {
-            try? await Task.sleep(for: .milliseconds(500))
+    }
+
+    /// Answer with no room open, and without waiting for any screen.
+    ///
+    /// An action on a notification delivered earlier can launch this process
+    /// in the background, where no scene connects — so no `RootView`, and no
+    /// `Session` ever starts. Waiting for one (as this once did, for up to
+    /// forty seconds across two loops) outlived iOS's ~30 s budget and never
+    /// sent. Instead this goes through the app's one core directly: restore
+    /// the stored session without sync if nothing has, send to the room, and
+    /// report — all inside `NotificationAnswerer.budget`. When a `Session` is
+    /// live the restore is a no-op and the same client sends; when one
+    /// starts later it starts sync on the client this restored.
+    private func send(_ answer: NotificationAnswer) async {
+        let activity = BackgroundActivity(name: "Answer from a notification")
+        defer { activity.end() }
+        if !(await NotificationAnswerer.send(answer, via: CoreClient.shared)) {
+            await LocalNotifier.postFailure(roomId: answer.roomId)
         }
-        if let platform {
-            await platform.respond(to: decoded)
-        } else if case let .answer(roomId, _) = decoded {
-            LocalNotifier.postFailure(roomId: roomId)
+    }
+}
+
+/// A `beginBackgroundTask` that is ended exactly once — by its owner, or by
+/// the system's expiration handler, whichever comes first.
+@MainActor
+private final class BackgroundActivity {
+    private var id: UIBackgroundTaskIdentifier = .invalid
+
+    init(name: String) {
+        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            self?.end()
         }
+    }
+
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
     }
 }

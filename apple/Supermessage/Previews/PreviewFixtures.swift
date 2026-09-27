@@ -162,6 +162,15 @@ struct PreviewClient: SessionClient {
     ) async throws {}
     func setTyping(roomId: String, typing: Bool) async throws {}
 
+    // MARK: NotificationAnswering
+
+    func restoreSessionQuietly() async throws -> Bool { false }
+    func sendPermissionAnswer(roomId: String, optionId: String) async throws {}
+    func sendGateDecisionTo(
+        roomId: String, gateId: String, optionId: String, comment: String?,
+        inReplyTo: String, prompt: String
+    ) async throws {}
+
     // MARK: RoomMembership
 
     func joinRoom(roomId: String) async throws {}

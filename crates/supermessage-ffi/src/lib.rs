@@ -652,6 +652,58 @@ impl Core {
     }
 }
 
+/// Answers from a notification, with no room open.
+///
+/// A block of its own so the surface reads as one feature. Every write above
+/// goes through the focused timeline and fails unless its room is the one on
+/// screen; these go to the room directly, need no sync, and return only once
+/// the homeserver has accepted the event.
+#[uniffi::export]
+impl Core {
+    /// Pick up a stored session **without starting sync** — enough to send
+    /// an answer from a process iOS woke only to deliver a notification
+    /// action. A no-op returning `true` when a session is already live, and a
+    /// later [`Core::restore_session`] starts streams on the client this
+    /// installed rather than building a second one.
+    pub fn restore_session_quietly(&self) -> Result<bool, FfiError> {
+        Ok(self.block(self.session.restore_quietly())?)
+    }
+
+    /// Answer an AgentPod permission request in `room_id`: the option's name
+    /// as a plain message, the same bytes the composer would send. The room
+    /// need not be open.
+    pub fn send_permission_answer(
+        &self,
+        room_id: String,
+        option_id: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.send_permission_answer(&room_id, &option_id))?;
+        Ok(())
+    }
+
+    /// [`Core::send_gate_decision`] for a room that need not be open: the
+    /// same content, validated the same way, sent straight to `room_id`.
+    pub fn send_gate_decision_to(
+        &self,
+        room_id: String,
+        gate_id: String,
+        option_id: String,
+        comment: Option<String>,
+        in_reply_to: String,
+        prompt: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.send_gate_decision_to(
+            &room_id,
+            &gate_id,
+            &option_id,
+            comment.as_deref(),
+            &in_reply_to,
+            &prompt,
+        ))?;
+        Ok(())
+    }
+}
+
 impl Core {
     /// Shared by both constructors, so neither can drift from the other on
     /// tracing setup or runtime construction.

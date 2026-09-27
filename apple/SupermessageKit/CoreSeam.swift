@@ -164,6 +164,24 @@ public protocol AccountDirectory: Sendable {
     func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto]
 }
 
+/// Answers sent with no room open: a notification's actions
+/// (`NotificationAnswerer`), and `Session.answerPermission`.
+///
+/// Everything in `MessageSending` goes through the focused timeline and
+/// fails unless its room is the one on screen. These go to the room
+/// directly, need no sync, and return only once the homeserver has the
+/// event — so "sent" means sent.
+public protocol NotificationAnswering: Sendable {
+    /// Restore the stored session **without starting sync**; `true` at once
+    /// when one is already live. `false` when nothing is stored.
+    func restoreSessionQuietly() async throws -> Bool
+    func sendPermissionAnswer(roomId: String, optionId: String) async throws
+    func sendGateDecisionTo(
+        roomId: String, gateId: String, optionId: String, comment: String?,
+        inReplyTo: String, prompt: String
+    ) async throws
+}
+
 // MARK: - The composition Session takes
 
 /// Everything a `Session` needs, which is everything above.
@@ -176,6 +194,7 @@ public protocol AccountDirectory: Sendable {
 public typealias SessionClient = AvatarFetching & MediaFetching & AudioFetching & RoomsSnapshotting
     & SpaceSelecting & AttachmentStaging & TimelineSubscribing & SessionAuthenticating
     & MessageSending & RoomMembership & RoomAdministering & AccountDirectory
+    & NotificationAnswering
 
 // MARK: - The one real conformer
 

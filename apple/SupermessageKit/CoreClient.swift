@@ -50,6 +50,18 @@ public actor CoreClient {
             label: Self.queueLabel, qos: .userInitiated, attributes: .concurrent)
     }
 
+    /// The app's one core.
+    ///
+    /// One per process, because the core holds the account's one
+    /// `matrix_sdk::Client` and a second over the same store and device is
+    /// the failure `restore_and_start` exists to prevent. Two things reach
+    /// it: the `Session` the views run on, and the app delegate answering a
+    /// notification action — possibly in a process iOS launched in the
+    /// background with no scene, and so no `Session`, at all. Sharing this
+    /// is what lets the second restore quietly and the first later start
+    /// sync on that same client.
+    public static let shared = CoreClient(dataDirectory: CoreClient.dataDirectory())
+
     /// Where the core keeps its SQLite stores.
     ///
     /// Inside the app container, so it inherits the sandbox and the backup
@@ -262,6 +274,27 @@ public actor CoreClient {
 
     public func setTyping(roomId: String, typing: Bool) async throws {
         try await run { try $0.setTyping(roomId: roomId, typing: typing) }
+    }
+
+    // MARK: - Answers with no room open (NotificationAnswering)
+
+    public func restoreSessionQuietly() async throws -> Bool {
+        try await run { try $0.restoreSessionQuietly() }
+    }
+
+    public func sendPermissionAnswer(roomId: String, optionId: String) async throws {
+        try await run { try $0.sendPermissionAnswer(roomId: roomId, optionId: optionId) }
+    }
+
+    public func sendGateDecisionTo(
+        roomId: String, gateId: String, optionId: String, comment: String?,
+        inReplyTo: String, prompt: String
+    ) async throws {
+        try await run {
+            try $0.sendGateDecisionTo(
+                roomId: roomId, gateId: gateId, optionId: optionId, comment: comment,
+                inReplyTo: inReplyTo, prompt: prompt)
+        }
     }
 
     // MARK: - Media and attachments

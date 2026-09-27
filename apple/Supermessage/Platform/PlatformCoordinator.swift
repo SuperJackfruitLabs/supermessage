@@ -199,26 +199,6 @@ final class PlatformCoordinator {
         return mode
     }
 
-    /// A notification's action, decoded.
-    func respond(to response: NotificationKeys.Response) async {
-        switch response {
-        case .ignore:
-            break
-        case let .open(roomId):
-            NotificationRouter.shared.request(roomId: roomId)
-        case let .answer(roomId, optionId):
-            // An action can wake an app that is not running, and the session
-            // restores on its own schedule. Wait for it rather than sending
-            // into a core that has no client yet.
-            for _ in 0..<40 where session.phase != .signedIn {
-                try? await Task.sleep(for: .milliseconds(500))
-            }
-            if !(await session.answerPermission(optionId: optionId, in: roomId)) {
-                LocalNotifier.postFailure(roomId: roomId)
-            }
-        }
-    }
-
     // MARK: - Live Activity
 
     private func liveChanged(_ seen: LiveSeen) {
