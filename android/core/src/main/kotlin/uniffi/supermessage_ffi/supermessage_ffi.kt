@@ -959,6 +959,12 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1054,6 +1060,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_restore_session(`ptr`: Pointer,`sink`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_supermessage_ffi_fn_method_core_restore_session_quietly(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     fun uniffi_supermessage_ffi_fn_method_core_room_avatar(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_room_avatar_full(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1068,7 +1076,11 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_message(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`mentions`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_send_permission_answer(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_reply(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1322,6 +1334,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_restore_session(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_room_avatar(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_room_avatar_full(
@@ -1336,7 +1350,11 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_message(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_reply(
     ): Short
@@ -1524,6 +1542,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_restore_session() != 6863.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly() != 65435.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_room_avatar() != 58138.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1545,7 +1566,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 31962.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to() != 20932.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_permission_answer() != 53383.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056.toShort()) {
@@ -2268,6 +2295,15 @@ public interface CoreInterface {
     fun `restoreSession`(`sink`: EventSink): kotlin.Boolean
     
     /**
+     * Pick up a stored session **without starting sync** — enough to send
+     * an answer from a process iOS woke only to deliver a notification
+     * action. A no-op returning `true` when a session is already live, and a
+     * later [`Core::restore_session`] starts streams on the client this
+     * installed rather than building a second one.
+     */
+    fun `restoreSessionQuietly`(): kotlin.Boolean
+    
+    /**
      * A room's avatar as a `data:` URI, if it has one.
      */
     fun `roomAvatar`(`roomId`: kotlin.String): kotlin.String?
@@ -2334,6 +2370,12 @@ public interface CoreInterface {
     fun `sendGateDecision`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
     
     /**
+     * [`Core::send_gate_decision`] for a room that need not be open: the
+     * same content, validated the same way, sent straight to `room_id`.
+     */
+    fun `sendGateDecisionTo`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -2343,6 +2385,13 @@ public interface CoreInterface {
      * `mentions` are user ids to notify; empty is the ordinary case.
      */
     fun `sendMessage`(`roomId`: kotlin.String, `body`: kotlin.String, `mentions`: List<kotlin.String>)
+    
+    /**
+     * Answer an AgentPod permission request in `room_id`: the option's name
+     * as a plain message, the same bytes the composer would send. The room
+     * need not be open.
+     */
+    fun `sendPermissionAnswer`(`roomId`: kotlin.String, `optionId`: kotlin.String)
     
     /**
      * Reply to `in_reply_to`, an event id in the focused room.
@@ -3095,6 +3144,26 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Pick up a stored session **without starting sync** — enough to send
+     * an answer from a process iOS woke only to deliver a notification
+     * action. A no-op returning `true` when a session is already live, and a
+     * later [`Core::restore_session`] starts streams on the client this
+     * installed rather than building a second one.
+     */
+    @Throws(FfiException::class)override fun `restoreSessionQuietly`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_restore_session_quietly(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * A room's avatar as a `data:` URI, if it has one.
      */
     @Throws(FfiException::class)override fun `roomAvatar`(`roomId`: kotlin.String): kotlin.String? {
@@ -3237,6 +3306,22 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * [`Core::send_gate_decision`] for a room that need not be open: the
+     * same content, validated the same way, sent straight to `room_id`.
+     */
+    @Throws(FfiException::class)override fun `sendGateDecisionTo`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`gateId`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),FfiConverterString.lower(`prompt`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -3251,6 +3336,23 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_message(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`body`),FfiConverterSequenceString.lower(`mentions`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Answer an AgentPod permission request in `room_id`: the option's name
+     * as a plain message, the same bytes the composer would send. The room
+     * need not be open.
+     */
+    @Throws(FfiException::class)override fun `sendPermissionAnswer`(`roomId`: kotlin.String, `optionId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_permission_answer(
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`optionId`),_status)
 }
     }
     
