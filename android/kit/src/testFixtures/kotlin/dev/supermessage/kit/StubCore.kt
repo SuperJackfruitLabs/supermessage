@@ -75,4 +75,13 @@ open class StubCore : CoreInterface {
     override fun timelinePaginateBack(roomId: kotlin.String, count: kotlin.UShort): kotlin.Boolean = throw NotImplementedError()
     override fun timelineResync(): TimelineSnapshot = throw NotImplementedError()
     override fun timelineSubscribe(roomId: kotlin.String, sink: EventSink): Unit = throw NotImplementedError()
-    override fun toggleReaction(roomId: kotlin.String, eventId: kotlin.String, key: kotlin.String): kotlin.Boolean = throw NotImplementedError()}
+    override fun toggleReaction(roomId: kotlin.String, eventId: kotlin.String, key: kotlin.String): kotlin.Boolean = throw NotImplementedError()
+
+    // Block and report (issue #60).
+    override fun ignoreUser(userId: kotlin.String): Unit = throw NotImplementedError()
+    override fun unignoreUser(userId: kotlin.String): Unit = throw NotImplementedError()
+    override fun ignoredUsers(): List<RoomMemberDto> = throw NotImplementedError()
+    override fun reportEvent(roomId: kotlin.String, eventId: kotlin.String, reason: kotlin.String): Unit = throw NotImplementedError()
+    override fun reportRoom(roomId: kotlin.String, reason: kotlin.String): Unit = throw NotImplementedError()
+    override fun reportUser(userId: kotlin.String, reason: kotlin.String): Unit = throw NotImplementedError()
+}

@@ -62,6 +62,16 @@ pub enum FfiError {
     /// The space id is not one this account is in.
     #[error("no such space: {space_id}")]
     UnknownSpace { space_id: String },
+
+    /// A report's reason is over the limit. Nothing was sent; keep the text
+    /// so the reader can shorten it.
+    #[error("reason is {length} characters, over the {limit} character limit")]
+    ReasonTooLong { length: u64, limit: u64 },
+
+    /// Declined, with a sentence written for the reader — show `detail` as it
+    /// is. Unlike `Protocol`, whose detail is the SDK's own words.
+    #[error("{detail}")]
+    Refused { detail: String },
 }
 
 impl From<CoreError> for FfiError {
@@ -82,6 +92,8 @@ impl From<CoreError> for FfiError {
             }
             CoreError::UnknownAttachment => Self::UnknownAttachment,
             CoreError::UnknownSpace { space_id } => Self::UnknownSpace { space_id },
+            CoreError::ReasonTooLong { length, limit } => Self::ReasonTooLong { length, limit },
+            CoreError::Refused(detail) => Self::Refused { detail },
         }
     }
 }

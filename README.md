@@ -36,6 +36,7 @@ release, or that every operation has been exercised against a live homeserver.
 | Message search | Homeserver search | Homeserver search | Homeserver search |
 | Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
 | AgentPod turn/permission cards and superpipeline gates | Implemented; gate sender uses shared core | Implemented | Implemented |
+| Block users and agents; report messages, rooms and users | Core only (no UI yet) | Implemented | Core only (no UI yet) |
 | Background push notifications when closed | Not implemented | Not implemented | Not implemented |
 
 Search depends on homeserver support and is not an encrypted local-history

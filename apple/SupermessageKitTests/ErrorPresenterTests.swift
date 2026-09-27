@@ -11,6 +11,8 @@ struct ErrorPresenterTests {
         .RoomChanged(requested: "!a:x", focused: "!b:x"),
         .AttachmentTooLarge(bytes: 9_000_000, limit: 5_000_000),
         .UnknownAttachment, .UnknownSpace(spaceId: "!s:x"),
+        .ReasonTooLong(length: 2105, limit: 2000),
+        .Refused(detail: "This homeserver doesn't accept message reports. Nothing was sent."),
     ]
 
     @Test("every error variant has something a person can read")
@@ -43,6 +45,25 @@ struct ErrorPresenterTests {
             for: .AttachmentTooLarge(bytes: 9_000_000, limit: 5_000_000))
         #expect(text.contains("9"))
         #expect(text.contains("5"))
+    }
+
+    @Test("a too-long report reason says how far over it is")
+    func reasonTooLongSaysByHowMuch() {
+        // The text is still in the field; the reader needs to know how much to
+        // cut, not only that something is wrong.
+        let text = ErrorPresenter.message(for: .ReasonTooLong(length: 2105, limit: 2000))
+        // "is 105 ", not "105": the full length, 2105, also contains 105.
+        #expect(text.contains("is 105 "))
+        #expect(text.contains("2000"))
+    }
+
+    @Test("a refusal worded by the core is shown as it is")
+    func refusedIsShownVerbatim() {
+        // Unlike `Protocol`, whose detail is the SDK's and gets replaced, this
+        // one was written for the reader — replacing it would throw away
+        // "Nothing was sent".
+        let detail = "This homeserver doesn't accept person reports. Nothing was sent."
+        #expect(ErrorPresenter.message(for: .Refused(detail: detail)) == detail)
     }
 
     @Test("still-connecting is not worth interrupting anyone for")

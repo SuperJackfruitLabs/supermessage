@@ -41,6 +41,7 @@ use super::media;
 use super::recovery;
 use super::room_info::{self, RoomInfoDto};
 use super::rooms::{self, RoomListHandle, SpaceSelection};
+use super::safety;
 use super::search::{self, SearchResultDto};
 use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
 use super::spaces::{self, SpaceSummary};
@@ -78,6 +79,11 @@ pub struct Session {
     // account; outliving that account it becomes a path held on behalf of
     // whoever logs in next.
     staged: Arc<attachments::StagedAttachments>,
+    // Streams the ignore (block) list to the host — see
+    // `safety::spawn_ignore_watch`. Owned here for the same reason `rooms` is:
+    // the task holds a `Client`, so `logout` must stop it before wiping the
+    // store. `start_streams`/`stop_ignore_watch` are the only writers.
+    ignore_watch: RwLock<Option<tokio::task::JoinHandle<()>>>,
     // Serializes whole session transitions (login, restore, logout) against
     // each other — see this module's doc comment.
     lifecycle: Mutex<()>,
@@ -94,6 +100,7 @@ impl Session {
             rooms: RwLock::new(None),
             focused: Arc::new(FocusedTimeline::default()),
             staged: Arc::new(attachments::StagedAttachments::default()),
+            ignore_watch: RwLock::new(None),
             lifecycle: Mutex::new(()),
         }
     }
@@ -194,6 +201,7 @@ impl Session {
         // safely precede the parts that can.
         self.staged.clear();
         self.focused.clear_and_join().await;
+        self.stop_ignore_watch().await;
         self.stop_room_list().await;
         self.stop_sync().await;
         // Clone the handle (cheap — `Client` is internally reference
@@ -241,6 +249,7 @@ impl Session {
     /// minting another device with a fresh login.
     async fn start_or_roll_back(&self, sink: Arc<dyn EventSink>) -> CoreResult<()> {
         if let Err(err) = self.start_streams(sink).await {
+            self.stop_ignore_watch().await;
             self.stop_room_list().await;
             self.stop_sync().await;
             *self.client.write().await = None;
@@ -494,9 +503,23 @@ impl Session {
         // a session without a live view is a session that works, just without
         // watching an agent think.
         if let Ok(client) = self.require_client().await {
-            live::listen(&client, sink);
+            live::listen(&client, Arc::clone(&sink));
+            // The block list, once now and on every change. Infallible for the
+            // same reason as the live view: a session that cannot stream it
+            // still works, and the host can ask `blocked_users` directly.
+            self.stop_ignore_watch().await;
+            *self.ignore_watch.write().await = Some(safety::spawn_ignore_watch(client, sink));
         }
         Ok(())
+    }
+
+    /// Stops the ignore-list stream and waits for its task to finish, so the
+    /// `Client` it holds is released. A safe no-op when none is running.
+    async fn stop_ignore_watch(&self) {
+        if let Some(task) = self.ignore_watch.write().await.take() {
+            task.abort();
+            let _ = task.await;
+        }
     }
 
     /// A snapshot of the room list — the sequence number of the last diff
@@ -1238,6 +1261,60 @@ impl Session {
         room.leave()
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))
+    }
+
+    // ── Block and report (issue #60) ────────────────────────────────────────
+    //
+    // Thin: every rule lives in `core::safety`. Kept together so the whole
+    // safety surface reads as one block here and in the FFI.
+
+    /// Blocks `user_id` — adds them to `m.ignored_user_list`. Their messages
+    /// stop reaching this account in every room, on every device. An agent
+    /// can be blocked like anyone else; it keeps running.
+    ///
+    /// The homeserver echoes the new list back on the next sync, which is
+    /// when [`crate::event::CoreEvent::IgnoredUsers`] fires and every
+    /// timeline is cleared and refilled without them.
+    pub async fn ignore_user(&self, user_id: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        safety::ignore_user(&client, user_id).await
+    }
+
+    /// Unblocks `user_id`. A no-op when they were not blocked.
+    pub async fn unignore_user(&self, user_id: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        safety::unignore_user(&client, user_id).await
+    }
+
+    /// Everyone this account has blocked, named — for the account screen's
+    /// "Blocked users" list. See [`safety::blocked_users`].
+    pub async fn blocked_users(&self) -> CoreResult<Vec<crate::room_info::RoomMemberDto>> {
+        let client = self.require_client().await?;
+        safety::blocked_users(&client).await
+    }
+
+    /// Reports one message to the homeserver's administrator. `reason` may
+    /// be empty; see [`safety::REPORT_REASON_MAX_CHARS`] for its limit.
+    pub async fn report_event(
+        &self,
+        room_id: &str,
+        event_id: &str,
+        reason: &str,
+    ) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        safety::report_event(&client, room_id, event_id, reason).await
+    }
+
+    /// Reports a room — joined or only invited to.
+    pub async fn report_room(&self, room_id: &str, reason: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        safety::report_room(&client, room_id, reason).await
+    }
+
+    /// Reports a person or an agent.
+    pub async fn report_user(&self, user_id: &str, reason: &str) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        safety::report_user(&client, user_id, reason).await
     }
 
     /// Fetches a room member's avatar as a `data:` URI, given the raw

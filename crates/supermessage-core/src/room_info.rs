@@ -36,6 +36,18 @@ pub struct RoomMemberDto {
     /// the new `member_avatar` command), not a second fetch path — see that
     /// command's doc comment in `core::commands`.
     pub avatar_url: Option<String>,
+    /// Whether this account has blocked them (`m.ignored_user_list`). Their
+    /// messages stop arriving everywhere; the panel offers Unblock instead of
+    /// Block. Defaults to `false` across the FFI so older call sites that
+    /// build a member by hand keep compiling.
+    #[uniffi(default = false)]
+    pub is_ignored: bool,
+    /// Whether this member is an agent rather than a person — decided here,
+    /// from the bridge's `@agent_` id convention, so hosts can word a block
+    /// or report for an agent ("it keeps running") without each keeping its
+    /// own copy of that rule.
+    #[uniffi(default = false)]
+    pub is_agent: bool,
 }
 
 impl From<RoomNotificationMode> for NotificationMode {
@@ -117,12 +129,15 @@ pub struct RoomInfoDto {
 /// to land, rather than being scattered across call sites, and so
 /// [`project_member`] stays a thin, untested-on-its-own adapter like
 /// `core::rooms::project_room`/`core::timeline::project_event_item`.
-fn project_member_parts(
+pub(crate) fn project_member_parts(
     user_id: &str,
     display_name: Option<String>,
     avatar_url: Option<String>,
+    is_ignored: bool,
 ) -> RoomMemberDto {
     RoomMemberDto {
+        is_ignored,
+        is_agent: crate::item_view::agent_name_from_id(user_id).is_some(),
         user_id: user_id.to_string(),
         // The same rule the timeline's attribution uses. Without it the same
         // agent was named two ways three centimetres apart on one screen.
@@ -242,6 +257,7 @@ fn project_member(member: &RoomMember) -> RoomMemberDto {
         member.user_id().as_str(),
         member.display_name().map(str::to_string),
         member.avatar_url().map(|url| url.to_string()),
+        member.is_ignored(),
     )
 }
 
@@ -297,6 +313,7 @@ mod tests {
             user_id,
             display_name.map(str::to_string),
             avatar_url.map(str::to_string),
+            false,
         )
     }
 
@@ -360,6 +377,7 @@ mod tests {
             "@agent_ashram_openclaw-ganesha:id.agentpod.dev",
             Some("ganesha (openclaw @ ashram)".into()),
             None,
+            false,
         );
         assert_eq!(
             member.display_name.as_deref(),
@@ -369,8 +387,12 @@ mod tests {
 
     #[test]
     fn a_person_keeps_the_display_name_they_set() {
-        let member =
-            project_member_parts("@rakesh:id.agentpod.dev", Some("rakesh 💕".into()), None);
+        let member = project_member_parts(
+            "@rakesh:id.agentpod.dev",
+            Some("rakesh 💕".into()),
+            None,
+            false,
+        );
         assert_eq!(member.display_name.as_deref(), Some("rakesh 💕"));
     }
 
@@ -473,6 +495,26 @@ mod tests {
         assert_eq!(m.user_id, "@bob:example.org");
         assert_eq!(m.display_name, None);
         assert_eq!(m.avatar_url, None);
+    }
+
+    #[test]
+    fn a_member_says_whether_they_are_blocked_and_whether_they_are_an_agent() {
+        // Both decide what the member's menu offers: Unblock instead of
+        // Block, and the agent wording ("it keeps running").
+        let blocked = project_member_parts("@troll:x.org", None, None, true);
+        assert!(blocked.is_ignored);
+        assert!(!blocked.is_agent);
+
+        let agent = member("@agent_strategy-sam:id.agentpod.dev", Some("Sam"), None);
+        assert!(
+            agent.is_agent,
+            "an @agent_ id is an agent whatever it is called"
+        );
+        assert!(!agent.is_ignored);
+
+        // Anchored to the localpart, like every other agent rule: a person on
+        // a server whose name contains `agent_` is still a person.
+        assert!(!member("@rakesh:agent_pod.example", None, None).is_agent);
     }
 
     #[test]

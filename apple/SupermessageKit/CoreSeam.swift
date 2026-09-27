@@ -32,10 +32,11 @@ import SupermessageFFI
 //
 //     grep -oE "client\.[a-zA-Z]+" SupermessageKit/Stores/*.swift
 //
-// Two of `CoreClient`'s 39 public methods appear in no protocol below, and it
+// Two of `CoreClient`'s public methods appear in no protocol below, and it
 // is not an oversight: `connectionState()` and `inviteUser(roomId:userId:)`
-// have no callers anywhere in the Kit, the app, or the tests. 37 + 2 = 39,
-// which is the arithmetic that says nothing was missed by accident.
+// have no callers anywhere in the Kit, the app, or the tests. Every other
+// public method is in exactly one protocol, which is the arithmetic that says
+// nothing was missed by accident.
 
 // MARK: - What the stores call
 
@@ -182,6 +183,19 @@ public protocol NotificationAnswering: Sendable {
     ) async throws
 }
 
+/// Blocking and reporting (issue #60). `RoomInfoPanel`, `AccountPanel`,
+/// `ReportSheet`, the message menu.
+public protocol SafetyActions: Sendable {
+    func ignoreUser(userId: String) async throws
+    func unignoreUser(userId: String) async throws
+    /// Everyone blocked, named by the core, each with `isIgnored` set.
+    func ignoredUsers() async throws -> [RoomMemberDto]
+    /// `reason` may be empty; the core refuses one over its limit.
+    func reportEvent(roomId: String, eventId: String, reason: String) async throws
+    func reportRoom(roomId: String, reason: String) async throws
+    func reportUser(userId: String, reason: String) async throws
+}
+
 // MARK: - The composition Session takes
 
 /// Everything a `Session` needs, which is everything above.
@@ -194,7 +208,7 @@ public protocol NotificationAnswering: Sendable {
 public typealias SessionClient = AvatarFetching & MediaFetching & AudioFetching & RoomsSnapshotting
     & SpaceSelecting & AttachmentStaging & TimelineSubscribing & SessionAuthenticating
     & MessageSending & RoomMembership & RoomAdministering & AccountDirectory
-    & NotificationAnswering
+    & NotificationAnswering & SafetyActions
 
 // MARK: - The one real conformer
 

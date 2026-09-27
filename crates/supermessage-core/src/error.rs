@@ -73,6 +73,23 @@ pub enum CoreError {
     /// room in the account underneath it.
     #[error("no joined space with id {space_id}")]
     UnknownSpace { space_id: String },
+    /// A report's reason is longer than the homeserver accepts — see
+    /// `core::safety::REPORT_REASON_MAX_CHARS`. Nothing was sent.
+    ///
+    /// Its own variant, like [`Self::AttachmentTooLarge`], so a host can say
+    /// how far over it is rather than "report failed", and keep what the
+    /// reader wrote in the field for them to shorten.
+    #[error("that reason is {length} characters; reports allow at most {limit}")]
+    ReasonTooLong { length: u64, limit: u64 },
+    /// The homeserver (or the core, on its behalf) declined, and the message
+    /// is written for the reader: "This homeserver doesn't accept person
+    /// reports. Nothing was sent." — see `core::safety::report_failure`.
+    ///
+    /// Distinct from [`Self::Protocol`], whose text is whatever the SDK said
+    /// and which hosts therefore replace with a generic sentence. A host
+    /// shows this one as it is.
+    #[error("{0}")]
+    Refused(String),
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;
@@ -89,6 +106,8 @@ impl CoreError {
             Self::AttachmentTooLarge { .. } => "attachmentTooLarge",
             Self::UnknownAttachment => "unknownAttachment",
             Self::UnknownSpace { .. } => "unknownSpace",
+            Self::ReasonTooLong { .. } => "reasonTooLong",
+            Self::Refused(_) => "refused",
         }
     }
 }
@@ -151,6 +170,21 @@ mod tests {
         let json = serde_json::to_value(CoreError::UnknownAttachment).unwrap();
         assert_eq!(json["kind"], "unknownAttachment");
         assert!(json["message"].as_str().is_some_and(|m| !m.is_empty()));
+    }
+
+    #[test]
+    fn reason_too_long_serializes_with_its_own_kind_and_both_numbers() {
+        let json = serde_json::to_value(CoreError::ReasonTooLong {
+            length: 2105,
+            limit: 2000,
+        })
+        .unwrap();
+        assert_eq!(json["kind"], "reasonTooLong");
+        let message = json["message"].as_str().unwrap();
+        assert!(
+            message.contains("2105") && message.contains("2000"),
+            "got {message}"
+        );
     }
 
     #[test]

@@ -141,6 +141,20 @@ struct TimelineView: View {
             // on the change to finished, never when a room opens onto a turn
             // that had already ended.
             .sensoryFeedback(.success, trigger: session.live.finished) { was, now in !was && now }
+            // "Report…" from the message menu. The menu is UIKit's and cannot
+            // present SwiftUI, so it writes the subject to the safety store
+            // and this presents it.
+            .sheet(item: pendingReport) { subject in
+                ReportSheet(session: session, subject: subject) {
+                    session.safety.pendingReport = nil
+                }
+            }
+    }
+
+    private var pendingReport: Binding<ReportSubject?> {
+        Binding(
+            get: { session.safety.pendingReport },
+            set: { session.safety.pendingReport = $0 })
     }
 
     /// What the dock says: "Sent to Atlas" → "Atlas is on it…" → nothing.

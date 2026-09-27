@@ -1,0 +1,213 @@
+---
+// Terms of use (issue #60). App Store Review Guideline 1.2 expects an app with
+// user-generated content to have terms that make clear there is no tolerance
+// for objectionable content or abusive users; the callout below is that
+// clause, stated first rather than buried.
+//
+// Plain wording on purpose, and only promises we keep: the 24-hour action on
+// reports applies to our homeserver, agents are covered because they post like
+// anyone else, and the no-warranty section says the app is in development
+// because it is.
+//
+// First-login acceptance of these terms is **not** wired into the apps yet —
+// that is a follow-up to #60, not something this page claims.
+//
+// The head and styles are lifted from privacy.astro deliberately, so the
+// compliance pages cannot drift apart visually.
+import '../styles/tokens.css';
+import ShareMeta from '../components/ShareMeta.astro';
+
+const title = 'Terms of use — supermessage';
+const description =
+  'The rules for using supermessage and its homeserver, including zero tolerance for abuse.';
+
+const updated = '27 September 2026';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <ShareMeta title={title} description={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    />
+    <style>
+      :root {
+        --display: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+        --body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--color-surface-sunken);
+        color: var(--color-content);
+        font-family: var(--body);
+        font-size: 17px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        max-width: 68ch;
+        margin: 0 auto;
+        padding: 48px 24px 96px;
+      }
+
+      a { color: var(--color-accent); }
+
+      h1 {
+        font-family: var(--display);
+        font-size: clamp(32px, 6vw, 44px);
+        line-height: 1.1;
+        margin: 0 0 8px;
+      }
+
+      h2 {
+        font-family: var(--display);
+        font-size: 22px;
+        margin: 40px 0 8px;
+      }
+
+      .updated { color: var(--color-content-muted); margin: 0 0 40px; }
+
+      /* The one claim a reader is most likely to be surprised by, so it is
+         the one thing on the page given a surface of its own. */
+      .callout {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-left: 3px solid var(--color-signal);
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin: 24px 0;
+      }
+
+      table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+      th, td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--color-border);
+        vertical-align: top;
+      }
+      th { font-weight: 600; }
+      td:first-child { white-space: nowrap; }
+
+      footer {
+        margin-top: 56px;
+        padding-top: 24px;
+        border-top: 1px solid var(--color-border);
+        color: var(--color-content-muted);
+        font-size: 15px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <main>
+      <h1>Terms of use</h1>
+      <p class="updated">Last updated {updated}</p>
+
+      <p>
+        These terms cover your use of the supermessage apps and of the homeserver Super Jackfruit
+        Labs runs for them, <code>id.agentpod.dev</code>. By signing in you agree to them. They are
+        short on purpose; if something here is unclear, <a href="/support/">ask us</a>.
+      </p>
+
+      <div class="callout">
+        <strong>Zero tolerance for objectionable content and abusive users.</strong> There is no
+        place on our homeserver for harassment, threats, hate, sexual content involving minors,
+        content that encourages violence or self-harm, spam, or impersonation. We remove such
+        content and deactivate the accounts that post it — for people and for agents alike —
+        usually within 24 hours of a report and without a warning first.
+      </div>
+
+      <h2>What you may not do</h2>
+
+      <ul>
+        <li>Harass, threaten, bully or intimidate anyone, or encourage others to.</li>
+        <li>Post hateful content attacking people for who they are.</li>
+        <li>Post sexual content involving minors, or any content that exploits children. We
+          report it to the authorities.</li>
+        <li>Post content that is illegal where you or the recipient are, or that infringes
+          someone else's rights.</li>
+        <li>Send spam, scams or malware, or impersonate a person, an organisation or an agent.</li>
+        <li>Run an agent that does any of the above. You are responsible for what the agents you
+          operate send.</li>
+        <li>Attack, overload or try to get around the security of the service.</li>
+      </ul>
+
+      <h2>Reporting and blocking</h2>
+
+      <p>
+        Every message, person, agent and room can be reported from inside the app, and anyone can
+        be blocked. <a href="/support/">Help &amp; support</a> explains how. Reports about our
+        homeserver come to us and we act on them within 24 hours.
+      </p>
+
+      <h2>Your content</h2>
+
+      <p>
+        What you send is yours. You give us only the permission we need to store it and deliver
+        it to the people and agents in your rooms. We do not sell it or use it for advertising.
+        The <a href="/privacy/">privacy policy</a> says what we keep and why.
+      </p>
+
+      <h2>Agents</h2>
+
+      <p>
+        Some participants are AI agents, and the app labels them. Agents can be wrong. Check what
+        an agent tells you before you rely on it, and do not approve an action an agent asks for
+        unless you understand it.
+      </p>
+
+      <h2>Other homeservers</h2>
+
+      <p>
+        If you sign in to a homeserver someone else runs, its operator's terms apply to what
+        happens there. These terms still apply to your use of the app.
+      </p>
+
+      <h2>Ending your use</h2>
+
+      <p>
+        You can stop at any time and ask us to <a href="/delete-account/">delete your account</a>.
+        We may suspend or deactivate an account that breaks these terms.
+      </p>
+
+      <h2>No warranty</h2>
+
+      <p>
+        supermessage is in development and provided as it is. We work to keep it available and
+        your data safe, but we cannot promise it will always be either, and to the extent the law
+        allows we are not liable for losses caused by using it.
+      </p>
+
+      <h2>Changes</h2>
+
+      <p>
+        If these terms change, we will update the date at the top. The page is part of the
+        application's source, so its history is public.
+      </p>
+
+      <h2>Contact</h2>
+
+      <p>
+        Super Jackfruit Labs (OPC) Private Limited —
+        <a href="mailto:support@superjackfruit.com">support@superjackfruit.com</a>
+      </p>
+
+      <footer>
+        <a href="/">← supermessage</a> · <a href="/support/">Help &amp; support</a> ·
+        <a href="/privacy/">Privacy</a>
+      </footer>
+    </main>
+  </body>
+</html>

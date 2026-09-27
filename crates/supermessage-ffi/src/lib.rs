@@ -400,6 +400,56 @@ impl Core {
         Ok(())
     }
 
+    // ── Block and report (issue #60) ────────────────────────────────────────
+    //
+    // Grouped on purpose: one contiguous block, so a parallel change to this
+    // file rebases around it rather than through it.
+
+    /// Block someone — a person or an agent. Their messages stop reaching
+    /// this account everywhere; an agent keeps running. The new list arrives
+    /// as `FfiEvent::IgnoredUsers` once the homeserver echoes it back.
+    pub fn ignore_user(&self, user_id: String) -> Result<(), FfiError> {
+        self.block(self.session.ignore_user(&user_id))?;
+        Ok(())
+    }
+
+    /// Unblock someone. A no-op when they were not blocked.
+    pub fn unignore_user(&self, user_id: String) -> Result<(), FfiError> {
+        self.block(self.session.unignore_user(&user_id))?;
+        Ok(())
+    }
+
+    /// Everyone this account has blocked, named, with `is_ignored` set.
+    pub fn ignored_users(
+        &self,
+    ) -> Result<Vec<supermessage_core::room_info::RoomMemberDto>, FfiError> {
+        Ok(self.block(self.session.blocked_users())?)
+    }
+
+    /// Report a message to the homeserver's administrator. `reason` may be
+    /// empty; over the limit it is refused with `ReasonTooLong`.
+    pub fn report_event(
+        &self,
+        room_id: String,
+        event_id: String,
+        reason: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.report_event(&room_id, &event_id, &reason))?;
+        Ok(())
+    }
+
+    /// Report a room — joined, or only invited to.
+    pub fn report_room(&self, room_id: String, reason: String) -> Result<(), FfiError> {
+        self.block(self.session.report_room(&room_id, &reason))?;
+        Ok(())
+    }
+
+    /// Report a person or an agent.
+    pub fn report_user(&self, user_id: String, reason: String) -> Result<(), FfiError> {
+        self.block(self.session.report_user(&user_id, &reason))?;
+        Ok(())
+    }
+
     /// Create a room and return its id.
     ///
     /// `is_direct` marks it as a one-to-one conversation, which changes how
@@ -919,4 +969,12 @@ pub fn roster_hidden_invitations(
     shows_invitations: bool,
 ) -> u32 {
     supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
+}
+
+/// How many more characters a report's reason may take — negative once it is
+/// over. Counted by the core, so a host's counter agrees with the check that
+/// refuses the report (Swift and Kotlin would each count differently).
+#[uniffi::export]
+pub fn report_reason_remaining(reason: String) -> i64 {
+    supermessage_core::safety::report_reason_remaining(&reason)
 }

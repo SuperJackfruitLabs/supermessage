@@ -86,3 +86,12 @@ letting Android ship first.
 content and block users for anything carrying user-generated content, and a
 Matrix client is squarely that. TestFlight *internal* needs none of it, which
 is why iOS is shipping today.
+
+Where #60 stands (2026-09-27): the core and FFI can block (`m.ignored_user_list`)
+and report messages, rooms and users; **iOS** has the UI — Report… on a
+message, block/report on a room's members, Report room… beside Leave and on
+an invitation, a Blocked list and Help & support / Terms links in Account.
+`supermessage.dev/support` and `/terms` publish the contact address, the
+24-hour response commitment and the zero-tolerance clause. Still open before
+production: **Android UI** (a follow-up issue), **terms acceptance at first
+sign-in**, and confirming `support@superjackfruit.com` receives mail.

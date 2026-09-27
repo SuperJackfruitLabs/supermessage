@@ -58,6 +58,17 @@ object ErrorPresenter {
         is FfiException.UnknownAttachment -> "That attachment is no longer staged."
 
         is FfiException.UnknownSpace -> "That space is no longer in your account."
+
+        // Block and report (issue #60). Android has no UI for these yet — see
+        // the parity follow-up — but the boundary produces them, so they are
+        // worded here rather than left to a generic apology.
+        is FfiException.ReasonTooLong -> {
+            val over = if (error.length > error.limit) error.length - error.limit else 0uL
+            "That reason is $over characters too long. Reports allow ${error.limit}."
+        }
+
+        // Written for the reader by the core, so shown as it is.
+        is FfiException.Refused -> error.detail.ifEmpty { "The homeserver declined." }
     }
 
     /**

@@ -22,6 +22,8 @@ class ErrorPresenterTest {
         FfiException.AttachmentTooLarge(bytes = 9_000_000uL, limit = 5_000_000uL),
         FfiException.UnknownAttachment(),
         FfiException.UnknownSpace("!s:x"),
+        FfiException.ReasonTooLong(length = 2105uL, limit = 2000uL),
+        FfiException.Refused("This homeserver doesn't accept reports."),
     )
 
     /** "every error variant has something a person can read" */

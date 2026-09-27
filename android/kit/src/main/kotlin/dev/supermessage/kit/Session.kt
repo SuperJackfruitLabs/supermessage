@@ -802,5 +802,10 @@ class Session(
             // rather than swept into an `else` so a new variant on the
             // boundary still breaks this build.
         }
+        is FfiEvent.IgnoredUsers -> {
+            // Block and report (issue #60) is iOS-only for now; Android parity
+            // is a follow-up. Listed rather than swept into an `else` for the
+            // same reason as above.
+        }
     }
 }

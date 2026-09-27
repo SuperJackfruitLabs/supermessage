@@ -377,6 +377,16 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_enable_recovery(void*_Nonnull 
 RustBuffer uniffi_supermessage_ffi_fn_method_core_ensure_recovery(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_IGNORE_USER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_IGNORE_USER
+void uniffi_supermessage_ffi_fn_method_core_ignore_user(void*_Nonnull ptr, RustBuffer user_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_IGNORED_USERS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_IGNORED_USERS
+RustBuffer uniffi_supermessage_ffi_fn_method_core_ignored_users(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_INVITE_USER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_INVITE_USER
 void uniffi_supermessage_ffi_fn_method_core_invite_user(void*_Nonnull ptr, RustBuffer room_id, RustBuffer user_id, RustCallStatus *_Nonnull out_status
@@ -445,6 +455,21 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_recovery_state(void*_Nonnull p
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REGISTER_PUSHER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REGISTER_PUSHER
 void uniffi_supermessage_ffi_fn_method_core_register_pusher(void*_Nonnull ptr, RustBuffer registration, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REPORT_EVENT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REPORT_EVENT
+void uniffi_supermessage_ffi_fn_method_core_report_event(void*_Nonnull ptr, RustBuffer room_id, RustBuffer event_id, RustBuffer reason, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REPORT_ROOM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REPORT_ROOM
+void uniffi_supermessage_ffi_fn_method_core_report_room(void*_Nonnull ptr, RustBuffer room_id, RustBuffer reason, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REPORT_USER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REPORT_USER
+void uniffi_supermessage_ffi_fn_method_core_report_user(void*_Nonnull ptr, RustBuffer user_id, RustBuffer reason, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RESET_RECOVERY
@@ -562,6 +587,11 @@ void uniffi_supermessage_ffi_fn_method_core_timeline_subscribe(void*_Nonnull ptr
 int8_t uniffi_supermessage_ffi_fn_method_core_toggle_reaction(void*_Nonnull ptr, RustBuffer room_id, RustBuffer event_id, RustBuffer key, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_UNIGNORE_USER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_UNIGNORE_USER
+void uniffi_supermessage_ffi_fn_method_core_unignore_user(void*_Nonnull ptr, RustBuffer user_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_EVENTSINK
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_INIT_CALLBACK_VTABLE_EVENTSINK
 void uniffi_supermessage_ffi_fn_init_callback_vtable_eventsink(UniffiVTableCallbackInterfaceEventSink* _Nonnull vtable
@@ -605,6 +635,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_people_label(RustBuffer user_ids, Rus
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_MATCHING
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_MATCHING
 RustBuffer uniffi_supermessage_ffi_fn_func_people_matching(RustBuffer people, RustBuffer query, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_REPORT_REASON_REMAINING
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_REPORT_REASON_REMAINING
+int64_t uniffi_supermessage_ffi_fn_func_report_reason_remaining(RustBuffer reason, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_RICH_BLOCKS_FROM_MARKDOWN
@@ -949,6 +984,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_people_matching(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_REPORT_REASON_REMAINING
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_REPORT_REASON_REMAINING
+uint16_t uniffi_supermessage_ffi_checksum_func_report_reason_remaining(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_RICH_BLOCKS_FROM_MARKDOWN
 uint16_t uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown(void
@@ -1045,6 +1086,18 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_ensure_recovery(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_IGNORE_USER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_IGNORE_USER
+uint16_t uniffi_supermessage_ffi_checksum_method_core_ignore_user(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_IGNORED_USERS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_IGNORED_USERS
+uint16_t uniffi_supermessage_ffi_checksum_method_core_ignored_users(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_INVITE_USER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_INVITE_USER
 uint16_t uniffi_supermessage_ffi_checksum_method_core_invite_user(void
@@ -1126,6 +1179,24 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_recovery_state(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REGISTER_PUSHER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REGISTER_PUSHER
 uint16_t uniffi_supermessage_ffi_checksum_method_core_register_pusher(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REPORT_EVENT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REPORT_EVENT
+uint16_t uniffi_supermessage_ffi_checksum_method_core_report_event(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REPORT_ROOM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REPORT_ROOM
+uint16_t uniffi_supermessage_ffi_checksum_method_core_report_room(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REPORT_USER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REPORT_USER
+uint16_t uniffi_supermessage_ffi_checksum_method_core_report_user(void
     
 );
 #endif
@@ -1264,6 +1335,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_timeline_subscribe(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TOGGLE_REACTION
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TOGGLE_REACTION
 uint16_t uniffi_supermessage_ffi_checksum_method_core_toggle_reaction(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_UNIGNORE_USER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_UNIGNORE_USER
+uint16_t uniffi_supermessage_ffi_checksum_method_core_unignore_user(void
     
 );
 #endif

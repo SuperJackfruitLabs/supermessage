@@ -46,6 +46,14 @@ public enum ErrorPresenter {
             return "That attachment is no longer staged."
         case .UnknownSpace:
             return "That space is no longer in your account."
+        case let .ReasonTooLong(length, limit):
+            // Nothing was sent, and the text is still in the field: say by
+            // how much, so shortening it is one pass rather than several.
+            return "That reason is \(length - min(length, limit)) characters too long. Reports allow \(limit)."
+        case let .Refused(detail):
+            // Written for the reader by the core — "This homeserver doesn't
+            // accept person reports. Nothing was sent." — so shown as is.
+            return detail.isEmpty ? "The homeserver declined." : detail
         }
     }
 

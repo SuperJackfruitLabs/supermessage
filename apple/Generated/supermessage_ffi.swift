@@ -463,6 +463,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+    typealias FfiType = Int64
+    typealias SwiftType = Int64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int64, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
     typealias FfiType = Float
     typealias SwiftType = Float
@@ -644,6 +660,18 @@ public protocol CoreProtocol : AnyObject {
     func ensureRecovery() throws  -> String?
     
     /**
+     * Block someone — a person or an agent. Their messages stop reaching
+     * this account everywhere; an agent keeps running. The new list arrives
+     * as `FfiEvent::IgnoredUsers` once the homeserver echoes it back.
+     */
+    func ignoreUser(userId: String) throws 
+    
+    /**
+     * Everyone this account has blocked, named, with `is_ignored` set.
+     */
+    func ignoredUsers() throws  -> [RoomMemberDto]
+    
+    /**
      * Invite someone to a room.
      */
     func inviteUser(roomId: String, userId: String) throws 
@@ -738,6 +766,22 @@ public protocol CoreProtocol : AnyObject {
      * push gateway. `event_id_only`, so no content leaves the homeserver.
      */
     func registerPusher(registration: PushRegistration) throws 
+    
+    /**
+     * Report a message to the homeserver's administrator. `reason` may be
+     * empty; over the limit it is refused with `ReasonTooLong`.
+     */
+    func reportEvent(roomId: String, eventId: String, reason: String) throws 
+    
+    /**
+     * Report a room — joined, or only invited to.
+     */
+    func reportRoom(roomId: String, reason: String) throws 
+    
+    /**
+     * Report a person or an agent.
+     */
+    func reportUser(userId: String, reason: String) throws 
     
     /**
      * Throw the old identity away and start again, returning the new key.
@@ -918,6 +962,11 @@ public protocol CoreProtocol : AnyObject {
      * Add or remove a reaction. Returns whether the reaction is now present.
      */
     func toggleReaction(roomId: String, eventId: String, key: String) throws  -> Bool
+    
+    /**
+     * Unblock someone. A no-op when they were not blocked.
+     */
+    func unignoreUser(userId: String) throws 
     
 }
 
@@ -1174,6 +1223,28 @@ open func ensureRecovery()throws  -> String? {
 }
     
     /**
+     * Block someone — a person or an agent. Their messages stop reaching
+     * this account everywhere; an agent keeps running. The new list arrives
+     * as `FfiEvent::IgnoredUsers` once the homeserver echoes it back.
+     */
+open func ignoreUser(userId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_ignore_user(self.uniffiClonePointer(),
+        FfiConverterString.lower(userId),$0
+    )
+}
+}
+    
+    /**
+     * Everyone this account has blocked, named, with `is_ignored` set.
+     */
+open func ignoredUsers()throws  -> [RoomMemberDto] {
+    return try  FfiConverterSequenceTypeRoomMemberDto.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_ignored_users(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
      * Invite someone to a room.
      */
 open func inviteUser(roomId: String, userId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
@@ -1343,6 +1414,41 @@ open func recoveryState()throws  -> String {
 open func registerPusher(registration: PushRegistration)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_register_pusher(self.uniffiClonePointer(),
         FfiConverterTypePushRegistration_lower(registration),$0
+    )
+}
+}
+    
+    /**
+     * Report a message to the homeserver's administrator. `reason` may be
+     * empty; over the limit it is refused with `ReasonTooLong`.
+     */
+open func reportEvent(roomId: String, eventId: String, reason: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_report_event(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),
+        FfiConverterString.lower(reason),$0
+    )
+}
+}
+    
+    /**
+     * Report a room — joined, or only invited to.
+     */
+open func reportRoom(roomId: String, reason: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_report_room(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(reason),$0
+    )
+}
+}
+    
+    /**
+     * Report a person or an agent.
+     */
+open func reportUser(userId: String, reason: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_report_user(self.uniffiClonePointer(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(reason),$0
     )
 }
 }
@@ -1672,6 +1778,16 @@ open func toggleReaction(roomId: String, eventId: String, key: String)throws  ->
         FfiConverterString.lower(key),$0
     )
 })
+}
+    
+    /**
+     * Unblock someone. A no-op when they were not blocked.
+     */
+open func unignoreUser(userId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_unignore_user(self.uniffiClonePointer(),
+        FfiConverterString.lower(userId),$0
+    )
+}
 }
     
 
@@ -2323,6 +2439,18 @@ public enum FfiError {
      */
     case UnknownSpace(spaceId: String
     )
+    /**
+     * A report's reason is over the limit. Nothing was sent; keep the text
+     * so the reader can shorten it.
+     */
+    case ReasonTooLong(length: UInt64, limit: UInt64
+    )
+    /**
+     * Declined, with a sentence written for the reader — show `detail` as it
+     * is. Unlike `Protocol`, whose detail is the SDK's own words.
+     */
+    case Refused(detail: String
+    )
 }
 
 
@@ -2363,6 +2491,13 @@ public struct FfiConverterTypeFfiError: FfiConverterRustBuffer {
         case 8: return .UnknownAttachment
         case 9: return .UnknownSpace(
             spaceId: try FfiConverterString.read(from: &buf)
+            )
+        case 10: return .ReasonTooLong(
+            length: try FfiConverterUInt64.read(from: &buf), 
+            limit: try FfiConverterUInt64.read(from: &buf)
+            )
+        case 11: return .Refused(
+            detail: try FfiConverterString.read(from: &buf)
             )
 
          default: throw UniffiInternalError.unexpectedEnumCase
@@ -2420,6 +2555,17 @@ public struct FfiConverterTypeFfiError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(9))
             FfiConverterString.write(spaceId, into: &buf)
             
+        
+        case let .ReasonTooLong(length,limit):
+            writeInt(&buf, Int32(10))
+            FfiConverterUInt64.write(length, into: &buf)
+            FfiConverterUInt64.write(limit, into: &buf)
+            
+        
+        case let .Refused(detail):
+            writeInt(&buf, Int32(11))
+            FfiConverterString.write(detail, into: &buf)
+            
         }
     }
 }
@@ -2438,7 +2584,7 @@ extension FfiError: Foundation.LocalizedError {
 /**
  * One thing that happened, as the host sees it.
  *
- * A flattened mirror of [`CoreEvent`]: same eight cases, with the two
+ * A flattened mirror of [`CoreEvent`]: the same cases, with the two
  * generic envelopes replaced by their monomorphised forms.
  */
 
@@ -2491,6 +2637,12 @@ public enum FfiEvent {
     )
     case attachmentStaged(token: String, filename: String, sizeBytes: UInt64, mime: String
     )
+    /**
+     * The account's block list, whole and sorted — once when the session
+     * starts, then after every change from any device. Replace, not merge.
+     */
+    case ignoredUsers(userIds: [String]
+    )
 }
 
 
@@ -2526,6 +2678,9 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         )
         
         case 8: return .attachmentStaged(token: try FfiConverterString.read(from: &buf), filename: try FfiConverterString.read(from: &buf), sizeBytes: try FfiConverterUInt64.read(from: &buf), mime: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 9: return .ignoredUsers(userIds: try FfiConverterSequenceString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -2594,6 +2749,11 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterString.write(filename, into: &buf)
             FfiConverterUInt64.write(sizeBytes, into: &buf)
             FfiConverterString.write(mime, into: &buf)
+            
+        
+        case let .ignoredUsers(userIds):
+            writeInt(&buf, Int32(9))
+            FfiConverterSequenceString.write(userIds, into: &buf)
             
         }
     }
@@ -3488,6 +3648,31 @@ fileprivate struct FfiConverterSequenceTypeRichBlock: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeRoomMemberDto: FfiConverterRustBuffer {
+    typealias SwiftType = [RoomMemberDto]
+
+    public static func write(_ value: [RoomMemberDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRoomMemberDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RoomMemberDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RoomMemberDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRoomMemberDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeRoomRow: FfiConverterRustBuffer {
     typealias SwiftType = [RoomRow]
 
@@ -3670,6 +3855,8 @@ fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer
 
 
 
+
+
 /**
  * A playing note's position as the clock under it reads — `"0:06"`,
  * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -3768,6 +3955,18 @@ public func peopleMatching(people: [PersonDto], query: String) -> [PersonDto] {
 })
 }
 /**
+ * How many more characters a report's reason may take — negative once it is
+ * over. Counted by the core, so a host's counter agrees with the check that
+ * refuses the report (Swift and Kotlin would each count differently).
+ */
+public func reportReasonRemaining(reason: String) -> Int64 {
+    return try!  FfiConverterInt64.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_report_reason_remaining(
+        FfiConverterString.lower(reason),$0
+    )
+})
+}
+/**
  * Parse a live turn's partial markdown into blocks.
  *
  * A free function rather than a `Core` method: it touches no session state,
@@ -3861,6 +4060,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_people_matching() != 1897) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_report_reason_remaining() != 11948) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3909,6 +4111,12 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_ensure_recovery() != 63369) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_ignore_user() != 7115) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_ignored_users() != 55455) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_invite_user() != 43593) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3949,6 +4157,15 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_register_pusher() != 45337) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_report_event() != 62560) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_report_room() != 25512) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_report_user() != 25492) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_reset_recovery() != 24413) {
@@ -4018,6 +4235,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_toggle_reaction() != 6594) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_unignore_user() != 38081) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_constructor_core_new() != 35650) {

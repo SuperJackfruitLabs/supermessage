@@ -14,6 +14,17 @@ struct RoomInfoPanel: View {
     @State private var account: String?
     @State private var showsAvatar = false
     @State private var confirmsLeave = false
+    /// The member whose actions (block, report) are open, if any.
+    @State private var actingOn: RoomMemberDto?
+    /// The report sheet, for a member or for the room.
+    @State private var reporting: ReportSubject?
+    /// A block or unblock that did not land, said under the member list.
+    @State private var safetyFailure: String?
+    /// Members unblocked from this panel, whose `isIgnored` is stale until
+    /// the homeserver echoes the new list back.
+    @State private var unblockedHere: Set<String> = []
+    /// Bumped when a block or unblock lands, for the haptic.
+    @State private var safetyLanded = 0
 
     init(session: Session, roomId: String, onClose: @escaping () -> Void) {
         self.session = session
@@ -132,14 +143,22 @@ struct RoomInfoPanel: View {
                             // answer to "who is in here", which is only a question
                             // once there is more than one of them.
                             if others(info).count > 1 {
-                                Section("Members (\(info.activeMemberCount))") {
+                                Section {
                                     ForEach(info.members, id: \.userId) { member in
-                                        MemberRow(member: member)
+                                        memberRow(member)
                                     }
+                                } header: {
+                                    Text("Members (\(info.activeMemberCount))")
+                                } footer: {
+                                    membersFooter
                                 }
                             } else if let sole = others(info).first {
-                                Section("Members") {
-                                    MemberRow(member: sole)
+                                Section {
+                                    memberRow(sole)
+                                } header: {
+                                    Text("Members")
+                                } footer: {
+                                    membersFooter
                                 }
                             }
 
@@ -178,6 +197,14 @@ struct RoomInfoPanel: View {
                                 } message: {
                                     Text("You'll stop receiving its messages.")
                                 }
+                                // Beside Leave: both are ways of being done
+                                // with a room, and a reader who wants one is
+                                // often weighing the other.
+                                Button("Report room…", role: .destructive) {
+                                    reporting = .room(roomId: roomId, name: info.identity.name)
+                                }
+                                .foregroundStyle(Theme.danger)
+                                .accessibilityHint("Reports this room to your homeserver's administrators")
                             }
                         }
                         .listRowBackground(Theme.surface)
@@ -208,6 +235,32 @@ struct RoomInfoPanel: View {
             await session.avatars.load(roomId)
             await load()
         }
+        .confirmationDialog(
+            actingOn.map { name(of: $0) } ?? "", isPresented: actingOnBinding,
+            titleVisibility: .visible, presenting: actingOn
+        ) { member in
+            if isBlocked(member) {
+                Button("Unblock \(name(of: member))") { Task { await unblock(member) } }
+            } else {
+                Button("Block \(name(of: member))", role: .destructive) {
+                    Task { await block(member) }
+                }
+            }
+            Button("Report \(name(of: member))…", role: .destructive) {
+                reporting = .user(
+                    userId: member.userId, name: name(of: member), isAgent: member.isAgent)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { member in
+            Text(
+                isBlocked(member)
+                    ? "Unblocking shows their messages again, including ones sent while they were blocked."
+                    : ReportSheet.blockConsequence(isAgent: member.isAgent))
+        }
+        .sheet(item: $reporting) { subject in
+            ReportSheet(session: session, subject: subject) { reporting = nil }
+        }
+        .sensoryFeedback(.success, trigger: safetyLanded)
         .fullScreenCover(isPresented: $showsAvatar) {
             if let avatarURI, let thumbnail = RoomRowView.image(from: avatarURI) {
                 // The thumbnail opens immediately and the full-size picture
@@ -228,6 +281,71 @@ struct RoomInfoPanel: View {
 
     private func load() async {
         do { info = try await session.roomInfo(roomId) } catch { failure = "\(error)" }
+    }
+
+    // MARK: - Block and report
+
+    /// A member, tappable for everyone but this account.
+    ///
+    /// You cannot block or report yourself, so your own row is not a button:
+    /// a control that opens onto nothing reads as broken.
+    @ViewBuilder
+    private func memberRow(_ member: RoomMemberDto) -> some View {
+        if member.userId == account {
+            MemberRow(member: member, isBlocked: false)
+        } else {
+            Button {
+                safetyFailure = nil
+                actingOn = member
+            } label: {
+                MemberRow(member: member, isBlocked: isBlocked(member))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(
+                isBlocked(member) ? "Unblock or report" : "Block or report")
+        }
+    }
+
+    @ViewBuilder
+    private var membersFooter: some View {
+        if let safetyFailure {
+            Text(safetyFailure).foregroundStyle(Theme.danger)
+        }
+    }
+
+    /// The core's list when it has spoken for this member, and the member's
+    /// own flag otherwise — less whatever this panel has just unblocked, since
+    /// the flag lags the homeserver's echo.
+    private func isBlocked(_ member: RoomMemberDto) -> Bool {
+        if session.safety.isBlocked(member.userId) { return true }
+        return member.isIgnored && !unblockedHere.contains(member.userId)
+    }
+
+    private func name(of member: RoomMemberDto) -> String {
+        member.displayName ?? member.userId
+    }
+
+    private var actingOnBinding: Binding<Bool> {
+        Binding(get: { actingOn != nil }, set: { if !$0 { actingOn = nil } })
+    }
+
+    private func block(_ member: RoomMemberDto) async {
+        if let refused = await session.block(member.userId) {
+            safetyFailure = refused
+        } else {
+            unblockedHere.remove(member.userId)
+            safetyLanded += 1
+        }
+    }
+
+    private func unblock(_ member: RoomMemberDto) async {
+        if let refused = await session.unblock(member.userId) {
+            safetyFailure = refused
+        } else {
+            unblockedHere.insert(member.userId)
+            safetyLanded += 1
+        }
     }
 
     /// Everyone in the room who is not this account.
@@ -279,13 +397,25 @@ struct RoomInfoPanel: View {
     }
 }
 
-/// One member: their name, and the id beneath it.
+/// One member: their name, and the id beneath it — and, when it applies,
+/// that they are an agent or that this account has blocked them.
 private struct MemberRow: View {
     let member: RoomMemberDto
+    let isBlocked: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(member.displayName ?? member.userId)
+            HStack(spacing: 6) {
+                Text(member.displayName ?? member.userId)
+                    .foregroundStyle(isBlocked ? Theme.contentMuted : Theme.content)
+                if member.isAgent { AgentTag() }
+                if isBlocked {
+                    Label("Blocked", systemImage: "hand.raised.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Theme.danger)
+                }
+            }
             if member.displayName != nil {
                 // One line, truncated in the middle: an agent id is
                 // `@agent_<host>_<harness>-<name>:<server>` and both ends
@@ -297,6 +427,29 @@ private struct MemberRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // One element for VoiceOver: "Scribe, Agent, Blocked, @agent_…" read
+        // as a single row rather than four stops.
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Everyone this account has blocked, each with a way back.
+///
+/// Used by `AccountPanel`. Lives here beside `MemberRow` because a blocked
+/// account is drawn exactly as a member is, with the same agent tag.
+struct BlockedUserRow: View {
+    let member: RoomMemberDto
+    let onUnblock: () -> Void
+
+    var body: some View {
+        HStack {
+            MemberRow(member: member, isBlocked: false)
+            Button("Unblock", action: onUnblock)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Unblock \(member.displayName ?? member.userId)")
         }
     }
 }

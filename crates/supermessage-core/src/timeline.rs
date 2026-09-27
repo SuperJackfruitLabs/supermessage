@@ -6242,4 +6242,126 @@ mod gate_decision_tests {
             );
         }
     }
+
+    /// Blocking someone empties every timeline, and the focused one has to
+    /// come back (issue #60).
+    ///
+    /// A change to `m.ignored_user_list` makes the SDK's event cache call
+    /// `clear_all_rooms()` — the cached events may include the person just
+    /// ignored — and for the focused room that arrives as a lone `Clear`,
+    /// the very shape this module's re-seed exists for. Without it the room
+    /// the reader blocked someone *from* goes blank at the moment they did
+    /// it, which reads as the block having deleted the conversation.
+    ///
+    /// Driven end to end through a real `Timeline` against a mock homeserver:
+    /// a room with history, focused; then a sync carrying the new ignore list.
+    /// The assertion is on what the reader would be left looking at, after
+    /// the timeline has demonstrably moved (a new envelope), so a clear that
+    /// never happened cannot pass it.
+    #[tokio::test]
+    async fn the_focused_timeline_refills_after_an_ignore() {
+        use std::sync::Mutex as StdMutex;
+
+        use matrix_sdk::ruma::{event_id, room_id, user_id};
+        use matrix_sdk::test_utils::mocks::{MatrixMockServer, RoomMessagesResponseTemplate};
+        use matrix_sdk_test::{event_factory::EventFactory, JoinedRoomBuilder};
+
+        struct Envelopes(StdMutex<Vec<u64>>);
+        impl EventSink for Envelopes {
+            fn emit(&self, event: crate::event::CoreEvent) {
+                if let crate::event::CoreEvent::TimelineDiff(envelope) = event {
+                    self.0.lock().unwrap().push(envelope.seq);
+                }
+            }
+        }
+
+        async fn settled_len(focused: &FocusedTimeline) -> usize {
+            // Long enough for the initial seed and a re-seed's settle
+            // window (`RESEED_SETTLE`) to have run their course.
+            tokio::time::sleep(RESEED_SETTLE * 3).await;
+            focused.snapshot().await.unwrap().2.len()
+        }
+
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+
+        let room_id = room_id!("!blocked-from:example.org");
+        let alice = user_id!("@alice:example.org");
+        let troll = user_id!("@troll:example.org");
+        let f = EventFactory::new().room(room_id);
+
+        // What back-pagination finds. A homeserver leaves an ignored user's
+        // events out of `/messages`, so the history holds only Alice's.
+        server
+            .mock_room_messages()
+            .ok(RoomMessagesResponseTemplate::default().events(vec![f
+                .text_msg("an older message")
+                .sender(alice)
+                .event_id(event_id!("$older"))
+                .into_raw_timeline()]))
+            .mount()
+            .await;
+
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(room_id)
+                        .add_timeline_event(
+                            f.text_msg("hello")
+                                .sender(alice)
+                                .event_id(event_id!("$hello")),
+                        )
+                        .add_timeline_event(
+                            f.text_msg("something nasty")
+                                .sender(troll)
+                                .event_id(event_id!("$nasty")),
+                        ),
+                );
+            })
+            .await;
+
+        let sink = Arc::new(Envelopes(StdMutex::new(Vec::new())));
+        let focused = FocusedTimeline::default();
+        focused
+            .subscribe(&client, room_id.as_str(), sink.clone())
+            .await
+            .unwrap();
+
+        let before = settled_len(&focused).await;
+        assert!(before > 0, "the room should have shown its history first");
+        let seq_before = *sink.0.lock().unwrap().last().unwrap();
+
+        // The ignore list arrives the way it does after `ignore_user`: as
+        // account data on the next sync.
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_custom_global_account_data(serde_json::json!({
+                    "type": "m.ignored_user_list",
+                    "content": { "ignored_users": { troll.as_str(): {} } },
+                }));
+            })
+            .await;
+
+        // The event cache clears on its own task; wait for the timeline to
+        // actually move before judging what it moved to.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        while *sink.0.lock().unwrap().last().unwrap() == seq_before {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the ignore never reached the timeline, so this test proved nothing"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+
+        let after = settled_len(&focused).await;
+        assert!(
+            after > 0,
+            "the focused room went blank after an ignore and stayed blank"
+        );
+
+        focused.clear_and_join().await;
+    }
 }

@@ -54,6 +54,7 @@ pub mod room_info;
 pub mod room_preview;
 pub mod rooms;
 pub mod roster;
+pub mod safety;
 pub mod search;
 pub mod secrets;
 pub mod session;

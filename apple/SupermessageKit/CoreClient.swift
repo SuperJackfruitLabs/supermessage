@@ -333,6 +333,32 @@ public actor CoreClient {
         }
     }
 
+    // MARK: - Block and report (issue #60)
+
+    public func ignoreUser(userId: String) async throws {
+        try await run { try $0.ignoreUser(userId: userId) }
+    }
+
+    public func unignoreUser(userId: String) async throws {
+        try await run { try $0.unignoreUser(userId: userId) }
+    }
+
+    public func ignoredUsers() async throws -> [RoomMemberDto] {
+        try await run { try $0.ignoredUsers() }
+    }
+
+    public func reportEvent(roomId: String, eventId: String, reason: String) async throws {
+        try await run { try $0.reportEvent(roomId: roomId, eventId: eventId, reason: reason) }
+    }
+
+    public func reportRoom(roomId: String, reason: String) async throws {
+        try await run { try $0.reportRoom(roomId: roomId, reason: reason) }
+    }
+
+    public func reportUser(userId: String, reason: String) async throws {
+        try await run { try $0.reportUser(userId: userId, reason: reason) }
+    }
+
     // MARK: - Search
 
     public func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {
