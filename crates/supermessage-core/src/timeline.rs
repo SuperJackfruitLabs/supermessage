@@ -137,9 +137,50 @@
 //!    `Timeline::subscribe`'s own contract — the same guarantee the very
 //!    first subscription in [`FocusedTimeline::subscribe`] already relies
 //!    on.
+//!
+//! ## A timeline built while a sync lands
+//!
+//! Issue #2: a message this account sent from another client vanished from
+//! an open room, and this client's own next message showed twice. Neither was
+//! this module's doing. It was the SDK timeline underneath, corrupt from the
+//! moment it was built.
+//!
+//! `matrix_sdk_ui`'s `TimelineBuilder::build` (0.18, `timeline/builder.rs`;
+//! 0.19 has the same shape) subscribes to the room's event cache and throws
+//! the snapshot away, awaits `latest_encryption_state()` — a network request
+//! when the room's encryption state is not yet known — and only then reads
+//! the cache's events for the initial items (`init_focus`). An event that
+//! lands in between is in both: in the initial items, and in the update the
+//! discarded subscription then delivers. The SDK's list of remote events
+//! holds it twice, and so does its item list.
+//!
+//! The duplicates are the visible part. The damage is that every later
+//! **positional** op the event cache sends — `Remove { index }` when it
+//! deduplicates this client's own sent message against the server's copy —
+//! lands on the wrong entry. Reproduced live against tuwunel 1.9.1: the
+//! removal meant for this client's own message deleted the other device's
+//! message instead, and the own message was left on screen twice. A bare
+//! `room.timeline_builder()` with no code of ours in the path did the same.
+//! Reopening the room fixed it, because that builds a new timeline.
+//!
+//! So that is the fix: [`build_verified_timeline`] builds, subscribes, lets
+//! the SDK's own background task apply whatever was queued
+//! ([`BUILD_SETTLE_IDLE`]), then compares the rows' remote event ids with the
+//! event cache's ([`timeline_drift`]). A duplicate, or a row the cache does
+//! not hold, means the build raced; the timeline is dropped and built again,
+//! and the first frame hosts see is the clean one. The streaming loop keeps a
+//! cheaper backstop — duplicates only, no cache read — and rebuilds the same
+//! way, coalesced into one `Reset`, if a corruption slipped past the settle.
+//!
+//! Hiding the duplicate rows in the projection instead was considered and
+//! rejected. The materialized list here has to stay index-for-index with the
+//! SDK's, because every op after it is positional; dropping a row would
+//! misaim the next op exactly the way the SDK's own list does, and the
+//! misaimed `Remove` inside the SDK would still delete a real message.
 
 use crate::event::{CoreEvent, EventSink};
 
+use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -268,6 +309,63 @@ type TimelineState = (u64, Vec<TimelineRow>);
 /// `current_stream = Box::pin(fresh_stream);` and carry on reading from the
 /// same variable.
 type TimelineDiffStream = Pin<Box<dyn Stream<Item = Vec<VectorDiff<Arc<TimelineItem>>>> + Send>>;
+
+/// The focused room's SDK timeline, shared between the handle (sends,
+/// reactions, pagination) and the streaming task, which may swap in a
+/// rebuilt one. See this module's "A timeline built while a sync lands".
+type TimelineSlot = Arc<Mutex<Arc<Timeline>>>;
+
+/// How many times [`build_verified_timeline`] builds a timeline before it
+/// hands back what it has, corrupt or not.
+///
+/// The race it guards against needs a sync to land inside one `build()` call,
+/// and the second build no longer waits on the network for the room's
+/// encryption state (the first one cached it), so the window it rode is
+/// mostly gone. Three is room for bad luck, and still finite.
+const MAX_TIMELINE_BUILDS: u32 = 3;
+
+/// How many times the streaming task may rebuild the SDK timeline after the
+/// build-time check passed — the backstop for a corruption the settle window
+/// missed. Per subscription, never refilled: a rebuild that does not clear the
+/// duplicates would otherwise run again on every batch. Reopening the room
+/// starts a fresh budget.
+const MAX_LIVE_REBUILDS: u32 = 3;
+
+/// How long the SDK timeline must stay quiet after it is built before its
+/// items are checked.
+///
+/// The update that corrupts a timeline is already queued when `build()`
+/// returns; the SDK's own background task applies it a moment later. This is
+/// the wait for that moment, and a healthy room pays it once, on open.
+const BUILD_SETTLE_IDLE: Duration = Duration::from_millis(50);
+
+/// The most the settle may take in total, however busy the room is.
+const BUILD_SETTLE_MAX: Duration = Duration::from_millis(400);
+
+/// A built, subscribed and checked SDK timeline — what
+/// [`build_verified_timeline`] returns.
+struct VerifiedTimeline {
+    timeline: Arc<Timeline>,
+    /// The settled items, projected: the first frame hosts see.
+    rows: Vec<TimelineRow>,
+    /// Picks up exactly where `rows` leaves off.
+    stream: TimelineDiffStream,
+}
+
+/// What [`timeline_drift`] found wrong with a list of rows. Event ids only.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct TimelineDrift {
+    /// Remote event ids that appear on more than one row, each listed once.
+    duplicated: Vec<String>,
+    /// Remote event ids the room's event cache does not hold.
+    unknown: Vec<String>,
+}
+
+impl TimelineDrift {
+    fn is_clean(&self) -> bool {
+        self.duplicated.is_empty() && self.unknown.is_empty()
+    }
+}
 
 /// What [`FocusedTimeline::snapshot`] hands the webview: `(subject, seq,
 /// items)` — the room id the snapshot belongs to, followed by the same
@@ -1746,6 +1844,156 @@ fn project_initial(items: &Vector<Arc<TimelineItem>>, own_user: &UserId) -> Vec<
         .collect()
 }
 
+/// Whether a timeline's rows disagree with the events they were built from.
+///
+/// Only **remote** events count. A local echo has no event id until it is
+/// sent, and a sent one keeps its send state until the server's copy replaces
+/// it, so both are skipped rather than mistaken for an event the cache has not
+/// seen yet.
+///
+/// `cache_ids`, when given, is the room event cache's own event ids: a row
+/// naming an event the cache does not hold was not built from the cache. The
+/// reverse is deliberately not checked. The timeline's filter, its folding of
+/// edits and reactions into their targets and its hiding of redactions all
+/// leave cached events without a row, and telling those apart from a lost one
+/// would mean reimplementing the SDK's timeline here.
+fn timeline_drift<'a>(
+    rows: impl IntoIterator<Item = &'a TimelineRow>,
+    cache_ids: Option<&HashSet<String>>,
+) -> TimelineDrift {
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut drift = TimelineDrift::default();
+    for row in rows {
+        if row.item.send_state.is_some() {
+            continue;
+        }
+        let Some(event_id) = row.item.event_id.as_deref() else {
+            continue;
+        };
+        if !seen.insert(event_id) {
+            if !drift.duplicated.iter().any(|seen| seen == event_id) {
+                drift.duplicated.push(event_id.to_owned());
+            }
+        } else if cache_ids.is_some_and(|ids| !ids.contains(event_id)) {
+            drift.unknown.push(event_id.to_owned());
+        }
+    }
+    drift
+}
+
+/// Builds the SDK timeline for `room` with this app's settings.
+async fn build_sdk_timeline(room: &Room) -> CoreResult<Timeline> {
+    room.timeline_builder()
+        .event_filter(timeline_event_filter)
+        // `TimelineItemDto::read_by` (see its doc comment) has nothing
+        // to project without this: `EventTimelineItem::read_receipts()`
+        // is unconditionally empty unless the timeline was built with
+        // tracking enabled (`TimelineReadReceiptTracking`, default
+        // `Disabled` — verified against `matrix-sdk-ui-0.18.0/src/
+        // timeline/controller/mod.rs`'s `TimelineSettings::default`).
+        // `MessageLikeEvents`, not `AllEvents`: every item this app's
+        // `read_by` is meant to annotate (a message-shaped bubble) is a
+        // message-like event; state/membership items never render a
+        // "seen by" marker (`Timeline.svelte`'s `seenMarker` gates on
+        // `isOwn` items rendered as a bubble), so tracking receipts
+        // against state events too would only cost bookkeeping with no
+        // consumer.
+        .track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents)
+        .build()
+        .await
+        .map_err(|e| CoreError::Protocol(e.to_string()))
+}
+
+/// The event ids the room's event cache holds right now, or `None` when the
+/// cache cannot be read — the check then falls back to duplicates alone.
+async fn event_cache_ids(room: &Room) -> Option<HashSet<String>> {
+    let (cache, _drop_handles) = room.event_cache().await.ok()?;
+    let events = cache.events().await.ok()?;
+    Some(
+        events
+            .iter()
+            .filter_map(|event| event.event_id().map(|id| id.to_string()))
+            .collect(),
+    )
+}
+
+/// Folds whatever the freshly built timeline emits into `rows` until it has
+/// been quiet for [`BUILD_SETTLE_IDLE`], or [`BUILD_SETTLE_MAX`] has passed.
+async fn settle(stream: &mut TimelineDiffStream, rows: &mut Vec<TimelineRow>, own_user: &UserId) {
+    let deadline = tokio::time::Instant::now() + BUILD_SETTLE_MAX;
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(BUILD_SETTLE_IDLE.min(remaining), stream.next()).await {
+            Ok(Some(batch)) => apply_ops(rows, &project_batch(batch, own_user)),
+            // Quiet, or the stream ended: either way there is nothing more to
+            // wait for.
+            Ok(None) | Err(_) => break,
+        }
+    }
+}
+
+/// Builds and subscribes the SDK timeline for `room`, and rebuilds it when it
+/// comes out corrupt — see this module's "A timeline built while a sync
+/// lands". Bounded by [`MAX_TIMELINE_BUILDS`]; the last build is returned
+/// whatever it holds, because a timeline with a duplicate row is still better
+/// than no room at all.
+async fn build_verified_timeline(
+    room: &Room,
+    own_user: &UserId,
+    subject: &str,
+) -> CoreResult<VerifiedTimeline> {
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let timeline = Arc::new(build_sdk_timeline(room).await?);
+        let (initial, stream) = timeline.subscribe().await;
+        let mut stream: TimelineDiffStream = Box::pin(stream);
+        let mut rows = project_initial(&initial, own_user);
+        settle(&mut stream, &mut rows, own_user).await;
+
+        let cache_ids = event_cache_ids(room).await;
+        let drift = timeline_drift(&rows, cache_ids.as_ref());
+        if drift.is_clean() {
+            return Ok(VerifiedTimeline {
+                timeline,
+                rows,
+                stream,
+            });
+        }
+        if attempt >= MAX_TIMELINE_BUILDS {
+            tracing::warn!(
+                subject = %subject,
+                attempt,
+                duplicated = ?drift.duplicated,
+                unknown = ?drift.unknown,
+                "the SDK timeline still disagrees with its event cache after every rebuild; showing it anyway"
+            );
+            return Ok(VerifiedTimeline {
+                timeline,
+                rows,
+                stream,
+            });
+        }
+        tracing::debug!(
+            subject = %subject,
+            attempt,
+            duplicated = ?drift.duplicated,
+            unknown = ?drift.unknown,
+            "the SDK built this timeline while a sync was landing and it disagrees with its event cache; rebuilding it"
+        );
+    }
+}
+
+/// The SDK timeline currently installed in `slot`.
+fn current_timeline(slot: &TimelineSlot) -> CoreResult<Arc<Timeline>> {
+    slot.lock()
+        .map(|timeline| Arc::clone(&timeline))
+        .map_err(|_| CoreError::Protocol("focused timeline slot lock poisoned".into()))
+}
+
 /// Owns the background task streaming one room's timeline to the webview,
 /// plus the `Timeline` itself so [`FocusedTimeline::paginate_back`] and
 /// [`FocusedTimeline::send_text`] can drive it.
@@ -1759,7 +2007,10 @@ pub struct TimelineHandle {
     /// emits is stamped with, and the one [`TimelineHandle::snapshot`]
     /// returns so the webview can tell whose messages it is being handed.
     room_id: String,
-    timeline: Arc<Timeline>,
+    /// The SDK timeline sends, reactions and pagination go through. A slot
+    /// rather than a plain `Arc<Timeline>` because the streaming task may
+    /// replace it: see this module's "A timeline built while a sync lands".
+    timeline: TimelineSlot,
     state: Arc<Mutex<TimelineState>>,
     task: JoinHandle<()>,
     /// Streams the room's typing state to the webview for as long as this
@@ -1895,27 +2146,6 @@ impl FocusedTimeline {
         let room = client
             .get_room(&parsed_room_id)
             .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
-        let timeline = room
-            .timeline_builder()
-            .event_filter(timeline_event_filter)
-            // `TimelineItemDto::read_by` (see its doc comment) has nothing
-            // to project without this: `EventTimelineItem::read_receipts()`
-            // is unconditionally empty unless the timeline was built with
-            // tracking enabled (`TimelineReadReceiptTracking`, default
-            // `Disabled` — verified against `matrix-sdk-ui-0.18.0/src/
-            // timeline/controller/mod.rs`'s `TimelineSettings::default`).
-            // `MessageLikeEvents`, not `AllEvents`: every item this app's
-            // `read_by` is meant to annotate (a message-shaped bubble) is a
-            // message-like event; state/membership items never render a
-            // "seen by" marker (`Timeline.svelte`'s `seenMarker` gates on
-            // `isOwn` items rendered as a bubble), so tracking receipts
-            // against state events too would only cost bookkeeping with no
-            // consumer.
-            .track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents)
-            .build()
-            .await
-            .map_err(|e| CoreError::Protocol(e.to_string()))?;
-        let timeline = Arc::new(timeline);
 
         // Required to compute `TimelineItemDto::is_own` — a client with no
         // user id can't meaningfully own a subscription in the first place.
@@ -1925,6 +2155,17 @@ impl FocusedTimeline {
         // holding a `Client`" hazard this module's teardown discipline
         // exists to close everywhere else.
         let own_user = client.user_id().ok_or(CoreError::NotReady)?.to_owned();
+
+        // Built, subscribed, settled and checked for the SDK's build race in
+        // one step — see [`build_verified_timeline`] and this module's "A
+        // timeline built while a sync lands" doc comment. What comes back is
+        // the first frame hosts see, and it is the one the check passed.
+        let VerifiedTimeline {
+            timeline,
+            rows: initial_rows,
+            stream,
+        } = build_verified_timeline(&room, &own_user, room_id).await?;
+        let timeline_slot: TimelineSlot = Arc::new(Mutex::new(Arc::clone(&timeline)));
 
         // Typing state streams independently of the timeline diff channel —
         // see [`TYPING_EVENT`]'s doc comment for why it needs none of the
@@ -1963,8 +2204,6 @@ impl FocusedTimeline {
             }
         });
 
-        let (initial, stream) = timeline.subscribe().await;
-
         // Starts at `(0, [])`: "before any diff has been folded in, the
         // timeline is empty" — consistent with `SeqCounter` starting at 1,
         // since the first envelope (seq 1, the seeding `Reset` below) is
@@ -1973,7 +2212,9 @@ impl FocusedTimeline {
         let task_state = Arc::clone(&state);
 
         let subject = room_id.to_string();
-        let paginator = Arc::clone(&timeline);
+        let mut paginator = Arc::clone(&timeline);
+        let task_slot = Arc::clone(&timeline_slot);
+        let task_room = room.clone();
         let task = tokio::spawn(async move {
             let mut seq = SeqCounter::default();
             // How much recovery this subscription has left, for each of the
@@ -1985,13 +2226,18 @@ impl FocusedTimeline {
             // a reader. Lives here, not in `TimelineState`, for the same
             // reason `seq` does: only this task ever needs it.
             let mut budget = RecoveryBudget::default();
+            // Rebuilds of the SDK timeline this subscription may still make
+            // after the one at build time — see [`MAX_LIVE_REBUILDS`]. Never
+            // refilled: unlike the two recoveries above, a rebuild that did
+            // not help would otherwise be retried on every batch.
+            let mut rebuilds_left = MAX_LIVE_REBUILDS;
 
             // The initial `Vector` `subscribe()` returns becomes the
             // stream's first envelope as a single `Reset`, so the webview
             // always starts from a known state instead of an empty list it
             // has to guess is complete.
             let ops = vec![DiffOp::Reset {
-                values: project_initial(&initial, &own_user),
+                values: initial_rows,
             }];
             emit_ops(&sink, &task_state, &mut seq, &subject, ops);
 
@@ -2031,7 +2277,7 @@ impl FocusedTimeline {
                 );
             }
 
-            let mut current_stream: TimelineDiffStream = Box::pin(stream);
+            let mut current_stream: TimelineDiffStream = stream;
             while let Some(batch) = current_stream.next().await {
                 let ops = project_batch(batch, &own_user);
 
@@ -2206,6 +2452,51 @@ impl FocusedTimeline {
                         current_stream = fresh_stream;
                     }
                 }
+
+                // The backstop for the build-time check: a corrupt SDK
+                // timeline the settle window missed still shows itself as a
+                // remote event id held twice, and every positional op after
+                // that is aimed at the wrong row. Only rebuilding stops it —
+                // see this module's "A timeline built while a sync lands".
+                let duplicated = {
+                    let guard = task_state
+                        .lock()
+                        .expect("timeline state lock poisoned by an earlier panic");
+                    timeline_drift(&guard.1, None).duplicated
+                };
+                if duplicated.is_empty() || rebuilds_left == 0 {
+                    continue;
+                }
+                rebuilds_left -= 1;
+                tracing::debug!(
+                    subject = %subject,
+                    duplicated = ?duplicated,
+                    rebuilds_left,
+                    "the SDK timeline holds a remote event twice; rebuilding it and coalescing into a single reset"
+                );
+                match build_verified_timeline(&task_room, &own_user, &subject).await {
+                    Ok(fresh) => {
+                        if let Ok(mut slot) = task_slot.lock() {
+                            *slot = Arc::clone(&fresh.timeline);
+                        }
+                        paginator = fresh.timeline;
+                        emit_ops(
+                            &sink,
+                            &task_state,
+                            &mut seq,
+                            &subject,
+                            coalesced_reset(fresh.rows),
+                        );
+                        current_stream = fresh.stream;
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            error = %err,
+                            subject = %subject,
+                            "rebuilding a corrupt timeline failed; keeping the one we have"
+                        );
+                    }
+                }
             }
         });
 
@@ -2215,7 +2506,7 @@ impl FocusedTimeline {
             .map_err(|_| CoreError::Protocol("focused timeline lock poisoned".into()))? =
             Some(TimelineHandle {
                 room_id: room_id.to_string(),
-                timeline,
+                timeline: timeline_slot,
                 state,
                 task,
                 typing_task,
@@ -2675,9 +2966,7 @@ impl FocusedTimeline {
             .0
             .lock()
             .map_err(|_| CoreError::Protocol("focused timeline lock poisoned".into()))?;
-        Ok(Arc::clone(
-            &handle.as_ref().ok_or(CoreError::NotReady)?.timeline,
-        ))
+        current_timeline(&handle.as_ref().ok_or(CoreError::NotReady)?.timeline)
     }
 
     /// Clones the focused `Timeline`, but only when `room_id` is actually
@@ -2750,7 +3039,7 @@ impl FocusedTimeline {
             .map_err(|_| CoreError::Protocol("focused timeline lock poisoned".into()))?;
         let handle = handle.as_ref().ok_or(CoreError::NotReady)?;
         verify_room_focus(room_id, &handle.room_id)?;
-        Ok(Arc::clone(&handle.timeline))
+        current_timeline(&handle.timeline)
     }
 
     /// Stops and drops the currently focused subscription, if any, and waits
@@ -4392,6 +4681,70 @@ mod tests {
             Vec::new(),
             Vec::new(),
         )
+    }
+
+    // `timeline_drift`: what makes a timeline count as built through the SDK's
+    // build race (this module's "A timeline built while a sync lands").
+
+    fn cache(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn a_timeline_holding_every_event_once_is_clean() {
+        let rows = vec![minimal_dto("$a"), minimal_dto("$b")];
+        assert!(timeline_drift(&rows, Some(&cache(&["$a", "$b", "$edit"]))).is_clean());
+    }
+
+    #[test]
+    fn a_remote_event_held_twice_is_a_duplicate_named_once() {
+        // The live shape: the whole racing batch appears twice.
+        let rows = vec![
+            minimal_dto("$a"),
+            minimal_dto("$b"),
+            minimal_dto("$a"),
+            minimal_dto("$b"),
+            minimal_dto("$a"),
+        ];
+        let drift = timeline_drift(&rows, None);
+        assert_eq!(drift.duplicated, vec!["$a".to_string(), "$b".to_string()]);
+        assert!(drift.unknown.is_empty());
+    }
+
+    #[test]
+    fn a_row_the_event_cache_does_not_hold_is_unknown() {
+        let rows = vec![minimal_dto("$a"), minimal_dto("$ghost")];
+        let drift = timeline_drift(&rows, Some(&cache(&["$a"])));
+        assert_eq!(drift.unknown, vec!["$ghost".to_string()]);
+        assert!(drift.duplicated.is_empty());
+    }
+
+    #[test]
+    fn without_the_cache_only_duplicates_count() {
+        let rows = vec![minimal_dto("$a"), minimal_dto("$ghost")];
+        assert!(timeline_drift(&rows, None).is_clean());
+    }
+
+    #[test]
+    fn a_sent_local_echo_beside_its_remote_copy_is_not_a_duplicate() {
+        // A sent echo carries its event id before the server's copy replaces
+        // it, and it is not in the cache yet. Neither is corruption.
+        let remote = minimal_dto("$own");
+        let mut echo = minimal_dto("$own");
+        echo.item.send_state = Some(crate::dto::DeliveryState::Sent);
+        let mut unsent = minimal_dto("$unsent");
+        unsent.item.send_state = Some(crate::dto::DeliveryState::Sent);
+        let rows = vec![remote, echo, unsent];
+        assert!(timeline_drift(&rows, Some(&cache(&["$own"]))).is_clean());
+    }
+
+    #[test]
+    fn rows_without_an_event_id_are_skipped() {
+        let mut divider = minimal_dto("divider-1");
+        divider.item.event_id = None;
+        let mut other = minimal_dto("divider-2");
+        other.item.event_id = None;
+        assert!(timeline_drift(&[divider, other], Some(&cache(&[]))).is_clean());
     }
 
     #[test]
