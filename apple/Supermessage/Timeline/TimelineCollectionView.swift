@@ -407,8 +407,14 @@ struct TimelineList: UIViewRepresentable {
                 DispatchQueue.main.async { topEdge = edge }
             }
         }
+        // A message reported from this device leaves the list at once (#60).
+        // Read here, so a new report re-runs this update; and a change forces
+        // a regroup, because hiding a row moves nothing the store's revision
+        // counts.
+        let hidden = session.safety.hiddenEvents
+        context.coordinator.noteHidden(hidden)
         context.coordinator.apply(
-            rows: timeline.items, revision: timeline.revision,
+            rows: session.safety.visible(timeline.items), revision: timeline.revision,
             isPaginating: timeline.isPaginating, isLive: session.live.isLive,
             isFinished: session.live.finished)
         // After the layout this update causes: a room that has just opened,
@@ -682,6 +688,16 @@ struct TimelineList: UIViewRepresentable {
         /// every streaming token. That is what the jitter was: not a missing
         /// animation, but every row on screen being re-measured and laid out
         /// again several times a second.
+        /// The reported-and-hidden set the last apply drew with.
+        private var appliedHidden: Set<String> = []
+
+        /// Regroup on the next apply when the hidden set has moved.
+        func noteHidden(_ hidden: Set<String>) {
+            guard hidden != appliedHidden else { return }
+            appliedHidden = hidden
+            forceRegroup = true
+        }
+
         func apply(
             rows: [TimelineRow], revision: UInt64, isPaginating: Bool, isLive: Bool,
             isFinished: Bool
@@ -974,6 +990,22 @@ struct TimelineList: UIViewRepresentable {
             view.window?.rootViewController?.topmostPresented.present(sheet, animated: true)
         }
 
+        /// What the report sheet needs to know about a message: where it is,
+        /// who wrote it, and whether they are an agent.
+        ///
+        /// The room comes from the timeline store for the reason `startReply`
+        /// gives. `nil` when any part is missing — no room, no event id, no
+        /// sender — because a report against half an address is one the
+        /// homeserver refuses.
+        fileprivate func reportSubject(_ row: TimelineRow) -> ReportSubject? {
+            guard let roomId = timeline.roomId, let eventId = row.item.eventId,
+                let sender = row.item.sender
+            else { return nil }
+            return .message(
+                roomId: roomId, eventId: eventId, senderId: sender,
+                senderName: row.senderShort, isAgent: TimelineGrouping.isAgent(row))
+        }
+
         fileprivate func react(_ row: TimelineRow, _ key: String) {
             guard let roomId = timeline.roomId else { return }
             Task { await session.toggleReaction(row.item.eventId, key: key, in: roomId) }
@@ -1092,6 +1124,24 @@ struct TimelineList: UIViewRepresentable {
                                 title: "Delete", image: UIImage(systemName: "trash"),
                                 attributes: .destructive
                             ) { _ in self.confirmDelete(row) })
+                    }
+                    // Report is offered on anyone else's message the server
+                    // has acknowledged: a report addresses an event id, and a
+                    // local echo has none (`canReplyOrReact` is the core's
+                    // answer to that). Never on your own — there is nobody to
+                    // report. Last and red, in its own group, so it is never
+                    // the item a thumb lands on by accident.
+                    if !row.item.isOwn, row.canReplyOrReact, let subject = self.reportSubject(row) {
+                        actions.append(
+                            UIMenu(
+                                title: "", options: .displayInline,
+                                children: [
+                                    UIAction(
+                                        title: "Report…",
+                                        image: UIImage(systemName: "exclamationmark.bubble"),
+                                        attributes: .destructive
+                                    ) { _ in self.session.safety.pendingReport = subject }
+                                ]))
                     }
                     return actions.isEmpty ? nil : UIMenu(children: actions)
                 }

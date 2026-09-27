@@ -45,12 +45,16 @@ public final class Session {
     public let replies = ReplyTarget()
     public let edits = EditTarget()
     public let staged: StagedAttachment
+    /// Who is blocked, and which messages were reported and hidden (#60).
+    public let safety: SafetyStore
 
     private let client: any SessionClient
     private let pump = EventPump()
     private var drainTask: Task<Void, Never>?
 
-    public init(client: any SessionClient) {
+    /// `defaults` is where the safety store keeps reported-and-hidden messages
+    /// across launches; `nil` (tests, previews) keeps them in memory.
+    public init(client: any SessionClient, defaults: UserDefaults? = nil) {
         self.client = client
         // Marking read from the roster — a swipe — goes through the same core
         // call opening a room makes, so the two cannot mean different things.
@@ -63,12 +67,13 @@ public final class Session {
         voice = VoicePlayer(client: client)
         timeline = TimelineStore(client: client, sink: pump)
         staged = StagedAttachment(client: client)
+        safety = SafetyStore(defaults: defaults)
     }
 
     /// A session on the app's one core — the same one a notification action
     /// answers through (`CoreClient.shared`).
     public convenience init() {
-        self.init(client: CoreClient.shared)
+        self.init(client: CoreClient.shared, defaults: .standard)
     }
 
 #if DEBUG
@@ -204,6 +209,72 @@ public final class Session {
 
     public func leaveRoom(_ roomId: String) async -> String? {
         await refusal { try await client.leaveRoom(roomId: roomId) }
+    }
+
+    // MARK: - Block and report (issue #60)
+    //
+    // Each returns a message on refusal, like `joinRoom` above, because the
+    // sheet or panel that asked shows it inline.
+
+    /// Block someone — a person or an agent. Their messages stop reaching this
+    /// account everywhere; an agent keeps running.
+    public func block(_ userId: String) async -> String? {
+        let refused = await safetyRefusal { try await client.ignoreUser(userId: userId) }
+        if refused == nil { safety.noteBlocked(userId) }
+        return refused
+    }
+
+    public func unblock(_ userId: String) async -> String? {
+        let refused = await safetyRefusal { try await client.unignoreUser(userId: userId) }
+        if refused == nil { safety.noteUnblocked(userId) }
+        return refused
+    }
+
+    /// Everyone blocked, named by the core. Empty when it cannot be read — the
+    /// account screen then shows no list rather than an error about a list.
+    public func blockedUsers() async -> [RoomMemberDto] {
+        (try? await client.ignoredUsers()) ?? []
+    }
+
+    /// Send a report, then hide the message and block the sender if asked.
+    ///
+    /// The order is the point. The report goes first and alone decides
+    /// success: a message is hidden only once the homeserver has it, so a
+    /// failed report never leaves the reader believing something was sent.
+    /// Blocking afterwards is a second, separate request; if it fails the
+    /// report still stands, and the refusal says which half did not happen.
+    public func report(_ subject: ReportSubject, reason: String, alsoBlock: Bool) async -> String? {
+        let refused: String? = await safetyRefusal {
+            switch subject {
+            case let .message(roomId, eventId, _, _, _):
+                try await client.reportEvent(roomId: roomId, eventId: eventId, reason: reason)
+            case let .room(roomId, _):
+                try await client.reportRoom(roomId: roomId, reason: reason)
+            case let .user(userId, _, _):
+                try await client.reportUser(userId: userId, reason: reason)
+            }
+        }
+        if let refused { return refused }
+        if case let .message(_, eventId, _, _, _) = subject {
+            safety.hide(eventId: eventId)
+        }
+        if alsoBlock, let target = subject.blockable, !safety.isBlocked(target.userId) {
+            if let blockRefused = await block(target.userId) {
+                return "Reported, but blocking didn't work: \(blockRefused)"
+            }
+        }
+        return nil
+    }
+
+    private func safetyRefusal(_ body: () async throws -> Void) async -> String? {
+        do {
+            try await body()
+            return nil
+        } catch let error as FfiError {
+            return ErrorPresenter.message(for: error)
+        } catch {
+            return "That didn't work."
+        }
     }
 
     /// Add or remove one of this account's reactions.
@@ -553,6 +624,7 @@ public final class Session {
         avatars.clear()
         faces.clear()
         edits.clearAll()
+        safety.clear()
         phase = .signedOut
     }
 
@@ -628,6 +700,8 @@ public final class Session {
             // rather than swept into a `default` so a new variant on the
             // boundary still breaks this build.
             break
+        case let .ignoredUsers(userIds):
+            safety.apply(ignored: userIds)
         }
     }
 }

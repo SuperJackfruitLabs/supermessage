@@ -14,6 +14,10 @@ struct AccountPanel: View {
     @State private var account: AccountDto?
     @State private var confirmingSignOut = false
     @State private var showingRecovery = false
+    /// Everyone blocked, named by the core. `nil` until asked.
+    @State private var blocked: [RoomMemberDto]?
+    @State private var unblockFailure: String?
+    @State private var unblocked = 0
     /// The roster's arrangement and whether it shows agent state. Here
     /// rather than behind a button beside compose: both are chosen once and
     /// rarely changed, which is what an account screen is for.
@@ -22,6 +26,21 @@ struct AccountPanel: View {
     @AppStorage(AppearanceSettings.modeKey) private var mode = AppearanceMode.system.rawValue
     @AppStorage(AppearanceSettings.darkStyleKey) private var darkStyle = DarkStyle.tinted.rawValue
     @AppStorage(AppearanceSettings.accentKey) private var accent = ""
+
+    init(session: Session, onClose: @escaping () -> Void) {
+        self.session = session
+        self.onClose = onClose
+    }
+
+    #if DEBUG
+    /// The panel with its blocked list already loaded — the list arrives from
+    /// its own `await`, and a frame must not depend on which won.
+    init(session: Session, blocked: [RoomMemberDto], onClose: @escaping () -> Void) {
+        self.session = session
+        self.onClose = onClose
+        _blocked = State(initialValue: blocked)
+    }
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -84,6 +103,40 @@ struct AccountPanel: View {
                         Text("Waiting first puts what needs an answer at the top. Agent state is the dot and word beside an agent's name.")
                     }
 
+                    // Only when there is someone in it: an empty "Blocked"
+                    // heading on every account is a list of nobody.
+                    if let blocked, !blocked.isEmpty {
+                        Section {
+                            ForEach(blocked, id: \.userId) { member in
+                                BlockedUserRow(member: member) {
+                                    Task { await unblock(member) }
+                                }
+                            }
+                        } header: {
+                            Text("Blocked")
+                        } footer: {
+                            if let unblockFailure {
+                                Text(unblockFailure).foregroundStyle(Theme.danger)
+                            } else {
+                                Text("Their messages are hidden in every room, on all your devices. A blocked agent keeps running. Block someone from a room's member list.")
+                            }
+                        }
+                    }
+
+                    Section {
+                        Link(destination: Self.supportURL) {
+                            Label("Help & support", systemImage: "questionmark.circle")
+                        }
+                        Link(destination: Self.termsURL) {
+                            Label("Terms of use", systemImage: "doc.text")
+                        }
+                        Link(destination: Self.privacyURL) {
+                            Label("Privacy", systemImage: "hand.raised")
+                        }
+                    } footer: {
+                        Text("To report abuse, long-press a message or open a room's info. Reports go to your homeserver's administrators.")
+                    }
+
                     Section {
                         // Beside `Sign out` because it is the same rarely-visited
                         // class of account action — and because the day it is
@@ -115,7 +168,11 @@ struct AccountPanel: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onClose) }
             }
-            .task { account = await session.account() }
+            .task {
+                account = await session.account()
+                if blocked == nil { blocked = await session.blockedUsers() }
+            }
+            .sensoryFeedback(.success, trigger: unblocked)
             .confirmationDialog(
                 "Sign out of \(name)?", isPresented: $confirmingSignOut, titleVisibility: .visible
             ) {
@@ -128,6 +185,24 @@ struct AccountPanel: View {
                 Button("Cancel", role: .cancel) {}
             }
         }
+    }
+
+    /// The landing site's pages. `supermessage.dev` is the site's own domain
+    /// (`landing/astro.config.mjs`), and these three are the pages the stores
+    /// ask an app with user content to link: support with a contact for abuse,
+    /// the terms, and the privacy policy.
+    static let supportURL = URL(string: "https://supermessage.dev/support/")!
+    static let termsURL = URL(string: "https://supermessage.dev/terms/")!
+    static let privacyURL = URL(string: "https://supermessage.dev/privacy/")!
+
+    private func unblock(_ member: RoomMemberDto) async {
+        unblockFailure = nil
+        if let refused = await session.unblock(member.userId) {
+            unblockFailure = refused
+            return
+        }
+        blocked?.removeAll { $0.userId == member.userId }
+        unblocked += 1
     }
 
     /// The local part of the Matrix id — `@rakesh:id.agentpod.dev` is a name
@@ -185,8 +260,20 @@ private struct AccentSwatches: View {
 #if DEBUG
 // The account, which is two facts and a way out.
 #Preview("Account") {
-    AccountPanel(session: PreviewFixtures.session(), onClose: {})
+    AccountPanel(session: PreviewFixtures.session(), blocked: [], onClose: {})
         .previewChrome()
+}
+
+// Two blocked accounts, an agent and a person, each with a way back.
+#Preview("Blocked users") {
+    AccountPanel(
+        session: PreviewFixtures.session(), blocked: PreviewFixtures.blockedUsers, onClose: {}
+    )
+    // Tall enough for the whole list: the blocked section sits below the
+    // fold on a phone, and a frame that cropped it would be a frame of the
+    // settings above it.
+    .frame(height: 1400)
+    .previewChrome()
 }
 
 #endif

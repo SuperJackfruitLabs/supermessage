@@ -15,6 +15,7 @@ struct InvitationView: View {
     @State private var inviter: String?
     @State private var busy = false
     @State private var failure: String?
+    @State private var reporting: ReportSubject?
 
     init(session: Session, roomId: String, roomName: String) {
         self.session = session
@@ -72,11 +73,26 @@ struct InvitationView: View {
                     .tint(Theme.accent)
             }
             .disabled(busy)
+
+            // An invitation is how a stranger reaches someone first, so it is
+            // where reporting matters most — and the endpoint does not need
+            // the reader to join before they can use it. Quiet, beneath the
+            // two answers, because most invitations are welcome.
+            Button("Report room…") {
+                reporting = .room(roomId: roomId, name: roomName)
+            }
+            .font(.footnote)
+            .foregroundStyle(Theme.danger)
+            .frame(minHeight: 44)
+            .accessibilityHint("Reports this invitation to your homeserver's administrators")
         }
         .padding(20)
         .frame(maxWidth: .infinity)
         .background(Theme.surfaceSunken)
         .task(id: roomId) { if inviter == nil { await loadInviter() } }
+        .sheet(item: $reporting) { subject in
+            ReportSheet(session: session, subject: subject) { reporting = nil }
+        }
     }
 
     /// Asked once, for the one invitation on screen — see

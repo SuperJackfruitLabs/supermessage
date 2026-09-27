@@ -37,10 +37,10 @@ use crate::timeline::TypingPayload;
 
 /// Everything the core can tell a host about, one variant per channel.
 ///
-/// The variants correspond exactly to the eight channels the desktop app has
-/// always listened on. Their names are the channel names with the transport
-/// removed — `sm://rooms/diff` is [`CoreEvent::RoomsDiff`] — and the mapping
-/// back is written once, in the desktop host's sink.
+/// The variants correspond exactly to the channels the desktop app listens
+/// on. Their names are the channel names with the transport removed —
+/// `sm://rooms/diff` is [`CoreEvent::RoomsDiff`] — and the mapping back is
+/// written once, in the desktop host's sink.
 #[derive(Debug, Clone)]
 pub enum CoreEvent {
     /// Sync came up, went away, or failed. `sm://connection`.
@@ -59,6 +59,10 @@ pub enum CoreEvent {
     Tool(ToolPayload),
     /// A file was staged for sending. `sm://attachment/staged`.
     AttachmentStaged(StagedAttachment),
+    /// The account's ignore (block) list, whole and sorted: once when the
+    /// session starts, then after every change from any device.
+    /// `sm://ignored-users`. See `core::safety::spawn_ignore_watch`.
+    IgnoredUsers(Vec<String>),
 }
 
 /// Where [`CoreEvent`]s go.

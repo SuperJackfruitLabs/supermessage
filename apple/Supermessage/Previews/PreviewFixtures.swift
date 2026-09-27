@@ -211,6 +211,19 @@ struct PreviewClient: SessionClient {
     func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {
         isEmpty ? [] : PreviewFixtures.searchResults
     }
+
+    // MARK: SafetyActions
+
+    func ignoreUser(userId: String) async throws {}
+    func unignoreUser(userId: String) async throws {}
+    // Empty on purpose, and not `blockedUsers`: `AccountPanel` asks for this
+    // in a `.task`, and a stub that answered with people would make the
+    // Account frame depend on whether that task won the race to the capture.
+    // The furnished list is seeded through `AccountPanel`'s DEBUG init.
+    func ignoredUsers() async throws -> [RoomMemberDto] { [] }
+    func reportEvent(roomId: String, eventId: String, reason: String) async throws {}
+    func reportRoom(roomId: String, reason: String) async throws {}
+    func reportUser(userId: String, reason: String) async throws {}
 }
 
 // MARK: - The values
@@ -688,9 +701,35 @@ enum PreviewFixtures {
                     avatarUrl: nil),
                 RoomMemberDto(userId: "@rakesh:example.org", displayName: "Rakesh",
                               avatarUrl: nil),
-                RoomMemberDto(userId: "@krishna:example.org", displayName: nil, avatarUrl: nil),
+                // Blocked, so the panel's "Blocked" state is on a frame.
+                RoomMemberDto(
+                    userId: "@krishna:example.org", displayName: nil, avatarUrl: nil,
+                    isIgnored: true),
             ],
             notifications: .allMessages, pinned: true)
+    }
+
+    // MARK: Block and report
+
+    /// Two blocked accounts — an agent and a person — as `ignoredUsers` names
+    /// them: the agent from its id, the person from a member event.
+    static var blockedUsers: [RoomMemberDto] {
+        [
+            RoomMemberDto(
+                userId: "@agent_vault_hermes-scribe:example.org", displayName: "Scribe",
+                avatarUrl: nil, isIgnored: true, isAgent: true),
+            RoomMemberDto(
+                userId: "@spammer:example.org", displayName: "Totally Real Support",
+                avatarUrl: nil, isIgnored: true, isAgent: false),
+        ]
+    }
+
+    /// A message from an agent, as the long-press menu hands it to the sheet.
+    static var reportedMessage: ReportSubject {
+        .message(
+            roomId: roomId, eventId: "$reported",
+            senderId: "@agent_ashram_openclaw-atlas:example.org", senderName: "Atlas",
+            isAgent: true)
     }
 
     static var stagedFile: StagedFile {

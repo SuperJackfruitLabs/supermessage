@@ -2698,6 +2698,20 @@ public struct RoomMemberDto {
      * command's doc comment in `core::commands`.
      */
     public var avatarUrl: String?
+    /**
+     * Whether this account has blocked them (`m.ignored_user_list`). Their
+     * messages stop arriving everywhere; the panel offers Unblock instead of
+     * Block. Defaults to `false` across the FFI so older call sites that
+     * build a member by hand keep compiling.
+     */
+    public var isIgnored: Bool
+    /**
+     * Whether this member is an agent rather than a person — decided here,
+     * from the bridge's `@agent_` id convention, so hosts can word a block
+     * or report for an agent ("it keeps running") without each keeping its
+     * own copy of that rule.
+     */
+    public var isAgent: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2714,10 +2728,24 @@ public struct RoomMemberDto {
          * room's own avatar already uses (`core::media::avatar_thumbnail`, via
          * the new `member_avatar` command), not a second fetch path — see that
          * command's doc comment in `core::commands`.
-         */avatarUrl: String?) {
+         */avatarUrl: String?, 
+        /**
+         * Whether this account has blocked them (`m.ignored_user_list`). Their
+         * messages stop arriving everywhere; the panel offers Unblock instead of
+         * Block. Defaults to `false` across the FFI so older call sites that
+         * build a member by hand keep compiling.
+         */isIgnored: Bool = false, 
+        /**
+         * Whether this member is an agent rather than a person — decided here,
+         * from the bridge's `@agent_` id convention, so hosts can word a block
+         * or report for an agent ("it keeps running") without each keeping its
+         * own copy of that rule.
+         */isAgent: Bool = false) {
         self.userId = userId
         self.displayName = displayName
         self.avatarUrl = avatarUrl
+        self.isIgnored = isIgnored
+        self.isAgent = isAgent
     }
 }
 
@@ -2734,6 +2762,12 @@ extension RoomMemberDto: Equatable, Hashable {
         if lhs.avatarUrl != rhs.avatarUrl {
             return false
         }
+        if lhs.isIgnored != rhs.isIgnored {
+            return false
+        }
+        if lhs.isAgent != rhs.isAgent {
+            return false
+        }
         return true
     }
 
@@ -2741,6 +2775,8 @@ extension RoomMemberDto: Equatable, Hashable {
         hasher.combine(userId)
         hasher.combine(displayName)
         hasher.combine(avatarUrl)
+        hasher.combine(isIgnored)
+        hasher.combine(isAgent)
     }
 }
 
@@ -2754,7 +2790,9 @@ public struct FfiConverterTypeRoomMemberDto: FfiConverterRustBuffer {
             try RoomMemberDto(
                 userId: FfiConverterString.read(from: &buf), 
                 displayName: FfiConverterOptionString.read(from: &buf), 
-                avatarUrl: FfiConverterOptionString.read(from: &buf)
+                avatarUrl: FfiConverterOptionString.read(from: &buf), 
+                isIgnored: FfiConverterBool.read(from: &buf), 
+                isAgent: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -2762,6 +2800,8 @@ public struct FfiConverterTypeRoomMemberDto: FfiConverterRustBuffer {
         FfiConverterString.write(value.userId, into: &buf)
         FfiConverterOptionString.write(value.displayName, into: &buf)
         FfiConverterOptionString.write(value.avatarUrl, into: &buf)
+        FfiConverterBool.write(value.isIgnored, into: &buf)
+        FfiConverterBool.write(value.isAgent, into: &buf)
     }
 }
 

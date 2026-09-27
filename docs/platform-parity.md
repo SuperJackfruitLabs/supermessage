@@ -110,6 +110,12 @@ states.
 
 ### What only one platform has
 
+- **Block and report** (#60) is iOS-only as UI. The core and both sets of
+  bindings carry it (`ignore_user`, `report_event`, `report_room`,
+  `report_user`, `FfiEvent::IgnoredUsers`); Android handles the event and
+  the two new errors but draws nothing, and the desktop emits
+  `sm://ignored-users` to a webview that does not listen yet.
+
 - **A mention menu** (`composer/MentionMenu`, 4 states). Neither native
   platform has one at all. `Mentionable` crosses the FFI boundary and both
   native composers ignore it.

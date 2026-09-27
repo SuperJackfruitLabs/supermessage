@@ -43,6 +43,7 @@ import uniffi.supermessage_core.FfiConverterTypePlayableAudio
 import uniffi.supermessage_core.FfiConverterTypePushRegistration
 import uniffi.supermessage_core.FfiConverterTypeRichBlock
 import uniffi.supermessage_core.FfiConverterTypeRoomInfoDto
+import uniffi.supermessage_core.FfiConverterTypeRoomMemberDto
 import uniffi.supermessage_core.FfiConverterTypeRoomRow
 import uniffi.supermessage_core.FfiConverterTypeRosterSection
 import uniffi.supermessage_core.FfiConverterTypeRosterView
@@ -59,6 +60,7 @@ import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.PushRegistration
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RoomInfoDto
+import uniffi.supermessage_core.RoomMemberDto
 import uniffi.supermessage_core.RoomRow
 import uniffi.supermessage_core.RosterSection
 import uniffi.supermessage_core.RosterView
@@ -77,6 +79,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferPlayableAudio
 import uniffi.supermessage_core.RustBuffer as RustBufferPushRegistration
 import uniffi.supermessage_core.RustBuffer as RustBufferRichBlock
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomInfoDto
+import uniffi.supermessage_core.RustBuffer as RustBufferRoomMemberDto
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomRow
 import uniffi.supermessage_core.RustBuffer as RustBufferRosterSection
 import uniffi.supermessage_core.RustBuffer as RustBufferRosterView
@@ -948,6 +951,14 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1001,6 +1012,10 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_ensure_recovery(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_ignore_user(`ptr`: Pointer,`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_ignored_users(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_invite_user(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_join_room(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1029,11 +1044,15 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_register_pusher(`ptr`: Pointer,`registration`: RustBufferPushRegistration.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_report_event(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`reason`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_report_room(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`reason`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_report_user(`ptr`: Pointer,`userId`: RustBuffer.ByValue,`reason`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_reset_recovery(`ptr`: Pointer,`password`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_restore_session(`ptr`: Pointer,`sink`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Byte
-    fun uniffi_supermessage_ffi_fn_method_core_restore_session_quietly(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     fun uniffi_supermessage_ffi_fn_method_core_room_avatar(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1049,11 +1068,7 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_message(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`mentions`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
-    fun uniffi_supermessage_ffi_fn_method_core_send_permission_answer(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_reply(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1075,6 +1090,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_toggle_reaction(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`key`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_supermessage_ffi_fn_method_core_unignore_user(`ptr`: Pointer,`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_eventsink(`vtable`: UniffiVTableCallbackInterfaceEventSink,
     ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
@@ -1093,6 +1110,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_people_matching(`people`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_report_reason_remaining(`reason`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
     fun uniffi_supermessage_ffi_fn_func_rich_blocks_from_markdown(`source`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_roster_hidden_invitations(`rows`: RustBuffer.ByValue,`showsInvitations`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1227,6 +1246,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_people_matching(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_report_reason_remaining(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_roster_hidden_invitations(
@@ -1259,6 +1280,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_ensure_recovery(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_ignore_user(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_ignored_users(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_invite_user(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_join_room(
@@ -1287,11 +1312,15 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_register_pusher(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_report_event(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_report_room(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_report_user(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_reset_recovery(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_restore_session(
-    ): Short
-    fun uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_room_avatar(
     ): Short
@@ -1307,11 +1336,7 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(
     ): Short
-    fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to(
-    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_message(
-    ): Short
-    fun uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_reply(
     ): Short
@@ -1332,6 +1357,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_method_core_timeline_subscribe(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_toggle_reaction(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_unignore_user(
     ): Short
     fun uniffi_supermessage_ffi_checksum_constructor_core_new(
     ): Short
@@ -1383,6 +1410,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_people_matching() != 1897.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_func_report_reason_remaining() != 11948.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1431,6 +1461,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_ensure_recovery() != 63369.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_ignore_user() != 7115.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_ignored_users() != 55455.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_invite_user() != 43593.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1473,13 +1509,19 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_register_pusher() != 45337.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_report_event() != 62560.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_report_room() != 25512.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_report_user() != 25492.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_reset_recovery() != 24413.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_restore_session() != 6863.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly() != 65435.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_room_avatar() != 58138.toShort()) {
@@ -1503,13 +1545,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 31962.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to() != 20932.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_permission_answer() != 53383.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056.toShort()) {
@@ -1540,6 +1576,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_toggle_reaction() != 6594.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_unignore_user() != 38081.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_constructor_core_new() != 35650.toShort()) {
@@ -1696,6 +1735,29 @@ public object FfiConverterULong: FfiConverter<ULong, Long> {
 
     override fun write(value: ULong, buf: ByteBuffer) {
         buf.putLong(value.toLong())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterLong: FfiConverter<Long, Long> {
+    override fun lift(value: Long): Long {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Long {
+        return buf.getLong()
+    }
+
+    override fun lower(value: Long): Long {
+        return value
+    }
+
+    override fun allocationSize(value: Long) = 8UL
+
+    override fun write(value: Long, buf: ByteBuffer) {
+        buf.putLong(value)
     }
 }
 
@@ -2064,6 +2126,18 @@ public interface CoreInterface {
     fun `ensureRecovery`(): kotlin.String?
     
     /**
+     * Block someone — a person or an agent. Their messages stop reaching
+     * this account everywhere; an agent keeps running. The new list arrives
+     * as `FfiEvent::IgnoredUsers` once the homeserver echoes it back.
+     */
+    fun `ignoreUser`(`userId`: kotlin.String)
+    
+    /**
+     * Everyone this account has blocked, named, with `is_ignored` set.
+     */
+    fun `ignoredUsers`(): List<RoomMemberDto>
+    
+    /**
      * Invite someone to a room.
      */
     fun `inviteUser`(`roomId`: kotlin.String, `userId`: kotlin.String)
@@ -2160,6 +2234,22 @@ public interface CoreInterface {
     fun `registerPusher`(`registration`: PushRegistration)
     
     /**
+     * Report a message to the homeserver's administrator. `reason` may be
+     * empty; over the limit it is refused with `ReasonTooLong`.
+     */
+    fun `reportEvent`(`roomId`: kotlin.String, `eventId`: kotlin.String, `reason`: kotlin.String)
+    
+    /**
+     * Report a room — joined, or only invited to.
+     */
+    fun `reportRoom`(`roomId`: kotlin.String, `reason`: kotlin.String)
+    
+    /**
+     * Report a person or an agent.
+     */
+    fun `reportUser`(`userId`: kotlin.String, `reason`: kotlin.String)
+    
+    /**
      * Throw the old identity away and start again, returning the new key.
      *
      * Destructive: deletes the old backup and replaces the cross-signing
@@ -2176,15 +2266,6 @@ public interface CoreInterface {
      * error.
      */
     fun `restoreSession`(`sink`: EventSink): kotlin.Boolean
-    
-    /**
-     * Pick up a stored session **without starting sync** — enough to send
-     * an answer from a process iOS woke only to deliver a notification
-     * action. A no-op returning `true` when a session is already live, and a
-     * later [`Core::restore_session`] starts streams on the client this
-     * installed rather than building a second one.
-     */
-    fun `restoreSessionQuietly`(): kotlin.Boolean
     
     /**
      * A room's avatar as a `data:` URI, if it has one.
@@ -2253,12 +2334,6 @@ public interface CoreInterface {
     fun `sendGateDecision`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
     
     /**
-     * [`Core::send_gate_decision`] for a room that need not be open: the
-     * same content, validated the same way, sent straight to `room_id`.
-     */
-    fun `sendGateDecisionTo`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
-    
-    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -2268,13 +2343,6 @@ public interface CoreInterface {
      * `mentions` are user ids to notify; empty is the ordinary case.
      */
     fun `sendMessage`(`roomId`: kotlin.String, `body`: kotlin.String, `mentions`: List<kotlin.String>)
-    
-    /**
-     * Answer an AgentPod permission request in `room_id`: the option's name
-     * as a plain message, the same bytes the composer would send. The room
-     * need not be open.
-     */
-    fun `sendPermissionAnswer`(`roomId`: kotlin.String, `optionId`: kotlin.String)
     
     /**
      * Reply to `in_reply_to`, an event id in the focused room.
@@ -2338,6 +2406,11 @@ public interface CoreInterface {
      * Add or remove a reaction. Returns whether the reaction is now present.
      */
     fun `toggleReaction`(`roomId`: kotlin.String, `eventId`: kotlin.String, `key`: kotlin.String): kotlin.Boolean
+    
+    /**
+     * Unblock someone. A no-op when they were not blocked.
+     */
+    fun `unignoreUser`(`userId`: kotlin.String)
     
     companion object
 }
@@ -2661,6 +2734,39 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Block someone — a person or an agent. Their messages stop reaching
+     * this account everywhere; an agent keeps running. The new list arrives
+     * as `FfiEvent::IgnoredUsers` once the homeserver echoes it back.
+     */
+    @Throws(FfiException::class)override fun `ignoreUser`(`userId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_ignore_user(
+        it, FfiConverterString.lower(`userId`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Everyone this account has blocked, named, with `is_ignored` set.
+     */
+    @Throws(FfiException::class)override fun `ignoredUsers`(): List<RoomMemberDto> {
+            return FfiConverterSequenceTypeRoomMemberDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_ignored_users(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Invite someone to a room.
      */
     @Throws(FfiException::class)override fun `inviteUser`(`roomId`: kotlin.String, `userId`: kotlin.String)
@@ -2903,6 +3009,52 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Report a message to the homeserver's administrator. `reason` may be
+     * empty; over the limit it is refused with `ReasonTooLong`.
+     */
+    @Throws(FfiException::class)override fun `reportEvent`(`roomId`: kotlin.String, `eventId`: kotlin.String, `reason`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_report_event(
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`eventId`),FfiConverterString.lower(`reason`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Report a room — joined, or only invited to.
+     */
+    @Throws(FfiException::class)override fun `reportRoom`(`roomId`: kotlin.String, `reason`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_report_room(
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`reason`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Report a person or an agent.
+     */
+    @Throws(FfiException::class)override fun `reportUser`(`userId`: kotlin.String, `reason`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_report_user(
+        it, FfiConverterString.lower(`userId`),FfiConverterString.lower(`reason`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Throw the old identity away and start again, returning the new key.
      *
      * Destructive: deletes the old backup and replaces the cross-signing
@@ -2935,26 +3087,6 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_restore_session(
         it, FfiConverterTypeEventSink.lower(`sink`),_status)
-}
-    }
-    )
-    }
-    
-
-    
-    /**
-     * Pick up a stored session **without starting sync** — enough to send
-     * an answer from a process iOS woke only to deliver a notification
-     * action. A no-op returning `true` when a session is already live, and a
-     * later [`Core::restore_session`] starts streams on the client this
-     * installed rather than building a second one.
-     */
-    @Throws(FfiException::class)override fun `restoreSessionQuietly`(): kotlin.Boolean {
-            return FfiConverterBoolean.lift(
-    callWithPointer {
-    uniffiRustCallWithError(FfiException) { _status ->
-    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_restore_session_quietly(
-        it, _status)
 }
     }
     )
@@ -3105,22 +3237,6 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
-     * [`Core::send_gate_decision`] for a room that need not be open: the
-     * same content, validated the same way, sent straight to `room_id`.
-     */
-    @Throws(FfiException::class)override fun `sendGateDecisionTo`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
-        = 
-    callWithPointer {
-    uniffiRustCallWithError(FfiException) { _status ->
-    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(
-        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`gateId`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),FfiConverterString.lower(`prompt`),_status)
-}
-    }
-    
-    
-
-    
-    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -3135,23 +3251,6 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_message(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`body`),FfiConverterSequenceString.lower(`mentions`),_status)
-}
-    }
-    
-    
-
-    
-    /**
-     * Answer an AgentPod permission request in `room_id`: the option's name
-     * as a plain message, the same bytes the composer would send. The room
-     * need not be open.
-     */
-    @Throws(FfiException::class)override fun `sendPermissionAnswer`(`roomId`: kotlin.String, `optionId`: kotlin.String)
-        = 
-    callWithPointer {
-    uniffiRustCallWithError(FfiException) { _status ->
-    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_permission_answer(
-        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`optionId`),_status)
 }
     }
     
@@ -3322,6 +3421,21 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     }
     )
     }
+    
+
+    
+    /**
+     * Unblock someone. A no-op when they were not blocked.
+     */
+    @Throws(FfiException::class)override fun `unignoreUser`(`userId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_unignore_user(
+        it, FfiConverterString.lower(`userId`),_status)
+}
+    }
+    
     
 
     
@@ -3775,6 +3889,32 @@ sealed class FfiException: kotlin.Exception() {
             get() = "spaceId=${ `spaceId` }"
     }
     
+    /**
+     * A report's reason is over the limit. Nothing was sent; keep the text
+     * so the reader can shorten it.
+     */
+    class ReasonTooLong(
+        
+        val `length`: kotlin.ULong, 
+        
+        val `limit`: kotlin.ULong
+        ) : FfiException() {
+        override val message
+            get() = "length=${ `length` }, limit=${ `limit` }"
+    }
+    
+    /**
+     * Declined, with a sentence written for the reader — show `detail` as it
+     * is. Unlike `Protocol`, whose detail is the SDK's own words.
+     */
+    class Refused(
+        
+        val `detail`: kotlin.String
+        ) : FfiException() {
+        override val message
+            get() = "detail=${ `detail` }"
+    }
+    
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<FfiException> {
         override fun lift(error_buf: RustBuffer.ByValue): FfiException = FfiConverterTypeFfiError.lift(error_buf)
@@ -3814,6 +3954,13 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 )
             8 -> FfiException.UnknownAttachment()
             9 -> FfiException.UnknownSpace(
+                FfiConverterString.read(buf),
+                )
+            10 -> FfiException.ReasonTooLong(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            11 -> FfiException.Refused(
                 FfiConverterString.read(buf),
                 )
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
@@ -3867,6 +4014,17 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 4UL
                 + FfiConverterString.allocationSize(value.`spaceId`)
             )
+            is FfiException.ReasonTooLong -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterULong.allocationSize(value.`length`)
+                + FfiConverterULong.allocationSize(value.`limit`)
+            )
+            is FfiException.Refused -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`detail`)
+            )
         }
     }
 
@@ -3917,6 +4075,17 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 FfiConverterString.write(value.`spaceId`, buf)
                 Unit
             }
+            is FfiException.ReasonTooLong -> {
+                buf.putInt(10)
+                FfiConverterULong.write(value.`length`, buf)
+                FfiConverterULong.write(value.`limit`, buf)
+                Unit
+            }
+            is FfiException.Refused -> {
+                buf.putInt(11)
+                FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 
@@ -3927,7 +4096,7 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
 /**
  * One thing that happened, as the host sees it.
  *
- * A flattened mirror of [`CoreEvent`]: same eight cases, with the two
+ * A flattened mirror of [`CoreEvent`]: the same cases, with the two
  * generic envelopes replaced by their monomorphised forms.
  */
 sealed class FfiEvent {
@@ -4023,6 +4192,15 @@ sealed class FfiEvent {
         companion object
     }
     
+    /**
+     * The account's block list, whole and sorted — once when the session
+     * starts, then after every change from any device. Replace, not merge.
+     */
+    data class IgnoredUsers(
+        val `userIds`: List<kotlin.String>) : FfiEvent() {
+        companion object
+    }
+    
 
     
     companion object
@@ -4077,6 +4255,9 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterString.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterString.read(buf),
+                )
+            9 -> FfiEvent.IgnoredUsers(
+                FfiConverterSequenceString.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
@@ -4159,6 +4340,13 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 + FfiConverterString.allocationSize(value.`mime`)
             )
         }
+        is FfiEvent.IgnoredUsers -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterSequenceString.allocationSize(value.`userIds`)
+            )
+        }
     }
 
     override fun write(value: FfiEvent, buf: ByteBuffer) {
@@ -4221,6 +4409,11 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterString.write(value.`filename`, buf)
                 FfiConverterULong.write(value.`sizeBytes`, buf)
                 FfiConverterString.write(value.`mime`, buf)
+                Unit
+            }
+            is FfiEvent.IgnoredUsers -> {
+                buf.putInt(9)
+                FfiConverterSequenceString.write(value.`userIds`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -5249,6 +5442,34 @@ public object FfiConverterSequenceTypeRichBlock: FfiConverterRustBuffer<List<Ric
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeRoomMemberDto: FfiConverterRustBuffer<List<RoomMemberDto>> {
+    override fun read(buf: ByteBuffer): List<RoomMemberDto> {
+        val len = buf.getInt()
+        return List<RoomMemberDto>(len) {
+            FfiConverterTypeRoomMemberDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<RoomMemberDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeRoomMemberDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<RoomMemberDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeRoomMemberDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeRoomRow: FfiConverterRustBuffer<List<RoomRow>> {
     override fun read(buf: ByteBuffer): List<RoomRow> {
         val len = buf.getInt()
@@ -5482,6 +5703,10 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
 
 
 
+
+
+
+
         /**
          * A playing note's position as the clock under it reads — `"0:06"`,
          * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -5586,6 +5811,20 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_people_matching(
         FfiConverterSequenceTypePersonDto.lower(`people`),FfiConverterString.lower(`query`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * How many more characters a report's reason may take — negative once it is
+         * over. Counted by the core, so a host's counter agrees with the check that
+         * refuses the report (Swift and Kotlin would each count differently).
+         */ fun `reportReasonRemaining`(`reason`: kotlin.String): kotlin.Long {
+            return FfiConverterLong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_report_reason_remaining(
+        FfiConverterString.lower(`reason`),_status)
 }
     )
     }

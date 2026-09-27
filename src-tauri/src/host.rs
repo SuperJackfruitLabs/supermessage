@@ -18,6 +18,7 @@ use supermessage_core::attachments::{stage_path, StagedAttachments, STAGED_ATTAC
 use supermessage_core::event::{CoreEvent, EventSink, FilePicker};
 use supermessage_core::live::{LIVE_EVENT, THOUGHT_EVENT, TOOL_EVENT};
 use supermessage_core::rooms::ROOMS_DIFF_EVENT;
+use supermessage_core::safety::IGNORED_USERS_EVENT;
 use supermessage_core::session::Session;
 use supermessage_core::sync::CONNECTION_EVENT;
 use supermessage_core::timeline::{FocusedTimeline, TIMELINE_DIFF_EVENT, TYPING_EVENT};
@@ -47,6 +48,7 @@ impl EventSink for TauriSink {
             CoreEvent::Thought(p) => self.0.emit(THOUGHT_EVENT, &p),
             CoreEvent::Tool(p) => self.0.emit(TOOL_EVENT, &p),
             CoreEvent::AttachmentStaged(m) => self.0.emit(STAGED_ATTACHMENT_EVENT, &m),
+            CoreEvent::IgnoredUsers(ids) => self.0.emit(IGNORED_USERS_EVENT, &ids),
         };
         if let Err(err) = sent {
             tracing::warn!(error = %err, "failed to emit a core event to the webview");

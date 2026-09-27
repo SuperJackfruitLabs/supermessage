@@ -19,7 +19,7 @@ use crate::ConnectionState;
 
 /// One thing that happened, as the host sees it.
 ///
-/// A flattened mirror of [`CoreEvent`]: same eight cases, with the two
+/// A flattened mirror of [`CoreEvent`]: the same cases, with the two
 /// generic envelopes replaced by their monomorphised forms.
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum FfiEvent {
@@ -84,6 +84,11 @@ pub enum FfiEvent {
         size_bytes: u64,
         mime: String,
     },
+    /// The account's block list, whole and sorted — once when the session
+    /// starts, then after every change from any device. Replace, not merge.
+    IgnoredUsers {
+        user_ids: Vec<String>,
+    },
 }
 
 /// What a native host implements to hear from the core.
@@ -138,6 +143,7 @@ impl CoreSink for HostSink {
                 size_bytes: m.size_bytes,
                 mime: m.mime,
             },
+            CoreEvent::IgnoredUsers(user_ids) => FfiEvent::IgnoredUsers { user_ids },
         });
     }
 }

@@ -1,0 +1,201 @@
+---
+// Help & support — the published contact information App Store Review
+// Guideline 1.2 asks of an app with user-generated content, and the page
+// the app's Account screen links as "Help & support" (issue #60).
+//
+// It says three things a reviewer and a reader both look for: how to reach a
+// person, how to report abuse from inside the app, and how fast a report is
+// acted on. The 24-hour commitment is for **our** homeserver only; a report
+// made on someone else's goes to them, and the page says so rather than
+// promising for a server we do not run.
+//
+// **The address must receive mail before this ships.** `supermessage.dev` has
+// no MX records (see privacy.astro's header), so the address is on
+// superjackfruit.com, which routes to Google Workspace. `support@` must exist
+// there as a mailbox or alias; a support page whose address bounces is worse
+// than none.
+//
+// The head and styles are lifted from privacy.astro deliberately, so the
+// compliance pages cannot drift apart visually.
+import '../styles/tokens.css';
+import ShareMeta from '../components/ShareMeta.astro';
+
+const title = 'Help & support — supermessage';
+const description =
+  'How to reach the people behind supermessage, and how to report abuse or block someone.';
+
+const updated = '27 September 2026';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <ShareMeta title={title} description={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    />
+    <style>
+      :root {
+        --display: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+        --body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--color-surface-sunken);
+        color: var(--color-content);
+        font-family: var(--body);
+        font-size: 17px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        max-width: 68ch;
+        margin: 0 auto;
+        padding: 48px 24px 96px;
+      }
+
+      a { color: var(--color-accent); }
+
+      h1 {
+        font-family: var(--display);
+        font-size: clamp(32px, 6vw, 44px);
+        line-height: 1.1;
+        margin: 0 0 8px;
+      }
+
+      h2 {
+        font-family: var(--display);
+        font-size: 22px;
+        margin: 40px 0 8px;
+      }
+
+      .updated { color: var(--color-content-muted); margin: 0 0 40px; }
+
+      /* The one claim a reader is most likely to be surprised by, so it is
+         the one thing on the page given a surface of its own. */
+      .callout {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-left: 3px solid var(--color-signal);
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin: 24px 0;
+      }
+
+      table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+      th, td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--color-border);
+        vertical-align: top;
+      }
+      th { font-weight: 600; }
+      td:first-child { white-space: nowrap; }
+
+      footer {
+        margin-top: 56px;
+        padding-top: 24px;
+        border-top: 1px solid var(--color-border);
+        color: var(--color-content-muted);
+        font-size: 15px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <main>
+      <h1>Help &amp; support</h1>
+      <p class="updated">Last updated {updated}</p>
+
+      <p>
+        supermessage is made by Super Jackfruit Labs. If something is wrong — with the app, with
+        your account, or with someone you met through it — this page is how to reach us.
+      </p>
+
+      <div class="callout">
+        <strong>To report abuse, use the app first.</strong> Long-press the message and choose
+        <em>Report…</em>, or open the room's info and tap a person to report or block them.
+        Reports reach the administrators of your homeserver. On our homeserver,
+        <code>id.agentpod.dev</code>, that is us, and <strong>we act on reports within 24
+        hours</strong>.
+      </div>
+
+      <h2>Contact</h2>
+
+      <p>
+        Email <a href="mailto:support@superjackfruit.com">support@superjackfruit.com</a>. A person
+        reads it, and we reply within 24 hours. For privacy questions or to delete your account,
+        see the <a href="/privacy/">privacy policy</a> and
+        <a href="/delete-account/">account deletion</a>.
+      </p>
+
+      <h2>Reporting abuse</h2>
+
+      <table>
+        <tr>
+          <th>What</th>
+          <th>How</th>
+        </tr>
+        <tr>
+          <td>A message</td>
+          <td>Long-press it and choose <em>Report…</em>. Add a reason if you can. The message is
+            hidden from you as soon as the report is sent, and you can block its sender in the
+            same step.</td>
+        </tr>
+        <tr>
+          <td>A person or an agent</td>
+          <td>Open the room's info, tap them, and choose <em>Report…</em> or <em>Block</em>.</td>
+        </tr>
+        <tr>
+          <td>A room or an invitation</td>
+          <td>Open the room's info and choose <em>Report room…</em>, or tap <em>Report room…</em>
+            under an invitation. You do not have to join a room to report it.</td>
+        </tr>
+        <tr>
+          <td>Anything else</td>
+          <td>Email <a href="mailto:support@superjackfruit.com">support@superjackfruit.com</a> with
+            what happened and, if you can, the room and a screenshot.</td>
+        </tr>
+      </table>
+
+      <p>
+        The person you report is not told who reported them. When a report is about content on
+        our homeserver, we review it within 24 hours and remove content or deactivate accounts
+        that break the <a href="/terms/">terms of use</a>.
+      </p>
+
+      <h2>Blocking</h2>
+
+      <p>
+        Blocking someone hides their messages from you in every room, on every device you are
+        signed in on, and they are not told. You can block an agent the same way: its messages
+        stop reaching you, and the agent itself keeps running for everyone else. Unblock anyone
+        from <em>Account → Blocked</em>.
+      </p>
+
+      <h2>If you use another homeserver</h2>
+
+      <p>
+        supermessage can sign in to any Matrix homeserver. Reports made there go to whoever runs
+        that server, under their rules and response times rather than ours. You can still email
+        us about the app itself.
+      </p>
+
+      <footer>
+        <a href="/">← supermessage</a> · <a href="/terms/">Terms of use</a> ·
+        <a href="/privacy/">Privacy</a>
+      </footer>
+    </main>
+  </body>
+</html>

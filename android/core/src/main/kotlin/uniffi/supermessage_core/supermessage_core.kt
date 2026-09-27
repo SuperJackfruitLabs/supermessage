@@ -2199,7 +2199,21 @@ data class RoomMemberDto (
      * the new `member_avatar` command), not a second fetch path — see that
      * command's doc comment in `core::commands`.
      */
-    var `avatarUrl`: kotlin.String?
+    var `avatarUrl`: kotlin.String?, 
+    /**
+     * Whether this account has blocked them (`m.ignored_user_list`). Their
+     * messages stop arriving everywhere; the panel offers Unblock instead of
+     * Block. Defaults to `false` across the FFI so older call sites that
+     * build a member by hand keep compiling.
+     */
+    var `isIgnored`: kotlin.Boolean = false, 
+    /**
+     * Whether this member is an agent rather than a person — decided here,
+     * from the bridge's `@agent_` id convention, so hosts can word a block
+     * or report for an agent ("it keeps running") without each keeping its
+     * own copy of that rule.
+     */
+    var `isAgent`: kotlin.Boolean = false
 ) {
     
     companion object
@@ -2214,19 +2228,25 @@ public object FfiConverterTypeRoomMemberDto: FfiConverterRustBuffer<RoomMemberDt
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
     override fun allocationSize(value: RoomMemberDto) = (
             FfiConverterString.allocationSize(value.`userId`) +
             FfiConverterOptionalString.allocationSize(value.`displayName`) +
-            FfiConverterOptionalString.allocationSize(value.`avatarUrl`)
+            FfiConverterOptionalString.allocationSize(value.`avatarUrl`) +
+            FfiConverterBoolean.allocationSize(value.`isIgnored`) +
+            FfiConverterBoolean.allocationSize(value.`isAgent`)
     )
 
     override fun write(value: RoomMemberDto, buf: ByteBuffer) {
             FfiConverterString.write(value.`userId`, buf)
             FfiConverterOptionalString.write(value.`displayName`, buf)
             FfiConverterOptionalString.write(value.`avatarUrl`, buf)
+            FfiConverterBoolean.write(value.`isIgnored`, buf)
+            FfiConverterBoolean.write(value.`isAgent`, buf)
     }
 }
 
