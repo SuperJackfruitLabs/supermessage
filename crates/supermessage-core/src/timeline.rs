@@ -597,6 +597,7 @@ fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
             size: m.info.as_ref().and_then(|i| i.size).map(uint_to_u64),
             width: m.info.as_ref().and_then(|i| i.width).map(uint_to_u64),
             height: m.info.as_ref().and_then(|i| i.height).map(uint_to_u64),
+            audio: None,
         }),
         MessageType::File(m) => Some(MediaMetaDto {
             filename: m.filename().to_string(),
@@ -604,6 +605,7 @@ fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
             size: m.info.as_ref().and_then(|i| i.size).map(uint_to_u64),
             width: None,
             height: None,
+            audio: None,
         }),
         MessageType::Audio(m) => Some(MediaMetaDto {
             filename: m.filename().to_string(),
@@ -611,6 +613,7 @@ fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
             size: m.info.as_ref().and_then(|i| i.size).map(uint_to_u64),
             width: None,
             height: None,
+            audio: Some(crate::audio::audio_meta(m)),
         }),
         MessageType::Video(m) => Some(MediaMetaDto {
             filename: m.filename().to_string(),
@@ -618,6 +621,7 @@ fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
             size: m.info.as_ref().and_then(|i| i.size).map(uint_to_u64),
             width: None,
             height: None,
+            audio: None,
         }),
         _ => None,
     }
@@ -2607,6 +2611,30 @@ impl FocusedTimeline {
             return Ok(None);
         };
         Ok(Some((source, media_filename(msgtype))))
+    }
+
+    /// An `m.audio`'s source and the mimetype its sender declared — `None`
+    /// for any other event, so a player can never be pointed at an image or a
+    /// file by id. Looked up on the live timeline item, like
+    /// [`Self::media_source`], so an encrypted room's source carries its keys.
+    pub async fn audio_source(
+        &self,
+        event_id: &EventId,
+    ) -> CoreResult<Option<(MediaSource, Option<String>)>> {
+        let timeline = self.active_timeline()?;
+        let Some(item) = timeline.item_by_event_id(event_id).await else {
+            return Ok(None);
+        };
+        let Some(message) = item.content().as_message() else {
+            return Ok(None);
+        };
+        let MessageType::Audio(audio) = message.msgtype() else {
+            return Ok(None);
+        };
+        Ok(Some((
+            audio.source.clone(),
+            audio.info.as_ref().and_then(|i| i.mimetype.clone()),
+        )))
     }
 
     pub async fn media_source(&self, event_id: &EventId) -> CoreResult<Option<MediaSource>> {

@@ -2,6 +2,7 @@ package dev.supermessage.previews
 
 import dev.supermessage.kit.stores.LiveStore
 import uniffi.supermessage_core.AgentState
+import uniffi.supermessage_core.AudioView
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.CustomEventField
@@ -35,6 +36,7 @@ import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_core.VoiceNoteTranscript
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 
 /**
@@ -282,7 +284,7 @@ object PreviewFixtures {
         get() = row(
             item(
                 "\$img", body = "muster-dark.png", msgtype = "m.image",
-                media = MediaMetaDto("muster-dark.png", "image/png", 184_320uL, 1500uL, 900uL),
+                media = MediaMetaDto("muster-dark.png", "image/png", 184_320uL, 1500uL, 900uL, audio = null),
             ),
             ItemView.Image("The muster board in dark", 1500uL, 900uL, null),
         )
@@ -291,9 +293,111 @@ object PreviewFixtures {
         get() = row(
             item(
                 "\$file", body = "tokens.toml", msgtype = "m.file",
-                media = MediaMetaDto("tokens.toml", "text/plain", 4_096uL, null, null),
+                media = MediaMetaDto("tokens.toml", "text/plain", 4_096uL, null, null, audio = null),
             ),
             ItemView.MediaFile(MediaFileLabel.FILE, "tokens.toml", 4_096uL, "text/plain"),
+        )
+
+    // ── Audio ────────────────────────────────────────────────────────────
+    //
+    // Each `AudioView` is what `core::audio::audio_view` builds for that
+    // event: title, length label and sentence included. None is computed here.
+
+    /**
+     * A recorded shape, 0..1, the way the core normalises MSC3246's 0..1024.
+     * Fixed values rather than a formula, so the fixture is plainly data.
+     */
+    val voiceWaveform: List<Float> = listOf(
+        0.12f, 0.20f, 0.35f, 0.62f, 0.80f, 0.55f, 0.40f, 0.72f, 0.95f, 0.70f,
+        0.46f, 0.30f, 0.22f, 0.38f, 0.64f, 0.88f, 0.76f, 0.52f, 0.34f, 0.26f,
+        0.44f, 0.68f, 0.84f, 0.60f, 0.42f, 0.28f, 0.18f, 0.32f, 0.58f, 0.78f,
+        0.66f, 0.48f, 0.36f, 0.54f, 0.74f, 0.50f, 0.30f, 0.20f, 0.14f, 0.10f,
+    )
+
+    fun voiceView(
+        durationMs: ULong? = 7_000uL,
+        lengthLabel: String? = "0:07",
+        waveform: List<Float>? = voiceWaveform,
+        accessibilityLabel: String = "Voice message, 7 seconds",
+    ): AudioView = AudioView(
+        isVoice = true, durationMs = durationMs, lengthLabel = lengthLabel, waveform = waveform,
+        title = "Voice message", filename = "Voice message.ogg", size = 7_992uL,
+        mimetype = "audio/ogg", caption = null, accessibilityLabel = accessibilityLabel,
+    )
+
+    private fun voiceRow(id: String, view: AudioView, isOwn: Boolean): TimelineRowDto =
+        if (isOwn) {
+            row(
+                item(id, sender = "@rakesh:example.org", body = "Voice message.ogg", isOwn = true, msgtype = "m.audio"),
+                ItemView.Audio(view),
+                senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
+            )
+        } else {
+            row(item(id, body = "Voice message.ogg", msgtype = "m.audio"), ItemView.Audio(view))
+        }
+
+    val voiceOwn: TimelineRowDto get() = voiceRow("\$voice-own", voiceView(), isOwn = true)
+
+    val voicePeer: TimelineRowDto get() = voiceRow("\$voice-peer", voiceView(), isOwn = false)
+
+    /** A note whose sender sent no waveform: the host draws even bars. */
+    val voiceNoWaveform: TimelineRowDto
+        get() = voiceRow("\$voice-flat", voiceView(waveform = null), isOwn = false)
+
+    /** The longest note the recorder allows. */
+    val voiceLong: TimelineRowDto
+        get() = voiceRow(
+            "\$voice-long",
+            voiceView(
+                durationMs = 299_000uL, lengthLabel = "4:59",
+                accessibilityLabel = "Voice message, 4 minutes 59 seconds",
+            ),
+            isOwn = true,
+        )
+
+    /** An `m.audio` that is not a voice note: named, and captioned. */
+    val audioFile: TimelineRowDto
+        get() = row(
+            item("\$audio-file", body = "standup-2026-09-26.m4a", msgtype = "m.audio"),
+            ItemView.Audio(
+                AudioView(
+                    isVoice = false, durationMs = 185_000uL, lengthLabel = "3:05", waveform = null,
+                    title = "standup-2026-09-26.m4a", filename = "standup-2026-09-26.m4a",
+                    size = 2_961_408uL, mimetype = "audio/mp4",
+                    caption = "Yesterday's standup, for anyone who missed it.",
+                    accessibilityLabel = "Audio, standup-2026-09-26.m4a, 3 minutes 5 seconds",
+                ),
+            ),
+        )
+
+    /** The hub's transcript of [voiceOwn], on the note's side. */
+    val voiceOwnTranscript: TimelineRowDto
+        get() = row(
+            item("\$voice-own-transcript", body = "Transcript", msgtype = "m.notice"),
+            ItemView.VoiceTranscript(
+                VoiceNoteTranscript(
+                    text = "Can you rerun the token diff after the rebase and tell me if the amber changed?",
+                    language = "en", seconds = 7u, duration = "0:07",
+                    caption = "Transcript · en · 0:07",
+                    accessibilityLabel = "Transcript of voice note: Can you rerun the token diff after the rebase and tell me if the amber changed?",
+                ),
+                onOwnNote = true,
+            ),
+        )
+
+    /** The hub's transcript of [voicePeer], on the note's side. */
+    val voicePeerTranscript: TimelineRowDto
+        get() = row(
+            item("\$voice-peer-transcript", body = "Transcript", msgtype = "m.notice"),
+            ItemView.VoiceTranscript(
+                VoiceNoteTranscript(
+                    text = "It did not. The diff is one line, the new accent-soft value.",
+                    language = "en", seconds = 7u, duration = "0:07",
+                    caption = "Transcript · en · 0:07",
+                    accessibilityLabel = "Transcript of voice note: It did not. The diff is one line, the new accent-soft value.",
+                ),
+                onOwnNote = false,
+            ),
         )
 
     val card: TimelineRowDto

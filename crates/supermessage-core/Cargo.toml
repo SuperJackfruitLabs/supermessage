@@ -89,6 +89,13 @@ infer = "0.19"
 # directly for the same reason `base64` is.
 mime = "0.3"
 
+# Ogg pages for voice notes (core::opus_container). BSD-3-Clause, pure Rust,
+# no codec: a voice note moves between Ogg (what Matrix voice messages are,
+# MSC3245) and CAF (the only container Apple reads and writes Opus in) as a
+# remux of the same packets. Default features only — `async` would pull in
+# tokio-util and futures-io for a file that is already in memory.
+ogg = "0.9"
+
 # Markdown -> RichBlock (core::rich). MIT. Agents send `m.text` with no
 # `formatted_body` — the hub generates none — so this parses the *dominant*
 # reading path in the app, not an edge case.

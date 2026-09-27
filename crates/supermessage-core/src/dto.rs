@@ -190,6 +190,21 @@ pub struct MediaMetaDto {
     /// The image's pixel height, from `ImageInfo`. Same scoping as
     /// [`Self::width`].
     pub height: Option<u64>,
+    /// For `m.audio` only: whether it is a voice note, its length, and its
+    /// waveform. `None` for every other msgtype. See `core::audio`.
+    pub audio: Option<AudioMetaDto>,
+}
+
+/// What an `m.audio` event says about itself beyond being a file: the
+/// MSC3245 voice flag, the length, and the MSC3246 waveform — already
+/// normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
+/// every value in it is the sender's to choose.
+#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioMetaDto {
+    pub is_voice: bool,
+    pub duration_ms: Option<u64>,
+    pub waveform: Option<Vec<f32>>,
 }
 
 /// A reply's quoted parent, projected from the SDK's `InReplyToDetails` (see
@@ -1492,10 +1507,23 @@ mod wire_format_golden {
             size: Some(12),
             width: Some(3),
             height: Some(4),
+            audio: None,
         };
         assert_eq!(
             serde_json::to_string(&media).unwrap(),
-            r#"{"filename":"a.png","mimetype":"image/png","size":12,"width":3,"height":4}"#
+            r#"{"filename":"a.png","mimetype":"image/png","size":12,"width":3,"height":4,"audio":null}"#
+        );
+        let voice = MediaMetaDto {
+            audio: Some(AudioMetaDto {
+                is_voice: true,
+                duration_ms: Some(7_400),
+                waveform: Some(vec![0.5]),
+            }),
+            ..media
+        };
+        assert_eq!(
+            serde_json::to_value(&voice).unwrap()["audio"],
+            serde_json::json!({ "isVoice": true, "durationMs": 7400, "waveform": [0.5] })
         );
     }
 

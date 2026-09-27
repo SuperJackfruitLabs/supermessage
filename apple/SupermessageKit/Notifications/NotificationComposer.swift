@@ -201,6 +201,12 @@ public enum NotificationComposer {
             return message(
                 row, eventId: eventId, roomId: roomId, subtitle: subtitle,
                 body: row.replyPreview ?? filename)
+        // "Voice message", or the audio file's name — the core's title, not
+        // the file name a voice note happens to be uploaded under.
+        case let .audio(audio):
+            return message(
+                row, eventId: eventId, roomId: roomId, subtitle: subtitle,
+                body: audio.caption ?? audio.title)
         // A failed turn is a message — the one other clients show as its
         // body — and the reader is waiting on the answer it replaces.
         case let .turnError(card):

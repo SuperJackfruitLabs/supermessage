@@ -36,6 +36,8 @@ public final class Session {
     /// Senders' faces, keyed by `mxc:` URI — see `AvatarCache.forMembers`.
     public let faces: AvatarCache
     public let media: MediaCache
+    /// Plays voice notes and audio messages, one at a time.
+    public let voice: VoicePlayer
     public let timeline: TimelineStore
     public let live = LiveStore()
     public let typing = TypingStore()
@@ -58,6 +60,7 @@ public final class Session {
         avatars = AvatarCache(client: client)
         faces = AvatarCache.forMembers(client: client)
         media = MediaCache(client: client)
+        voice = VoicePlayer(client: client)
         timeline = TimelineStore(client: client, sink: pump)
         staged = StagedAttachment(client: client)
     }
@@ -535,6 +538,7 @@ public final class Session {
         drafts.clearAll()
         replies.clearAll()
         await staged.discard()
+        voice.stop()
         spaces.clear()
         avatars.clear()
         faces.clear()

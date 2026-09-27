@@ -1,0 +1,73 @@
+import type { AudioView, ItemView } from "$lib/ipc";
+import type { NotePlayback } from "$lib/stores/audioPlayback.svelte";
+
+/**
+ * Audio messages, as `core::audio::audio_view` draws them, and the player
+ * states a row can be in.
+ *
+ * The labels are the core's wording, written out by hand: "0:07" rounded at
+ * rest, "Voice message, 7 seconds" for a screen reader. A story shows them;
+ * it never formats them.
+ */
+
+/** A deterministic, speech-like shape: loud and quiet runs, never flat. */
+function speech(bars: number, seed = 1): number[] {
+  return Array.from({ length: bars }, (_, i) => {
+    const v = 0.12 + 0.85 * Math.abs(Math.sin((i + seed) * 0.37) * Math.cos((i + seed) * 0.11));
+    return Math.round(v * 1000) / 1000;
+  });
+}
+
+export function audioNote(overrides: Partial<AudioView> = {}): AudioView {
+  return {
+    isVoice: true,
+    durationMs: 7000,
+    lengthLabel: "0:07",
+    waveform: speech(64),
+    title: "Voice message",
+    filename: "Voice message.ogg",
+    size: 7992,
+    mimetype: "audio/ogg",
+    caption: null,
+    accessibilityLabel: "Voice message, 7 seconds",
+    ...overrides,
+  };
+}
+
+export const voiceNoteShort = audioNote();
+
+export const voiceNoteLong = audioNote({
+  durationMs: 299_000,
+  lengthLabel: "4:59",
+  waveform: speech(120, 7),
+  size: 480_120,
+  accessibilityLabel: "Voice message, 4 minutes 59 seconds",
+});
+
+/** A sender that wrote no waveform: the player draws an even placeholder. */
+export const voiceNoteNoWaveform = audioNote({ waveform: null });
+
+export const audioFile = audioNote({
+  isVoice: false,
+  durationMs: 65_000,
+  lengthLabel: "1:05",
+  waveform: null,
+  title: "standup-2026-09-26.m4a",
+  filename: "standup-2026-09-26.m4a",
+  size: 1_048_576,
+  mimetype: "audio/mp4",
+  accessibilityLabel: "Audio, standup-2026-09-26.m4a, 1 minute 5 seconds",
+});
+
+export const voiceNoteCaptioned = audioNote({ caption: "The bit about the migration is at the end." });
+
+export function audioView(audio: AudioView = voiceNoteShort): ItemView {
+  return { render: "audio", audio };
+}
+
+export const playbackIdle: NotePlayback = { status: "idle", positionMs: 0, durationMs: null };
+export const playbackLoading: NotePlayback = { status: "loading", positionMs: 0, durationMs: 7000 };
+export const playbackPlaying: NotePlayback = { status: "playing", positionMs: 3200, durationMs: 7000 };
+export const playbackPaused: NotePlayback = { status: "paused", positionMs: 5100, durationMs: 7000 };
+export const playbackError: NotePlayback = { status: "error", positionMs: 0, durationMs: null };
+export const playbackLongPlaying: NotePlayback = { status: "playing", positionMs: 151_400, durationMs: 299_000 };

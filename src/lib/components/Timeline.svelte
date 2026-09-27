@@ -298,6 +298,8 @@
   import DispatchCard from "./timeline/DispatchCard.svelte";
   import TurnErrorCard from "./timeline/TurnErrorCard.svelte";
   import VoiceTranscript from "./timeline/VoiceTranscript.svelte";
+  import AudioPlayer from "./timeline/AudioPlayer.svelte";
+  import { audioPlayback } from "$lib/stores/audioPlayback.svelte";
   import LogLine from "./timeline/LogLine.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
@@ -419,6 +421,16 @@
    * promptly never schedules a second render at all.
    */
   let waitedLongEnough = $state(false);
+
+  /**
+   * The app's one audio player (`$lib/stores/audioPlayback`). It outlives
+   * rows on purpose — virtua unmounts a row scrolled out of view, and a note
+   * must not stop because the reader scrolled — but not this pane: leaving
+   * the room (this pane is remounted per room) silences whatever was
+   * playing in it.
+   */
+  const player = audioPlayback();
+  $effect(() => () => player.stop());
 
   $effect(() => {
     // Keyed on the room, not on `loaded`: the threshold now gates the *empty*
@@ -1413,8 +1425,9 @@
                 {@render messageBlock(row, imageContent)}
               {:else if view.render === "mediaFile"}
                 <!--
-                  `m.file`/`m.audio`/`m.video`: an informative row (filename,
-                  size, kind) with a Save action. No in-app playback — that is
+                  `m.file`/`m.video`: an informative row (filename, size,
+                  kind) with a Save action. (`m.audio` is a player now — the
+                  `audio` branch below.) No in-app video playback — that is
                   still a follow-up (see
                   `.superpowers/sdd/2026-08-13-m0-spine/media-report.md`) — but
                   a file you can save is a file you can open, which is the part
@@ -1467,6 +1480,34 @@
                   {/if}
                 {/snippet}
                 {@render messageBlock(row, mediaFileContent)}
+              {:else if view.render === "audio"}
+                <!--
+                  `m.audio`: a voice note or an audio file, as a player. Every
+                  fact on it is `core::audio`'s (`view.audio`); where it is in
+                  playback is the app's one player's. Keyed by event id, like
+                  every media fetch — a local echo has no bytes to fetch yet,
+                  so its player is drawn but cannot be pressed.
+                -->
+                {@const eventId = item.eventId}
+                {#snippet audioContent()}
+                  <AudioPlayer
+                    audio={view.audio}
+                    isOwn={item.isOwn}
+                    playback={player.stateOf(eventId ?? "")}
+                    detail={view.audio.size != null ? formatFileSize(view.audio.size) : null}
+                    disabled={eventId === null}
+                    downloading={savingMedia === eventId}
+                    onToggle={() => eventId && void player.toggle(eventId, view.audio.durationMs)}
+                    onSeek={(fraction) => eventId && void player.seek(eventId, fraction, view.audio.durationMs)}
+                    onDownload={() => void saveMedia(eventId, view.audio.filename)}
+                  />
+                  {#if saveNote?.eventId === eventId}
+                    <p class="mt-1 font-sans text-meta {saveNote.failed ? 'text-danger' : 'text-content-muted'}">
+                      {saveNote.text}
+                    </p>
+                  {/if}
+                {/snippet}
+                {@render messageBlock(row, audioContent)}
               {:else if view.render === "customEvent"}
                 <!--
                   The dispatch card (spec §7) — a `kind: "customMessage"`

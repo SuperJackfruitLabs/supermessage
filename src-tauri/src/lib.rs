@@ -22,7 +22,7 @@ mod host;
 use crate::commands::{
     attachment_discard, attachment_send, attachment_stage, collect_mentions, connection_state,
     create_room, delete_message, edit_message, enable_recovery, invite_user, join_room,
-    join_room_by_alias, leave_room, log_from_webview, login, logout, mark_room_read,
+    join_room_by_alias, leave_room, log_from_webview, login, logout, mark_room_read, media_audio,
     media_download, media_fetch, member_avatar, parse_matrix_link, recover_with_key,
     recovery_state, reset_recovery, restore_session, rich_blocks_from_markdown, room_avatar,
     room_info, rooms_resync, roster_hidden_invitations, roster_sections, roster_state,
@@ -249,6 +249,7 @@ pub fn run() {
             leave_room,
             room_avatar,
             media_fetch,
+            media_audio,
             media_download,
             search_messages,
             log_from_webview,

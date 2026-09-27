@@ -527,6 +527,41 @@ pub async fn media_fetch(
     session.media_fetch(&event_id).await
 }
 
+/// An audio message's file for the webview's `<audio>`: what it is, its
+/// bytes as base64, and its length when the container says it exactly.
+///
+/// Base64 rather than a path or an asset-protocol URL, for the reason every
+/// other media command gives — the webview never learns where a file is. The
+/// page turns it into a `blob:` URL (`media-src blob:` in the CSP); a voice
+/// note is tens of kilobytes, so the inflation is noise.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayableAudioDto {
+    pub mimetype: String,
+    pub data_base64: String,
+    pub duration_ms: Option<u64>,
+}
+
+/// See `Session::audio_playable`. `opus_in_caf` is true when this webview's
+/// `<audio>` cannot play Ogg/Opus but can play CAF/Opus — older WebKit on
+/// macOS — which the page finds out with `canPlayType` and passes down.
+#[tauri::command]
+pub async fn media_audio(
+    event_id: String,
+    opus_in_caf: bool,
+    session: State<'_, Session>,
+) -> Result<Option<PlayableAudioDto>, CoreError> {
+    use base64::Engine as _;
+    Ok(session
+        .audio_playable(&event_id, opus_in_caf)
+        .await?
+        .map(|audio| PlayableAudioDto {
+            mimetype: audio.mimetype,
+            data_base64: base64::engine::general_purpose::STANDARD.encode(&audio.data),
+            duration_ms: audio.duration_ms,
+        }))
+}
+
 /// Builds `room_id`'s room-info panel data: name, topic, canonical alias,
 /// alt aliases, room id and joined member list.
 ///

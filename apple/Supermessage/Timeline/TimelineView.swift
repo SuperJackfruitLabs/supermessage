@@ -46,6 +46,11 @@ struct TimelineView: View {
             .task(id: timeline.roomId) {
                 await timeline.markRead()
             }
+            // A voice note stops when its room goes: switching rooms, or
+            // leaving the conversation, must not leave a note talking with
+            // nothing on screen to pause it.
+            .onChange(of: timeline.roomId) { session.voice.stop() }
+            .onDisappear { session.voice.stop() }
             // **And again whenever something arrives while you are reading.**
             // Marking on entry alone meant a message that landed while the
             // room was open on screen stayed unread — you read it, went back

@@ -1,0 +1,19 @@
+{
+  "_comment": "The audio player's clock, as core::audio::audio_clock_label formats it. The desktop cannot call the core ten times a second for a playing note, so it carries a port; core::audio's tests and src/lib/audioClock.test.ts both read this file, so the two cannot drift apart unnoticed.",
+  "cases": [
+    { "ms": 0, "label": "0:00" },
+    { "ms": 999, "label": "0:00" },
+    { "ms": 1000, "label": "0:01" },
+    { "ms": 6999, "label": "0:06" },
+    { "ms": 7000, "label": "0:07" },
+    { "ms": 59999, "label": "0:59" },
+    { "ms": 60000, "label": "1:00" },
+    { "ms": 65000, "label": "1:05" },
+    { "ms": 299999, "label": "4:59" },
+    { "ms": 600000, "label": "10:00" },
+    { "ms": 3599999, "label": "59:59" },
+    { "ms": 3600000, "label": "1:00:00" },
+    { "ms": 3723000, "label": "1:02:03" },
+    { "ms": 36000000, "label": "10:00:00" }
+  ]
+}

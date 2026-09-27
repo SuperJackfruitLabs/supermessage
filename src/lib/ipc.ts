@@ -376,6 +376,43 @@ export interface MediaMeta {
   size: number | null;
   width: number | null;
   height: number | null;
+  /** `m.audio` only — see {@link AudioMeta}. `null` for every other msgtype. */
+  audio: AudioMeta | null;
+}
+
+/**
+ * Mirrors `AudioMetaDto` (`core::dto`): what an `m.audio` says about itself
+ * beyond being a file, already bounded and normalised by `core::audio`.
+ * The timeline draws from {@link AudioView} instead; this is the raw half.
+ */
+export interface AudioMeta {
+  isVoice: boolean;
+  durationMs: number | null;
+  /** Bars in `0..=1`, at most 120. */
+  waveform: number[] | null;
+}
+
+/**
+ * An `m.audio` message, ready to draw as a player — mirrors
+ * `core::audio::AudioView`. Every string here is the core's (or the
+ * sender's, for `filename`/`caption`): render as text only.
+ */
+export interface AudioView {
+  /** MSC3245 voice note; anything else is an audio file with its name shown. */
+  isVoice: boolean;
+  durationMs: number | null;
+  /** The length at rest, already formatted — "0:07". Show as-is. */
+  lengthLabel: string | null;
+  /** Bars in `0..=1`, oldest first, at most 120. `null`: draw an even placeholder. */
+  waveform: number[] | null;
+  /** "Voice message", or the file's name. */
+  title: string;
+  filename: string;
+  size: number | null;
+  mimetype: string | null;
+  caption: string | null;
+  /** "Voice message, 7 seconds". */
+  accessibilityLabel: string;
 }
 
 /**
@@ -938,6 +975,8 @@ export type ItemView =
       /** What the sender wrote with it (MSC2530), or null for a bare image. */
       caption: string | null;
     }
+  /** An `m.audio`, drawn as a player; see {@link AudioView}. */
+  | { render: "audio"; audio: AudioView }
   | {
       render: "mediaFile";
       label: "File" | "Audio" | "Video";
@@ -1478,6 +1517,27 @@ export async function mediaFetch(eventId: string): Promise<string | null> {
  */
 export async function mediaDownload(eventId: string): Promise<string | null> {
   return invoke<string | null>("media_download", { eventId });
+}
+
+/** Bytes an `<audio>` element can open — mirrors `PlayableAudioDto` (`src-tauri/src/commands.rs`). */
+export interface PlayableAudio {
+  /** Sniffed from the bytes by the core — `audio/ogg`, `audio/x-caf`, `audio/mp4`… */
+  mimetype: string;
+  dataBase64: string;
+  /** The length the file itself holds, when its container says so exactly. */
+  durationMs: number | null;
+}
+
+/**
+ * Fetches an `m.audio`'s bytes in a form this webview's `<audio>` can play,
+ * or `null` when the event is not in the focused timeline or is not audio.
+ *
+ * `opusInCaf`: this engine plays Opus only from CAF (a WebKit without Ogg),
+ * so an Ogg/Opus voice note is remuxed — not transcoded — by the core. See
+ * `$lib/audioPlayback` for how that is probed.
+ */
+export async function mediaAudio(eventId: string, opusInCaf: boolean): Promise<PlayableAudio | null> {
+  return invoke<PlayableAudio | null>("media_audio", { eventId, opusInCaf });
 }
 
 /** One search hit, mirroring `SearchResultDto` in `src-tauri/src/core/search.rs`. */

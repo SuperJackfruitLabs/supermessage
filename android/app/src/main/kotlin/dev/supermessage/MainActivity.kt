@@ -16,6 +16,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,16 +26,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
 import dev.supermessage.kit.Session
+import dev.supermessage.kit.VoicePlayback
+import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -104,6 +111,22 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
 
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // The one voice-note player, app-wide — see `VoicePlayback` for why one.
+    // Built here because the engine and the cache directory need a Context.
+    // Files go under cacheDir, which the system may clear; a cleared note is
+    // fetched again the next time it is played.
+    val context = LocalContext.current
+    val voice = remember(session) {
+        VoicePlayback(
+            fetch = session::playableAudio,
+            cacheDir = File(context.cacheDir, "voice"),
+            engine = MediaPlayerEngine(),
+            scope = scope,
+        )
+    }
+    // Backgrounded: stop, and let go of the decoder.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { voice.stop() }
 
     // What the extra pane (see RootScaffold's own KDoc on
     // `extraPaneContent`) is currently showing — at most one
@@ -343,55 +366,61 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                 var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }
 
                 Column(modifier = Modifier.fillMaxSize().testTag("pane-timeline")) {
-                    Timeline(
-                        rows = items,
-                        revision = revision,
-                        typingLine = typingLine,
-                        isPaginating = isPaginating,
-                        canPaginate = canPaginate,
-                        onPaginate = { scope.launch { session.timeline.paginateBack() } },
-                        onMarkRead = { scope.launch { session.timeline.markRead() } },
-                        liveAnswer = liveAnswer,
-                        liveThought = liveThought,
-                        liveTools = liveTools,
-                        liveFinished = liveFinished,
-                        onReact = { row, key ->
-                            scope.launch {
-                                session.toggleReaction(row.item.eventId, key, currentRoomId)
-                            }
-                        },
-                        // The event id is the gate's own, which the decision
-                        // references; the card supplies what it resolves.
-                        // Both are needed and neither side has both.
-                        // Returns whether the answer landed, so the card can
-                        // stop offering the choice — and keep offering it when
-                        // the send failed.
-                        onDecide = { row, answer ->
-                            session.answerGate(
-                                eventId = row.item.eventId,
-                                gateId = answer.subject,
-                                optionId = answer.optionId,
-                                comment = answer.comment,
-                                prompt = answer.prompt,
-                                roomId = currentRoomId,
-                            )
-                        },
-                        onRowLongPress = { row ->
-                            // Own + editable rewrites the
-                            // message; anything else a long
-                            // press has something to offer
-                            // for is a reply — see Timeline's
-                            // own class doc for why the
-                            // gesture only exists at all when
-                            // one of the two is true.
-                            if (row.item.isOwn && row.item.editable) {
-                                session.edits.start(row, currentRoomId)
-                            } else if (row.canReplyOrReact) {
-                                session.replies.start(row, currentRoomId)
-                            }
-                        },
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
+                    // The note that is playing belongs to this room and
+                    // this pane: leaving either stops it (the key is the
+                    // room; disposal is the pane going away).
+                    DisposableEffect(currentRoomId) { onDispose { voice.stop() } }
+                    CompositionLocalProvider(LocalVoicePlayback provides voice) {
+                        Timeline(
+                            rows = items,
+                            revision = revision,
+                            typingLine = typingLine,
+                            isPaginating = isPaginating,
+                            canPaginate = canPaginate,
+                            onPaginate = { scope.launch { session.timeline.paginateBack() } },
+                            onMarkRead = { scope.launch { session.timeline.markRead() } },
+                            liveAnswer = liveAnswer,
+                            liveThought = liveThought,
+                            liveTools = liveTools,
+                            liveFinished = liveFinished,
+                            onReact = { row, key ->
+                                scope.launch {
+                                    session.toggleReaction(row.item.eventId, key, currentRoomId)
+                                }
+                            },
+                            // The event id is the gate's own, which the decision
+                            // references; the card supplies what it resolves.
+                            // Both are needed and neither side has both.
+                            // Returns whether the answer landed, so the card can
+                            // stop offering the choice — and keep offering it when
+                            // the send failed.
+                            onDecide = { row, answer ->
+                                session.answerGate(
+                                    eventId = row.item.eventId,
+                                    gateId = answer.subject,
+                                    optionId = answer.optionId,
+                                    comment = answer.comment,
+                                    prompt = answer.prompt,
+                                    roomId = currentRoomId,
+                                )
+                            },
+                            onRowLongPress = { row ->
+                                // Own + editable rewrites the
+                                // message; anything else a long
+                                // press has something to offer
+                                // for is a reply — see Timeline's
+                                // own class doc for why the
+                                // gesture only exists at all when
+                                // one of the two is true.
+                                if (row.item.isOwn && row.item.editable) {
+                                    session.edits.start(row, currentRoomId)
+                                } else if (row.canReplyOrReact) {
+                                    session.replies.start(row, currentRoomId)
+                                }
+                            },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                    }
 
                     Composer(
                         text = text,

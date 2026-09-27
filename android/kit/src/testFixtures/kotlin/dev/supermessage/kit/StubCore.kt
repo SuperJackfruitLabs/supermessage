@@ -47,6 +47,7 @@ open class StubCore : CoreInterface {
     override fun login(homeserver: kotlin.String, username: kotlin.String, password: kotlin.String, sink: EventSink): Unit = throw NotImplementedError()
     override fun logout(): Unit = throw NotImplementedError()
     override fun markRoomRead(roomId: kotlin.String): Unit = throw NotImplementedError()
+    override fun mediaAudio(eventId: kotlin.String, opusInCaf: kotlin.Boolean): PlayableAudio? = throw NotImplementedError()
     override fun mediaFetch(eventId: kotlin.String): kotlin.String? = throw NotImplementedError()
     override fun memberAvatar(mxcUri: kotlin.String): kotlin.String? = throw NotImplementedError()
     override fun recoverWithKey(recoveryKey: kotlin.String): Unit = throw NotImplementedError()

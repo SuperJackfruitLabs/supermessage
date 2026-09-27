@@ -393,7 +393,7 @@ enum PreviewFixtures {
             item(id: "$img", body: "muster-dark.png", msgtype: "m.image",
                  media: MediaMetaDto(
                     filename: "muster-dark.png", mimetype: "image/png", size: 184_320,
-                    width: 1500, height: 900)),
+                    width: 1500, height: 900, audio: nil)),
             view: .image(alt: "The muster board in dark", width: 1500, height: 900, caption: nil))
     }
 
@@ -402,7 +402,7 @@ enum PreviewFixtures {
             item(id: "$file", body: "tokens.toml", msgtype: "m.file",
                  media: MediaMetaDto(
                     filename: "tokens.toml", mimetype: "text/plain", size: 4_096,
-                    width: nil, height: nil)),
+                    width: nil, height: nil, audio: nil)),
             view: .mediaFile(
                 label: .file, filename: "tokens.toml", size: 4_096, mimetype: "text/plain"))
     }

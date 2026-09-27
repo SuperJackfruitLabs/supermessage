@@ -39,6 +39,7 @@ import uniffi.supermessage_core.FfiConverterTypeMatrixLinkTarget
 import uniffi.supermessage_core.FfiConverterTypeMentionable
 import uniffi.supermessage_core.FfiConverterTypeNotificationMode
 import uniffi.supermessage_core.FfiConverterTypePersonDto
+import uniffi.supermessage_core.FfiConverterTypePlayableAudio
 import uniffi.supermessage_core.FfiConverterTypePushRegistration
 import uniffi.supermessage_core.FfiConverterTypeRichBlock
 import uniffi.supermessage_core.FfiConverterTypeRoomInfoDto
@@ -54,6 +55,7 @@ import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
+import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.PushRegistration
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RoomInfoDto
@@ -71,6 +73,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferMatrixLinkTarget
 import uniffi.supermessage_core.RustBuffer as RustBufferMentionable
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationMode
 import uniffi.supermessage_core.RustBuffer as RustBufferPersonDto
+import uniffi.supermessage_core.RustBuffer as RustBufferPlayableAudio
 import uniffi.supermessage_core.RustBuffer as RustBufferPushRegistration
 import uniffi.supermessage_core.RustBuffer as RustBufferRichBlock
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomInfoDto
@@ -935,6 +938,10 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1004,6 +1011,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_mark_room_read(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_media_audio(`ptr`: Pointer,`eventId`: RustBuffer.ByValue,`opusInCaf`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_media_fetch(`ptr`: Pointer,`eventId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_member_avatar(`ptr`: Pointer,`mxcUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1058,6 +1067,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
     ): Unit
+    fun uniffi_supermessage_ffi_fn_func_audio_clock_label(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_display_initial(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1190,6 +1201,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_supermessage_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_checksum_func_audio_clock_label(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_collect_mentions(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_display_initial(
@@ -1249,6 +1262,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_method_core_logout(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_mark_room_read(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_media_audio(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_media_fetch(
     ): Short
@@ -1329,6 +1344,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_collect_mentions() != 57065.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1417,6 +1435,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_mark_room_read() != 2656.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_media_audio() != 15242.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_media_fetch() != 27382.toShort()) {
@@ -2060,6 +2081,18 @@ public interface CoreInterface {
     fun `markRoomRead`(`roomId`: kotlin.String)
     
     /**
+     * An audio message's file, fetched, decrypted, and ready for this host's
+     * player. `None` when `event_id` is not an audio message in the focused
+     * room.
+     *
+     * `opus_in_caf`: the host's player reads Opus only from CAF — true on
+     * iOS (AVFoundation plays no Ogg), false on Android (MediaPlayer plays
+     * Ogg). An Ogg/Opus voice note is then remuxed, not transcoded. See
+     * `core::audio::playable_audio`.
+     */
+    fun `mediaAudio`(`eventId`: kotlin.String, `opusInCaf`: kotlin.Boolean): PlayableAudio?
+    
+    /**
      * An event's media as a `data:` URI, fetched and decrypted.
      *
      * There is deliberately no `media_download` here, unlike the desktop
@@ -2701,6 +2734,29 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 }
     }
     
+    
+
+    
+    /**
+     * An audio message's file, fetched, decrypted, and ready for this host's
+     * player. `None` when `event_id` is not an audio message in the focused
+     * room.
+     *
+     * `opus_in_caf`: the host's player reads Opus only from CAF — true on
+     * iOS (AVFoundation plays no Ogg), false on Android (MediaPlayer plays
+     * Ogg). An Ogg/Opus voice note is then remuxed, not transcoded. See
+     * `core::audio::playable_audio`.
+     */
+    @Throws(FfiException::class)override fun `mediaAudio`(`eventId`: kotlin.String, `opusInCaf`: kotlin.Boolean): PlayableAudio? {
+            return FfiConverterOptionalTypePlayableAudio.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_media_audio(
+        it, FfiConverterString.lower(`eventId`),FfiConverterBoolean.lower(`opusInCaf`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -4863,6 +4919,38 @@ public object FfiConverterOptionalTypeMatrixLinkTarget: FfiConverterRustBuffer<M
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypePlayableAudio: FfiConverterRustBuffer<PlayableAudio?> {
+    override fun read(buf: ByteBuffer): PlayableAudio? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypePlayableAudio.read(buf)
+    }
+
+    override fun allocationSize(value: PlayableAudio?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypePlayableAudio.allocationSize(value)
+        }
+    }
+
+    override fun write(value: PlayableAudio?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypePlayableAudio.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceFloat: FfiConverterRustBuffer<List<kotlin.Float>> {
     override fun read(buf: ByteBuffer): List<kotlin.Float> {
         val len = buf.getInt()
@@ -5287,6 +5375,25 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
 
 
 
+
+
+
+
+
+        /**
+         * A playing note's position as the clock under it reads — `"0:06"`,
+         * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
+         * rest arrives already formatted on `AudioView`; this is for the one number
+         * that changes while it plays, so every host ticks over at the same instant.
+         */ fun `audioClockLabel`(`ms`: kotlin.ULong): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_audio_clock_label(
+        FfiConverterULong.lower(`ms`),_status)
+}
+    )
+    }
+    
 
         /**
          * The user ids a finished message mentions, for `m.mentions`.

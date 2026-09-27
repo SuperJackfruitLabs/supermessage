@@ -495,6 +495,22 @@ impl Core {
         Ok(self.block(self.session.media_fetch(&event_id))?)
     }
 
+    /// An audio message's file, fetched, decrypted, and ready for this host's
+    /// player. `None` when `event_id` is not an audio message in the focused
+    /// room.
+    ///
+    /// `opus_in_caf`: the host's player reads Opus only from CAF — true on
+    /// iOS (AVFoundation plays no Ogg), false on Android (MediaPlayer plays
+    /// Ogg). An Ogg/Opus voice note is then remuxed, not transcoded. See
+    /// `core::audio::playable_audio`.
+    pub fn media_audio(
+        &self,
+        event_id: String,
+        opus_in_caf: bool,
+    ) -> Result<Option<supermessage_core::audio::PlayableAudio>, FfiError> {
+        Ok(self.block(self.session.audio_playable(&event_id, opus_in_caf))?)
+    }
+
     /// Stage a file the host has already chosen.
     ///
     /// The desktop command opens the picker from Rust; this takes a path
@@ -762,6 +778,15 @@ pub fn parse_matrix_link(
 #[uniffi::export]
 pub fn peer_color_index(user_id: String) -> u8 {
     supermessage_core::peer_color::peer_color_index(&user_id)
+}
+
+/// A playing note's position as the clock under it reads — `"0:06"`,
+/// `"1:02:03"` — truncated to the second. See `core::audio`: the length at
+/// rest arrives already formatted on `AudioView`; this is for the one number
+/// that changes while it plays, so every host ticks over at the same instant.
+#[uniffi::export]
+pub fn audio_clock_label(ms: u64) -> String {
+    supermessage_core::audio::audio_clock_label(ms)
 }
 
 /// The user ids a finished message mentions, for `m.mentions`.

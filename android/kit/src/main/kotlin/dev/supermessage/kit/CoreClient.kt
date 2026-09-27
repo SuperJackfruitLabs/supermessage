@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
+import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
@@ -241,6 +242,13 @@ class CoreClient(
     suspend fun memberAvatar(mxcUri: String): String? = run { it.memberAvatar(mxcUri) }
 
     suspend fun mediaFetch(eventId: String): String? = run { it.mediaFetch(eventId) }
+
+    /**
+     * An audio message's file, typed from its bytes. [opusInCaf] is `false`
+     * on Android: `MediaPlayer` opens Ogg/Opus as it is, so nothing is remuxed.
+     */
+    suspend fun mediaAudio(eventId: String, opusInCaf: Boolean): PlayableAudio? =
+        run { it.mediaAudio(eventId, opusInCaf) }
 
     suspend fun attachmentStagePath(roomId: String, path: String): StagedFile =
         run { it.attachmentStagePath(roomId, path) }

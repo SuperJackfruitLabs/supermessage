@@ -716,6 +716,21 @@ pub async fn send_staged(
     // what crossed IPC and what the recipient will see in `info.mimetype`, so
     // parsing it back is the one thing that guarantees those agree.
     let mime: Mime = meta.mime.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
+    let (
+        Upload {
+            bytes,
+            filename,
+            mime,
+        },
+        voice,
+    ) = voice_upload(
+        Upload {
+            bytes,
+            filename: meta.filename.clone(),
+            mime,
+        },
+        voice,
+    )?;
     let info = send_info(&mime, bytes.len() as u64, meta.dimensions(), voice.as_ref());
 
     // **What the sender typed goes with the file, as its caption** (MSC2530:
@@ -731,7 +746,7 @@ pub async fn send_staged(
 
     tracing::debug!(
         room_id,
-        filename = meta.filename,
+        filename,
         msgtype = msgtype_for_mime(&mime),
         "sending an attachment through the send queue"
     );
@@ -741,20 +756,89 @@ pub async fn send_staged(
     // upload with no timeline item until it finishes — which for a large
     // file means a composer that looks like it did nothing for a minute.
     timeline
-        .send_attachment(
-            AttachmentSource::Data {
-                bytes,
-                filename: meta.filename.clone(),
-            },
-            mime,
-            config,
-        )
+        .send_attachment(AttachmentSource::Data { bytes, filename }, mime, config)
         .use_send_queue()
         .await
         .map_err(|e| CoreError::Protocol(e.to_string()))?;
 
     Ok(())
 }
+
+/// A file on its way to the homeserver: what is uploaded, under what name,
+/// as what type.
+#[derive(Debug, Clone, PartialEq)]
+struct Upload {
+    bytes: Vec<u8>,
+    filename: String,
+    mime: Mime,
+}
+
+/// A voice note as Matrix defines one: **Ogg/Opus** (MSC3245).
+///
+/// The iOS recorder writes Opus into CAF, the only container
+/// `AVAudioRecorder` writes Opus in. Sent as it is, it would be a file no
+/// other client plays, so here it is remuxed — the same packets, moved into
+/// Ogg pages (`crate::opus_container`) — and sent as `audio/ogg` under the
+/// same name with an `.ogg` extension.
+///
+/// Its length is then **read from the file**: the sample count the container
+/// records, not the recorder's wall clock. An Ogg/Opus note staged as it is
+/// has its length read the same way. Anything else (a legacy `.m4a`) keeps
+/// the length the host measured.
+///
+/// Only a marked recording is touched. A CAF someone attaches as a file goes
+/// as the file they picked.
+///
+/// Why Ogg: Element X on iOS will not play a voice message whose mimetype is
+/// not `audio/ogg` — its voice-message media manager refuses anything else
+/// before downloading it — which is why the `.m4a` notes this app sent until
+/// 0.0.13 showed there as voice messages that never played.
+fn voice_upload(
+    upload: Upload,
+    voice: Option<VoiceNote>,
+) -> CoreResult<(Upload, Option<VoiceNote>)> {
+    use crate::opus_container::{caf_to_ogg, is_caf, is_ogg_opus, ogg_duration_ms};
+
+    let Some(mut voice) = voice else {
+        return Ok((upload, None));
+    };
+    if is_caf(&upload.bytes) {
+        let ogg = caf_to_ogg(&upload.bytes)
+            .map_err(|e| CoreError::Store(format!("couldn't prepare the voice message: {e}")))?;
+        voice.duration_ms = ogg.duration_ms;
+        let stem = Path::new(&upload.filename)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Voice message");
+        return Ok((
+            Upload {
+                bytes: ogg.bytes,
+                filename: format!("{stem}.ogg"),
+                mime: VOICE_MIME.parse().expect("a valid mime type"),
+            },
+            Some(voice),
+        ));
+    }
+    if is_ogg_opus(&upload.bytes) {
+        if let Ok(ms) = ogg_duration_ms(&upload.bytes) {
+            voice.duration_ms = ms;
+        }
+        return Ok((
+            Upload {
+                mime: VOICE_MIME.parse().expect("a valid mime type"),
+                ..upload
+            },
+            Some(voice),
+        ));
+    }
+    Ok((upload, Some(voice)))
+}
+
+/// The type a voice note is sent as. Plain `audio/ogg`, as Element sends it:
+/// Element X matches on the prefix, and a `codecs` parameter is one more
+/// thing every other reader (the hub's transcriber among them) must parse.
+pub const VOICE_MIME: &str = "audio/ogg";
 
 /// The caption as the SDK takes it: markdown, like every other message this
 /// app sends, and nothing at all for text that is only whitespace.
@@ -1328,5 +1412,198 @@ mod tests {
             .unwrap();
         let (_, _, voice) = staged.take_for_send_at("tok", "!a:x.org", now).unwrap();
         assert_eq!(voice.unwrap().waveform, vec![0.0, 0.25]);
+    }
+
+    // ---- voice notes go as Ogg/Opus ----------------------------------------
+
+    /// What `AVAudioRecorder` writes for the composer: Opus in CAF, from
+    /// Apple's own encoder (`afconvert -d opus@48000`), 1.468 s.
+    const APPLE_CAF: &[u8] = include_bytes!("../tests/fixtures/voice-apple.caf");
+    const LIBOPUS_OGG: &[u8] = include_bytes!("../tests/fixtures/voice-libopus.ogg");
+
+    fn recording(bytes: &[u8], filename: &str, mime: &str) -> Upload {
+        Upload {
+            bytes: bytes.to_vec(),
+            filename: filename.into(),
+            mime: mime.parse().unwrap(),
+        }
+    }
+
+    fn marked(duration_ms: u64) -> Option<VoiceNote> {
+        Some(VoiceNote {
+            duration_ms,
+            waveform: vec![0.2, 0.9],
+        })
+    }
+
+    #[test]
+    fn a_caf_recording_goes_as_ogg_opus_with_the_files_own_length() {
+        // The host's clock said 9.9 s; the file holds 1.468 s of audio.
+        let (upload, voice) = voice_upload(
+            recording(APPLE_CAF, "Voice message.caf", "application/octet-stream"),
+            marked(9_900),
+        )
+        .unwrap();
+        assert_eq!(upload.filename, "Voice message.ogg");
+        assert_eq!(upload.mime.as_ref(), "audio/ogg");
+        assert!(crate::opus_container::is_ogg_opus(&upload.bytes));
+        let voice = voice.unwrap();
+        assert_eq!(voice.duration_ms, 1_468);
+        assert_eq!(voice.waveform, vec![0.2, 0.9]);
+        // Which also makes it a voice message, not a file row: the voice
+        // info is only honoured on audio.
+        assert!(matches!(
+            send_info(&upload.mime, 1, None, Some(&voice)),
+            AttachmentInfo::Voice(_)
+        ));
+    }
+
+    #[test]
+    fn an_ogg_note_keeps_its_bytes_and_takes_its_length_from_them() {
+        let (upload, voice) = voice_upload(
+            recording(LIBOPUS_OGG, "note.ogg", "audio/ogg"),
+            marked(9_900),
+        )
+        .unwrap();
+        assert_eq!(upload.bytes, LIBOPUS_OGG);
+        assert_eq!(voice.unwrap().duration_ms, 1_468);
+    }
+
+    #[test]
+    fn a_legacy_m4a_note_keeps_the_hosts_length() {
+        let mut m4a = vec![0, 0, 0, 0x20];
+        m4a.extend_from_slice(b"ftypM4A ");
+        let (upload, voice) = voice_upload(
+            recording(&m4a, "Voice message.m4a", "audio/mp4"),
+            marked(6_200),
+        )
+        .unwrap();
+        assert_eq!(upload.filename, "Voice message.m4a");
+        assert_eq!(upload.mime.as_ref(), "audio/mp4");
+        assert_eq!(voice.unwrap().duration_ms, 6_200);
+    }
+
+    #[test]
+    fn an_unmarked_caf_goes_as_the_file_that_was_picked() {
+        let (upload, voice) = voice_upload(
+            recording(APPLE_CAF, "loop.caf", "application/octet-stream"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(upload.bytes, APPLE_CAF);
+        assert_eq!(upload.filename, "loop.caf");
+        assert!(voice.is_none());
+    }
+
+    #[test]
+    fn a_damaged_recording_fails_the_send_rather_than_sending_noise() {
+        let result = voice_upload(
+            recording(
+                &APPLE_CAF[..600],
+                "Voice message.caf",
+                "application/octet-stream",
+            ),
+            marked(1_000),
+        );
+        assert!(matches!(result, Err(CoreError::Store(_))));
+    }
+
+    /// **The exact event a voice note leaves as**, sent through the SDK's own
+    /// `send_attachment` against a mock homeserver and read back off the
+    /// wire. Nothing here constructs the content by hand: the SDK builds it
+    /// from what `voice_upload` and `send_info` hand it, the way a real send
+    /// does.
+    ///
+    /// Printed with `--nocapture`, which is where the JSON in the PR comes
+    /// from.
+    #[tokio::test]
+    async fn a_voice_note_leaves_as_an_msc3245_voice_message_in_ogg() {
+        use matrix_sdk::attachment::AttachmentConfig as SdkAttachmentConfig;
+        use matrix_sdk::ruma::{event_id, mxc_uri, room_id};
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        server.mock_room_state_encryption().plain().mount().await;
+        server
+            .mock_authenticated_media_config()
+            .ok_default()
+            .mount()
+            .await;
+        let room = server
+            .sync_joined_room(&client, room_id!("!voice:example.org"))
+            .await;
+        let (uploaded, upload_mock) = server
+            .mock_upload()
+            .expect_mime_type("audio/ogg")
+            .ok_with_capture(mxc_uri!("mxc://example.org/voice"));
+        upload_mock.mount().await;
+        server.mock_room_send().ok(event_id!("$sent")).mount().await;
+
+        let (upload, voice) = voice_upload(
+            recording(APPLE_CAF, "Voice message.caf", "application/octet-stream"),
+            Some(VoiceNote {
+                duration_ms: 9_900,
+                waveform: vec![0.0, 0.25, 0.5, 1.0],
+            }),
+        )
+        .unwrap();
+        let info = send_info(
+            &upload.mime,
+            upload.bytes.len() as u64,
+            None,
+            voice.as_ref(),
+        );
+        let size = upload.bytes.len() as u64;
+        let result = room
+            .send_attachment(
+                upload.filename.clone(),
+                &upload.mime,
+                upload.bytes,
+                SdkAttachmentConfig::new().info(info),
+            )
+            .await;
+        if let Err(e) = result {
+            for r in server.server().received_requests().await.unwrap() {
+                eprintln!("{} {} {:?}", r.method, r.url, r.headers.get("content-type"));
+            }
+            panic!("the mock refused the send: {e}");
+        }
+
+        assert!(
+            crate::opus_container::is_ogg_opus(&uploaded.await.unwrap()),
+            "the bytes uploaded are the Ogg, not the CAF"
+        );
+
+        let sent = server
+            .server()
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|r| r.method.as_str() == "PUT" && r.url.path().contains("/send/"))
+            .expect("a send request");
+        let content: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+        println!(
+            "voice note content:\n{}",
+            serde_json::to_string_pretty(&content).unwrap()
+        );
+
+        assert!(sent.url.path().contains("/send/m.room.message/"));
+        assert_eq!(content["msgtype"], "m.audio");
+        assert_eq!(content["body"], "Voice message.ogg");
+        assert_eq!(content["url"], "mxc://example.org/voice");
+        assert_eq!(content["info"]["mimetype"], "audio/ogg");
+        assert_eq!(content["info"]["size"], size);
+        // Milliseconds, from the file (1.468 s), not the host's 9.9 s — in
+        // both places a reader might look.
+        assert_eq!(content["info"]["duration"], 1_468);
+        assert_eq!(content["org.matrix.msc1767.audio"]["duration"], 1_468);
+        // MSC3246 v1: integers 0..=1024, scaled from our 0..=1 by the SDK.
+        assert_eq!(
+            content["org.matrix.msc1767.audio"]["waveform"],
+            serde_json::json!([0, 256, 512, 1024])
+        );
+        assert_eq!(content["org.matrix.msc3245.voice"], serde_json::json!({}));
     }
 }

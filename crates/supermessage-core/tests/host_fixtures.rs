@@ -231,3 +231,62 @@ fn voice_transcripts() {
     assert_eq!(hindi.caption, "Transcript · hi · 0:04");
     assert_eq!(hindi.duration.as_deref(), Some("0:04"));
 }
+
+/// Voice notes and audio files, in `PreviewFixtures.voiceAudio` /
+/// `standupRecording` (iOS, `VoiceNoteFixtures.swift`) and the Android and
+/// desktop player fixtures: the length labels and screen-reader sentences
+/// they hard-code, and the clock they show mid-play.
+#[test]
+fn audio_players() {
+    use supermessage_core::audio::{audio_clock_label, audio_view};
+    use supermessage_core::dto::AudioMetaDto;
+
+    let voice = |ms: Option<u64>| {
+        audio_view(
+            Some(&AudioMetaDto {
+                is_voice: true,
+                duration_ms: ms,
+                waveform: None,
+            }),
+            "Voice message.ogg".into(),
+            None,
+            Some("audio/ogg".into()),
+            None,
+        )
+    };
+    for (ms, label, spoken) in [
+        (7_400, "0:07", "Voice message, 7 seconds"),
+        (12_000, "0:12", "Voice message, 12 seconds"),
+        (299_000, "4:59", "Voice message, 4 minutes 59 seconds"),
+    ] {
+        let view = voice(Some(ms));
+        assert_eq!(view.title, "Voice message");
+        assert_eq!(view.length_label.as_deref(), Some(label), "{ms}");
+        assert_eq!(view.accessibility_label, spoken, "{ms}");
+    }
+    let unknown = voice(None);
+    assert_eq!(unknown.length_label, None);
+    assert_eq!(unknown.accessibility_label, "Voice message");
+
+    let file = audio_view(
+        Some(&AudioMetaDto {
+            is_voice: false,
+            duration_ms: Some(185_000),
+            waveform: None,
+        }),
+        "Standup recording.mp3".into(),
+        Some(2_960_000),
+        Some("audio/mpeg".into()),
+        None,
+    );
+    assert_eq!(file.title, "Standup recording.mp3");
+    assert_eq!(file.length_label.as_deref(), Some("3:05"));
+    assert_eq!(
+        file.accessibility_label,
+        "Audio, Standup recording.mp3, 3 minutes 5 seconds"
+    );
+
+    // Mid-play clocks the fixtures show.
+    assert_eq!(audio_clock_label(3_200), "0:03");
+    assert_eq!(audio_clock_label(5_100), "0:05");
+}

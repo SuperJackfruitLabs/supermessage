@@ -30,6 +30,7 @@
 uniffi::setup_scaffolding!();
 
 pub mod attachments;
+pub mod audio;
 pub mod auth;
 pub mod custom_events;
 pub mod display_name;
@@ -42,6 +43,7 @@ pub mod live;
 pub mod matrix_links;
 pub mod media;
 pub mod mentions;
+pub mod opus_container;
 pub mod peer_color;
 pub mod people;
 pub mod push;
