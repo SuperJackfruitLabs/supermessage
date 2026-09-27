@@ -1,6 +1,6 @@
 {
   "name": "supermessage",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "description": "Cross-platform, agent-aware Matrix chat client",
   "type": "module",
   "scripts": {
