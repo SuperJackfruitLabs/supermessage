@@ -65,9 +65,13 @@ agents:
   clients that do not recognize those event schemas.
 - **Approvals from chat.** Gate choices use the shared core's structured
   Matrix decision sender, carrying the gate identifier and the gate event
-  reference. AgentPod permission replies remain ordinary chat text. Resolving
-  a superpipeline gate also requires the AgentPod Application Service and its
-  human-identity mapping; local tests do not prove that live integration.
+  reference. AgentPod permission replies remain ordinary chat text. On iOS,
+  both can also be answered from a local notification's actions (permission:
+  Allow once / Reject; gate: Approve / Request changes / Reject, per the
+  operator's decision of 2026-09-27) without the room open, through the
+  core's room-addressed senders. Resolving a superpipeline gate also requires
+  the AgentPod Application Service and its human-identity mapping; local tests
+  do not prove that live integration.
 - **A reading surface for long-form agent output.** Message bodies are set for
   reading and surrounding controls for scanning. See the
   [design language](docs/design-language.md).

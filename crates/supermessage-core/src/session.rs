@@ -277,11 +277,101 @@ impl Session {
         if self.is_running().await {
             return Ok(true);
         }
-        if !self.restore().await? {
+        // A client with no streams can also be one [`Self::restore_quietly`]
+        // installed to answer a notification before any screen existed. Its
+        // streams are started rather than a second client built: two
+        // `Client`s over one store and device is exactly what this guard is
+        // for. (A *failed* start never leaves one here — `start_or_roll_back`
+        // removes it.)
+        if !self.is_active().await && !self.restore().await? {
             return Ok(false);
         }
         self.start_or_roll_back(sink).await?;
         Ok(true)
+    }
+
+    // --- Answering without a room open ---------------------------------
+    //
+    // A notification's Allow / Reject / Approve arrives with no room on
+    // screen, and often with no app on screen at all — iOS launches the
+    // process in the background just to deliver the tap. Everything the
+    // `FocusedTimeline` writes needs that room to be the focused one, so
+    // these go to the room directly, need no sync, and return only once the
+    // homeserver has accepted the event: the caller's "sent" means sent.
+
+    /// Restores a persisted session **without starting sync or the room
+    /// list** — enough to send, and nothing that keeps running.
+    ///
+    /// For a process woken only to deliver a notification action, which has a
+    /// few seconds of budget and no screen. Serialized through
+    /// [`Self::lifecycle`] like every other transition, and a no-op returning
+    /// `true` when a client already exists, so it can never build a second
+    /// `Client` beside a live one. A later [`Self::restore_and_start`] (the
+    /// app coming to the foreground) starts streams on the client this
+    /// installed rather than replacing it.
+    ///
+    /// `false` when nothing is stored, as for [`Self::restore`].
+    pub async fn restore_quietly(&self) -> CoreResult<bool> {
+        let _lifecycle = self.lifecycle.lock().await;
+        if self.is_active().await {
+            return Ok(true);
+        }
+        self.restore().await
+    }
+
+    /// Answers an AgentPod permission request in `room_id` with `option_id`,
+    /// whether or not that room is open, and returns once the homeserver has
+    /// the event.
+    ///
+    /// The content is [`crate::timeline::permission_answer_content`] — the
+    /// same plain message the composer would send for that text.
+    pub async fn send_permission_answer(&self, room_id: &str, option_id: &str) -> CoreResult<()> {
+        let room = self.room_to_answer_in(room_id).await?;
+        room.send(crate::timeline::permission_answer_content(option_id))
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Answers a superpipeline gate in `room_id`, whether or not that room is
+    /// open, and returns once the homeserver has the event.
+    ///
+    /// Byte-for-byte the decision [`FocusedTimeline::send_gate_decision`]
+    /// sends from the card — both build it with
+    /// [`crate::timeline::gate_decision_request`] — and validated the same
+    /// way, before anything else: an unknown option is the caller's bug and
+    /// says so rather than surfacing as a missing room.
+    pub async fn send_gate_decision_to(
+        &self,
+        room_id: &str,
+        gate_id: &str,
+        option_id: &str,
+        comment: Option<&str>,
+        in_reply_to: &str,
+        prompt: &str,
+    ) -> CoreResult<()> {
+        let content = crate::timeline::gate_decision_request(
+            gate_id,
+            option_id,
+            comment,
+            in_reply_to,
+            prompt,
+        )?;
+        let room = self.room_to_answer_in(room_id).await?;
+        room.send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
+    /// The joined room an answer goes to, read from the local store — no
+    /// sync needed, which is the point.
+    async fn room_to_answer_in(&self, room_id: &str) -> CoreResult<matrix_sdk::Room> {
+        let client = self.require_client().await?;
+        let parsed = RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        client
+            .get_room(&parsed)
+            .ok_or_else(|| CoreError::Protocol("unknown room".into()))
     }
 
     /// Starts sync for the currently logged-in client and stores the
@@ -1653,6 +1743,248 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("second login after logout must succeed, got: {e:?}"));
 
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // --- Answering without a room open ---------------------------------
+
+    #[tokio::test]
+    async fn a_quiet_restore_with_nothing_stored_is_false_not_an_error() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-answer-quiet-none"),
+            Box::new(MemoryStore::default()),
+        );
+        assert!(!session.restore_quietly().await.unwrap());
+        assert!(!session.is_active().await);
+    }
+
+    #[tokio::test]
+    async fn an_answer_before_any_session_is_not_ready() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-answer-no-session"),
+            Box::new(MemoryStore::default()),
+        );
+        let err = session
+            .send_permission_answer("!r:localhost", "Allow once")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CoreError::NotReady), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn a_gate_answer_is_validated_before_it_needs_a_session() {
+        // The same guard order as the card's path: a bad option id is the
+        // caller's bug, and must say so rather than read as "signed out".
+        let session = Session::new(
+            std::env::temp_dir().join("sm-answer-gate-guard"),
+            Box::new(MemoryStore::default()),
+        );
+        let err = session
+            .send_gate_decision_to("!r:localhost", "gate_1", "ship_it", None, "$g", "…")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, CoreError::Protocol(m) if m.contains("ship_it")),
+            "got {err:?}"
+        );
+    }
+
+    /// A signed-in session over a mock homeserver that knows one joined,
+    /// unencrypted room — `!r:localhost` — and accepts sends into it.
+    ///
+    /// No room is ever focused and no sync service is started: the room
+    /// reaches the store through one `sync_once`, which is what a process
+    /// woken for a notification action has on disk from its last run.
+    async fn session_with_a_known_room(
+        label: &str,
+    ) -> (Session, wiremock::MockServer, std::path::PathBuf) {
+        use matrix_sdk::config::SyncSettings;
+        use wiremock::matchers::{method, path, path_regex};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        tls::install_ring_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/_matrix/client/versions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "versions": ["r0.6.0"],
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/_matrix/client/r0/login"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "abc123",
+                "device_id": "GHTYAJCE",
+                "user_id": "@alice:localhost",
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/_matrix/client/r0/sync"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "next_batch": "s1",
+                "rooms": { "join": { "!r:localhost": {
+                    "timeline": { "events": [], "limited": false },
+                    "state": { "events": [] },
+                } } },
+            })))
+            .mount(&server)
+            .await;
+        // Not encrypted: the SDK asks before its first send into a room whose
+        // encryption state it has not seen.
+        Mock::given(method("GET"))
+            .and(path_regex(r"/rooms/.*/state/m\.room\.encryption"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "errcode": "M_NOT_FOUND",
+                "error": "no encryption",
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path_regex(r"/rooms/.*/send/m\.room\.message/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "event_id": "$sent" })),
+            )
+            .mount(&server)
+            .await;
+
+        let data_dir =
+            std::env::temp_dir().join(format!("sm-answer-{label}-{}", rand::random::<u64>()));
+        let session = Session::new(data_dir.clone(), Box::new(MemoryStore::default()));
+        session
+            .login(&server.uri(), "alice", "hunter2")
+            .await
+            .unwrap();
+        session
+            .client()
+            .await
+            .unwrap()
+            .sync_once(SyncSettings::default())
+            .await
+            .unwrap();
+        (session, server, data_dir)
+    }
+
+    /// The bodies of every message the mock homeserver was sent, in order.
+    async fn sent_messages(server: &wiremock::MockServer) -> Vec<serde_json::Value> {
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| {
+                r.method.as_str() == "PUT" && r.url.path().contains("/send/m.room.message/")
+            })
+            .map(|r| serde_json::from_slice(&r.body).unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_permission_answer_lands_with_no_room_open() {
+        let (session, server, data_dir) = session_with_a_known_room("permission").await;
+
+        session
+            .send_permission_answer("!r:localhost", "Allow once")
+            .await
+            .unwrap_or_else(|e| panic!("the answer must land with no room focused: {e:?}"));
+
+        let sent = sent_messages(&server).await;
+        assert_eq!(sent.len(), 1, "exactly one event, got {sent:?}");
+        // The composer's bytes for the same text — what `send_text`, and so
+        // the old notification path, put in the room.
+        let composer =
+            serde_json::to_value(crate::timeline::mentioning_message("Allow once", &[])).unwrap();
+        assert_eq!(sent[0], composer);
+        assert_eq!(
+            sent[0],
+            serde_json::json!({ "msgtype": "m.text", "body": "Allow once" }),
+            "the hub's matcher reads the option's name as a plain message"
+        );
+        assert!(
+            !session.is_running().await,
+            "answering must not start sync behind the reader's back"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn a_gate_decision_lands_with_no_room_open_and_matches_the_cards() {
+        let (session, server, data_dir) = session_with_a_known_room("gate").await;
+
+        session
+            .send_gate_decision_to(
+                "!r:localhost",
+                "gate_4e8b",
+                "request_changes",
+                Some("Add a test first."),
+                "$gateEvent",
+                "Ship it?",
+            )
+            .await
+            .unwrap_or_else(|e| panic!("the decision must land with no room focused: {e:?}"));
+
+        let sent = sent_messages(&server).await;
+        assert_eq!(sent.len(), 1, "exactly one event, got {sent:?}");
+        assert_eq!(
+            sent[0],
+            serde_json::json!({
+                "msgtype": "m.text",
+                "body": "Requested changes — Ship it?",
+                "schema_version": 1,
+                "suite_event_type": "dev.superpipeline.gate.decision.v1",
+                "gate_id": "gate_4e8b",
+                "option_id": "request_changes",
+                "comment": "Add a test first.",
+                "m.relates_to": { "rel_type": "m.reference", "event_id": "$gateEvent" },
+            }),
+            "the wire shape AgentPod's fixture pins, byte for byte"
+        );
+        // And what the card's path builds for the same answer.
+        assert_eq!(
+            sent[0],
+            crate::timeline::gate_decision_request(
+                "gate_4e8b",
+                "request_changes",
+                Some("Add a test first."),
+                "$gateEvent",
+                "Ship it?",
+            )
+            .unwrap()
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn an_answer_to_a_room_this_account_is_not_in_fails_rather_than_guessing() {
+        let (session, server, data_dir) = session_with_a_known_room("unknown").await;
+        let err = session
+            .send_permission_answer("!elsewhere:localhost", "Allow once")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CoreError::Protocol(_)), "got {err:?}");
+        assert!(sent_messages(&server).await.is_empty());
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn a_quiet_restore_keeps_the_client_it_finds() {
+        let (session, _server, data_dir) = session_with_a_known_room("quiet").await;
+        // A second `Client` over the same store and device is the hazard
+        // `restore_and_start`'s guard exists for; a quiet restore beside a
+        // live session must not build one either. Removing the stored
+        // homeserver makes any rebuild observable: `restore` would find
+        // nothing to restore and answer `false`.
+        session.store.delete(KEY_HOMESERVER_URL).unwrap();
+        assert!(
+            session.restore_quietly().await.unwrap(),
+            "a live client must be reused, not rebuilt from the keyring"
+        );
+        assert!(session.is_active().await);
+        assert!(!session.is_running().await);
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 }

@@ -17,10 +17,38 @@ public struct LocalNotification: Equatable, Sendable {
         /// An AgentPod permission request with an "Allow once" and a
         /// "Reject" answer. Both actions require the device to be unlocked.
         case permission = "PERMISSION"
-        /// A decision that must be read before it is answered — a
-        /// superpipeline gate, or a permission request whose answers do not
-        /// map onto Allow once / Reject. Only "Open".
+        /// A superpipeline gate: Approve, Request changes (typed feedback),
+        /// Reject and Open. Every answer requires the device to be unlocked,
+        /// and an action the gate does not offer opens it instead — see
+        /// `NotificationKeys.response`. Answering gates from a notification
+        /// is the operator's decision of 2026-09-27; before it, gates only
+        /// opened.
         case gate = "GATE"
+        /// A decision that must be read in the app before it is answered — a
+        /// pending request the roster cannot identify, a permission request
+        /// whose answers do not map onto Allow once / Reject, a gate with
+        /// nothing a notification can send — or an answer that did not land.
+        /// Only "Open".
+        case decision = "DECISION"
+    }
+
+    /// What a GATE notification's actions need to answer the gate with no
+    /// room open: the same three things the card sends.
+    public struct Gate: Equatable, Sendable {
+        /// superpipeline's `gate_id` — `CustomEventDecision.subject`.
+        public let gateId: String
+        /// The gate's question; the core derives the sentence left in the
+        /// room from it, as it does for the card.
+        public let prompt: String
+        /// Which of `approve`, `request_changes` and `reject` this gate
+        /// offers. An action outside this set opens the room.
+        public let optionIds: [String]
+
+        public init(gateId: String, prompt: String, optionIds: [String]) {
+            self.gateId = gateId
+            self.prompt = prompt
+            self.optionIds = optionIds
+        }
     }
 
     /// The request identifier. Stable per event, so posting the same thing
@@ -38,11 +66,14 @@ public struct LocalNotification: Equatable, Sendable {
     /// Both set exactly when `category == .permission`.
     public let allowOptionId: String?
     public let rejectOptionId: String?
+    /// Set exactly when `category == .gate`, and then `eventId` is the gate
+    /// event's id — the decision references it.
+    public let gate: Gate?
 
     public init(
         id: String, roomId: String, eventId: String?, title: String, subtitle: String?,
         body: String, category: Category, allowOptionId: String? = nil,
-        rejectOptionId: String? = nil
+        rejectOptionId: String? = nil, gate: Gate? = nil
     ) {
         self.id = id
         self.roomId = roomId
@@ -53,6 +84,7 @@ public struct LocalNotification: Equatable, Sendable {
         self.category = category
         self.allowOptionId = allowOptionId
         self.rejectOptionId = rejectOptionId
+        self.gate = gate
     }
 
     /// Whether this asks the reader for a decision rather than telling them
@@ -123,7 +155,7 @@ public enum NotificationComposer {
                     LocalNotification(
                         id: "\(id)#pending#\(row.room.lastActivityMs ?? row.room.unread)",
                         roomId: id, eventId: nil, title: row.identity.name, subtitle: nil,
-                        body: preview.text, category: .gate))
+                        body: preview.text, category: .decision))
             } else if let text = row.preview?.text ?? row.room.lastMessage {
                 out.append(
                     LocalNotification(
@@ -176,10 +208,15 @@ public enum NotificationComposer {
                 // status — is context, not an interruption.
                 return nil
             }
-            if decision.subject != nil {
+            if let gateId = decision.subject {
+                guard let gate = gateAnswers(decision, gateId: gateId) else {
+                    return LocalNotification(
+                        id: eventId, roomId: roomId, eventId: eventId, title: roomName,
+                        subtitle: label, body: decision.prompt, category: .decision)
+                }
                 return LocalNotification(
                     id: eventId, roomId: roomId, eventId: eventId, title: roomName,
-                    subtitle: label, body: decision.prompt, category: .gate)
+                    subtitle: label, body: decision.prompt, category: .gate, gate: gate)
             }
             if let answers = permissionAnswers(decision) {
                 return LocalNotification(
@@ -189,7 +226,7 @@ public enum NotificationComposer {
             }
             return LocalNotification(
                 id: eventId, roomId: roomId, eventId: eventId, title: roomName,
-                subtitle: label, body: decision.prompt, category: .gate)
+                subtitle: label, body: decision.prompt, category: .decision)
         case .bubble, .emote:
             guard let text = row.replyPreview else { return nil }
             return message(row, eventId: eventId, roomId: roomId, subtitle: subtitle, body: text)
@@ -259,6 +296,30 @@ public enum NotificationComposer {
             }
         guard let allow, let reject else { return nil }
         return (allow.id, reject.id)
+    }
+
+    /// What a GATE notification can answer, or `nil` when it can answer
+    /// nothing and should only open.
+    ///
+    /// Matched on option **ids**, never labels: a label is free text per
+    /// board ("Ship it", "LGTM"), while the id is superpipeline's
+    /// `GateDecision` and the only thing its resolution endpoint accepts. A
+    /// gate needs Approve or Reject among them to be worth actions at all —
+    /// "Request changes" alone still needs the card read first.
+    public static func gateAnswers(
+        _ decision: CustomEventDecision, gateId: String
+    ) -> LocalNotification.Gate? {
+        guard !gateId.isEmpty else { return nil }
+        let known = [
+            NotificationKeys.approveOption, NotificationKeys.requestChangesOption,
+            NotificationKeys.rejectOption,
+        ]
+        let offered = Set(decision.options.map(\.id))
+        let ids = known.filter(offered.contains)
+        guard ids.contains(NotificationKeys.approveOption)
+            || ids.contains(NotificationKeys.rejectOption)
+        else { return nil }
+        return LocalNotification.Gate(gateId: gateId, prompt: decision.prompt, optionIds: ids)
     }
 
     // MARK: - The room's own notification setting

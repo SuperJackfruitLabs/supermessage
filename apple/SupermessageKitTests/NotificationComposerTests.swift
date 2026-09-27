@@ -135,7 +135,7 @@ struct NotificationComposerTests {
             previous: [roomRow("!a", unread: 0)],
             next: [roomRow("!a", unread: 1, pending: true, text: "Waiting on you")],
             context: background)
-        #expect(notes.first?.category == .gate)
+        #expect(notes.first?.category == .decision)
         #expect(notes.first?.allowOptionId == nil)
     }
 
@@ -213,26 +213,50 @@ struct NotificationComposerTests {
     func alwaysIsNotOnce() {
         let row = timelineRow("$p", view: decisionView(subject: nil, options: ["Allow always", "Reject"]))
         let note = timeline([row]).first
-        #expect(note?.category == .gate, "a lock-screen tap must not grant more than it said")
+        #expect(note?.category == .decision, "a lock-screen tap must not grant more than it said")
         #expect(note?.allowOptionId == nil)
     }
 
     @Test("a permission request with no reject answer only opens")
     func permissionWithoutReject() {
         let row = timelineRow("$p", view: decisionView(subject: nil, options: ["Allow once"]))
-        #expect(timeline([row]).first?.category == .gate)
+        #expect(timeline([row]).first?.category == .decision)
     }
 
-    @Test("a gate only opens: its details must be read before it is answered")
+    @Test("a gate carries what its actions need to answer it with no room open")
     func gateCategory() {
-        // Options that would pass for a permission request's, so it is the
-        // subject — what makes this a gate — that decides, not the labels.
-        for options in [["approve", "reject"], ["Allow once", "Reject"]] {
+        // Operator decision 2026-09-27: gates are answered from the
+        // notification. The actions need the gate's id, its question and
+        // which of superpipeline's three decisions it offers.
+        let row = timelineRow(
+            "$g", view: decisionView(subject: "gate-1", options: ["approve", "request_changes", "reject"]))
+        let note = timeline([row]).first
+        #expect(note?.category == .gate)
+        #expect(note?.eventId == "$g", "the decision references the gate's own event")
+        #expect(
+            note?.gate
+                == LocalNotification.Gate(
+                    gateId: "gate-1", prompt: "Allow Write src/main.ts?",
+                    optionIds: ["approve", "request_changes", "reject"]))
+        #expect(note?.allowOptionId == nil)
+        #expect(note?.rejectOptionId == nil)
+    }
+
+    @Test("a gate offers only the decisions it has")
+    func gateOffersItsOwnOptions() {
+        let row = timelineRow("$g", view: decisionView(subject: "gate-1", options: ["reject", "approve"]))
+        #expect(timeline([row]).first?.gate?.optionIds == ["approve", "reject"])
+    }
+
+    @Test("a gate is matched on superpipeline's ids, never on labels, and otherwise only opens")
+    func gateWithoutKnownOptions() {
+        // Options that would pass for a permission request's: it is the
+        // subject that makes this a gate, and the ids that make it answerable.
+        for options in [["Allow once", "Reject"], ["request_changes"], []] {
             let row = timelineRow("$g", view: decisionView(subject: "gate-1", options: options))
             let note = timeline([row]).first
-            #expect(note?.category == .gate, "options \(options)")
-            #expect(note?.allowOptionId == nil)
-            #expect(note?.rejectOptionId == nil)
+            #expect(note?.category == .decision, "options \(options)")
+            #expect(note?.gate == nil, "options \(options)")
         }
     }
 
@@ -306,10 +330,10 @@ struct NotificationComposerTests {
         let info = NotificationKeys.userInfo(for: note)
         #expect(
             NotificationKeys.response(actionIdentifier: NotificationKeys.allowAction, userInfo: info)
-                == .answer(roomId: "!a", optionId: "Allow once"))
+                == .answer(.permission(roomId: "!a", optionId: "Allow once")))
         #expect(
             NotificationKeys.response(actionIdentifier: NotificationKeys.rejectAction, userInfo: info)
-                == .answer(roomId: "!a", optionId: "Reject"))
+                == .answer(.permission(roomId: "!a", optionId: "Reject")))
         #expect(
             NotificationKeys.response(
                 actionIdentifier: "com.apple.UNNotificationDefaultActionIdentifier", userInfo: info)
@@ -320,10 +344,88 @@ struct NotificationComposerTests {
     func actionWithoutOption() {
         let note = LocalNotification(
             id: "g", roomId: "!a", eventId: "$g", title: "", subtitle: nil, body: "",
-            category: .gate)
+            category: .decision)
         let info = NotificationKeys.userInfo(for: note)
         #expect(
             NotificationKeys.response(actionIdentifier: NotificationKeys.allowAction, userInfo: info)
+                == .open(roomId: "!a"))
+        #expect(
+            NotificationKeys.response(actionIdentifier: NotificationKeys.approveGateAction, userInfo: info)
+                == .open(roomId: "!a"), "a gate action on a note that carries no gate")
+    }
+
+    func gateNote(options: [String] = ["approve", "request_changes", "reject"]) -> [String: String] {
+        NotificationKeys.userInfo(
+            for: LocalNotification(
+                id: "$g", roomId: "!a", eventId: "$g", title: "", subtitle: nil, body: "Ship it?",
+                category: .gate,
+                gate: LocalNotification.Gate(gateId: "gate-1", prompt: "Ship it?", optionIds: options)))
+    }
+
+    @Test("Approve and Reject send the gate's decision, as the card would")
+    func gateActionsDecode() {
+        #expect(
+            NotificationKeys.response(actionIdentifier: NotificationKeys.approveGateAction, userInfo: gateNote())
+                == .answer(
+                    .gate(
+                        roomId: "!a", gateEventId: "$g", gateId: "gate-1", optionId: "approve",
+                        comment: nil, prompt: "Ship it?")))
+        #expect(
+            NotificationKeys.response(actionIdentifier: NotificationKeys.rejectGateAction, userInfo: gateNote())
+                == .answer(
+                    .gate(
+                        roomId: "!a", gateEventId: "$g", gateId: "gate-1", optionId: "reject",
+                        comment: nil, prompt: "Ship it?")))
+        // The permission request's Reject is a different action: it must not
+        // be read as a gate's.
+        #expect(
+            NotificationKeys.response(actionIdentifier: NotificationKeys.rejectAction, userInfo: gateNote())
+                == .open(roomId: "!a"))
+    }
+
+    @Test("Request changes sends what the reader typed as the comment")
+    func requestChangesDecodes() {
+        #expect(
+            NotificationKeys.response(
+                actionIdentifier: NotificationKeys.requestChangesAction, userInfo: gateNote(),
+                userText: "  Add a test first.\n")
+                == .answer(
+                    .gate(
+                        roomId: "!a", gateEventId: "$g", gateId: "gate-1",
+                        optionId: "request_changes", comment: "Add a test first.",
+                        prompt: "Ship it?")))
+    }
+
+    @Test("Request changes with nothing typed opens the gate instead of sending no reason")
+    func requestChangesNeedsText() {
+        for typed in [nil, "", "  \n "] as [String?] {
+            #expect(
+                NotificationKeys.response(
+                    actionIdentifier: NotificationKeys.requestChangesAction, userInfo: gateNote(),
+                    userText: typed)
+                    == .open(roomId: "!a"), "typed \(String(describing: typed))")
+        }
+    }
+
+    @Test("an action the gate does not offer opens it rather than sending an answer it would refuse")
+    func gateActionNotOffered() {
+        #expect(
+            NotificationKeys.response(
+                actionIdentifier: NotificationKeys.approveGateAction,
+                userInfo: gateNote(options: ["reject"]))
+                == .open(roomId: "!a"))
+        #expect(
+            NotificationKeys.response(
+                actionIdentifier: NotificationKeys.requestChangesAction,
+                userInfo: gateNote(options: ["approve", "reject"]), userText: "Fix it")
+                == .open(roomId: "!a"))
+    }
+
+    @Test("a plain tap on a gate opens it")
+    func gateTapOpens() {
+        #expect(
+            NotificationKeys.response(
+                actionIdentifier: "com.apple.UNNotificationDefaultActionIdentifier", userInfo: gateNote())
                 == .open(roomId: "!a"))
     }
 

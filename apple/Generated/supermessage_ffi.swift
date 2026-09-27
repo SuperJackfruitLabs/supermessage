@@ -758,6 +758,15 @@ public protocol CoreProtocol : AnyObject {
     func restoreSession(sink: EventSink) throws  -> Bool
     
     /**
+     * Pick up a stored session **without starting sync** — enough to send
+     * an answer from a process iOS woke only to deliver a notification
+     * action. A no-op returning `true` when a session is already live, and a
+     * later [`Core::restore_session`] starts streams on the client this
+     * installed rather than building a second one.
+     */
+    func restoreSessionQuietly() throws  -> Bool
+    
+    /**
      * A room's avatar as a `data:` URI, if it has one.
      */
     func roomAvatar(roomId: String) throws  -> String?
@@ -824,6 +833,12 @@ public protocol CoreProtocol : AnyObject {
     func sendGateDecision(roomId: String, gateId: String, optionId: String, comment: String?, inReplyTo: String, prompt: String) throws 
     
     /**
+     * [`Core::send_gate_decision`] for a room that need not be open: the
+     * same content, validated the same way, sent straight to `room_id`.
+     */
+    func sendGateDecisionTo(roomId: String, gateId: String, optionId: String, comment: String?, inReplyTo: String, prompt: String) throws 
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -833,6 +848,13 @@ public protocol CoreProtocol : AnyObject {
      * `mentions` are user ids to notify; empty is the ordinary case.
      */
     func sendMessage(roomId: String, body: String, mentions: [String]) throws 
+    
+    /**
+     * Answer an AgentPod permission request in `room_id`: the option's name
+     * as a plain message, the same bytes the composer would send. The room
+     * need not be open.
+     */
+    func sendPermissionAnswer(roomId: String, optionId: String) throws 
     
     /**
      * Reply to `in_reply_to`, an event id in the focused room.
@@ -1356,6 +1378,20 @@ open func restoreSession(sink: EventSink)throws  -> Bool {
 }
     
     /**
+     * Pick up a stored session **without starting sync** — enough to send
+     * an answer from a process iOS woke only to deliver a notification
+     * action. A no-op returning `true` when a session is already live, and a
+     * later [`Core::restore_session`] starts streams on the client this
+     * installed rather than building a second one.
+     */
+open func restoreSessionQuietly()throws  -> Bool {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_restore_session_quietly(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
      * A room's avatar as a `data:` URI, if it has one.
      */
 open func roomAvatar(roomId: String)throws  -> String? {
@@ -1468,6 +1504,22 @@ open func sendGateDecision(roomId: String, gateId: String, optionId: String, com
 }
     
     /**
+     * [`Core::send_gate_decision`] for a room that need not be open: the
+     * same content, validated the same way, sent straight to `room_id`.
+     */
+open func sendGateDecisionTo(roomId: String, gateId: String, optionId: String, comment: String?, inReplyTo: String, prompt: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(gateId),
+        FfiConverterString.lower(optionId),
+        FfiConverterOptionString.lower(comment),
+        FfiConverterString.lower(inReplyTo),
+        FfiConverterString.lower(prompt),$0
+    )
+}
+}
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -1481,6 +1533,19 @@ open func sendMessage(roomId: String, body: String, mentions: [String])throws  {
         FfiConverterString.lower(roomId),
         FfiConverterString.lower(body),
         FfiConverterSequenceString.lower(mentions),$0
+    )
+}
+}
+    
+    /**
+     * Answer an AgentPod permission request in `room_id`: the option's name
+     * as a plain message, the same bytes the composer would send. The room
+     * need not be open.
+     */
+open func sendPermissionAnswer(roomId: String, optionId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_permission_answer(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(optionId),$0
     )
 }
 }
@@ -3892,6 +3957,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_restore_session() != 6863) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly() != 65435) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_room_avatar() != 58138) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3913,7 +3981,13 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 31962) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to() != 20932) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_permission_answer() != 53383) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056) {

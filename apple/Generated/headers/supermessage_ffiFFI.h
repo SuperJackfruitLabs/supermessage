@@ -457,6 +457,11 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_reset_recovery(void*_Nonnull p
 int8_t uniffi_supermessage_ffi_fn_method_core_restore_session(void*_Nonnull ptr, uint64_t sink, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RESTORE_SESSION_QUIETLY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RESTORE_SESSION_QUIETLY
+int8_t uniffi_supermessage_ffi_fn_method_core_restore_session_quietly(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_AVATAR
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_AVATAR
 RustBuffer uniffi_supermessage_ffi_fn_method_core_room_avatar(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
@@ -492,9 +497,19 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_search_messages(void*_Nonnull 
 void uniffi_supermessage_ffi_fn_method_core_send_gate_decision(void*_Nonnull ptr, RustBuffer room_id, RustBuffer gate_id, RustBuffer option_id, RustBuffer comment, RustBuffer in_reply_to, RustBuffer prompt, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_GATE_DECISION_TO
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_GATE_DECISION_TO
+void uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(void*_Nonnull ptr, RustBuffer room_id, RustBuffer gate_id, RustBuffer option_id, RustBuffer comment, RustBuffer in_reply_to, RustBuffer prompt, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
 void uniffi_supermessage_ffi_fn_method_core_send_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer body, RustBuffer mentions, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_PERMISSION_ANSWER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_PERMISSION_ANSWER
+void uniffi_supermessage_ffi_fn_method_core_send_permission_answer(void*_Nonnull ptr, RustBuffer room_id, RustBuffer option_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_REPLY
@@ -1126,6 +1141,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_restore_session(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_RESTORE_SESSION_QUIETLY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_RESTORE_SESSION_QUIETLY
+uint16_t uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_AVATAR
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_AVATAR
 uint16_t uniffi_supermessage_ffi_checksum_method_core_room_avatar(void
@@ -1168,9 +1189,21 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION_TO
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION_TO
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_MESSAGE
 uint16_t uniffi_supermessage_ffi_checksum_method_core_send_message(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_PERMISSION_ANSWER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_PERMISSION_ANSWER
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(void
     
 );
 #endif

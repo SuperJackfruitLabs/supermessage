@@ -65,8 +65,10 @@ public final class Session {
         staged = StagedAttachment(client: client)
     }
 
+    /// A session on the app's one core — the same one a notification action
+    /// answers through (`CoreClient.shared`).
     public convenience init() {
-        self.init(client: CoreClient(dataDirectory: CoreClient.dataDirectory()))
+        self.init(client: CoreClient.shared)
     }
 
 #if DEBUG
@@ -431,11 +433,19 @@ public final class Session {
     /// answers one (`decisionReply.ts`) and as Element would: the hub's
     /// matcher reads the room, and a permission request has no gate to
     /// resolve. Returns whether it landed.
+    ///
+    /// Sent to the room directly (`sendPermissionAnswer`), not through the
+    /// focused timeline the composer uses. That path failed unless the room
+    /// was the one open, and it only queued the message, so "landed" meant
+    /// "queued". This one awaits the homeserver, so the card keeps offering
+    /// the choice when the answer did not arrive; the answer shows in the
+    /// timeline when it syncs back, a moment later, rather than as a local
+    /// echo first.
     @discardableResult
     public func answerPermission(optionId: String, in roomId: String) async -> Bool {
         guard phase == .signedIn else { return false }
         do {
-            try await client.sendMessage(roomId: roomId, body: optionId, mentions: [])
+            try await client.sendPermissionAnswer(roomId: roomId, optionId: optionId)
             return true
         } catch {
             return false
