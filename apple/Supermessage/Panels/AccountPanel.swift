@@ -33,11 +33,17 @@ struct AccountPanel: View {
     }
 
     #if DEBUG
-    /// The panel with its blocked list already loaded — the list arrives from
-    /// its own `await`, and a frame must not depend on which won.
-    init(session: Session, blocked: [RoomMemberDto], onClose: @escaping () -> Void) {
+    /// The panel with its account and blocked list already loaded — each
+    /// arrives from its own `await`, and a frame must not depend on which won
+    /// the race with the snapshot (CI drew "rakesh" on one run and "?" on the
+    /// next).
+    init(
+        session: Session, account: AccountDto, blocked: [RoomMemberDto],
+        onClose: @escaping () -> Void
+    ) {
         self.session = session
         self.onClose = onClose
+        _account = State(initialValue: account)
         _blocked = State(initialValue: blocked)
     }
     #endif
@@ -260,14 +266,17 @@ private struct AccentSwatches: View {
 #if DEBUG
 // The account, which is two facts and a way out.
 #Preview("Account") {
-    AccountPanel(session: PreviewFixtures.session(), blocked: [], onClose: {})
+    AccountPanel(
+        session: PreviewFixtures.session(), account: PreviewFixtures.account, blocked: [],
+        onClose: {})
         .previewChrome()
 }
 
 // Two blocked accounts, an agent and a person, each with a way back.
 #Preview("Blocked users") {
     AccountPanel(
-        session: PreviewFixtures.session(), blocked: PreviewFixtures.blockedUsers, onClose: {}
+        session: PreviewFixtures.session(), account: PreviewFixtures.account,
+        blocked: PreviewFixtures.blockedUsers, onClose: {}
     )
     // Tall enough for the whole list: the blocked section sits below the
     // fold on a phone, and a frame that cropped it would be a frame of the

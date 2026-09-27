@@ -200,11 +200,7 @@ struct PreviewClient: SessionClient {
 
     // MARK: AccountDirectory
 
-    func account() async throws -> AccountDto {
-        AccountDto(
-            userId: PreviewFixtures.accountUserId,
-            homeserver: "https://matrix.example.org")
-    }
+    func account() async throws -> AccountDto { PreviewFixtures.account }
     func knownPeople() async throws -> [PersonDto] {
         isEmpty ? [] : PreviewFixtures.people
     }
@@ -713,6 +709,10 @@ enum PreviewFixtures {
 
     /// Two blocked accounts — an agent and a person — as `ignoredUsers` names
     /// them: the agent from its id, the person from a member event.
+    static var account: AccountDto {
+        AccountDto(userId: accountUserId, homeserver: "https://matrix.example.org")
+    }
+
     static var blockedUsers: [RoomMemberDto] {
         [
             RoomMemberDto(
