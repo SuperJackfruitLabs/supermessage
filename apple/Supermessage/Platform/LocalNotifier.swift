@@ -3,12 +3,13 @@ import UserNotifications
 
 /// Posts what `NotificationComposer` decided, through the system.
 ///
-/// Local notifications only. They work without a push gateway and without
-/// the `aps-environment` entitlement — which is why they are all this app
-/// can show until a gateway is deployed (AGENTS.md: Sygnal is not running).
-/// The catch is that they are posted by this process, so they only happen
-/// while it is alive: in the foreground, and for the short while iOS lets a
-/// backgrounded app keep running.
+/// Local notifications. They work without a push gateway and without the
+/// `aps-environment` entitlement, but they are posted by this process, so
+/// they only happen while it is alive. With remote push registered (the
+/// AgentPod hub's gateway, `SM_PUSH`), a message that arrives while the app
+/// is away is the Notification Service Extension's to show, and these are
+/// only what the open app sees first (`NotificationContext.remotePush`).
+/// The categories below are registered for both.
 enum LocalNotifier {
     /// The four categories. Registered at launch, before any notification
     /// can be delivered, so a tap on one posted by a previous launch still

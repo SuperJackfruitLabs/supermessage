@@ -48,22 +48,37 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: any Error
     ) {
-        // Expected in any build without the `aps-environment` entitlement,
-        // which is every build until push is set up (see
-        // apple/SupermessageWidgets/push.yml). Local notifications are
-        // unaffected, so there is nothing to tell the reader.
+        // Expected in any build without the `aps-environment` entitlement —
+        // one generated without SM_PUSH (see apple/SupermessageWidgets/push.yml).
+        // Local notifications are unaffected, so there is nothing to tell the
+        // reader.
     }
 
     // MARK: - UNUserNotificationCenterDelegate
 
     /// A notification arriving while the app is in the foreground.
     ///
-    /// Shown: the composer already declined to post anything for the room on
-    /// screen, so whatever arrives here is about somewhere else.
+    /// A local one is shown: the composer already declined to post anything
+    /// for the room on screen. A remote one — the push the extension decided —
+    /// is shown unless it is about the room on screen, or is an event the
+    /// open timeline already notified for (`NotificationComposer.presentsRemote`).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter, willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        let shown: UNNotificationPresentationOptions = [.banner, .list, .sound]
+        guard notification.request.trigger is UNPushNotificationTrigger else { return shown }
+        // Read here, off the main actor, so nothing non-Sendable crosses.
+        let info = notification.request.content.userInfo
+        let roomId =
+            info[NotificationKeys.roomId] as? String ?? info[RemotePush.roomIdKey] as? String
+        let eventId =
+            info[NotificationKeys.eventId] as? String ?? info[RemotePush.eventIdKey] as? String
+        let presents = await presentsRemote(roomId: roomId, eventId: eventId)
+        return presents ? shown : []
+    }
+
+    private func presentsRemote(roomId: String?, eventId: String?) -> Bool {
+        platform?.presentsRemote(roomId: roomId, eventId: eventId) ?? true
     }
 
     /// A notification's action. The system waits for this to return before

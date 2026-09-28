@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.usernotifications.service</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).NotificationService</string>
+	</dict>
+
+	<!--
+	  The keychain access group the app and this extension share, from the
+	  SM_KEYCHAIN_GROUP build setting (see nse.yml). The session and the
+	  store passphrase are read from here; see CoreLocation.swift.
+	-->
+	<key>SMKeychainAccessGroup</key>
+	<string>$(SM_KEYCHAIN_GROUP)</string>
+</dict>
+</plist>

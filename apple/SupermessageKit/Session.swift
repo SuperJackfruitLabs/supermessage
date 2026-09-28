@@ -184,9 +184,26 @@ public final class Session {
     /// empty until the next message, which in these rooms can be hours. This
     /// is exactly what `seed()` was written for, after a webview reload left
     /// the desktop roster empty with a perfectly healthy core behind it.
+    /// Whether going into the background stops sync, and coming back
+    /// starts it.
+    ///
+    /// Set once remote push is registered. The app's encryption sync holds
+    /// the stores' cross-process lock across each long poll, so an app that
+    /// kept syncing in the background would keep the Notification Service
+    /// Extension waiting for it past its thirty seconds — and with push, the
+    /// extension is what shows a message while the app is away. Without push
+    /// this stays `false` and background sync is what local notifications
+    /// ride on.
+    public var pausesSyncInBackground = false
+    private var syncPaused = false
+
     public func scenePhaseChanged(to active: Bool) async {
         guard phase == .signedIn else { return }
         if active {
+            if syncPaused, let pausing = client as? any SyncPausing {
+                syncPaused = false
+                await pausing.syncResume()
+            }
             await rooms.seed()
             await timeline.seed()
             await spaces.refresh()
@@ -194,6 +211,10 @@ public final class Session {
             // Leaving a typing notice on when the app goes away tells the room
             // someone is writing who is not even looking at it.
             await setTyping(false, in: roomId)
+        }
+        if !active, pausesSyncInBackground, !syncPaused, let pausing = client as? any SyncPausing {
+            syncPaused = true
+            await pausing.syncPause()
         }
     }
 

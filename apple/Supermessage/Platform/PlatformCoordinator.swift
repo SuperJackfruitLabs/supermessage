@@ -88,7 +88,10 @@ final class PlatformCoordinator {
             if lastPhase == .signedIn {
                 LocalNotifier.removeAll()
                 liveActivity.endAll()
+                // The pusher itself was removed by the core's logout, before
+                // the token went; this only forgets that one was registered.
                 registeredPusher = nil
+                session.pausesSyncInBackground = false
                 writeSnapshot(.empty)
             }
             previousRooms = []
@@ -131,17 +134,27 @@ final class PlatformCoordinator {
         else { return }
         let hex = PushConfiguration.hex(token)
         guard registeredPusher != hex else { return }
-        #if DEBUG
-            let sandbox = true
-        #else
-            let sandbox = false
-        #endif
+        // The signing profile's APNs environment, not `#if DEBUG`: a Release
+        // build is a production token whatever the compiler flags say.
         let registration = PushConfiguration.registration(
             token: token, gateway: gateway,
-            bundleId: Bundle.main.bundleIdentifier ?? "dev.supermessage.ios", sandbox: sandbox,
+            bundleId: Bundle.main.bundleIdentifier ?? "dev.supermessage.ios",
+            sandbox: PushConfiguration.isSandbox(),
             deviceName: UIDevice.current.name,
             language: Locale.preferredLanguages.first ?? "en")
-        if await session.registerPusher(registration) { registeredPusher = hex }
+        if await session.registerPusher(registration) {
+            registeredPusher = hex
+            // From here the extension shows what arrives while the app is
+            // away, and needs the stores' lock to do it.
+            session.pausesSyncInBackground = true
+        }
+    }
+
+    /// Whether a remote notification arriving in the foreground is shown —
+    /// see `NotificationComposer.presentsRemote`.
+    func presentsRemote(roomId: String?, eventId: String?) -> Bool {
+        NotificationComposer.presentsRemote(
+            roomId: roomId, eventId: eventId, context: context, alreadyNotified: notified)
     }
 
     // MARK: - Local notifications
@@ -149,7 +162,7 @@ final class PlatformCoordinator {
     private var context: NotificationContext {
         NotificationContext(
             openRoomId: session.rooms.selectedId, appActive: appActive,
-            timelineRoomId: session.timeline.roomId)
+            timelineRoomId: session.timeline.roomId, remotePush: registeredPusher != nil)
     }
 
     private func roomsChanged(_ rooms: [RoomRow]) {

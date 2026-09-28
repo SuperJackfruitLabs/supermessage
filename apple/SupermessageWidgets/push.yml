@@ -1,23 +1,18 @@
 # The `aps-environment` entitlement, for remote (APNs) push. Included by
 # ../project.yml ONLY when generated with SM_PUSH=YES.
 #
-# **Off by default for the same reason as extensions.yml.** The App ID
-# `dev.supermessage.ios` does not have the Push Notifications capability
-# today (the team's development profile for it carries no aps-environment),
-# so the App Store profile the TestFlight export uses cannot grant it, and a
-# signed build that claims it fails the export. Without it:
-# `registerForRemoteNotifications` fails quietly, no pusher is registered,
-# and local notifications still work — which is all that can work until a
-# push gateway is deployed anyway.
+# Apple-side, done on 2026-09-28: the App ID `dev.supermessage.ios` has Push
+# Notifications, App Groups and Time Sensitive Notifications, and the
+# `supermessage iOS App Store` profile (IOS_PROFILE_BASE64) was regenerated to
+# carry them. The gateway is the AgentPod hub's own
+# (`https://hub.agentpod.dev/_matrix/push/v1/notify`, operator decision of
+# 2026-09-28): it holds the APNs key and talks to Apple, and this app only
+# registers a pusher pointing at it. The TestFlight workflow generates with
+# SM_PUSH=YES, SM_NSE=YES, SM_EXTENSIONS=YES and that URL.
 #
-# Apple-side, before enabling this in CI:
-#   1. App ID `dev.supermessage.ios`: enable Push Notifications.
-#   2. An APNs auth key (.p8) for the gateway — it is the gateway (Sygnal),
-#      not this app, that talks to APNs.
-#   3. Regenerate the `supermessage iOS App Store` profile and update the
-#      IOS_PROFILE_BASE64 secret.
-#   4. Set SM_PUSH=YES on the workflow's `xcodegen generate` steps, and
-#      SM_PUSH_GATEWAY_URL to the gateway's /_matrix/push/v1/notify URL.
+# Off (a local build, `xcodegen generate` with nothing set): no entitlement,
+# `registerForRemoteNotifications` fails quietly, no pusher is registered, and
+# local notifications still work.
 #
 # `development` is right for the archive: exporting for App Store Connect
 # re-signs with the distribution profile's value, which is `production`.
@@ -27,3 +22,7 @@ targets:
       path: ../Supermessage/Platform/Supermessage.entitlements
       properties:
         aps-environment: development
+        # A decision (a permission request, a gate) is sent by the gateway
+        # with `interruption-level: time-sensitive`, which iOS honours only
+        # for an app holding this.
+        com.apple.developer.usernotifications.time-sensitive: true
