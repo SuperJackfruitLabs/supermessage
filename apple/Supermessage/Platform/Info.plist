@@ -11,11 +11,31 @@
 	<!--
 	  The push gateway's /_matrix/push/v1/notify URL, from the
 	  SM_PUSH_GATEWAY_URL build setting. EMPTY by default, and empty means no
-	  pusher is registered: no gateway is deployed (AGENTS.md), and a pusher
-	  pointing nowhere is the homeserver retrying into a void.
+	  pusher is registered: a pusher pointing nowhere is the homeserver
+	  retrying into a void. TestFlight builds name the AgentPod hub's gateway.
 	-->
 	<key>SMPushGatewayURL</key>
 	<string>$(SM_PUSH_GATEWAY_URL)</string>
+
+	<!--
+	  The APNs environment of this build configuration (SM_APS_ENVIRONMENT:
+	  development for Debug, production for Release), used when no embedded
+	  provisioning profile says otherwise. See PushConfiguration.isSandbox.
+	-->
+	<key>SMAPSEnvironment</key>
+	<string>$(SM_APS_ENVIRONMENT)</string>
+
+	<!--
+	  The keychain access group shared with the Notification Service
+	  Extension, and the app's own default group every earlier build wrote
+	  to. Both EMPTY unless generated with SM_NSE=YES, which also grants the
+	  entitlement; empty keeps the keychain exactly as before. See
+	  CoreLocation.swift.
+	-->
+	<key>SMKeychainAccessGroup</key>
+	<string>$(SM_KEYCHAIN_GROUP)</string>
+	<key>SMLegacyKeychainAccessGroup</key>
+	<string>$(SM_LEGACY_KEYCHAIN_GROUP)</string>
 
 	<!-- An agent's turn on the Lock Screen and in the Dynamic Island. -->
 	<key>NSSupportsLiveActivities</key>

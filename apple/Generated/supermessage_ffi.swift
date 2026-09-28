@@ -745,6 +745,14 @@ public protocol CoreProtocol : AnyObject {
     func memberAvatar(mxcUri: String) throws  -> String?
     
     /**
+     * What the notification for `event_id` in `room_id` should say, fetched
+     * and decrypted here — the Notification Service Extension's one call
+     * after [`Core::restore_session_quietly`]. An error means the event could
+     * not be had; the host then keeps the push's own generic text.
+     */
+    func notificationFor(roomId: String, eventId: String) throws  -> NotificationDto
+    
+    /**
      * Use a recovery key on this device, to read what other devices hold.
      */
     func recoverWithKey(recoveryKey: String) throws 
@@ -936,6 +944,17 @@ public protocol CoreProtocol : AnyObject {
     func spacesList() throws  -> [SpaceSummary]
     
     /**
+     * Stop syncing while the app is away, so a second process can take the
+     * store lock. Streams stay subscribed. See `Session::pause_sync`.
+     */
+    func syncPause() 
+    
+    /**
+     * Start a sync [`Core::sync_pause`] stopped.
+     */
+    func syncResume() 
+    
+    /**
      * Load older messages. `true` means the start of the room was reached and
      * there is nothing more to ask for.
      */
@@ -967,6 +986,12 @@ public protocol CoreProtocol : AnyObject {
      * Unblock someone. A no-op when they were not blocked.
      */
     func unignoreUser(userId: String) throws 
+    
+    /**
+     * Stop pushing to this device without signing out. [`Core::logout`]
+     * already does this first; a no-op when nothing was registered.
+     */
+    func unregisterPusher() throws 
     
 }
 
@@ -1039,6 +1064,22 @@ public convenience init(dataDir: String) {
         try! rustCall { uniffi_supermessage_ffi_fn_free_core(pointer, $0) }
     }
 
+    
+    /**
+     * Build a core that shares its stores with another process — on iOS, the
+     * app and its Notification Service Extension. See [`CoreOptions`].
+     *
+     * Infallible, like [`Core::new`]: every step that can fail here has a
+     * safe way to continue, and a core that refused to exist would leave the
+     * host with nothing to show even a sign-in screen through.
+     */
+public static func withOptions(options: CoreOptions) -> Core {
+    return try!  FfiConverterTypeCore.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_constructor_core_with_options(
+        FfiConverterTypeCoreOptions.lower(options),$0
+    )
+})
+}
     
     /**
      * Build a core whose secrets live in a store the host supplies.
@@ -1376,6 +1417,21 @@ open func memberAvatar(mxcUri: String)throws  -> String? {
     return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_member_avatar(self.uniffiClonePointer(),
         FfiConverterString.lower(mxcUri),$0
+    )
+})
+}
+    
+    /**
+     * What the notification for `event_id` in `room_id` should say, fetched
+     * and decrypted here — the Notification Service Extension's one call
+     * after [`Core::restore_session_quietly`]. An error means the event could
+     * not be had; the host then keeps the push's own generic text.
+     */
+open func notificationFor(roomId: String, eventId: String)throws  -> NotificationDto {
+    return try  FfiConverterTypeNotificationDto_lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_notification_for(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),$0
     )
 })
 }
@@ -1727,6 +1783,25 @@ open func spacesList()throws  -> [SpaceSummary] {
 }
     
     /**
+     * Stop syncing while the app is away, so a second process can take the
+     * store lock. Streams stay subscribed. See `Session::pause_sync`.
+     */
+open func syncPause() {try! rustCall() {
+    uniffi_supermessage_ffi_fn_method_core_sync_pause(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Start a sync [`Core::sync_pause`] stopped.
+     */
+open func syncResume() {try! rustCall() {
+    uniffi_supermessage_ffi_fn_method_core_sync_resume(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
      * Load older messages. `true` means the start of the room was reached and
      * there is nothing more to ask for.
      */
@@ -1786,6 +1861,16 @@ open func toggleReaction(roomId: String, eventId: String, key: String)throws  ->
 open func unignoreUser(userId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_unignore_user(self.uniffiClonePointer(),
         FfiConverterString.lower(userId),$0
+    )
+}
+}
+    
+    /**
+     * Stop pushing to this device without signing out. [`Core::logout`]
+     * already does this first; a no-op when nothing was registered.
+     */
+open func unregisterPusher()throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_unregister_pusher(self.uniffiClonePointer(),$0
     )
 }
 }
@@ -1931,6 +2016,154 @@ public func FfiConverterTypeConnectionState_lift(_ buf: RustBuffer) throws -> Co
 #endif
 public func FfiConverterTypeConnectionState_lower(_ value: ConnectionState) -> RustBuffer {
     return FfiConverterTypeConnectionState.lower(value)
+}
+
+
+/**
+ * How a host that shares its stores with another process builds its core.
+ *
+ * On iOS both the app and the Notification Service Extension build one, over
+ * the same App Group directory and the same keychain access group, under
+ * different `process_name`s. The app also names where an earlier build kept
+ * things, and they are moved once (see `settle_data_dir`).
+ */
+public struct CoreOptions {
+    /**
+     * Where the stores live. For a shared store, a directory both processes
+     * can reach — the App Group container on iOS.
+     */
+    public var dataDir: String
+    /**
+     * The name this process holds the cross-process store lock under:
+     * `"main"` for the app, `"nse"` for the extension. Never the same in two
+     * processes that share `data_dir`.
+     */
+    public var processName: String
+    /**
+     * Where a previous build kept its stores. Moved into `data_dir` once,
+     * before any client is built, so an update does not sign anyone out.
+     * `None` in a process that never had any (the extension).
+     */
+    public var legacyDataDir: String?
+    /**
+     * The keychain access group secrets live in — on iOS the group both
+     * processes are entitled to, team prefix included. `None` for the
+     * platform default. Ignored off iOS.
+     */
+    public var keychainAccessGroup: String?
+    /**
+     * The access group a previous build wrote its secrets to — the app's
+     * own default group, `<team>.dev.supermessage.ios`. Moved into
+     * `keychain_access_group` the first time they are readable. Ignored off
+     * iOS, and when `keychain_access_group` is `None`.
+     */
+    public var legacyKeychainAccessGroup: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Where the stores live. For a shared store, a directory both processes
+         * can reach — the App Group container on iOS.
+         */dataDir: String, 
+        /**
+         * The name this process holds the cross-process store lock under:
+         * `"main"` for the app, `"nse"` for the extension. Never the same in two
+         * processes that share `data_dir`.
+         */processName: String, 
+        /**
+         * Where a previous build kept its stores. Moved into `data_dir` once,
+         * before any client is built, so an update does not sign anyone out.
+         * `None` in a process that never had any (the extension).
+         */legacyDataDir: String?, 
+        /**
+         * The keychain access group secrets live in — on iOS the group both
+         * processes are entitled to, team prefix included. `None` for the
+         * platform default. Ignored off iOS.
+         */keychainAccessGroup: String?, 
+        /**
+         * The access group a previous build wrote its secrets to — the app's
+         * own default group, `<team>.dev.supermessage.ios`. Moved into
+         * `keychain_access_group` the first time they are readable. Ignored off
+         * iOS, and when `keychain_access_group` is `None`.
+         */legacyKeychainAccessGroup: String?) {
+        self.dataDir = dataDir
+        self.processName = processName
+        self.legacyDataDir = legacyDataDir
+        self.keychainAccessGroup = keychainAccessGroup
+        self.legacyKeychainAccessGroup = legacyKeychainAccessGroup
+    }
+}
+
+
+
+extension CoreOptions: Equatable, Hashable {
+    public static func ==(lhs: CoreOptions, rhs: CoreOptions) -> Bool {
+        if lhs.dataDir != rhs.dataDir {
+            return false
+        }
+        if lhs.processName != rhs.processName {
+            return false
+        }
+        if lhs.legacyDataDir != rhs.legacyDataDir {
+            return false
+        }
+        if lhs.keychainAccessGroup != rhs.keychainAccessGroup {
+            return false
+        }
+        if lhs.legacyKeychainAccessGroup != rhs.legacyKeychainAccessGroup {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(dataDir)
+        hasher.combine(processName)
+        hasher.combine(legacyDataDir)
+        hasher.combine(keychainAccessGroup)
+        hasher.combine(legacyKeychainAccessGroup)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreOptions {
+        return
+            try CoreOptions(
+                dataDir: FfiConverterString.read(from: &buf), 
+                processName: FfiConverterString.read(from: &buf), 
+                legacyDataDir: FfiConverterOptionString.read(from: &buf), 
+                keychainAccessGroup: FfiConverterOptionString.read(from: &buf), 
+                legacyKeychainAccessGroup: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreOptions, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.dataDir, into: &buf)
+        FfiConverterString.write(value.processName, into: &buf)
+        FfiConverterOptionString.write(value.legacyDataDir, into: &buf)
+        FfiConverterOptionString.write(value.keychainAccessGroup, into: &buf)
+        FfiConverterOptionString.write(value.legacyKeychainAccessGroup, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreOptions_lift(_ buf: RustBuffer) throws -> CoreOptions {
+    return try FfiConverterTypeCoreOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreOptions_lower(_ value: CoreOptions) -> RustBuffer {
+    return FfiConverterTypeCoreOptions.lower(value)
 }
 
 
@@ -3425,6 +3658,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGateAnswers: FfiConverterRustBuffer {
+    typealias SwiftType = GateAnswers?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGateAnswers.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGateAnswers.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeMatrixLinkTarget: FfiConverterRustBuffer {
     typealias SwiftType = MatrixLinkTarget?
 
@@ -3441,6 +3698,54 @@ fileprivate struct FfiConverterOptionTypeMatrixLinkTarget: FfiConverterRustBuffe
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeMatrixLinkTarget.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeNotificationDto: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationDto?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeNotificationDto.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeNotificationDto.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePermissionAnswers: FfiConverterRustBuffer {
+    typealias SwiftType = PermissionAnswers?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePermissionAnswers.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePermissionAnswers.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -3857,6 +4162,16 @@ fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer
 
 
 
+
+
+
+
+
+
+
+
+
+
 /**
  * A playing note's position as the clock under it reads — `"0:06"`,
  * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -3894,6 +4209,55 @@ public func displayInitial(name: String) -> String {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_supermessage_ffi_fn_func_display_initial(
         FfiConverterString.lower(name),$0
+    )
+})
+}
+/**
+ * The `UNNotificationCategory` identifier for `category` — the value the
+ * push gateway also sends as `aps.category`.
+ */
+public func notificationCategoryIdentifier(category: NotificationCategory) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_category_identifier(
+        FfiConverterTypeNotificationCategory_lower(category),$0
+    )
+})
+}
+/**
+ * The notification a timeline row deserves, or `None` when it is not news —
+ * the same decision the Notification Service Extension makes for a push, so
+ * a local notification and a remote one say the same thing. See
+ * `core::notification`.
+ */
+public func notificationForRow(row: TimelineRow, roomId: String, eventId: String, roomName: String) -> NotificationDto? {
+    return try!  FfiConverterOptionTypeNotificationDto.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_for_row(
+        FfiConverterTypeTimelineRow_lower(row),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),
+        FfiConverterString.lower(roomName),$0
+    )
+})
+}
+/**
+ * What a gate notification can answer, or `None` when it should only open.
+ */
+public func notificationGateAnswers(decision: CustomEventDecision, gateId: String) -> GateAnswers? {
+    return try!  FfiConverterOptionTypeGateAnswers.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_gate_answers(
+        FfiConverterTypeCustomEventDecision_lower(decision),
+        FfiConverterString.lower(gateId),$0
+    )
+})
+}
+/**
+ * The Allow once / Reject pair a permission decision offers, if it offers
+ * both. "Always" is never taken for "once".
+ */
+public func notificationPermissionAnswers(decision: CustomEventDecision) -> PermissionAnswers? {
+    return try!  FfiConverterOptionTypePermissionAnswers.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_permission_answers(
+        FfiConverterTypeCustomEventDecision_lower(decision),$0
     )
 })
 }
@@ -4048,6 +4412,18 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_display_initial() != 43302) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_notification_category_identifier() != 36525) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notification_for_row() != 16600) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notification_gate_answers() != 2727) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notification_permission_answers() != 1058) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4150,6 +4526,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_member_avatar() != 39314) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_notification_for() != 31590) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_recover_with_key() != 27628) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4225,6 +4604,12 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_spaces_list() != 33636) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_sync_pause() != 35955) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_sync_resume() != 60926) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_timeline_paginate_back() != 54481) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4240,7 +4625,13 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_unignore_user() != 38081) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_unregister_pusher() != 51150) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_constructor_core_new() != 35650) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_constructor_core_with_options() != 28253) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_constructor_core_with_secret_store() != 63818) {

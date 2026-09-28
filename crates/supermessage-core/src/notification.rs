@@ -1,0 +1,813 @@
+//! What a notification says, decided once for every process that posts one.
+//!
+//! Two places post a notification on iOS and they must agree to the word:
+//! the app, from a row it is already showing (a *local* notification), and
+//! the Notification Service Extension, from an event it has only a push's
+//! room and event id for (a *remote* one — see [`crate::session::Session::notification_for`]).
+//! If the two decided separately, the same permission request would offer
+//! Allow and Reject from one and only Open from the other, and whichever
+//! arrived second would win.
+//!
+//! So both go through [`notification_for_row`]. The NSE first turns its one
+//! decrypted event into the [`TimelineRow`] the timeline would have built
+//! (`timeline::row_from_parts`, the projection the timeline itself uses), so
+//! a notification's body is the row's own preview and its category the row's
+//! own render decision. What remains here is the part only a notification
+//! needs: which category of actions to offer, and which options they send.
+//!
+//! **Nothing here chooses what a room is called or how a sender is named.**
+//! Those arrive decided — `RoomIdentity.name`, `TimelineRow::sender_name`.
+
+use crate::custom_events::{CustomEventDecision, CustomEventView, GATE_OPTION_IDS};
+use crate::dto::TimelineRow;
+use crate::item_view::ItemView;
+
+/// Which set of actions a notification offers. The host registers one
+/// category per case under [`NotificationCategory::identifier`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum NotificationCategory {
+    /// An ordinary message. Tapping it opens the room.
+    Message,
+    /// An AgentPod permission request answerable as Allow once / Reject.
+    Permission,
+    /// A superpipeline gate answerable as Approve / Request changes / Reject.
+    Gate,
+    /// A decision that must be read in the app first. Only "Open".
+    Decision,
+}
+
+impl NotificationCategory {
+    /// The `UNNotificationCategory` identifier — and the value the push
+    /// gateway puts in `aps.category`, so a push the extension could not
+    /// improve still offers the right actions.
+    pub fn identifier(self) -> &'static str {
+        match self {
+            Self::Message => "MESSAGE",
+            Self::Permission => "PERMISSION",
+            Self::Gate => "GATE",
+            Self::Decision => "DECISION",
+        }
+    }
+}
+
+/// The two option ids a PERMISSION notification's actions send.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PermissionAnswers {
+    pub allow_option_id: String,
+    pub reject_option_id: String,
+}
+
+/// What a GATE notification's actions need to answer with no room open: the
+/// same three things the card sends.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct GateAnswers {
+    /// superpipeline's `gate_id` — `CustomEventDecision::subject`.
+    pub gate_id: String,
+    /// The gate's question; the sentence left in the room is derived from it.
+    pub prompt: String,
+    /// Which of `approve`, `request_changes` and `reject` the gate offers, in
+    /// that order.
+    pub option_ids: Vec<String>,
+}
+
+/// Why a remote notification should not be shown at all.
+///
+/// A hint, not a guarantee: without Apple's notification-filtering
+/// entitlement an extension cannot drop a push, only empty it. The homeserver's
+/// own push rules already keep most of these from being sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum NotificationSuppression {
+    /// An edit (`m.replace`): the original already notified.
+    Edit,
+    Reaction,
+    /// A redaction, or an event that has since been redacted.
+    Redaction,
+    /// The sender is blocked, or the account's push rules say not to notify.
+    Filtered,
+    /// This account sent it, from another device.
+    Own,
+    /// Something the timeline draws as context rather than news — a turn
+    /// card, a transcript, a state change — which no local notification
+    /// would have been posted for either.
+    NotNews,
+}
+
+/// One notification, decided.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct NotificationDto {
+    pub room_id: String,
+    /// The event it is about. For a gate, the event the decision references.
+    pub event_id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    /// Plain text, already bounded — the row's own preview.
+    pub body: String,
+    pub category: NotificationCategory,
+    /// Set exactly when `category` is `Permission`.
+    pub permission: Option<PermissionAnswers>,
+    /// Set exactly when `category` is `Gate`.
+    pub gate: Option<GateAnswers>,
+    /// Groups notifications into one conversation per room — the gateway's
+    /// `thread-id` too.
+    pub thread_id: String,
+    /// Present when this should not be shown; the text fields are then the
+    /// generic ones and must not be displayed.
+    pub suppress: Option<NotificationSuppression>,
+}
+
+/// The body a notification carries when there is nothing better to say. The
+/// push gateway's own `aps.alert` says the same, so a push the extension could
+/// not improve and one it could are worded alike.
+pub const GENERIC_BODY: &str = "New message";
+
+/// What a still-encrypted message says: this device has no key for it yet.
+pub const ENCRYPTED_BODY: &str = "Encrypted message";
+
+impl NotificationDto {
+    /// A notification that says only that something arrived.
+    pub fn generic(room_id: &str, event_id: &str, title: &str) -> Self {
+        Self {
+            room_id: room_id.to_string(),
+            event_id: event_id.to_string(),
+            title: title.to_string(),
+            subtitle: None,
+            body: GENERIC_BODY.to_string(),
+            category: NotificationCategory::Message,
+            permission: None,
+            gate: None,
+            thread_id: room_id.to_string(),
+            suppress: None,
+        }
+    }
+
+    /// One that should not be shown, and why.
+    pub fn suppressed(room_id: &str, event_id: &str, why: NotificationSuppression) -> Self {
+        Self {
+            suppress: Some(why),
+            ..Self::generic(room_id, event_id, "")
+        }
+    }
+}
+
+/// The notification a row deserves, or `None` when it is not news.
+///
+/// `room_name` is the room's `RoomIdentity.name`. A message is titled with
+/// its sender and subtitled with the room, unless the two are the same (a
+/// direct conversation); a decision is titled with the room and subtitled
+/// with the card's own label, because the question is the room's, not the
+/// sender's.
+pub fn notification_for_row(
+    row: &TimelineRow,
+    room_id: &str,
+    event_id: &str,
+    room_name: &str,
+) -> Option<NotificationDto> {
+    let subtitle = (row.sender_name != room_name).then(|| room_name.to_string());
+    let message = |body: String| NotificationDto {
+        title: row.sender_name.clone(),
+        subtitle: subtitle.clone(),
+        body,
+        ..NotificationDto::generic(room_id, event_id, "")
+    };
+    match &row.view {
+        ItemView::CustomEvent { view, label, .. } => {
+            // A card with nothing to decide — a turn, a run, a station
+            // status — is context, not an interruption.
+            let CustomEventView::Rendered {
+                decision: Some(decision),
+                ..
+            } = view
+            else {
+                return None;
+            };
+            let base = NotificationDto {
+                title: room_name.to_string(),
+                subtitle: Some(label.clone()),
+                body: decision.prompt.clone(),
+                category: NotificationCategory::Decision,
+                ..NotificationDto::generic(room_id, event_id, "")
+            };
+            if let Some(gate_id) = &decision.subject {
+                return Some(match gate_answers(decision, gate_id) {
+                    Some(gate) => NotificationDto {
+                        category: NotificationCategory::Gate,
+                        gate: Some(gate),
+                        ..base
+                    },
+                    None => base,
+                });
+            }
+            Some(match permission_answers(decision) {
+                Some(answers) => NotificationDto {
+                    category: NotificationCategory::Permission,
+                    permission: Some(answers),
+                    ..base
+                },
+                None => base,
+            })
+        }
+        ItemView::Bubble { .. } | ItemView::Emote => row.reply_preview.clone().map(message),
+        ItemView::Image {
+            alt, caption: cap, ..
+        } => Some(message(
+            cap.clone()
+                .or_else(|| row.reply_preview.clone())
+                .unwrap_or_else(|| alt.clone()),
+        )),
+        ItemView::MediaFile { filename, .. } => Some(message(
+            row.reply_preview
+                .clone()
+                .unwrap_or_else(|| filename.clone()),
+        )),
+        // "Voice message", or the audio file's name — the core's title, not
+        // the file name a voice note happens to be uploaded under.
+        ItemView::Audio { audio } => Some(message(
+            audio.caption.clone().unwrap_or_else(|| audio.title.clone()),
+        )),
+        // A failed turn is a message — the one other clients show as its
+        // body — and the reader is waiting on the answer it replaces.
+        ItemView::TurnError { card } => Some(message(
+            row.reply_preview
+                .clone()
+                .unwrap_or_else(|| card.headline.clone()),
+        )),
+        // What a voice note said, posted after the note. The note already
+        // notified, so the transcript is not a second interruption.
+        ItemView::VoiceTranscript { .. } => None,
+        ItemView::System { .. }
+        | ItemView::UnreadMarker
+        | ItemView::Placeholder { .. }
+        | ItemView::DateDivider
+        | ItemView::None => None,
+    }
+}
+
+/// The two options a PERMISSION notification's actions send, or `None` when
+/// the request does not offer both.
+///
+/// The actions are registered ahead of time as a fixed pair — "Allow once" and
+/// "Reject" — so they can only be offered when the request has an option that
+/// means each. The renderer hands back an option's *name* as its id, and those
+/// names are ACP's: "Allow once", "Allow always", "Reject". **"Always" is never
+/// taken for "once"**: a lock-screen tap must not grant more than the button
+/// said.
+pub fn permission_answers(decision: &CustomEventDecision) -> Option<PermissionAnswers> {
+    fn normalised(s: &str) -> String {
+        s.trim().to_lowercase()
+    }
+    let options = &decision.options;
+    let allow = options
+        .iter()
+        .find(|o| normalised(&o.id) == "allow once")
+        .or_else(|| {
+            options.iter().find(|o| {
+                let n = normalised(&o.id);
+                n.starts_with("allow") && !n.contains("always")
+            })
+        })?;
+    let reject = options
+        .iter()
+        .find(|o| normalised(&o.id) == "reject")
+        .or_else(|| {
+            options.iter().find(|o| {
+                let n = normalised(&o.id);
+                (n.starts_with("reject") || n.starts_with("deny")) && !n.contains("always")
+            })
+        })?;
+    Some(PermissionAnswers {
+        allow_option_id: allow.id.clone(),
+        reject_option_id: reject.id.clone(),
+    })
+}
+
+/// What a GATE notification can answer, or `None` when it can answer nothing
+/// and should only open.
+///
+/// Matched on option **ids**, never labels: a label is free text per board
+/// ("Ship it", "LGTM"), the id is superpipeline's `GateDecision`. A gate needs
+/// Approve or Reject among them to be worth actions — "Request changes" alone
+/// still needs the card read first.
+pub fn gate_answers(decision: &CustomEventDecision, gate_id: &str) -> Option<GateAnswers> {
+    if gate_id.is_empty() {
+        return None;
+    }
+    let option_ids: Vec<String> = GATE_OPTION_IDS
+        .iter()
+        .filter(|known| decision.options.iter().any(|o| o.id == **known))
+        .map(|id| id.to_string())
+        .collect();
+    if !option_ids
+        .iter()
+        .any(|id| id == "approve" || id == "reject")
+    {
+        return None;
+    }
+    Some(GateAnswers {
+        gate_id: gate_id.to_string(),
+        prompt: decision.prompt.clone(),
+        option_ids,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// A push's one event, as the timeline would have projected it.
+// ---------------------------------------------------------------------------
+
+use matrix_sdk::ruma::events::room::message::{Relation, SyncRoomMessageEvent};
+use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent};
+use matrix_sdk::ruma::serde::Raw;
+use matrix_sdk::ruma::UserId;
+use matrix_sdk_ui::notification_client::{
+    NotificationEvent, NotificationItem, RawNotificationEvent,
+};
+
+/// Everything a notification needs from a fetched, decrypted event.
+///
+/// The SDK's [`NotificationItem`] reduced to plain values, so the decision
+/// below is testable with a hand-built event and no homeserver.
+pub struct FetchedEvent<'a> {
+    pub room_id: &'a str,
+    pub event_id: &'a str,
+    /// The room's computed display name, before `RoomIdentity` parsing.
+    pub room_display_name: &'a str,
+    pub sender_display_name: Option<&'a str>,
+    /// The decrypted event, when it is a timeline event.
+    pub raw: Option<&'a Raw<AnySyncTimelineEvent>>,
+    /// The same event parsed, with any reply fallback already removed.
+    pub event: Option<&'a AnySyncTimelineEvent>,
+    /// An invitation's inviter, when this is an invitation rather than an
+    /// event in a joined room.
+    pub invited_by: Option<&'a UserId>,
+}
+
+impl<'a> FetchedEvent<'a> {
+    /// Borrow the parts of an SDK notification item.
+    pub fn from_item(item: &'a NotificationItem, room_id: &'a str, event_id: &'a str) -> Self {
+        let (raw, event, invited_by) = match (&item.raw_event, &item.event) {
+            (RawNotificationEvent::Timeline(raw), NotificationEvent::Timeline(event)) => {
+                (Some(raw), Some(event.as_ref()), None)
+            }
+            (_, NotificationEvent::Invite(invite)) => (None, None, Some(invite.sender.as_ref())),
+            _ => (None, None, None),
+        };
+        Self {
+            room_id,
+            event_id,
+            room_display_name: &item.room_computed_display_name,
+            sender_display_name: item.sender_display_name.as_deref(),
+            raw,
+            event,
+            invited_by,
+        }
+    }
+}
+
+/// A sender named the way their row in the timeline would name them.
+fn sender_name(sender: &str, display_name: Option<&str>) -> String {
+    let dto = crate::timeline::project_item_parts(
+        "",
+        None,
+        "message",
+        None,
+        None,
+        Some(sender),
+        display_name,
+        None,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        None,
+        None,
+        false,
+        Vec::new(),
+        Vec::new(),
+    );
+    TimelineRow::new(dto).sender_name
+}
+
+/// The notification for one fetched event.
+///
+/// Never fails: an event this cannot describe gets the generic body, because
+/// a push the homeserver decided to send is somebody wanting the reader's
+/// attention, and dropping it on a parse would be the worse error.
+pub fn notification_for_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDto {
+    let room_id = fetched.room_id;
+    let event_id = fetched.event_id;
+    let room_name = crate::room_identity::parse_room_identity(fetched.room_display_name).name;
+
+    if let Some(inviter) = fetched.invited_by {
+        let who = sender_name(inviter.as_str(), fetched.sender_display_name);
+        return NotificationDto {
+            body: format!("{who} invited you"),
+            ..NotificationDto::generic(room_id, event_id, &room_name)
+        };
+    }
+
+    let (Some(raw), Some(event)) = (fetched.raw, fetched.event) else {
+        return NotificationDto::generic(room_id, event_id, &room_name);
+    };
+    if event.sender() == own_user {
+        return NotificationDto::suppressed(room_id, event_id, NotificationSuppression::Own);
+    }
+
+    let sender = event.sender().as_str();
+    let timestamp = Some(u64::from(event.origin_server_ts().0));
+    let parts = |kind: &str, msgtype: Option<&str>, body: Option<&str>| {
+        crate::timeline::project_item_parts(
+            event_id,
+            Some(event_id),
+            kind,
+            msgtype,
+            None,
+            Some(sender),
+            fetched.sender_display_name,
+            None,
+            false,
+            body,
+            None,
+            None,
+            None,
+            timestamp,
+            false,
+            None,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        )
+    };
+
+    let row = match event {
+        AnySyncTimelineEvent::MessageLike(message) => match message {
+            AnySyncMessageLikeEvent::RoomMessage(SyncRoomMessageEvent::Original(original)) => {
+                if matches!(original.content.relates_to, Some(Relation::Replacement(_))) {
+                    return NotificationDto::suppressed(
+                        room_id,
+                        event_id,
+                        NotificationSuppression::Edit,
+                    );
+                }
+                let msgtype = &original.content.msgtype;
+                let mut dto = parts("message", Some(msgtype.msgtype()), Some(msgtype.body()));
+                dto.media = crate::timeline::media_meta(msgtype);
+                crate::timeline::row_from_parts(dto, Some(raw), own_user)
+            }
+            AnySyncMessageLikeEvent::Reaction(_) => {
+                return NotificationDto::suppressed(
+                    room_id,
+                    event_id,
+                    NotificationSuppression::Reaction,
+                );
+            }
+            AnySyncMessageLikeEvent::RoomRedaction(_) => {
+                return NotificationDto::suppressed(
+                    room_id,
+                    event_id,
+                    NotificationSuppression::Redaction,
+                );
+            }
+            other if other.is_redacted() => {
+                return NotificationDto::suppressed(
+                    room_id,
+                    event_id,
+                    NotificationSuppression::Redaction,
+                );
+            }
+            // Still encrypted: the extension ran out of ways to get the key.
+            // Said honestly, and still from its sender, because the push is
+            // real — somebody wrote something.
+            AnySyncMessageLikeEvent::RoomEncrypted(_) => {
+                let row = TimelineRow::new(parts("unableToDecrypt", None, None));
+                return NotificationDto {
+                    title: row.sender_name,
+                    subtitle: None,
+                    body: ENCRYPTED_BODY.to_string(),
+                    ..NotificationDto::generic(room_id, event_id, &room_name)
+                };
+            }
+            other => {
+                let event_type = other.event_type().to_string();
+                // A suite event this build draws: project it as the timeline
+                // does, so a permission request notifies as one.
+                if crate::custom_events::default_registry()
+                    .get(&event_type)
+                    .is_some()
+                {
+                    let (payload, body) = crate::timeline::custom_message_payload(Some(raw));
+                    let mut dto = parts("customMessage", None, body.as_deref());
+                    dto.detail = Some(event_type);
+                    dto.custom_payload = payload.map(crate::dto::CustomPayload);
+                    crate::timeline::row_from_parts(dto, Some(raw), own_user)
+                } else {
+                    // A sticker, a call, a poll: news, but nothing this can
+                    // say more about than the gateway already did.
+                    let row = TimelineRow::new(parts("customMessage", None, None));
+                    return NotificationDto {
+                        title: row.sender_name,
+                        subtitle: None,
+                        ..NotificationDto::generic(room_id, event_id, &room_name)
+                    };
+                }
+            }
+        },
+        AnySyncTimelineEvent::State(_) => {
+            return NotificationDto::suppressed(
+                room_id,
+                event_id,
+                NotificationSuppression::NotNews,
+            );
+        }
+    };
+
+    notification_for_row(&row, room_id, event_id, &room_name).unwrap_or_else(|| {
+        NotificationDto::suppressed(room_id, event_id, NotificationSuppression::NotNews)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::custom_events::CustomEventDecisionOption;
+    use matrix_sdk::ruma::user_id;
+    use serde_json::{json, Value};
+
+    fn decision(ids: &[&str], subject: Option<&str>) -> CustomEventDecision {
+        CustomEventDecision {
+            prompt: "Allow it?".into(),
+            options: ids
+                .iter()
+                .map(|id| CustomEventDecisionOption {
+                    id: id.to_string(),
+                    label: id.to_string(),
+                })
+                .collect(),
+            subject: subject.map(str::to_string),
+        }
+    }
+
+    // --- permission_answers: moved from NotificationComposer.permissionAnswers,
+    // with its cases.
+
+    #[test]
+    fn allow_once_and_reject_are_the_pair() {
+        let answers =
+            permission_answers(&decision(&["Allow once", "Allow always", "Reject"], None)).unwrap();
+        assert_eq!(answers.allow_option_id, "Allow once");
+        assert_eq!(answers.reject_option_id, "Reject");
+    }
+
+    #[test]
+    fn always_is_never_taken_for_once() {
+        assert_eq!(
+            permission_answers(&decision(&["Allow always", "Reject"], None)),
+            None
+        );
+        assert_eq!(
+            permission_answers(&decision(&["Allow once", "Reject always"], None)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_near_spelling_is_accepted_when_the_exact_one_is_absent() {
+        let answers = permission_answers(&decision(&[" ALLOW ", "Deny"], None)).unwrap();
+        assert_eq!(answers.allow_option_id, " ALLOW ");
+        assert_eq!(answers.reject_option_id, "Deny");
+    }
+
+    #[test]
+    fn the_exact_spelling_wins_over_an_earlier_near_one() {
+        let answers =
+            permission_answers(&decision(&["Allow for now", "Allow once", "Reject"], None))
+                .unwrap();
+        assert_eq!(answers.allow_option_id, "Allow once");
+    }
+
+    #[test]
+    fn a_request_without_both_answers_has_no_pair() {
+        assert_eq!(permission_answers(&decision(&["Allow once"], None)), None);
+        assert_eq!(permission_answers(&decision(&["Reject"], None)), None);
+    }
+
+    // --- gate_answers
+
+    #[test]
+    fn a_gates_options_are_its_known_ids_in_order() {
+        let gate =
+            gate_answers(&decision(&["reject", "approve", "later"], Some("g")), "g").unwrap();
+        assert_eq!(gate.option_ids, vec!["approve", "reject"]);
+        assert_eq!(gate.gate_id, "g");
+    }
+
+    #[test]
+    fn request_changes_alone_only_opens() {
+        assert_eq!(
+            gate_answers(&decision(&["request_changes"], Some("g")), "g"),
+            None
+        );
+        assert_eq!(gate_answers(&decision(&["approve"], Some("")), ""), None);
+    }
+
+    // --- a push's event, end to end through the timeline's projection
+
+    fn raw(json: Value) -> Raw<AnySyncTimelineEvent> {
+        Raw::from_json(serde_json::value::to_raw_value(&json).unwrap())
+    }
+
+    fn notify(json: Value) -> NotificationDto {
+        let raw = raw(json);
+        let event = raw.deserialize().expect("a valid event");
+        let fetched = FetchedEvent {
+            room_id: "!r:hs",
+            event_id: "$e",
+            room_display_name: "🛠 Hermes — Ops",
+            sender_display_name: Some("Agent Hermes"),
+            raw: Some(&raw),
+            event: Some(&event),
+            invited_by: None,
+        };
+        notification_for_event(&fetched, user_id!("@me:hs"))
+    }
+
+    fn message(content: Value) -> Value {
+        json!({
+            "type": "m.room.message",
+            "event_id": "$e",
+            "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": content,
+        })
+    }
+
+    fn permission_payload() -> Value {
+        json!({
+            "schema_version": 1,
+            "session_id": "s1",
+            "request_seq": 3,
+            "title": "Run the tests",
+            "options": [
+                { "option_id": "allow_once", "name": "Allow once" },
+                { "option_id": "reject", "name": "Reject" }
+            ]
+        })
+    }
+
+    #[test]
+    fn a_message_is_titled_by_its_sender_and_subtitled_by_the_parsed_room() {
+        let note = notify(message(
+            json!({ "msgtype": "m.text", "body": "  hello\n there " }),
+        ));
+        assert_eq!(note.suppress, None);
+        assert_eq!(note.category, NotificationCategory::Message);
+        assert_eq!(note.title, "Agent Hermes");
+        // `RoomIdentity.name`: the glyph and the role are not the name.
+        assert_eq!(note.subtitle.as_deref(), Some("Hermes"));
+        assert_eq!(note.body, "hello\n there");
+        assert_eq!(note.thread_id, "!r:hs");
+    }
+
+    #[test]
+    fn a_permission_request_embedded_in_prose_notifies_as_a_permission() {
+        let note = notify(message(json!({
+            "msgtype": "m.text",
+            "body": "Allow Run the tests? 1 allow once, 2 reject",
+            "dev.agentpod.permission": permission_payload(),
+        })));
+        assert_eq!(note.category, NotificationCategory::Permission);
+        assert_eq!(note.title, "Hermes");
+        assert_eq!(note.subtitle.as_deref(), Some("Permission"));
+        assert_eq!(note.body, "Allow Run the tests?");
+        assert_eq!(
+            note.permission,
+            Some(PermissionAnswers {
+                allow_option_id: "Allow once".into(),
+                reject_option_id: "Reject".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn the_separate_permission_event_notifies_the_same_way() {
+        let mut content = permission_payload();
+        content["body"] = json!("Allow Run the tests?");
+        let note = notify(json!({
+            "type": "dev.agentpod.permission.v1",
+            "event_id": "$e",
+            "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": content,
+        }));
+        assert_eq!(note.category, NotificationCategory::Permission);
+        assert_eq!(note.body, "Allow Run the tests?");
+    }
+
+    #[test]
+    fn an_embedded_gate_notifies_as_a_gate() {
+        let note = notify(message(json!({
+            "msgtype": "m.text",
+            "body": "Approve Ship v2?",
+            "dev.superpipeline.gate": {
+                "schema_version": 1,
+                "gate_id": "gate-9",
+                "card_title": "Ship v2",
+                "options": [{ "id": "approve" }, { "id": "request_changes" }, { "id": "reject" }]
+            }
+        })));
+        assert_eq!(note.category, NotificationCategory::Gate);
+        let gate = note.gate.expect("a gate with answers");
+        assert_eq!(gate.gate_id, "gate-9");
+        assert_eq!(
+            gate.option_ids,
+            vec!["approve", "request_changes", "reject"]
+        );
+        assert_eq!(note.body, "Approve \"Ship v2\"?");
+    }
+
+    #[test]
+    fn edits_reactions_and_redactions_are_not_shown() {
+        let edit = notify(message(json!({
+            "msgtype": "m.text",
+            "body": "* fixed",
+            "m.new_content": { "msgtype": "m.text", "body": "fixed" },
+            "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+        })));
+        assert_eq!(edit.suppress, Some(NotificationSuppression::Edit));
+
+        let reaction = notify(json!({
+            "type": "m.reaction", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": { "m.relates_to": { "rel_type": "m.annotation", "event_id": "$x", "key": "👍" } }
+        }));
+        assert_eq!(reaction.suppress, Some(NotificationSuppression::Reaction));
+
+        let redaction = notify(json!({
+            "type": "m.room.redaction", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1, "redacts": "$x", "content": { "redacts": "$x" }
+        }));
+        assert_eq!(redaction.suppress, Some(NotificationSuppression::Redaction));
+    }
+
+    #[test]
+    fn this_accounts_own_message_is_not_shown() {
+        let mut own = message(json!({ "msgtype": "m.text", "body": "from my laptop" }));
+        own["sender"] = json!("@me:hs");
+        assert_eq!(notify(own).suppress, Some(NotificationSuppression::Own));
+    }
+
+    #[test]
+    fn a_turn_card_is_context_not_news() {
+        let note = notify(json!({
+            "type": "dev.agentpod.turn.v1", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": {
+                "schema_version": 1, "session_id": "s", "body": "Used 2 tools",
+                "tools": [{ "title": "Read", "status": "completed" }],
+                "counts": { "total": 1, "failed": 0, "omitted": 0 }
+            }
+        }));
+        assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+    }
+
+    #[test]
+    fn a_still_encrypted_message_says_so_from_its_sender() {
+        let note = notify(json!({
+            "type": "m.room.encrypted", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": {
+                "algorithm": "m.megolm.v1.aes-sha2", "ciphertext": "AAAA",
+                "sender_key": "k", "device_id": "D", "session_id": "S"
+            }
+        }));
+        assert_eq!(note.suppress, None);
+        assert_eq!(note.body, ENCRYPTED_BODY);
+        assert_eq!(note.title, "Agent Hermes");
+    }
+
+    #[test]
+    fn an_invitation_names_who_sent_it() {
+        let fetched = FetchedEvent {
+            room_id: "!r:hs",
+            event_id: "$e",
+            room_display_name: "Launch",
+            sender_display_name: None,
+            raw: None,
+            event: None,
+            invited_by: Some(user_id!("@agent_strategy-sam:hs")),
+        };
+        let note = notification_for_event(&fetched, user_id!("@me:hs"));
+        assert_eq!(note.title, "Launch");
+        assert_eq!(note.body, "Strategy Sam invited you");
+    }
+
+    #[test]
+    fn category_identifiers_are_the_registered_ones() {
+        assert_eq!(NotificationCategory::Message.identifier(), "MESSAGE");
+        assert_eq!(NotificationCategory::Permission.identifier(), "PERMISSION");
+        assert_eq!(NotificationCategory::Gate.identifier(), "GATE");
+        assert_eq!(NotificationCategory::Decision.identifier(), "DECISION");
+    }
+}

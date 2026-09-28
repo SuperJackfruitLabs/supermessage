@@ -1168,6 +1168,104 @@ public func FfiConverterTypeCustomEventField_lower(_ value: CustomEventField) ->
 
 
 /**
+ * What a GATE notification's actions need to answer with no room open: the
+ * same three things the card sends.
+ */
+public struct GateAnswers {
+    /**
+     * superpipeline's `gate_id` — `CustomEventDecision::subject`.
+     */
+    public var gateId: String
+    /**
+     * The gate's question; the sentence left in the room is derived from it.
+     */
+    public var prompt: String
+    /**
+     * Which of `approve`, `request_changes` and `reject` the gate offers, in
+     * that order.
+     */
+    public var optionIds: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * superpipeline's `gate_id` — `CustomEventDecision::subject`.
+         */gateId: String, 
+        /**
+         * The gate's question; the sentence left in the room is derived from it.
+         */prompt: String, 
+        /**
+         * Which of `approve`, `request_changes` and `reject` the gate offers, in
+         * that order.
+         */optionIds: [String]) {
+        self.gateId = gateId
+        self.prompt = prompt
+        self.optionIds = optionIds
+    }
+}
+
+
+
+extension GateAnswers: Equatable, Hashable {
+    public static func ==(lhs: GateAnswers, rhs: GateAnswers) -> Bool {
+        if lhs.gateId != rhs.gateId {
+            return false
+        }
+        if lhs.prompt != rhs.prompt {
+            return false
+        }
+        if lhs.optionIds != rhs.optionIds {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(gateId)
+        hasher.combine(prompt)
+        hasher.combine(optionIds)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateAnswers: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateAnswers {
+        return
+            try GateAnswers(
+                gateId: FfiConverterString.read(from: &buf), 
+                prompt: FfiConverterString.read(from: &buf), 
+                optionIds: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateAnswers, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.gateId, into: &buf)
+        FfiConverterString.write(value.prompt, into: &buf)
+        FfiConverterSequenceString.write(value.optionIds, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateAnswers_lift(_ buf: RustBuffer) throws -> GateAnswers {
+    return try FfiConverterTypeGateAnswers.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateAnswers_lower(_ value: GateAnswers) -> RustBuffer {
+    return FfiConverterTypeGateAnswers.lower(value)
+}
+
+
+/**
  * Media metadata projected from an `m.image`/`m.file`/`m.audio`/`m.video`
  * message's `MessageType` (see `core::timeline::media_meta`) — deliberately
  * never the media's bytes themselves. `TimelineItemDto` streams to the
@@ -1413,6 +1511,248 @@ public func FfiConverterTypeMentionable_lift(_ buf: RustBuffer) throws -> Mentio
 #endif
 public func FfiConverterTypeMentionable_lower(_ value: Mentionable) -> RustBuffer {
     return FfiConverterTypeMentionable.lower(value)
+}
+
+
+/**
+ * One notification, decided.
+ */
+public struct NotificationDto {
+    public var roomId: String
+    /**
+     * The event it is about. For a gate, the event the decision references.
+     */
+    public var eventId: String
+    public var title: String
+    public var subtitle: String?
+    /**
+     * Plain text, already bounded — the row's own preview.
+     */
+    public var body: String
+    public var category: NotificationCategory
+    /**
+     * Set exactly when `category` is `Permission`.
+     */
+    public var permission: PermissionAnswers?
+    /**
+     * Set exactly when `category` is `Gate`.
+     */
+    public var gate: GateAnswers?
+    /**
+     * Groups notifications into one conversation per room — the gateway's
+     * `thread-id` too.
+     */
+    public var threadId: String
+    /**
+     * Present when this should not be shown; the text fields are then the
+     * generic ones and must not be displayed.
+     */
+    public var suppress: NotificationSuppression?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(roomId: String, 
+        /**
+         * The event it is about. For a gate, the event the decision references.
+         */eventId: String, title: String, subtitle: String?, 
+        /**
+         * Plain text, already bounded — the row's own preview.
+         */body: String, category: NotificationCategory, 
+        /**
+         * Set exactly when `category` is `Permission`.
+         */permission: PermissionAnswers?, 
+        /**
+         * Set exactly when `category` is `Gate`.
+         */gate: GateAnswers?, 
+        /**
+         * Groups notifications into one conversation per room — the gateway's
+         * `thread-id` too.
+         */threadId: String, 
+        /**
+         * Present when this should not be shown; the text fields are then the
+         * generic ones and must not be displayed.
+         */suppress: NotificationSuppression?) {
+        self.roomId = roomId
+        self.eventId = eventId
+        self.title = title
+        self.subtitle = subtitle
+        self.body = body
+        self.category = category
+        self.permission = permission
+        self.gate = gate
+        self.threadId = threadId
+        self.suppress = suppress
+    }
+}
+
+
+
+extension NotificationDto: Equatable, Hashable {
+    public static func ==(lhs: NotificationDto, rhs: NotificationDto) -> Bool {
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.eventId != rhs.eventId {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.subtitle != rhs.subtitle {
+            return false
+        }
+        if lhs.body != rhs.body {
+            return false
+        }
+        if lhs.category != rhs.category {
+            return false
+        }
+        if lhs.permission != rhs.permission {
+            return false
+        }
+        if lhs.gate != rhs.gate {
+            return false
+        }
+        if lhs.threadId != rhs.threadId {
+            return false
+        }
+        if lhs.suppress != rhs.suppress {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(roomId)
+        hasher.combine(eventId)
+        hasher.combine(title)
+        hasher.combine(subtitle)
+        hasher.combine(body)
+        hasher.combine(category)
+        hasher.combine(permission)
+        hasher.combine(gate)
+        hasher.combine(threadId)
+        hasher.combine(suppress)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationDto {
+        return
+            try NotificationDto(
+                roomId: FfiConverterString.read(from: &buf), 
+                eventId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterOptionString.read(from: &buf), 
+                body: FfiConverterString.read(from: &buf), 
+                category: FfiConverterTypeNotificationCategory.read(from: &buf), 
+                permission: FfiConverterOptionTypePermissionAnswers.read(from: &buf), 
+                gate: FfiConverterOptionTypeGateAnswers.read(from: &buf), 
+                threadId: FfiConverterString.read(from: &buf), 
+                suppress: FfiConverterOptionTypeNotificationSuppression.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterString.write(value.eventId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.subtitle, into: &buf)
+        FfiConverterString.write(value.body, into: &buf)
+        FfiConverterTypeNotificationCategory.write(value.category, into: &buf)
+        FfiConverterOptionTypePermissionAnswers.write(value.permission, into: &buf)
+        FfiConverterOptionTypeGateAnswers.write(value.gate, into: &buf)
+        FfiConverterString.write(value.threadId, into: &buf)
+        FfiConverterOptionTypeNotificationSuppression.write(value.suppress, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationDto_lift(_ buf: RustBuffer) throws -> NotificationDto {
+    return try FfiConverterTypeNotificationDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationDto_lower(_ value: NotificationDto) -> RustBuffer {
+    return FfiConverterTypeNotificationDto.lower(value)
+}
+
+
+/**
+ * The two option ids a PERMISSION notification's actions send.
+ */
+public struct PermissionAnswers {
+    public var allowOptionId: String
+    public var rejectOptionId: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(allowOptionId: String, rejectOptionId: String) {
+        self.allowOptionId = allowOptionId
+        self.rejectOptionId = rejectOptionId
+    }
+}
+
+
+
+extension PermissionAnswers: Equatable, Hashable {
+    public static func ==(lhs: PermissionAnswers, rhs: PermissionAnswers) -> Bool {
+        if lhs.allowOptionId != rhs.allowOptionId {
+            return false
+        }
+        if lhs.rejectOptionId != rhs.rejectOptionId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(allowOptionId)
+        hasher.combine(rejectOptionId)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePermissionAnswers: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PermissionAnswers {
+        return
+            try PermissionAnswers(
+                allowOptionId: FfiConverterString.read(from: &buf), 
+                rejectOptionId: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PermissionAnswers, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.allowOptionId, into: &buf)
+        FfiConverterString.write(value.rejectOptionId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePermissionAnswers_lift(_ buf: RustBuffer) throws -> PermissionAnswers {
+    return try FfiConverterTypePermissionAnswers.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePermissionAnswers_lower(_ value: PermissionAnswers) -> RustBuffer {
+    return FfiConverterTypePermissionAnswers.lower(value)
 }
 
 
@@ -3902,6 +4242,13 @@ public struct TimelineItemDto {
     public var eventId: String?
     public var kind: String
     public var msgtype: String?
+    /**
+     * The kind's own qualifier — a custom event's type, a membership
+     * transition, a state event's type — and `None` for a message, **except**
+     * a text or notice message carrying a suite decision under an embedded
+     * key (`crate::embedded`), where it is the event type that decision
+     * stands for and [`Self::custom_payload`] is its object.
+     */
     public var detail: String?
     public var sender: String?
     public var senderDisplayName: String?
@@ -3936,7 +4283,9 @@ public struct TimelineItemDto {
     public var media: MediaMetaDto?
     /**
      * The event's raw `content` object, present only for `kind:
-     * "customMessage"` — this is the plumbing `docs/matrix-events.md` §G
+     * "customMessage"` — or, for a text or notice message, the object it
+     * carries under an embedded suite key (see [`Self::detail`] and
+     * `crate::embedded`) — this is the plumbing `docs/matrix-events.md` §G
      * describes for Superpipeline cards/runs/permission requests/station status
      * (see `core::timeline::custom_message_payload`). The SDK's
      * `MsgLikeKind::Other` discards a custom event's content entirely
@@ -4053,7 +4402,14 @@ public struct TimelineItemDto {
          * and its absence is exactly why a message that has not landed yet
          * cannot be replied to — see `item_view::can_reply_or_react`, which used
          * to infer that from the send state because this field did not exist.
-         */eventId: String?, kind: String, msgtype: String?, detail: String?, sender: String?, senderDisplayName: String?, 
+         */eventId: String?, kind: String, msgtype: String?, 
+        /**
+         * The kind's own qualifier — a custom event's type, a membership
+         * transition, a state event's type — and `None` for a message, **except**
+         * a text or notice message carrying a suite decision under an embedded
+         * key (`crate::embedded`), where it is the event type that decision
+         * stands for and [`Self::custom_payload`] is its object.
+         */detail: String?, sender: String?, senderDisplayName: String?, 
         /**
          * The sender's avatar as an `mxc:` URI, when their profile carries one.
          *
@@ -4081,7 +4437,9 @@ public struct TimelineItemDto {
          */media: MediaMetaDto?, 
         /**
          * The event's raw `content` object, present only for `kind:
-         * "customMessage"` — this is the plumbing `docs/matrix-events.md` §G
+         * "customMessage"` — or, for a text or notice message, the object it
+         * carries under an embedded suite key (see [`Self::detail`] and
+         * `crate::embedded`) — this is the plumbing `docs/matrix-events.md` §G
          * describes for Superpipeline cards/runs/permission requests/station status
          * (see `core::timeline::custom_message_payload`). The SDK's
          * `MsgLikeKind::Other` discards a custom event's content entirely
@@ -6073,6 +6431,100 @@ extension Membership: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Which set of actions a notification offers. The host registers one
+ * category per case under [`NotificationCategory::identifier`].
+ */
+
+public enum NotificationCategory {
+    
+    /**
+     * An ordinary message. Tapping it opens the room.
+     */
+    case message
+    /**
+     * An AgentPod permission request answerable as Allow once / Reject.
+     */
+    case permission
+    /**
+     * A superpipeline gate answerable as Approve / Request changes / Reject.
+     */
+    case gate
+    /**
+     * A decision that must be read in the app first. Only "Open".
+     */
+    case decision
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationCategory: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationCategory
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationCategory {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .message
+        
+        case 2: return .permission
+        
+        case 3: return .gate
+        
+        case 4: return .decision
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: NotificationCategory, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .message:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .permission:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .gate:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .decision:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationCategory_lift(_ buf: RustBuffer) throws -> NotificationCategory {
+    return try FfiConverterTypeNotificationCategory.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationCategory_lower(_ value: NotificationCategory) -> RustBuffer {
+    return FfiConverterTypeNotificationCategory.lower(value)
+}
+
+
+
+extension NotificationCategory: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * How loudly a room is allowed to interrupt.
  *
  * Mirrors the SDK's `RoomNotificationMode` plus one case it does not have:
@@ -6157,6 +6609,122 @@ public func FfiConverterTypeNotificationMode_lower(_ value: NotificationMode) ->
 
 
 extension NotificationMode: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Why a remote notification should not be shown at all.
+ *
+ * A hint, not a guarantee: without Apple's notification-filtering
+ * entitlement an extension cannot drop a push, only empty it. The homeserver's
+ * own push rules already keep most of these from being sent.
+ */
+
+public enum NotificationSuppression {
+    
+    /**
+     * An edit (`m.replace`): the original already notified.
+     */
+    case edit
+    case reaction
+    /**
+     * A redaction, or an event that has since been redacted.
+     */
+    case redaction
+    /**
+     * The sender is blocked, or the account's push rules say not to notify.
+     */
+    case filtered
+    /**
+     * This account sent it, from another device.
+     */
+    case own
+    /**
+     * Something the timeline draws as context rather than news — a turn
+     * card, a transcript, a state change — which no local notification
+     * would have been posted for either.
+     */
+    case notNews
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationSuppression: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationSuppression
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationSuppression {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .edit
+        
+        case 2: return .reaction
+        
+        case 3: return .redaction
+        
+        case 4: return .filtered
+        
+        case 5: return .own
+        
+        case 6: return .notNews
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: NotificationSuppression, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .edit:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .reaction:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .redaction:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .filtered:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .own:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .notNews:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationSuppression_lift(_ buf: RustBuffer) throws -> NotificationSuppression {
+    return try FfiConverterTypeNotificationSuppression.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationSuppression_lower(_ value: NotificationSuppression) -> RustBuffer {
+    return FfiConverterTypeNotificationSuppression.lower(value)
+}
+
+
+
+extension NotificationSuppression: Equatable, Hashable {}
 
 
 
@@ -7334,6 +7902,30 @@ fileprivate struct FfiConverterOptionTypeCustomEventDecision: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGateAnswers: FfiConverterRustBuffer {
+    typealias SwiftType = GateAnswers?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGateAnswers.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGateAnswers.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeMediaMetaDto: FfiConverterRustBuffer {
     typealias SwiftType = MediaMetaDto?
 
@@ -7350,6 +7942,30 @@ fileprivate struct FfiConverterOptionTypeMediaMetaDto: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeMediaMetaDto.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePermissionAnswers: FfiConverterRustBuffer {
+    typealias SwiftType = PermissionAnswers?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePermissionAnswers.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePermissionAnswers.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -7446,6 +8062,30 @@ fileprivate struct FfiConverterOptionTypeDeliveryState: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeDeliveryState.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeNotificationSuppression: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationSuppression?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeNotificationSuppression.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeNotificationSuppression.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

@@ -1,0 +1,87 @@
+# The Notification Service Extension, and what the app and it must share.
+# Included by ../project.yml ONLY when generated with SM_NSE=YES:
+#
+#     cd apple && SM_PUSH=YES SM_NSE=YES SM_EXTENSIONS=YES xcodegen generate
+#
+# All three together: push is what wakes the extension, and the App Group it
+# reads the app's stores through is declared by extensions.yml.
+#
+# **Off by default, because it changes what signing needs** — a third bundle
+# id and two more entitlements. Apple-side, done on 2026-09-28:
+#   - App ID `dev.supermessage.ios.nse` with App Groups
+#     (`group.dev.supermessage.ios`);
+#   - the `supermessage NSE App Store` profile for it, in the
+#     IOS_NSE_PROFILE_BASE64 secret, named in apple/ExportOptions.plist;
+#   - keychain access groups under the team prefix, which need no portal
+#     change.
+#
+# What the extension does is in NotificationService.swift. What the two
+# processes share is decided in SupermessageKit/Notifications/CoreLocation.swift:
+#   - the SDK's stores, in the App Group container (moved there from the app's
+#     own container on the first launch that has the group);
+#   - the session and the store passphrase, in the keychain access group
+#     `<team>.dev.supermessage.shared`, readable after first unlock (moved from
+#     the app's default group, `<team>.dev.supermessage.ios`, the same way).
+#
+# Paths below are relative to this file; build settings are not rewritten by an
+# include, so those stay relative to apple/ (SRCROOT).
+targets:
+  Supermessage:
+    dependencies:
+      # An app extension dependency is embedded in PlugIns by XcodeGen.
+      - target: SupermessageNotificationService
+    # The App Group itself comes from extensions.yml, which the app needs
+    # beside this (SM_EXTENSIONS=YES): XcodeGen concatenates the arrays of two
+    # includes, so naming it here too would list it twice. Without it the app
+    # keeps its stores in its own container and the extension, finding none
+    # in the group, shows every push as it came.
+    entitlements:
+      path: ../Supermessage/Platform/Supermessage.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)dev.supermessage.shared
+    settings:
+      base:
+        # Read by CoreLocation into CoreOptions. `$(DEVELOPMENT_TEAM).` is the
+        # App ID prefix for this team — the value `$(AppIdentifierPrefix)`
+        # has in the entitlements above — spelled with a setting that is
+        # always defined, so Info.plist never carries an unexpanded one.
+        SM_KEYCHAIN_GROUP: $(DEVELOPMENT_TEAM).dev.supermessage.shared
+        # Where every earlier build's items are: the app's default access
+        # group, its application identifier.
+        SM_LEGACY_KEYCHAIN_GROUP: $(DEVELOPMENT_TEAM).dev.supermessage.ios
+
+  SupermessageNotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NotificationService.swift
+      # Shared with the app through SupermessageKit — one declaration each, so
+      # the two processes cannot disagree about a path, a payload key or what
+      # a decided notification becomes.
+      - path: ../SupermessageKit/Notifications/CoreLocation.swift
+      - path: ../SupermessageKit/Notifications/RemotePush.swift
+      - path: ../SupermessageKit/Notifications/NotificationComposer.swift
+      - path: ../SupermessageKit/Notifications/NotificationRouter.swift
+    dependencies:
+      # The app embeds the framework (and the core inside it); the extension
+      # links the same copy from the app's Frameworks directory.
+      - target: SupermessageFFI
+        embed: false
+    entitlements:
+      path: SupermessageNotificationService.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.supermessage.ios
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)dev.supermessage.shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.supermessage.ios.nse
+        INFOPLIST_FILE: SupermessageNotificationService/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: supermessage
+        # Empty everywhere but the TestFlight archive, which passes the NSE
+        # profile's name — see SM_APP_PROFILE in project.yml.
+        PROVISIONING_PROFILE_SPECIFIER: $(SM_NSE_PROFILE)
+        SWIFT_STRICT_CONCURRENCY: complete
+        SM_KEYCHAIN_GROUP: $(DEVELOPMENT_TEAM).dev.supermessage.shared

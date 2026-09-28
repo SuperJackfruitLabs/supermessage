@@ -474,6 +474,28 @@ jobs:
         # and this is what makes that a check rather than a belief.
         run: ./scripts/tests/test_ios_preview_leak.sh
 
+      - name: The app builds with push, the extension and the widgets on
+        # What TestFlight ships is generated with SM_PUSH, SM_NSE and
+        # SM_EXTENSIONS, and every step above builds without them — so without
+        # this the Notification Service Extension, the widgets and the
+        # entitlements they bring would first compile during an archive.
+        # Last, because it regenerates the project the steps above used.
+        #
+        # For the simulator, which needs no provisioning profile, so it proves
+        # the code and the project and not the signing — the TestFlight
+        # workflow's archive (upload unchecked) is what proves the profiles.
+        env:
+          SM_PUSH: 'YES'
+          SM_NSE: 'YES'
+          SM_EXTENSIONS: 'YES'
+          SM_PUSH_GATEWAY_URL: https://hub.agentpod.dev/_matrix/push/v1/notify
+        run: |
+          (cd apple && xcodegen generate)
+          xcodebuild build \
+            -project apple/Supermessage.xcodeproj \
+            -scheme Supermessage \
+            -destination "id=${{ steps.sim.outputs.udid }}"
+
   android:
     name: Android
     needs: changes

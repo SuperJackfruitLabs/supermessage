@@ -24,6 +24,19 @@ jobs:
   testflight:
     name: Archive${{ inputs.upload && ' and upload' || '' }}
     runs-on: macos-26
+    # What the project is generated with, for every `xcodegen generate` below.
+    #
+    # Push (the aps-environment and time-sensitive entitlements), the
+    # Notification Service Extension, and the widget extension with the App
+    # Group both extensions share — the three profiles installed below grant
+    # exactly these. The gateway is the AgentPod hub's own, by operator
+    # decision of 2026-09-28; the app registers a pusher only when this is
+    # set (apple/SupermessageKit/Notifications/PushConfiguration.swift).
+    env:
+      SM_PUSH: 'YES'
+      SM_NSE: 'YES'
+      SM_EXTENSIONS: 'YES'
+      SM_PUSH_GATEWAY_URL: https://hub.agentpod.dev/_matrix/push/v1/notify
     steps:
       - uses: actions/checkout@v4
 
@@ -161,25 +174,38 @@ jobs:
               | grep "Apple Distribution" \
               || { echo "::error::no Apple Distribution identity after import"; exit 1; }
 
-      # The profile, where Xcode looks for it rather than where Apple keeps it.
+      # The profiles, where Xcode looks for them rather than where Apple keeps
+      # them — one per bundle id: the app, the Notification Service Extension
+      # and the widgets.
       #
       # Export is manual-signed now, so nothing is fetched at build time — see
       # the long note in apple/ExportOptions.plist. Xcode reads this directory
-      # and matches on the profile's embedded name, so the file name does not
-      # matter and the UUID does not either.
-      - name: Install the provisioning profile
+      # and matches on each profile's embedded name, so the file names do not
+      # matter and the UUIDs do not either.
+      - name: Install the provisioning profiles
         env:
-          PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          APP_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          NSE_PROFILE_BASE64: ${{ secrets.IOS_NSE_PROFILE_BASE64 }}
+          WIDGETS_PROFILE_BASE64: ${{ secrets.IOS_WIDGETS_PROFILE_BASE64 }}
         run: |
           set -euo pipefail
           DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$DIR"
-          printf '%s' "$PROFILE_BASE64" | base64 -d > "$DIR/supermessage.mobileprovision"
-          # Decoded and named back, so a truncated or wrong secret is a red
-          # step here rather than "no profiles were found" during export.
-          security cms -D -i "$DIR/supermessage.mobileprovision" \
-            | plutil -extract Name raw - \
-            || { echo "::error::the profile secret did not decode"; exit 1; }
+          install_profile() {
+            local file="$DIR/$1.mobileprovision" expected="$2" encoded="$3" name
+            [ -n "$encoded" ] || { echo "::error::the secret for '$expected' is empty"; exit 1; }
+            printf '%s' "$encoded" | base64 -d > "$file"
+            # Decoded and named back, so a truncated or swapped secret is a
+            # red step here rather than "no profiles were found" during export.
+            name="$(security cms -D -i "$file" | plutil -extract Name raw -)" \
+              || { echo "::error::the profile secret for '$expected' did not decode"; exit 1; }
+            echo "$1: $name"
+            [ "$name" = "$expected" ] \
+              || { echo "::error::expected '$expected', the secret holds '$name'"; exit 1; }
+          }
+          install_profile supermessage "supermessage iOS App Store" "$APP_PROFILE_BASE64"
+          install_profile supermessage-nse "supermessage NSE App Store" "$NSE_PROFILE_BASE64"
+          install_profile supermessage-widgets "supermessage Widgets App Store" "$WIDGETS_PROFILE_BASE64"
 
       - name: Archive, export${{ inputs.upload && ', upload' || '' }}
         env:

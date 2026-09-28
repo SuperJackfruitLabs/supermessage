@@ -348,6 +348,11 @@ pub struct TimelineItemDto {
     pub event_id: Option<String>,
     pub kind: String,
     pub msgtype: Option<String>,
+    /// The kind's own qualifier — a custom event's type, a membership
+    /// transition, a state event's type — and `None` for a message, **except**
+    /// a text or notice message carrying a suite decision under an embedded
+    /// key (`crate::embedded`), where it is the event type that decision
+    /// stands for and [`Self::custom_payload`] is its object.
     pub detail: Option<String>,
     pub sender: Option<String>,
     pub sender_display_name: Option<String>,
@@ -375,7 +380,9 @@ pub struct TimelineItemDto {
     /// media's actual bytes.
     pub media: Option<MediaMetaDto>,
     /// The event's raw `content` object, present only for `kind:
-    /// "customMessage"` — this is the plumbing `docs/matrix-events.md` §G
+    /// "customMessage"` — or, for a text or notice message, the object it
+    /// carries under an embedded suite key (see [`Self::detail`] and
+    /// `crate::embedded`) — this is the plumbing `docs/matrix-events.md` §G
     /// describes for Superpipeline cards/runs/permission requests/station status
     /// (see `core::timeline::custom_message_payload`). The SDK's
     /// `MsgLikeKind::Other` discards a custom event's content entirely

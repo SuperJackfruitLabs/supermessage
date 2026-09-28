@@ -32,8 +32,12 @@ resolves, a message is delivered, encrypted history recovers across clients,
 or a platform has a downloadable release. End-to-end checks require explicit
 permission before posting into live rooms. Windows/macOS and native mobile
 builds and device checks remain separate from Linux frontend/core checks.
-Background push delivery is not implemented. Keep dated verification reports
-in their original context rather than presenting them as current evidence.
+Background push on iOS goes through the AgentPod hub's own push gateway
+(`https://hub.agentpod.dev/_matrix/push/v1/notify`, operator decision of
+2026-09-28) to the Notification Service Extension, which decrypts through
+`Core::notification_for`; it is not yet verified on a device, and Android and
+desktop have no background push. Keep dated verification reports in their
+original context rather than presenting them as current evidence.
 
 Remaining follow-ups:
 
@@ -89,7 +93,7 @@ android/             — the native Android app (Gradle, over the Rust core via 
 | Desktop skins | Per-OS token themes over Tauri native chrome (Fluent-inspired Windows, hand-rolled HIG macOS, libadwaita CSS vars Linux) | — |
 | Message list | virtua (Svelte virtualizer) for the inverted chat timeline | MIT |
 | JS ↔ Rust bridge | Tauri commands/events + Svelte stores | — |
-| Push proposal (not implemented) | Self-hosted gateway + FCM/APNs | AGPL-3.0 if Sygnal — infrastructure only, not linked |
+| Push (iOS) | AgentPod hub's push gateway → APNs, with a Notification Service Extension | Infrastructure outside this repo, not linked |
 
 **Wired so far:** Tauri 2, matrix-sdk 0.18 (`markdown` + `bundled-sqlite`), Svelte 5 + SvelteKit (SPA), Tailwind v4, Bits UI, virtua. Native mobile hosts use UniFFI. Framework7 was an earlier proposal, superseded by the native iOS and Android implementations. Shared design tokens feed each host.
 
@@ -125,7 +129,7 @@ android/             — the native Android app (Gradle, over the Rust core via 
 - **Sync:** Simplified Sliding Sync (MSC4186) via the SDK's SyncService; `/sync` v3 fallback for older servers.
 - **E2EE:** SDK crypto (vodozemac): cross-signing, SSSS key backup, emoji/SAS device verification. Never hand-roll crypto.
 - **Media:** authenticated media endpoints (spec ≥1.11).
-- **Push:** `event_id_only` pushes via own Sygnal → FCM/APNs; the app fetches and decrypts content itself. iOS phase 2: Notification Service Extension in Swift linking the Rust SDK.
+- **Push:** `event_id_only` pushes via the AgentPod hub's own gateway (`https://hub.agentpod.dev/_matrix/push/v1/notify`, operator decision of 2026-09-28) → APNs; the app fetches and decrypts content itself. On iOS that is the Notification Service Extension (`apple/SupermessageNotificationService`, behind `SM_NSE`), linking the same Rust core: it restores the session quietly and calls `Core::notification_for`, which runs the SDK's `NotificationClient` in multi-process mode and words the notification through `core::notification` — the function the app's local notifications use too. The app (`main`) and the extension (`nse`) share the SDK stores in the App Group and the session in the keychain group `<team>.dev.supermessage.shared`, under the SDK's cross-process store lock. FCM is not wired.
 
 ## Build, test, and development commands
 
@@ -231,6 +235,22 @@ Three rules that are not style preferences:
 
 Amber (`Theme.signal`) means a pending decision and nothing else. Only
 `DecisionCard` may use it.
+
+**Push and the Notification Service Extension.** Three XcodeGen flags change
+what signing needs and are off in a local `xcodegen generate`: `SM_PUSH` (the
+`aps-environment` and time-sensitive entitlements), `SM_NSE`
+(`SupermessageNotificationService`, `dev.supermessage.ios.nse`, and the shared
+keychain group) and `SM_EXTENSIONS` (the widgets and the App Group both
+extensions use). TestFlight and CI's last iOS step generate with all three, and
+`SM_PUSH_GATEWAY_URL` names the gateway. With the App Group, `CoreLocation`
+gives the app a core over `<App Group>/supermessage` holding the stores' lock
+as `main`, and the extension one over the same directory as `nse`; the first
+launch moves an earlier build's stores and keychain items there, in the core
+(`storage::move_dir`, `secrets::MigratingStore`), so nobody is signed out.
+What a notification says is `core::notification`, for both processes — the app
+never words one itself. Once a pusher is registered, the app pauses sync in the
+background (`Core::sync_pause`) so the extension can take the lock, and posts
+local notifications only for what it sees first in the foreground.
 
 **Reproducing timeline scrolling without an account:** launch a Debug build
 with `-fixtureTimeline` (a long local room, `Previews/ScrollFixture.swift`) and
@@ -469,7 +489,7 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
   Flutter/matrix-dart-sdk and trixnity. If you modify an MPL-2.0 file, publish
   the change.
 - **AGPL projects are reference-only, never copy code:** Element X apps, trixnity-messenger/Tammy, mautrix. If an Application Service bridge is ever co-designed, prefer Ruma/ruma-appservice (MIT); avoid mautrix (AGPL).
-- **Sygnal (push gateway) is AGPL-3.0** in its maintained element-hq form; the Apache-2.0 matrix-org original is archived. It is deployed infrastructure, not a dependency — the client never talks to it (the homeserver POSTs to it). Run it unmodified; a minimal own Rust push gateway is an M3 option (see docs/tech-stack.md license section).
+- **The push gateway is the AgentPod hub's own** (operator decision of 2026-09-28), not Sygnal, whose maintained element-hq form is AGPL-3.0. It is infrastructure, not a dependency — the client never talks to it (the homeserver POSTs to it); the client only registers an `event_id_only` pusher naming it.
 - E2EE via vodozemac only; never hand-roll cryptography. Note the product call (docs/positioning.md): org rooms are unencrypted by design (knowledge extraction, AS-bridge incompatibility); E2EE stays available for external/DM contexts but is not on the critical path.
 - Push content is fetched and decrypted by the app itself (`event_id_only` pushes) — do not route message content through the push gateway.
 
@@ -482,7 +502,7 @@ the README capability table and source for present behavior.
 - **M0 — spine:** Tauri scaffold; Rust core syncs a real account on `id.agentpod.dev` (password login); Svelte stores mirror room list/timeline; virtua message list; send/receive plaintext. Dogfood immediately against real agent users.
 - **M1 — agent-aware client:** custom event rendering framework + schema drafts (card/run/permission/station), deep links, graceful plain-text fallback. E2EE is "available, not blocking".
 - **M2 — daily driver:** media, replies/reactions/edits, receipts/typing, iOS keyboard fix, Android 16KB/ring fix, Framework7 mobile skin + desktop skins.
-- **M3 — push + approvals:** Sygnal deployment; FCM/APNs; Superpipeline gate notifications → Matrix → approve/reject end-to-end; then iOS NSE.
+- **M3 — push + approvals:** a push gateway (in the event, the AgentPod hub's own rather than Sygnal — 2026-09-28); FCM/APNs; Superpipeline gate notifications → Matrix → approve/reject end-to-end; then iOS NSE.
 - **M4 — mission surfaces:** spaces/mission rooms, presence-from-org-state, fleet event rooms, multi-account, settings polish, store submissions.
 
 ## Known risks to keep in mind when writing code

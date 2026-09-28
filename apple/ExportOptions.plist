@@ -41,11 +41,21 @@
     <key>signingCertificate</key>
     <string>Apple Distribution</string>
 
-    <!-- Keyed by bundle id, valued by the profile's *name*, not its UUID. -->
+    <!--
+      Keyed by bundle id, valued by the profile's *name*, not its UUID. One
+      per bundle in the archive: the app, its Notification Service Extension
+      and its widgets. A bundle missing here fails the export, which is why
+      the workflow generates the project with all three (SM_PUSH, SM_NSE,
+      SM_EXTENSIONS) and installs all three profiles.
+    -->
     <key>provisioningProfiles</key>
     <dict>
         <key>dev.supermessage.ios</key>
         <string>supermessage iOS App Store</string>
+        <key>dev.supermessage.ios.nse</key>
+        <string>supermessage NSE App Store</string>
+        <key>dev.supermessage.ios.widgets</key>
+        <string>supermessage Widgets App Store</string>
     </dict>
 
     <!--

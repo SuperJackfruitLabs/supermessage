@@ -41,7 +41,16 @@ public actor CoreClient {
     static let queueLabel = "dev.supermessage.core"
 
     public init(dataDirectory: String) {
-        core = Core(dataDir: dataDirectory)
+        self.init(core: Core(dataDir: dataDirectory))
+    }
+
+    /// A core over stores another process shares — see `CoreLocation`.
+    public init(options: CoreOptions) {
+        self.init(core: Core.withOptions(options: options))
+    }
+
+    private init(core: Core) {
+        self.core = core
         // Concurrent, not serial: the core is `Send + Sync` and serialising
         // here would make a slow media fetch block a keystroke's typing
         // notification. `.userInitiated` because everything behind this is
@@ -60,18 +69,24 @@ public actor CoreClient {
     /// background with no scene, and so no `Session`, at all. Sharing this
     /// is what lets the second restore quietly and the first later start
     /// sync on that same client.
-    public static let shared = CoreClient(dataDirectory: CoreClient.dataDirectory())
-
-    /// Where the core keeps its SQLite stores.
     ///
-    /// Inside the app container, so it inherits the sandbox and the backup
-    /// rules rather than choosing its own — the same reasoning that puts the
-    /// session in the Data Protection keychain.
+    /// Built as the `main` holder of the stores' cross-process lock, in the
+    /// App Group when the build has one, so the Notification Service
+    /// Extension (the `nse` holder) can read the same stores. The first launch
+    /// with the group moves an earlier build's stores and keychain items
+    /// there — in the core, before any client is built — so nobody is signed
+    /// out by the update.
+    public static let shared = CoreClient(
+        options: CoreLocation.current(.app)
+            ?? CoreOptions(
+                dataDir: dataDirectory(), processName: CoreLocation.Process.app.rawValue,
+                legacyDataDir: nil, keychainAccessGroup: nil, legacyKeychainAccessGroup: nil))
+
+    /// Where a core with no App Group keeps its SQLite stores: the app's own
+    /// Application Support, which is also where every earlier build kept
+    /// them. Tests use it for a core that never signs in.
     public static func dataDirectory() -> String {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let directory = base.appendingPathComponent("supermessage", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.path
+        CoreLocation.legacyDirectory().path
     }
 
     /// Run one blocking call on the dedicated queue.
@@ -366,6 +381,18 @@ public actor CoreClient {
     }
 
     // MARK: - Push (see Notifications/PushConfiguration.swift)
+
+    public func unregisterPusher() async throws {
+        try await run { try $0.unregisterPusher() }
+    }
+
+    public func syncPause() async {
+        await run { $0.syncPause() }
+    }
+
+    public func syncResume() async {
+        await run { $0.syncResume() }
+    }
 
     public func registerPusher(registration: PushRegistration) async throws {
         try await run { try $0.registerPusher(registration: registration) }

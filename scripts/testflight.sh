@@ -68,6 +68,8 @@ xcodebuild archive \
     CODE_SIGN_IDENTITY="Apple Distribution" \
     DEVELOPMENT_TEAM=N2QQPW2BRJ \
     SM_APP_PROFILE="supermessage iOS App Store" \
+    SM_NSE_PROFILE="supermessage NSE App Store" \
+    SM_WIDGETS_PROFILE="supermessage Widgets App Store" \
     -quiet
 
 # What actually shipped, read back from the archive rather than from the
@@ -82,6 +84,23 @@ for key in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion \
     value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null || echo "MISSING")"
     printf '    %-32s %s\n' "$key" "$value"
     [ "$value" = MISSING ] && { echo "error: $key is absent; TestFlight will reject this" >&2; exit 1; }
+done
+
+# The extensions, read back the same way: each must be in the archive, carry
+# the app's version and build (App Store Connect refuses a mismatch), and be
+# signed for its own bundle id.
+APP="$ARCHIVE/Products/Applications/Supermessage.app"
+for appex in SupermessageNotificationService SupermessageWidgets; do
+    EXT="$APP/PlugIns/$appex.appex"
+    if [ ! -d "$EXT" ]; then
+        echo "    $appex: not in this build (generated without its flag)"
+        continue
+    fi
+    for key in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion; do
+        value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$EXT/Info.plist" 2>/dev/null || echo "MISSING")"
+        printf '    %-32s %s\n' "$appex $key" "$value"
+        [ "$value" = MISSING ] && { echo "error: $appex has no $key" >&2; exit 1; }
+    done
 done
 
 echo "==> exporting"

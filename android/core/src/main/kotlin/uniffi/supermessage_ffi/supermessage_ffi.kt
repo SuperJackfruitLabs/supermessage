@@ -33,11 +33,17 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.AgentState
+import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeAccountDto
 import uniffi.supermessage_core.FfiConverterTypeAgentState
+import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
+import uniffi.supermessage_core.FfiConverterTypeGateAnswers
 import uniffi.supermessage_core.FfiConverterTypeMatrixLinkTarget
 import uniffi.supermessage_core.FfiConverterTypeMentionable
+import uniffi.supermessage_core.FfiConverterTypeNotificationCategory
+import uniffi.supermessage_core.FfiConverterTypeNotificationDto
 import uniffi.supermessage_core.FfiConverterTypeNotificationMode
+import uniffi.supermessage_core.FfiConverterTypePermissionAnswers
 import uniffi.supermessage_core.FfiConverterTypePersonDto
 import uniffi.supermessage_core.FfiConverterTypePlayableAudio
 import uniffi.supermessage_core.FfiConverterTypePushRegistration
@@ -52,9 +58,13 @@ import uniffi.supermessage_core.FfiConverterTypeSpaceSummary
 import uniffi.supermessage_core.FfiConverterTypeTimelineRow
 import uniffi.supermessage_core.FfiConverterTypeToolPhase
 import uniffi.supermessage_core.FfiConverterTypeTypingUserDto
+import uniffi.supermessage_core.GateAnswers
 import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
+import uniffi.supermessage_core.NotificationCategory
+import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
+import uniffi.supermessage_core.PermissionAnswers
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.PushRegistration
@@ -71,9 +81,14 @@ import uniffi.supermessage_core.ToolPhase
 import uniffi.supermessage_core.TypingUserDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
+import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
+import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
 import uniffi.supermessage_core.RustBuffer as RustBufferMatrixLinkTarget
 import uniffi.supermessage_core.RustBuffer as RustBufferMentionable
+import uniffi.supermessage_core.RustBuffer as RustBufferNotificationCategory
+import uniffi.supermessage_core.RustBuffer as RustBufferNotificationDto
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationMode
+import uniffi.supermessage_core.RustBuffer as RustBufferPermissionAnswers
 import uniffi.supermessage_core.RustBuffer as RustBufferPersonDto
 import uniffi.supermessage_core.RustBuffer as RustBufferPlayableAudio
 import uniffi.supermessage_core.RustBuffer as RustBufferPushRegistration
@@ -965,6 +980,24 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -991,6 +1024,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_free_core(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_constructor_core_new(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Pointer
+    fun uniffi_supermessage_ffi_fn_constructor_core_with_options(`options`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
     fun uniffi_supermessage_ffi_fn_constructor_core_with_secret_store(`dataDir`: RustBuffer.ByValue,`store`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
@@ -1044,6 +1079,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_member_avatar(`ptr`: Pointer,`mxcUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_notification_for(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferNotificationDto.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_recover_with_key(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_recovery_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1094,6 +1131,10 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_spaces_list(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_sync_pause(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_sync_resume(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_timeline_paginate_back(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`count`: Short,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     fun uniffi_supermessage_ffi_fn_method_core_timeline_resync(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1104,6 +1145,8 @@ internal interface UniffiLib : Library {
     ): Byte
     fun uniffi_supermessage_ffi_fn_method_core_unignore_user(`ptr`: Pointer,`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_unregister_pusher(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_eventsink(`vtable`: UniffiVTableCallbackInterfaceEventSink,
     ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
@@ -1113,6 +1156,14 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_display_initial(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_category_identifier(`category`: RustBufferNotificationCategory.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_for_row(`row`: RustBufferTimelineRow.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`roomName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_gate_answers(`decision`: RustBufferCustomEventDecision.ByValue,`gateId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_permission_answers(`decision`: RustBufferCustomEventDecision.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_parse_matrix_link(`href`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1250,6 +1301,14 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_display_initial(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_category_identifier(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_for_row(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_gate_answers(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_permission_answers(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_parse_matrix_link(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_peer_color_index(
@@ -1318,6 +1377,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_member_avatar(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_notification_for(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_recover_with_key(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_recovery_state(
@@ -1368,6 +1429,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_spaces_list(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_sync_pause(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_sync_resume(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_timeline_paginate_back(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_timeline_resync(
@@ -1378,7 +1443,11 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_unignore_user(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_unregister_pusher(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_constructor_core_new(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_constructor_core_with_options(
     ): Short
     fun uniffi_supermessage_ffi_checksum_constructor_core_with_secret_store(
     ): Short
@@ -1414,6 +1483,18 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_display_initial() != 43302.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_category_identifier() != 36525.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_for_row() != 16600.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_gate_answers() != 2727.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_permission_answers() != 1058.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094.toShort()) {
@@ -1518,6 +1599,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_member_avatar() != 39314.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_notification_for() != 31590.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_recover_with_key() != 27628.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1593,6 +1677,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_spaces_list() != 33636.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_sync_pause() != 35955.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_sync_resume() != 60926.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_timeline_paginate_back() != 54481.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1608,7 +1698,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_unignore_user() != 38081.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_unregister_pusher() != 51150.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_constructor_core_new() != 35650.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_constructor_core_with_options() != 28253.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_constructor_core_with_secret_store() != 63818.toShort()) {
@@ -2238,6 +2334,14 @@ public interface CoreInterface {
     fun `memberAvatar`(`mxcUri`: kotlin.String): kotlin.String?
     
     /**
+     * What the notification for `event_id` in `room_id` should say, fetched
+     * and decrypted here — the Notification Service Extension's one call
+     * after [`Core::restore_session_quietly`]. An error means the event could
+     * not be had; the host then keeps the push's own generic text.
+     */
+    fun `notificationFor`(`roomId`: kotlin.String, `eventId`: kotlin.String): NotificationDto
+    
+    /**
      * Use a recovery key on this device, to read what other devices hold.
      */
     fun `recoverWithKey`(`recoveryKey`: kotlin.String)
@@ -2429,6 +2533,17 @@ public interface CoreInterface {
     fun `spacesList`(): List<SpaceSummary>
     
     /**
+     * Stop syncing while the app is away, so a second process can take the
+     * store lock. Streams stay subscribed. See `Session::pause_sync`.
+     */
+    fun `syncPause`()
+    
+    /**
+     * Start a sync [`Core::sync_pause`] stopped.
+     */
+    fun `syncResume`()
+    
+    /**
      * Load older messages. `true` means the start of the room was reached and
      * there is nothing more to ask for.
      */
@@ -2460,6 +2575,12 @@ public interface CoreInterface {
      * Unblock someone. A no-op when they were not blocked.
      */
     fun `unignoreUser`(`userId`: kotlin.String)
+    
+    /**
+     * Stop pushing to this device without signing out. [`Core::logout`]
+     * already does this first; a no-op when nothing was registered.
+     */
+    fun `unregisterPusher`()
     
     companion object
 }
@@ -3004,6 +3125,25 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * What the notification for `event_id` in `room_id` should say, fetched
+     * and decrypted here — the Notification Service Extension's one call
+     * after [`Core::restore_session_quietly`]. An error means the event could
+     * not be had; the host then keeps the push's own generic text.
+     */
+    @Throws(FfiException::class)override fun `notificationFor`(`roomId`: kotlin.String, `eventId`: kotlin.String): NotificationDto {
+            return FfiConverterTypeNotificationDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_notification_for(
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`eventId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Use a recovery key on this device, to read what other devices hold.
      */
     @Throws(FfiException::class)override fun `recoverWithKey`(`recoveryKey`: kotlin.String)
@@ -3456,6 +3596,35 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Stop syncing while the app is away, so a second process can take the
+     * store lock. Streams stay subscribed. See `Session::pause_sync`.
+     */override fun `syncPause`()
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_sync_pause(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Start a sync [`Core::sync_pause`] stopped.
+     */override fun `syncResume`()
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_sync_resume(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
      * Load older messages. `true` means the start of the room was reached and
      * there is nothing more to ask for.
      */
@@ -3541,9 +3710,43 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     
 
     
+    /**
+     * Stop pushing to this device without signing out. [`Core::logout`]
+     * already does this first; a no-op when nothing was registered.
+     */
+    @Throws(FfiException::class)override fun `unregisterPusher`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_unregister_pusher(
+        it, _status)
+}
+    }
+    
+    
+
+    
 
     
     companion object {
+        
+    /**
+     * Build a core that shares its stores with another process — on iOS, the
+     * app and its Notification Service Extension. See [`CoreOptions`].
+     *
+     * Infallible, like [`Core::new`]: every step that can fail here has a
+     * safe way to continue, and a core that refused to exist would leave the
+     * host with nothing to show even a sign-in screen through.
+     */ fun `withOptions`(`options`: CoreOptions): Core {
+            return FfiConverterTypeCore.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_constructor_core_with_options(
+        FfiConverterTypeCoreOptions.lower(`options`),_status)
+}
+    )
+    }
+    
+
         
     /**
      * Build a core whose secrets live in a store the host supplies.
@@ -3638,6 +3841,83 @@ public object FfiConverterTypeConnectionState: FfiConverterRustBuffer<Connection
     override fun write(value: ConnectionState, buf: ByteBuffer) {
             FfiConverterString.write(value.`state`, buf)
             FfiConverterOptionalString.write(value.`message`, buf)
+    }
+}
+
+
+
+/**
+ * How a host that shares its stores with another process builds its core.
+ *
+ * On iOS both the app and the Notification Service Extension build one, over
+ * the same App Group directory and the same keychain access group, under
+ * different `process_name`s. The app also names where an earlier build kept
+ * things, and they are moved once (see `settle_data_dir`).
+ */
+data class CoreOptions (
+    /**
+     * Where the stores live. For a shared store, a directory both processes
+     * can reach — the App Group container on iOS.
+     */
+    var `dataDir`: kotlin.String, 
+    /**
+     * The name this process holds the cross-process store lock under:
+     * `"main"` for the app, `"nse"` for the extension. Never the same in two
+     * processes that share `data_dir`.
+     */
+    var `processName`: kotlin.String, 
+    /**
+     * Where a previous build kept its stores. Moved into `data_dir` once,
+     * before any client is built, so an update does not sign anyone out.
+     * `None` in a process that never had any (the extension).
+     */
+    var `legacyDataDir`: kotlin.String?, 
+    /**
+     * The keychain access group secrets live in — on iOS the group both
+     * processes are entitled to, team prefix included. `None` for the
+     * platform default. Ignored off iOS.
+     */
+    var `keychainAccessGroup`: kotlin.String?, 
+    /**
+     * The access group a previous build wrote its secrets to — the app's
+     * own default group, `<team>.dev.supermessage.ios`. Moved into
+     * `keychain_access_group` the first time they are readable. Ignored off
+     * iOS, and when `keychain_access_group` is `None`.
+     */
+    var `legacyKeychainAccessGroup`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCoreOptions: FfiConverterRustBuffer<CoreOptions> {
+    override fun read(buf: ByteBuffer): CoreOptions {
+        return CoreOptions(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CoreOptions) = (
+            FfiConverterString.allocationSize(value.`dataDir`) +
+            FfiConverterString.allocationSize(value.`processName`) +
+            FfiConverterOptionalString.allocationSize(value.`legacyDataDir`) +
+            FfiConverterOptionalString.allocationSize(value.`keychainAccessGroup`) +
+            FfiConverterOptionalString.allocationSize(value.`legacyKeychainAccessGroup`)
+    )
+
+    override fun write(value: CoreOptions, buf: ByteBuffer) {
+            FfiConverterString.write(value.`dataDir`, buf)
+            FfiConverterString.write(value.`processName`, buf)
+            FfiConverterOptionalString.write(value.`legacyDataDir`, buf)
+            FfiConverterOptionalString.write(value.`keychainAccessGroup`, buf)
+            FfiConverterOptionalString.write(value.`legacyKeychainAccessGroup`, buf)
     }
 }
 
@@ -5284,6 +5564,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeGateAnswers: FfiConverterRustBuffer<GateAnswers?> {
+    override fun read(buf: ByteBuffer): GateAnswers? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeGateAnswers.read(buf)
+    }
+
+    override fun allocationSize(value: GateAnswers?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeGateAnswers.allocationSize(value)
+        }
+    }
+
+    override fun write(value: GateAnswers?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeGateAnswers.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeMatrixLinkTarget: FfiConverterRustBuffer<MatrixLinkTarget?> {
     override fun read(buf: ByteBuffer): MatrixLinkTarget? {
         if (buf.get().toInt() == 0) {
@@ -5306,6 +5618,70 @@ public object FfiConverterOptionalTypeMatrixLinkTarget: FfiConverterRustBuffer<M
         } else {
             buf.put(1)
             FfiConverterTypeMatrixLinkTarget.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeNotificationDto: FfiConverterRustBuffer<NotificationDto?> {
+    override fun read(buf: ByteBuffer): NotificationDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeNotificationDto.read(buf)
+    }
+
+    override fun allocationSize(value: NotificationDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeNotificationDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: NotificationDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeNotificationDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypePermissionAnswers: FfiConverterRustBuffer<PermissionAnswers?> {
+    override fun read(buf: ByteBuffer): PermissionAnswers? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypePermissionAnswers.read(buf)
+    }
+
+    override fun allocationSize(value: PermissionAnswers?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypePermissionAnswers.allocationSize(value)
+        }
+    }
+
+    override fun write(value: PermissionAnswers?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypePermissionAnswers.write(value, buf)
         }
     }
 }
@@ -5809,6 +6185,26 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         /**
          * A playing note's position as the clock under it reads — `"0:06"`,
          * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -5849,6 +6245,59 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_display_initial(
         FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The `UNNotificationCategory` identifier for `category` — the value the
+         * push gateway also sends as `aps.category`.
+         */ fun `notificationCategoryIdentifier`(`category`: NotificationCategory): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_category_identifier(
+        FfiConverterTypeNotificationCategory.lower(`category`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The notification a timeline row deserves, or `None` when it is not news —
+         * the same decision the Notification Service Extension makes for a push, so
+         * a local notification and a remote one say the same thing. See
+         * `core::notification`.
+         */ fun `notificationForRow`(`row`: TimelineRow, `roomId`: kotlin.String, `eventId`: kotlin.String, `roomName`: kotlin.String): NotificationDto? {
+            return FfiConverterOptionalTypeNotificationDto.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_for_row(
+        FfiConverterTypeTimelineRow.lower(`row`),FfiConverterString.lower(`roomId`),FfiConverterString.lower(`eventId`),FfiConverterString.lower(`roomName`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * What a gate notification can answer, or `None` when it should only open.
+         */ fun `notificationGateAnswers`(`decision`: CustomEventDecision, `gateId`: kotlin.String): GateAnswers? {
+            return FfiConverterOptionalTypeGateAnswers.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_gate_answers(
+        FfiConverterTypeCustomEventDecision.lower(`decision`),FfiConverterString.lower(`gateId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The Allow once / Reject pair a permission decision offers, if it offers
+         * both. "Always" is never taken for "once".
+         */ fun `notificationPermissionAnswers`(`decision`: CustomEventDecision): PermissionAnswers? {
+            return FfiConverterOptionalTypePermissionAnswers.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_permission_answers(
+        FfiConverterTypeCustomEventDecision.lower(`decision`),_status)
 }
     )
     }

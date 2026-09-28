@@ -138,6 +138,43 @@ The side comes from the reply's parent sender when the parent loaded, and
 from the notice's own sender otherwise. On iOS a transcript does not raise a
 notification of its own — the note already did.
 
+## 5. A permission request or a gate — a key on the prose that asks it
+
+AgentPod sends a permission request as an ordinary prose `m.room.message`
+("Allow Run the migration? Reply 1 …") for every client, and the structured
+request for a client that draws buttons. That second half used to be a
+separate event beside the prose (`dev.agentpod.permission.v1`; a gate's is
+`dev.superpipeline.gate.v1`). For push it is moving **onto the prose message**,
+under one key, the way the turn error card and the transcript already ride:
+
+| Key on the prose message | Its value | Drawn as |
+|---|---|---|
+| `dev.agentpod.permission` | The object the separate event's `content` carries (agentpod `PermissionRequestEvent`) | The permission card |
+| `dev.superpipeline.gate` | The gate schema's object | The approval card |
+
+The key names are this client's reading of the contract; when this landed
+(2026-09-28) the hub's `feat/push-gateway` branch had not published its
+constant, so **both forms are read**: the separate event exactly as before,
+and the key (`core::embedded`). A key whose value does not render leaves the
+message the sentence it is. The prose carrying the key becomes the card
+(`ItemView::CustomEvent`) with the prose as its fallback body; its
+`TimelineItemDto` carries the event type in `detail` and the object in
+`custom_payload`.
+
+**One card per decision.** A hub mid-migration may send both forms. The core
+keeps one: while a prose message carrying a decision is in the timeline, a
+separate event for the same decision renders as `ItemView::None`, and draws
+again if the prose goes (`embedded::reconcile`, applied to the materialised
+timeline and sent as `Set` ops in the same envelope). "The same decision" is
+`session_id` + `request_seq` for a permission request and `gate_id` for a
+gate. A gate answered from an embedded card references the prose message's
+event id.
+
+On iOS the same event notifies through the core too
+(`core::notification::notification_for_row`): a permission request with Allow
+once and Reject gets the PERMISSION category, a gate with Approve or Reject the
+GATE category, anything else DECISION ("Open" only).
+
 ## Adding a field
 
 1. Add it to the wire struct in `core::live` or to the renderer in
