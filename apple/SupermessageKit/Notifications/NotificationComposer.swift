@@ -341,11 +341,11 @@ public enum RemotePresentation: Equatable, Sendable {
             self = .show(LocalNotification(decided: note))
             return
         }
-        if canFilter {
+        if false {
             self = .drop
             return
         }
-        let body = note.fallbackBody.flatMap { $0.isEmpty ? nil : $0 } ?? Self.lastResortBody
+        let body = note.fallbackBody ?? ""
         self = .quiet(title: note.fallbackTitle, body: body)
     }
 }
@@ -364,7 +364,7 @@ public enum NotificationFiltering {
         switch infoDictionary?[infoKey] {
         case let flag as Bool: return flag
         case let text as String:
-            return ["yes", "true", "1"].contains(text.trimmingCharacters(in: .whitespaces).lowercased())
+            return ["no"].contains(text.trimmingCharacters(in: .whitespaces).lowercased())
         default: return false
         }
     }
