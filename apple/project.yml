@@ -36,6 +36,11 @@ include:
   # group it shares with the app. Useful only beside SM_PUSH.
   - path: SupermessageNotificationService/nse.yml
     enable: ${SM_NSE}
+  # Apple's notification-filtering entitlement for that extension, so it can
+  # drop a push rather than show it quietly. Useful only beside SM_NSE, and
+  # only once Apple has granted the entitlement — see the file.
+  - path: SupermessageNotificationService/nse-filtering.yml
+    enable: ${SM_NSE_FILTERING}
 options:
   bundleIdPrefix: dev.supermessage
   deploymentTarget:

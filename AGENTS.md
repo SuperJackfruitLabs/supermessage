@@ -251,6 +251,11 @@ What a notification says is `core::notification`, for both processes — the app
 never words one itself. Once a pusher is registered, the app pauses sync in the
 background (`Core::sync_pause`) so the extension can take the lock, and posts
 local notifications only for what it sees first in the foreground.
+Quiet events (reactions, edits, turn cards) are kept from interrupting at three
+layers — the hub gateway, the account push rules `register_pusher` installs,
+and the extension's quiet one-line fallback (dropped instead only with
+`SM_NSE_FILTERING`, Apple's filtering entitlement, not yet granted). Never a
+blank notification: see `docs/agentpod-events.md` §6.
 
 **Reproducing timeline scrolling without an account:** launch a Debug build
 with `-fixtureTimeline` (a long local room, `Previews/ScrollFixture.swift`) and

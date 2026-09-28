@@ -112,28 +112,49 @@ final class NotificationWorker: @unchecked Sendable {
         return built
     }
 
-    /// `note` over the push's content. A suppressed event — an edit, a
-    /// reaction, a blocked sender — is emptied: without Apple's filtering
-    /// entitlement an extension cannot drop a push, and an empty one is the
-    /// nearest it can come.
-    static func apply(_ note: NotificationDto, to base: UNMutableNotificationContent)
-        -> UNNotificationContent
-    {
-        if note.suppress != nil {
-            let empty = UNMutableNotificationContent()
-            empty.badge = base.badge
-            return empty
+    /// Whether this build may drop a push — the filtering entitlement is in
+    /// it (`SM_NSE_FILTERING`, see nse-filtering.yml).
+    static let canFilter = NotificationFiltering.isEnabled(
+        infoDictionary: Bundle.main.infoDictionary)
+
+    /// `note` over the push's content, as `RemotePresentation` decides.
+    ///
+    /// A suppressed event — a reaction, an edit, a turn card, this account's
+    /// own message — is dropped when this build holds Apple's filtering
+    /// entitlement, and otherwise said in one quiet line: passive, silent,
+    /// ranked last. Never emptied without it: iOS shows an empty push anyway,
+    /// as a blank notification.
+    static func apply(
+        _ note: NotificationDto, to base: UNMutableNotificationContent,
+        canFilter: Bool = NotificationWorker.canFilter
+    ) -> UNNotificationContent {
+        switch RemotePresentation(note, canFilter: canFilter) {
+        case .drop:
+            // With the entitlement, an empty content is a dropped push.
+            return UNNotificationContent()
+        case .quiet(let title, let body):
+            if let title { base.title = title }
+            base.subtitle = ""
+            base.body = body
+            base.sound = nil
+            base.interruptionLevel = .passive
+            base.relevanceScore = 0
+            // No actions to offer: tapping opens the room, which the
+            // push's keys already say.
+            base.categoryIdentifier = LocalNotification.Category.message.rawValue
+            base.threadIdentifier = note.threadId
+            return base
+        case .show(let local):
+            base.title = local.title
+            base.subtitle = local.subtitle ?? ""
+            base.body = local.body
+            base.categoryIdentifier = local.category.rawValue
+            base.threadIdentifier = note.threadId
+            var info = base.userInfo
+            for (key, value) in NotificationKeys.userInfo(for: local) { info[key] = value }
+            base.userInfo = info
+            return base
         }
-        let local = LocalNotification(decided: note)
-        base.title = local.title
-        base.subtitle = local.subtitle ?? ""
-        base.body = local.body
-        base.categoryIdentifier = local.category.rawValue
-        base.threadIdentifier = note.threadId
-        var info = base.userInfo
-        for (key, value) in NotificationKeys.userInfo(for: local) { info[key] = value }
-        base.userInfo = info
-        return base
     }
 }
 

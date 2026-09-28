@@ -17,5 +17,14 @@
 	-->
 	<key>SMKeychainAccessGroup</key>
 	<string>$(SM_KEYCHAIN_GROUP)</string>
+
+	<!--
+	  Whether this build may drop a push: YES only when generated with
+	  SM_NSE_FILTERING=YES, which also adds Apple's filtering entitlement
+	  (nse-filtering.yml). Empty otherwise, and empty means off: the
+	  extension then shows a suppressed push as one quiet line instead.
+	-->
+	<key>SMNotificationFiltering</key>
+	<string>$(SM_NSE_FILTERING)</string>
 </dict>
 </plist>
