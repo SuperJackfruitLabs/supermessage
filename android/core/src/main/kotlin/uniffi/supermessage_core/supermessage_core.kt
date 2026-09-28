@@ -3761,6 +3761,10 @@ public object FfiConverterTypeAgentState: FfiConverterRustBuffer<AgentState> {
 
 /**
  * The outcome of the whole fallback chain — what a host switches on.
+ *
+ * `Rendered` is much larger than the two fallbacks, and stays unboxed on
+ * purpose: this crosses UniFFI, which has no `Box` in a variant, and the
+ * value lives once per timeline row rather than in a hot collection of them.
  */
 sealed class CustomEventView {
     
