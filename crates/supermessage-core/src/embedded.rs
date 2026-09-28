@@ -109,30 +109,55 @@ fn carrier(row: &TimelineRow) -> Option<(String, bool)> {
     decision_identity(event_type, payload).map(|identity| (identity, embedded))
 }
 
-/// Settle which carrier of each decision is drawn, in place, returning the
+/// Settle how each carrier of a decision is drawn, in place, returning the
 /// indices of the rows whose view changed.
 ///
-/// A separate event is hidden (`ItemView::None`) exactly while a prose
-/// message carrying the same decision is in `rows`, and drawn again — its
-/// view recomputed from its own item — once that message is not (redacted,
-/// or paginated out). Every other row is untouched, so a timeline with no
-/// embedded decision costs one pass and changes nothing.
+/// Two rules, settled together because both decide the same rows' views and
+/// two passes would undo each other every batch:
+///
+/// - **One card per decision.** A separate event is hidden (`ItemView::None`)
+///   exactly while a prose message carrying the same decision is in `rows`,
+///   and drawn again — its view recomputed from its own item — once that
+///   message is not (redacted, or paginated out).
+/// - **A resolved gate is a receipt.** A gate the room says the board has
+///   accepted (`crate::gate_outcome`) is drawn with its outcome in place of
+///   its buttons, whichever carrier is on screen and in whichever order the
+///   two arrived — and drawn pending again if the outcome goes.
+///
+/// Every other row is untouched, so a timeline with no suite decision costs
+/// one pass and changes nothing.
 pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
     let embedded: std::collections::HashSet<String> = rows
         .iter()
         .filter_map(carrier)
         .filter_map(|(identity, embedded)| embedded.then_some(identity))
         .collect();
+    let resolved = crate::gate_outcome::resolved_gates(rows);
 
     let mut changed = Vec::new();
     for (index, row) in rows.iter_mut().enumerate() {
-        let Some((identity, false)) = carrier(row) else {
+        let Some((identity, is_embedded)) = carrier(row) else {
             continue;
         };
-        let wanted = if embedded.contains(&identity) {
+        if is_embedded
+            && !matches!(
+                row.view,
+                ItemView::CustomEvent { .. } | ItemView::Bubble { .. }
+            )
+        {
+            // A prose message the projection drew as something else — a turn
+            // error riding the same message — keeps that. It was drawn from
+            // its raw event, which this pass does not have.
+            continue;
+        }
+        let wanted = if !is_embedded && embedded.contains(&identity) {
             ItemView::None
         } else {
-            crate::item_view::view_for(&row.item)
+            let own = crate::item_view::view_for(&row.item);
+            match resolved.get(&identity) {
+                Some(outcome) => crate::gate_outcome::as_receipt(own, outcome),
+                None => own,
+            }
         };
         if row.view != wanted {
             row.view = wanted;

@@ -162,7 +162,7 @@ struct FirstRunDemoView: View {
                     CustomEventDecisionOption(label: "Reject", id: "reject"),
                 ],
                 subject: "demo-permission"),
-            link: nil)
+            link: nil, outcome: nil)
     }
 }
 

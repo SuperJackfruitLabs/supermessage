@@ -45,6 +45,24 @@ internal fun CardAnswered() {
     }
 }
 
+/**
+ * Resolved in the room: the board has the answer, and says whose it was. No
+ * buttons and no amber — and unlike the per-device answered state, this one
+ * survives leaving the room, because it comes from the room.
+ */
+@Preview(name = "Card, resolved in the room", showBackground = true, heightDp = 300)
+@Composable
+internal fun CardResolved() {
+    PreviewGround {
+        DecisionCard(
+            view = PreviewFixtures.cardResolved,
+            label = "Gate",
+            eventType = "dev.superpipeline.gate.v1",
+            onDecide = { true },
+        )
+    }
+}
+
 @Preview(name = "Card, with reasoning", showBackground = true, heightDp = 320)
 @Composable
 internal fun CardWithReasoning() {

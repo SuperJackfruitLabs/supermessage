@@ -1168,6 +1168,138 @@ public func FfiConverterTypeCustomEventField_lower(_ value: CustomEventField) ->
 
 
 /**
+ * A decision the board has accepted, as the room reports it.
+ *
+ * Built by `crate::gate_outcome` from the hub's
+ * `dev.superpipeline.gate.outcome.v1`. Every string is display text, bounded
+ * here; `decision` is the id superpipeline resolved with and is never shown
+ * on its own.
+ */
+public struct CustomEventOutcome {
+    /**
+     * superpipeline's `GateDecision` — `approve`, `request_changes`,
+     * `reject` — or, from a hub newer than this build, some other id.
+     */
+    public var decision: String
+    /**
+     * Who answered, as the hub named them. `None` when it did not say.
+     *
+     * In a board room with more than one person this is the only place
+     * "answered by someone else" is recorded, so it is shown whenever it is
+     * present, including when it is the reader.
+     */
+    public var decidedBy: String?
+    /**
+     * The whole receipt line, ready to draw: "Approved by rakesh",
+     * "Changes requested", "Decided by rakesh" for an id this build does
+     * not know.
+     */
+    public var summary: String
+    /**
+     * The question the gate asked, kept so a receipt says what was decided —
+     * the prompt of the decision it replaces. `None` when the card never
+     * had one to answer.
+     */
+    public var prompt: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * superpipeline's `GateDecision` — `approve`, `request_changes`,
+         * `reject` — or, from a hub newer than this build, some other id.
+         */decision: String, 
+        /**
+         * Who answered, as the hub named them. `None` when it did not say.
+         *
+         * In a board room with more than one person this is the only place
+         * "answered by someone else" is recorded, so it is shown whenever it is
+         * present, including when it is the reader.
+         */decidedBy: String?, 
+        /**
+         * The whole receipt line, ready to draw: "Approved by rakesh",
+         * "Changes requested", "Decided by rakesh" for an id this build does
+         * not know.
+         */summary: String, 
+        /**
+         * The question the gate asked, kept so a receipt says what was decided —
+         * the prompt of the decision it replaces. `None` when the card never
+         * had one to answer.
+         */prompt: String?) {
+        self.decision = decision
+        self.decidedBy = decidedBy
+        self.summary = summary
+        self.prompt = prompt
+    }
+}
+
+
+
+extension CustomEventOutcome: Equatable, Hashable {
+    public static func ==(lhs: CustomEventOutcome, rhs: CustomEventOutcome) -> Bool {
+        if lhs.decision != rhs.decision {
+            return false
+        }
+        if lhs.decidedBy != rhs.decidedBy {
+            return false
+        }
+        if lhs.summary != rhs.summary {
+            return false
+        }
+        if lhs.prompt != rhs.prompt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(decision)
+        hasher.combine(decidedBy)
+        hasher.combine(summary)
+        hasher.combine(prompt)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CustomEventOutcome {
+        return
+            try CustomEventOutcome(
+                decision: FfiConverterString.read(from: &buf), 
+                decidedBy: FfiConverterOptionString.read(from: &buf), 
+                summary: FfiConverterString.read(from: &buf), 
+                prompt: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CustomEventOutcome, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.decision, into: &buf)
+        FfiConverterOptionString.write(value.decidedBy, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterOptionString.write(value.prompt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventOutcome_lift(_ buf: RustBuffer) throws -> CustomEventOutcome {
+    return try FfiConverterTypeCustomEventOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomEventOutcome_lower(_ value: CustomEventOutcome) -> RustBuffer {
+    return FfiConverterTypeCustomEventOutcome.lower(value)
+}
+
+
+/**
  * What a GATE notification's actions need to answer with no room open: the
  * same three things the card sends.
  */
@@ -5679,7 +5811,21 @@ public enum CustomEventView {
         /**
          * A validated `https://` URL the host may open. See
          * [`CustomEventRenderResult::link`] and [`safe_link`].
-         */link: String?
+         */link: String?, 
+        /**
+         * The room says this was decided and the board accepted it — a
+         * `dev.superpipeline.gate.outcome.v1` for this gate is in the loaded
+         * timeline (`crate::gate_outcome`).
+         *
+         * When set, `decision` is `None`: a resolved gate has nothing left to
+         * answer, and a host draws the receipt instead of the buttons. The
+         * renderer never sets this; only the timeline's reconcile pass does,
+         * because only the room — not one event — can say it.
+         *
+         * **Not the same fact as "answered on this device".** That is a host's
+         * own per-view state, set when a decision send lands; this is the hub
+         * saying superpipeline accepted it. Hosts draw the two differently.
+         */outcome: CustomEventOutcome?
     )
     /**
      * No renderer produced anything, but the event carried a plain-text
@@ -5706,7 +5852,7 @@ public struct FfiConverterTypeCustomEventView: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .rendered(fields: try FfiConverterSequenceTypeCustomEventField.read(from: &buf), reasoning: try FfiConverterOptionString.read(from: &buf), newerVersion: try FfiConverterBool.read(from: &buf), decision: try FfiConverterOptionTypeCustomEventDecision.read(from: &buf), link: try FfiConverterOptionString.read(from: &buf)
+        case 1: return .rendered(fields: try FfiConverterSequenceTypeCustomEventField.read(from: &buf), reasoning: try FfiConverterOptionString.read(from: &buf), newerVersion: try FfiConverterBool.read(from: &buf), decision: try FfiConverterOptionTypeCustomEventDecision.read(from: &buf), link: try FfiConverterOptionString.read(from: &buf), outcome: try FfiConverterOptionTypeCustomEventOutcome.read(from: &buf)
         )
         
         case 2: return .fallbackBody(text: try FfiConverterString.read(from: &buf)
@@ -5723,13 +5869,14 @@ public struct FfiConverterTypeCustomEventView: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .rendered(fields,reasoning,newerVersion,decision,link):
+        case let .rendered(fields,reasoning,newerVersion,decision,link,outcome):
             writeInt(&buf, Int32(1))
             FfiConverterSequenceTypeCustomEventField.write(fields, into: &buf)
             FfiConverterOptionString.write(reasoning, into: &buf)
             FfiConverterBool.write(newerVersion, into: &buf)
             FfiConverterOptionTypeCustomEventDecision.write(decision, into: &buf)
             FfiConverterOptionString.write(link, into: &buf)
+            FfiConverterOptionTypeCustomEventOutcome.write(outcome, into: &buf)
             
         
         case let .fallbackBody(text):
@@ -7894,6 +8041,30 @@ fileprivate struct FfiConverterOptionTypeCustomEventDecision: FfiConverterRustBu
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeCustomEventDecision.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCustomEventOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = CustomEventOutcome?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCustomEventOutcome.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCustomEventOutcome.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

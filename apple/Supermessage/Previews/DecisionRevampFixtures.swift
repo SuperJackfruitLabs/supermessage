@@ -34,7 +34,23 @@ enum DecisionRevampFixtures {
                 CustomEventField(label: "Branch", value: "feat/oauth-login"),
                 CustomEventField(label: "Decision", value: "Changes requested by Rakesh"),
             ],
-            reasoning: nil, newerVersion: false, decision: nil, link: nil)
+            reasoning: nil, newerVersion: false, decision: nil, link: nil, outcome: nil)
+    }
+
+    /// A gate the hub reported resolved, answered by someone else: what
+    /// `core::gate_outcome::as_receipt` makes of `gateWithHandoff` once its
+    /// outcome is in the room.
+    static var gateResolved: CustomEventView {
+        .rendered(
+            fields: [
+                CustomEventField(label: "Card", value: "Add OAuth login"),
+                CustomEventField(label: "Stage", value: "review"),
+            ],
+            reasoning: nil, newerVersion: false, decision: nil,
+            link: "https://superpipeline.example/cards/oauth-login",
+            outcome: CustomEventOutcome(
+                decision: "approve", decidedBy: "priya", summary: "Approved by priya",
+                prompt: "Ship \u{201C}Add OAuth login\u{201D} to the next stage?"))
     }
 
     /// A schema-2 gate: a handoff summary as reasoning, a deep link, and more
@@ -60,7 +76,7 @@ enum DecisionRevampFixtures {
                     CustomEventDecisionOption(label: "Reject", id: "reject"),
                 ],
                 subject: "gate-91c4"),
-            link: "https://superpipeline.example/cards/oauth-login")
+            link: "https://superpipeline.example/cards/oauth-login", outcome: nil)
     }
 
     /// AgentPod's permission request: the option ids are the hub's names, the
@@ -77,7 +93,7 @@ enum DecisionRevampFixtures {
                     CustomEventDecisionOption(label: "Reject", id: "Reject"),
                 ],
                 subject: nil),
-            link: nil)
+            link: nil, outcome: nil)
     }
 }
 #endif

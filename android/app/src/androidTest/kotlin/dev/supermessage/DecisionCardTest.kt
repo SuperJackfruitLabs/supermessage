@@ -14,6 +14,7 @@ import org.junit.Test
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.CustomEventField
+import uniffi.supermessage_core.CustomEventOutcome
 import uniffi.supermessage_core.CustomEventView
 
 /**
@@ -44,6 +45,7 @@ class DecisionCardTest {
                         newerVersion = false,
                         decision = null,
                         link = null,
+                        outcome = null,
                     ),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
@@ -75,6 +77,7 @@ class DecisionCardTest {
                     newerVersion = false,
                     decision = null,
                     link = null,
+                    outcome = null,
                 ),
                 label = "Station status",
                 eventType = "dev.supermessage.station.v1",
@@ -90,12 +93,12 @@ class DecisionCardTest {
         compose.setContent {
             Column {
                 DecisionCard(
-                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = true, decision = null, link = null),
+                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = true, decision = null, link = null, outcome = null),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
                 )
                 DecisionCard(
-                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null),
+                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null, outcome = null),
                     label = "Turn2",
                     eventType = "dev.agentpod.turn.v1",
                 )
@@ -114,6 +117,7 @@ class DecisionCardTest {
                     newerVersion = false,
                     decision = null,
                     link = null,
+                    outcome = null,
                 ),
                 label = "Turn",
                 eventType = "dev.agentpod.turn.v1",
@@ -149,12 +153,13 @@ class DecisionCardTest {
                             subject = null,
                         ),
                         link = null,
+                        outcome = null,
                     ),
                     label = "Permission",
                     eventType = "dev.agentpod.permission.v1",
                 )
                 DecisionCard(
-                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null),
+                    view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null, outcome = null),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
                 )
@@ -181,6 +186,7 @@ class DecisionCardTest {
                         subject = null,
                     ),
                     link = null,
+                    outcome = null,
                 ),
                 label = "Permission",
                 eventType = "dev.agentpod.permission.v1",
@@ -214,6 +220,7 @@ class DecisionCardTest {
                         subject = null,
                     ),
                     link = null,
+                    outcome = null,
                 ),
                 label = "Permission",
                 eventType = "dev.agentpod.permission.v1",
@@ -221,6 +228,42 @@ class DecisionCardTest {
         }
         compose.onNodeWithText("Approve").assertIsDisplayed()
         compose.onAllNodesWithText(id, substring = true).assertCountEquals(0)
+    }
+
+    /**
+     * A gate the room says is resolved (`core::gate_outcome`) is a receipt:
+     * who answered, and no control to answer again with — even with an
+     * `onDecide` listening, which is exactly the recycled-row case the
+     * per-device answered state could not survive.
+     */
+    @Test
+    fun aResolvedGateNamesWhoAnsweredAndOffersNoButtons() {
+        compose.setContent {
+            DecisionCard(
+                view = CustomEventView.Rendered(
+                    fields = listOf(CustomEventField("Card", "Launch post")),
+                    reasoning = null,
+                    newerVersion = false,
+                    decision = null,
+                    link = null,
+                    outcome = CustomEventOutcome(
+                        decision = "approve",
+                        decidedBy = "priya",
+                        summary = "Approved by priya",
+                        prompt = "Approve \"Launch post\"?",
+                    ),
+                ),
+                label = "Approval",
+                eventType = "dev.superpipeline.gate.v1",
+                onDecide = { true },
+            )
+        }
+        compose.onNodeWithTag("decision-resolved").assertIsDisplayed()
+        compose.onNodeWithText("Approved by priya", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Approve \"Launch post\"?").assertIsDisplayed()
+        compose.onAllNodesWithTag("decision-option").assertCountEquals(0)
+        compose.onAllNodesWithTag("decision-pending").assertCountEquals(0)
+        compose.onAllNodesWithTag("decision-awaiting-board").assertCountEquals(0)
     }
 
     @Test
@@ -233,7 +276,7 @@ class DecisionCardTest {
         val safeEventType = "…gent.turn.v1"
         compose.setContent {
             DecisionCard(
-                view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null),
+                view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null, outcome = null),
                 label = "Turn",
                 eventType = safeEventType,
             )

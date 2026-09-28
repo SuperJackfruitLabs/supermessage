@@ -175,6 +175,66 @@ On iOS the same event notifies through the core too
 once and Reject gets the PERMISSION category, a gate with Approve or Reject the
 GATE category, anything else DECISION ("Open" only).
 
+## 6. A gate's outcome — the room saying the board accepted an answer
+
+When superpipeline accepts an answer to a gate, the hub says so in the gate's
+room (agentpod#614, #615): a readable line for every client ("Approved by
+rakesh — the board has it.") and a structured receipt beside it.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `suite_event_type` | `"dev.superpipeline.gate.outcome.v1"` | Declares the receipt. On an `m.room.message` it is **required** — it is how the prose form is told apart from prose that merely mentions the type |
+| `gate_id` | string | The gate resolved — superpipeline's id, the same one the gate carries |
+| `board_id` | string | The gate's board |
+| `decision` | string | superpipeline's `GateDecision`: `approve`, `request_changes`, `reject` |
+| `decided_by` | string or null | Who answered, as the hub names them (a handle, not an mxid) |
+| `m.relates_to` | `{ rel_type: "m.reference", event_id }` | The gate's event — whichever the hub recorded as the gate's (`matrix_gate_events.event_id`: the legacy `dev.superpipeline.gate.v1` companion while legacy events are on, otherwise the prose) |
+
+It arrives either as a **custom event** of type
+`dev.superpipeline.gate.outcome.v1` (what #615 sends, via `sendCustomEvent`)
+or as an **`m.room.message`** carrying the same keys. Both are read
+(`core::gate_outcome`); both arrive on a `TimelineItemDto` with `detail` the
+outcome type and `custom_payload` the event's `content`. The custom event
+renders as `ItemView::None` — the readable line beside it says the same thing
+— and the prose form stays the ordinary message it is.
+
+**What it does to the card.** `embedded::reconcile`, the pass that already
+keeps one card per decision, also turns every carrier of a resolved gate into
+a receipt: `CustomEventView::Rendered` with `decision: None` and `outcome:
+Some(CustomEventOutcome { decision, decided_by, summary, prompt })`. Hosts
+draw it without buttons or amber, naming `decided_by`.
+
+**Matching an outcome to its card**, in order:
+
+1. **Same sender.** Only an outcome from the identity that posted the gate
+   counts. Anyone in a room can send this shape; closing someone's approval
+   card is what a forged one would be for. The hub speaks both as the room's
+   speaker (the board's, in a board room).
+2. **`gate_id`**, unless both sides carry a `board_id` and they differ. It
+   closes every carrier of the gate — the prose card on screen and the hidden
+   companion alike.
+3. **The reference**, only when the outcome carries no `gate_id`: the gate
+   whose carrier has that event id, and through its identity every other
+   carrier.
+
+**Order does not matter.** The pass runs over the whole materialised timeline
+after every batch, so a gate is a receipt whenever both events are loaded —
+outcome first on a cold sync, gate first in live sync, or the gate brought in
+under its outcome by back-pagination — and stays one when its row is
+re-projected or the room is re-entered. If the outcome leaves the timeline
+(redacted, paginated out) the card is drawn pending again.
+
+**Answered is not resolved.** The reader's own
+`dev.superpipeline.gate.decision.v1` references the gate too and closes
+nothing: on 2026-09-28 decision events landed for hours while every resolve
+was refused (agentpod#613). A host keeps its per-device "answered" state —
+set when a decision send lands — and draws it as waiting for the board, which
+the outcome then replaces.
+
+**Notifications.** The prose line notifies as an ordinary message; the custom
+event is suppressed as `NotNews`. Neither is ever a PERMISSION or GATE
+notification.
+
 ## Adding a field
 
 1. Add it to the wire struct in `core::live` or to the renderer in

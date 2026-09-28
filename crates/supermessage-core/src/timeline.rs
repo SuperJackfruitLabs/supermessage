@@ -1867,6 +1867,13 @@ pub(crate) fn row_from_parts(
     if let Some((event_type, payload)) = embedded_from_raw(raw) {
         dto.detail = Some(event_type.to_string());
         dto.custom_payload = Some(crate::dto::CustomPayload(payload));
+    } else if let Some(payload) = gate_outcome_from_raw(raw) {
+        // The prose form of a gate's receipt: the same pair the custom event
+        // would have produced, so `crate::gate_outcome` reads one shape. The
+        // message itself still draws as the sentence it is — no renderer is
+        // registered for the type, so the view falls through to the bubble.
+        dto.detail = Some(crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE.to_string());
+        dto.custom_payload = Some(crate::dto::CustomPayload(payload));
     }
     // Read only for a message: the card rides on the hub's
     // `m.room.message`, and `view_for_with_turn_error` ignores it on
@@ -1904,6 +1911,22 @@ fn embedded_from_raw(
     let (event_type, payload) = crate::embedded::embedded_suite_event(&content)?;
     let payload = bound_custom_payload(payload, CUSTOM_PAYLOAD_MAX_BYTES)?;
     Some((event_type, payload))
+}
+
+/// A message's `content`, when the message is the prose form of a gate's
+/// receipt (`crate::gate_outcome`), bounded like a custom event's payload.
+///
+/// [`embedded_from_raw`]'s twin, for the same reasons.
+fn gate_outcome_from_raw(raw: Option<&Raw<AnySyncTimelineEvent>>) -> Option<serde_json::Value> {
+    let raw = raw?;
+    if !crate::gate_outcome::may_carry_outcome(raw.json().get()) {
+        return None;
+    }
+    let content: serde_json::Value = raw.get_field("content").ok()??;
+    if !crate::gate_outcome::is_outcome_message(&content) {
+        return None;
+    }
+    bound_custom_payload(content, CUSTOM_PAYLOAD_MAX_BYTES)
 }
 
 /// Project a raw batch of SDK diffs into the wire ops for one envelope.

@@ -801,6 +801,15 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
             text: "Encrypted message — this device has no key for it".to_string(),
         },
 
+        // The hub's structured receipt for a resolved gate. It is never news
+        // on its own: the readable line posted beside it says the same thing,
+        // and the gate's own card becomes the receipt (`crate::gate_outcome`).
+        "customMessage"
+            if item.detail.as_deref() == Some(crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE) =>
+        {
+            ItemView::None
+        }
+
         "customMessage" => ItemView::CustomEvent {
             label: custom_event_label(default_registry(), item.detail.as_deref()),
             event_type: display_event_type(item.detail.as_deref()),
@@ -1694,6 +1703,7 @@ mod tests {
                     newer_version: false,
                     decision: None,
                     link: None,
+                    outcome: None,
                 }
             }
         );
