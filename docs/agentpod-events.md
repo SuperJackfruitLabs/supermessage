@@ -175,6 +175,48 @@ On iOS the same event notifies through the core too
 once and Reject gets the PERMISSION category, a gate with Approve or Reject the
 GATE category, anything else DECISION ("Open" only).
 
+## 6. Quiet events — what must never interrupt, at three layers
+
+Some events are not news: a reaction (an agent's 👀/✅/❌ on the reader's
+message), an edit, a turn card (`dev.agentpod.turn.v1`), and the legacy
+separate permission/gate events whose prose message already notifies. On
+TestFlight build 30 each still arrived as a push, and the extension, told to
+suppress it, emptied it — which iOS shows as a **blank notification**. Three
+layers now keep them quiet, each catching what the one before cannot:
+
+| Layer | Where | Covers | Cannot cover |
+|---|---|---|---|
+| 1. Hub gateway | AgentPod hub, `/_matrix/push/v1/notify` | Drops pushes for events the hub itself sends (turn cards, the hub's own reactions/edits) | Events the hub did not send: a harness-mode agent posting its own, another client's edit, a human's reaction |
+| 2. Account push rules | `core::push::quiet_push_rules`, installed by `Session::register_pusher` (every launch that registers a pusher, after login or restore) | Unencrypted events of type `m.reaction`, `dev.agentpod.turn.v1`, `dev.agentpod.permission.v1`, `dev.superpipeline.gate.v1`, and any event whose `content.m\.relates_to.rel_type` is `m.replace` (an edit) — whoever sent them | **Encrypted events**: the homeserver sees only `m.room.encrypted`, never the type or the relation. Org rooms are unencrypted by design; encrypted DMs are not |
+| 3. The extension | `core::notification` + `NotificationService.swift` | Anything still pushed — encrypted events, races, an account whose rules failed to install | — |
+
+**Layer 2** writes five account override rules, ids under
+`dev.supermessage.quiet.` (`reaction`, `agentpod_turn`, `agentpod_permission`,
+`superpipeline_gate`, `edit`), each with empty `actions` — the spec's
+don't-notify since v1.7. The edit rule is the spec's own
+`.m.rule.suppress_edits` condition (`event_property_is`, key escaped as
+`content.m\.relates_to.rel_type`); the reaction rule is `.m.rule.reaction`'s.
+tuwunel 1.9.1's ruma has both server-default rules and evaluates
+`event_property_is` with escaped keys, so these add nothing on a fresh
+account — they are for a stored ruleset that predates those defaults, and for
+the suite's own types, which no server default knows. Installing is
+idempotent: the core reads the rules from the homeserver and writes only the
+missing or changed ones; it never touches a rule outside its prefix, and
+leaves one of its own alone if somebody disabled it. Failure is logged, not
+fatal — layer 3 still holds.
+
+**Layer 3.** The core still decides `suppress` (Reaction, Edit, Redaction,
+Filtered, Own, NotNews), and now also a short honest line for it,
+`NotificationDto::fallback_title`/`fallback_body`: "Krishna reacted ✅ to a
+message", "Krishna finished · 4 steps" (from the card's `counts`), "Krishna
+edited a message", "Sent from your other device". Without Apple's
+`com.apple.developer.usernotifications.filtering` entitlement the extension
+cannot drop a push, so it shows that line **quietly**: interruption level
+passive, no sound, relevance score 0, no actions. With the entitlement
+(`SM_NSE_FILTERING=YES`, `apple/SupermessageNotificationService/nse-filtering.yml`,
+not yet requested from Apple) it drops the push instead. Either way, never a
+blank notification (`RemotePresentation` in SupermessageKit).
+
 ## Adding a field
 
 1. Add it to the wire struct in `core::live` or to the renderer in

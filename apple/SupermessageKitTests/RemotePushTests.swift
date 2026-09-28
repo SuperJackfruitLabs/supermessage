@@ -225,11 +225,82 @@ struct RemotePushTests {
                 roomId: "!a", eventId: "$gate", title: "Room !a", subtitle: "Approval",
                 body: "Ship it?", category: .gate, permission: nil,
                 gate: GateAnswers(gateId: "g1", prompt: "Ship it?", optionIds: ["approve", "reject"]),
-                threadId: "!a", suppress: nil))
+                threadId: "!a", suppress: nil, fallbackTitle: nil, fallbackBody: nil))
         #expect(note.id == "$gate")
         #expect(note.category == .gate)
         #expect(note.gate == LocalNotification.Gate(gateId: "g1", prompt: "Ship it?", optionIds: ["approve", "reject"]))
         #expect(NotificationKeys.userInfo(for: note)[NotificationKeys.gateOptions] == "approve reject")
         #expect(notificationCategoryIdentifier(category: .gate) == LocalNotification.Category.gate.rawValue)
+    }
+
+    // MARK: - What the extension does with a decided push
+
+    func decided(
+        suppress: NotificationSuppression?, fallbackTitle: String? = nil,
+        fallbackBody: String? = nil
+    ) -> NotificationDto {
+        NotificationDto(
+            roomId: "!a", eventId: "$e", title: "", subtitle: nil, body: "New message",
+            category: .message, permission: nil, gate: nil, threadId: "!a",
+            suppress: suppress, fallbackTitle: fallbackTitle, fallbackBody: fallbackBody)
+    }
+
+    @Test("a suppressed push without the filtering entitlement says its quiet line, never nothing")
+    func suppressedIsQuietNotBlank() {
+        let note = decided(
+            suppress: .reaction, fallbackTitle: "Hermes",
+            fallbackBody: "Krishna reacted ✅ to a message")
+        #expect(
+            RemotePresentation(note, canFilter: false)
+                == .quiet(title: "Hermes", body: "Krishna reacted ✅ to a message"))
+        // Every kind of suppression, not only reactions.
+        for why in [NotificationSuppression.edit, .redaction, .filtered, .own, .notNews] {
+            let quiet = RemotePresentation(decided(suppress: why, fallbackBody: "x"), canFilter: false)
+            #expect(quiet == .quiet(title: nil, body: "x"))
+        }
+    }
+
+    @Test("a suppressed push with no line from the core still is not blank")
+    func lastResortIsNotBlank() {
+        #expect(
+            RemotePresentation(decided(suppress: .filtered), canFilter: false)
+                == .quiet(title: nil, body: RemotePresentation.lastResortBody))
+        #expect(
+            RemotePresentation(decided(suppress: .filtered, fallbackBody: ""), canFilter: false)
+                == .quiet(title: nil, body: RemotePresentation.lastResortBody))
+        #expect(!RemotePresentation.lastResortBody.isEmpty)
+    }
+
+    @Test("with the filtering entitlement a suppressed push is dropped")
+    func filteringDrops() {
+        #expect(
+            RemotePresentation(decided(suppress: .notNews, fallbackBody: "x"), canFilter: true)
+                == .drop)
+    }
+
+    @Test("a push that is news is shown as the core decided, filtering or not")
+    func newsIsShown() {
+        let note = NotificationDto(
+            roomId: "!a", eventId: "$m", title: "Krishna", subtitle: "Ops", body: "done",
+            category: .message, permission: nil, gate: nil, threadId: "!a", suppress: nil,
+            fallbackTitle: nil, fallbackBody: nil)
+        for canFilter in [false, true] {
+            #expect(
+                RemotePresentation(note, canFilter: canFilter)
+                    == .show(LocalNotification(decided: note)))
+        }
+    }
+
+    @Test("filtering is on only when the build says YES")
+    func filteringFlag() {
+        let key = NotificationFiltering.infoKey
+        #expect(key == "SMNotificationFiltering")
+        #expect(NotificationFiltering.isEnabled(infoDictionary: [key: "YES"]))
+        #expect(NotificationFiltering.isEnabled(infoDictionary: [key: true]))
+        // Unset: the build setting expands to an empty string.
+        #expect(!NotificationFiltering.isEnabled(infoDictionary: [key: ""]))
+        #expect(!NotificationFiltering.isEnabled(infoDictionary: [key: "NO"]))
+        #expect(!NotificationFiltering.isEnabled(infoDictionary: [:]))
+        #expect(!NotificationFiltering.isEnabled(infoDictionary: nil))
     }
 }

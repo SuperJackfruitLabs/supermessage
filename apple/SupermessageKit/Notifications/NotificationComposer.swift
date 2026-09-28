@@ -308,3 +308,64 @@ public enum NotificationComposer {
         }
     }
 }
+
+// MARK: - A push the Notification Service Extension decided
+
+/// What the Notification Service Extension does with a push, once the core
+/// has decided it (`Core.notificationFor`).
+///
+/// A value, so the choice is testable here; the extension only turns it into
+/// `UNNotificationContent`. The rule it encodes: **never a blank
+/// notification.** TestFlight build 30 emptied every suppressed push — an
+/// agent's reaction, a turn card — and iOS showed each one anyway, as a
+/// notification with no text, because an extension without Apple's
+/// filtering entitlement cannot drop a push.
+public enum RemotePresentation: Equatable, Sendable {
+    /// Drop the push. Only when the extension holds
+    /// `com.apple.developer.usernotifications.filtering`, where an empty
+    /// content is how a push is dropped.
+    case drop
+    /// Say what happened in one line, quietly — passive, no sound, lowest
+    /// relevance — because the push cannot be dropped. `title` is `nil` when
+    /// the push's own should stay (the core did not know the room).
+    case quiet(title: String?, body: String)
+    /// Show what the core decided.
+    case show(LocalNotification)
+
+    /// The body a suppressed push says when the core gave it no line. The
+    /// core always does; this is only never-blank's last resort.
+    public static let lastResortBody = "Quiet activity"
+
+    public init(_ note: NotificationDto, canFilter: Bool) {
+        guard note.suppress != nil else {
+            self = .show(LocalNotification(decided: note))
+            return
+        }
+        if canFilter {
+            self = .drop
+            return
+        }
+        let body = note.fallbackBody.flatMap { $0.isEmpty ? nil : $0 } ?? Self.lastResortBody
+        self = .quiet(title: note.fallbackTitle, body: body)
+    }
+}
+
+/// Whether this build's Notification Service Extension may drop a push.
+///
+/// Read from the extension's Info.plist key `SMNotificationFiltering`, which
+/// is the `SM_NSE_FILTERING` build setting — set only by
+/// `SupermessageNotificationService/nse-filtering.yml`, the include that also
+/// adds the filtering entitlement. Off unless it says YES: claiming to filter
+/// without the entitlement would bring the blank notifications back.
+public enum NotificationFiltering {
+    public static let infoKey = "SMNotificationFiltering"
+
+    public static func isEnabled(infoDictionary: [String: Any]?) -> Bool {
+        switch infoDictionary?[infoKey] {
+        case let flag as Bool: return flag
+        case let text as String:
+            return ["yes", "true", "1"].contains(text.trimmingCharacters(in: .whitespaces).lowercased())
+        default: return false
+        }
+    }
+}
