@@ -37,7 +37,16 @@ release, or that every operation has been exercised against a live homeserver.
 | Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
 | AgentPod turn/permission cards and superpipeline gates | Implemented; gate sender uses shared core | Implemented | Implemented |
 | Block users and agents; report messages, rooms and users | Core only (no UI yet) | Implemented | Core only (no UI yet) |
-| Background push notifications when closed | Not implemented | Not implemented | Not implemented |
+| Background push notifications when closed | Not implemented | Implemented (hub gateway + Notification Service Extension; device verification pending) | Not implemented |
+
+iOS push goes through the AgentPod hub's own push gateway
+(`https://hub.agentpod.dev/_matrix/push/v1/notify`, operator decision of
+2026-09-28). The pusher is `event_id_only`, so no message content passes
+through the gateway or Apple: the app's Notification Service Extension fetches
+and decrypts the event through the shared core and words it exactly as the
+app's own local notifications are worded. It needs a TestFlight build (the
+workflow generates with `SM_PUSH`, `SM_NSE` and `SM_EXTENSIONS`) and has not yet
+been verified on a device.
 
 Search depends on homeserver support and is not an encrypted local-history
 search. Encrypted events can still show undecryptable placeholders when keys
@@ -67,7 +76,7 @@ agents:
 - **Approvals from chat.** Gate choices use the shared core's structured
   Matrix decision sender, carrying the gate identifier and the gate event
   reference. AgentPod permission replies remain ordinary chat text. On iOS,
-  both can also be answered from a local notification's actions (permission:
+  both can also be answered from a notification's actions (permission:
   Allow once / Reject; gate: Approve / Request changes / Reject, per the
   operator's decision of 2026-09-27) without the room open, through the
   core's room-addressed senders. Resolving a superpipeline gate also requires
