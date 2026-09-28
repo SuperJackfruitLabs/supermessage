@@ -1695,7 +1695,21 @@ data class NotificationDto (
      * Present when this should not be shown; the text fields are then the
      * generic ones and must not be displayed.
      */
-    var `suppress`: NotificationSuppression?
+    var `suppress`: NotificationSuppression?, 
+    /**
+     * Set exactly when `suppress` is: the title to show quietly — no sound,
+     * no banner — when the push cannot be dropped. `None` keeps the push's
+     * own title (the room is not always known: a filtered event is never
+     * fetched).
+     */
+    var `fallbackTitle`: kotlin.String?, 
+    /**
+     * Set exactly when `suppress` is: one line saying what actually
+     * happened — "Krishna reacted ✅ to a message", "Krishna finished · 4
+     * steps" — rather than a blank notification or a "New message" that is
+     * not one.
+     */
+    var `fallbackBody`: kotlin.String?
 ) {
     
     companion object
@@ -1717,6 +1731,8 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterOptionalTypeGateAnswers.read(buf),
             FfiConverterString.read(buf),
             FfiConverterOptionalTypeNotificationSuppression.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
@@ -1730,7 +1746,9 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterOptionalTypePermissionAnswers.allocationSize(value.`permission`) +
             FfiConverterOptionalTypeGateAnswers.allocationSize(value.`gate`) +
             FfiConverterString.allocationSize(value.`threadId`) +
-            FfiConverterOptionalTypeNotificationSuppression.allocationSize(value.`suppress`)
+            FfiConverterOptionalTypeNotificationSuppression.allocationSize(value.`suppress`) +
+            FfiConverterOptionalString.allocationSize(value.`fallbackTitle`) +
+            FfiConverterOptionalString.allocationSize(value.`fallbackBody`)
     )
 
     override fun write(value: NotificationDto, buf: ByteBuffer) {
@@ -1744,6 +1762,8 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterOptionalTypeGateAnswers.write(value.`gate`, buf)
             FfiConverterString.write(value.`threadId`, buf)
             FfiConverterOptionalTypeNotificationSuppression.write(value.`suppress`, buf)
+            FfiConverterOptionalString.write(value.`fallbackTitle`, buf)
+            FfiConverterOptionalString.write(value.`fallbackBody`, buf)
     }
 }
 
@@ -4705,8 +4725,16 @@ public object FfiConverterTypeNotificationMode: FfiConverterRustBuffer<Notificat
  * Why a remote notification should not be shown at all.
  *
  * A hint, not a guarantee: without Apple's notification-filtering
- * entitlement an extension cannot drop a push, only empty it. The homeserver's
- * own push rules already keep most of these from being sent.
+ * entitlement an extension cannot drop a push, and an emptied one still
+ * shows — as a blank notification, which is what TestFlight build 30 did
+ * for every agent reaction and turn card. So a suppressed notification
+ * carries [`NotificationDto::fallback_body`] as well: a short, honest line
+ * the host shows quietly when it cannot drop the push.
+ *
+ * Most of these are never pushed at all. See `docs/agentpod-events.md`
+ * ("Quiet events"): the hub gateway drops what the hub itself sends, and the
+ * account push rules `core::push::quiet_push_rules` installs keep the
+ * homeserver from pushing the rest — for unencrypted events.
  */
 
 enum class NotificationSuppression {

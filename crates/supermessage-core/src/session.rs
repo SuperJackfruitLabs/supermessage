@@ -487,12 +487,20 @@ impl Session {
                 &FetchedEvent::from_item(&item, room_id, event_id),
                 &own_user,
             ),
-            NotificationStatus::EventFilteredOut => {
-                NotificationDto::suppressed(room_id, event_id, NotificationSuppression::Filtered)
-            }
-            NotificationStatus::EventRedacted => {
-                NotificationDto::suppressed(room_id, event_id, NotificationSuppression::Redaction)
-            }
+            NotificationStatus::EventFilteredOut => NotificationDto::suppressed(
+                room_id,
+                event_id,
+                NotificationSuppression::Filtered,
+                None,
+                crate::notification::QUIET_FILTERED_BODY.to_string(),
+            ),
+            NotificationStatus::EventRedacted => NotificationDto::suppressed(
+                room_id,
+                event_id,
+                NotificationSuppression::Redaction,
+                None,
+                crate::notification::QUIET_REMOVED_BODY.to_string(),
+            ),
             NotificationStatus::EventNotFound => {
                 return Err(CoreError::Protocol("the event was not found".into()))
             }
@@ -1130,7 +1138,57 @@ impl Session {
         self.store.set(
             KEY_PUSHER,
             &crate::push::encode_ids(&crate::push::pusher_ids(registration)),
+        )?;
+        // Every launch that registers a pusher (the host does so once it is
+        // signed in, whether by login or restore) also makes sure the
+        // homeserver will not push what is not news. Best effort and bounded:
+        // a pusher without the rules still works — the extension's quiet line
+        // covers what they would have stopped.
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            self.ensure_quiet_push_rules(),
         )
+        .await
+        {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!(error = %e, "could not install the quiet push rules"),
+            Err(_) => tracing::warn!("installing the quiet push rules timed out"),
+        }
+        Ok(())
+    }
+
+    /// Makes sure this account's push rules keep quiet events — reactions,
+    /// edits, AgentPod turn cards, the legacy permission/gate companions —
+    /// from being pushed at all. See `core::push::quiet_push_rules`.
+    ///
+    /// Idempotent: reads the account's rules from the homeserver (not the
+    /// possibly unsynced local copy) and sends only the ones missing or out
+    /// of date, so a second call sends nothing. Touches only rules under
+    /// `dev.supermessage.quiet.`, and leaves one of those alone if somebody
+    /// disabled it. Returns how many were written.
+    ///
+    /// Covers **unencrypted** events only: the homeserver cannot read an
+    /// encrypted event's type.
+    pub async fn ensure_quiet_push_rules(&self) -> CoreResult<usize> {
+        use matrix_sdk::ruma::api::client::push::{get_pushrules_all, set_pushrule};
+        use matrix_sdk::ruma::push::NewPushRule;
+
+        let client = self.require_client().await?;
+        let current = client
+            .send(get_pushrules_all::v3::Request::new())
+            .await
+            .map_err(|e| CoreError::Network(e.to_string()))?
+            .global;
+        let missing = crate::push::quiet_rules_to_install(&current);
+        for rule in &missing {
+            client
+                .send(set_pushrule::v3::Request::new(NewPushRule::Override(
+                    rule.clone(),
+                )))
+                .await
+                .map_err(|e| CoreError::Network(e.to_string()))?;
+        }
+        Ok(missing.len())
     }
 
     /// Stop pushing this account's notifications to this device.
@@ -2466,6 +2524,137 @@ mod tests {
                 (false, "tok-2".to_string()),
             ]
         );
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// A homeserver whose account push rules are whatever was last PUT,
+    /// listed back as a real one lists them — so a second call sees the
+    /// first call's rules.
+    struct PushRulesServer {
+        rules: std::sync::Mutex<Vec<serde_json::Value>>,
+    }
+
+    impl wiremock::Respond for PushRulesServer {
+        fn respond(&self, request: &wiremock::Request) -> wiremock::ResponseTemplate {
+            let path = request.url.path();
+            let mut rules = self.rules.lock().unwrap();
+            if request.method == wiremock::http::Method::PUT {
+                let rule_id = path.rsplit('/').next().unwrap().to_string();
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                rules.retain(|r| r["rule_id"] != rule_id.as_str());
+                rules.insert(
+                    0,
+                    serde_json::json!({
+                        "rule_id": rule_id, "default": false, "enabled": true,
+                        "actions": body["actions"], "conditions": body["conditions"],
+                    }),
+                );
+                return wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({}));
+            }
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "global": {
+                    "override": *rules, "content": [], "room": [], "sender": [], "underride": []
+                }
+            }))
+        }
+    }
+
+    async fn mount_push_rules(server: &wiremock::MockServer, initial: Vec<serde_json::Value>) {
+        use wiremock::matchers::path_regex;
+        wiremock::Mock::given(path_regex(r"^/_matrix/client/[^/]+/pushrules/"))
+            .respond_with(PushRulesServer {
+                rules: std::sync::Mutex::new(initial),
+            })
+            .mount(server)
+            .await;
+    }
+
+    /// Every push-rule PUT: its path's rule id and its body.
+    async fn rule_puts(server: &wiremock::MockServer) -> Vec<(String, serde_json::Value)> {
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| {
+                r.method == wiremock::http::Method::PUT && r.url.path().contains("/pushrules/")
+            })
+            .map(|r| {
+                (
+                    r.url.path().to_string(),
+                    serde_json::from_slice(&r.body).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn registering_a_pusher_installs_the_quiet_rules_once() {
+        let (session, server, data_dir) = session_for_push("quiet", MAIN_PROCESS).await;
+        // Somebody's own rule is already there, and must be left as it is.
+        let theirs = serde_json::json!({
+            "rule_id": "user.reactions", "default": false, "enabled": true,
+            "actions": ["notify"],
+            "conditions": [{ "kind": "event_match", "key": "type", "pattern": "m.reaction" }]
+        });
+        mount_push_rules(&server, vec![theirs]).await;
+
+        session
+            .register_pusher(&registration("tok-1"))
+            .await
+            .unwrap();
+        let puts = rule_puts(&server).await;
+        let paths: Vec<&str> = puts.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.reaction",
+                "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.agentpod_turn",
+                "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.agentpod_permission",
+                "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.superpipeline_gate",
+                "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.edit",
+            ]
+        );
+        assert_eq!(
+            puts[0].1,
+            serde_json::json!({
+                "actions": [],
+                "conditions": [{ "kind": "event_match", "key": "type", "pattern": "m.reaction" }]
+            })
+        );
+        assert_eq!(
+            puts[4].1,
+            serde_json::json!({
+                "actions": [],
+                "conditions": [{
+                    "kind": "event_property_is",
+                    "key": "content.m\\.relates_to.rel_type",
+                    "value": "m.replace"
+                }]
+            })
+        );
+
+        // The next launch registers again, and writes nothing.
+        session
+            .register_pusher(&registration("tok-1"))
+            .await
+            .unwrap();
+        assert_eq!(session.ensure_quiet_push_rules().await.unwrap(), 0);
+        assert_eq!(rule_puts(&server).await.len(), 5);
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn a_homeserver_refusing_push_rules_does_not_fail_the_pusher() {
+        // No push-rule endpoints at all: every call is a 404.
+        let (session, server, data_dir) = session_for_push("norules", MAIN_PROCESS).await;
+        session
+            .register_pusher(&registration("tok-1"))
+            .await
+            .unwrap();
+        assert!(session.store.get(KEY_PUSHER).unwrap().is_some());
+        assert!(session.ensure_quiet_push_rules().await.is_err());
+        assert_eq!(pusher_requests(&server).await.len(), 1);
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 
