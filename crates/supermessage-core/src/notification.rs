@@ -73,8 +73,16 @@ pub struct GateAnswers {
 /// Why a remote notification should not be shown at all.
 ///
 /// A hint, not a guarantee: without Apple's notification-filtering
-/// entitlement an extension cannot drop a push, only empty it. The homeserver's
-/// own push rules already keep most of these from being sent.
+/// entitlement an extension cannot drop a push, and an emptied one still
+/// shows — as a blank notification, which is what TestFlight build 30 did
+/// for every agent reaction and turn card. So a suppressed notification
+/// carries [`NotificationDto::fallback_body`] as well: a short, honest line
+/// the host shows quietly when it cannot drop the push.
+///
+/// Most of these are never pushed at all. See `docs/agentpod-events.md`
+/// ("Quiet events"): the hub gateway drops what the hub itself sends, and the
+/// account push rules `core::push::quiet_push_rules` installs keep the
+/// homeserver from pushing the rest — for unencrypted events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum NotificationSuppression {
     /// An edit (`m.replace`): the original already notified.
@@ -113,6 +121,16 @@ pub struct NotificationDto {
     /// Present when this should not be shown; the text fields are then the
     /// generic ones and must not be displayed.
     pub suppress: Option<NotificationSuppression>,
+    /// Set exactly when `suppress` is: the title to show quietly — no sound,
+    /// no banner — when the push cannot be dropped. `None` keeps the push's
+    /// own title (the room is not always known: a filtered event is never
+    /// fetched).
+    pub fallback_title: Option<String>,
+    /// Set exactly when `suppress` is: one line saying what actually
+    /// happened — "Krishna reacted ✅ to a message", "Krishna finished · 4
+    /// steps" — rather than a blank notification or a "New message" that is
+    /// not one.
+    pub fallback_body: Option<String>,
 }
 
 /// The body a notification carries when there is nothing better to say. The
@@ -137,15 +155,77 @@ impl NotificationDto {
             gate: None,
             thread_id: room_id.to_string(),
             suppress: None,
+            fallback_title: None,
+            fallback_body: None,
         }
     }
 
-    /// One that should not be shown, and why.
-    pub fn suppressed(room_id: &str, event_id: &str, why: NotificationSuppression) -> Self {
+    /// One that should not be shown, and why — with the quiet line to show
+    /// instead when it cannot be dropped.
+    pub fn suppressed(
+        room_id: &str,
+        event_id: &str,
+        why: NotificationSuppression,
+        fallback_title: Option<&str>,
+        fallback_body: String,
+    ) -> Self {
         Self {
             suppress: Some(why),
+            fallback_title: fallback_title.filter(|t| !t.is_empty()).map(str::to_string),
+            fallback_body: Some(fallback_body),
             ..Self::generic(room_id, event_id, "")
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The quiet lines: what a suppressed notification says when it must show.
+// ---------------------------------------------------------------------------
+
+/// A filtered event's line: it was never fetched, so nothing more is known.
+pub const QUIET_FILTERED_BODY: &str = "Quiet activity";
+
+/// A message removed before the extension could read it.
+pub const QUIET_REMOVED_BODY: &str = "A message was removed";
+
+/// This account's own event, from another device. Said, minimally, only
+/// because the push cannot be taken back.
+pub const QUIET_OWN_BODY: &str = "Sent from your other device";
+
+/// The longest reaction key quoted in full. A key is free text — usually one
+/// emoji, occasionally a sentence.
+const REACTION_KEY_MAX_CHARS: usize = 16;
+
+fn reacted_line(who: &str, key: &str) -> String {
+    let key = key.trim();
+    if key.is_empty() {
+        return format!("{who} reacted to a message");
+    }
+    let mut quoted: String = key.chars().take(REACTION_KEY_MAX_CHARS).collect();
+    if key.chars().count() > REACTION_KEY_MAX_CHARS {
+        quoted.push('…');
+    }
+    format!("{who} reacted {quoted} to a message")
+}
+
+/// A finished turn, from its card's `counts` — "Krishna finished · 4 steps",
+/// ", 1 failed" when any did. The same numbers the card's "Did" row shows.
+fn turn_line(who: &str, payload: Option<&serde_json::Value>) -> String {
+    let counts = payload.and_then(|p| p.get("counts"));
+    let number = |key: &str| {
+        counts
+            .and_then(|c| c.get(key))
+            .and_then(serde_json::Value::as_f64)
+            .filter(|n| n.is_finite() && *n >= 0.0)
+            .map(|n| n as u64)
+    };
+    let Some(total) = number("total") else {
+        return format!("{who} finished a turn");
+    };
+    let noun = if total == 1 { "step" } else { "steps" };
+    match number("failed").filter(|f| *f > 0) {
+        Some(failed) => format!("{who} finished · {total} {noun}, {failed} failed"),
+        None => format!("{who} finished · {total} {noun}"),
     }
 }
 
@@ -313,6 +393,7 @@ pub fn gate_answers(decision: &CustomEventDecision, gate_id: &str) -> Option<Gat
 // A push's one event, as the timeline would have projected it.
 // ---------------------------------------------------------------------------
 
+use matrix_sdk::ruma::events::reaction::SyncReactionEvent;
 use matrix_sdk::ruma::events::room::message::{Relation, SyncRoomMessageEvent};
 use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent};
 use matrix_sdk::ruma::serde::Raw;
@@ -411,10 +492,20 @@ pub fn notification_for_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> 
         return NotificationDto::generic(room_id, event_id, &room_name);
     };
     if event.sender() == own_user {
-        return NotificationDto::suppressed(room_id, event_id, NotificationSuppression::Own);
+        return NotificationDto::suppressed(
+            room_id,
+            event_id,
+            NotificationSuppression::Own,
+            Some(&room_name),
+            QUIET_OWN_BODY.to_string(),
+        );
     }
 
     let sender = event.sender().as_str();
+    let who = sender_name(sender, fetched.sender_display_name);
+    let quiet = |why: NotificationSuppression, line: String| {
+        NotificationDto::suppressed(room_id, event_id, why, Some(&room_name), line)
+    };
     let timestamp = Some(u64::from(event.origin_server_ts().0));
     let parts = |kind: &str, msgtype: Option<&str>, body: Option<&str>| {
         crate::timeline::project_item_parts(
@@ -445,10 +536,9 @@ pub fn notification_for_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> 
         AnySyncTimelineEvent::MessageLike(message) => match message {
             AnySyncMessageLikeEvent::RoomMessage(SyncRoomMessageEvent::Original(original)) => {
                 if matches!(original.content.relates_to, Some(Relation::Replacement(_))) {
-                    return NotificationDto::suppressed(
-                        room_id,
-                        event_id,
+                    return quiet(
                         NotificationSuppression::Edit,
+                        format!("{who} edited a message"),
                     );
                 }
                 let msgtype = &original.content.msgtype;
@@ -456,25 +546,25 @@ pub fn notification_for_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> 
                 dto.media = crate::timeline::media_meta(msgtype);
                 crate::timeline::row_from_parts(dto, Some(raw), own_user)
             }
-            AnySyncMessageLikeEvent::Reaction(_) => {
-                return NotificationDto::suppressed(
-                    room_id,
-                    event_id,
-                    NotificationSuppression::Reaction,
-                );
+            AnySyncMessageLikeEvent::Reaction(reaction) => {
+                let key = match reaction {
+                    SyncReactionEvent::Original(original) => {
+                        original.content.relates_to.key.as_str()
+                    }
+                    SyncReactionEvent::Redacted(_) => "",
+                };
+                return quiet(NotificationSuppression::Reaction, reacted_line(&who, key));
             }
             AnySyncMessageLikeEvent::RoomRedaction(_) => {
-                return NotificationDto::suppressed(
-                    room_id,
-                    event_id,
+                return quiet(
                     NotificationSuppression::Redaction,
+                    format!("{who} removed a message"),
                 );
             }
             other if other.is_redacted() => {
-                return NotificationDto::suppressed(
-                    room_id,
-                    event_id,
+                return quiet(
                     NotificationSuppression::Redaction,
+                    QUIET_REMOVED_BODY.to_string(),
                 );
             }
             // Still encrypted: the extension ran out of ways to get the key.
@@ -499,9 +589,18 @@ pub fn notification_for_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> 
                 {
                     let (payload, body) = crate::timeline::custom_message_payload(Some(raw));
                     let mut dto = parts("customMessage", None, body.as_deref());
-                    dto.detail = Some(event_type);
-                    dto.custom_payload = payload.map(crate::dto::CustomPayload);
-                    crate::timeline::row_from_parts(dto, Some(raw), own_user)
+                    dto.detail = Some(event_type.clone());
+                    dto.custom_payload = payload.clone().map(crate::dto::CustomPayload);
+                    let row = crate::timeline::row_from_parts(dto, Some(raw), own_user);
+                    if let Some(note) = notification_for_row(&row, room_id, event_id, &room_name) {
+                        return note;
+                    }
+                    let line = if event_type == crate::custom_events::TURN_ACTIVITY_EVENT_TYPE {
+                        turn_line(&who, payload.as_ref())
+                    } else {
+                        format!("{who} posted an update")
+                    };
+                    return quiet(NotificationSuppression::NotNews, line);
                 } else {
                     // A sticker, a call, a poll: news, but nothing this can
                     // say more about than the gateway already did.
@@ -515,16 +614,19 @@ pub fn notification_for_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> 
             }
         },
         AnySyncTimelineEvent::State(_) => {
-            return NotificationDto::suppressed(
-                room_id,
-                event_id,
+            return quiet(
                 NotificationSuppression::NotNews,
+                format!("{who} updated the room"),
             );
         }
     };
 
     notification_for_row(&row, room_id, event_id, &room_name).unwrap_or_else(|| {
-        NotificationDto::suppressed(room_id, event_id, NotificationSuppression::NotNews)
+        let line = match &row.view {
+            ItemView::VoiceTranscript { .. } => format!("{who} transcribed a voice message"),
+            _ => format!("{who} posted an update"),
+        };
+        quiet(NotificationSuppression::NotNews, line)
     })
 }
 
@@ -801,6 +903,151 @@ mod tests {
         let note = notification_for_event(&fetched, user_id!("@me:hs"));
         assert_eq!(note.title, "Launch");
         assert_eq!(note.body, "Strategy Sam invited you");
+    }
+
+    // --- the quiet line a suppressed notification shows when it cannot be
+    // dropped (TestFlight build 30 showed these blank)
+
+    fn reaction(key: &str) -> Value {
+        json!({
+            "type": "m.reaction", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": { "m.relates_to": { "rel_type": "m.annotation", "event_id": "$x", "key": key } }
+        })
+    }
+
+    fn turn(counts: Value) -> Value {
+        json!({
+            "type": "dev.agentpod.turn.v1", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": {
+                "schema_version": 1, "session_id": "s", "body": "Used tools",
+                "tools": [{ "title": "Read", "status": "completed" }],
+                "counts": counts
+            }
+        })
+    }
+
+    #[test]
+    fn a_reaction_says_who_reacted_with_what() {
+        let note = notify(reaction("✅"));
+        assert_eq!(note.suppress, Some(NotificationSuppression::Reaction));
+        assert_eq!(
+            note.fallback_body.as_deref(),
+            Some("Agent Hermes reacted ✅ to a message")
+        );
+        // The room by its `RoomIdentity.name`, as every other notification.
+        assert_eq!(note.fallback_title.as_deref(), Some("Hermes"));
+        // The text fields stay the generic ones: they are not what to show.
+        assert_eq!(note.body, GENERIC_BODY);
+    }
+
+    #[test]
+    fn a_long_reaction_key_is_cut_and_an_empty_one_is_not_quoted() {
+        let long = "a".repeat(40);
+        let note = notify(reaction(&long));
+        assert_eq!(
+            note.fallback_body.as_deref(),
+            Some(format!("Agent Hermes reacted {}… to a message", "a".repeat(16)).as_str())
+        );
+        let exact = "b".repeat(16);
+        assert_eq!(
+            notify(reaction(&exact)).fallback_body.as_deref(),
+            Some(format!("Agent Hermes reacted {exact} to a message").as_str())
+        );
+        assert_eq!(
+            notify(reaction("  ")).fallback_body.as_deref(),
+            Some("Agent Hermes reacted to a message")
+        );
+    }
+
+    #[test]
+    fn a_finished_turn_says_how_many_steps() {
+        let note = notify(turn(json!({ "total": 4, "failed": 0, "omitted": 0 })));
+        assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+        assert_eq!(
+            note.fallback_body.as_deref(),
+            Some("Agent Hermes finished · 4 steps")
+        );
+        assert_eq!(
+            notify(turn(json!({ "total": 1 }))).fallback_body.as_deref(),
+            Some("Agent Hermes finished · 1 step")
+        );
+        assert_eq!(
+            notify(turn(json!({ "total": 3, "failed": 1 })))
+                .fallback_body
+                .as_deref(),
+            Some("Agent Hermes finished · 3 steps, 1 failed")
+        );
+        // Counts that are not numbers are not guessed at.
+        assert_eq!(
+            notify(turn(json!({ "total": "many" })))
+                .fallback_body
+                .as_deref(),
+            Some("Agent Hermes finished a turn")
+        );
+    }
+
+    #[test]
+    fn edits_removals_and_state_say_what_happened() {
+        let edit = notify(message(json!({
+            "msgtype": "m.text",
+            "body": "* fixed",
+            "m.new_content": { "msgtype": "m.text", "body": "fixed" },
+            "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+        })));
+        assert_eq!(
+            edit.fallback_body.as_deref(),
+            Some("Agent Hermes edited a message")
+        );
+
+        let redaction = notify(json!({
+            "type": "m.room.redaction", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1, "redacts": "$x", "content": { "redacts": "$x" }
+        }));
+        assert_eq!(
+            redaction.fallback_body.as_deref(),
+            Some("Agent Hermes removed a message")
+        );
+
+        let state = notify(json!({
+            "type": "m.room.topic", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1, "state_key": "", "content": { "topic": "t" }
+        }));
+        assert_eq!(state.suppress, Some(NotificationSuppression::NotNews));
+        assert_eq!(
+            state.fallback_body.as_deref(),
+            Some("Agent Hermes updated the room")
+        );
+    }
+
+    #[test]
+    fn this_accounts_own_event_says_only_the_minimum() {
+        let mut own = message(json!({ "msgtype": "m.text", "body": "from my laptop" }));
+        own["sender"] = json!("@me:hs");
+        let note = notify(own);
+        assert_eq!(note.fallback_body.as_deref(), Some(QUIET_OWN_BODY));
+        // Nothing the reader wrote is repeated back to them.
+        assert!(!note.fallback_body.unwrap().contains("laptop"));
+    }
+
+    #[test]
+    fn a_fallback_is_carried_exactly_when_the_notification_is_suppressed() {
+        let shown = notify(message(json!({ "msgtype": "m.text", "body": "hi" })));
+        assert_eq!(shown.suppress, None);
+        assert_eq!(shown.fallback_title, None);
+        assert_eq!(shown.fallback_body, None);
+
+        let filtered = NotificationDto::suppressed(
+            "!r:hs",
+            "$e",
+            NotificationSuppression::Filtered,
+            Some(""),
+            QUIET_FILTERED_BODY.to_string(),
+        );
+        // An empty title is no title: the push keeps its own.
+        assert_eq!(filtered.fallback_title, None);
+        assert_eq!(filtered.fallback_body.as_deref(), Some(QUIET_FILTERED_BODY));
     }
 
     #[test]

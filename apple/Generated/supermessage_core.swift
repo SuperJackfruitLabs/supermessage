@@ -1548,6 +1548,20 @@ public struct NotificationDto {
      * generic ones and must not be displayed.
      */
     public var suppress: NotificationSuppression?
+    /**
+     * Set exactly when `suppress` is: the title to show quietly — no sound,
+     * no banner — when the push cannot be dropped. `None` keeps the push's
+     * own title (the room is not always known: a filtered event is never
+     * fetched).
+     */
+    public var fallbackTitle: String?
+    /**
+     * Set exactly when `suppress` is: one line saying what actually
+     * happened — "Krishna reacted ✅ to a message", "Krishna finished · 4
+     * steps" — rather than a blank notification or a "New message" that is
+     * not one.
+     */
+    public var fallbackBody: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1571,7 +1585,19 @@ public struct NotificationDto {
         /**
          * Present when this should not be shown; the text fields are then the
          * generic ones and must not be displayed.
-         */suppress: NotificationSuppression?) {
+         */suppress: NotificationSuppression?, 
+        /**
+         * Set exactly when `suppress` is: the title to show quietly — no sound,
+         * no banner — when the push cannot be dropped. `None` keeps the push's
+         * own title (the room is not always known: a filtered event is never
+         * fetched).
+         */fallbackTitle: String?, 
+        /**
+         * Set exactly when `suppress` is: one line saying what actually
+         * happened — "Krishna reacted ✅ to a message", "Krishna finished · 4
+         * steps" — rather than a blank notification or a "New message" that is
+         * not one.
+         */fallbackBody: String?) {
         self.roomId = roomId
         self.eventId = eventId
         self.title = title
@@ -1582,6 +1608,8 @@ public struct NotificationDto {
         self.gate = gate
         self.threadId = threadId
         self.suppress = suppress
+        self.fallbackTitle = fallbackTitle
+        self.fallbackBody = fallbackBody
     }
 }
 
@@ -1619,6 +1647,12 @@ extension NotificationDto: Equatable, Hashable {
         if lhs.suppress != rhs.suppress {
             return false
         }
+        if lhs.fallbackTitle != rhs.fallbackTitle {
+            return false
+        }
+        if lhs.fallbackBody != rhs.fallbackBody {
+            return false
+        }
         return true
     }
 
@@ -1633,6 +1667,8 @@ extension NotificationDto: Equatable, Hashable {
         hasher.combine(gate)
         hasher.combine(threadId)
         hasher.combine(suppress)
+        hasher.combine(fallbackTitle)
+        hasher.combine(fallbackBody)
     }
 }
 
@@ -1653,7 +1689,9 @@ public struct FfiConverterTypeNotificationDto: FfiConverterRustBuffer {
                 permission: FfiConverterOptionTypePermissionAnswers.read(from: &buf), 
                 gate: FfiConverterOptionTypeGateAnswers.read(from: &buf), 
                 threadId: FfiConverterString.read(from: &buf), 
-                suppress: FfiConverterOptionTypeNotificationSuppression.read(from: &buf)
+                suppress: FfiConverterOptionTypeNotificationSuppression.read(from: &buf), 
+                fallbackTitle: FfiConverterOptionString.read(from: &buf), 
+                fallbackBody: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -1668,6 +1706,8 @@ public struct FfiConverterTypeNotificationDto: FfiConverterRustBuffer {
         FfiConverterOptionTypeGateAnswers.write(value.gate, into: &buf)
         FfiConverterString.write(value.threadId, into: &buf)
         FfiConverterOptionTypeNotificationSuppression.write(value.suppress, into: &buf)
+        FfiConverterOptionString.write(value.fallbackTitle, into: &buf)
+        FfiConverterOptionString.write(value.fallbackBody, into: &buf)
     }
 }
 
@@ -6618,8 +6658,16 @@ extension NotificationMode: Equatable, Hashable {}
  * Why a remote notification should not be shown at all.
  *
  * A hint, not a guarantee: without Apple's notification-filtering
- * entitlement an extension cannot drop a push, only empty it. The homeserver's
- * own push rules already keep most of these from being sent.
+ * entitlement an extension cannot drop a push, and an emptied one still
+ * shows — as a blank notification, which is what TestFlight build 30 did
+ * for every agent reaction and turn card. So a suppressed notification
+ * carries [`NotificationDto::fallback_body`] as well: a short, honest line
+ * the host shows quietly when it cannot drop the push.
+ *
+ * Most of these are never pushed at all. See `docs/agentpod-events.md`
+ * ("Quiet events"): the hub gateway drops what the hub itself sends, and the
+ * account push rules `core::push::quiet_push_rules` installs keep the
+ * homeserver from pushing the rest — for unencrypted events.
  */
 
 public enum NotificationSuppression {
