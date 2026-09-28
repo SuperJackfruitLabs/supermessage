@@ -3,13 +3,19 @@
 //! A Matrix client does not talk to APNs or FCM. It hands the homeserver a
 //! *pusher* — "send notifications for this account to that gateway, addressed
 //! to this device token" — and the homeserver POSTs to the gateway, which
-//! forwards to Apple or Google. The gateway is infrastructure outside this
-//! repository (see AGENTS.md on Sygnal); this module only describes the device
-//! to the homeserver.
+//! forwards to Apple or Google. The gateway is the AgentPod hub's own
+//! `/_matrix/push/v1/notify` (operator decision of 2026-09-28), outside this
+//! repository; this module only describes the device to the homeserver.
 //!
 //! `event_id_only`, always: the push carries a room and an event id and no
 //! message content, so nothing a person wrote passes through the gateway or
-//! Apple. The app fetches and decrypts the event itself.
+//! Apple. The app fetches and decrypts the event itself — on iOS in its
+//! Notification Service Extension, through `Session::notification_for`.
+//!
+//! No `default_payload`: the hub's gateway builds the whole APNs payload
+//! itself — a generic `aps.alert`, `mutable-content` so the extension runs,
+//! `thread-id` and a collapse id from the room and event, and the category
+//! for a decision — so there is nothing for a pusher to add.
 
 use matrix_sdk::ruma::api::client::push::{Pusher, PusherIds, PusherInit, PusherKind};
 use matrix_sdk::ruma::push::{HttpPusherData, PushFormat};
@@ -49,6 +55,38 @@ pub fn pusher_for(registration: &PushRegistration) -> Pusher {
     .into()
 }
 
+/// The two ids that name a pusher, as this device remembers them — enough to
+/// remove it later, from a later process.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StoredPusher {
+    pub pushkey: String,
+    pub app_id: String,
+}
+
+impl StoredPusher {
+    pub fn into_ids(self) -> PusherIds {
+        PusherIds::new(self.pushkey, self.app_id)
+    }
+}
+
+/// The ids of the pusher `registration` asks for.
+pub fn pusher_ids(registration: &PushRegistration) -> StoredPusher {
+    StoredPusher {
+        pushkey: registration.pushkey.clone(),
+        app_id: registration.app_id.clone(),
+    }
+}
+
+pub fn encode_ids(ids: &StoredPusher) -> String {
+    serde_json::to_string(ids).expect("two strings always serialise")
+}
+
+/// `None` for anything that is not what [`encode_ids`] wrote — a value that
+/// cannot name a pusher is one there is nothing to remove for.
+pub fn decode_ids(json: &str) -> Option<StoredPusher> {
+    serde_json::from_str(json).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,6 +112,14 @@ mod tests {
             }
             other => panic!("expected an http pusher, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn stored_ids_round_trip_and_garbage_names_nothing() {
+        let ids = pusher_ids(&registration());
+        assert_eq!(decode_ids(&encode_ids(&ids)), Some(ids.clone()));
+        assert_eq!(ids.clone().into_ids().pushkey, "abcd");
+        assert_eq!(decode_ids("not json"), None);
     }
 
     #[test]

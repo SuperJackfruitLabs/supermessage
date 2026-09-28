@@ -560,6 +560,9 @@ fn image_caption(item: &TimelineItemDto) -> Option<String> {
 
 /// Render decision for `kind: "message"`, switching on `msgtype`.
 fn message_view(item: &TimelineItemDto) -> ItemView {
+    if let Some(card) = embedded_decision_view(item) {
+        return card;
+    }
     let msgtype = item.msgtype.as_deref();
     match msgtype {
         Some("m.text") => ItemView::Bubble {
@@ -629,6 +632,34 @@ fn message_view(item: &TimelineItemDto) -> ItemView {
             text: format!("Unsupported message ({})", msgtype.unwrap_or("unknown")),
         },
     }
+}
+
+/// The card a prose message carrying a suite decision under an embedded key
+/// is drawn as — the same card the separate event would have drawn — or
+/// `None` when it carries none, or one the renderer cannot read.
+///
+/// The key's value arrives on the item as `detail` (the event type it stands
+/// for) and `custom_payload` (the object), put there by the projection; see
+/// `crate::embedded`. Only a text or notice message qualifies, as for a turn
+/// error card. A payload that does not render leaves the message the sentence
+/// it also is, never a placeholder: the prose asks the same question.
+fn embedded_decision_view(item: &TimelineItemDto) -> Option<ItemView> {
+    if !matches!(item.msgtype.as_deref(), Some("m.text") | Some("m.notice")) {
+        return None;
+    }
+    let event_type = item.detail.as_deref()?;
+    let payload = &item.custom_payload.as_ref()?.0;
+    let view = resolve_custom_event(
+        default_registry(),
+        Some(event_type),
+        Some(payload),
+        item.body.as_deref(),
+    );
+    matches!(view, CustomEventView::Rendered { .. }).then(|| ItemView::CustomEvent {
+        label: custom_event_label(default_registry(), Some(event_type)),
+        event_type: display_event_type(Some(event_type)),
+        view,
+    })
 }
 
 /// Render decision for `kind: "state"`, switching on the state event type.

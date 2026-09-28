@@ -19,6 +19,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use matrix_sdk::cross_process_lock::CrossProcessLockConfig;
 use matrix_sdk::{
     encryption::{BackupDownloadStrategy, EncryptionSettings},
     ruma::{
@@ -43,7 +44,9 @@ use super::room_info::{self, RoomInfoDto};
 use super::rooms::{self, RoomListHandle, SpaceSelection};
 use super::safety;
 use super::search::{self, SearchResultDto};
-use super::secrets::{generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_STORE_PASSPHRASE};
+use super::secrets::{
+    generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_PUSHER, KEY_STORE_PASSPHRASE,
+};
 use super::spaces::{self, SpaceSummary};
 use super::sync::{self, SyncHandle};
 use super::timeline::FocusedTimeline;
@@ -87,10 +90,33 @@ pub struct Session {
     // Serializes whole session transitions (login, restore, logout) against
     // each other — see this module's doc comment.
     lifecycle: Mutex<()>,
+    // Which process this is, as the SDK's cross-process store lock names its
+    // holder — see [`Session::for_process`].
+    process: String,
 }
+
+/// The lock holder the app's own process uses.
+pub const MAIN_PROCESS: &str = "main";
+
+/// The lock holder the iOS Notification Service Extension uses.
+pub const NSE_PROCESS: &str = "nse";
 
 impl Session {
     pub fn new(data_dir: PathBuf, store: Box<dyn SecretStore>) -> Self {
+        Self::for_process(data_dir, store, MAIN_PROCESS)
+    }
+
+    /// A session in a process that shares its stores with another.
+    ///
+    /// On iOS the app and its Notification Service Extension open the same
+    /// SQLite stores, and both write to the crypto store — a notification is
+    /// decrypted by ratcheting a session the app also holds. Unsynchronised,
+    /// one process's in-memory copy goes stale under the other's write and
+    /// the next decryption fails. The SDK's cross-process lock prevents that,
+    /// and `process` is the name this one holds it under: [`MAIN_PROCESS`]
+    /// for the app, [`NSE_PROCESS`] for the extension. Two processes must
+    /// never share a name — the lock would think it already held.
+    pub fn for_process(data_dir: PathBuf, store: Box<dyn SecretStore>, process: &str) -> Self {
         Self {
             data_dir,
             store,
@@ -102,7 +128,13 @@ impl Session {
             staged: Arc::new(attachments::StagedAttachments::default()),
             ignore_watch: RwLock::new(None),
             lifecycle: Mutex::new(()),
+            process: process.to_string(),
         }
+    }
+
+    /// The name this process holds the cross-process store lock under.
+    pub fn process(&self) -> &str {
+        &self.process
     }
 
     /// The focused-room timeline this session owns, for registration as
@@ -138,6 +170,7 @@ impl Session {
     pub async fn login(&self, homeserver: &str, username: &str, password: &str) -> CoreResult<()> {
         let client = self.build_client(homeserver).await?;
         self.auth.login(&client, username, password).await?;
+        self.enable_crypto_lock(&client).await;
         self.auth.persist(&client, self.store.as_ref()).await?;
         // The persisted session carries only auth tokens and device
         // identity, never the homeserver — a later `restore` needs this to
@@ -162,9 +195,34 @@ impl Session {
         if !self.auth.restore(&client, self.store.as_ref()).await? {
             return Ok(false);
         }
+        self.enable_crypto_lock(&client).await;
 
         *self.client.write().await = Some(client);
         Ok(true)
+    }
+
+    /// Takes part in the crypto store's cross-process lock under this
+    /// process's name.
+    ///
+    /// The client is *built* multi-process ([`Self::build_client`]), which is
+    /// what the SDK's own syncs consult. This is the other half: a client
+    /// that only sends — the app answering a notification with no sync, the
+    /// extension before its notification client runs — writes the crypto
+    /// store too (an encrypted send ratchets the outbound session), and
+    /// without the lock enabled on it those writes would not coordinate with
+    /// the other process's. Needs the OLM machine, which exists only once a
+    /// session is logged in or restored, hence here and not at build.
+    ///
+    /// Not fatal: a client without it still works in a single process, which
+    /// is every platform but iOS. Logged, because on iOS it matters.
+    async fn enable_crypto_lock(&self, client: &Client) {
+        if let Err(e) = client
+            .encryption()
+            .enable_cross_process_store_lock(self.process.clone())
+            .await
+        {
+            tracing::warn!(error = %e, process = %self.process, "the crypto store lock is not enabled");
+        }
     }
 
     /// Logs out and drops the active client, if any. Clears local state even
@@ -209,8 +267,14 @@ impl Session {
         // a concurrent `client()`/`require_client()` is never blocked on it.
         let active = self.client().await;
         if let Some(active) = &active {
+            // Before the token goes: removing a pusher is an authenticated
+            // call. A homeserver usually drops a logged-out device's pushers
+            // itself, but that is not in the spec, and one that does not
+            // would push this account's messages to a phone signed out of it.
+            self.remove_pusher(active).await;
             self.auth.logout(active, self.store.as_ref()).await?;
         }
+        self.store.delete(KEY_PUSHER)?;
         self.store.delete(KEY_HOMESERVER_URL)?;
         *self.client.write().await = None;
         // Drop our own strong reference before touching the store directory
@@ -371,6 +435,94 @@ impl Session {
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))?;
         Ok(())
+    }
+
+    /// What the notification for `event_id` in `room_id` should say — the
+    /// question a push asks, with no room open and usually no app running.
+    ///
+    /// For the iOS Notification Service Extension, which is handed a push
+    /// carrying only those two ids (`event_id_only`: nothing a person wrote
+    /// passes through the gateway or Apple). The event is fetched and, in an
+    /// encrypted room, decrypted here, by the SDK's `NotificationClient` in
+    /// its multi-process mode: a short sliding sync of its own, on its own
+    /// connection, so it never disturbs the app's, and an encryption sync
+    /// under the cross-process lock when the key has not arrived yet.
+    ///
+    /// What it says is decided by `crate::notification` from the row the
+    /// timeline would have drawn, so a remote notification and a local one
+    /// cannot word the same event differently.
+    ///
+    /// An error means the event could not be had at all; the caller shows
+    /// the push's own generic text. A blocked sender, or an event the
+    /// account's push rules would not notify for, comes back as a
+    /// notification marked `suppress` rather than as an error.
+    pub async fn notification_for(
+        &self,
+        room_id: &str,
+        event_id: &str,
+    ) -> CoreResult<crate::notification::NotificationDto> {
+        use crate::notification::{
+            notification_for_event, FetchedEvent, NotificationDto, NotificationSuppression,
+        };
+        use matrix_sdk_ui::notification_client::{
+            NotificationClient, NotificationProcessSetup, NotificationStatus,
+        };
+
+        let client = self.require_client().await?;
+        let own_user = client.user_id().ok_or(CoreError::NotReady)?.to_owned();
+        let parsed_room = RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let parsed_event =
+            EventId::parse(event_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+
+        let notifications =
+            NotificationClient::new(client, NotificationProcessSetup::MultipleProcesses)
+                .await
+                .map_err(|e| CoreError::Network(e.to_string()))?;
+        let status = notifications
+            .get_notification(&parsed_room, &parsed_event)
+            .await
+            .map_err(|e| CoreError::Network(e.to_string()))?;
+        Ok(match status {
+            NotificationStatus::Event(item) => notification_for_event(
+                &FetchedEvent::from_item(&item, room_id, event_id),
+                &own_user,
+            ),
+            NotificationStatus::EventFilteredOut => {
+                NotificationDto::suppressed(room_id, event_id, NotificationSuppression::Filtered)
+            }
+            NotificationStatus::EventRedacted => {
+                NotificationDto::suppressed(room_id, event_id, NotificationSuppression::Redaction)
+            }
+            NotificationStatus::EventNotFound => {
+                return Err(CoreError::Protocol("the event was not found".into()))
+            }
+        })
+    }
+
+    /// Stops syncing without tearing anything down, for an app going into
+    /// the background.
+    ///
+    /// On iOS the app's encryption sync holds the cross-process lock across
+    /// each long poll, so an app that keeps syncing after it leaves the screen
+    /// makes the Notification Service Extension wait for the lock — longer
+    /// than the thirty seconds it is given. Once pushes arrive, the extension
+    /// is what shows a message while the app is away, and the app has no
+    /// reason to be syncing. [`Self::resume_sync`] starts it again; the room
+    /// list and the focused timeline are left running and simply receive
+    /// nothing until then.
+    ///
+    /// A no-op with no sync running.
+    pub async fn pause_sync(&self) {
+        if let Some(handle) = self.sync.read().await.as_ref() {
+            handle.pause().await;
+        }
+    }
+
+    /// Starts a sync [`Self::pause_sync`] stopped. A no-op with none.
+    pub async fn resume_sync(&self) {
+        if let Some(handle) = self.sync.read().await.as_ref() {
+            handle.resume().await;
+        }
     }
 
     /// The joined room an answer goes to, read from the local store — no
@@ -963,11 +1115,56 @@ impl Session {
         registration: &crate::push::PushRegistration,
     ) -> CoreResult<()> {
         let client = self.require_client().await?;
+        // A new device token replaces the old one rather than joining it:
+        // APNs refuses a stale token, and the homeserver would keep trying it.
+        if let Some(previous) = self.stored_pusher()? {
+            if previous != crate::push::pusher_ids(registration) {
+                self.remove_pusher(&client).await;
+            }
+        }
         client
             .pusher()
             .set(crate::push::pusher_for(registration), false)
             .await
-            .map_err(|e| CoreError::Network(e.to_string()))
+            .map_err(|e| CoreError::Network(e.to_string()))?;
+        self.store.set(
+            KEY_PUSHER,
+            &crate::push::encode_ids(&crate::push::pusher_ids(registration)),
+        )
+    }
+
+    /// Stop pushing this account's notifications to this device.
+    ///
+    /// What [`Self::logout`] does first, exposed for a host that wants push
+    /// off without signing out. A no-op when nothing was registered.
+    pub async fn unregister_pusher(&self) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        self.remove_pusher(&client).await;
+        self.store.delete(KEY_PUSHER)
+    }
+
+    /// The pusher this device last registered, if any.
+    fn stored_pusher(&self) -> CoreResult<Option<crate::push::StoredPusher>> {
+        Ok(self
+            .store
+            .get(KEY_PUSHER)?
+            .and_then(|json| crate::push::decode_ids(&json)))
+    }
+
+    /// Ask the homeserver to forget the stored pusher. Best effort and
+    /// bounded: signing out must not hang on it, and a pusher left behind
+    /// costs the gateway a rejected token, not the reader anything.
+    async fn remove_pusher(&self, client: &Client) {
+        let Ok(Some(stored)) = self.stored_pusher() else {
+            return;
+        };
+        let pushers = client.pusher();
+        let removal = pushers.delete(stored.into_ids());
+        match tokio::time::timeout(std::time::Duration::from_secs(5), removal).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => tracing::warn!(error = %e, "could not remove this device's pusher"),
+            Err(_) => tracing::warn!("removing this device's pusher timed out"),
+        }
     }
 
     pub async fn set_room_pinned(&self, room_id: &str, pinned: bool) -> CoreResult<()> {
@@ -1363,6 +1560,13 @@ impl Session {
         Client::builder()
             .homeserver_url(homeserver)
             .sqlite_store(self.store_path(), Some(&passphrase))
+            // Multi-process, under this process's own name — see
+            // [`Self::for_process`]. It is also what makes the `SyncService`
+            // safe beside the extension: its encryption sync takes this lock
+            // around every iteration (`matrix-sdk-ui` 0.18,
+            // `EncryptionSyncService::next_sync_with_lock`), so the two never
+            // write the crypto store at once.
+            .cross_process_store_config(CrossProcessLockConfig::multi_process(self.process.clone()))
             // Encryption is set up at login rather than asked for later.
             //
             // `auto_enable_cross_signing` is what makes this account's devices
@@ -2062,6 +2266,214 @@ mod tests {
         );
         assert!(session.is_active().await);
         assert!(!session.is_running().await);
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // --- Push, and a second process beside this one ----------------------
+
+    /// A logged-in session against a mock homeserver that accepts pushers,
+    /// holding the store lock as `process`.
+    async fn session_for_push(
+        label: &str,
+        process: &str,
+    ) -> (Session, wiremock::MockServer, std::path::PathBuf) {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        tls::install_ring_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/_matrix/client/versions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "versions": ["r0.6.0"],
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/_matrix/client/r0/login"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "abc123",
+                "device_id": "GHTYAJCE",
+                "user_id": "@alice:localhost",
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/_matrix/client/r0/pushers/set"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+
+        let data_dir =
+            std::env::temp_dir().join(format!("sm-push-{label}-{}", rand::random::<u64>()));
+        let session =
+            Session::for_process(data_dir.clone(), Box::new(MemoryStore::default()), process);
+        session
+            .login(&server.uri(), "alice", "hunter2")
+            .await
+            .unwrap();
+        (session, server, data_dir)
+    }
+
+    fn registration(pushkey: &str) -> crate::push::PushRegistration {
+        crate::push::PushRegistration {
+            pushkey: pushkey.into(),
+            app_id: "dev.supermessage.ios".into(),
+            app_display_name: "supermessage".into(),
+            device_display_name: "iPhone".into(),
+            lang: "en".into(),
+            gateway_url: "https://hub.agentpod.dev/_matrix/push/v1/notify".into(),
+        }
+    }
+
+    /// Every `pushers/set` body the homeserver received, in order.
+    async fn pusher_requests(server: &wiremock::MockServer) -> Vec<serde_json::Value> {
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| r.url.path().ends_with("/pushers/set"))
+            .map(|r| serde_json::from_slice(&r.body).unwrap())
+            .collect()
+    }
+
+    /// A deletion is a `pushers/set` whose `kind` is null (spec §Push).
+    fn is_removal(body: &serde_json::Value, pushkey: &str) -> bool {
+        body["kind"].is_null() && body["pushkey"] == pushkey
+    }
+
+    #[tokio::test]
+    async fn the_client_holds_the_store_lock_under_this_process_name() {
+        let (session, _server, data_dir) = session_for_push("holder", NSE_PROCESS).await;
+        let client = session.client().await.unwrap();
+        assert_eq!(
+            client.cross_process_lock_config().holder_name(),
+            Some("nse")
+        );
+        assert_eq!(
+            Session::new(data_dir.clone(), Box::new(MemoryStore::default())).process(),
+            "main"
+        );
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// The app and the extension over one store: while one holds the crypto
+    /// store lock, the other cannot take it. This is the whole of what keeps
+    /// the two from ratcheting the same session at once.
+    #[tokio::test]
+    async fn two_processes_over_one_store_do_not_hold_its_lock_at_once() {
+        let (app, _server, data_dir) = session_for_push("two", MAIN_PROCESS).await;
+
+        // The extension: a second session over the same directory and the
+        // same keychain items, as the App Group and access group give it.
+        let shared = MemoryStore::default();
+        for key in crate::secrets::ALL_KEYS {
+            if let Some(value) = app.store.get(key).unwrap() {
+                shared.set(key, &value).unwrap();
+            }
+        }
+        let nse = Session::for_process(data_dir.clone(), Box::new(shared), NSE_PROCESS);
+        assert!(nse.restore().await.unwrap());
+
+        let app_client = app.client().await.unwrap();
+        let nse_client = nse.client().await.unwrap();
+        // Spun for, not tried once: the extension's restore just took and
+        // released the lock, and a released lease lapses rather than being
+        // handed back (`LEASE_DURATION_MS`, half a second).
+        let held = app_client
+            .encryption()
+            .spin_lock_store(Some(3000))
+            .await
+            .unwrap()
+            .expect("the app takes the lock");
+        assert!(
+            nse_client
+                .encryption()
+                .try_lock_store_once()
+                .await
+                .unwrap()
+                .is_none(),
+            "the extension must not get the lock the app holds"
+        );
+        drop(held);
+        assert!(
+            nse_client
+                .encryption()
+                .spin_lock_store(Some(3000))
+                .await
+                .unwrap()
+                .is_some(),
+            "and gets it once the app lets go"
+        );
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn signing_out_removes_this_devices_pusher() {
+        let (session, server, data_dir) = session_for_push("logout", MAIN_PROCESS).await;
+        session
+            .register_pusher(&registration("tok-1"))
+            .await
+            .unwrap();
+        assert!(session.store.get(KEY_PUSHER).unwrap().is_some());
+
+        session.logout().await.unwrap();
+
+        let requests = pusher_requests(&server).await;
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        assert_eq!(requests[0]["kind"], "http");
+        assert!(is_removal(&requests[1], "tok-1"), "{:?}", requests[1]);
+        assert_eq!(requests[1]["app_id"], "dev.supermessage.ios");
+        assert_eq!(session.store.get(KEY_PUSHER).unwrap(), None);
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn a_new_device_token_replaces_the_old_pusher() {
+        let (session, server, data_dir) = session_for_push("rotate", MAIN_PROCESS).await;
+        session
+            .register_pusher(&registration("tok-1"))
+            .await
+            .unwrap();
+        session
+            .register_pusher(&registration("tok-1"))
+            .await
+            .unwrap();
+        session
+            .register_pusher(&registration("tok-2"))
+            .await
+            .unwrap();
+
+        // Registering the same token again changes nothing; a new token
+        // removes the old one, and only then is added.
+        let sequence: Vec<(bool, String)> = pusher_requests(&server)
+            .await
+            .iter()
+            .map(|r| {
+                (
+                    r["kind"].is_null(),
+                    r["pushkey"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            sequence,
+            vec![
+                (false, "tok-1".to_string()),
+                (false, "tok-1".to_string()),
+                (true, "tok-1".to_string()),
+                (false, "tok-2".to_string()),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn signing_out_with_no_pusher_asks_the_homeserver_nothing() {
+        let (session, server, data_dir) = session_for_push("none", MAIN_PROCESS).await;
+        session.logout().await.unwrap();
+        assert!(pusher_requests(&server).await.is_empty());
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 }

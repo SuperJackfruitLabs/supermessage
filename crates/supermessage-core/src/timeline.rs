@@ -687,7 +687,7 @@ fn message_media_source(msgtype: &MessageType) -> Option<MediaSource> {
 /// (whose `VideoInfo` carries the same two fields) doesn't get them too.
 /// `filename` uses each content type's own `filename()` method, which falls
 /// back to `body` when the event carries no separate `filename` field.
-fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
+pub(crate) fn media_meta(msgtype: &MessageType) -> Option<MediaMetaDto> {
     match msgtype {
         MessageType::Image(m) => Some(MediaMetaDto {
             filename: m.filename().to_string(),
@@ -816,7 +816,7 @@ fn bound_custom_payload(content: serde_json::Value, max_bytes: usize) -> Option<
 /// degrades to a readable line instead of the generic placeholder, per
 /// `docs/matrix-events.md` §G's "no custom event should ever render as
 /// nothing".
-fn custom_message_payload(
+pub(crate) fn custom_message_payload(
     raw: Option<&Raw<AnySyncTimelineEvent>>,
 ) -> (Option<serde_json::Value>, Option<String>) {
     let Some(raw) = raw else {
@@ -1839,32 +1839,71 @@ pub fn project_item(item: &TimelineItem, own_user: &UserId) -> Option<TimelineRo
     Some(match item.kind() {
         TimelineItemKind::Event(event) => {
             let dto = project_event_item(item, event, own_user);
-            // Read only for a message: the card rides on the hub's
-            // `m.room.message`, and `view_for_with_turn_error` ignores it on
-            // anything else anyway.
-            let turn_error = if dto.kind == "message" {
-                turn_error_from_raw(event.original_json())
-            } else {
-                None
-            };
-            // The same, for the hub's transcript notice. A message carrying
-            // both keys is a failure first: the card is the louder news.
-            let transcript = if dto.kind == "message" && turn_error.is_none() {
-                voice_transcript_from_raw(event.original_json())
-            } else {
-                None
-            };
-            match transcript {
-                Some(transcript) => {
-                    TimelineRow::with_voice_transcript(dto, Some(transcript), own_user.as_str())
-                }
-                None => TimelineRow::with_turn_error(dto, turn_error),
-            }
+            row_from_parts(dto, event.original_json(), own_user)
         }
         TimelineItemKind::Virtual(virtual_item) => {
             TimelineRow::new(project_virtual_item(item, virtual_item))
         }
     })
+}
+
+/// Finish a projected item into the row a host draws, reading what the SDK's
+/// parsed content dropped back out of the raw event: a turn error card, a
+/// voice transcript, or a suite decision embedded in the prose.
+///
+/// Shared by the timeline ([`project_item`]) and by a push notification
+/// (`crate::notification`), which projects one raw event with no timeline
+/// behind it — so a notification says exactly what the row would.
+pub(crate) fn row_from_parts(
+    mut dto: TimelineItemDto,
+    raw: Option<&Raw<AnySyncTimelineEvent>>,
+    own_user: &UserId,
+) -> TimelineRow {
+    if dto.kind != "message" {
+        return TimelineRow::new(dto);
+    }
+    // Onto the item, where `item_view` finds it and `crate::embedded`
+    // settles which of two carriers is drawn.
+    if let Some((event_type, payload)) = embedded_from_raw(raw) {
+        dto.detail = Some(event_type.to_string());
+        dto.custom_payload = Some(crate::dto::CustomPayload(payload));
+    }
+    // Read only for a message: the card rides on the hub's
+    // `m.room.message`, and `view_for_with_turn_error` ignores it on
+    // anything else anyway.
+    let turn_error = turn_error_from_raw(raw);
+    // The same, for the hub's transcript notice. A message carrying
+    // both keys is a failure first: the card is the louder news.
+    let transcript = if turn_error.is_none() {
+        voice_transcript_from_raw(raw)
+    } else {
+        None
+    };
+    match transcript {
+        Some(transcript) => {
+            TimelineRow::with_voice_transcript(dto, Some(transcript), own_user.as_str())
+        }
+        None => TimelineRow::with_turn_error(dto, turn_error),
+    }
+}
+
+/// The suite decision a message's raw event carries under an embedded key
+/// (`crate::embedded`), bounded like a separate event's payload.
+///
+/// [`turn_error_from_raw`]'s twin, with its reasons: the SDK's parsed
+/// content keeps only `body` and `msgtype`, `original_json()` is the
+/// decrypted event, and a text search spares every other message a parse.
+fn embedded_from_raw(
+    raw: Option<&Raw<AnySyncTimelineEvent>>,
+) -> Option<(&'static str, serde_json::Value)> {
+    let raw = raw?;
+    if !crate::embedded::may_carry_embedded(raw.json().get()) {
+        return None;
+    }
+    let content: serde_json::Value = raw.get_field("content").ok()??;
+    let (event_type, payload) = crate::embedded::embedded_suite_event(&content)?;
+    let payload = bound_custom_payload(payload, CUSTOM_PAYLOAD_MAX_BYTES)?;
+    Some((event_type, payload))
 }
 
 /// Project a raw batch of SDK diffs into the wire ops for one envelope.
@@ -3453,8 +3492,18 @@ fn emit_ops(
         // A batch that put the list back exactly as it found it did not move a
         // row, and must not be replayed as though it did — see
         // `core::dto::collapse_reinsertions`.
-        let wire_ops =
+        let mut wire_ops =
             collapse_reinsertions(&before_ids, &guard.1, ops, |row| row.item.id.as_str());
+        // One card per decision, however the hub sent it — see
+        // `crate::embedded::reconcile`. Settled on the folded state and sent
+        // as `Set`s in the same envelope, so a host applying the batch never
+        // draws both, and the snapshot a resync serves agrees with the wire.
+        for index in crate::embedded::reconcile(&mut guard.1) {
+            wire_ops.push(DiffOp::Set {
+                index,
+                value: guard.1[index].clone(),
+            });
+        }
         (before, guard.1.len(), wire_ops)
     };
     let folded_len = after;

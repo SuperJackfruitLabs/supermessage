@@ -107,6 +107,20 @@ impl SyncHandle {
         self.watcher.abort();
     }
 
+    /// Stops the sync loops and leaves the handle able to start them again.
+    ///
+    /// `SyncService::stop` settles in `Idle`, which the watcher reports as
+    /// offline and — by `should_reconnect` — never restarts, so a paused sync
+    /// stays paused until [`Self::resume`].
+    pub async fn pause(&self) {
+        self.service.stop().await;
+    }
+
+    /// Starts the sync loops [`Self::pause`] stopped.
+    pub async fn resume(&self) {
+        self.service.start().await;
+    }
+
     /// The room list service driving the room list — consumed by a later
     /// task to project rooms/timelines to the webview.
     pub fn room_list_service(&self) -> Arc<RoomListService> {
