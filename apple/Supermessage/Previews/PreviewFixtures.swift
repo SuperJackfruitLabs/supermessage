@@ -453,7 +453,7 @@ enum PreviewFixtures {
                     CustomEventDecisionOption(label: "Reject", id: "reject"),
                 ],
                 subject: "gate-7f21"),
-            link: nil)
+            link: nil, outcome: nil)
     }
 
     /// The same card once it has been answered: no decision, and therefore no
@@ -464,7 +464,7 @@ enum PreviewFixtures {
                 CustomEventField(label: "Repository", value: "SuperJackfruitLabs/supermessage"),
                 CustomEventField(label: "Decision", value: "Approved by Rakesh"),
             ],
-            reasoning: nil, newerVersion: false, decision: nil, link: nil)
+            reasoning: nil, newerVersion: false, decision: nil, link: nil, outcome: nil)
     }
 
     static var cardWithReasoning: CustomEventView {
@@ -474,7 +474,7 @@ enum PreviewFixtures {
                 "The contrast contract on content-faint lists all three grounds rather than "
                 + "only the reading surface, because the ground it fails on is never the one "
                 + "you are looking at.",
-            newerVersion: false, decision: nil, link: nil)
+            newerVersion: false, decision: nil, link: nil, outcome: nil)
     }
 
     /// A schema this build is too old to render fully — the core telling the
@@ -482,7 +482,7 @@ enum PreviewFixtures {
     static var cardNewerVersion: CustomEventView {
         .rendered(
             fields: [CustomEventField(label: "Station", value: "hermes-gateway")],
-            reasoning: nil, newerVersion: true, decision: nil, link: nil)
+            reasoning: nil, newerVersion: true, decision: nil, link: nil, outcome: nil)
     }
 
     /// One field whose value is a 71-character unbroken run.
@@ -494,7 +494,7 @@ enum PreviewFixtures {
             fields: [CustomEventField(
                 label: "Artifact",
                 value: "sha256:9f2c4e7a1b8d3f60a5c9e2b7d4f18a63c0e5b9d2f7a4c1e8b3d6f09a2c5e8b1d")],
-            reasoning: nil, newerVersion: false, decision: nil, link: nil)
+            reasoning: nil, newerVersion: false, decision: nil, link: nil, outcome: nil)
     }
 
     /// Nothing structured survived, so the core hands over the plain body.

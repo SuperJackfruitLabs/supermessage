@@ -7,6 +7,7 @@
     dispatchCardNewerVersion,
     dispatchCardPending,
     dispatchCardPendingDecision,
+    dispatchCardResolved,
     dispatchCardWithReasoning,
     message,
   } from "$lib/fixtures";
@@ -62,6 +63,25 @@
       <DispatchCardFrame>
         <DispatchCard
           view={dispatchCardAnswered}
+          decision={null}
+          {item}
+          onDecide={() => {}}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!--
+  Resolved in the room: the board has the answer and says whose it was. No
+  buttons and no amber — this is the state that survives the room being
+  rebuilt, because it comes from the room.
+-->
+<Story name="Resolved in the room">
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardResolved}
           decision={null}
           {item}
           onDecide={() => {}}

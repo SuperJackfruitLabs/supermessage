@@ -1,4 +1,4 @@
-import type { CustomEventDecision, CustomEventField, ItemView } from "$lib/ipc";
+import type { CustomEventDecision, CustomEventField, CustomEventOutcome, ItemView } from "$lib/ipc";
 
 /**
  * Dispatch-card states.
@@ -24,6 +24,7 @@ export function customEventView(
       reasoning: null,
       newerVersion: false,
       decision: null,
+      outcome: null,
     },
     ...overrides,
   };
@@ -63,14 +64,31 @@ export const dispatchCardPendingDecision = decision;
 export const dispatchCardPending = customEventView({
   label: "Permission",
   eventType: "dev.agentpod.permission.v1",
-  view: { status: "rendered", fields, reasoning: null, newerVersion: false, decision },
+  view: { status: "rendered", fields, reasoning: null, newerVersion: false, decision, outcome: null },
 });
 
 /** Answered, so the amber is gone and the buttons have settled. */
 export const dispatchCardAnswered = customEventView({
   label: "Permission",
   eventType: "dev.agentpod.permission.v1",
-  view: { status: "rendered", fields, reasoning: null, newerVersion: false, decision: null },
+  view: { status: "rendered", fields, reasoning: null, newerVersion: false, decision: null, outcome: null },
+});
+
+const outcome: CustomEventOutcome = {
+  decision: "approve",
+  decidedBy: "priya",
+  summary: "Approved by priya",
+  prompt: "Promote build 214 to production?",
+};
+
+/**
+ * Resolved in the room: the hub said the board accepted an answer, and whose
+ * it was. No buttons and no amber — the core has dropped the decision.
+ */
+export const dispatchCardResolved = customEventView({
+  label: "Approval",
+  eventType: "dev.superpipeline.gate.v1",
+  view: { status: "rendered", fields, reasoning: null, newerVersion: false, decision: null, outcome },
 });
 
 /** A card with the agent's reasoning attached. */
@@ -81,6 +99,7 @@ export const dispatchCardWithReasoning = customEventView({
     reasoning: "Staging is green across all four ABIs and the 16KB device passed.",
     newerVersion: false,
     decision: null,
+    outcome: null,
   },
 });
 
@@ -91,7 +110,7 @@ export const dispatchCardWithReasoning = customEventView({
  * about this event type than it does.
  */
 export const dispatchCardNewerVersion = customEventView({
-  view: { status: "rendered", fields, reasoning: null, newerVersion: true, decision: null },
+  view: { status: "rendered", fields, reasoning: null, newerVersion: true, decision: null, outcome: null },
 });
 
 /**
@@ -110,5 +129,6 @@ export const dispatchCardLongValue = customEventView({
     reasoning: null,
     newerVersion: false,
     decision: null,
+    outcome: null,
   },
 });

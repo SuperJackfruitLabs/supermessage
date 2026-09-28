@@ -164,6 +164,8 @@ Binding constraints from `AGENTS.md`, restated because they shape the schema:
 
 That schema work is M1's first task and should be co-designed with Superpipeline rather than invented here.
 
+**Gate outcome** (`dev.superpipeline.gate.outcome.v1`, 2026-09-28). When a gate resolves, the AgentPod hub posts a receipt referencing the gate's event (`m.reference`) with `gate_id`, `board_id`, `decision` and `decided_by` — as a custom event of that type, or as an `m.room.message` declaring it in `suite_event_type`. The custom event draws as nothing (the hub's readable line beside it is the transcript); the gate's card becomes a receipt through `core::gate_outcome`, matched by sender, then `gate_id`, then the reference. Field by field in `docs/agentpod-events.md` §7.
+
 ## Recommended order
 
 1. **Stop the leak.** Replace the "render a row for anything unrecognised" default with an explicit allow/suppress classification. This alone removes `Unsupported event (m.room.name)` and every sibling.

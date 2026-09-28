@@ -155,6 +155,34 @@ pub struct CustomEventDecision {
     pub subject: Option<String>,
 }
 
+/// A decision the board has accepted, as the room reports it.
+///
+/// Built by `crate::gate_outcome` from the hub's
+/// `dev.superpipeline.gate.outcome.v1`. Every string is display text, bounded
+/// here; `decision` is the id superpipeline resolved with and is never shown
+/// on its own.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEventOutcome {
+    /// superpipeline's `GateDecision` — `approve`, `request_changes`,
+    /// `reject` — or, from a hub newer than this build, some other id.
+    pub decision: String,
+    /// Who answered, as the hub named them. `None` when it did not say.
+    ///
+    /// In a board room with more than one person this is the only place
+    /// "answered by someone else" is recorded, so it is shown whenever it is
+    /// present, including when it is the reader.
+    pub decided_by: Option<String>,
+    /// The whole receipt line, ready to draw: "Approved by rakesh",
+    /// "Changes requested", "Decided by rakesh" for an id this build does
+    /// not know.
+    pub summary: String,
+    /// The question the gate asked, kept so a receipt says what was decided —
+    /// the prompt of the decision it replaces. `None` when the card never
+    /// had one to answer.
+    pub prompt: Option<String>,
+}
+
 /// What a renderer returns.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CustomEventRenderResult {
@@ -186,6 +214,11 @@ pub struct CustomEventRenderResult {
 }
 
 /// The outcome of the whole fallback chain — what a host switches on.
+///
+/// `Rendered` is much larger than the two fallbacks, and stays unboxed on
+/// purpose: this crosses UniFFI, which has no `Box` in a variant, and the
+/// value lives once per timeline row rather than in a hot collection of them.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase", tag = "status")]
 pub enum CustomEventView {
@@ -211,6 +244,19 @@ pub enum CustomEventView {
         /// A validated `https://` URL the host may open. See
         /// [`CustomEventRenderResult::link`] and [`safe_link`].
         link: Option<String>,
+        /// The room says this was decided and the board accepted it — a
+        /// `dev.superpipeline.gate.outcome.v1` for this gate is in the loaded
+        /// timeline (`crate::gate_outcome`).
+        ///
+        /// When set, `decision` is `None`: a resolved gate has nothing left to
+        /// answer, and a host draws the receipt instead of the buttons. The
+        /// renderer never sets this; only the timeline's reconcile pass does,
+        /// because only the room — not one event — can say it.
+        ///
+        /// **Not the same fact as "answered on this device".** That is a host's
+        /// own per-view state, set when a decision send lands; this is the hub
+        /// saying superpipeline accepted it. Hosts draw the two differently.
+        outcome: Option<CustomEventOutcome>,
     },
     /// No renderer produced anything, but the event carried a plain-text
     /// `body` fallback, as Matrix convention asks of a custom event.
@@ -456,6 +502,7 @@ pub fn resolve_custom_event(
                 newer_version,
                 decision: bound_decision(result.decision),
                 link: result.link,
+                outcome: None,
             };
         }
     }
@@ -1023,6 +1070,7 @@ mod tests {
                 newer_version: false,
                 decision: None,
                 link: None,
+                outcome: None,
             }
         );
     }
@@ -1606,6 +1654,7 @@ mod tests {
                 newer_version: false,
                 decision: None,
                 link: None,
+                outcome: None,
             },
             "the shipped demo renderer must stay decision-free"
         );

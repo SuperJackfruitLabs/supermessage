@@ -6,6 +6,7 @@ import uniffi.supermessage_core.AudioView
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.CustomEventField
+import uniffi.supermessage_core.CustomEventOutcome
 import uniffi.supermessage_core.CustomEventView
 import uniffi.supermessage_core.DeliveryState
 import uniffi.supermessage_core.ItemView
@@ -430,6 +431,7 @@ object PreviewFixtures {
                 subject = "gate-7f21",
             ),
             link = null,
+            outcome = null,
         )
 
     /** Answered: no decision, and therefore no amber anywhere on it. */
@@ -440,6 +442,27 @@ object PreviewFixtures {
                 CustomEventField("Decision", "Approved by Rakesh"),
             ),
             reasoning = null, newerVersion = false, decision = null, link = null,
+            outcome = null,
+        )
+
+    /**
+     * Resolved: the hub said in the room that the board accepted an answer,
+     * and it was someone else's. What `core::gate_outcome::as_receipt` makes of
+     * [cardPending] once its outcome is in the timeline.
+     */
+    val cardResolved: CustomEventView
+        get() = CustomEventView.Rendered(
+            fields = listOf(
+                CustomEventField("Repository", "SuperJackfruitLabs/supermessage"),
+                CustomEventField("Branch", "spec/native-previews-parity"),
+            ),
+            reasoning = null, newerVersion = false, decision = null, link = null,
+            outcome = CustomEventOutcome(
+                decision = "approve",
+                decidedBy = "priya",
+                summary = "Approved by priya",
+                prompt = "Merge this branch into main?",
+            ),
         )
 
     val cardWithReasoning: CustomEventView
@@ -450,6 +473,7 @@ object PreviewFixtures {
                     "only the reading surface, because the ground it fails on is never the " +
                     "one you are looking at.",
             newerVersion = false, decision = null, link = null,
+            outcome = null,
         )
 
     /** A schema this build is too old to render fully. */
@@ -457,6 +481,7 @@ object PreviewFixtures {
         get() = CustomEventView.Rendered(
             fields = listOf(CustomEventField("Station", "hermes-gateway")),
             reasoning = null, newerVersion = true, decision = null, link = null,
+            outcome = null,
         )
 
     /** One field whose value is a 71-character unbroken run. */
@@ -469,6 +494,7 @@ object PreviewFixtures {
                 ),
             ),
             reasoning = null, newerVersion = false, decision = null, link = null,
+            outcome = null,
         )
 
     /** Nothing structured survived, so the core hands over the plain body. */

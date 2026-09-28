@@ -800,6 +800,22 @@ export interface CustomEventDecision {
 }
 
 /**
+ * A gate the room says the board has accepted — the hub's
+ * `dev.superpipeline.gate.outcome.v1`, matched to its card by
+ * `core::gate_outcome`. Display text, already bounded.
+ */
+export interface CustomEventOutcome {
+  /** superpipeline's `GateDecision` id. An identifier, never rendered on its own. */
+  decision: string;
+  /** Who answered, as the hub named them; null when it did not say. */
+  decidedBy: string | null;
+  /** The receipt line, ready to render: "Approved by rakesh". */
+  summary: string;
+  /** The question the gate asked, kept so the receipt says what was decided. */
+  prompt: string | null;
+}
+
+/**
  * The custom-event fallback chain's outcome, decided by
  * `core::custom_events::resolve_custom_event`. This app renders its three
  * states; it never makes the decision itself.
@@ -820,6 +836,12 @@ export type CustomEventView =
       reasoning: string | null;
       newerVersion: boolean;
       decision: CustomEventDecision | null;
+      /**
+       * Set when the room says the board accepted an answer. `decision` is
+       * then null: a resolved gate has nothing left to answer. Not the same
+       * fact as a decision this reader sent — only the hub knows this one.
+       */
+      outcome: CustomEventOutcome | null;
     }
   | { status: "fallbackBody"; text: string }
   | { status: "placeholder"; text: string };

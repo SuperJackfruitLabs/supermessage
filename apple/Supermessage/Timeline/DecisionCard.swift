@@ -47,9 +47,13 @@ private func fieldValue(_ field: CustomEventField) -> some View {
 ///
 /// - **pending** — it carries a decision nobody on this device has answered.
 ///   The only amber in the app.
-/// - **receipt** — the decision was answered here and the answer landed, or
-///   the room's own payload says it was decided (a `Decision` field). One
-///   line saying what happened; no controls.
+/// - **resolved** — the room says the board accepted an answer: the hub's
+///   gate outcome is in the timeline and the core handed it over as
+///   `outcome`, naming who answered. No controls, and it survives a recycled
+///   row or a re-entered room because it comes from the room, not from here.
+/// - **answered** — the reader answered on this device and the send landed,
+///   but the board has not said so yet. No controls, and says it is waiting.
+///   Or the room's own payload says it was decided (a `Decision` field).
 /// - **plain** — everything else: a turn, an artifact, a station.
 struct CustomEventCard: View {
     /// Whether the reader has chosen one of the accessibility text sizes.
@@ -82,9 +86,10 @@ struct CustomEventCard: View {
     /// here, because the reader stops trying.
     ///
     /// Per-device and per-view. It does not survive a scroll far enough to
-    /// recycle the row, and the room still holds a gate event that looks
-    /// pending — closing that properly means the bridge saying so in the room
-    /// after it resolves, which is a separate change.
+    /// recycle the row — and does not need to: once superpipeline accepts the
+    /// answer the hub says so in the room, and the core hands this card an
+    /// `outcome`, which does survive. Until then this is only "answered", and
+    /// the card says it is waiting for the board rather than claiming more.
     ///
     /// Held here rather than on the buttons because the whole card changes
     /// when it is set: the amber goes, not only the controls.
@@ -107,10 +112,10 @@ struct CustomEventCard: View {
 
     var body: some View {
         switch view {
-        case let .rendered(fields, reasoning, newerVersion, decision, link):
+        case let .rendered(fields, reasoning, newerVersion, decision, link, outcome):
             rendered(
                 fields: fields, reasoning: reasoning, newerVersion: newerVersion,
-                decision: decision, link: link)
+                decision: decision, link: link, outcome: outcome)
 
         case let .fallbackBody(text):
             // A type nothing here can render, but which carried a plain-text
@@ -138,9 +143,17 @@ struct CustomEventCard: View {
     @ViewBuilder
     private func rendered(
         fields: [CustomEventField], reasoning: String?, newerVersion: Bool,
-        decision: CustomEventDecision?, link: String?
+        decision: CustomEventDecision?, link: String?, outcome: CustomEventOutcome?
     ) -> some View {
-        if let decision {
+        if let outcome {
+            // The room says it is over, and who ended it. First, because it
+            // is the strongest fact this card can have: whatever this device
+            // remembers answering, the board has the answer.
+            receiptCard(
+                outcome: outcome.summary, at: nil, headline: outcome.prompt, fields: fields,
+                reasoning: reasoning, newerVersion: newerVersion, link: link, awaitingBoard: false)
+                .transition(receiptTransition)
+        } else if let decision {
             // Pending and its receipt share one slot, so the change between
             // them is a transition rather than one row swapped for another.
             ZStack(alignment: .top) {
@@ -148,7 +161,7 @@ struct CustomEventCard: View {
                     receiptCard(
                         outcome: answer.outcome, at: answer.at, headline: decision.prompt,
                         fields: fields, reasoning: reasoning, newerVersion: newerVersion,
-                        link: link)
+                        link: link, awaitingBoard: true)
                         .transition(receiptTransition)
                 } else {
                     pendingCard(
@@ -166,10 +179,10 @@ struct CustomEventCard: View {
             // The room says it is over. The renderer handed the outcome over
             // as a field; a card with an outcome is a receipt, not a form.
             var rest = fields
-            let outcome = rest.remove(at: decided).value
+            let said = rest.remove(at: decided).value
             receiptCard(
-                outcome: outcome, at: nil, headline: nil, fields: rest, reasoning: reasoning,
-                newerVersion: newerVersion, link: link)
+                outcome: said, at: nil, headline: nil, fields: rest, reasoning: reasoning,
+                newerVersion: newerVersion, link: link, awaitingBoard: false)
         } else {
             plainCard(fields: fields, reasoning: reasoning, newerVersion: newerVersion, link: link)
         }
@@ -256,9 +269,13 @@ struct CustomEventCard: View {
 
     // MARK: Receipt
 
+    /// `awaitingBoard`: answered on this device, not yet confirmed by the
+    /// room. The decision event landing is not the board accepting it — the
+    /// two came apart for hours on 2026-09-28 — so this card does not say
+    /// more than it knows.
     private func receiptCard(
         outcome: String, at: Date?, headline: String?, fields: [CustomEventField],
-        reasoning: String?, newerVersion: Bool, link: String?
+        reasoning: String?, newerVersion: Bool, link: String?, awaitingBoard: Bool
     ) -> some View {
         let digest = FieldDigest(fields: fields, prompt: headline ?? "")
         return VStack(alignment: .leading, spacing: 8) {
@@ -273,6 +290,12 @@ struct CustomEventCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             DecisionReceiptLine(outcome: outcome, at: at)
+            if awaitingBoard {
+                Text("Waiting for the board to confirm")
+                    .metaFace()
+                    .foregroundStyle(Theme.contentMuted)
+                    .accessibilityIdentifier("decision-awaiting-board")
+            }
             summary(digest)
             details(digest.rest)
             reasoningDisclosure(reasoning)
@@ -690,6 +713,18 @@ struct GateAnswer {
             view: PreviewFixtures.cardPending, label: "Gate",
             eventType: "dev.superpipeline.gate.v1", senderName: "Superpipeline — Delivery",
             answered: DecisionRevampFixtures.answeredRequestChanges)
+    }
+}
+
+// Resolved: the hub said in the room that the board accepted an answer, and
+// who gave it — here someone other than the reader. No buttons, no amber, and
+// no "waiting": this is the state that survives leaving the room.
+#Preview("Resolved in the room") {
+    PreviewGround(width: 360) {
+        CustomEventCard(
+            view: DecisionRevampFixtures.gateResolved, label: "Approval",
+            eventType: "dev.superpipeline.gate.v1", senderName: "Superpipeline — Delivery",
+            onDecide: { _ in true })
     }
 }
 

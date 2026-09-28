@@ -181,6 +181,25 @@
     {view.view.text}
   </p>
 {/if}
+{#if view.view.status === "rendered" && view.view.outcome}
+  {@const outcome = view.view.outcome}
+  <!--
+    Resolved: the hub said in the room that the board accepted an answer
+    (`core::gate_outcome`), and who gave it — in a shared board room, often
+    someone other than this reader. The core has already dropped the
+    decision, so no buttons render below; and no amber, because nothing is
+    owed. It comes from the room, so it holds however often the timeline is
+    rebuilt.
+  -->
+  <div class="border-t border-border px-3 py-2">
+    {#if outcome.prompt}
+      <p class="selectable break-words text-content-muted">{outcome.prompt}</p>
+    {/if}
+    <p class="mt-1 font-sans text-label font-medium break-words text-ok" data-testid="decision-outcome">
+      ✓ {outcome.summary}
+    </p>
+  </div>
+{/if}
 {#if decision}
   <!--
     The core supplies the decision's subject. Gate answers also need this

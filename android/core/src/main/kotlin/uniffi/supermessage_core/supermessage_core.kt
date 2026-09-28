@@ -1414,6 +1414,75 @@ public object FfiConverterTypeCustomEventField: FfiConverterRustBuffer<CustomEve
 
 
 /**
+ * A decision the board has accepted, as the room reports it.
+ *
+ * Built by `crate::gate_outcome` from the hub's
+ * `dev.superpipeline.gate.outcome.v1`. Every string is display text, bounded
+ * here; `decision` is the id superpipeline resolved with and is never shown
+ * on its own.
+ */
+data class CustomEventOutcome (
+    /**
+     * superpipeline's `GateDecision` — `approve`, `request_changes`,
+     * `reject` — or, from a hub newer than this build, some other id.
+     */
+    var `decision`: kotlin.String, 
+    /**
+     * Who answered, as the hub named them. `None` when it did not say.
+     *
+     * In a board room with more than one person this is the only place
+     * "answered by someone else" is recorded, so it is shown whenever it is
+     * present, including when it is the reader.
+     */
+    var `decidedBy`: kotlin.String?, 
+    /**
+     * The whole receipt line, ready to draw: "Approved by rakesh",
+     * "Changes requested", "Decided by rakesh" for an id this build does
+     * not know.
+     */
+    var `summary`: kotlin.String, 
+    /**
+     * The question the gate asked, kept so a receipt says what was decided —
+     * the prompt of the decision it replaces. `None` when the card never
+     * had one to answer.
+     */
+    var `prompt`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer<CustomEventOutcome> {
+    override fun read(buf: ByteBuffer): CustomEventOutcome {
+        return CustomEventOutcome(
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CustomEventOutcome) = (
+            FfiConverterString.allocationSize(value.`decision`) +
+            FfiConverterOptionalString.allocationSize(value.`decidedBy`) +
+            FfiConverterString.allocationSize(value.`summary`) +
+            FfiConverterOptionalString.allocationSize(value.`prompt`)
+    )
+
+    override fun write(value: CustomEventOutcome, buf: ByteBuffer) {
+            FfiConverterString.write(value.`decision`, buf)
+            FfiConverterOptionalString.write(value.`decidedBy`, buf)
+            FfiConverterString.write(value.`summary`, buf)
+            FfiConverterOptionalString.write(value.`prompt`, buf)
+    }
+}
+
+
+
+/**
  * What a GATE notification's actions need to answer with no room open: the
  * same three things the card sends.
  */
@@ -3712,6 +3781,10 @@ public object FfiConverterTypeAgentState: FfiConverterRustBuffer<AgentState> {
 
 /**
  * The outcome of the whole fallback chain — what a host switches on.
+ *
+ * `Rendered` is much larger than the two fallbacks, and stays unboxed on
+ * purpose: this crosses UniFFI, which has no `Box` in a variant, and the
+ * value lives once per timeline row rather than in a hot collection of them.
  */
 sealed class CustomEventView {
     
@@ -3744,7 +3817,22 @@ sealed class CustomEventView {
          * A validated `https://` URL the host may open. See
          * [`CustomEventRenderResult::link`] and [`safe_link`].
          */
-        val `link`: kotlin.String?) : CustomEventView() {
+        val `link`: kotlin.String?, 
+        /**
+         * The room says this was decided and the board accepted it — a
+         * `dev.superpipeline.gate.outcome.v1` for this gate is in the loaded
+         * timeline (`crate::gate_outcome`).
+         *
+         * When set, `decision` is `None`: a resolved gate has nothing left to
+         * answer, and a host draws the receipt instead of the buttons. The
+         * renderer never sets this; only the timeline's reconcile pass does,
+         * because only the room — not one event — can say it.
+         *
+         * **Not the same fact as "answered on this device".** That is a host's
+         * own per-view state, set when a decision send lands; this is the hub
+         * saying superpipeline accepted it. Hosts draw the two differently.
+         */
+        val `outcome`: CustomEventOutcome?) : CustomEventView() {
         companion object
     }
     
@@ -3783,6 +3871,7 @@ public object FfiConverterTypeCustomEventView : FfiConverterRustBuffer<CustomEve
                 FfiConverterBoolean.read(buf),
                 FfiConverterOptionalTypeCustomEventDecision.read(buf),
                 FfiConverterOptionalString.read(buf),
+                FfiConverterOptionalTypeCustomEventOutcome.read(buf),
                 )
             2 -> CustomEventView.FallbackBody(
                 FfiConverterString.read(buf),
@@ -3804,6 +3893,7 @@ public object FfiConverterTypeCustomEventView : FfiConverterRustBuffer<CustomEve
                 + FfiConverterBoolean.allocationSize(value.`newerVersion`)
                 + FfiConverterOptionalTypeCustomEventDecision.allocationSize(value.`decision`)
                 + FfiConverterOptionalString.allocationSize(value.`link`)
+                + FfiConverterOptionalTypeCustomEventOutcome.allocationSize(value.`outcome`)
             )
         }
         is CustomEventView.FallbackBody -> {
@@ -3831,6 +3921,7 @@ public object FfiConverterTypeCustomEventView : FfiConverterRustBuffer<CustomEve
                 FfiConverterBoolean.write(value.`newerVersion`, buf)
                 FfiConverterOptionalTypeCustomEventDecision.write(value.`decision`, buf)
                 FfiConverterOptionalString.write(value.`link`, buf)
+                FfiConverterOptionalTypeCustomEventOutcome.write(value.`outcome`, buf)
                 Unit
             }
             is CustomEventView.FallbackBody -> {
@@ -5868,6 +5959,38 @@ public object FfiConverterOptionalTypeCustomEventDecision: FfiConverterRustBuffe
         } else {
             buf.put(1)
             FfiConverterTypeCustomEventDecision.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeCustomEventOutcome: FfiConverterRustBuffer<CustomEventOutcome?> {
+    override fun read(buf: ByteBuffer): CustomEventOutcome? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeCustomEventOutcome.read(buf)
+    }
+
+    override fun allocationSize(value: CustomEventOutcome?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeCustomEventOutcome.allocationSize(value)
+        }
+    }
+
+    override fun write(value: CustomEventOutcome?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeCustomEventOutcome.write(value, buf)
         }
     }
 }

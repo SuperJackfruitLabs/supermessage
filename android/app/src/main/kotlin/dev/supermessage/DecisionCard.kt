@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventField
+import uniffi.supermessage_core.CustomEventOutcome
 import uniffi.supermessage_core.CustomEventView
 
 /**
@@ -84,6 +85,7 @@ fun DecisionCard(
                 newerVersion = view.newerVersion,
                 decision = view.decision,
                 link = view.link,
+                outcome = view.outcome,
                 modifier = modifier,
                 onDecide = onDecide,
             )
@@ -127,12 +129,14 @@ private fun RenderedCard(
     newerVersion: Boolean,
     decision: CustomEventDecision?,
     link: String? = null,
+    outcome: CustomEventOutcome? = null,
     modifier: Modifier = Modifier,
     onDecide: (suspend (GateAnswer) -> Boolean)? = null,
 ) {
     // Amber marks a pending decision and nothing else on this card — see
-    // `SupermessageColorRoles.signal`'s own note in `Theme.kt`.
-    val pending = decision != null
+    // `SupermessageColorRoles.signal`'s own note in `Theme.kt`. The core never
+    // hands over both, but a resolved gate must not be amber even if it did.
+    val pending = decision != null && outcome == null
     val signal = SupermessageTheme.colors.signal
 
     Column(
@@ -224,9 +228,44 @@ private fun RenderedCard(
             )
         }
 
-        if (decision != null) {
+        if (outcome != null) {
+            ResolvedReceipt(outcome)
+        } else if (decision != null) {
             DecisionPrompt(decision, onDecide = onDecide)
         }
+    }
+}
+
+/**
+ * The room says the board accepted an answer, and who gave it.
+ *
+ * From the core (`core::gate_outcome`), not from anything this card
+ * remembers, so it holds across a recycled row and a re-entered room — which
+ * the per-device "answered" state in [DecisionPrompt] does not. No controls,
+ * and no amber: nothing is owed any more.
+ */
+@Composable
+private fun ResolvedReceipt(outcome: CustomEventOutcome, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.testTag("decision-resolved"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        val prompt = outcome.prompt
+        if (prompt != null) {
+            // Still said, so the receipt says what was decided — muted,
+            // because it is no longer a question.
+            Text(
+                prompt,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            "\u2713 " + outcome.summary,
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = SupermessageTheme.colors.ok,
+            modifier = Modifier.testTag("decision-outcome"),
+        )
     }
 }
 
@@ -345,6 +384,15 @@ private fun DecisionPrompt(
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = SupermessageTheme.colors.signal,
                 modifier = Modifier.testTag("decision-answered"),
+            )
+            // Answered is not resolved: the decision landed in the room, and
+            // the board has not said it accepted it. When it does, the core
+            // hands this card an outcome and [ResolvedReceipt] replaces this.
+            Text(
+                "Waiting for the board to confirm",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("decision-awaiting-board"),
             )
         } else {
         // A row while the options fit, wrapping to the next line when they do

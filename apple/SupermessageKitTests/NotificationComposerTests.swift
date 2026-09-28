@@ -51,7 +51,7 @@ struct NotificationComposerTests {
                     prompt: "Allow Write src/main.ts?",
                     options: options.map { CustomEventDecisionOption(label: $0, id: $0) },
                     subject: subject),
-                link: nil),
+                link: nil, outcome: nil),
             label: subject == nil ? "Permission" : "Gate",
             eventType: subject == nil ? "dev.agentpod.permission.v1" : "dev.superpipeline.gate.v1")
     }
@@ -263,7 +263,7 @@ struct NotificationComposerTests {
     @Test("a card with nothing to decide is not an interruption")
     func cardWithoutDecision() {
         let view = ItemView.customEvent(
-            view: .rendered(fields: [], reasoning: nil, newerVersion: false, decision: nil, link: nil),
+            view: .rendered(fields: [], reasoning: nil, newerVersion: false, decision: nil, link: nil, outcome: nil),
             label: "Turn", eventType: "dev.agentpod.turn.v1")
         #expect(timeline([timelineRow("$t", view: view)]).isEmpty)
     }

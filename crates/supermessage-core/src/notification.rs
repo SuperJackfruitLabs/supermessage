@@ -581,6 +581,14 @@ pub fn notification_for_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> 
             }
             other => {
                 let event_type = other.event_type().to_string();
+                // A gate's structured receipt: its readable line, posted
+                // beside it, is the news. Never a second buzz, never actions.
+                if event_type == crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE {
+                    return quiet(
+                        NotificationSuppression::NotNews,
+                        format!("{who} posted an update"),
+                    );
+                }
                 // A suite event this build draws: project it as the timeline
                 // does, so a permission request notifies as one.
                 if crate::custom_events::default_registry()
@@ -905,6 +913,17 @@ mod tests {
         assert_eq!(note.body, "Strategy Sam invited you");
     }
 
+    fn gate_outcome() -> Value {
+        json!({
+            "suite_event_type": crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE,
+            "gate_id": "gate-9",
+            "board_id": "brd_1",
+            "decision": "approve",
+            "decided_by": "rakesh",
+            "m.relates_to": { "rel_type": "m.reference", "event_id": "$gate" }
+        })
+    }
+
     // --- the quiet line a suppressed notification shows when it cannot be
     // dropped (TestFlight build 30 showed these blank)
 
@@ -926,6 +945,37 @@ mod tests {
                 "counts": counts
             }
         })
+    }
+
+    #[test]
+    fn a_gate_outcome_in_prose_notifies_as_the_sentence_it_is() {
+        let mut content = gate_outcome();
+        content["msgtype"] = json!("m.text");
+        content["body"] = json!("Approved by rakesh — the board has it.");
+        let note = notify(message(content));
+        assert_eq!(note.suppress, None);
+        assert_eq!(note.category, NotificationCategory::Message);
+        assert_eq!(note.gate, None);
+        assert_eq!(note.permission, None);
+        assert_eq!(note.body, "Approved by rakesh — the board has it.");
+    }
+
+    #[test]
+    fn a_gate_outcome_event_is_not_news() {
+        let note = notify(json!({
+            "type": crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE,
+            "event_id": "$e",
+            "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": gate_outcome(),
+        }));
+        assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+        assert_eq!(note.category, NotificationCategory::Message);
+        assert_eq!(note.gate, None);
+        assert_eq!(
+            note.fallback_body.as_deref(),
+            Some("Agent Hermes posted an update")
+        );
     }
 
     #[test]
