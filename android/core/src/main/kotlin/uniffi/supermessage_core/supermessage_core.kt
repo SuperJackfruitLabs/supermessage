@@ -1414,6 +1414,56 @@ public object FfiConverterTypeCustomEventField: FfiConverterRustBuffer<CustomEve
 
 
 /**
+ * What a GATE notification's actions need to answer with no room open: the
+ * same three things the card sends.
+ */
+data class GateAnswers (
+    /**
+     * superpipeline's `gate_id` — `CustomEventDecision::subject`.
+     */
+    var `gateId`: kotlin.String, 
+    /**
+     * The gate's question; the sentence left in the room is derived from it.
+     */
+    var `prompt`: kotlin.String, 
+    /**
+     * Which of `approve`, `request_changes` and `reject` the gate offers, in
+     * that order.
+     */
+    var `optionIds`: List<kotlin.String>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateAnswers: FfiConverterRustBuffer<GateAnswers> {
+    override fun read(buf: ByteBuffer): GateAnswers {
+        return GateAnswers(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateAnswers) = (
+            FfiConverterString.allocationSize(value.`gateId`) +
+            FfiConverterString.allocationSize(value.`prompt`) +
+            FfiConverterSequenceString.allocationSize(value.`optionIds`)
+    )
+
+    override fun write(value: GateAnswers, buf: ByteBuffer) {
+            FfiConverterString.write(value.`gateId`, buf)
+            FfiConverterString.write(value.`prompt`, buf)
+            FfiConverterSequenceString.write(value.`optionIds`, buf)
+    }
+}
+
+
+
+/**
  * Media metadata projected from an `m.image`/`m.file`/`m.audio`/`m.video`
  * message's `MessageType` (see `core::timeline::media_meta`) — deliberately
  * never the media's bytes themselves. `TimelineItemDto` streams to the
@@ -1538,6 +1588,128 @@ public object FfiConverterTypeMentionable: FfiConverterRustBuffer<Mentionable> {
     override fun write(value: Mentionable, buf: ByteBuffer) {
             FfiConverterString.write(value.`userId`, buf)
             FfiConverterOptionalString.write(value.`displayName`, buf)
+    }
+}
+
+
+
+/**
+ * One notification, decided.
+ */
+data class NotificationDto (
+    var `roomId`: kotlin.String, 
+    /**
+     * The event it is about. For a gate, the event the decision references.
+     */
+    var `eventId`: kotlin.String, 
+    var `title`: kotlin.String, 
+    var `subtitle`: kotlin.String?, 
+    /**
+     * Plain text, already bounded — the row's own preview.
+     */
+    var `body`: kotlin.String, 
+    var `category`: NotificationCategory, 
+    /**
+     * Set exactly when `category` is `Permission`.
+     */
+    var `permission`: PermissionAnswers?, 
+    /**
+     * Set exactly when `category` is `Gate`.
+     */
+    var `gate`: GateAnswers?, 
+    /**
+     * Groups notifications into one conversation per room — the gateway's
+     * `thread-id` too.
+     */
+    var `threadId`: kotlin.String, 
+    /**
+     * Present when this should not be shown; the text fields are then the
+     * generic ones and must not be displayed.
+     */
+    var `suppress`: NotificationSuppression?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<NotificationDto> {
+    override fun read(buf: ByteBuffer): NotificationDto {
+        return NotificationDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeNotificationCategory.read(buf),
+            FfiConverterOptionalTypePermissionAnswers.read(buf),
+            FfiConverterOptionalTypeGateAnswers.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalTypeNotificationSuppression.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: NotificationDto) = (
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterString.allocationSize(value.`eventId`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterOptionalString.allocationSize(value.`subtitle`) +
+            FfiConverterString.allocationSize(value.`body`) +
+            FfiConverterTypeNotificationCategory.allocationSize(value.`category`) +
+            FfiConverterOptionalTypePermissionAnswers.allocationSize(value.`permission`) +
+            FfiConverterOptionalTypeGateAnswers.allocationSize(value.`gate`) +
+            FfiConverterString.allocationSize(value.`threadId`) +
+            FfiConverterOptionalTypeNotificationSuppression.allocationSize(value.`suppress`)
+    )
+
+    override fun write(value: NotificationDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterString.write(value.`eventId`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterOptionalString.write(value.`subtitle`, buf)
+            FfiConverterString.write(value.`body`, buf)
+            FfiConverterTypeNotificationCategory.write(value.`category`, buf)
+            FfiConverterOptionalTypePermissionAnswers.write(value.`permission`, buf)
+            FfiConverterOptionalTypeGateAnswers.write(value.`gate`, buf)
+            FfiConverterString.write(value.`threadId`, buf)
+            FfiConverterOptionalTypeNotificationSuppression.write(value.`suppress`, buf)
+    }
+}
+
+
+
+/**
+ * The two option ids a PERMISSION notification's actions send.
+ */
+data class PermissionAnswers (
+    var `allowOptionId`: kotlin.String, 
+    var `rejectOptionId`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePermissionAnswers: FfiConverterRustBuffer<PermissionAnswers> {
+    override fun read(buf: ByteBuffer): PermissionAnswers {
+        return PermissionAnswers(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PermissionAnswers) = (
+            FfiConverterString.allocationSize(value.`allowOptionId`) +
+            FfiConverterString.allocationSize(value.`rejectOptionId`)
+    )
+
+    override fun write(value: PermissionAnswers, buf: ByteBuffer) {
+            FfiConverterString.write(value.`allowOptionId`, buf)
+            FfiConverterString.write(value.`rejectOptionId`, buf)
     }
 }
 
@@ -2816,6 +2988,13 @@ data class TimelineItemDto (
     var `eventId`: kotlin.String?, 
     var `kind`: kotlin.String, 
     var `msgtype`: kotlin.String?, 
+    /**
+     * The kind's own qualifier — a custom event's type, a membership
+     * transition, a state event's type — and `None` for a message, **except**
+     * a text or notice message carrying a suite decision under an embedded
+     * key (`crate::embedded`), where it is the event type that decision
+     * stands for and [`Self::custom_payload`] is its object.
+     */
     var `detail`: kotlin.String?, 
     var `sender`: kotlin.String?, 
     var `senderDisplayName`: kotlin.String?, 
@@ -2850,7 +3029,9 @@ data class TimelineItemDto (
     var `media`: MediaMetaDto?, 
     /**
      * The event's raw `content` object, present only for `kind:
-     * "customMessage"` — this is the plumbing `docs/matrix-events.md` §G
+     * "customMessage"` — or, for a text or notice message, the object it
+     * carries under an embedded suite key (see [`Self::detail`] and
+     * `crate::embedded`) — this is the plumbing `docs/matrix-events.md` §G
      * describes for Superpipeline cards/runs/permission requests/station status
      * (see `core::timeline::custom_message_payload`). The SDK's
      * `MsgLikeKind::Other` discards a custom event's content entirely
@@ -4338,6 +4519,54 @@ public object FfiConverterTypeMembership: FfiConverterRustBuffer<Membership> {
 
 
 /**
+ * Which set of actions a notification offers. The host registers one
+ * category per case under [`NotificationCategory::identifier`].
+ */
+
+enum class NotificationCategory {
+    
+    /**
+     * An ordinary message. Tapping it opens the room.
+     */
+    MESSAGE,
+    /**
+     * An AgentPod permission request answerable as Allow once / Reject.
+     */
+    PERMISSION,
+    /**
+     * A superpipeline gate answerable as Approve / Request changes / Reject.
+     */
+    GATE,
+    /**
+     * A decision that must be read in the app first. Only "Open".
+     */
+    DECISION;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationCategory: FfiConverterRustBuffer<NotificationCategory> {
+    override fun read(buf: ByteBuffer) = try {
+        NotificationCategory.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: NotificationCategory) = 4UL
+
+    override fun write(value: NotificationCategory, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
  * How loudly a room is allowed to interrupt.
  *
  * Mirrors the SDK's `RoomNotificationMode` plus one case it does not have:
@@ -4373,6 +4602,64 @@ public object FfiConverterTypeNotificationMode: FfiConverterRustBuffer<Notificat
     override fun allocationSize(value: NotificationMode) = 4UL
 
     override fun write(value: NotificationMode, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Why a remote notification should not be shown at all.
+ *
+ * A hint, not a guarantee: without Apple's notification-filtering
+ * entitlement an extension cannot drop a push, only empty it. The homeserver's
+ * own push rules already keep most of these from being sent.
+ */
+
+enum class NotificationSuppression {
+    
+    /**
+     * An edit (`m.replace`): the original already notified.
+     */
+    EDIT,
+    REACTION,
+    /**
+     * A redaction, or an event that has since been redacted.
+     */
+    REDACTION,
+    /**
+     * The sender is blocked, or the account's push rules say not to notify.
+     */
+    FILTERED,
+    /**
+     * This account sent it, from another device.
+     */
+    OWN,
+    /**
+     * Something the timeline draws as context rather than news — a turn
+     * card, a transcript, a state change — which no local notification
+     * would have been posted for either.
+     */
+    NOT_NEWS;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationSuppression: FfiConverterRustBuffer<NotificationSuppression> {
+    override fun read(buf: ByteBuffer) = try {
+        NotificationSuppression.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: NotificationSuppression) = 4UL
+
+    override fun write(value: NotificationSuppression, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -5563,6 +5850,38 @@ public object FfiConverterOptionalTypeCustomEventDecision: FfiConverterRustBuffe
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeGateAnswers: FfiConverterRustBuffer<GateAnswers?> {
+    override fun read(buf: ByteBuffer): GateAnswers? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeGateAnswers.read(buf)
+    }
+
+    override fun allocationSize(value: GateAnswers?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeGateAnswers.allocationSize(value)
+        }
+    }
+
+    override fun write(value: GateAnswers?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeGateAnswers.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeMediaMetaDto: FfiConverterRustBuffer<MediaMetaDto?> {
     override fun read(buf: ByteBuffer): MediaMetaDto? {
         if (buf.get().toInt() == 0) {
@@ -5585,6 +5904,38 @@ public object FfiConverterOptionalTypeMediaMetaDto: FfiConverterRustBuffer<Media
         } else {
             buf.put(1)
             FfiConverterTypeMediaMetaDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypePermissionAnswers: FfiConverterRustBuffer<PermissionAnswers?> {
+    override fun read(buf: ByteBuffer): PermissionAnswers? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypePermissionAnswers.read(buf)
+    }
+
+    override fun allocationSize(value: PermissionAnswers?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypePermissionAnswers.allocationSize(value)
+        }
+    }
+
+    override fun write(value: PermissionAnswers?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypePermissionAnswers.write(value, buf)
         }
     }
 }
@@ -5713,6 +6064,38 @@ public object FfiConverterOptionalTypeDeliveryState: FfiConverterRustBuffer<Deli
         } else {
             buf.put(1)
             FfiConverterTypeDeliveryState.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeNotificationSuppression: FfiConverterRustBuffer<NotificationSuppression?> {
+    override fun read(buf: ByteBuffer): NotificationSuppression? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeNotificationSuppression.read(buf)
+    }
+
+    override fun allocationSize(value: NotificationSuppression?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeNotificationSuppression.allocationSize(value)
+        }
+    }
+
+    override fun write(value: NotificationSuppression?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeNotificationSuppression.write(value, buf)
         }
     }
 }

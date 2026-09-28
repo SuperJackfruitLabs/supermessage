@@ -135,6 +135,20 @@ impl Core {
         Self::build(data_dir, Box::new(KeyringStore))
     }
 
+    /// Build a core that shares its stores with another process — on iOS, the
+    /// app and its Notification Service Extension. See [`CoreOptions`].
+    ///
+    /// Infallible, like [`Core::new`]: every step that can fail here has a
+    /// safe way to continue, and a core that refused to exist would leave the
+    /// host with nothing to show even a sign-in screen through.
+    #[uniffi::constructor]
+    pub fn with_options(options: CoreOptions) -> Arc<Self> {
+        install_tracing();
+        let data_dir = settle_data_dir(&options);
+        let store = settle_secret_store(&options);
+        Self::build_for(data_dir, store, &options.process_name)
+    }
+
     /// Build a core whose secrets live in a store the host supplies.
     ///
     /// For platforms where the core has no usable store of its own. Android is
@@ -337,6 +351,24 @@ impl Core {
     ) -> Result<(), FfiError> {
         self.block(self.session.register_pusher(&registration))?;
         Ok(())
+    }
+
+    /// Stop pushing to this device without signing out. [`Core::logout`]
+    /// already does this first; a no-op when nothing was registered.
+    pub fn unregister_pusher(&self) -> Result<(), FfiError> {
+        self.block(self.session.unregister_pusher())?;
+        Ok(())
+    }
+
+    /// Stop syncing while the app is away, so a second process can take the
+    /// store lock. Streams stay subscribed. See `Session::pause_sync`.
+    pub fn sync_pause(&self) {
+        self.block(self.session.pause_sync());
+    }
+
+    /// Start a sync [`Core::sync_pause`] stopped.
+    pub fn sync_resume(&self) {
+        self.block(self.session.resume_sync());
     }
 
     /// Pin or unpin a room — the `m.favourite` tag, so it travels between
@@ -731,6 +763,18 @@ impl Core {
         Ok(())
     }
 
+    /// What the notification for `event_id` in `room_id` should say, fetched
+    /// and decrypted here — the Notification Service Extension's one call
+    /// after [`Core::restore_session_quietly`]. An error means the event could
+    /// not be had; the host then keeps the push's own generic text.
+    pub fn notification_for(
+        &self,
+        room_id: String,
+        event_id: String,
+    ) -> Result<supermessage_core::notification::NotificationDto, FfiError> {
+        Ok(self.block(self.session.notification_for(&room_id, &event_id))?)
+    }
+
     /// [`Core::send_gate_decision`] for a room that need not be open: the
     /// same content, validated the same way, sent straight to `room_id`.
     pub fn send_gate_decision_to(
@@ -762,16 +806,114 @@ impl Core {
         store: Box<dyn supermessage_core::secrets::SecretStore>,
     ) -> Arc<Self> {
         install_tracing();
+        Self::build_for(
+            PathBuf::from(data_dir),
+            store,
+            supermessage_core::session::MAIN_PROCESS,
+        )
+    }
 
+    fn build_for(
+        data_dir: PathBuf,
+        store: Box<dyn supermessage_core::secrets::SecretStore>,
+        process: &str,
+    ) -> Arc<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .expect("a multi-thread runtime must be constructible");
 
         Arc::new(Self {
-            session: Arc::new(Session::new(PathBuf::from(data_dir), store)),
+            session: Arc::new(Session::for_process(data_dir, store, process)),
             runtime,
         })
+    }
+}
+
+/// How a host that shares its stores with another process builds its core.
+///
+/// On iOS both the app and the Notification Service Extension build one, over
+/// the same App Group directory and the same keychain access group, under
+/// different `process_name`s. The app also names where an earlier build kept
+/// things, and they are moved once (see `settle_data_dir`).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct CoreOptions {
+    /// Where the stores live. For a shared store, a directory both processes
+    /// can reach — the App Group container on iOS.
+    pub data_dir: String,
+    /// The name this process holds the cross-process store lock under:
+    /// `"main"` for the app, `"nse"` for the extension. Never the same in two
+    /// processes that share `data_dir`.
+    pub process_name: String,
+    /// Where a previous build kept its stores. Moved into `data_dir` once,
+    /// before any client is built, so an update does not sign anyone out.
+    /// `None` in a process that never had any (the extension).
+    pub legacy_data_dir: Option<String>,
+    /// The keychain access group secrets live in — on iOS the group both
+    /// processes are entitled to, team prefix included. `None` for the
+    /// platform default. Ignored off iOS.
+    pub keychain_access_group: Option<String>,
+    /// The access group a previous build wrote its secrets to — the app's
+    /// own default group, `<team>.dev.supermessage.ios`. Moved into
+    /// `keychain_access_group` the first time they are readable. Ignored off
+    /// iOS, and when `keychain_access_group` is `None`.
+    pub legacy_keychain_access_group: Option<String>,
+}
+
+/// The directory to open the stores in, after moving an earlier build's there.
+///
+/// A move that fails leaves the stores where they were, and this process uses
+/// them *there*: opening an empty directory with a stored session would mint
+/// a fresh encryption identity under the same device id, which other devices
+/// then refuse — far worse than one more launch in the old place.
+fn settle_data_dir(options: &CoreOptions) -> PathBuf {
+    let data_dir = PathBuf::from(&options.data_dir);
+    let Some(legacy) = options.legacy_data_dir.as_deref().map(PathBuf::from) else {
+        return data_dir;
+    };
+    if legacy == data_dir {
+        return data_dir;
+    }
+    match supermessage_core::storage::move_dir(&legacy.join("store"), &data_dir.join("store")) {
+        Ok(outcome) => {
+            if outcome.moved > 0 || outcome.kept > 0 {
+                tracing::info!(
+                    moved = outcome.moved,
+                    kept = outcome.kept,
+                    "moved the stores"
+                );
+            }
+            data_dir
+        }
+        Err(error) => {
+            tracing::warn!(%error, "could not move the stores; using them where they are");
+            legacy
+        }
+    }
+}
+
+/// The secret store for `options`: the OS store in the named access group,
+/// reading through to the legacy one until everything has moved.
+fn settle_secret_store(options: &CoreOptions) -> Box<dyn supermessage_core::secrets::SecretStore> {
+    use supermessage_core::secrets::{os_store, MigratingStore};
+    let group = options
+        .keychain_access_group
+        .as_deref()
+        .filter(|g| !g.is_empty());
+    let current = match os_store(group) {
+        Ok(store) => store,
+        Err(error) => {
+            tracing::warn!(%error, "the shared keychain group is unavailable; using the default");
+            return Box::new(KeyringStore);
+        }
+    };
+    let legacy = options
+        .legacy_keychain_access_group
+        .as_deref()
+        .filter(|g| !g.is_empty() && group.is_some());
+    match legacy.map(|g| os_store(Some(g))) {
+        Some(Ok(legacy)) => Box::new(MigratingStore::new(current, legacy)),
+        _ => current,
     }
 }
 
@@ -971,10 +1113,111 @@ pub fn roster_hidden_invitations(
     supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
 }
 
+/// The notification a timeline row deserves, or `None` when it is not news —
+/// the same decision the Notification Service Extension makes for a push, so
+/// a local notification and a remote one say the same thing. See
+/// `core::notification`.
+#[uniffi::export]
+pub fn notification_for_row(
+    row: supermessage_core::dto::TimelineRow,
+    room_id: String,
+    event_id: String,
+    room_name: String,
+) -> Option<supermessage_core::notification::NotificationDto> {
+    supermessage_core::notification::notification_for_row(&row, &room_id, &event_id, &room_name)
+}
+
+/// The Allow once / Reject pair a permission decision offers, if it offers
+/// both. "Always" is never taken for "once".
+#[uniffi::export]
+pub fn notification_permission_answers(
+    decision: supermessage_core::custom_events::CustomEventDecision,
+) -> Option<supermessage_core::notification::PermissionAnswers> {
+    supermessage_core::notification::permission_answers(&decision)
+}
+
+/// What a gate notification can answer, or `None` when it should only open.
+#[uniffi::export]
+pub fn notification_gate_answers(
+    decision: supermessage_core::custom_events::CustomEventDecision,
+    gate_id: String,
+) -> Option<supermessage_core::notification::GateAnswers> {
+    supermessage_core::notification::gate_answers(&decision, &gate_id)
+}
+
+/// The `UNNotificationCategory` identifier for `category` — the value the
+/// push gateway also sends as `aps.category`.
+#[uniffi::export]
+pub fn notification_category_identifier(
+    category: supermessage_core::notification::NotificationCategory,
+) -> String {
+    category.identifier().to_string()
+}
+
 /// How many more characters a report's reason may take — negative once it is
 /// over. Counted by the core, so a host's counter agrees with the check that
 /// refuses the report (Swift and Kotlin would each count differently).
 #[uniffi::export]
 pub fn report_reason_remaining(reason: String) -> i64 {
     supermessage_core::safety::report_reason_remaining(&reason)
+}
+
+#[cfg(test)]
+mod options_tests {
+    use super::*;
+
+    fn options(data_dir: &std::path::Path, legacy: &std::path::Path) -> CoreOptions {
+        CoreOptions {
+            data_dir: data_dir.to_string_lossy().into_owned(),
+            process_name: "main".into(),
+            legacy_data_dir: Some(legacy.to_string_lossy().into_owned()),
+            keychain_access_group: None,
+            legacy_keychain_access_group: None,
+        }
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("sm-ffi-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn an_earlier_builds_store_is_moved_and_opened_in_the_new_place() {
+        let root = scratch("moved");
+        let (group, app) = (root.join("group"), root.join("app"));
+        std::fs::create_dir_all(app.join("store")).unwrap();
+        std::fs::write(app.join("store/matrix-sdk-crypto.sqlite3"), "keys").unwrap();
+
+        assert_eq!(settle_data_dir(&options(&group, &app)), group);
+        assert!(group.join("store/matrix-sdk-crypto.sqlite3").exists());
+        assert!(!app.join("store").exists());
+    }
+
+    /// Opening an empty directory with a stored session would mint a new
+    /// encryption identity under the old device id. A move that fails must
+    /// leave this launch on the old store instead.
+    #[test]
+    fn a_move_that_fails_keeps_using_the_store_where_it_is() {
+        let root = scratch("failed");
+        let app = root.join("app");
+        std::fs::create_dir_all(app.join("store")).unwrap();
+        std::fs::write(app.join("store/matrix-sdk-crypto.sqlite3"), "keys").unwrap();
+        // A data directory under a *file* cannot be created.
+        std::fs::write(root.join("blocker"), "").unwrap();
+        let group = root.join("blocker/group");
+
+        assert_eq!(settle_data_dir(&options(&group, &app)), app);
+        assert!(app.join("store/matrix-sdk-crypto.sqlite3").exists());
+    }
+
+    #[test]
+    fn a_process_with_nothing_to_move_uses_its_own_directory() {
+        let root = scratch("nothing");
+        let mut opts = options(&root.join("group"), &root.join("app"));
+        assert_eq!(settle_data_dir(&opts), root.join("group"));
+        opts.legacy_data_dir = None;
+        assert_eq!(settle_data_dir(&opts), root.join("group"));
+    }
 }
