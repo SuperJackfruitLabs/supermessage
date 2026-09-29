@@ -225,7 +225,7 @@ struct RemotePushTests {
                 roomId: "!a", eventId: "$gate", title: "Room !a", subtitle: "Approval",
                 body: "Ship it?", category: .gate, permission: nil,
                 gate: GateAnswers(gateId: "g1", prompt: "Ship it?", optionIds: ["approve", "reject"]),
-                threadId: "!a", suppress: nil, fallbackTitle: nil, fallbackBody: nil))
+                threadId: "!a", suppress: nil, fallbackTitle: nil, fallbackBody: nil, activity: nil))
         #expect(note.id == "$gate")
         #expect(note.category == .gate)
         #expect(note.gate == LocalNotification.Gate(gateId: "g1", prompt: "Ship it?", optionIds: ["approve", "reject"]))
@@ -242,7 +242,7 @@ struct RemotePushTests {
         NotificationDto(
             roomId: "!a", eventId: "$e", title: "", subtitle: nil, body: "New message",
             category: .message, permission: nil, gate: nil, threadId: "!a",
-            suppress: suppress, fallbackTitle: fallbackTitle, fallbackBody: fallbackBody)
+            suppress: suppress, fallbackTitle: fallbackTitle, fallbackBody: fallbackBody, activity: nil)
     }
 
     @Test("a suppressed push without the filtering entitlement says its quiet line, never nothing")
@@ -283,7 +283,7 @@ struct RemotePushTests {
         let note = NotificationDto(
             roomId: "!a", eventId: "$m", title: "Krishna", subtitle: "Ops", body: "done",
             category: .message, permission: nil, gate: nil, threadId: "!a", suppress: nil,
-            fallbackTitle: nil, fallbackBody: nil)
+            fallbackTitle: nil, fallbackBody: nil, activity: nil)
         for canFilter in [false, true] {
             #expect(
                 RemotePresentation(note, canFilter: canFilter)

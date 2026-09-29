@@ -257,6 +257,25 @@ and the extension's quiet one-line fallback (dropped instead only with
 `SM_NSE_FILTERING`, Apple's filtering entitlement, not yet granted). Never a
 blank notification: see `docs/agentpod-events.md` §6.
 
+**Widgets.** What the Needs you and Agents widgets show is `core::widget`: a
+JSON snapshot in `<App Group>/widgets/snapshot.json`, written by two
+processes through `WidgetSnapshotWriter` (a `flock` around read → core merge →
+atomic write). The extension merges each push it decides
+(`widget::apply_notification` — a decision asked, an agent's line, a finished
+turn, a gate's receipt); the app merges its roster over that when it runs
+(`apply_roster`, where an older roster loses to a newer), the open room
+(`apply_timeline`), and a `BGAppRefreshTask` (`WidgetRefresh`) catches up
+while it is away. The snapshot carries *frames* — counts, the fleet line and
+each agent's state from each moment one changes — so the widget, which has no
+core, decides nothing, not even when "active" becomes "idle". A widget's
+Allow/Reject/Approve is `AnswerDecisionIntent`, a `LiveActivityIntent` so it
+runs **in the app's process** (the widget extension has no core, no keychain
+group and a ~30 MB ceiling); the app asks the core whether the snapshot still
+owes that answer (`widget::answer_for`) before sending it the way a
+notification action does, and marks it *sent*, never resolved — only the
+board's receipt removes a gate. `apple/SupermessageWidgets/Views` is compiled
+into the app too, so the widgets' previews are in the preview gate.
+
 **Reproducing timeline scrolling without an account:** launch a Debug build
 with `-fixtureTimeline` (a long local room, `Previews/ScrollFixture.swift`) and
 run `SupermessageUITests/TimelineScrollTests` while recording the simulator

@@ -196,8 +196,11 @@ public final class Session {
     /// ride on.
     public var pausesSyncInBackground = false
     private var syncPaused = false
+    /// Whether a scene is in the foreground, as `scenePhaseChanged` last heard.
+    private var sceneActive = true
 
     public func scenePhaseChanged(to active: Bool) async {
+        sceneActive = active
         guard phase == .signedIn else { return }
         if active {
             if syncPaused, let pausing = client as? any SyncPausing {
@@ -217,6 +220,41 @@ public final class Session {
             await pausing.syncPause()
         }
     }
+
+    /// Catch up for a background refresh (`BGAppRefreshTask`): let sync run
+    /// for `duration` if it was paused, read the roster before and after, and
+    /// pause it again — unless the reader brought the app forward meanwhile,
+    /// which resumes it for good.
+    ///
+    /// Short on purpose. While sync runs it holds the stores' lock, and a
+    /// push arriving then waits for it in the Notification Service Extension;
+    /// the system's refresh budget is about thirty seconds anyway. Returns
+    /// whether there was a signed-in session to catch up.
+    @discardableResult
+    public func catchUpInBackground(for duration: Duration) async -> Bool {
+        guard phase == .signedIn else { return false }
+        let pausing = client as? any SyncPausing
+        let resumed = syncPaused && pausing != nil
+        if resumed {
+            syncPaused = false
+            await pausing?.syncResume()
+        }
+        await rooms.seed()
+        try? await Task.sleep(for: duration)
+        await rooms.seed()
+        if resumed, !sceneActive, pausesSyncInBackground, !syncPaused {
+            syncPaused = true
+            await pausing?.syncPause()
+        }
+        return true
+    }
+
+    /// Told when a decision is answered from its card in the room and the
+    /// answer landed: `(roomId, eventId, optionId)`. The platform marks the
+    /// widgets' copy sent, so a widget stops offering a gate the reader just
+    /// approved in the app. Only gates: a permission's answer is a message,
+    /// which the widgets read back from the room (`widget::apply_timeline`).
+    public var decisionAnswered: (@MainActor (String, String, String) -> Void)?
 
     /// The commands the panels drive.
     ///
@@ -330,6 +368,7 @@ public final class Session {
             try await client.sendGateDecision(
                 roomId: roomId, gateId: gateId, optionId: optionId, comment: comment,
                 inReplyTo: eventId, prompt: prompt)
+            decisionAnswered?(roomId, eventId, optionId)
             return true
         } catch {
             return false

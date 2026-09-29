@@ -58,6 +58,9 @@ import uniffi.supermessage_core.FfiConverterTypeSpaceSummary
 import uniffi.supermessage_core.FfiConverterTypeTimelineRow
 import uniffi.supermessage_core.FfiConverterTypeToolPhase
 import uniffi.supermessage_core.FfiConverterTypeTypingUserDto
+import uniffi.supermessage_core.FfiConverterTypeWidgetAnswer
+import uniffi.supermessage_core.FfiConverterTypeWidgetLiveTurn
+import uniffi.supermessage_core.FfiConverterTypeWidgetWrite
 import uniffi.supermessage_core.GateAnswers
 import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
@@ -79,6 +82,9 @@ import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_core.TimelineRow
 import uniffi.supermessage_core.ToolPhase
 import uniffi.supermessage_core.TypingUserDto
+import uniffi.supermessage_core.WidgetAnswer
+import uniffi.supermessage_core.WidgetLiveTurn
+import uniffi.supermessage_core.WidgetWrite
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
@@ -103,6 +109,9 @@ import uniffi.supermessage_core.RustBuffer as RustBufferSpaceSummary
 import uniffi.supermessage_core.RustBuffer as RustBufferTimelineRow
 import uniffi.supermessage_core.RustBuffer as RustBufferToolPhase
 import uniffi.supermessage_core.RustBuffer as RustBufferTypingUserDto
+import uniffi.supermessage_core.RustBuffer as RustBufferWidgetAnswer
+import uniffi.supermessage_core.RustBuffer as RustBufferWidgetLiveTurn
+import uniffi.supermessage_core.RustBuffer as RustBufferWidgetWrite
 
 // This is a helper for safely working with byte buffers returned from the Rust code.
 // A rust-owned buffer is represented by its capacity, its current length, and a
@@ -998,6 +1007,20 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1183,6 +1206,20 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_roster_state(`row`: RustBufferRoomRow.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferAgentState.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_answer_for(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_apply_notification(`stored`: RustBuffer.ByValue,`note`: RustBufferNotificationDto.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferWidgetWrite.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_apply_roster(`stored`: RustBuffer.ByValue,`rows`: RustBuffer.ByValue,`live`: RustBuffer.ByValue,`asOfMs`: Long,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferWidgetWrite.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_apply_timeline(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`rows`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferWidgetWrite.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_clear_answer(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferWidgetWrite.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_mark_answered(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferWidgetWrite.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_signed_out(`stored`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferWidgetWrite.ByValue
     fun ffi_supermessage_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_supermessage_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1326,6 +1363,20 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_roster_sections(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_roster_state(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_answer_for(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_apply_notification(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_apply_roster(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_apply_timeline(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_clear_answer(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_mark_answered(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_signed_out(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_account(
     ): Short
@@ -1522,6 +1573,27 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_roster_state() != 4121.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_answer_for() != 34951.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_apply_notification() != 55538.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_apply_roster() != 30950.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_apply_timeline() != 12710.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_clear_answer() != 58905.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_mark_answered() != 34613.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_signed_out() != 55888.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_account() != 48469.toShort()) {
@@ -5724,6 +5796,38 @@ public object FfiConverterOptionalTypePlayableAudio: FfiConverterRustBuffer<Play
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeWidgetAnswer: FfiConverterRustBuffer<WidgetAnswer?> {
+    override fun read(buf: ByteBuffer): WidgetAnswer? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeWidgetAnswer.read(buf)
+    }
+
+    override fun allocationSize(value: WidgetAnswer?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeWidgetAnswer.allocationSize(value)
+        }
+    }
+
+    override fun write(value: WidgetAnswer?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeWidgetAnswer.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceFloat: FfiConverterRustBuffer<List<kotlin.Float>> {
     override fun read(buf: ByteBuffer): List<kotlin.Float> {
         val len = buf.getInt()
@@ -6113,6 +6217,46 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
 
 
 
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<List<WidgetLiveTurn>> {
+    override fun read(buf: ByteBuffer): List<WidgetLiveTurn> {
+        val len = buf.getInt()
+        return List<WidgetLiveTurn>(len) {
+            FfiConverterTypeWidgetLiveTurn.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetLiveTurn>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetLiveTurn.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetLiveTurn>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetLiveTurn.write(it, buf)
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6436,6 +6580,90 @@ public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_state(
         FfiConverterTypeRoomRow.lower(`row`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * What a widget button sends, or `None` when it must send nothing.
+         */ fun `widgetAnswerFor`(`stored`: kotlin.String?, `roomId`: kotlin.String, `eventId`: kotlin.String, `optionId`: kotlin.String): WidgetAnswer? {
+            return FfiConverterOptionalTypeWidgetAnswer.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_answer_for(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterString.lower(`roomId`),FfiConverterString.lower(`eventId`),FfiConverterString.lower(`optionId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * One push, as the Notification Service Extension decided it.
+         */ fun `widgetApplyNotification`(`stored`: kotlin.String?, `note`: NotificationDto, `nowMs`: kotlin.ULong): WidgetWrite {
+            return FfiConverterTypeWidgetWrite.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_apply_notification(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterTypeNotificationDto.lower(`note`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The app's roster, read at `as_of_ms`, with the turns it is watching.
+         */ fun `widgetApplyRoster`(`stored`: kotlin.String?, `rows`: List<RoomRow>, `live`: List<WidgetLiveTurn>, `asOfMs`: kotlin.ULong, `nowMs`: kotlin.ULong): WidgetWrite {
+            return FfiConverterTypeWidgetWrite.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_apply_roster(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterSequenceTypeRoomRow.lower(`rows`),FfiConverterSequenceTypeWidgetLiveTurn.lower(`live`),FfiConverterULong.lower(`asOfMs`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The open room's loaded timeline.
+         */ fun `widgetApplyTimeline`(`stored`: kotlin.String?, `roomId`: kotlin.String, `rows`: List<TimelineRow>, `nowMs`: kotlin.ULong): WidgetWrite {
+            return FfiConverterTypeWidgetWrite.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_apply_timeline(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterString.lower(`roomId`),FfiConverterSequenceTypeTimelineRow.lower(`rows`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The send from a widget failed: the decision is owed again.
+         */ fun `widgetClearAnswer`(`stored`: kotlin.String?, `roomId`: kotlin.String, `eventId`: kotlin.String, `nowMs`: kotlin.ULong): WidgetWrite {
+            return FfiConverterTypeWidgetWrite.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_clear_answer(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterString.lower(`roomId`),FfiConverterString.lower(`eventId`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A widget button was tapped: the decision is sent, not resolved.
+         */ fun `widgetMarkAnswered`(`stored`: kotlin.String?, `roomId`: kotlin.String, `eventId`: kotlin.String, `optionId`: kotlin.String, `nowMs`: kotlin.ULong): WidgetWrite {
+            return FfiConverterTypeWidgetWrite.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_mark_answered(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterString.lower(`roomId`),FfiConverterString.lower(`eventId`),FfiConverterString.lower(`optionId`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Signed out: nothing kept.
+         */ fun `widgetSignedOut`(`stored`: kotlin.String?, `nowMs`: kotlin.ULong): WidgetWrite {
+            return FfiConverterTypeWidgetWrite.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_signed_out(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterULong.lower(`nowMs`),_status)
 }
     )
     }

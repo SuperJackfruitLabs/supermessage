@@ -3778,6 +3778,30 @@ fileprivate struct FfiConverterOptionTypePlayableAudio: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeWidgetAnswer: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetAnswer?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeWidgetAnswer.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeWidgetAnswer.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
     typealias SwiftType = [Float]
 
@@ -4125,6 +4149,37 @@ fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer {
+    typealias SwiftType = [WidgetLiveTurn]
+
+    public static func write(_ value: [WidgetLiveTurn], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeWidgetLiveTurn.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [WidgetLiveTurn] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [WidgetLiveTurn]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeWidgetLiveTurn.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+
+
+
+
+
+
 
 
 
@@ -4387,6 +4442,96 @@ public func rosterState(row: RoomRow, nowMs: UInt64) -> AgentState {
     )
 })
 }
+/**
+ * What a widget button sends, or `None` when it must send nothing.
+ */
+public func widgetAnswerFor(stored: String?, roomId: String, eventId: String, optionId: String) -> WidgetAnswer? {
+    return try!  FfiConverterOptionTypeWidgetAnswer.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_answer_for(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),
+        FfiConverterString.lower(optionId),$0
+    )
+})
+}
+/**
+ * One push, as the Notification Service Extension decided it.
+ */
+public func widgetApplyNotification(stored: String?, note: NotificationDto, nowMs: UInt64) -> WidgetWrite {
+    return try!  FfiConverterTypeWidgetWrite_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_apply_notification(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterTypeNotificationDto_lower(note),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * The app's roster, read at `as_of_ms`, with the turns it is watching.
+ */
+public func widgetApplyRoster(stored: String?, rows: [RoomRow], live: [WidgetLiveTurn], asOfMs: UInt64, nowMs: UInt64) -> WidgetWrite {
+    return try!  FfiConverterTypeWidgetWrite_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_apply_roster(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterSequenceTypeRoomRow.lower(rows),
+        FfiConverterSequenceTypeWidgetLiveTurn.lower(live),
+        FfiConverterUInt64.lower(asOfMs),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * The open room's loaded timeline.
+ */
+public func widgetApplyTimeline(stored: String?, roomId: String, rows: [TimelineRow], nowMs: UInt64) -> WidgetWrite {
+    return try!  FfiConverterTypeWidgetWrite_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_apply_timeline(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterString.lower(roomId),
+        FfiConverterSequenceTypeTimelineRow.lower(rows),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * The send from a widget failed: the decision is owed again.
+ */
+public func widgetClearAnswer(stored: String?, roomId: String, eventId: String, nowMs: UInt64) -> WidgetWrite {
+    return try!  FfiConverterTypeWidgetWrite_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_clear_answer(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * A widget button was tapped: the decision is sent, not resolved.
+ */
+public func widgetMarkAnswered(stored: String?, roomId: String, eventId: String, optionId: String, nowMs: UInt64) -> WidgetWrite {
+    return try!  FfiConverterTypeWidgetWrite_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_mark_answered(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),
+        FfiConverterString.lower(optionId),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * Signed out: nothing kept.
+ */
+public func widgetSignedOut(stored: String?, nowMs: UInt64) -> WidgetWrite {
+    return try!  FfiConverterTypeWidgetWrite_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_signed_out(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -4449,6 +4594,27 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_roster_state() != 4121) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_widget_answer_for() != 34951) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_widget_apply_notification() != 55538) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_widget_apply_roster() != 30950) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_widget_apply_timeline() != 12710) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_widget_clear_answer() != 58905) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_widget_mark_answered() != 34613) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_widget_signed_out() != 55888) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_account() != 48469) {

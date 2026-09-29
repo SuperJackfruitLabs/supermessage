@@ -507,35 +507,3 @@ struct LiveTurnSummaryTests {
                 == "Thinking")
     }
 }
-
-/// What the widgets are handed.
-struct WidgetSummaryTests {
-    func row(_ id: String, pending: Bool, agent: Bool, at: UInt64) -> RoomRow {
-        RoomRow(
-            room: RoomSummary(
-                id: id, name: id, avatarUrl: nil, unread: 0, lastMessage: "hi",
-                lastMessageIsOwn: false, lastMessageNamesSender: false, lastEventType: nil,
-                lastActivityMs: at, runtime: agent ? RuntimeDto(harness: "OpenClaw", host: "h") : nil,
-                membership: .joined),
-            identity: RoomIdentity(glyph: nil, name: "Name \(id)", role: nil, initial: "N"),
-            preview: RoomPreview(text: "hi", pending: pending), affordance: .compose)
-    }
-
-    @Test("needs-you counts every pending room once; the agent list holds only agents")
-    func summary() {
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let ms = UInt64(now.timeIntervalSince1970 * 1000)
-        let snapshot = WidgetSummary.snapshot(
-            rows: [
-                row("!a", pending: true, agent: true, at: ms),
-                row("!b", pending: true, agent: false, at: ms - 1000),
-                row("!c", pending: false, agent: true, at: ms - 2000),
-                row("!d", pending: false, agent: false, at: ms - 3000),
-            ], now: now)
-        #expect(snapshot.needsYou == 2)
-        #expect(snapshot.agents.map(\.id) == ["!a", "!c"])
-        #expect(snapshot.agents.first?.needsYou == true)
-        #expect(snapshot.agents.first?.state == "needs you")
-        #expect(snapshot.signedIn)
-    }
-}

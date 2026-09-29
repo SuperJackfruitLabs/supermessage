@@ -131,6 +131,54 @@ pub struct NotificationDto {
     /// steps" — rather than a blank notification or a "New message" that is
     /// not one.
     pub fallback_body: Option<String>,
+    /// What this event means for the widgets, as far as a push can tell
+    /// (`crate::widget`): a decision asked, an agent's line, a finished turn,
+    /// a gate the board resolved, or this account answering from elsewhere.
+    /// Set by [`notification_for_event`] — the Notification Service
+    /// Extension's path — and `None` from [`notification_for_row`], whose
+    /// caller has the whole timeline to read instead.
+    pub activity: Option<NotificationActivity>,
+}
+
+/// What kind of news a pushed event is for the widgets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ActivityKind {
+    /// A permission request or a gate, asked of the reader.
+    Decision,
+    /// Somebody said something in the room.
+    Message,
+    /// An agent's turn card: the turn is over.
+    TurnFinished,
+    /// The hub's receipt that the board accepted an answer to a gate.
+    GateOutcome,
+    /// This account answered, from another device: a permission option's
+    /// name, or a gate decision.
+    OwnAnswer,
+}
+
+/// The facts [`crate::widget`] needs from one pushed event, and nothing the
+/// notification itself does not already know.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct NotificationActivity {
+    pub kind: ActivityKind,
+    /// The room's `RoomIdentity.name` — the agent's or the board's.
+    pub room_name: String,
+    /// Whether the room's name reads as an agent's (a glyph or a role, the
+    /// roster's own test), for a room the widgets do not list yet.
+    pub room_is_agent: bool,
+    /// The sender's Matrix id.
+    pub sender: String,
+    /// The event's `origin_server_ts`.
+    pub at_ms: u64,
+    /// `Message`: its preview line. `TurnFinished`: "Finished · 4 steps".
+    /// `OwnAnswer`: the plain text sent, when it was a message.
+    pub line: Option<String>,
+    /// `GateOutcome` and a gate `OwnAnswer`: the gate named.
+    pub gate_id: Option<String>,
+    /// `GateOutcome` and a gate `OwnAnswer`: the event referenced.
+    pub references: Option<String>,
+    /// A gate `OwnAnswer`: the option chosen.
+    pub option_id: Option<String>,
 }
 
 /// The body a notification carries when there is nothing better to say. The
@@ -157,6 +205,7 @@ impl NotificationDto {
             suppress: None,
             fallback_title: None,
             fallback_body: None,
+            activity: None,
         }
     }
 
@@ -211,6 +260,12 @@ fn reacted_line(who: &str, key: &str) -> String {
 /// A finished turn, from its card's `counts` — "Krishna finished · 4 steps",
 /// ", 1 failed" when any did. The same numbers the card's "Did" row shows.
 fn turn_line(who: &str, payload: Option<&serde_json::Value>) -> String {
+    format!("{who} {}", turn_summary(payload))
+}
+
+/// A finished turn without its subject — "finished · 4 steps" — for a line
+/// that is already under the agent's name.
+fn turn_summary(payload: Option<&serde_json::Value>) -> String {
     let counts = payload.and_then(|p| p.get("counts"));
     let number = |key: &str| {
         counts
@@ -220,12 +275,12 @@ fn turn_line(who: &str, payload: Option<&serde_json::Value>) -> String {
             .map(|n| n as u64)
     };
     let Some(total) = number("total") else {
-        return format!("{who} finished a turn");
+        return "finished a turn".to_string();
     };
     let noun = if total == 1 { "step" } else { "steps" };
     match number("failed").filter(|f| *f > 0) {
-        Some(failed) => format!("{who} finished · {total} {noun}, {failed} failed"),
-        None => format!("{who} finished · {total} {noun}"),
+        Some(failed) => format!("finished · {total} {noun}, {failed} failed"),
+        None => format!("finished · {total} {noun}"),
     }
 }
 
@@ -476,6 +531,111 @@ fn sender_name(sender: &str, display_name: Option<&str>) -> String {
 /// a push the homeserver decided to send is somebody wanting the reader's
 /// attention, and dropping it on a parse would be the worse error.
 pub fn notification_for_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDto {
+    let mut note = decide_event(fetched, own_user);
+    note.activity = activity_for_event(fetched, own_user, &note);
+    note
+}
+
+/// The widgets' reading of one fetched event (see [`NotificationActivity`]),
+/// or `None` when it changes nothing a widget shows — a reaction, an edit, a
+/// redaction, a state change, an invitation.
+///
+/// Read after the notification is decided and from it where it can be: a
+/// decision is whatever [`notification_for_row`] said was one, and a message's
+/// line is the notification's own body. Only what a notification drops —
+/// this account's own answer, the hub's gate receipt, a turn card's counts —
+/// is read back off the event.
+fn activity_for_event(
+    fetched: &FetchedEvent<'_>,
+    own_user: &UserId,
+    note: &NotificationDto,
+) -> Option<NotificationActivity> {
+    let (raw, event) = (fetched.raw?, fetched.event?);
+    let identity = crate::room_identity::parse_room_identity(fetched.room_display_name);
+    let content: Option<serde_json::Value> = raw.get_field("content").ok().flatten();
+    let text = |key: &str| {
+        content
+            .as_ref()
+            .and_then(|c| c.get(key))
+            .and_then(serde_json::Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let reference = || {
+        content
+            .as_ref()
+            .and_then(|c| c.get("m.relates_to"))
+            .filter(|r| {
+                r.get("rel_type").and_then(serde_json::Value::as_str) == Some("m.reference")
+            })
+            .and_then(|r| r.get("event_id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+    let base = |kind: ActivityKind| NotificationActivity {
+        kind,
+        room_name: identity.name.clone(),
+        room_is_agent: identity.glyph.is_some() || identity.role.is_some(),
+        sender: event.sender().to_string(),
+        at_ms: u64::from(event.origin_server_ts().0),
+        line: None,
+        gate_id: None,
+        references: None,
+        option_id: None,
+    };
+    let event_type = event.event_type().to_string();
+    let suite_type = text("suite_event_type");
+    let is_outcome = event_type == crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE
+        || suite_type.as_deref() == Some(crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE);
+
+    if is_outcome {
+        return Some(NotificationActivity {
+            gate_id: text("gate_id"),
+            references: reference(),
+            ..base(ActivityKind::GateOutcome)
+        });
+    }
+    if event.sender() == own_user {
+        if matches!(note.suppress, Some(NotificationSuppression::Own)) {
+            if suite_type.as_deref() == Some(crate::timeline::GATE_DECISION_SUITE_TYPE) {
+                return Some(NotificationActivity {
+                    gate_id: text("gate_id"),
+                    references: reference(),
+                    option_id: text("option_id"),
+                    ..base(ActivityKind::OwnAnswer)
+                });
+            }
+            if event_type == "m.room.message" {
+                return Some(NotificationActivity {
+                    line: text("body"),
+                    ..base(ActivityKind::OwnAnswer)
+                });
+            }
+        }
+        return None;
+    }
+    if event_type == crate::custom_events::TURN_ACTIVITY_EVENT_TYPE {
+        return Some(NotificationActivity {
+            line: Some(turn_summary(content.as_ref())),
+            ..base(ActivityKind::TurnFinished)
+        });
+    }
+    if note.suppress.is_some() {
+        return None;
+    }
+    match note.category {
+        NotificationCategory::Permission
+        | NotificationCategory::Gate
+        | NotificationCategory::Decision => Some(base(ActivityKind::Decision)),
+        NotificationCategory::Message => Some(NotificationActivity {
+            line: Some(note.body.clone()),
+            ..base(ActivityKind::Message)
+        }),
+    }
+}
+
+/// [`notification_for_event`] without the widgets' reading.
+fn decide_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDto {
     let room_id = fetched.room_id;
     let event_id = fetched.event_id;
     let room_name = crate::room_identity::parse_room_identity(fetched.room_display_name).name;
@@ -1098,6 +1258,106 @@ mod tests {
         // An empty title is no title: the push keeps its own.
         assert_eq!(filtered.fallback_title, None);
         assert_eq!(filtered.fallback_body.as_deref(), Some(QUIET_FILTERED_BODY));
+    }
+
+    // --- what a push means for the widgets (`crate::widget`)
+
+    fn activity_of(json: Value) -> NotificationActivity {
+        notify(json).activity.expect("an activity")
+    }
+
+    #[test]
+    fn a_decision_push_is_a_decision_from_its_sender_at_its_time() {
+        let mut event = message(json!({
+            "msgtype": "m.text",
+            "body": "Allow Run the tests? 1 allow once, 2 reject",
+            "dev.agentpod.permission": permission_payload(),
+        }));
+        event["origin_server_ts"] = json!(1_700_000_000_123u64);
+        let activity = activity_of(event);
+        assert_eq!(activity.kind, ActivityKind::Decision);
+        assert_eq!(activity.sender, "@agent_hermes:hs");
+        assert_eq!(activity.at_ms, 1_700_000_000_123);
+        // `RoomIdentity.name`, and a glyph and a role make it an agent's.
+        assert_eq!(activity.room_name, "Hermes");
+        assert!(activity.room_is_agent);
+    }
+
+    #[test]
+    fn a_message_push_carries_its_line() {
+        let activity = activity_of(message(json!({ "msgtype": "m.text", "body": "Deployed" })));
+        assert_eq!(activity.kind, ActivityKind::Message);
+        assert_eq!(activity.line.as_deref(), Some("Deployed"));
+    }
+
+    #[test]
+    fn a_turn_card_push_says_it_finished_without_the_name() {
+        let activity = activity_of(turn(json!({ "total": 4, "failed": 1 })));
+        assert_eq!(activity.kind, ActivityKind::TurnFinished);
+        assert_eq!(
+            activity.line.as_deref(),
+            Some("finished · 4 steps, 1 failed")
+        );
+    }
+
+    #[test]
+    fn a_receipt_in_either_form_names_its_gate_and_reference() {
+        let custom = activity_of(json!({
+            "type": crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE,
+            "event_id": "$e", "sender": "@agent_hermes:hs", "origin_server_ts": 1,
+            "content": gate_outcome(),
+        }));
+        let mut prose = gate_outcome();
+        prose["msgtype"] = json!("m.text");
+        prose["body"] = json!("Approved by rakesh");
+        let prose = activity_of(message(prose));
+        for activity in [custom, prose] {
+            assert_eq!(activity.kind, ActivityKind::GateOutcome);
+            assert_eq!(activity.gate_id.as_deref(), Some("gate-9"));
+            assert_eq!(activity.references.as_deref(), Some("$gate"));
+        }
+    }
+
+    #[test]
+    fn this_accounts_own_answers_are_read_back() {
+        let mut said = message(json!({ "msgtype": "m.text", "body": "Allow once" }));
+        said["sender"] = json!("@me:hs");
+        let activity = activity_of(said);
+        assert_eq!(activity.kind, ActivityKind::OwnAnswer);
+        assert_eq!(activity.line.as_deref(), Some("Allow once"));
+        assert_eq!(activity.option_id, None);
+
+        let mut decided = message(json!({
+            "msgtype": "m.text",
+            "body": "Approved — Ship v2",
+            "suite_event_type": crate::timeline::GATE_DECISION_SUITE_TYPE,
+            "gate_id": "gate-9",
+            "option_id": "approve",
+            "m.relates_to": { "rel_type": "m.reference", "event_id": "$gate" }
+        }));
+        decided["sender"] = json!("@me:hs");
+        let activity = activity_of(decided);
+        assert_eq!(activity.kind, ActivityKind::OwnAnswer);
+        assert_eq!(activity.gate_id.as_deref(), Some("gate-9"));
+        assert_eq!(activity.option_id.as_deref(), Some("approve"));
+        assert_eq!(activity.references.as_deref(), Some("$gate"));
+    }
+
+    #[test]
+    fn reactions_edits_and_state_change_nothing_a_widget_shows() {
+        assert_eq!(notify(reaction("👍")).activity, None);
+        let edit = notify(message(json!({
+            "msgtype": "m.text",
+            "body": "* fixed",
+            "m.new_content": { "msgtype": "m.text", "body": "fixed" },
+            "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+        })));
+        assert_eq!(edit.activity, None);
+        let state = notify(json!({
+            "type": "m.room.topic", "event_id": "$e", "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1, "state_key": "", "content": { "topic": "t" }
+        }));
+        assert_eq!(state.activity, None);
     }
 
     #[test]

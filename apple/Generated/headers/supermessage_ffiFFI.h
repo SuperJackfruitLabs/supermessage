@@ -707,6 +707,41 @@ RustBuffer uniffi_supermessage_ffi_fn_func_roster_sections(RustBuffer rows, Rust
 RustBuffer uniffi_supermessage_ffi_fn_func_roster_state(RustBuffer row, uint64_t now_ms, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_ANSWER_FOR
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_ANSWER_FOR
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_answer_for(RustBuffer stored, RustBuffer room_id, RustBuffer event_id, RustBuffer option_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_NOTIFICATION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_NOTIFICATION
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_apply_notification(RustBuffer stored, RustBuffer note, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_ROSTER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_ROSTER
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_apply_roster(RustBuffer stored, RustBuffer rows, RustBuffer live, uint64_t as_of_ms, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_TIMELINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_TIMELINE
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_apply_timeline(RustBuffer stored, RustBuffer room_id, RustBuffer rows, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_CLEAR_ANSWER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_CLEAR_ANSWER
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_clear_answer(RustBuffer stored, RustBuffer room_id, RustBuffer event_id, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_MARK_ANSWERED
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_MARK_ANSWERED
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_mark_answered(RustBuffer stored, RustBuffer room_id, RustBuffer event_id, RustBuffer option_id, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_SIGNED_OUT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_SIGNED_OUT
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_signed_out(RustBuffer stored, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_SUPERMESSAGE_FFI_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_SUPERMESSAGE_FFI_RUSTBUFFER_ALLOC
 RustBuffer ffi_supermessage_ffi_rustbuffer_alloc(uint64_t size, RustCallStatus *_Nonnull out_status
@@ -1080,6 +1115,48 @@ uint16_t uniffi_supermessage_ffi_checksum_func_roster_sections(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
 uint16_t uniffi_supermessage_ffi_checksum_func_roster_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_ANSWER_FOR
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_ANSWER_FOR
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_answer_for(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_NOTIFICATION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_NOTIFICATION
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_apply_notification(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_ROSTER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_ROSTER
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_apply_roster(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_TIMELINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_TIMELINE
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_apply_timeline(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_CLEAR_ANSWER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_CLEAR_ANSWER
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_clear_answer(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_MARK_ANSWERED
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_MARK_ANSWERED
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_mark_answered(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_SIGNED_OUT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_SIGNED_OUT
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_signed_out(void
     
 );
 #endif

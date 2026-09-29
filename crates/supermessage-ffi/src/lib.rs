@@ -1145,6 +1145,95 @@ pub fn notification_gate_answers(
     supermessage_core::notification::gate_answers(&decision, &gate_id)
 }
 
+// ---------------------------------------------------------------------------
+// The widgets' snapshot (`core::widget`). Each takes the stored JSON — `None`
+// when there is none — and returns the next, with whether it changed and
+// whether the widgets are worth reloading. The host reads and writes the file
+// under its lock and decides nothing else.
+// ---------------------------------------------------------------------------
+
+/// One push, as the Notification Service Extension decided it.
+#[uniffi::export]
+pub fn widget_apply_notification(
+    stored: Option<String>,
+    note: supermessage_core::notification::NotificationDto,
+    now_ms: u64,
+) -> supermessage_core::widget::WidgetWrite {
+    supermessage_core::widget::apply_notification(stored.as_deref(), &note, now_ms)
+}
+
+/// The app's roster, read at `as_of_ms`, with the turns it is watching.
+#[uniffi::export]
+pub fn widget_apply_roster(
+    stored: Option<String>,
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    live: Vec<supermessage_core::widget::WidgetLiveTurn>,
+    as_of_ms: u64,
+    now_ms: u64,
+) -> supermessage_core::widget::WidgetWrite {
+    supermessage_core::widget::apply_roster(stored.as_deref(), &rows, &live, as_of_ms, now_ms)
+}
+
+/// The open room's loaded timeline.
+#[uniffi::export]
+pub fn widget_apply_timeline(
+    stored: Option<String>,
+    room_id: String,
+    rows: Vec<supermessage_core::dto::TimelineRow>,
+    now_ms: u64,
+) -> supermessage_core::widget::WidgetWrite {
+    supermessage_core::widget::apply_timeline(stored.as_deref(), &room_id, &rows, now_ms)
+}
+
+/// What a widget button sends, or `None` when it must send nothing.
+#[uniffi::export]
+pub fn widget_answer_for(
+    stored: Option<String>,
+    room_id: String,
+    event_id: String,
+    option_id: String,
+) -> Option<supermessage_core::widget::WidgetAnswer> {
+    supermessage_core::widget::answer_for(stored.as_deref(), &room_id, &event_id, &option_id)
+}
+
+/// A widget button was tapped: the decision is sent, not resolved.
+#[uniffi::export]
+pub fn widget_mark_answered(
+    stored: Option<String>,
+    room_id: String,
+    event_id: String,
+    option_id: String,
+    now_ms: u64,
+) -> supermessage_core::widget::WidgetWrite {
+    supermessage_core::widget::mark_answered(
+        stored.as_deref(),
+        &room_id,
+        &event_id,
+        &option_id,
+        now_ms,
+    )
+}
+
+/// The send from a widget failed: the decision is owed again.
+#[uniffi::export]
+pub fn widget_clear_answer(
+    stored: Option<String>,
+    room_id: String,
+    event_id: String,
+    now_ms: u64,
+) -> supermessage_core::widget::WidgetWrite {
+    supermessage_core::widget::clear_answer(stored.as_deref(), &room_id, &event_id, now_ms)
+}
+
+/// Signed out: nothing kept.
+#[uniffi::export]
+pub fn widget_signed_out(
+    stored: Option<String>,
+    now_ms: u64,
+) -> supermessage_core::widget::WidgetWrite {
+    supermessage_core::widget::signed_out(stored.as_deref(), now_ms)
+}
+
 /// The `UNNotificationCategory` identifier for `category` — the value the
 /// push gateway also sends as `aps.category`.
 #[uniffi::export]
