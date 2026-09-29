@@ -299,9 +299,17 @@ agentpod. **This is the one place a person's words reach Apple:** agent
 names, steps and a decision's question and options travel in plaintext in
 the Live Activity pushes, by operator decision of 2026-09-29. Message pushes
 stay `event_id_only`. The card's layout is `FleetActivityCard`
-(`SupermessageWidgets/Views`), previewed at the iPhone 13 mini's Lock
-Screen size; its decision is drawn by `WidgetDecisionCard`, the one amber
-element.
+(`SupermessageWidgets/Views`, the "A + C" design of spec
+`2026-09-30-fleet-card-a-plus-c-design.md`), previewed at the iPhone 13
+mini's Lock Screen size against its 160pt limit, with a small form for the
+watch's Smart Stack (`FleetWatchCard`); its decision is drawn by
+`WidgetDecisionCard`, the one amber element. What the card says — the hero,
+the track's stage, the words — is `FleetCard`, beside the contract in
+`SupermessageKit/Notifications` and tested in the Kit, because the extension
+that draws it has no core to ask. Agents' faces are files the app keeps in
+`<App Group>/avatars` (`AgentAvatarCache`): the core names the agent and the
+file (`Core::agent_avatar`, `widget::avatar_file_name`), and an index maps
+user id to file for the extension (`AgentAvatarStore`).
 
 **Reproducing timeline scrolling without an account:** launch a Debug build
 with `-fixtureTimeline` (a long local room, `Previews/ScrollFixture.swift`) and
