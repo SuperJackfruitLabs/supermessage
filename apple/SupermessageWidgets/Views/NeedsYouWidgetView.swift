@@ -212,6 +212,9 @@ struct WidgetDecisionCard: View {
         /// Whether to draw the buttons. The watch's Smart Stack is a glance:
         /// a tap there opens the card on the phone.
         var answers = true
+        /// The tightest form, for the largest text: who and what on one
+        /// line, and smaller buttons — so the decision is never cropped.
+        var tight = false
     }
 
     private var owed: Bool { decision.answered == nil }
@@ -222,22 +225,31 @@ struct WidgetDecisionCard: View {
 
     /// The fleet card's decision: the one amber element on the Lock Screen.
     private func bannerBody(_ banner: Banner) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: banner.tight ? 6 : 8) {
             Link(destination: link) {
                 HStack(alignment: .center, spacing: 8) {
-                    banner.face
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(decision.agent)
-                            .font(.caption.weight(.semibold))
+                    if banner.tight {
+                        (Text(decision.agent)
                             .foregroundStyle(owed ? WidgetTheme.signal : WidgetTheme.contentMuted)
+                            + Text(" · \(decision.question)").foregroundStyle(WidgetTheme.content))
+                            .font(.caption.weight(.semibold))
                             .lineLimit(1)
-                        Text(decision.question)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(WidgetTheme.content)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(banner.questionLines)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        banner.face
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(decision.agent)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(owed ? WidgetTheme.signal : WidgetTheme.contentMuted)
+                                .lineLimit(1)
+                            Text(decision.question)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(WidgetTheme.content)
+                                .multilineTextAlignment(.leading)
+                                .lineLimit(banner.questionLines)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             if banner.answers, owed, !decision.buttons.isEmpty {
@@ -257,11 +269,11 @@ struct WidgetDecisionCard: View {
                     }
                 }
                 .buttonBorderShape(.capsule)
-                .controlSize(.regular)
+                .controlSize(banner.tight ? .small : .regular)
             }
         }
         .padding(.horizontal, 11)
-        .padding(.vertical, 9)
+        .padding(.vertical, banner.tight ? 6 : 9)
         .background {
             RoundedRectangle(cornerRadius: Metrics.radiusCard)
                 .fill(owed ? WidgetTheme.signal.opacity(0.10) : WidgetTheme.surfaceSunken)
@@ -272,7 +284,7 @@ struct WidgetDecisionCard: View {
 
     private func wideLabel(_ option: WidgetSnapshot.Option) -> some View {
         Text(option.label)
-            .font(.subheadline.weight(.semibold))
+            .font((banner?.tight == true ? Font.caption : Font.subheadline).weight(.semibold))
             .foregroundStyle(option.declines ? WidgetTheme.content : WidgetTheme.signalSoft)
             .lineLimit(1)
             .minimumScaleFactor(0.8)

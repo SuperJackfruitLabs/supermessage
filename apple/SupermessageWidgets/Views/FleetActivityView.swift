@@ -60,6 +60,7 @@ struct FleetActivityCard: View {
         var stages: Bool
         var subtitle: Bool
         var questionLines = 2
+        var tightDecision = false
     }
 
     private var layouts: [Layout] {
@@ -68,6 +69,7 @@ struct FleetActivityCard: View {
             return [
                 Layout(rows: 0, stages: false, subtitle: true),
                 Layout(rows: 0, stages: false, subtitle: true, questionLines: 1),
+                Layout(rows: 0, stages: false, subtitle: true, questionLines: 1, tightDecision: true),
             ]
         case .agent, nil:
             let rows = min(3, card.rows.count)
@@ -97,6 +99,9 @@ struct FleetActivityCard: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        // Past this, even the tightest layout would crop inside the Lock
+        // Screen's 160 points; the card stops growing here instead.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     private func content(_ card: FleetCard, _ layout: Layout) -> some View {
@@ -113,7 +118,7 @@ struct FleetActivityCard: View {
                                 userId: state.agents.first(where: { $0.roomId == decision.roomId })?
                                     .mxid,
                                 name: decision.agent, size: 30)),
-                        questionLines: layout.questionLines))
+                        questionLines: layout.questionLines, tight: layout.tightDecision))
             case .agent(let agent):
                 FleetHero(
                     agent: agent, isStale: isStale, clock: clock, updated: state.updated,
@@ -172,10 +177,13 @@ struct FleetHeader: View {
                 .fixedSize()
             }
             Spacer(minLength: 4)
-            time
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(WidgetTheme.contentFaint)
-                .lineLimit(1)
+            ViewThatFits(in: .horizontal) {
+                time
+                Text(card.time, style: .time)
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(WidgetTheme.contentFaint)
+            .lineLimit(1)
         }
     }
 
