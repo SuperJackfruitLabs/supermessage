@@ -883,6 +883,22 @@ fn voice_transcript_from_raw(
     )
 }
 
+/// The voice reply a voice message's raw event carries under
+/// [`crate::voice_reply::VOICE_REPLY_KEY`], if it carries a valid one.
+///
+/// [`voice_transcript_from_raw`]'s twin, with its reasons. Any failure is
+/// `None`, and the message is the ordinary voice note it also is.
+fn voice_reply_from_raw(
+    raw: Option<&Raw<AnySyncTimelineEvent>>,
+) -> Option<crate::voice_reply::VoiceReplyLink> {
+    let raw = raw?;
+    if !crate::voice_reply::may_carry_voice_reply(raw.json().get()) {
+        return None;
+    }
+    let content: serde_json::Value = raw.get_field("content").ok()??;
+    crate::voice_reply::parse_voice_reply(content.get(crate::voice_reply::VOICE_REPLY_KEY)?)
+}
+
 /// The sentence a decision leaves in the room.
 ///
 /// Derived from `option_id` rather than from the option's label, because a
@@ -1849,7 +1865,8 @@ pub fn project_item(item: &TimelineItem, own_user: &UserId) -> Option<TimelineRo
 
 /// Finish a projected item into the row a host draws, reading what the SDK's
 /// parsed content dropped back out of the raw event: a turn error card, a
-/// voice transcript, or a suite decision embedded in the prose.
+/// voice transcript, a suite decision embedded in the prose, or the text a
+/// voice reply speaks (`crate::voice_reply`).
 ///
 /// Shared by the timeline ([`project_item`]) and by a push notification
 /// (`crate::notification`), which projects one raw event with no timeline
@@ -1874,6 +1891,23 @@ pub(crate) fn row_from_parts(
         // registered for the type, so the view falls through to the bubble.
         dto.detail = Some(crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE.to_string());
         dto.custom_payload = Some(crate::dto::CustomPayload(payload));
+    }
+    // An agent's answer, spoken: the voice message names the text it speaks,
+    // and `crate::voice_reply::reconcile` folds the two into one row once
+    // both are in the timeline. Here it only rides along on the row.
+    if dto.msgtype.as_deref() == Some("m.audio") {
+        let link = voice_reply_from_raw(raw);
+        // The hub says the length in whole seconds too; a note whose own
+        // metadata lost it still shows one.
+        if let (Some(seconds), Some(audio)) = (
+            link.as_ref().and_then(|l| l.seconds).filter(|s| *s > 0),
+            dto.media.as_mut().and_then(|m| m.audio.as_mut()),
+        ) {
+            audio.duration_ms.get_or_insert(u64::from(seconds) * 1_000);
+        }
+        let mut row = TimelineRow::new(dto);
+        row.voice_reply = link;
+        return row;
     }
     // Read only for a message: the card rides on the hub's
     // `m.room.message`, and `view_for_with_turn_error` ignores it on
@@ -3521,7 +3555,16 @@ fn emit_ops(
         // `crate::embedded::reconcile`. Settled on the folded state and sent
         // as `Set`s in the same envelope, so a host applying the batch never
         // draws both, and the snapshot a resync serves agrees with the wire.
-        for index in crate::embedded::reconcile(&mut guard.1) {
+        //
+        // And one message per spoken answer: an agent's voice reply is drawn
+        // on the text it speaks, and its own row hidden — see
+        // `crate::voice_reply`. A row both passes touch is sent once, as it
+        // ends up.
+        let mut settled = crate::embedded::reconcile(&mut guard.1);
+        settled.extend(crate::voice_reply::reconcile(&mut guard.1));
+        settled.sort_unstable();
+        settled.dedup();
+        for index in settled {
             wire_ops.push(DiffOp::Set {
                 index,
                 value: guard.1[index].clone(),
@@ -3970,6 +4013,147 @@ mod tests {
         )
         .unwrap();
         assert_eq!(turn_error_from_raw(Some(&raw)), None);
+    }
+
+    // `row_from_parts` for a voice reply: the raw-event half of
+    // `crate::voice_reply`. The parse and the pairing are tested there; these
+    // pin that the key is read off the hub's `m.audio` and rides on the row.
+
+    fn hub_voice_reply(key: serde_json::Value, info_duration: bool) -> Raw<AnySyncTimelineEvent> {
+        // Without a length anywhere: no `info.duration`, and no MSC1767
+        // block, whose `duration` is required.
+        let mut info = serde_json::json!({ "mimetype": "audio/ogg", "size": 48_213 });
+        let mut block = serde_json::Value::Null;
+        if info_duration {
+            info["duration"] = 4_210.into();
+            block = serde_json::json!({ "duration": 4_210, "waveform": [0, 512, 1024] });
+        }
+        let event = serde_json::json!({
+            "type": "m.room.message",
+            "event_id": "$voice",
+            "sender": "@agent_scribe:id.agentpod.dev",
+            "origin_server_ts": 1_700_000_000_000_u64,
+            "content": {
+                "msgtype": "m.audio",
+                "body": "Voice message.ogg",
+                "filename": "Voice message.ogg",
+                "url": "mxc://hs/abc",
+                "info": info,
+                "org.matrix.msc3245.voice": {},
+                "dev.agentpod.voice_reply": key,
+            }
+        });
+        let mut event = event;
+        if !block.is_null() {
+            event["content"]["org.matrix.msc1767.audio"] = block;
+        }
+        serde_json::from_str(&event.to_string())
+            .expect("hand-built raw sync timeline event JSON must deserialize")
+    }
+
+    fn voice_row(raw: &Raw<AnySyncTimelineEvent>) -> TimelineRow {
+        let event = raw.deserialize().unwrap();
+        let AnySyncTimelineEvent::MessageLike(
+            matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(
+                matrix_sdk::ruma::events::room::message::SyncRoomMessageEvent::Original(original),
+            ),
+        ) = event
+        else {
+            panic!("a room message");
+        };
+        let msgtype = &original.content.msgtype;
+        let mut dto = project_item_parts(
+            "id",
+            Some("$voice"),
+            "message",
+            Some(msgtype.msgtype()),
+            None,
+            Some("@agent_scribe:id.agentpod.dev"),
+            None,
+            None,
+            false,
+            Some(msgtype.body()),
+            None,
+            None,
+            None,
+            Some(1),
+            false,
+            None,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        );
+        dto.media = media_meta(msgtype);
+        row_from_parts(
+            dto,
+            Some(raw),
+            matrix_sdk::ruma::user_id!("@me:id.agentpod.dev"),
+        )
+    }
+
+    #[test]
+    fn a_voice_reply_carries_the_text_it_speaks_and_draws_as_a_voice_note() {
+        let raw = hub_voice_reply(
+            serde_json::json!({
+                "schema_version": 1, "text_event_id": "$text", "voice": "bf_emma", "seconds": 4
+            }),
+            true,
+        );
+        let row = voice_row(&raw);
+        let link = row
+            .voice_reply
+            .as_ref()
+            .expect("the hub's key must be read");
+        assert_eq!(link.text_event_id, "$text");
+        assert_eq!(link.voice, "bf_emma");
+        // Alone, it is the voice note it is; pairing is the timeline's call.
+        let crate::item_view::ItemView::Audio { audio } = &row.view else {
+            panic!("expected a voice note, got {:?}", row.view);
+        };
+        assert!(audio.is_voice);
+        assert_eq!(
+            audio.duration_ms,
+            Some(4_210),
+            "the event's own length wins"
+        );
+    }
+
+    #[test]
+    fn a_voice_reply_whose_note_lost_its_length_takes_the_hubs_seconds() {
+        let raw = hub_voice_reply(
+            serde_json::json!({
+                "schema_version": 1, "text_event_id": "$text", "voice": "bf_emma", "seconds": 4
+            }),
+            false,
+        );
+        let crate::item_view::ItemView::Audio { audio } = voice_row(&raw).view else {
+            panic!("expected a voice note");
+        };
+        assert_eq!(audio.duration_ms, Some(4_000));
+        assert_eq!(audio.length_label.as_deref(), Some("0:04"));
+    }
+
+    #[test]
+    fn a_malformed_voice_reply_is_an_ordinary_voice_note() {
+        let raw = hub_voice_reply(
+            serde_json::json!({ "schema_version": 2, "text_event_id": "$text", "voice": "bf_emma" }),
+            false,
+        );
+        let row = voice_row(&raw);
+        assert_eq!(row.voice_reply, None);
+        let crate::item_view::ItemView::Audio { audio } = &row.view else {
+            panic!("expected a voice note");
+        };
+        assert_eq!(audio.duration_ms, None, "no key, no borrowed length");
+    }
+
+    #[test]
+    fn a_voice_reply_is_left_off_the_desktops_json_when_absent() {
+        let row = minimal_dto("$plain");
+        let json = serde_json::to_value(&row).unwrap();
+        assert!(json.get("voiceReply").is_none());
+        assert!(json["view"].get("voice").is_none());
     }
 
     // `voice_transcript_from_raw`: the raw-event half of the transcript. The
@@ -6433,6 +6617,183 @@ mod gate_decision_tests {
             after > 0,
             "the focused room went blank after an ignore and stayed blank"
         );
+
+        focused.clear_and_join().await;
+    }
+
+    /// An agent's answer, then its voice, through a real `Timeline` against a
+    /// mock homeserver: the reader ends with one row — the text, carrying the
+    /// player — and the voice's own row hidden, and the envelope that brought
+    /// the voice changed the text row **in place** (a `Set` at its index)
+    /// rather than moving or re-inserting it. Redacting the voice then leaves
+    /// the plain text.
+    #[tokio::test]
+    async fn a_voice_reply_arriving_after_its_text_folds_into_it_in_place() {
+        use std::sync::Mutex as StdMutex;
+
+        use matrix_sdk::ruma::{event_id, room_id, user_id};
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+        use matrix_sdk_test::{event_factory::EventFactory, JoinedRoomBuilder};
+
+        struct Envelopes(StdMutex<Vec<DiffEnvelope<TimelineRow>>>);
+        impl EventSink for Envelopes {
+            fn emit(&self, event: crate::event::CoreEvent) {
+                if let crate::event::CoreEvent::TimelineDiff(envelope) = event {
+                    self.0.lock().unwrap().push(envelope);
+                }
+            }
+        }
+
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        server
+            .mock_room_messages()
+            .ok(Default::default())
+            .mount()
+            .await;
+
+        let room_id = room_id!("!spoken:example.org");
+        let agent = user_id!("@agent_scribe:example.org");
+        let f = EventFactory::new().room(room_id);
+
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(room_id).add_timeline_event(
+                        f.text_msg("It is four o'clock.")
+                            .sender(agent)
+                            .event_id(event_id!("$text")),
+                    ),
+                );
+            })
+            .await;
+
+        let sink = Arc::new(Envelopes(StdMutex::new(Vec::new())));
+        let focused = FocusedTimeline::default();
+        focused
+            .subscribe(&client, room_id.as_str(), sink.clone())
+            .await
+            .unwrap();
+
+        async fn wait_for(
+            focused: &FocusedTimeline,
+            what: &str,
+            done: impl Fn(&[TimelineRow]) -> bool,
+        ) -> Vec<TimelineRow> {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                let rows = focused.snapshot().await.unwrap().2;
+                if done(&rows) {
+                    return rows;
+                }
+                assert!(tokio::time::Instant::now() < deadline, "never saw {what}");
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+        let by_event = |rows: &[TimelineRow], id: &str| {
+            rows.iter()
+                .position(|r| r.item.event_id.as_deref() == Some(id))
+        };
+
+        let rows = wait_for(&focused, "the text", |rows| {
+            by_event(rows, "$text").is_some()
+        })
+        .await;
+        let text_index = by_event(&rows, "$text").unwrap();
+        assert!(matches!(
+            rows[text_index].view,
+            crate::item_view::ItemView::Bubble { voice: None, .. }
+        ));
+        let envelopes_before = sink.0.lock().unwrap().len();
+
+        let voice: Raw<AnySyncTimelineEvent> = serde_json::from_value(serde_json::json!({
+            "type": "m.room.message",
+            "event_id": "$voice",
+            "sender": agent,
+            "origin_server_ts": 1_700_000_000_000_u64,
+            "content": {
+                "msgtype": "m.audio",
+                "body": "Voice message.ogg",
+                "url": "mxc://example.org/abc",
+                "info": { "mimetype": "audio/ogg", "duration": 4_210 },
+                "org.matrix.msc1767.audio": { "duration": 4_210, "waveform": [0, 512, 1024] },
+                "org.matrix.msc3245.voice": {},
+                "dev.agentpod.voice_reply": {
+                    "schema_version": 1, "text_event_id": "$text", "voice": "bf_emma", "seconds": 4
+                }
+            }
+        }))
+        .unwrap();
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(JoinedRoomBuilder::new(room_id).add_timeline_event(voice));
+            })
+            .await;
+
+        let paired = |rows: &[TimelineRow]| {
+            by_event(rows, "$text").is_some_and(|i| {
+                matches!(
+                    &rows[i].view,
+                    crate::item_view::ItemView::Bubble { voice: Some(p), .. } if p.event_id == "$voice"
+                )
+            })
+        };
+        let rows = wait_for(&focused, "the pair", paired).await;
+        let voice_index = by_event(&rows, "$voice").expect("the voice row is still a row");
+        assert_eq!(
+            rows[voice_index].view,
+            crate::item_view::ItemView::None,
+            "the voice row is hidden, not removed"
+        );
+        let text_index_now = by_event(&rows, "$text").unwrap();
+        assert_eq!(text_index_now, text_index, "the text row did not move");
+
+        // How the host heard about it: a `Set` of the text row where it was,
+        // never a remove or an insert of it.
+        let envelopes = sink.0.lock().unwrap()[envelopes_before..].to_vec();
+        let text_id = rows[text_index].item.id.clone();
+        assert!(
+            envelopes.iter().flat_map(|e| &e.ops).any(|op| matches!(
+                op,
+                DiffOp::Set { index, value } if *index == text_index && value.item.id == text_id
+                    && matches!(value.view, crate::item_view::ItemView::Bubble { voice: Some(_), .. })
+            )),
+            "the text row must be updated in place: {:?}",
+            envelopes.iter().map(|e| e.ops.iter().map(op_name).collect::<Vec<_>>()).collect::<Vec<_>>()
+        );
+        assert!(
+            !envelopes.iter().flat_map(|e| &e.ops).any(|op| matches!(
+                op,
+                DiffOp::Remove { index } if *index == text_index
+            )),
+            "the text row must never be removed"
+        );
+
+        // The voice is redacted: the text is its plain self again.
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(room_id).add_timeline_event(
+                        f.redaction(event_id!("$voice"))
+                            .sender(agent)
+                            .event_id(event_id!("$redaction")),
+                    ),
+                );
+            })
+            .await;
+        wait_for(&focused, "the plain text again", |rows| {
+            by_event(rows, "$text").is_some_and(|i| {
+                matches!(
+                    rows[i].view,
+                    crate::item_view::ItemView::Bubble { voice: None, .. }
+                )
+            })
+        })
+        .await;
 
         focused.clear_and_join().await;
     }

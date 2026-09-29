@@ -290,3 +290,93 @@ fn audio_players() {
     assert_eq!(audio_clock_label(3_200), "0:03");
     assert_eq!(audio_clock_label(5_100), "0:05");
 }
+
+/// Voice replies, in `PreviewFixtures.voiceReply*` (iOS `VoiceNoteFixtures`,
+/// Android `PreviewFixtures`, desktop `fixtures/timeline.ts`): the player's
+/// title and what a screen reader says, and the blocks of the reply that
+/// carries code.
+#[test]
+fn voice_replies() {
+    use supermessage_core::dto::{AudioMetaDto, MediaMetaDto, TimelineItemDto};
+    use supermessage_core::item_view::{voice_reply_view, ItemView};
+    use supermessage_core::timeline::project_item_parts;
+
+    let item = |id: &str, msgtype: &str, body: &str| -> TimelineItemDto {
+        project_item_parts(
+            id,
+            Some(id),
+            "message",
+            Some(msgtype),
+            None,
+            Some("@agent_scribe:example.org"),
+            Some("Scribe"),
+            None,
+            false,
+            Some(body),
+            None,
+            None,
+            None,
+            Some(1),
+            false,
+            None,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        )
+    };
+    let voice = |ms: u64| {
+        let mut it = item("$v", "m.audio", "Voice message.ogg");
+        it.media = Some(MediaMetaDto {
+            filename: "Voice message.ogg".into(),
+            mimetype: Some("audio/ogg".into()),
+            size: Some(48_213),
+            width: None,
+            height: None,
+            audio: Some(AudioMetaDto {
+                is_voice: true,
+                duration_ms: Some(ms),
+                waveform: None,
+            }),
+        });
+        it
+    };
+    for (ms, label, spoken) in [
+        (4_210, "0:04", "Voice reply, 4 seconds"),
+        (6_900, "0:07", "Voice reply, 7 seconds"),
+        (41_800, "0:42", "Voice reply, 42 seconds"),
+    ] {
+        let Some(ItemView::Bubble {
+            voice: Some(player),
+            muted,
+            ..
+        }) = voice_reply_view(&item("$t", "m.text", "Yes."), &voice(ms))
+        else {
+            panic!("a pair draws as a bubble with its player");
+        };
+        assert!(!muted);
+        assert_eq!(player.event_id, "$v");
+        assert_eq!(player.audio.title, "Voice reply");
+        assert_eq!(player.audio.length_label.as_deref(), Some(label), "{ms}");
+        assert_eq!(player.audio.accessibility_label, spoken, "{ms}");
+    }
+
+    let code = "Run `pnpm check` first, then:\n\n```bash\ncargo test -p supermessage-core voice_reply\n```";
+    let Some(ItemView::Bubble { blocks, .. }) =
+        voice_reply_view(&item("$t", "m.text", code), &voice(6_900))
+    else {
+        panic!("a pair draws as a bubble");
+    };
+    assert_eq!(
+        serde_json::to_value(&blocks).unwrap(),
+        serde_json::json!([
+            { "block": "paragraph", "inlines": [
+                { "inline": "text", "text": "Run " },
+                { "inline": "code", "text": "pnpm check" },
+                { "inline": "text", "text": " first, then:" }
+            ]},
+            { "block": "codeBlock", "language": "bash",
+              "text": "cargo test -p supermessage-core voice_reply\n" }
+        ])
+    );
+}

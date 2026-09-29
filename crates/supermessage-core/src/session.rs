@@ -2882,6 +2882,7 @@ mod tests {
                 "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.agentpod_turn",
                 "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.agentpod_permission",
                 "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.superpipeline_gate",
+                "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.agentpod_voice_reply",
                 "/_matrix/client/r0/pushrules/global/override/dev.supermessage.quiet.edit",
             ]
         );
@@ -2893,7 +2894,7 @@ mod tests {
             })
         );
         assert_eq!(
-            puts[4].1,
+            puts[5].1,
             serde_json::json!({
                 "actions": [],
                 "conditions": [{
@@ -2910,7 +2911,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(session.ensure_quiet_push_rules().await.unwrap(), 0);
-        assert_eq!(rule_puts(&server).await.len(), 5);
+        assert_eq!(rule_puts(&server).await.len(), 6);
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 

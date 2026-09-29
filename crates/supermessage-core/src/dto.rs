@@ -900,6 +900,22 @@ pub struct TimelineRow {
     /// scrolls out of the materialised timeline does not make the preview
     /// change or vanish underneath the person writing.
     pub reply_preview: Option<String>,
+    /// For a voice message that is an agent's answer spoken
+    /// (`dev.agentpod.voice_reply`): the text message it speaks. `None` for
+    /// every other row.
+    ///
+    /// **A host never needs this.** The core pairs the two
+    /// (`crate::voice_reply::reconcile`) and hands over the result — the text
+    /// row's `ItemView::Bubble` carrying the player, this row
+    /// `ItemView::None`. It is carried on the row because the pairing is
+    /// re-settled after every batch and must survive this row being hidden,
+    /// and the raw event it came from is gone by then.
+    ///
+    /// Defaulted, and left off the desktop's JSON when absent, so no host's
+    /// fixtures change for rows that are not voice replies.
+    #[uniffi(default = None)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_reply: Option<crate::voice_reply::VoiceReplyLink>,
 }
 
 impl TimelineRow {
@@ -959,6 +975,7 @@ impl TimelineRow {
             reply_quote,
             can_reply_or_react,
             reply_preview,
+            voice_reply: None,
         }
     }
 }

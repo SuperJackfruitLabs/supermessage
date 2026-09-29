@@ -25,6 +25,7 @@ use crate::custom_events::{default_registry, resolve_custom_event, CustomEventVi
 use crate::dto::{ReplyToDto, TimelineItemDto};
 use crate::rich::{blocks_from_markdown, blocks_from_sanitised_html, RichBlock};
 use crate::turn_error::TurnErrorCard;
+use crate::voice_reply::VoiceReplyPlayer;
 use crate::voice_transcript::VoiceNoteTranscript;
 
 /// What a [`ItemView::System`] line is *about*, independent of its wording.
@@ -98,9 +99,19 @@ pub enum ItemView {
     ///
     /// `blocks` is the parsed body, so a host draws rich text without
     /// touching markdown or HTML itself. See `crate::rich`.
+    ///
+    /// `voice` is the agent's answer, spoken: a voice message that named this
+    /// message as the text it speaks (`dev.agentpod.voice_reply`). A host
+    /// draws its player **first**, then the text, as one message — the way a
+    /// voice note sits above its transcript — and the voice message's own row
+    /// is [`Self::None`]. `None` for every other message. See
+    /// `crate::voice_reply`, which decides the pairing over the whole
+    /// timeline.
     Bubble {
         muted: bool,
         blocks: Vec<RichBlock>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        voice: Option<VoiceReplyPlayer>,
     },
     Emote,
     System {
@@ -568,6 +579,7 @@ fn message_view(item: &TimelineItemDto) -> ItemView {
         Some("m.text") => ItemView::Bubble {
             muted: false,
             blocks: blocks_for(item),
+            voice: None,
         },
         // A one-line notice is the room speaking — a bridge's refusal, a bot's
         // status — and reads as a system line rather than as a message in the
@@ -583,6 +595,7 @@ fn message_view(item: &TimelineItemDto) -> ItemView {
         Some("m.notice") => ItemView::Bubble {
             muted: true,
             blocks: blocks_for(item),
+            voice: None,
         },
         Some("m.emote") => ItemView::Emote,
         Some("m.image") => ItemView::Image {
@@ -761,6 +774,36 @@ fn transcript_is_on_own_note(item: &TimelineItemDto, own_user: &str) -> bool {
         Some(reply) if reply.available => reply.sender.as_deref() == Some(own_user),
         _ => item.is_own,
     }
+}
+
+/// A text message drawn with the voice message that speaks it: the text's
+/// own bubble, carrying the voice note's player — or `None` when either is not
+/// what the pairing needs (a text or notice message, and an `m.audio`).
+///
+/// The player is the note as [`ItemView::Audio`] would draw it, retitled as a
+/// reply: a screen reader hears "Voice reply, 4 seconds" and then the text,
+/// the order the two are drawn in. The rule for *when* to pair is
+/// `crate::voice_reply::reconcile`'s; this only draws a pair.
+pub fn voice_reply_view(text: &TimelineItemDto, voice: &TimelineItemDto) -> Option<ItemView> {
+    let muted = match (text.kind.as_str(), text.msgtype.as_deref()) {
+        ("message", Some("m.text")) => false,
+        ("message", Some("m.notice")) => true,
+        _ => return None,
+    };
+    let event_id = voice.event_id.clone()?;
+    let ItemView::Audio { mut audio } = view_for(voice) else {
+        return None;
+    };
+    audio.title = "Voice reply".to_string();
+    audio.accessibility_label = match audio.duration_ms {
+        Some(ms) => format!("Voice reply, {}", crate::audio::spoken_length(ms)),
+        None => "Voice reply".to_string(),
+    };
+    Some(ItemView::Bubble {
+        muted,
+        blocks: blocks_for(text),
+        voice: Some(VoiceReplyPlayer { event_id, audio }),
+    })
 }
 
 /// The render decision for `item`.
@@ -944,7 +987,7 @@ mod tests {
         let mut it = item("message");
         it.msgtype = Some("m.text".into());
         it.body = Some("hi".into());
-        let ItemView::Bubble { muted, blocks } = view_for(&it) else {
+        let ItemView::Bubble { muted, blocks, .. } = view_for(&it) else {
             panic!("expected a bubble, got {:?}", view_for(&it));
         };
         assert!(!muted);
