@@ -64,6 +64,7 @@ class TimelineTest {
             view = ItemView.Bubble(
                 muted = false,
                 blocks = listOf(RichBlock.Paragraph(inlines = listOf(RichInline.Text(body)))),
+                voice = null,
             ),
             senderName = "Sender",
             senderShort = "Sender",

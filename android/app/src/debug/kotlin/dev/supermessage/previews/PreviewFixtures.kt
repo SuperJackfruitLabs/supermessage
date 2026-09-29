@@ -38,6 +38,7 @@ import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.ToolPhase
 import uniffi.supermessage_core.VoiceNoteTranscript
+import uniffi.supermessage_core.VoiceReplyPlayer
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 
 /**
@@ -141,14 +142,14 @@ object PreviewFixtures {
     val message: TimelineRowDto
         get() = row(
             item("\$m1"),
-            ItemView.Bubble(false, paragraph("Rebased onto main and the token diff is empty now.")),
+            ItemView.Bubble(false, paragraph("Rebased onto main and the token diff is empty now."), voice = null),
         )
 
     /** `m.notice`, which is what most agent output in this org actually uses. */
     val noticed: TimelineRowDto
         get() = row(
             item("\$m2", body = "pnpm check passed in 41s.", msgtype = "m.notice"),
-            ItemView.Bubble(true, paragraph("pnpm check passed in 41s.")),
+            ItemView.Bubble(true, paragraph("pnpm check passed in 41s."), voice = null),
         )
 
     val ownSending: TimelineRowDto
@@ -157,7 +158,7 @@ object PreviewFixtures {
                 "\$own1", sender = "@rakesh:example.org", body = "Merging it.", isOwn = true,
                 sendState = DeliveryState.NOT_SENT_YET,
             ),
-            ItemView.Bubble(false, paragraph("Merging it.")),
+            ItemView.Bubble(false, paragraph("Merging it."), voice = null),
             senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
             canReplyOrReact = false,
         )
@@ -166,7 +167,7 @@ object PreviewFixtures {
     val peerEdited: TimelineRowDto
         get() = row(
             item("\$m3", body = "Actually, the diff has one line in it.", edited = true),
-            ItemView.Bubble(false, paragraph("Actually, the diff has one line in it.")),
+            ItemView.Bubble(false, paragraph("Actually, the diff has one line in it."), voice = null),
         )
 
     /** Three own messages in one run; the middle one edited. */
@@ -182,7 +183,7 @@ object PreviewFixtures {
     private fun ownInRun(id: String, body: String, edited: Boolean = false): TimelineRowDto =
         row(
             item(id, sender = "@rakesh:example.org", body = body, isOwn = true, edited = edited),
-            ItemView.Bubble(false, paragraph(body)),
+            ItemView.Bubble(false, paragraph(body), voice = null),
             senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
         )
 
@@ -192,7 +193,7 @@ object PreviewFixtures {
                 "\$own2", sender = "@rakesh:example.org", body = "Merging it.", isOwn = true,
                 sendState = DeliveryState.SENDING_FAILED,
             ),
-            ItemView.Bubble(false, paragraph("Merging it.")),
+            ItemView.Bubble(false, paragraph("Merging it."), voice = null),
             senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
             canReplyOrReact = false,
         )
@@ -216,7 +217,7 @@ object PreviewFixtures {
             val value =
                 "dGhpcyBpcyBub3QgYSByZWFsIHRva2VuIGJ1dCBpdCBpcyBsb25nIGVub3VnaCB0by" +
                     "BicmVhayBhIHBob25lIHdpZHRoIGxheW91dA=="
-            return row(item("\$long", body = value), ItemView.Bubble(false, paragraph(value)))
+            return row(item("\$long", body = value), ItemView.Bubble(false, paragraph(value), voice = null))
         }
 
     val dayDivider: TimelineRowDto
@@ -253,7 +254,7 @@ object PreviewFixtures {
                     ReactionDto("shipped", "shipped", 2u, false, emptyList()),
                 ),
             ),
-            ItemView.Bubble(false, paragraph("Rebased onto main and the token diff is empty now.")),
+            ItemView.Bubble(false, paragraph("Rebased onto main and the token diff is empty now."), voice = null),
         )
 
     val reply: TimelineRowDto
@@ -266,7 +267,7 @@ object PreviewFixtures {
                     excerpt = "Should the contrast contract list every ground?", label = null,
                 ),
             ),
-            ItemView.Bubble(false, paragraph("Agreed — the contract belongs on the token.")),
+            ItemView.Bubble(false, paragraph("Agreed — the contract belongs on the token."), voice = null),
             replyQuote = ReplyQuoteView.Available(
                 sender = "Rakesh", excerpt = "Should the contrast contract list every ground?",
                 label = null, senderId = "@rakesh:example.org",
@@ -277,7 +278,7 @@ object PreviewFixtures {
     val replyToNothing: TimelineRowDto
         get() = row(
             item("\$orphan", body = "Yes, that one."),
-            ItemView.Bubble(false, paragraph("Yes, that one.")),
+            ItemView.Bubble(false, paragraph("Yes, that one."), voice = null),
             replyQuote = ReplyQuoteView.Unavailable,
         )
 
@@ -354,6 +355,76 @@ object PreviewFixtures {
                 accessibilityLabel = "Voice message, 4 minutes 59 seconds",
             ),
             isOwn = true,
+        )
+
+    /**
+     * An agent's answer, spoken: the voice note's view as
+     * `core::item_view::voice_reply_view` retitles it. Pinned by the Rust
+     * test `host_fixtures::voice_replies`.
+     */
+    fun voiceReplyView(
+        durationMs: ULong = 4_210uL,
+        lengthLabel: String = "0:04",
+        spoken: String = "4 seconds",
+    ): AudioView = AudioView(
+        isVoice = true, durationMs = durationMs, lengthLabel = lengthLabel, waveform = voiceWaveform,
+        title = "Voice reply", filename = "Voice message.ogg", size = 48_213uL,
+        mimetype = "audio/ogg", caption = null, accessibilityLabel = "Voice reply, $spoken",
+    )
+
+    /** The agent's text row carrying the voice message that speaks it. */
+    fun voiceReplyRow(
+        id: String,
+        body: String,
+        blocks: List<RichBlock>,
+        audio: AudioView = voiceReplyView(),
+        reactions: List<ReactionDto> = emptyList(),
+    ): TimelineRowDto = row(
+        item(id, sender = "@agent_scribe:example.org", body = body, atMs = 1_757_700_060_000uL, reactions = reactions),
+        ItemView.Bubble(muted = false, blocks = blocks, voice = VoiceReplyPlayer(eventId = "$id-voice", audio = audio)),
+        senderName = "Scribe", senderShort = "Scribe", senderInitial = "S",
+        replyPreview = body,
+    )
+
+    val voiceReplyShort: TimelineRowDto
+        get() {
+            val text = "Yes — the review moved to Thursday at ten."
+            return voiceReplyRow(
+                "\$reply-short", text, listOf(RichBlock.Paragraph(listOf(RichInline.Text(text)))),
+                reactions = listOf(
+                    ReactionDto(
+                        key = "👍", displayKey = "👍", count = 1u, byMe = true,
+                        senders = listOf("@rakesh:example.org"),
+                    ),
+                ),
+            )
+        }
+
+    val voiceReplyLong: TimelineRowDto
+        get() {
+            val paragraphs = listOf(
+                "I went through the three proposals for the review slot. Thursday at ten works for everyone who has to be there, and it leaves Friday free for the follow-ups the last review kept pushing into the weekend.",
+                "Two things to settle before then. The token audit is still waiting on the dark-mode contrast numbers, which I can have by Wednesday evening if nothing else lands on me, and the Android parity list needs one more pass now that the voice player is shared.",
+                "If Thursday slips, the next slot with everyone free is Monday afternoon, which pushes the release notes by a week. I would rather hold Thursday and cut scope than move it.",
+            )
+            return voiceReplyRow(
+                "\$reply-long", paragraphs.joinToString("\n\n"),
+                paragraphs.map { RichBlock.Paragraph(listOf(RichInline.Text(it))) },
+                audio = voiceReplyView(41_800uL, "0:42", "42 seconds"),
+            )
+        }
+
+    val voiceReplyCode: TimelineRowDto
+        get() = voiceReplyRow(
+            "\$reply-code",
+            "Run `pnpm check` first, then:\n\n```bash\ncargo test -p supermessage-core voice_reply\n```",
+            listOf(
+                RichBlock.Paragraph(
+                    listOf(RichInline.Text("Run "), RichInline.Code("pnpm check"), RichInline.Text(" first, then:")),
+                ),
+                RichBlock.CodeBlock(language = "bash", text = "cargo test -p supermessage-core voice_reply\n"),
+            ),
+            audio = voiceReplyView(6_900uL, "0:07", "7 seconds"),
         )
 
     /** An `m.audio` that is not a voice note: named, and captioned. */

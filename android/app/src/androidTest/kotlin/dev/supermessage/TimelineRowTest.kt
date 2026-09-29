@@ -68,7 +68,7 @@ class TimelineRowTest {
         listOf(RichBlock.Paragraph(inlines = listOf(RichInline.Text(text))))
 
     private fun row(
-        view: ItemView = ItemView.Bubble(muted = false, blocks = paragraph("hi")),
+        view: ItemView = ItemView.Bubble(muted = false, blocks = paragraph("hi"), voice = null),
         senderName: String = "Sender",
         /** What the face shows. Decided by the core — see `sender_initial`. */
         senderInitial: String = "?",
@@ -150,7 +150,7 @@ class TimelineRowTest {
         compose.setContent {
             SupermessageTheme {
                 TimelineRow(
-                    row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("an agent wrote this")), isOwn = false),
+                    row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("an agent wrote this"), voice = null), isOwn = false),
                     now = now,
                 )
             }
@@ -164,7 +164,7 @@ class TimelineRowTest {
         compose.setContent {
             SupermessageTheme {
                 TimelineRow(
-                    row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("the operator wrote this")), isOwn = true),
+                    row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("the operator wrote this"), voice = null), isOwn = true),
                     now = now,
                 )
             }
@@ -177,7 +177,7 @@ class TimelineRowTest {
     fun everyVariantIsHandled() {
         compose.setContent {
             Column {
-                TimelineRow(row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("bubble text"))), now = now)
+                TimelineRow(row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("bubble text"), voice = null)), now = now)
                 TimelineRow(row = row(view = ItemView.Emote, body = "waved"), now = now)
                 TimelineRow(row = row(view = ItemView.System(kind = SystemKind.EncryptionEnabled, text = "system text")), now = now)
                 TimelineRow(row = row(view = ItemView.Placeholder(kind = PlaceholderKind.Redacted, text = "placeholder text")), now = now)
@@ -232,7 +232,7 @@ class TimelineRowTest {
     fun aMutedBubbleStillShowsItsText() {
         compose.setContent {
             TimelineRow(
-                row = row(view = ItemView.Bubble(muted = true, blocks = paragraph("automated notice text"))),
+                row = row(view = ItemView.Bubble(muted = true, blocks = paragraph("automated notice text"), voice = null)),
                 now = now,
             )
         }
@@ -245,7 +245,7 @@ class TimelineRowTest {
         compose.setContent {
             TimelineRow(
                 row = row(
-                    view = ItemView.Bubble(muted = false, blocks = paragraph("hello")),
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("hello"), voice = null),
                     senderName = "Cleaner Cody",
                 ),
                 now = now,
@@ -298,7 +298,7 @@ class TimelineRowTest {
         )
         compose.setContent {
             Box(Modifier.width(1000.dp)) {
-                TimelineRow(row = row(view = ItemView.Bubble(muted = false, blocks = blocks)), now = now)
+                TimelineRow(row = row(view = ItemView.Bubble(muted = false, blocks = blocks, voice = null)), now = now)
             }
         }
         val width = compose.onNodeWithTag("bubble").getUnclippedBoundsInRoot().width
@@ -311,7 +311,7 @@ class TimelineRowTest {
         compose.setContent {
             TimelineRow(
                 row = row(
-                    view = ItemView.Bubble(muted = false, blocks = paragraph("done")),
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("done"), voice = null),
                     isOwn = true,
                     readBy = listOf("@a:example.org", "@b:example.org"),
                     reactions = listOf(
@@ -356,7 +356,7 @@ class TimelineRowTest {
         compose.setContent {
             TimelineRow(
                 row = row(
-                    view = ItemView.Bubble(muted = false, blocks = paragraph("hello")),
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("hello"), voice = null),
                     isOwn = true,
                     readBy = listOf("@_agentpod_ganesha:id.agentpod.dev"),
                 ),
@@ -378,7 +378,7 @@ class TimelineRowTest {
         compose.setContent {
             TimelineRow(
                 row = row(
-                    view = ItemView.Bubble(muted = false, blocks = paragraph("done")),
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("done"), voice = null),
                     reactions = listOf(
                         ReactionDto(
                             key = "✅",
@@ -410,7 +410,7 @@ class TimelineRowTest {
         compose.setContent {
             TimelineRow(
                 row = row(
-                    view = ItemView.Bubble(muted = false, blocks = paragraph("done")),
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("done"), voice = null),
                     reactions = listOf(
                         ReactionDto(
                             key = "👍",
@@ -441,7 +441,7 @@ class TimelineRowTest {
         compose.setContent {
             TimelineRow(
                 row = row(
-                    view = ItemView.Bubble(muted = false, blocks = paragraph("done")),
+                    view = ItemView.Bubble(muted = false, blocks = paragraph("done"), voice = null),
                     reactions = listOf(
                         ReactionDto(
                             key = "long-custom-key-truncated-for-display",
@@ -471,7 +471,7 @@ class TimelineRowTest {
     fun longPressingAddReactionOffersExactlyTheQuickSet() {
         compose.setContent {
             TimelineRow(
-                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"))),
+                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"), voice = null)),
                 now = now,
                 onReact = {},
             )
@@ -488,7 +488,7 @@ class TimelineRowTest {
         val reacted = mutableListOf<String>()
         compose.setContent {
             TimelineRow(
-                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"))),
+                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"), voice = null)),
                 now = now,
                 onReact = { reacted += it },
             )
@@ -507,7 +507,7 @@ class TimelineRowTest {
     fun aMessageThatCannotBeReactedToOffersNoAddAffordance() {
         compose.setContent {
             TimelineRow(
-                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi")))
+                row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"), voice = null))
                     .let { it.copy(canReplyOrReact = false) },
                 now = now,
                 onReact = {},

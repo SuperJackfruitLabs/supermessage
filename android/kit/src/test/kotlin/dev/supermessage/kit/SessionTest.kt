@@ -58,7 +58,7 @@ class SessionTest {
                 isOwn = isOwn, sendState = null, replyTo = null, edited = false,
                 reactions = emptyList(), readBy = emptyList(), editable = false, membershipSubject = null,
             ),
-            view = ItemView.Bubble(muted = false, blocks = emptyList()),
+            view = ItemView.Bubble(muted = false, blocks = emptyList(), voice = null),
             senderName = sender,
             senderShort = sender,
             senderInitial = "?",

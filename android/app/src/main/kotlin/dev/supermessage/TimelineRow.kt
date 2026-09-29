@@ -56,6 +56,7 @@ import uniffi.supermessage_core.ReactionDto
 import uniffi.supermessage_core.ReplyQuoteView
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
+import uniffi.supermessage_core.VoiceReplyPlayer
 
 /**
  * The reactions a long press on a message offers to add, verbatim from
@@ -119,12 +120,15 @@ fun TimelineRow(
     val named = attribution.ifEmpty { row.senderName }
 
     when (val view = row.view) {
+        // `voice` is an agent's answer read aloud: its player above the text,
+        // one message. The voice message's own row is `None` (core::voice_reply).
         is ItemView.Bubble ->
             MessageBlock(
                 row = row,
                 named = named,
                 muted = view.muted,
                 blocks = view.blocks,
+                spoken = view.voice,
                 continuesRun = continuesRun,
                 endsRun = endsRun,
                 avatarUri = avatarUri,
@@ -283,6 +287,7 @@ private fun MessageBlock(
     named: String,
     muted: Boolean,
     blocks: List<RichBlock>,
+    spoken: VoiceReplyPlayer?,
     continuesRun: Boolean,
     endsRun: Boolean,
     avatarUri: (userId: String) -> String?,
@@ -327,6 +332,9 @@ private fun MessageBlock(
         }
 
         row.replyQuote?.let { ReplyQuoteBlock(it) }
+
+        // Listen first, then read: the spoken answer above the words it says.
+        spoken?.let { SpokenReply(spoken = it, isOwn = isOwn, modifier = Modifier.padding(bottom = 6.dp)) }
 
         // `m.notice` de-emphasised but never suppressed: the colour dims,
         // the block tree still renders in full.
