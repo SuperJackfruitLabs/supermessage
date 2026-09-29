@@ -267,5 +267,5 @@ owed decision.
     the card within seconds;
   - steps advance;
   - a permission appears with buttons, and tapping Allow works;
-  - the card ends about two minutes after the last turn finishes;
+  - the card ends once every agent has been quiet for 15 minutes, and a finished turn's card then lingers for 2 minutes;
   - the widgets show the recap since the app was last opened.
