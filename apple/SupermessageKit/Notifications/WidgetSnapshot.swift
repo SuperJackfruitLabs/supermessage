@@ -177,12 +177,16 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         public var pulse: String
         /// One per `agents`, in order.
         public var states: [AgentState]
+        /// Who the pulse counts as working, by name ("Atlas is working"), or
+        /// `nil` when nobody is — what a recap with nothing in it says
+        /// instead of "Nothing new" under an "N working" header.
+        public var busy: String?
 
         public var from: Date { .init(milliseconds: fromMs) }
 
         public init(
             fromMs: UInt64, needsYou: UInt32, needsYouCount: String, needsYouLine: String,
-            working: UInt32, pulse: String, states: [AgentState]
+            working: UInt32, pulse: String, states: [AgentState], busy: String? = nil
         ) {
             self.fromMs = fromMs
             self.needsYou = needsYou
@@ -191,6 +195,7 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
             self.working = working
             self.pulse = pulse
             self.states = states
+            self.busy = busy
         }
     }
 

@@ -68,12 +68,23 @@ struct AgentsWidgetView: View {
                     .lineLimit(1)
             }
             if snapshot.recap.isEmpty {
-                Text(nothingNew(snapshot))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(WidgetTheme.content)
-                Text(snapshot.agents.isEmpty ? "No agent rooms yet." : "Quiet while you were away.")
-                    .font(.caption)
-                    .foregroundStyle(WidgetTheme.contentMuted)
+                // Under an "N working" header, never "Nothing new": the
+                // frame names who is working instead (spec 2026-09-30, B5).
+                if let busy = frame.busy {
+                    Text(busy)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(WidgetTheme.content)
+                    Text(nothingFinished(snapshot))
+                        .font(.caption)
+                        .foregroundStyle(WidgetTheme.contentMuted)
+                } else {
+                    Text(nothingNew(snapshot))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(WidgetTheme.content)
+                    Text(snapshot.agents.isEmpty ? "No agent rooms yet." : "Quiet while you were away.")
+                        .font(.caption)
+                        .foregroundStyle(WidgetTheme.contentMuted)
+                }
             }
             ForEach(snapshot.recap.prefix(rows)) { row in
                 Link(destination: AppLink.room(row.roomId) ?? URL(string: "supermessage://")!) {
@@ -95,6 +106,11 @@ struct AgentsWidgetView: View {
         // With nothing new, the body says since when; the header need not.
         guard let opened = snapshot.openedAt, !snapshot.recap.isEmpty else { return "Agents" }
         return "Since \(opened.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private func nothingFinished(_ snapshot: WidgetSnapshot) -> String {
+        guard let opened = snapshot.openedAt else { return "Nothing finished yet" }
+        return "Nothing finished since \(opened.formatted(date: .omitted, time: .shortened))"
     }
 
     private func nothingNew(_ snapshot: WidgetSnapshot) -> String {
