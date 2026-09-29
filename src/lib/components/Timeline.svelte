@@ -1291,6 +1291,26 @@
               </div>
             {:else if view.render === "bubble"}
                 {#snippet bubbleContent()}
+                  {#if view.voice}
+                    <!--
+                      An agent's answer, spoken (`core::voice_reply`): the voice
+                      note's player first, then the text it speaks, as one
+                      message. The player plays the *voice* event; everything
+                      else on this row — react, reply, copy — is the text's.
+                      The voice message's own row is `none`.
+                    -->
+                    {@const spoken = view.voice}
+                    <div class="mb-2">
+                      <AudioPlayer
+                        audio={spoken.audio}
+                        isOwn={item.isOwn}
+                        playback={player.stateOf(spoken.eventId)}
+                        onToggle={() => void player.toggle(spoken.eventId, spoken.audio.durationMs)}
+                        onSeek={(fraction) => void player.seek(spoken.eventId, fraction, spoken.audio.durationMs)}
+                        onDownload={() => void saveMedia(spoken.eventId, spoken.audio.filename)}
+                      />
+                    </div>
+                  {/if}
                   <!--
                     One renderer for both bodies now. `core::rich` parses the
                     sanitised `formatted_body` a human's client sent *and* the

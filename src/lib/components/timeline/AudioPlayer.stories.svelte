@@ -2,7 +2,7 @@
   import { defineMeta } from "@storybook/addon-svelte-csf";
   import type { Snippet } from "svelte";
 
-  import type { AudioView } from "$lib/ipc";
+  import type { AudioView, RichBlock } from "$lib/ipc";
   import type { NotePlayback } from "$lib/stores/audioPlayback.svelte";
   import {
     audioFile,
@@ -16,10 +16,17 @@
     voiceNoteLong,
     voiceNoteNoWaveform,
     voiceNoteShort,
+    voiceReplyCodeAudio,
+    voiceReplyCodeBlocks,
+    voiceReplyLongAudio,
+    voiceReplyLongBlocks,
+    voiceReplyShortAudio,
+    voiceReplyShortBlocks,
     voiceTranscriptLong,
     voiceTranscriptShort,
   } from "$lib/fixtures";
 
+  import RichText from "../RichText.svelte";
   import AudioPlayer from "./AudioPlayer.svelte";
   import VoiceTranscript from "./VoiceTranscript.svelte";
 
@@ -54,6 +61,24 @@
         : 'max-w-[68ch] font-sans text-body'}"
     >
       <AudioPlayer {audio} {isOwn} {playback} {detail} onToggle={noop} onSeek={noop} onDownload={noop} />
+    </div>
+  </div>
+{/snippet}
+
+<!--
+  An agent's answer, spoken (`core::voice_reply`): the peer message block from
+  `Timeline.svelte`'s bubble branch — the player first, then the text it
+  speaks in the peer body style (the same classes).
+-->
+{#snippet reply(audio: AudioView, blocks: RichBlock[], playback: NotePlayback)}
+  <div class="flex justify-start">
+    <div class="flex min-w-0 max-w-[68ch] flex-col font-sans text-body text-content">
+      <div class="mb-2">
+        <AudioPlayer {audio} isOwn={false} {playback} onToggle={noop} onSeek={noop} onDownload={noop} />
+      </div>
+      <div class="message-html selectable">
+        <RichText {blocks} />
+      </div>
     </div>
   </div>
 {/snippet}
@@ -193,6 +218,54 @@
       <div class="h-6"></div>
       {@render note(voiceNoteLong, false, playbackIdle)}
       <VoiceTranscript transcript={voiceTranscriptLong} onOwnNote={false} />
+    {/snippet}
+    {@render sheet(body)}
+  {/snippet}
+</Story>
+
+<!--
+  An agent's answer, spoken: one message — the voice reply's player, then the
+  text it speaks. The voice message's own row is hidden by the core.
+-->
+<Story name="Voice reply">
+  {#snippet template()}
+    {#snippet body()}
+      {@render reply(voiceReplyShortAudio, voiceReplyShortBlocks, playbackIdle)}
+      <div class="h-6"></div>
+      {@render reply(voiceReplyCodeAudio, voiceReplyCodeBlocks, playbackIdle)}
+    {/snippet}
+    {@render sheet(body)}
+  {/snippet}
+</Story>
+
+<!-- A long answer: the player stays on top, the text runs on under it. -->
+<Story name="Voice reply, long">
+  {#snippet template()}
+    {#snippet body()}
+      {@render reply(voiceReplyLongAudio, voiceReplyLongBlocks, playbackPaused)}
+    {/snippet}
+    {@render sheet(body)}
+  {/snippet}
+</Story>
+
+<Story name="Voice reply, dark">
+  {#snippet template()}
+    <div data-appearance="dark" class="w-[72ch] max-w-full bg-surface p-4 font-sans text-content">
+      {@render reply(voiceReplyShortAudio, voiceReplyShortBlocks, playbackPlaying)}
+      <div class="h-6"></div>
+      {@render reply(voiceReplyCodeAudio, voiceReplyCodeBlocks, playbackIdle)}
+    </div>
+  {/snippet}
+</Story>
+
+<!-- The whole exchange: your note, its transcript, and the spoken answer. -->
+<Story name="Voice reply after a transcript">
+  {#snippet template()}
+    {#snippet body()}
+      {@render note(voiceNoteShort, true, playbackIdle)}
+      <VoiceTranscript transcript={voiceTranscriptShort} onOwnNote={true} />
+      <div class="h-6"></div>
+      {@render reply(voiceReplyShortAudio, voiceReplyShortBlocks, playbackIdle)}
     {/snippet}
     {@render sheet(body)}
   {/snippet}
