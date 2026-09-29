@@ -1,0 +1,506 @@
+<title>Fleet Card Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a design review sheet. Each direction is a column of three Lock Screens
+   (working, needs you, done), stacked to one column on a phone. Tokens are
+   supermessage's own (design/tokens.toml): the page follows the viewer's theme;
+   the cards use the dark Lock Screen palette in both, as most Lock Screens are. */
+:root {
+  --surface: #fdfcff; --sunken: #f3f2f9; --raised: #fafafd;
+  --border: #e0deea; --border-strong: #c3bfd4;
+  --content: #221c38; --muted: #50496d; --faint: #70688f;
+  --accent: #5b43d4; --accent-soft: #ebe7fb;
+  --page-font: "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --ios: -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  /* The card: supermessage dark tokens. */
+  --c-surface: #1f1838; --c-raised: #251f41; --c-sunken: #151129; --c-border: #383254;
+  --c-content: #f4f2fb; --c-muted: #c6c2d8; --c-faint: #8e86ab;
+  --c-accent: #9d8ff0; --c-signal: #e8a33d; --c-signal-soft: #332919;
+  --c-ok: #70cdab; --c-danger: #ed6e74;
+  --wall-a: #1d2b5c; --wall-b: #3a1f55; --wall-c: #0c1024;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: #1f1838; --sunken: #151129; --raised: #251f41;
+    --border: #383254; --border-strong: #534a75;
+    --content: #f4f2fb; --muted: #c6c2d8; --faint: #8e86ab;
+    --accent: #9d8ff0; --accent-soft: #2b224f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --surface: #1f1838; --sunken: #151129; --raised: #251f41;
+  --border: #383254; --border-strong: #534a75;
+  --content: #f4f2fb; --muted: #c6c2d8; --faint: #8e86ab;
+  --accent: #9d8ff0; --accent-soft: #2b224f; color-scheme: dark;
+}
+
+body { background: var(--sunken); color: var(--content); font-family: var(--page-font); font-size: 15px; line-height: 1.5; }
+.page { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 32px 56px; display: grid; gap: 32px; }
+header.intro { display: grid; gap: 10px; max-width: 68ch; }
+h1 { font-size: 1.75rem; font-weight: 600; line-height: 1.2; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.intro p { margin: 0; color: var(--muted); }
+.meta { font-family: var(--mono); font-size: 0.75rem; color: var(--faint); }
+
+.directions { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; align-items: start; }
+.direction { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px 16px 20px; display: grid; gap: 16px; min-width: 0; }
+.direction h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.direction .pitch { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.tag { font-family: var(--mono); font-size: 0.72rem; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; justify-self: start; }
+.state-label { font-size: 0.8rem; font-weight: 500; color: var(--faint); margin: 0 0 6px 2px; }
+
+/* A slice of Lock Screen: wallpaper, then the card at the mini's width. */
+.lock { border-radius: 18px; padding: 14px 10px; background:
+    radial-gradient(120% 90% at 20% 0%, var(--wall-b), transparent 60%),
+    radial-gradient(120% 120% at 100% 100%, var(--wall-a), transparent 55%), var(--wall-c);
+  display: grid; justify-items: center; }
+.card { width: 100%; max-width: 344px; min-height: 0; border-radius: 22px; background: var(--c-surface);
+  color: var(--c-content); font-family: var(--ios); padding: 14px 16px; display: grid; gap: 10px;
+  box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+.card * { box-sizing: border-box; }
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.grow { flex: 1; min-width: 0; }
+.num { font-variant-numeric: tabular-nums; }
+.clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.faint { color: var(--c-faint); }
+.muted { color: var(--c-muted); }
+
+/* Avatars stand in for the Guild avatars the app would cache into the App Group. */
+.av { flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 600; color: #fff; }
+.av.lyra { background: linear-gradient(140deg, #ff8fa3, #9d6bff); }
+.av.ray { background: linear-gradient(140deg, #4cc3ff, #3a5bd9); }
+.av.quill { background: linear-gradient(140deg, #ffcf6b, #e0672e); }
+.av.kai { background: linear-gradient(140deg, #6ee7b7, #0f8f7a); }
+
+/* ── A · The track ─────────────────────────────────────────────── */
+.a-head { font-size: 17px; font-weight: 600; line-height: 1.25; }
+.a-sub { font-size: 13px; }
+.a-clock { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.track { position: relative; height: 34px; }
+.track .rail { position: absolute; left: 12px; right: 12px; top: 15px; height: 4px; border-radius: 2px; background: var(--c-border); }
+.track .fill { position: absolute; left: 12px; top: 15px; height: 4px; border-radius: 2px; background: var(--c-ok); }
+.track .stop { position: absolute; top: 11px; width: 12px; height: 12px; border-radius: 50%; background: var(--c-surface); border: 2px solid var(--c-border); transform: translateX(-6px); }
+.track .stop.done { border-color: var(--c-ok); background: var(--c-ok); }
+.track .rider { position: absolute; top: 3px; width: 28px; height: 28px; transform: translateX(-14px); font-size: 11px; box-shadow: 0 0 0 3px var(--c-surface); }
+.stops { display: flex; justify-content: space-between; font-size: 11px; color: var(--c-faint); padding-inline: 2px; }
+.stops b { color: var(--c-content); font-weight: 600; }
+.segments { display: flex; gap: 3px; }
+.segments i { flex: 1; height: 5px; border-radius: 3px; background: var(--c-border); }
+.segments i.on { background: var(--c-ok); }
+.segments i.bad { background: var(--c-danger); }
+@media (prefers-reduced-motion: no-preference) {
+  .track .rider.moving { animation: nudge 2.4s ease-in-out infinite; }
+  @keyframes nudge { 0%,100% { margin-left: 0 } 50% { margin-left: 5px } }
+}
+
+/* ── B · Headline and avatars ──────────────────────────────────── */
+.b-main { display: flex; gap: 12px; align-items: center; }
+.ring { position: relative; flex: none; width: 54px; height: 54px; }
+.ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.ring .av { position: absolute; inset: 6px; font-size: 15px; }
+.b-head { font-size: 17px; font-weight: 600; line-height: 1.2; }
+.b-step { font-size: 13px; }
+.b-others { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--c-border); font-size: 12px; }
+.mini { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.mini .av { width: 20px; height: 20px; font-size: 9px; }
+
+/* ── C · Compact dashboard ─────────────────────────────────────── */
+.c-counts { display: flex; gap: 14px; align-items: baseline; }
+.c-count { display: flex; align-items: baseline; gap: 5px; }
+.c-count strong { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.c-count span { font-size: 12px; color: var(--c-muted); }
+.c-count.signal strong { color: var(--c-signal); }
+.c-count.ok strong { color: var(--c-ok); }
+.c-row { display: grid; grid-template-columns: 22px minmax(0,1fr) auto; gap: 8px; align-items: center; font-size: 13px; }
+.c-row .av { width: 22px; height: 22px; font-size: 10px; }
+.bar { height: 4px; border-radius: 2px; background: var(--c-border); overflow: hidden; margin-top: 3px; }
+.bar > i { display: block; height: 100%; background: var(--c-ok); border-radius: 2px; }
+
+/* The decision: the one amber element, in every direction. */
+.decision { background: var(--c-signal-soft); border: 1px solid var(--c-signal); border-radius: 14px; padding: 10px 12px; display: grid; gap: 8px; }
+.decision .q { font-size: 15px; font-weight: 600; line-height: 1.25; }
+.decision .who { font-size: 12px; color: var(--c-signal); font-weight: 600; }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn { border-radius: 999px; padding: 7px 0; text-align: center; font-size: 14px; font-weight: 600; }
+.btn.yes { background: var(--c-signal); color: #1c1407; }
+.btn.no { background: var(--c-raised); color: var(--c-content); border: 1px solid var(--c-border); }
+
+/* Done: a finish, like "Delivered". */
+.done-mark { width: 30px; height: 30px; border-radius: 50%; background: var(--c-ok); color: #0b2a1f; display: grid; place-items: center; font-weight: 700; font-size: 16px; flex: none; }
+.fail-mark { background: var(--c-danger); color: #2a0b0d; }
+.result { font-size: 13px; color: var(--c-muted); line-height: 1.35; }
+
+/* ── A + C, the chosen mix ─────────────────────────────────────── */
+.mix { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px 16px 22px; display: grid; gap: 18px; }
+.mix h2 { margin: 0; font-size: 1.3rem; font-weight: 600; }
+.mix .pitch { margin: 0; color: var(--muted); max-width: 70ch; }
+.mix-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 18px 20px; align-items: start; }
+.mix-grid > div { min-width: 0; }
+.caption { margin: 8px 2px 0; font-size: 0.82rem; color: var(--muted); }
+/* A 160pt guide: the tallest the Lock Screen draws a Live Activity. */
+.guide { position: relative; width: 100%; max-width: 344px; }
+.guide::after { content: "160pt"; position: absolute; right: -2px; top: 160px; transform: translateY(-50%); font: 500 10px/1 var(--mono); color: var(--c-faint); background: var(--c-sunken); padding: 2px 4px; border-radius: 4px; }
+.guide::before { content: ""; position: absolute; left: 0; right: 0; top: 160px; border-top: 1px dashed rgba(157, 143, 240, 0.55); }
+.m-card { gap: 8px; padding: 12px 14px; }
+.m-top { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
+.m-top strong { font-size: 15px; font-weight: 700; }
+.m-top .ok strong { color: var(--c-ok); }
+.m-top .sig strong { color: var(--c-signal); }
+.m-top .bad strong { color: var(--c-danger); }
+.m-hero { display: flex; align-items: center; gap: 10px; }
+.m-hero .av { width: 32px; height: 32px; font-size: 12px; }
+.m-head { font-size: 16px; font-weight: 600; line-height: 1.2; }
+.m-sub { font-size: 12px; }
+.m-clock { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.m-track { position: relative; height: 16px; margin-inline: 2px; }
+.m-track .rail, .m-track .fill { position: absolute; top: 6px; height: 4px; border-radius: 2px; left: 0; }
+.m-track .rail { right: 0; background: var(--c-border); }
+.m-track .fill { background: var(--c-ok); }
+.m-track .stop { position: absolute; top: 3px; width: 10px; height: 10px; border-radius: 50%; transform: translateX(-5px); background: var(--c-surface); border: 2px solid var(--c-border); }
+.m-track .stop.on { background: var(--c-ok); border-color: var(--c-ok); }
+.m-track .stop.bad { background: var(--c-danger); border-color: var(--c-danger); }
+.m-track .dot { position: absolute; top: 0; width: 16px; height: 16px; border-radius: 50%; transform: translateX(-8px); background: var(--c-ok); box-shadow: 0 0 0 3px var(--c-surface); }
+@media (prefers-reduced-motion: no-preference) {
+  .m-track .dot.pulse { animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 3px rgba(112,205,171,.0) } 50% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 7px rgba(112,205,171,.35) } }
+}
+.m-stages { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--c-faint); margin-top: -2px; }
+.m-stages b { color: var(--c-content); font-weight: 600; }
+.m-rows { display: grid; gap: 5px; padding-top: 6px; border-top: 1px solid var(--c-border); }
+.m-row { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 7px; align-items: center; font-size: 12px; }
+.m-row .av { width: 18px; height: 18px; font-size: 8px; }
+.m-row .bar { margin-top: 2px; height: 3px; }
+/* The same card on the watch's Smart Stack (watchOS 11 shows iPhone Live Activities). */
+.watch { width: 190px; border-radius: 34px; background: #000; padding: 12px; justify-self: start; }
+.watch .w-card { background: var(--c-surface); color: var(--c-content); border-radius: 20px; padding: 10px 11px; font-family: var(--ios); display: grid; gap: 6px; }
+.watch .w-top { display: flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; }
+.watch .w-top .av { width: 20px; height: 20px; font-size: 8px; }
+.watch .w-step { font-size: 11px; color: var(--c-muted); }
+
+.notes { display: grid; gap: 14px; max-width: 72ch; }
+.card { position: relative; }
+.measured { position: absolute; top: -9px; right: 10px; font: 500 10px/1 var(--mono); padding: 3px 6px; border-radius: 6px; background: var(--c-sunken); color: var(--c-ok); border: 1px solid var(--c-border); }
+.measured.over { color: var(--c-danger); border-color: var(--c-danger); }
+.notes h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.notes ul { margin: 0; padding-left: 1.2em; color: var(--muted); display: grid; gap: 6px; }
+.notes li strong { color: var(--content); font-weight: 600; }
+</style>
+
+<div class="page">
+  <header class="intro">
+    <h1>Fleet card directions</h1>
+    <p>Three ways to redesign the Lock Screen Live Activity, each shown in the three moments that matter: an agent working, an agent that needs you, and a turn that finished. Pick one, or mix parts.</p>
+    <p class="meta">Card width 344pt at the iPhone 13 mini's Lock Screen · max height 160pt · supermessage dark tokens · avatars are placeholders for the Guild avatars</p>
+  </header>
+
+  <section class="mix" aria-labelledby="mix-title">
+    <span class="tag">A + C</span>
+    <h2 id="mix-title">The track and the dashboard, together</h2>
+    <p class="pitch">The chosen mix. C's counts sit on top, with a fixed time instead of a ticking one. The most important agent gets A's headline, clock and track; the agent that needs you comes first, then the one that was busy most recently. Everyone else gets one of C's compact rows, and rows that don't fit drop into the count. The dashed line is the 160pt limit.</p>
+
+    <div class="mix-grid">
+
+      <div>
+        <p class="state-label">One agent working</p>
+        <div class="lock"><div class="guide"><div class="card m-card">
+          <div class="m-top"><span class="ok"><strong class="num">1</strong> working</span><span class="faint grow num" style="text-align:right">Updated 9:41 PM</span></div>
+          <div class="m-hero">
+            <span class="av lyra">AL</span>
+            <div class="grow"><div class="m-head clip">Running the tests</div><div class="m-sub muted clip">Artistic Lyra · step 3 of 7</div></div>
+            <span class="m-clock num">2:04</span>
+          </div>
+          <div class="m-track" aria-hidden="true"><div class="rail"></div><div class="fill" style="width:50%"></div>
+            <span class="stop on" style="left:0"></span><span class="stop on" style="left:33.3%"></span><span class="stop" style="left:66.6%"></span><span class="stop" style="left:100%"></span>
+            <span class="dot pulse" style="left:50%"></span></div>
+          <div class="m-stages"><span>Thinking</span><b>Tools 3/7</b><span>Writing</span><span>Done</span></div>
+        </div></div></div>
+        <p class="caption">A alone: nothing else is running, so there are no rows.</p>
+      </div>
+
+      <div>
+        <p class="state-label">Three agents working</p>
+        <div class="lock"><div class="guide"><div class="card m-card">
+          <div class="m-top"><span class="ok"><strong class="num">3</strong> working</span><span class="faint grow num" style="text-align:right">Updated 9:41 PM</span></div>
+          <div class="m-hero">
+            <span class="av lyra">AL</span>
+            <div class="grow"><div class="m-head clip">Running the tests</div><div class="m-sub muted clip">Artistic Lyra · Tools 3/7</div></div>
+            <span class="m-clock num">2:04</span>
+          </div>
+          <div class="m-track" aria-hidden="true"><div class="rail"></div><div class="fill" style="width:50%"></div>
+            <span class="stop on" style="left:0"></span><span class="stop on" style="left:33.3%"></span><span class="stop" style="left:66.6%"></span><span class="stop" style="left:100%"></span>
+            <span class="dot pulse" style="left:50%"></span></div>
+          <div class="m-rows">
+            <div class="m-row"><span class="av kai">CK</span><div class="grow"><div class="clip">Kai · <span class="muted">Reading widget.rs</span></div><div class="bar"><i style="width:25%"></i></div></div><span class="faint num">1/4</span></div>
+          </div>
+        </div></div></div>
+        <p class="caption">One row fits under the hero; the third agent is counted in "3 working". The stage labels give way to the row, and the hero's subtitle keeps "Tools 3/7".</p>
+      </div>
+
+      <div>
+        <p class="state-label">Needs you</p>
+        <div class="lock"><div class="guide"><div class="card m-card">
+          <div class="m-top"><span class="sig"><strong class="num">1</strong> needs you</span><span class="ok"><strong class="num">2</strong> working</span><span class="faint grow num" style="text-align:right">Updated 9:42 PM</span></div>
+          <div class="decision" style="padding:9px 11px;gap:8px">
+            <div class="row" style="align-items:center">
+              <span class="av ray" style="width:30px;height:30px;font-size:11px">RR</span>
+              <div class="grow"><div class="who clip">Research Ray · 12s ago</div><div class="q clip">Run git push origin main?</div></div>
+            </div>
+            <div class="btns"><span class="btn yes">Allow once</span><span class="btn no">Reject</span></div>
+          </div>
+        </div></div></div>
+        <p class="caption">The decision takes the hero's place and is the only amber. The working agents are counted in the header; they come back as the hero once it's answered.</p>
+      </div>
+
+      <div>
+        <p class="state-label">Finished, lingering two minutes</p>
+        <div class="lock"><div class="guide"><div class="card m-card">
+          <div class="m-top"><span class="ok"><strong class="num">1</strong> done</span><span class="bad"><strong class="num">1</strong> failed</span><span class="faint grow num" style="text-align:right">Finished 9:45 PM</span></div>
+          <div class="m-hero">
+            <span class="done-mark" aria-hidden="true">✓</span>
+            <div class="grow"><div class="m-head clip">Lyra finished</div><div class="m-sub muted clip">Done in 3m 57s · 7 steps</div></div>
+          </div>
+          <div class="m-track" aria-hidden="true"><div class="rail"></div><div class="fill" style="width:100%"></div>
+            <span class="stop on" style="left:0"></span><span class="stop on" style="left:33.3%"></span><span class="stop on" style="left:66.6%"></span><span class="stop on" style="left:100%"></span></div>
+          <div class="m-rows">
+            <div class="m-row"><span class="done-mark fail-mark" style="width:18px;height:18px;font-size:11px">!</span><div class="clip">Quill · <span style="color:var(--c-danger)">Failed at step 4 of 7</span></div><span class="faint num">4/7</span></div>
+          </div>
+        </div></div></div>
+        <p class="caption">A's finish, like "Delivered". The header's time stops at the finish.</p>
+      </div>
+
+      <div>
+        <p class="state-label">Failed</p>
+        <div class="lock"><div class="guide"><div class="card m-card">
+          <div class="m-top"><span class="bad"><strong class="num">1</strong> failed</span><span class="faint grow num" style="text-align:right">Finished 9:47 PM</span></div>
+          <div class="m-hero">
+            <span class="done-mark fail-mark" aria-hidden="true">!</span>
+            <div class="grow"><div class="m-head clip">Quill failed</div><div class="m-sub clip" style="color:var(--c-danger)">At step 4 of 7 · after 1m 12s</div></div>
+          </div>
+          <div class="m-track" aria-hidden="true"><div class="rail"></div><div class="fill" style="width:57%;background:var(--c-danger)"></div>
+            <span class="stop on" style="left:0"></span><span class="stop bad" style="left:33.3%"></span><span class="stop" style="left:66.6%"></span><span class="stop" style="left:100%"></span></div>
+          <div class="m-stages"><span>Thinking</span><b style="color:var(--c-danger)">Tools 4/7</b><span>Writing</span><span>Done</span></div>
+        </div></div></div>
+        <p class="caption">The track turns red where the turn stopped.</p>
+      </div>
+
+      <div>
+        <p class="state-label">On the watch</p>
+        <div class="watch" aria-label="Apple Watch Smart Stack preview">
+          <div class="w-card">
+            <div class="w-top"><span class="av lyra">AL</span><span class="grow clip">Running the tests</span></div>
+            <div class="m-track" aria-hidden="true"><div class="rail"></div><div class="fill" style="width:50%"></div><span class="dot" style="left:50%;width:12px;height:12px;transform:translateX(-6px);top:2px"></span></div>
+            <div class="w-step row"><span class="grow clip">Lyra · 3/7</span><span class="num">2:04</span></div>
+          </div>
+        </div>
+        <p class="caption">The same card on the Smart Stack in watchOS 11: the hero and track only.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <h2 style="margin:4px 0 -12px;font-size:1.05rem;font-weight:600;color:var(--muted)">The three original directions</h2>
+  <div class="directions">
+
+    <!-- ═════════ A · The track ═════════ -->
+    <section class="direction" aria-labelledby="a-title">
+      <span class="tag">A</span>
+      <h2 id="a-title">The track</h2>
+      <p class="pitch">Closest to a delivery tracker. One headline, a big clock, and the turn as a road: Thinking, Tools, Writing, Done, with the agent's avatar riding along it. The tool steps fill in as segments.</p>
+
+      <div>
+        <p class="state-label">Working</p>
+        <div class="lock"><div class="card">
+          <div class="row">
+            <div class="grow">
+              <div class="a-head clip">Lyra is running the tests</div>
+              <div class="a-sub muted clip">Artistic Lyra · step 3 of 7</div>
+            </div>
+            <div class="a-clock num">2:04</div>
+          </div>
+          <div class="track" aria-hidden="true">
+            <div class="rail"></div>
+            <div class="fill" style="width: calc((100% - 24px) * 0.5)"></div>
+            <span class="stop done" style="left: 12px"></span>
+            <span class="stop done" style="left: calc(12px + (100% - 24px) * 0.333)"></span>
+            <span class="stop" style="left: calc(12px + (100% - 24px) * 0.666)"></span>
+            <span class="stop" style="left: calc(100% - 12px)"></span>
+            <span class="av lyra rider moving" style="left: calc(12px + (100% - 24px) * 0.5)">AL</span>
+          </div>
+          <div class="stops"><span>Thinking</span><b>Tools 3/7</b><span>Writing</span><span>Done</span></div>
+        </div></div>
+      </div>
+
+      <div>
+        <p class="state-label">Needs you</p>
+        <div class="lock"><div class="card">
+          <div class="decision">
+            <div class="row"><span class="av ray" style="width:22px;height:22px;font-size:10px">RR</span><span class="who grow">Research Ray asks · 12s</span></div>
+            <div class="q">Run git push origin main?</div>
+            <div class="btns"><span class="btn yes">Allow once</span><span class="btn no">Reject</span></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div>
+        <p class="state-label">Done</p>
+        <div class="lock"><div class="card">
+          <div class="row">
+            <span class="done-mark" aria-hidden="true">✓</span>
+            <div class="grow">
+              <div class="a-head clip">Lyra finished</div>
+              <div class="a-sub muted">Done in 3m 57s · 7 steps</div>
+            </div>
+          </div>
+          <div class="segments" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
+          <div class="result clip">"All 42 tests pass. Pushed the fix to fix/widgets."</div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- ═════════ B · Headline and avatars ═════════ -->
+    <section class="direction" aria-labelledby="b-title">
+      <span class="tag">B</span>
+      <h2 id="b-title">Headline and avatars</h2>
+      <p class="pitch">People first. The agent's avatar is the progress ring, filling as tools complete. A headline says what it is doing. Everyone else working sits in a strip of small avatars with their own rings.</p>
+
+      <div>
+        <p class="state-label">Working</p>
+        <div class="lock"><div class="card">
+          <div class="b-main">
+            <div class="ring">
+              <svg viewBox="0 0 54 54" aria-hidden="true">
+                <circle cx="27" cy="27" r="24.5" fill="none" stroke="var(--c-border)" stroke-width="4"></circle>
+                <circle cx="27" cy="27" r="24.5" fill="none" stroke="var(--c-ok)" stroke-width="4" stroke-linecap="round" stroke-dasharray="153.9" stroke-dashoffset="88"></circle>
+              </svg>
+              <span class="av lyra">AL</span>
+            </div>
+            <div class="grow">
+              <div class="b-head clip">Running the tests</div>
+              <div class="b-step muted clip">Artistic Lyra · 3 of 7 · <span class="num">2:04</span></div>
+            </div>
+          </div>
+          <div class="b-others">
+            <span class="mini"><span class="av kai">CK</span><span class="clip">Kai · 1/4</span></span>
+            <span class="mini"><span class="av quill">WQ</span><span class="clip">Quill · writing</span></span>
+            <span class="faint grow" style="text-align:right">3 working</span>
+          </div>
+        </div></div>
+      </div>
+
+      <div>
+        <p class="state-label">Needs you</p>
+        <div class="lock"><div class="card">
+          <div class="decision">
+            <div class="row">
+              <span class="av ray" style="width:34px;height:34px;font-size:12px;box-shadow:0 0 0 2px var(--c-signal)">RR</span>
+              <div class="grow">
+                <div class="who">Research Ray needs you</div>
+                <div class="q clip">Run git push origin main?</div>
+              </div>
+            </div>
+            <div class="btns"><span class="btn yes">Allow once</span><span class="btn no">Reject</span></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div>
+        <p class="state-label">Done</p>
+        <div class="lock"><div class="card">
+          <div class="b-main">
+            <div class="ring">
+              <svg viewBox="0 0 54 54" aria-hidden="true">
+                <circle cx="27" cy="27" r="24.5" fill="none" stroke="var(--c-ok)" stroke-width="4"></circle>
+              </svg>
+              <span class="av lyra">AL</span>
+            </div>
+            <div class="grow">
+              <div class="b-head clip">Tests pass, fix pushed</div>
+              <div class="b-step muted clip">Artistic Lyra · done in 3m 57s</div>
+            </div>
+          </div>
+          <div class="b-others">
+            <span class="mini"><span class="av quill">WQ</span><span style="color:var(--c-danger)" class="clip">Quill failed at step 4</span></span>
+            <span class="faint grow" style="text-align:right">All quiet</span>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- ═════════ C · Compact dashboard ═════════ -->
+    <section class="direction" aria-labelledby="c-title">
+      <span class="tag">C</span>
+      <h2 id="c-title">Compact dashboard</h2>
+      <p class="pitch">For when several agents run at once. Big counts across the top, then one line per agent with a thin progress bar. Densest and calmest; less of a moment, more of a monitor.</p>
+
+      <div>
+        <p class="state-label">Working</p>
+        <div class="lock"><div class="card">
+          <div class="c-counts">
+            <span class="c-count ok"><strong class="num">3</strong><span>working</span></span>
+            <span class="c-count"><strong class="num">0</strong><span>need you</span></span>
+            <span class="faint grow num" style="text-align:right;font-size:12px">now</span>
+          </div>
+          <div class="c-row"><span class="av lyra">AL</span><div class="grow"><div class="clip">Lyra · <span class="muted">Running the tests</span></div><div class="bar"><i style="width:43%"></i></div></div><span class="faint num">3/7</span></div>
+          <div class="c-row"><span class="av kai">CK</span><div class="grow"><div class="clip">Kai · <span class="muted">Reading widget.rs</span></div><div class="bar"><i style="width:25%"></i></div></div><span class="faint num">1/4</span></div>
+        </div></div>
+      </div>
+
+      <div>
+        <p class="state-label">Needs you</p>
+        <div class="lock"><div class="card">
+          <div class="c-counts">
+            <span class="c-count ok"><strong class="num">2</strong><span>working</span></span>
+            <span class="c-count signal"><strong class="num">1</strong><span>needs you</span></span>
+          </div>
+          <div class="decision">
+            <div class="row"><span class="who grow clip">Research Ray · Run git push origin main?</span></div>
+            <div class="btns"><span class="btn yes">Allow once</span><span class="btn no">Reject</span></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div>
+        <p class="state-label">Done</p>
+        <div class="lock"><div class="card">
+          <div class="c-counts">
+            <span class="c-count ok"><strong class="num">2</strong><span>done</span></span>
+            <span class="c-count"><strong class="num" style="color:var(--c-danger)">1</strong><span>failed</span></span>
+            <span class="faint grow" style="text-align:right;font-size:12px">All quiet</span>
+          </div>
+          <div class="c-row"><span class="done-mark" style="width:22px;height:22px;font-size:12px">✓</span><div class="clip">Lyra · <span class="muted">Done in 3m 57s</span></div><span class="faint num">7</span></div>
+          <div class="c-row"><span class="done-mark fail-mark" style="width:22px;height:22px;font-size:12px">!</span><div class="clip">Quill · <span style="color:var(--c-danger)">Failed at step 4 of 7</span></div><span class="faint num">4</span></div>
+        </div></div>
+      </div>
+    </section>
+
+  </div>
+
+  <section class="notes">
+    <h2>What each needs beyond today's card</h2>
+    <ul>
+      <li><strong>All three:</strong> the hub sends the turn's phase (thinking, tools, writing) and each agent's avatar key. The app caches the Guild avatars into the App Group when it runs, because the card can't load images from the network. The header shows a fixed time instead of a ticking one.</li>
+      <li><strong>A, the track:</strong> the richest moment and the most familiar pattern. It shows one agent at a time, so a second busy agent is a single line.</li>
+      <li><strong>B, headline and avatars:</strong> the most personal. It suits the Guild, where agents have faces and names. A result line on Done needs the hub to send the answer's first sentence, which goes to Apple in plaintext like the rest of the card.</li>
+      <li><strong>C, compact dashboard:</strong> the best at three or more agents, and the plainest at one. It changes least from today's card.</li>
+      <li><strong>The decision</strong> looks the same in every direction: the only amber element, with two big buttons. It always takes the top of the card.</li>
+    </ul>
+  </section>
+</div>
+<script>
+  // Each card shows its own rendered height against the Lock Screen's 160pt
+  // limit (CSS px and iOS points match 1:1 at this scale).
+  function measureCards() {
+    for (const card of document.querySelectorAll(".lock .card")) {
+      let tag = card.querySelector(":scope > .measured");
+      if (!tag) { tag = document.createElement("span"); tag.className = "measured"; card.appendChild(tag); }
+      const h = Math.round(card.getBoundingClientRect().height);
+      tag.textContent = h + " / 160";
+      tag.classList.toggle("over", h > 160);
+    }
+  }
+  measureCards();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(measureCards);
+  window.addEventListener("resize", measureCards);
+</script>
