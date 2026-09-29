@@ -1,6 +1,6 @@
 use super::*;
 use crate::dto::RoomSummary;
-use crate::notification::{GateAnswers, NotificationActivity, PermissionAnswers};
+use crate::notification::{GateAnswers, NotificationActivity, PermissionAnswers, TurnCounts};
 
 const NOW: u64 = 1_800_000_000_000;
 const MIN: u64 = 60 * 1000;
@@ -702,31 +702,304 @@ fn frames_say_when_an_agent_goes_idle_and_then_quiet() {
     );
 }
 
+// --- reloading
+
 #[test]
-fn every_change_asks_for_a_reload_even_just_after_one() {
-    // WidgetKit defers and coalesces background reloads itself; a line that
-    // moves a minute after the last reload must still ask, or nothing asks
-    // again until the timeline's own refresh (seen on device, 2026-09-29).
+fn a_decision_reloads_at_once_even_just_after_a_reload() {
     let first = pushed(&[message("!r:hs", "$1", "one", NOW)]);
-    assert!(first.reload);
+    assert!(first.reload, "the first write is news");
+    let asked = apply_notification(
+        Some(&first.json),
+        &permission("!r:hs", "$p", NOW + MIN),
+        NOW + MIN,
+    );
+    assert!(asked.changed && asked.reload);
+    assert_eq!(snapshot(&asked).reloaded_at_ms, NOW + MIN);
+    // And leaving: the board's receipt, a minute later still.
+    let gated = apply_notification(
+        Some(&asked.json),
+        &gate("!b:hs", "$g", "gate-9", NOW + 2 * MIN),
+        NOW + 2 * MIN,
+    );
+    let closed = apply_notification(
+        Some(&gated.json),
+        &outcome("@agent_hermes:hs", Some("gate-9"), None),
+        NOW + 3 * MIN,
+    );
+    assert!(closed.changed && closed.reload);
+}
+
+#[test]
+fn anything_else_waits_out_the_period_after_the_last_reload() {
+    let first = pushed(&[message("!r:hs", "$1", "one", NOW)]);
     let soon = apply_notification(
         Some(&first.json),
         &message("!r:hs", "$2", "two", NOW + MIN),
         NOW + MIN,
     );
-    assert!(soon.changed && soon.reload);
+    assert!(soon.changed, "the snapshot still moves");
+    assert!(!soon.reload, "but the widgets are not asked to redraw yet");
+    // A skipped reload is not a reload: the period still runs from the last
+    // one that was asked for.
+    assert_eq!(snapshot(&soon).reloaded_at_ms, NOW);
+
+    let just_before = apply_notification(
+        Some(&soon.json),
+        &message("!r:hs", "$3", "three", NOW + RELOAD_EVERY_MS - 1),
+        NOW + RELOAD_EVERY_MS - 1,
+    );
+    assert!(just_before.changed && !just_before.reload);
+    let due = apply_notification(
+        Some(&just_before.json),
+        &message("!r:hs", "$4", "four", NOW + RELOAD_EVERY_MS),
+        NOW + RELOAD_EVERY_MS,
+    );
+    assert!(due.changed && due.reload);
+    assert_eq!(snapshot(&due).reloaded_at_ms, NOW + RELOAD_EVERY_MS);
+
     let same = apply_notification(
-        Some(&soon.json),
-        &message("!r:hs", "$2", "two", NOW + MIN),
-        NOW + 2 * MIN,
+        Some(&due.json),
+        &message("!r:hs", "$4", "four", NOW + RELOAD_EVERY_MS),
+        NOW + 3 * RELOAD_EVERY_MS,
     );
-    assert!(!same.changed && !same.reload);
-    let asked = apply_notification(
-        Some(&soon.json),
-        &permission("!r:hs", "$p", NOW + 2 * MIN),
-        NOW + 2 * MIN,
+    assert!(
+        !same.changed && !same.reload,
+        "nothing changed, nothing to draw"
     );
-    assert!(asked.reload);
+}
+
+#[test]
+fn a_tap_and_its_failure_reload_at_once() {
+    let asked = pushed(&[permission("!r:hs", "$p", NOW)]);
+    let tapped = mark_answered(Some(&asked.json), "!r:hs", "$p", "Allow once", NOW + 1);
+    assert!(tapped.reload, "the button must go");
+    let failed = clear_answer(Some(&tapped.json), "!r:hs", "$p", NOW + 2);
+    assert!(failed.reload, "and come back");
+}
+
+#[test]
+fn signing_out_reloads_at_once() {
+    let first = pushed(&[message("!r:hs", "$1", "one", NOW)]);
+    let out = signed_out(Some(&first.json), NOW + 1);
+    assert!(
+        out.changed && out.reload,
+        "the last account must not linger"
+    );
+}
+
+// --- the recap: since the app was last opened
+
+fn answer(
+    room: &str,
+    event: &str,
+    line: &str,
+    at_ms: u64,
+    total: u32,
+    failed: u32,
+) -> NotificationDto {
+    NotificationDto {
+        turn: Some(TurnCounts { total, failed }),
+        ..message(room, event, line, at_ms)
+    }
+}
+
+fn named(mut note: NotificationDto, name: &str) -> NotificationDto {
+    note.activity.as_mut().unwrap().room_name = name.into();
+    note
+}
+
+#[test]
+fn an_answer_whose_turn_went_well_is_finished_with_its_steps() {
+    let s = snapshot(&pushed(&[answer("!r:hs", "$a", "All green.", NOW, 7, 0)]));
+    let agent = &s.agents[0];
+    assert_eq!(agent.outcome, Some(WidgetOutcome::Finished));
+    assert_eq!(agent.outcome_line.as_deref(), Some("Finished · 7 steps"));
+    // What it said is still its line.
+    assert_eq!(agent.line.as_deref(), Some("All green."));
+    assert_eq!(s.recap.len(), 1);
+    assert_eq!(s.recap[0].line, "Finished · 7 steps");
+
+    let one = snapshot(&pushed(&[answer("!r:hs", "$a", "Done.", NOW, 1, 0)]));
+    assert_eq!(one.recap[0].line, "Finished · 1 step");
+    let none = snapshot(&pushed(&[answer("!r:hs", "$a", "Hi.", NOW, 0, 0)]));
+    assert_eq!(none.recap[0].line, "Finished");
+}
+
+#[test]
+fn an_answer_whose_turn_had_a_failed_step_is_failed() {
+    let s = snapshot(&pushed(&[answer("!r:hs", "$a", "Sorry.", NOW, 7, 2)]));
+    assert_eq!(s.recap[0].outcome, WidgetOutcome::Failed);
+    assert_eq!(s.recap[0].line, "2 of 7 steps failed");
+    let only = snapshot(&pushed(&[answer("!r:hs", "$a", "Sorry.", NOW, 1, 1)]));
+    assert_eq!(only.recap[0].line, "1 of 1 step failed");
+}
+
+#[test]
+fn a_line_without_a_turn_is_said_and_a_question_is_said_too() {
+    let s = snapshot(&pushed(&[
+        message("!r:hs", "$m", "Looking into it", NOW - MIN),
+        named(permission("!q:hs", "$p", NOW), "Quill"),
+    ]));
+    let lines: Vec<(&str, WidgetOutcome, &str)> = s
+        .recap
+        .iter()
+        .map(|r| (r.name.as_str(), r.outcome, r.line.as_str()))
+        .collect();
+    assert_eq!(
+        lines,
+        vec![
+            ("Quill", WidgetOutcome::Said, "Allow Run the tests?"),
+            ("Hermes", WidgetOutcome::Said, "Looking into it"),
+        ]
+    );
+}
+
+#[test]
+fn the_recap_is_failed_then_finished_then_said_and_newest_first_within_each() {
+    let s = snapshot(&pushed(&[
+        named(
+            answer("!f1:hs", "$1", "x", NOW - 9 * MIN, 3, 1),
+            "Old failure",
+        ),
+        named(message("!s1:hs", "$2", "newest line", NOW - MIN), "Talker"),
+        named(
+            answer("!d1:hs", "$3", "x", NOW - 2 * MIN, 4, 0),
+            "New finish",
+        ),
+        named(
+            answer("!f2:hs", "$4", "x", NOW - 5 * MIN, 3, 1),
+            "New failure",
+        ),
+        named(
+            answer("!d2:hs", "$5", "x", NOW - 8 * MIN, 4, 0),
+            "Old finish",
+        ),
+        named(
+            message("!s2:hs", "$6", "older line", NOW - 7 * MIN),
+            "Mumbler",
+        ),
+    ]));
+    let order: Vec<&str> = s.recap.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(
+        order,
+        vec![
+            "New failure",
+            "Old failure",
+            "New finish",
+            "Old finish",
+            "Talker",
+            "Mumbler",
+        ]
+    );
+}
+
+#[test]
+fn an_agent_that_did_nothing_since_is_left_out() {
+    let rows = [
+        row(
+            "!a:hs",
+            "✳ Atlas — Platform",
+            Some(NOW - 2 * MIN),
+            Some("x"),
+        ),
+        row("!r:hs", "🛠 Hermes — Ops", Some(NOW - 3 * MIN), Some("y")),
+    ];
+    let roster = apply_roster(None, &rows, &[], NOW - MIN, NOW - MIN);
+    let s = snapshot(&apply_notification(
+        Some(&roster.json),
+        &message("!r:hs", "$m", "Deployed", NOW),
+        NOW,
+    ));
+    assert_eq!(s.agents.len(), 2, "both are still agents");
+    let names: Vec<&str> = s.recap.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, vec!["Hermes"], "but only one did something");
+}
+
+#[test]
+fn opening_the_app_starts_the_recap_again() {
+    let before = pushed(&[
+        answer("!r:hs", "$a", "Sorry.", NOW - 5 * MIN, 7, 2),
+        message("!r:hs", "$m", "Trying again", NOW - 4 * MIN),
+    ]);
+    assert_eq!(snapshot(&before).recap.len(), 1);
+    let opened = apply_opened(Some(&before.json), NOW);
+    let s = snapshot(&opened);
+    assert_eq!(s.opened_at_ms, NOW);
+    assert!(s.recap.is_empty());
+    let agent = &s.agents[0];
+    assert_eq!((agent.outcome, agent.unread), (None, 0));
+    assert_eq!(
+        agent.line.as_deref(),
+        Some("Trying again"),
+        "only the recap starts again"
+    );
+
+    // A push for something from before the app was opened was seen there.
+    let late = apply_notification(
+        Some(&opened.json),
+        &message("!r:hs", "$old", "earlier", NOW - MIN),
+        NOW + MIN,
+    );
+    assert!(snapshot(&late).recap.is_empty());
+    // At the very moment it was opened is after.
+    let at = apply_notification(
+        Some(&opened.json),
+        &message("!r:hs", "$at", "then", NOW),
+        NOW + MIN,
+    );
+    assert_eq!(snapshot(&at).recap.len(), 1);
+}
+
+#[test]
+fn unread_counts_each_push_once() {
+    let s = snapshot(&pushed(&[
+        message("!r:hs", "$1", "one", NOW - 3 * MIN),
+        message("!r:hs", "$2", "two", NOW - 2 * MIN),
+        message("!r:hs", "$2", "two", NOW - 2 * MIN),
+        permission("!r:hs", "$p", NOW - MIN),
+    ]));
+    assert_eq!(s.recap[0].unread, 3);
+}
+
+#[test]
+fn a_failure_is_not_hidden_by_what_came_after_it() {
+    let s = snapshot(&pushed(&[
+        answer("!r:hs", "$a", "Sorry.", NOW - 3 * MIN, 7, 2),
+        message("!r:hs", "$m", "Trying again", NOW - 2 * MIN),
+        answer("!r:hs", "$b", "Done.", NOW - MIN, 3, 0),
+    ]));
+    assert_eq!(s.recap[0].outcome, WidgetOutcome::Failed);
+    assert_eq!(s.recap[0].line, "2 of 7 steps failed");
+    assert_eq!(s.recap[0].unread, 3);
+    // But a line replaces an older line, and a finish an older finish.
+    let said = snapshot(&pushed(&[
+        message("!r:hs", "$1", "first", NOW - 2 * MIN),
+        message("!r:hs", "$2", "second", NOW - MIN),
+    ]));
+    assert_eq!(said.recap[0].line, "second");
+    let late_older = snapshot(&pushed(&[
+        message("!r:hs", "$2", "second", NOW - MIN),
+        message("!r:hs", "$1", "first", NOW - 2 * MIN),
+    ]));
+    assert_eq!(
+        late_older.recap[0].line, "second",
+        "delivered late is not newer"
+    );
+}
+
+#[test]
+fn the_roster_keeps_what_the_pushes_counted() {
+    let pushes = pushed(&[answer("!r:hs", "$a", "Sorry.", NOW - MIN, 7, 2)]);
+    let rows = [row(
+        "!r:hs",
+        "🛠 Hermes — Ops",
+        Some(NOW - MIN),
+        Some("Sorry."),
+    )];
+    let s = snapshot(&apply_roster(Some(&pushes.json), &rows, &[], NOW, NOW));
+    assert_eq!(s.recap.len(), 1);
+    assert_eq!(s.recap[0].outcome, WidgetOutcome::Failed);
+    assert_eq!(s.recap[0].unread, 1);
 }
 
 // --- the open room
@@ -825,4 +1098,7 @@ fn the_json_is_camel_case_for_the_widgets_mirror() {
     assert!(value["decisions"][0]["askedAtMs"].is_u64());
     assert_eq!(value["decisions"][0]["kind"], "gate");
     assert!(value["frames"][0]["needsYouLine"].is_string());
+    assert!(value["openedAtMs"].is_u64());
+    assert_eq!(value["recap"][0]["outcome"], "said");
+    assert!(value["agents"][0]["outcomeLine"].is_string());
 }
