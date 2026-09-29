@@ -94,12 +94,17 @@ struct NeedsYouWidgetView: View {
             Label("Needs you", systemImage: "hand.raised")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(WidgetTheme.contentMuted)
-            Spacer(minLength: 4)
-            Text(frame.needsYou == 0 ? frame.pulse : frame.needsYouCount)
-                .font(.caption.weight(.semibold).monospacedDigit())
-                .foregroundStyle(frame.needsYou == 0 ? WidgetTheme.contentFaint : WidgetTheme.accent)
                 .lineLimit(1)
-                .contentTransition(.numericText())
+            Spacer(minLength: 4)
+            // Nothing owed: the body says so, with the fleet's line — no
+            // count of zero up here to repeat it.
+            if frame.needsYou > 0 {
+                Text(frame.needsYouCount)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(WidgetTheme.accent)
+                    .lineLimit(1)
+                    .contentTransition(.numericText())
+            }
         }
     }
 
