@@ -703,7 +703,10 @@ fn frames_say_when_an_agent_goes_idle_and_then_quiet() {
 }
 
 #[test]
-fn a_line_alone_reloads_at_most_every_few_minutes_and_a_decision_always() {
+fn every_change_asks_for_a_reload_even_just_after_one() {
+    // WidgetKit defers and coalesces background reloads itself; a line that
+    // moves a minute after the last reload must still ask, or nothing asks
+    // again until the timeline's own refresh (seen on device, 2026-09-29).
     let first = pushed(&[message("!r:hs", "$1", "one", NOW)]);
     assert!(first.reload);
     let soon = apply_notification(
@@ -711,14 +714,13 @@ fn a_line_alone_reloads_at_most_every_few_minutes_and_a_decision_always() {
         &message("!r:hs", "$2", "two", NOW + MIN),
         NOW + MIN,
     );
-    assert!(soon.changed);
-    assert!(!soon.reload);
-    let later = apply_notification(
+    assert!(soon.changed && soon.reload);
+    let same = apply_notification(
         Some(&soon.json),
-        &message("!r:hs", "$3", "three", NOW + LINE_RELOAD_EVERY_MS),
-        NOW + LINE_RELOAD_EVERY_MS,
+        &message("!r:hs", "$2", "two", NOW + MIN),
+        NOW + 2 * MIN,
     );
-    assert!(later.reload);
+    assert!(!same.changed && !same.reload);
     let asked = apply_notification(
         Some(&soon.json),
         &permission("!r:hs", "$p", NOW + 2 * MIN),

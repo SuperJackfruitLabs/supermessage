@@ -9,11 +9,10 @@ enum WidgetKinds {
 /// Reads the snapshot the app and the Notification Service Extension write.
 ///
 /// One entry per frame the core wrote (`SnapshotEntry.timeline`), so an
-/// agent's state moves on time. Both writers ask WidgetKit to reload when
-/// what they wrote is worth a redraw; a change only to an agent's line may
-/// be written without one (the core throttles those — reloads from the
-/// background are budgeted), so the timeline also asks again after half an
-/// hour.
+/// agent's state moves on time. Both writers ask WidgetKit to reload on every
+/// change they write; WidgetKit defers those asked for from the background by
+/// a few minutes. The timeline also asks again after half an hour, in case
+/// the reload budget ran out.
 struct SnapshotProvider: TimelineProvider {
     func placeholder(in context: Context) -> SnapshotEntry {
         SnapshotEntry(date: .now, content: .snapshot(WidgetSample.snapshot()))

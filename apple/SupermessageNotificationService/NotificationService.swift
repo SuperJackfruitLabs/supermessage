@@ -111,11 +111,10 @@ final class NotificationWorker: @unchecked Sendable {
         return Self.apply(note, to: base)
     }
 
-    /// Merge `note` into the widgets' snapshot and, when the core says it is
-    /// worth it, ask WidgetKit to redraw. Reloads from here count against the
-    /// widgets' daily budget, which is why the core throttles a change that
-    /// only moves an agent's line and never one that adds or clears a
-    /// decision.
+    /// Merge `note` into the widgets' snapshot and, when it changed what a
+    /// widget shows, ask WidgetKit to redraw. WidgetKit defers and coalesces
+    /// reloads asked for from an extension, and budgets them; the core asks
+    /// on every change and leaves the pacing to it.
     static func feedWidgets(_ note: NotificationDto, feed: WidgetFeed? = WidgetFeed.shared()) {
         guard let feed, feed.apply(note) else { return }
         WidgetCenter.shared.reloadAllTimelines()
