@@ -41,15 +41,20 @@ struct AgentsWidgetView: View {
 
     private func list(_ snapshot: WidgetSnapshot, _ frame: WidgetSnapshot.Frame) -> some View {
         let most = max(1, min(limit, snapshot.recap.count))
+        // Each count of rows first with its "N more" line, then without it:
+        // a row is worth more than the line counting it.
         return ViewThatFits(in: .vertical) {
             ForEach((1...most).reversed(), id: \.self) { rows in
-                list(snapshot, frame, rows: rows)
+                list(snapshot, frame, rows: rows, counted: true)
+                list(snapshot, frame, rows: rows, counted: false)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func list(_ snapshot: WidgetSnapshot, _ frame: WidgetSnapshot.Frame, rows: Int) -> some View {
+    private func list(
+        _ snapshot: WidgetSnapshot, _ frame: WidgetSnapshot.Frame, rows: Int, counted: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: family == .systemLarge ? 10 : 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text(since(snapshot))
@@ -75,7 +80,7 @@ struct AgentsWidgetView: View {
                     WidgetRecapRow(row: row, now: entry.date)
                 }
             }
-            if snapshot.recap.count > rows {
+            if counted, snapshot.recap.count > rows {
                 Text("\(snapshot.recap.count - rows) more in the app")
                     .font(.caption2)
                     .foregroundStyle(WidgetTheme.contentFaint)
@@ -87,7 +92,8 @@ struct AgentsWidgetView: View {
     /// "Since 10:42" — when the app was last opened — or plain "Agents"
     /// before it has been.
     private func since(_ snapshot: WidgetSnapshot) -> String {
-        guard let opened = snapshot.openedAt else { return "Agents" }
+        // With nothing new, the body says since when; the header need not.
+        guard let opened = snapshot.openedAt, !snapshot.recap.isEmpty else { return "Agents" }
         return "Since \(opened.formatted(date: .omitted, time: .shortened))"
     }
 

@@ -32,8 +32,11 @@ enum FleetClock: Sendable {
 ///
 /// The Lock Screen gives a Live Activity 160 points at most, and a cropped
 /// card loses its last line without saying so. So, as the widgets do
-/// (`AgentsWidgetView`), the agents drop one at a time through `ViewThatFits`
-/// until the card fits, and the rest are counted ("2 more").
+/// (`AgentsWidgetView`), the card is laid out through `ViewThatFits`: each
+/// agent on two lines if they fit, else on one (the step beside the name),
+/// else one agent fewer — and the rest are counted ("2 more agents"). An
+/// agent whose decision is on the card is not listed again under it: the
+/// decision already says who is asking and what.
 ///
 /// Decides nothing: the agents, their order, the state, the step and the
 /// counts are the hub's.
@@ -42,21 +45,50 @@ struct FleetActivityCard: View {
     let isStale: Bool
     var clock: FleetClock = .live
 
+    /// The agents listed under the header: not the one whose decision is
+    /// already on the card.
+    private var listed: [FleetActivityAttributes.ContentState.Agent] {
+        guard let decision = state.decision else { return state.agents }
+        return state.agents.filter { $0.roomId != decision.roomId }
+    }
+
+    /// Every way to lay the card out, most generous first.
+    private var layouts: [Layout] {
+        let most = min(3, listed.count)
+        var all: [Layout] = []
+        for rows in stride(from: most, through: 1, by: -1) {
+            all += [
+                Layout(rows: rows, compact: false, counted: true),
+                Layout(rows: rows, compact: true, counted: true),
+                Layout(rows: rows, compact: true, counted: false),
+            ]
+        }
+        return all + [
+            Layout(rows: 0, compact: true, counted: true),
+            Layout(rows: 0, compact: true, counted: false),
+        ]
+    }
+
+    private struct Layout: Hashable {
+        let rows: Int
+        let compact: Bool
+        let counted: Bool
+    }
+
     var body: some View {
-        let most = min(3, state.agents.count)
         ViewThatFits(in: .vertical) {
-            ForEach((0...most).reversed(), id: \.self) { rows in
-                card(rows: rows, counted: true)
+            ForEach(layouts, id: \.self) { layout in
+                card(layout)
             }
-            card(rows: 0, counted: false)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private func card(rows: Int, counted: Bool) -> some View {
-        let unlisted = state.agents.count - rows + state.more
+    private func card(_ layout: Layout) -> some View {
+        let rows = layout.rows
+        let unlisted = listed.count - rows + state.more
         return VStack(alignment: .leading, spacing: 8) {
             header
             if let decision = state.decision {
@@ -66,12 +98,13 @@ struct FleetActivityCard: View {
             }
             if rows > 0 {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(state.agents.prefix(rows)) { agent in
-                        FleetAgentRow(agent: agent, isStale: isStale, clock: clock)
+                    ForEach(listed.prefix(rows)) { agent in
+                        FleetAgentRow(
+                            agent: agent, isStale: isStale, clock: clock, compact: layout.compact)
                     }
                 }
             }
-            if counted, unlisted > 0 {
+            if layout.counted, unlisted > 0 {
                 Text(unlisted == 1 ? "1 more agent" : "\(unlisted) more agents")
                     .font(.caption2)
                     .foregroundStyle(WidgetTheme.contentFaint)
@@ -136,15 +169,45 @@ struct FleetActivityCard: View {
 }
 
 /// One agent: a dot, its name and what it is at, and under them the step it
-/// is on or how its turn ended.
+/// is on or how its turn ended — or, `compact`, all of it on one line.
 struct FleetAgentRow: View {
     typealias Agent = FleetActivityAttributes.ContentState.Agent
 
     let agent: Agent
     let isStale: Bool
     var clock: FleetClock = .live
+    var compact = false
 
     var body: some View {
+        if compact { line } else { lines }
+    }
+
+    private var line: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Circle()
+                .fill(dot)
+                .frame(width: 7, height: 7)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+            Text(agent.name)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(WidgetTheme.content)
+                .lineLimit(1)
+                .layoutPriority(2)
+            if let detail {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(agent.state == .failed ? WidgetTheme.danger : WidgetTheme.contentMuted)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            meta
+                .font(.caption.monospacedDigit())
+                .lineLimit(1)
+                .layoutPriority(1)
+        }
+    }
+
+    private var lines: some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Circle()
@@ -199,10 +262,10 @@ struct FleetAgentRow: View {
             Text("needs you").foregroundStyle(WidgetTheme.accent)
         case .active:
             Text("active").foregroundStyle(WidgetTheme.contentFaint)
-        case .done:
-            Text("done").foregroundStyle(WidgetTheme.ok)
-        case .failed:
-            Text("failed").foregroundStyle(WidgetTheme.danger)
+        case .done, .failed:
+            // The line under the name says how it ended; the dot, in green
+            // or red, says it at a glance. A word here would repeat both.
+            EmptyView()
         }
     }
 
@@ -214,7 +277,8 @@ struct FleetAgentRow: View {
         case .working: return "Working"
         case .needsYou: return "Waiting for you"
         case .done: return agent.total.map { $0 == 1 ? "Done · 1 step" : "Done · \($0) steps" }
-        case .failed, .active: return nil
+        case .failed: return "Failed"
+        case .active: return nil
         }
     }
 
