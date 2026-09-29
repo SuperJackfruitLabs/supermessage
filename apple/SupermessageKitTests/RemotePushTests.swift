@@ -177,7 +177,7 @@ struct RemotePushTests {
                 body: "hi", formattedBody: nil, media: nil, customPayload: nil, timestampMs: now,
                 isOwn: false, sendState: nil, replyTo: nil, edited: false, reactions: [],
                 readBy: [], editable: false, membershipSubject: nil),
-            view: .bubble(muted: false, blocks: []), senderName: "Atlas", senderShort: "Atlas",
+            view: .bubble(muted: false, blocks: [], voice: nil), senderName: "Atlas", senderShort: "Atlas",
             senderInitial: "A", membershipVerb: nil, replyQuote: nil, canReplyOrReact: true,
             replyPreview: "hi")
     }

@@ -16,7 +16,7 @@ struct SafetyStoreTests {
                 body: "hello", formattedBody: nil, media: nil, customPayload: nil,
                 timestampMs: 1_700_000_000_000, isOwn: false, sendState: nil, replyTo: nil,
                 edited: false, reactions: [], readBy: [], editable: false, membershipSubject: nil),
-            view: .bubble(muted: false, blocks: []), senderName: "Troll", senderShort: "Troll",
+            view: .bubble(muted: false, blocks: [], voice: nil), senderName: "Troll", senderShort: "Troll",
             senderInitial: "T", membershipVerb: nil, replyQuote: nil, canReplyOrReact: eventId != nil,
             replyPreview: nil)
     }

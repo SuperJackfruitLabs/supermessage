@@ -119,7 +119,7 @@ struct TurnErrorPresentationTests {
         // It carries its own header — the sender and the failure — like a
         // card does, and a message after it must not read as the card's.
         let error = Self.row(id: "$1", view: .turnError(card: Self.card), at: 1_000)
-        let message = Self.row(id: "$2", view: .bubble(muted: false, blocks: []), at: 2_000)
+        let message = Self.row(id: "$2", view: .bubble(muted: false, blocks: [], voice: nil), at: 2_000)
         #expect(!TimelineGrouping.continuesRun(message, after: error))
         #expect(!TimelineGrouping.continuesRun(error, after: message))
     }

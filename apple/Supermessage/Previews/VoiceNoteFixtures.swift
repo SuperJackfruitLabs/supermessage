@@ -83,6 +83,79 @@ extension PreviewFixtures {
         .init(name: "other-file", audio: standupRecording, isOwn: false, state: .idle),
     ]
 
+    // MARK: Voice replies
+
+    /// An agent's answer, spoken: the voice note's view as
+    /// `core::item_view::voice_reply_view` retitles it. Pinned by the Rust
+    /// test `host_fixtures::voice_replies`.
+    static func voiceReplyAudio(
+        ms: UInt64 = 4_210, label: String = "0:04", spoken: String = "4 seconds", seed: Int = 7
+    ) -> AudioView {
+        AudioView(
+            isVoice: true, durationMs: ms, lengthLabel: label,
+            waveform: PreviewFixtures.waveform(seed: seed),
+            title: "Voice reply", filename: "Voice message.ogg", size: 48_213,
+            mimetype: "audio/ogg", caption: nil,
+            accessibilityLabel: "Voice reply, \(spoken)")
+    }
+
+    /// The agent's text row, carrying the voice message that speaks it — the
+    /// one row the core leaves on screen for the pair.
+    static func voiceReplyRow(
+        id: String, body: String, blocks: [RichBlock], audio: AudioView = voiceReplyAudio(),
+        reactions: [ReactionDto] = []
+    ) -> TimelineRow {
+        row(
+            item(
+                id: id, sender: "@agent_scribe:example.org", body: body,
+                at: 1_757_700_060_000, reactions: reactions),
+            view: .bubble(
+                muted: false, blocks: blocks,
+                voice: VoiceReplyPlayer(eventId: "\(id)-voice", audio: audio)),
+            senderName: "Scribe", senderShort: "Scribe", senderInitial: "S",
+            replyPreview: body)
+    }
+
+    static var voiceReplyShort: TimelineRow {
+        let text = "Yes — the review moved to Thursday at ten."
+        return voiceReplyRow(
+            id: "$reply-short", body: text, blocks: [.paragraph(inlines: [.text(text: text)])],
+            reactions: [
+                ReactionDto(
+                    key: "👍", displayKey: "👍", count: 1, byMe: true,
+                    senders: ["@rakesh:example.org"])
+            ])
+    }
+
+    /// Over `TimelineGrouping.longReadCharacters`: the text clamps and offers
+    /// Read, and the player above it stays whole.
+    static var voiceReplyLong: TimelineRow {
+        let paragraphs = [
+            "I went through the three proposals for the review slot. Thursday at ten works for everyone who has to be there, and it leaves Friday free for the follow-ups the last review kept pushing into the weekend.",
+            "Two things to settle before then. The token audit is still waiting on the dark-mode contrast numbers, which I can have by Wednesday evening if nothing else lands on me, and the Android parity list needs one more pass now that the voice player is shared.",
+            "If Thursday slips, the next slot with everyone free is Monday afternoon, which pushes the release notes by a week. I would rather hold Thursday and cut scope than move it.",
+        ]
+        return voiceReplyRow(
+            id: "$reply-long", body: paragraphs.joined(separator: "\n\n"),
+            blocks: paragraphs.map { .paragraph(inlines: [.text(text: $0)]) },
+            audio: voiceReplyAudio(ms: 41_800, label: "0:42", spoken: "42 seconds", seed: 11))
+    }
+
+    /// Markdown the agent wrote: inline code and a fenced block, drawn the way
+    /// any message's are.
+    static var voiceReplyCode: TimelineRow {
+        voiceReplyRow(
+            id: "$reply-code",
+            body: "Run `pnpm check` first, then:\n\n```bash\ncargo test -p supermessage-core voice_reply\n```",
+            blocks: [
+                .paragraph(inlines: [
+                    .text(text: "Run "), .code(text: "pnpm check"), .text(text: " first, then:"),
+                ]),
+                .codeBlock(language: "bash", text: "cargo test -p supermessage-core voice_reply\n"),
+            ],
+            audio: voiceReplyAudio(ms: 6_900, label: "0:07", spoken: "7 seconds", seed: 4))
+    }
+
     /// A player that plays nothing, for rows drawn outside a session.
     @MainActor static func voicePlayer() -> VoicePlayer {
         VoicePlayer(client: PreviewClient())

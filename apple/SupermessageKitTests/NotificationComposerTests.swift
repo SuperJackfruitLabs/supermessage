@@ -26,7 +26,7 @@ struct NotificationComposerTests {
     }
 
     func timelineRow(
-        _ eventId: String?, view: ItemView = .bubble(muted: false, blocks: []),
+        _ eventId: String?, view: ItemView = .bubble(muted: false, blocks: [], voice: nil),
         own: Bool = false, at: UInt64? = now, preview: String? = "hi there",
         sender: String = "Atlas"
     ) -> TimelineRow {
@@ -295,6 +295,28 @@ struct NotificationComposerTests {
             transcript: VoiceTranscriptPresentationTests.transcript, onOwnNote: false)
         let row = timelineRow("$v", view: view, preview: "Transcript: Can you move the review to Thursday?")
         #expect(timeline([row]).isEmpty)
+    }
+
+    @Test("an agent's spoken answer does not notify a second time, but its text does")
+    func voiceReply() {
+        // The hub posts the text, then its voice. The core draws the text with
+        // the player and hides the voice row; standalone (its text not loaded)
+        // the voice is still not news.
+        let audio = AudioView(
+            isVoice: true, durationMs: 4_210, lengthLabel: "0:04", waveform: nil,
+            title: "Voice reply", filename: "Voice message.ogg", size: nil,
+            mimetype: "audio/ogg", caption: nil, accessibilityLabel: "Voice reply, 4 seconds")
+        var voice = timelineRow("$voice", view: .audio(audio: audio), preview: nil)
+        voice.voiceReply = VoiceReplyLink(textEventId: "$text", voice: "bf_emma", seconds: 4)
+        #expect(timeline([voice]).isEmpty)
+
+        let text = timelineRow(
+            "$text",
+            view: .bubble(
+                muted: false, blocks: [],
+                voice: VoiceReplyPlayer(eventId: "$voice", audio: audio)),
+            preview: "Yes — Thursday at ten.")
+        #expect(timeline([text]).map(\.body) == ["Yes — Thursday at ten."])
     }
 
     @Test("system rows do not notify")

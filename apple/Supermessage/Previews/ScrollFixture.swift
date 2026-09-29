@@ -78,7 +78,7 @@ enum ScrollFixture {
                 rows.append(
                     PreviewFixtures.row(
                         PreviewFixtures.item(id: "$t\(d)-\(i)", sender: sender, body: text, at: at, isOwn: own),
-                        view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: text)])]),
+                        view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: text)])], voice: nil),
                         senderName: name, senderShort: name, senderInitial: String(name.prefix(1))))
             }
         }
