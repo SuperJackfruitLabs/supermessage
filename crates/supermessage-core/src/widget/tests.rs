@@ -608,7 +608,17 @@ fn a_room_left_takes_its_decisions_with_it() {
     let s = snapshot(&apply_roster(Some(&asked.json), &[left], &[], NOW, NOW));
     assert!(s.decisions.is_empty());
 
-    // An empty roster is a roster not loaded yet, not a room left.
+    // A roster that does not list the room — another space chosen, or not
+    // loaded yet — is not a room left.
+    let elsewhere = row("!a:hs", "✳ Atlas — Platform", Some(NOW), None);
+    let s = snapshot(&apply_roster(
+        Some(&asked.json),
+        &[elsewhere],
+        &[],
+        NOW,
+        NOW,
+    ));
+    assert_eq!(s.decisions.len(), 1);
     let s = snapshot(&apply_roster(Some(&asked.json), &[], &[], NOW, NOW));
     assert_eq!(s.decisions.len(), 1);
 }

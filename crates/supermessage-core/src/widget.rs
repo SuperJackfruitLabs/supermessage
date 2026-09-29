@@ -825,15 +825,17 @@ pub fn apply_roster(
         })
         .collect();
 
-    if !rows.is_empty() {
-        let joined: HashSet<&str> = rows
-            .iter()
-            .filter(|r| r.room.membership == Membership::Joined)
-            .map(|r| r.room.id.as_str())
-            .collect();
-        next.decisions
-            .retain(|d| joined.contains(d.room_id.as_str()));
-    }
+    // Only a room the roster says this account is no longer in. A room the
+    // roster does not list may simply be outside the space the reader has
+    // chosen (`Session::space_select` scopes the roster), and a decision
+    // there is still owed.
+    let gone: HashSet<&str> = rows
+        .iter()
+        .filter(|r| r.room.membership != Membership::Joined)
+        .map(|r| r.room.id.as_str())
+        .collect();
+    next.decisions
+        .retain(|d| !gone.contains(d.room_id.as_str()));
     let described: HashSet<&str> = next
         .decisions
         .iter()
