@@ -9,7 +9,7 @@ import WidgetKit
 struct FleetLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FleetActivityAttributes.self) { context in
-            FleetActivityCard(state: context.state, isStale: context.isStale)
+            FleetActivityContent(state: context.state, isStale: context.isStale)
                 .activityBackgroundTint(WidgetTheme.surface)
                 .activitySystemActionForegroundColor(WidgetTheme.content)
                 .widgetURL(Self.link(context.state))
@@ -22,7 +22,7 @@ struct FleetLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if let top = context.state.agents.first {
-                        FleetAgentRow(agent: top, isStale: context.isStale)
+                        FleetRow(agent: top, isStale: context.isStale)
                     }
                 }
             } compactLeading: {
@@ -37,6 +37,9 @@ struct FleetLiveActivity: Widget {
             }
             .widgetURL(Self.link(context.state))
         }
+        // The watch's Smart Stack (watchOS 11), which shows the phone's Live
+        // Activities in the small family (spec 2026-09-30, B3).
+        .supplementalActivityFamilies([.small])
     }
 
     /// A tap opens what the card leads with: the decision, else the first
@@ -46,5 +49,23 @@ struct FleetLiveActivity: Widget {
             return AppLink.decision(roomId: decision.roomId, eventId: decision.eventId)
         }
         return state.agents.first.flatMap { AppLink.room($0.roomId) }
+    }
+}
+
+/// The Lock Screen's card, or on the watch's Smart Stack its small form: the
+/// family is only known from the environment.
+private struct FleetActivityContent: View {
+    let state: FleetActivityAttributes.ContentState
+    let isStale: Bool
+
+    @Environment(\.activityFamily) private var family
+
+    var body: some View {
+        switch family {
+        case .small:
+            FleetWatchCard(state: state, isStale: isStale)
+        default:
+            FleetActivityCard(state: state, isStale: isStale)
+        }
     }
 }

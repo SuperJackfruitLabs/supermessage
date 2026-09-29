@@ -1,37 +1,56 @@
 #if DEBUG
 import SupermessageKit
 import SwiftUI
+import UIKit
 
-/// The fleet Live Activity's Lock Screen card, drawn in the app so the
-/// preview gate renders it (`scripts/snapshot-previews.sh`). The card is the
-/// widget extension's own view (`apple/SupermessageWidgets/Views`, compiled
-/// into both); only the frame is a stand-in for the Lock Screen.
+/// The fleet Live Activity, drawn in the app so the preview gate renders it
+/// (`scripts/snapshot-previews.sh`): the Lock Screen card in every state of
+/// the approved "A + C" mockups (docs/superpowers/specs/
+/// 2026-09-30-fleet-card-mockups.html), and its small form on the watch.
+/// The cards are the widget extension's own views
+/// (`apple/SupermessageWidgets/Views`, compiled into both); only the frames
+/// around them stand in for the Lock Screen and the Smart Stack.
 ///
 /// **Sized for the iPhone 13 mini**, the operator's phone, which has no
-/// Dynamic Island — so this card is all of the Live Activity there. Its Lock
-/// Screen gives a Live Activity the screen's width less the margins, 353
-/// points, and at most 160 points of height; the frame proposes exactly that
-/// and clips, so a card that does not fit shows as cropped here rather than
-/// on the phone.
+/// Dynamic Island — so this card is all of the Live Activity there: 344
+/// points wide, as the mockups measure it, and at most 160 tall. The frame
+/// proposes exactly that and clips, and a dashed line marks the limit, so a
+/// card that does not fit shows as cropped here rather than on the phone.
 ///
-/// The clock is frozen (`FleetClock.frozen`), so "12 sec ago" and "2:04"
-/// come out the same on every render.
-private let now = Date(timeIntervalSince1970: 1_790_670_135)
+/// The clock is frozen (`FleetClock.frozen`), so "2:04" comes out the same on
+/// every render, and the header's "9:41 PM" is a fixed moment in UTC (the
+/// gate's zone). The avatars are stand-ins for the Guild's, drawn from the
+/// palette, supplied through `fleetAvatar` as the App Group's files would be.
+private let now = Date(timeIntervalSince1970: 1_790_718_135)  // 2026-09-29 21:42:15 UTC
+private let width: CGFloat = 344
+private let limit: CGFloat = 160
 
 private struct LockScreenCard: View {
+    let label: String
     let state: FleetActivityAttributes.ContentState
     var isStale = false
 
     var body: some View {
-        // Offered the Lock Screen's 160 points, it takes the height of the
-        // rows that fit — as ActivityKit sizes it — and the rest of the slot
-        // shows the wallpaper.
-        FleetActivityCard(state: state, isStale: isStale, clock: .frozen(now))
-            .frame(width: 353)
-            .background(WidgetTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .frame(height: 160, alignment: .top)
-            .clipped()
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.white.opacity(0.75))
+            // Offered the Lock Screen's 160 points, the card takes the height
+            // of the layout that fits — as ActivityKit sizes it — and the
+            // rest of the slot shows the wallpaper and the limit.
+            FleetActivityCard(state: state, isStale: isStale, clock: .frozen(now))
+                .frame(width: width)
+                .background(WidgetTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .frame(height: limit, alignment: .top)
+                .clipped()
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .frame(height: 1)
+                }
+        }
     }
 }
 
@@ -40,9 +59,36 @@ private struct LockScreenCard: View {
 private struct Wallpaper<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
-        VStack(spacing: 12) { content }
-            .padding(11)
-            .background(Color(red: 0.16, green: 0.18, blue: 0.26))
+        VStack(alignment: .leading, spacing: 12) { content }
+            .padding(12)
+            .background(Color(red: 0.10, green: 0.10, blue: 0.20))
+            .environment(\.fleetAvatar, Faces.image)
+    }
+}
+
+/// Stand-ins for the Guild's pictures: a diagonal wash between two palette
+/// colours, one pair per agent, as the App Group's 64×64 files would be.
+private enum Faces {
+    static func pair(_ userId: String) -> (Color, Color)? {
+        let p = ThemeTokens.dark
+        switch userId {
+        case "@agent_artistic-lyra:hs": return (p.accent, p.danger)
+        case "@agent_research-ray:hs": return (p.accent, p.ok)
+        case "@agent_coder-kai:hs": return (p.ok, p.contentMuted)
+        default: return nil
+        }
+    }
+
+    @Sendable static func image(_ userId: String) -> UIImage? {
+        guard let pair = pair(userId) else { return nil }
+        let size = CGSize(width: 64, height: 64)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            let colors = [UIColor(pair.0).cgColor, UIColor(pair.1).cgColor] as CFArray
+            let gradient = CGGradient(
+                colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 1])!
+            context.cgContext.drawLinearGradient(
+                gradient, start: .zero, end: CGPoint(x: size.width, y: size.height), options: [])
+        }
     }
 }
 
@@ -50,22 +96,29 @@ private enum Fleet {
     typealias State = FleetActivityAttributes.ContentState
     static let at = now.timeIntervalSince1970
 
-    static let ray = State.Agent(
-        roomId: "!ray:hs", name: "Research Ray", state: .needsYou, step: "Waiting for you",
-        since: at - 135)
     static let lyra = State.Agent(
-        roomId: "!lyra:hs", name: "Artistic Lyra", state: .working, step: "Running the tests",
-        completed: 3, total: 7, since: at - 124)
-    static let quill = State.Agent(
-        roomId: "!quill:hs", name: "Writer Quill", state: .failed, step: "Failed at step 4 of 7",
-        completed: 4, total: 7, since: at - 635)
+        roomId: "!lyra:hs", mxid: "@agent_artistic-lyra:hs", name: "Artistic Lyra",
+        state: .working, phase: .tools, step: "Running the tests", completed: 3, total: 7,
+        since: at - 124)
+    static let kai = State.Agent(
+        roomId: "!kai:hs", mxid: "@agent_coder-kai:hs", name: "Coder Kai", state: .working,
+        phase: .tools, step: "Reading widget.rs", completed: 1, total: 4, since: at - 60)
+    /// No cached picture: drawn as its initial.
     static let atlas = State.Agent(
-        roomId: "!atlas:hs", name: "Atlas", state: .working,
-        step: "Reading crates/supermessage-core/src/widget.rs", completed: 11, total: 12,
-        since: at - 3_725)
-    static let ganesha = State.Agent(
-        roomId: "!ganesha:hs", name: "Ganesha", state: .done, step: "Done · 7 steps",
-        completed: 7, total: 7, since: at - 300)
+        roomId: "!atlas:hs", mxid: "@agent_atlas:hs", name: "Atlas", state: .working,
+        phase: .thinking, step: "Thinking", since: at - 20)
+    static let ray = State.Agent(
+        roomId: "!ray:hs", mxid: "@agent_research-ray:hs", name: "Research Ray", state: .needsYou,
+        step: "Waiting for you", since: at - 12)
+    static let doneLyra = State.Agent(
+        roomId: "!lyra:hs", mxid: "@agent_artistic-lyra:hs", name: "Artistic Lyra", state: .done,
+        step: "Done · 7 steps", completed: 7, total: 7, since: at - 400, endedAt: at - 163)
+    static let failedQuill = State.Agent(
+        roomId: "!quill:hs", mxid: "@agent_writer-quill:hs", name: "Writer Quill", state: .failed,
+        step: "Failed at step 4 of 7", completed: 4, total: 7, since: at - 480, endedAt: at - 408)
+    static let lastQuill = State.Agent(
+        roomId: "!quill:hs", mxid: "@agent_writer-quill:hs", name: "Writer Quill", state: .failed,
+        step: "Failed at step 4 of 7", completed: 4, total: 7, since: at - 72, endedAt: at)
 
     static let decision = State.Decision(
         roomId: "!ray:hs", eventId: "$perm1", agent: "Research Ray", kind: .permission,
@@ -75,67 +128,66 @@ private enum Fleet {
             .init(id: "Reject", label: "Reject", declines: true),
         ])
 
-    static let gate = State.Decision(
-        roomId: "!board:hs", eventId: "$gate", agent: "Launch board", kind: .gate,
-        question: "Approve \"Ship v2 to production\" — the release notes and the migration are ready?",
-        options: [
-            .init(id: "approve", label: "Approve", declines: false),
-            .init(id: "reject", label: "Reject", declines: true),
-        ])
-
-    /// The shared fixture's state (`fixtures/fleet-content-state.json`).
+    static let one = State(agents: [lyra], working: 1, updatedAt: at - 60)
+    static let three = State(agents: [lyra, kai, atlas], working: 3, updatedAt: at - 60)
     static let asked = State(
-        agents: [ray, lyra, quill], more: 1, decision: decision, needsYou: 1, working: 1,
-        updatedAt: at - 12)
-    static let three = State(
-        agents: [lyra, atlas, quill], more: 0, needsYou: 0, working: 2, updatedAt: at - 12)
-    static let one = State(agents: [lyra], needsYou: 0, working: 1, updatedAt: at - 3)
-    static let gated = State(
-        agents: [atlas], decision: gate, needsYou: 1, working: 1, updatedAt: at - 40)
-    static let done = State(
-        agents: [ganesha, quill], needsYou: 0, working: 0, updatedAt: at - 95)
+        agents: [ray, lyra, kai], decision: decision, needsYou: 1, working: 2, updatedAt: at)
+    static let finished = State(agents: [doneLyra, failedQuill], updatedAt: at)
+    static let failed = State(agents: [lastQuill], updatedAt: at)
+    /// The hub's stale date has passed with an agent working: no clock
+    /// moves, nothing claims progress — and a failed row keeps its red.
+    static let stale = State(agents: [lyra, failedQuill], working: 1, updatedAt: at - 20 * 60)
 }
 
 private struct Cards: View {
     var body: some View {
         Wallpaper {
-            LockScreenCard(state: Fleet.asked)
-            LockScreenCard(state: Fleet.three)
-            LockScreenCard(state: Fleet.one)
+            LockScreenCard(label: "One agent working", state: Fleet.one)
+            LockScreenCard(label: "Three agents working", state: Fleet.three)
+            LockScreenCard(label: "Needs you", state: Fleet.asked)
+            LockScreenCard(label: "Finished, with a failed row", state: Fleet.finished)
+            LockScreenCard(label: "Failed", state: Fleet.failed)
+            LockScreenCard(label: "Stale", state: Fleet.stale, isStale: true)
         }
     }
 }
 
-#Preview("Fleet card, mini") {
+#Preview("Fleet card, A + C") {
     Cards()
 }
 
-#Preview("Fleet card, mini, dark") {
+#Preview("Fleet card, A + C, dark") {
     Cards().preferredColorScheme(.dark)
 }
 
-#Preview("Fleet card, mini, larger text") {
+#Preview("Fleet card, A + C, larger text") {
     Cards().dynamicTypeSize(.xLarge)
 }
 
-#Preview("Fleet card, mini, larger text, dark") {
+#Preview("Fleet card, A + C, larger text, dark") {
     Cards().dynamicTypeSize(.xLarge).preferredColorScheme(.dark)
 }
 
-#Preview("Fleet card, gate, stale, all done") {
-    Wallpaper {
-        LockScreenCard(state: Fleet.gated)
-        LockScreenCard(state: Fleet.three, isStale: true)
-        LockScreenCard(state: Fleet.done)
+/// The watch's Smart Stack: a small Live Activity, about 170 points wide on
+/// a 45 mm watch, on black.
+private struct WatchStack: View {
+    let state: FleetActivityAttributes.ContentState
+
+    var body: some View {
+        FleetWatchCard(state: state, isStale: false, clock: .frozen(now))
+            .frame(width: 170)
+            .background(WidgetTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(12)
+            .background(Color.black, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
     }
-    .dynamicTypeSize(.xLarge)
 }
 
-#Preview("Fleet card, gate, stale, all done, dark") {
+#Preview("Fleet card, on the watch") {
     Wallpaper {
-        LockScreenCard(state: Fleet.gated)
-        LockScreenCard(state: Fleet.three, isStale: true)
-        LockScreenCard(state: Fleet.done)
+        WatchStack(state: Fleet.one)
+        WatchStack(state: Fleet.asked)
+        WatchStack(state: Fleet.finished)
     }
     .preferredColorScheme(.dark)
 }

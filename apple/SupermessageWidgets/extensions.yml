@@ -39,6 +39,10 @@ targets:
       # Shared with the app through SupermessageKit — one declaration each,
       # so the two processes cannot disagree about a shape.
       - path: ../SupermessageKit/Notifications/FleetActivityAttributes.swift
+      # What the fleet card says, from that state (tested in the Kit), and
+      # where the agents' cached pictures are.
+      - path: ../SupermessageKit/Notifications/FleetCard.swift
+      - path: ../SupermessageKit/Notifications/AgentAvatarStore.swift
       - path: ../SupermessageKit/Notifications/WidgetSnapshot.swift
       # The palette. Generated; never edited by hand.
       - path: ../Supermessage/Generated/ThemeTokens.swift
