@@ -52,6 +52,8 @@ struct FleetActivityCard: View {
     let isStale: Bool
     var clock: FleetClock = .live
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private var card: FleetCard { FleetCard(state) }
 
     /// Every way to lay the card out, most generous first.
@@ -66,11 +68,17 @@ struct FleetActivityCard: View {
     private var layouts: [Layout] {
         switch card.hero {
         case .decision:
-            return [
-                Layout(rows: 0, stages: false, subtitle: true),
-                Layout(rows: 0, stages: false, subtitle: true, questionLines: 1),
-                Layout(rows: 0, stages: false, subtitle: true, questionLines: 1, tightDecision: true),
-            ]
+            // Chosen by text size rather than offered to `ViewThatFits`: as
+            // one of its candidates, the one-line form was drawn at the
+            // default size inside the roomy form's height, leaving an empty
+            // band under it. The roomy form (the mockup's) fits up to
+            // xLarge with two lines of question; the one-line form is only
+            // for the largest sizes, where nothing roomier fits in 160pt.
+            let size = min(dynamicTypeSize, .xxxLarge)
+            if size >= .xxxLarge {
+                return [Layout(rows: 0, stages: false, subtitle: true, questionLines: 1, tightDecision: true)]
+            }
+            return [Layout(rows: 0, stages: false, subtitle: true, questionLines: size >= .xxLarge ? 1 : 2)]
         case .agent, nil:
             let rows = min(3, card.rows.count)
             if rows == 0 {
