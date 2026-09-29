@@ -73,6 +73,12 @@ public struct WidgetFeed: Sendable {
         run { widgetClearAnswer(stored: $0, roomId: roomId, eventId: eventId, nowMs: $1) }
     }
 
+    /// The app came to the foreground (or left it): the recap starts again.
+    @discardableResult
+    public func opened() -> Reload {
+        run { widgetApplyOpened(stored: $0, nowMs: $1) }
+    }
+
     @discardableResult
     public func signedOut() -> Reload {
         run { widgetSignedOut(stored: $0, nowMs: $1) }

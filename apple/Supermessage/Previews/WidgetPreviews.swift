@@ -52,14 +52,24 @@ private struct WidgetFrame<Content: View>: View {
     }
 }
 
-private func entry(_ snapshot: WidgetSnapshot) -> SnapshotEntry {
-    SnapshotEntry(date: .now, content: .snapshot(snapshot))
+private func entry(_ snapshot: WidgetSnapshot, at date: Date = .now) -> SnapshotEntry {
+    SnapshotEntry(date: date, content: .snapshot(snapshot))
 }
 
-/// The sample with six agents, the most a widget lists.
+/// A fixed moment for the frames that print a time of day ("Since 12:25"),
+/// which a moment taken from the wall clock would change on every render.
+private let fixedNow = Date(timeIntervalSince1970: 1_790_670_135)
+
+/// The recap as the Agents widget draws it, at the fixed moment.
+private func recap(_ snapshot: WidgetSnapshot) -> SnapshotEntry {
+    entry(snapshot, at: fixedNow)
+}
+
+/// The sample with six agents, the most a widget lists, all of whom did
+/// something since the app was last opened.
 private func fleet() -> WidgetSnapshot {
-    var snapshot = WidgetSample.snapshot(decisions: 0)
-    let ms = UInt64(Date.now.timeIntervalSince1970 * 1000)
+    var snapshot = WidgetSample.snapshot(now: fixedNow, decisions: 0)
+    let ms = UInt64(fixedNow.timeIntervalSince1970 * 1000)
     let hour: UInt64 = 3_600_000
     snapshot.agents += [
         .init(
@@ -74,6 +84,22 @@ private func fleet() -> WidgetSnapshot {
             .init(word: "quiet", tone: .quiet), .init(word: "quiet", tone: .quiet),
         ]
     }
+    snapshot.recap += [
+        .init(
+            roomId: "!ray", name: "Research Ray", outcome: .said,
+            line: "Approved, with one required factual correction in the second section",
+            unread: 3, atMs: ms - 26 * 60_000),
+        .init(
+            roomId: "!krishna", name: "Krishna", outcome: .said,
+            line: "Drafted the release notes", unread: 1, atMs: ms - 44 * 60_000),
+    ]
+    return snapshot
+}
+
+/// Nothing happened since the app was last opened.
+private func quiet() -> WidgetSnapshot {
+    var snapshot = WidgetSample.snapshot(now: fixedNow, decisions: 0)
+    snapshot.recap = []
     return snapshot
 }
 
@@ -196,7 +222,8 @@ private struct Board<Content: View>: View {
 #Preview("Agents, medium") {
     Board {
         WidgetFrame(family: .systemMedium) {
-            AgentsWidgetView(entry: entry(WidgetSample.snapshot()), family: .systemMedium)
+            AgentsWidgetView(
+                entry: recap(WidgetSample.snapshot(now: fixedNow)), family: .systemMedium)
         }
     }
 }
@@ -204,7 +231,7 @@ private struct Board<Content: View>: View {
 #Preview("Agents, large") {
     Board {
         WidgetFrame(family: .systemLarge) {
-            AgentsWidgetView(entry: entry(WidgetSample.snapshot()), family: .systemLarge)
+            AgentsWidgetView(entry: recap(fleet()), family: .systemLarge)
         }
     }
 }
@@ -213,14 +240,22 @@ private struct Board<Content: View>: View {
     Board {
         VStack(spacing: 16) {
             WidgetFrame(family: .systemMedium, mini: true) {
-                AgentsWidgetView(entry: entry(fleet()), family: .systemMedium)
+                AgentsWidgetView(entry: recap(fleet()), family: .systemMedium)
             }
             WidgetFrame(family: .systemLarge, mini: true) {
-                AgentsWidgetView(entry: entry(fleet()), family: .systemLarge)
+                AgentsWidgetView(entry: recap(fleet()), family: .systemLarge)
             }
         }
     }
     .dynamicTypeSize(.xLarge)
+}
+
+#Preview("Agents, nothing new") {
+    Board {
+        WidgetFrame(family: .systemMedium, mini: true) {
+            AgentsWidgetView(entry: recap(quiet()), family: .systemMedium)
+        }
+    }
 }
 
 #Preview("Needs you, mini, larger text") {
@@ -236,7 +271,7 @@ private struct Board<Content: View>: View {
 #Preview("Agents, large, dark") {
     Board {
         WidgetFrame(family: .systemLarge) {
-            AgentsWidgetView(entry: entry(WidgetSample.snapshot()), family: .systemLarge)
+            AgentsWidgetView(entry: recap(fleet()), family: .systemLarge)
         }
     }
     .preferredColorScheme(.dark)

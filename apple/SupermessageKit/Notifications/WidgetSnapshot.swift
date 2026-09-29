@@ -83,6 +83,11 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         }
     }
 
+    /// What an agent did since the app was last opened, most telling first.
+    public enum Outcome: String, Codable, Sendable {
+        case failed, finished, said
+    }
+
     public struct Agent: Codable, Equatable, Sendable, Identifiable {
         public var roomId: String
         public var name: String
@@ -90,13 +95,20 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         public var line: String?
         public var step: String?
         public var rosterNeedsYou: Bool
+        public var outcome: Outcome?
+        public var outcomeLine: String?
+        public var outcomeAtMs: UInt64?
+        public var unread: UInt32
+        public var countedEventId: String?
 
         public var id: String { roomId }
         public var lastActivity: Date? { lastActivityMs.map(Date.init(milliseconds:)) }
 
         public init(
             roomId: String, name: String, lastActivityMs: UInt64?, line: String?,
-            step: String? = nil, rosterNeedsYou: Bool = false
+            step: String? = nil, rosterNeedsYou: Bool = false, outcome: Outcome? = nil,
+            outcomeLine: String? = nil, outcomeAtMs: UInt64? = nil, unread: UInt32 = 0,
+            countedEventId: String? = nil
         ) {
             self.roomId = roomId
             self.name = name
@@ -104,6 +116,40 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
             self.line = line
             self.step = step
             self.rosterNeedsYou = rosterNeedsYou
+            self.outcome = outcome
+            self.outcomeLine = outcomeLine
+            self.outcomeAtMs = outcomeAtMs
+            self.unread = unread
+            self.countedEventId = countedEventId
+        }
+    }
+
+    /// One row of the recap: an agent that did something since the app was
+    /// last opened. The core orders them — failed, finished, said, then
+    /// newest first — and leaves out every agent that did nothing.
+    public struct Recap: Codable, Equatable, Sendable, Identifiable {
+        public var roomId: String
+        public var name: String
+        public var outcome: Outcome
+        /// "2 of 7 steps failed", "Finished · 7 steps", or what it said.
+        public var line: String
+        /// Pushes from it since then.
+        public var unread: UInt32
+        public var atMs: UInt64
+
+        public var id: String { roomId }
+        public var at: Date { .init(milliseconds: atMs) }
+
+        public init(
+            roomId: String, name: String, outcome: Outcome, line: String, unread: UInt32,
+            atMs: UInt64
+        ) {
+            self.roomId = roomId
+            self.name = name
+            self.outcome = outcome
+            self.line = line
+            self.unread = unread
+            self.atMs = atMs
         }
     }
 
@@ -149,36 +195,50 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     }
 
     /// The schema this build reads. Another is treated as no snapshot.
-    public static let schemaVersion: UInt32 = 2
+    public static let schemaVersion: UInt32 = 3
+
+    /// How long a change that is not a decision waits for a reload, and how
+    /// often the widgets' timeline asks again on its own — the core's
+    /// `widget::RELOAD_EVERY_MS`.
+    public static let reloadEvery: TimeInterval = 15 * 60
 
     public var schema: UInt32
     public var revision: UInt64
     public var updatedAtMs: UInt64
     public var rosterAtMs: UInt64
     public var reloadedAtMs: UInt64
+    /// When the app was last opened; `0` until it has been.
+    public var openedAtMs: UInt64
     public var signedIn: Bool
     public var decisions: [Decision]
     public var overflow: Bool
     public var agents: [Agent]
     public var rosterWaiting: UInt32
     public var frames: [Frame]
+    public var recap: [Recap]
+
+    /// When the recap is from, or `nil` before the app was first opened.
+    public var openedAt: Date? { openedAtMs == 0 ? nil : .init(milliseconds: openedAtMs) }
 
     public init(
         schema: UInt32 = WidgetSnapshot.schemaVersion, revision: UInt64 = 1, updatedAtMs: UInt64 = 0,
-        rosterAtMs: UInt64 = 0, reloadedAtMs: UInt64 = 0, signedIn: Bool, decisions: [Decision],
-        overflow: Bool = false, agents: [Agent], rosterWaiting: UInt32 = 0, frames: [Frame]
+        rosterAtMs: UInt64 = 0, reloadedAtMs: UInt64 = 0, openedAtMs: UInt64 = 0, signedIn: Bool,
+        decisions: [Decision], overflow: Bool = false, agents: [Agent], rosterWaiting: UInt32 = 0,
+        frames: [Frame], recap: [Recap] = []
     ) {
         self.schema = schema
         self.revision = revision
         self.updatedAtMs = updatedAtMs
         self.rosterAtMs = rosterAtMs
         self.reloadedAtMs = reloadedAtMs
+        self.openedAtMs = openedAtMs
         self.signedIn = signedIn
         self.decisions = decisions
         self.overflow = overflow
         self.agents = agents
         self.rosterWaiting = rosterWaiting
         self.frames = frames
+        self.recap = recap
     }
 
     /// The frame for `date`: the last one that has begun, or the first when

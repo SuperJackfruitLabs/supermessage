@@ -1,7 +1,8 @@
 import SwiftUI
 import WidgetKit
 
-/// Every agent room, what each is doing, and a tap into its room.
+/// What the agents did since the app was last opened, and a tap into each
+/// one's room.
 struct AgentsWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetKinds.agents, provider: SnapshotProvider()) { entry in
@@ -9,7 +10,7 @@ struct AgentsWidget: Widget {
                 .containerBackground(WidgetTheme.surface, for: .widget)
         }
         .configurationDisplayName("Agents")
-        .description("What each agent is doing, and what it last said.")
+        .description("What your agents did since you last opened the app.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }

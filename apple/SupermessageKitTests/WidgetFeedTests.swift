@@ -126,6 +126,51 @@ struct WidgetFeedTests {
         #expect(snapshot.agents.map(\.line) == ["Newer"])
     }
 
+    static func answer(total: UInt32, failed: UInt32, at: UInt64 = now) -> NotificationDto {
+        NotificationDto(
+            roomId: "!r:hs", eventId: "$answer", title: "Hermes", subtitle: nil,
+            body: "All green.", category: .message, permission: nil, gate: nil,
+            threadId: "!r:hs", suppress: nil, fallbackTitle: nil, fallbackBody: nil,
+            activity: activity(.message, at: at, line: "All green."),
+            turn: TurnCounts(total: total, failed: failed))
+    }
+
+    // MARK: - The recap
+
+    @Test("an answer's turn counts, carried by the extension, make the recap's line")
+    func recapFromTurn() throws {
+        let (feed, dir) = Self.feed()
+        feed.apply(Self.answer(total: 7, failed: 2))
+        let snapshot = try #require(WidgetSnapshotStore.read(in: dir))
+        let row = try #require(snapshot.recap.first)
+        #expect(row.name == "Hermes")
+        #expect(row.outcome == .failed)
+        #expect(row.line == "2 of 7 steps failed")
+        #expect(row.unread == 1)
+    }
+
+    @Test("opening the app starts the recap again")
+    func openedClearsTheRecap() throws {
+        let (feed, dir) = Self.feed()
+        feed.apply(Self.answer(total: 7, failed: 0))
+        #expect(try #require(WidgetSnapshotStore.read(in: dir)).recap.count == 1)
+        feed.opened()
+        let snapshot = try #require(WidgetSnapshotStore.read(in: dir))
+        #expect(snapshot.recap.isEmpty)
+        #expect(snapshot.openedAt == Date(timeIntervalSince1970: TimeInterval(Self.now) / 1000))
+    }
+
+    @Test("a line reloads the widgets only once the period has passed; a decision at once")
+    func reloadRule() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("widget-feed-\(UUID().uuidString)", isDirectory: true)
+        let writer = WidgetSnapshotWriter(directory: dir)
+        let at = { (ms: UInt64) in WidgetFeed(writer: writer, now: { ms }) }
+        #expect(at(Self.now).apply(Self.answer(total: 1, failed: 0, at: Self.now)))
+        #expect(!at(Self.now + Self.minute).apply(Self.answer(total: 2, failed: 0, at: Self.now + Self.minute)))
+        #expect(at(Self.now + 2 * Self.minute).apply(Self.permission(at: Self.now + 2 * Self.minute)))
+    }
+
     @Test("the widget's mirror reads every field the core writes")
     func mirrorDecodesTheCore() throws {
         let write = widgetApplyNotification(stored: nil, note: Self.gate(), nowMs: Self.now)
@@ -137,5 +182,8 @@ struct WidgetFeedTests {
         #expect(decision.buttons.map(\.id) == ["approve", "reject"])
         #expect(snapshot.schema == WidgetSnapshot.schemaVersion)
         #expect(!snapshot.frames.isEmpty)
+        #expect(snapshot.recap.map(\.outcome) == [.said])
+        #expect(snapshot.agents.first?.outcomeLine == "Approve \"Ship v2\"?")
+        #expect(snapshot.agents.first?.unread == 1)
     }
 }
