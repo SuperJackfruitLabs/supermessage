@@ -38,6 +38,8 @@ import uniffi.supermessage_core.FfiConverterTypeAccountDto
 import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
+import uniffi.supermessage_core.FfiConverterTypeLiveActivityToken
+import uniffi.supermessage_core.FfiConverterTypeLiveActivityTokenKind
 import uniffi.supermessage_core.FfiConverterTypeMatrixLinkTarget
 import uniffi.supermessage_core.FfiConverterTypeMentionable
 import uniffi.supermessage_core.FfiConverterTypeNotificationCategory
@@ -62,6 +64,8 @@ import uniffi.supermessage_core.FfiConverterTypeWidgetAnswer
 import uniffi.supermessage_core.FfiConverterTypeWidgetLiveTurn
 import uniffi.supermessage_core.FfiConverterTypeWidgetWrite
 import uniffi.supermessage_core.GateAnswers
+import uniffi.supermessage_core.LiveActivityToken
+import uniffi.supermessage_core.LiveActivityTokenKind
 import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationCategory
@@ -89,6 +93,8 @@ import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
+import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityToken
+import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityTokenKind
 import uniffi.supermessage_core.RustBuffer as RustBufferMatrixLinkTarget
 import uniffi.supermessage_core.RustBuffer as RustBufferMentionable
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationCategory
@@ -1021,6 +1027,12 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1108,6 +1120,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_recovery_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_register_live_activity_token(`ptr`: Pointer,`gatewayUrl`: RustBuffer.ByValue,`token`: RustBufferLiveActivityToken.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_register_pusher(`ptr`: Pointer,`registration`: RustBufferPushRegistration.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_report_event(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`reason`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1168,6 +1182,8 @@ internal interface UniffiLib : Library {
     ): Byte
     fun uniffi_supermessage_ffi_fn_method_core_unignore_user(`ptr`: Pointer,`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_unregister_live_activity_token(`ptr`: Pointer,`gatewayUrl`: RustBuffer.ByValue,`kind`: RustBufferLiveActivityTokenKind.ByValue,`activityId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_unregister_pusher(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_eventsink(`vtable`: UniffiVTableCallbackInterfaceEventSink,
@@ -1209,6 +1225,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_func_widget_answer_for(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_apply_notification(`stored`: RustBuffer.ByValue,`note`: RustBufferNotificationDto.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferWidgetWrite.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_apply_opened(`stored`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferWidgetWrite.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_apply_roster(`stored`: RustBuffer.ByValue,`rows`: RustBuffer.ByValue,`live`: RustBuffer.ByValue,`asOfMs`: Long,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferWidgetWrite.ByValue
@@ -1368,6 +1386,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_widget_apply_notification(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_apply_opened(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_widget_apply_roster(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_widget_apply_timeline(
@@ -1434,6 +1454,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_recovery_state(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_register_live_activity_token(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_register_pusher(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_report_event(
@@ -1493,6 +1515,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_method_core_toggle_reaction(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_unignore_user(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_unregister_live_activity_token(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_unregister_pusher(
     ): Short
@@ -1579,6 +1603,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_widget_apply_notification() != 55538.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_apply_opened() != 19519.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_widget_apply_roster() != 30950.toShort()) {
@@ -1680,6 +1707,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_register_live_activity_token() != 18836.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_register_pusher() != 45337.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1768,6 +1798,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_unignore_user() != 38081.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_unregister_live_activity_token() != 42958.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_unregister_pusher() != 51150.toShort()) {
@@ -2431,6 +2464,13 @@ public interface CoreInterface {
     fun `recoveryState`(): kotlin.String
     
     /**
+     * Send a Live Activity push token to the hub on `gateway_url`'s origin,
+     * authenticated as this session (`core::live_activity`). An error when
+     * the hub did not take it; the host retries.
+     */
+    fun `registerLiveActivityToken`(`gatewayUrl`: kotlin.String, `token`: LiveActivityToken)
+    
+    /**
      * Register this device's push token with the homeserver, pointed at a
      * push gateway. `event_id_only`, so no content leaves the homeserver.
      */
@@ -2647,6 +2687,11 @@ public interface CoreInterface {
      * Unblock someone. A no-op when they were not blocked.
      */
     fun `unignoreUser`(`userId`: kotlin.String)
+    
+    /**
+     * Ask the hub to forget a Live Activity token: the activity ended.
+     */
+    fun `unregisterLiveActivityToken`(`gatewayUrl`: kotlin.String, `kind`: LiveActivityTokenKind, `activityId`: kotlin.String?)
     
     /**
      * Stop pushing to this device without signing out. [`Core::logout`]
@@ -3254,6 +3299,23 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Send a Live Activity push token to the hub on `gateway_url`'s origin,
+     * authenticated as this session (`core::live_activity`). An error when
+     * the hub did not take it; the host retries.
+     */
+    @Throws(FfiException::class)override fun `registerLiveActivityToken`(`gatewayUrl`: kotlin.String, `token`: LiveActivityToken)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_register_live_activity_token(
+        it, FfiConverterString.lower(`gatewayUrl`),FfiConverterTypeLiveActivityToken.lower(`token`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Register this device's push token with the homeserver, pointed at a
      * push gateway. `event_id_only`, so no content leaves the homeserver.
      */
@@ -3776,6 +3838,21 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_unignore_user(
         it, FfiConverterString.lower(`userId`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Ask the hub to forget a Live Activity token: the activity ended.
+     */
+    @Throws(FfiException::class)override fun `unregisterLiveActivityToken`(`gatewayUrl`: kotlin.String, `kind`: LiveActivityTokenKind, `activityId`: kotlin.String?)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_unregister_live_activity_token(
+        it, FfiConverterString.lower(`gatewayUrl`),FfiConverterTypeLiveActivityTokenKind.lower(`kind`),FfiConverterOptionalString.lower(`activityId`),_status)
 }
     }
     
@@ -6349,6 +6426,14 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
 
 
 
+
+
+
+
+
+
+
+
         /**
          * A playing note's position as the clock under it reads — `"0:06"`,
          * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -6604,6 +6689,18 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_apply_notification(
         FfiConverterOptionalString.lower(`stored`),FfiConverterTypeNotificationDto.lower(`note`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The app was opened: the widgets' recap starts again from `now_ms`.
+         */ fun `widgetApplyOpened`(`stored`: kotlin.String?, `nowMs`: kotlin.ULong): WidgetWrite {
+            return FfiConverterTypeWidgetWrite.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_apply_opened(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterULong.lower(`nowMs`),_status)
 }
     )
     }

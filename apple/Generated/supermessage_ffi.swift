@@ -770,6 +770,13 @@ public protocol CoreProtocol : AnyObject {
     func recoveryState() throws  -> String
     
     /**
+     * Send a Live Activity push token to the hub on `gateway_url`'s origin,
+     * authenticated as this session (`core::live_activity`). An error when
+     * the hub did not take it; the host retries.
+     */
+    func registerLiveActivityToken(gatewayUrl: String, token: LiveActivityToken) throws 
+    
+    /**
      * Register this device's push token with the homeserver, pointed at a
      * push gateway. `event_id_only`, so no content leaves the homeserver.
      */
@@ -986,6 +993,11 @@ public protocol CoreProtocol : AnyObject {
      * Unblock someone. A no-op when they were not blocked.
      */
     func unignoreUser(userId: String) throws 
+    
+    /**
+     * Ask the hub to forget a Live Activity token: the activity ended.
+     */
+    func unregisterLiveActivityToken(gatewayUrl: String, kind: LiveActivityTokenKind, activityId: String?) throws 
     
     /**
      * Stop pushing to this device without signing out. [`Core::logout`]
@@ -1464,6 +1476,19 @@ open func recoveryState()throws  -> String {
 }
     
     /**
+     * Send a Live Activity push token to the hub on `gateway_url`'s origin,
+     * authenticated as this session (`core::live_activity`). An error when
+     * the hub did not take it; the host retries.
+     */
+open func registerLiveActivityToken(gatewayUrl: String, token: LiveActivityToken)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_register_live_activity_token(self.uniffiClonePointer(),
+        FfiConverterString.lower(gatewayUrl),
+        FfiConverterTypeLiveActivityToken_lower(token),$0
+    )
+}
+}
+    
+    /**
      * Register this device's push token with the homeserver, pointed at a
      * push gateway. `event_id_only`, so no content leaves the homeserver.
      */
@@ -1861,6 +1886,18 @@ open func toggleReaction(roomId: String, eventId: String, key: String)throws  ->
 open func unignoreUser(userId: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_unignore_user(self.uniffiClonePointer(),
         FfiConverterString.lower(userId),$0
+    )
+}
+}
+    
+    /**
+     * Ask the hub to forget a Live Activity token: the activity ended.
+     */
+open func unregisterLiveActivityToken(gatewayUrl: String, kind: LiveActivityTokenKind, activityId: String?)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_unregister_live_activity_token(self.uniffiClonePointer(),
+        FfiConverterString.lower(gatewayUrl),
+        FfiConverterTypeLiveActivityTokenKind_lower(kind),
+        FfiConverterOptionString.lower(activityId),$0
     )
 }
 }
@@ -4227,6 +4264,10 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
 
 
 
+
+
+
+
 /**
  * A playing note's position as the clock under it reads — `"0:06"`,
  * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -4468,6 +4509,17 @@ public func widgetApplyNotification(stored: String?, note: NotificationDto, nowM
 })
 }
 /**
+ * The app was opened: the widgets' recap starts again from `now_ms`.
+ */
+public func widgetApplyOpened(stored: String?, nowMs: UInt64) -> WidgetWrite {
+    return try!  FfiConverterTypeWidgetWrite_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_apply_opened(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
  * The app's roster, read at `as_of_ms`, with the turns it is watching.
  */
 public func widgetApplyRoster(stored: String?, rows: [RoomRow], live: [WidgetLiveTurn], asOfMs: UInt64, nowMs: UInt64) -> WidgetWrite {
@@ -4602,6 +4654,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_widget_apply_notification() != 55538) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_widget_apply_opened() != 19519) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_widget_apply_roster() != 30950) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4701,6 +4756,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_recovery_state() != 14919) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_register_live_activity_token() != 18836) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_register_pusher() != 45337) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4789,6 +4847,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_unignore_user() != 38081) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_unregister_live_activity_token() != 42958) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_unregister_pusher() != 51150) {

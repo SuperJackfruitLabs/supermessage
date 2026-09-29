@@ -1533,6 +1533,59 @@ public object FfiConverterTypeGateAnswers: FfiConverterRustBuffer<GateAnswers> {
 
 
 /**
+ * A token ActivityKit issued, as the host relays it.
+ */
+data class LiveActivityToken (
+    var `kind`: LiveActivityTokenKind, 
+    /**
+     * The APNs token, lowercase hex.
+     */
+    var `token`: kotlin.String, 
+    /**
+     * Whether the token is for the APNs sandbox — the signing profile's
+     * `aps-environment`, as for the pusher (`PushConfiguration.isSandbox`).
+     */
+    var `sandbox`: kotlin.Boolean, 
+    /**
+     * ActivityKit's id for the activity; required for `Update`.
+     */
+    var `activityId`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLiveActivityToken: FfiConverterRustBuffer<LiveActivityToken> {
+    override fun read(buf: ByteBuffer): LiveActivityToken {
+        return LiveActivityToken(
+            FfiConverterTypeLiveActivityTokenKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: LiveActivityToken) = (
+            FfiConverterTypeLiveActivityTokenKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`token`) +
+            FfiConverterBoolean.allocationSize(value.`sandbox`) +
+            FfiConverterOptionalString.allocationSize(value.`activityId`)
+    )
+
+    override fun write(value: LiveActivityToken, buf: ByteBuffer) {
+            FfiConverterTypeLiveActivityTokenKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`token`, buf)
+            FfiConverterBoolean.write(value.`sandbox`, buf)
+            FfiConverterOptionalString.write(value.`activityId`, buf)
+    }
+}
+
+
+
+/**
  * Media metadata projected from an `m.image`/`m.file`/`m.audio`/`m.video`
  * message's `MessageType` (see `core::timeline::media_meta`) — deliberately
  * never the media's bytes themselves. `TimelineItemDto` streams to the
@@ -1808,7 +1861,16 @@ data class NotificationDto (
      * Extension's path — and `None` from [`notification_for_row`], whose
      * caller has the whole timeline to read instead.
      */
-    var `activity`: NotificationActivity?
+    var `activity`: NotificationActivity?, 
+    /**
+     * How the turn this event ended went, when the push said: the hub adds
+     * `"turn": {"total", "failed"}` to the push of an agent's answer
+     * (spec 2026-09-29, A5), because the turn card that carries the same
+     * counts is quiet and never pushed. Only counts, never text. The core
+     * cannot see the push's payload, so the Notification Service Extension
+     * sets this from it; every constructor here leaves it `None`.
+     */
+    var `turn`: TurnCounts? = null
 ) {
     
     companion object
@@ -1833,6 +1895,7 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalTypeNotificationActivity.read(buf),
+            FfiConverterOptionalTypeTurnCounts.read(buf),
         )
     }
 
@@ -1849,7 +1912,8 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterOptionalTypeNotificationSuppression.allocationSize(value.`suppress`) +
             FfiConverterOptionalString.allocationSize(value.`fallbackTitle`) +
             FfiConverterOptionalString.allocationSize(value.`fallbackBody`) +
-            FfiConverterOptionalTypeNotificationActivity.allocationSize(value.`activity`)
+            FfiConverterOptionalTypeNotificationActivity.allocationSize(value.`activity`) +
+            FfiConverterOptionalTypeTurnCounts.allocationSize(value.`turn`)
     )
 
     override fun write(value: NotificationDto, buf: ByteBuffer) {
@@ -1866,6 +1930,7 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterOptionalString.write(value.`fallbackTitle`, buf)
             FfiConverterOptionalString.write(value.`fallbackBody`, buf)
             FfiConverterOptionalTypeNotificationActivity.write(value.`activity`, buf)
+            FfiConverterOptionalTypeTurnCounts.write(value.`turn`, buf)
     }
 }
 
@@ -3529,6 +3594,41 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
 
 
 /**
+ * A turn's tool calls: how many it made and how many of those failed.
+ */
+data class TurnCounts (
+    var `total`: kotlin.UInt, 
+    var `failed`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnCounts: FfiConverterRustBuffer<TurnCounts> {
+    override fun read(buf: ByteBuffer): TurnCounts {
+        return TurnCounts(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnCounts) = (
+            FfiConverterUInt.allocationSize(value.`total`) +
+            FfiConverterUInt.allocationSize(value.`failed`)
+    )
+
+    override fun write(value: TurnCounts, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`total`, buf)
+            FfiConverterUInt.write(value.`failed`, buf)
+    }
+}
+
+
+
+/**
  * One model the harness tried, with any identical attempts directly after
  * it folded in.
  */
@@ -4700,6 +4800,45 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+/**
+ * Which of ActivityKit's two tokens this is.
+ */
+
+enum class LiveActivityTokenKind {
+    
+    /**
+     * Push-to-start: lets the hub start the card.
+     */
+    START,
+    /**
+     * One running activity's: lets the hub update and end it.
+     */
+    UPDATE;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLiveActivityTokenKind: FfiConverterRustBuffer<LiveActivityTokenKind> {
+    override fun read(buf: ByteBuffer) = try {
+        LiveActivityTokenKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: LiveActivityTokenKind) = 4UL
+
+    override fun write(value: LiveActivityTokenKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
     }
 }
 
@@ -6501,6 +6640,38 @@ public object FfiConverterOptionalTypeRuntimeDto: FfiConverterRustBuffer<Runtime
         } else {
             buf.put(1)
             FfiConverterTypeRuntimeDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeTurnCounts: FfiConverterRustBuffer<TurnCounts?> {
+    override fun read(buf: ByteBuffer): TurnCounts? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTurnCounts.read(buf)
+    }
+
+    override fun allocationSize(value: TurnCounts?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTurnCounts.allocationSize(value)
+        }
+    }
+
+    override fun write(value: TurnCounts?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTurnCounts.write(value, buf)
         }
     }
 }

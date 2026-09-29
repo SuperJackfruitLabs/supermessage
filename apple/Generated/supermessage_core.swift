@@ -1398,6 +1398,111 @@ public func FfiConverterTypeGateAnswers_lower(_ value: GateAnswers) -> RustBuffe
 
 
 /**
+ * A token ActivityKit issued, as the host relays it.
+ */
+public struct LiveActivityToken {
+    public var kind: LiveActivityTokenKind
+    /**
+     * The APNs token, lowercase hex.
+     */
+    public var token: String
+    /**
+     * Whether the token is for the APNs sandbox — the signing profile's
+     * `aps-environment`, as for the pusher (`PushConfiguration.isSandbox`).
+     */
+    public var sandbox: Bool
+    /**
+     * ActivityKit's id for the activity; required for `Update`.
+     */
+    public var activityId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: LiveActivityTokenKind, 
+        /**
+         * The APNs token, lowercase hex.
+         */token: String, 
+        /**
+         * Whether the token is for the APNs sandbox — the signing profile's
+         * `aps-environment`, as for the pusher (`PushConfiguration.isSandbox`).
+         */sandbox: Bool, 
+        /**
+         * ActivityKit's id for the activity; required for `Update`.
+         */activityId: String?) {
+        self.kind = kind
+        self.token = token
+        self.sandbox = sandbox
+        self.activityId = activityId
+    }
+}
+
+
+
+extension LiveActivityToken: Equatable, Hashable {
+    public static func ==(lhs: LiveActivityToken, rhs: LiveActivityToken) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.token != rhs.token {
+            return false
+        }
+        if lhs.sandbox != rhs.sandbox {
+            return false
+        }
+        if lhs.activityId != rhs.activityId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(token)
+        hasher.combine(sandbox)
+        hasher.combine(activityId)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLiveActivityToken: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LiveActivityToken {
+        return
+            try LiveActivityToken(
+                kind: FfiConverterTypeLiveActivityTokenKind.read(from: &buf), 
+                token: FfiConverterString.read(from: &buf), 
+                sandbox: FfiConverterBool.read(from: &buf), 
+                activityId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LiveActivityToken, into buf: inout [UInt8]) {
+        FfiConverterTypeLiveActivityTokenKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.token, into: &buf)
+        FfiConverterBool.write(value.sandbox, into: &buf)
+        FfiConverterOptionString.write(value.activityId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLiveActivityToken_lift(_ buf: RustBuffer) throws -> LiveActivityToken {
+    return try FfiConverterTypeLiveActivityToken.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLiveActivityToken_lower(_ value: LiveActivityToken) -> RustBuffer {
+    return FfiConverterTypeLiveActivityToken.lower(value)
+}
+
+
+/**
  * Media metadata projected from an `m.image`/`m.file`/`m.audio`/`m.video`
  * message's `MessageType` (see `core::timeline::media_meta`) — deliberately
  * never the media's bytes themselves. `TimelineItemDto` streams to the
@@ -1881,6 +1986,15 @@ public struct NotificationDto {
      * caller has the whole timeline to read instead.
      */
     public var activity: NotificationActivity?
+    /**
+     * How the turn this event ended went, when the push said: the hub adds
+     * `"turn": {"total", "failed"}` to the push of an agent's answer
+     * (spec 2026-09-29, A5), because the turn card that carries the same
+     * counts is quiet and never pushed. Only counts, never text. The core
+     * cannot see the push's payload, so the Notification Service Extension
+     * sets this from it; every constructor here leaves it `None`.
+     */
+    public var turn: TurnCounts?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1924,7 +2038,15 @@ public struct NotificationDto {
          * Set by [`notification_for_event`] — the Notification Service
          * Extension's path — and `None` from [`notification_for_row`], whose
          * caller has the whole timeline to read instead.
-         */activity: NotificationActivity?) {
+         */activity: NotificationActivity?, 
+        /**
+         * How the turn this event ended went, when the push said: the hub adds
+         * `"turn": {"total", "failed"}` to the push of an agent's answer
+         * (spec 2026-09-29, A5), because the turn card that carries the same
+         * counts is quiet and never pushed. Only counts, never text. The core
+         * cannot see the push's payload, so the Notification Service Extension
+         * sets this from it; every constructor here leaves it `None`.
+         */turn: TurnCounts? = nil) {
         self.roomId = roomId
         self.eventId = eventId
         self.title = title
@@ -1938,6 +2060,7 @@ public struct NotificationDto {
         self.fallbackTitle = fallbackTitle
         self.fallbackBody = fallbackBody
         self.activity = activity
+        self.turn = turn
     }
 }
 
@@ -1984,6 +2107,9 @@ extension NotificationDto: Equatable, Hashable {
         if lhs.activity != rhs.activity {
             return false
         }
+        if lhs.turn != rhs.turn {
+            return false
+        }
         return true
     }
 
@@ -2001,6 +2127,7 @@ extension NotificationDto: Equatable, Hashable {
         hasher.combine(fallbackTitle)
         hasher.combine(fallbackBody)
         hasher.combine(activity)
+        hasher.combine(turn)
     }
 }
 
@@ -2024,7 +2151,8 @@ public struct FfiConverterTypeNotificationDto: FfiConverterRustBuffer {
                 suppress: FfiConverterOptionTypeNotificationSuppression.read(from: &buf), 
                 fallbackTitle: FfiConverterOptionString.read(from: &buf), 
                 fallbackBody: FfiConverterOptionString.read(from: &buf), 
-                activity: FfiConverterOptionTypeNotificationActivity.read(from: &buf)
+                activity: FfiConverterOptionTypeNotificationActivity.read(from: &buf), 
+                turn: FfiConverterOptionTypeTurnCounts.read(from: &buf)
         )
     }
 
@@ -2042,6 +2170,7 @@ public struct FfiConverterTypeNotificationDto: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.fallbackTitle, into: &buf)
         FfiConverterOptionString.write(value.fallbackBody, into: &buf)
         FfiConverterOptionTypeNotificationActivity.write(value.activity, into: &buf)
+        FfiConverterOptionTypeTurnCounts.write(value.turn, into: &buf)
     }
 }
 
@@ -5336,6 +5465,75 @@ public func FfiConverterTypeTimelineRow_lower(_ value: TimelineRow) -> RustBuffe
 
 
 /**
+ * A turn's tool calls: how many it made and how many of those failed.
+ */
+public struct TurnCounts {
+    public var total: UInt32
+    public var failed: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(total: UInt32, failed: UInt32) {
+        self.total = total
+        self.failed = failed
+    }
+}
+
+
+
+extension TurnCounts: Equatable, Hashable {
+    public static func ==(lhs: TurnCounts, rhs: TurnCounts) -> Bool {
+        if lhs.total != rhs.total {
+            return false
+        }
+        if lhs.failed != rhs.failed {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(total)
+        hasher.combine(failed)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnCounts: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnCounts {
+        return
+            try TurnCounts(
+                total: FfiConverterUInt32.read(from: &buf), 
+                failed: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnCounts, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.total, into: &buf)
+        FfiConverterUInt32.write(value.failed, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnCounts_lift(_ buf: RustBuffer) throws -> TurnCounts {
+    return try FfiConverterTypeTurnCounts.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnCounts_lower(_ value: TurnCounts) -> RustBuffer {
+    return FfiConverterTypeTurnCounts.lower(value)
+}
+
+
+/**
  * One model the harness tried, with any identical attempts directly after
  * it folded in.
  */
@@ -6905,6 +7103,79 @@ public func FfiConverterTypeItemView_lower(_ value: ItemView) -> RustBuffer {
 
 
 extension ItemView: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Which of ActivityKit's two tokens this is.
+ */
+
+public enum LiveActivityTokenKind {
+    
+    /**
+     * Push-to-start: lets the hub start the card.
+     */
+    case start
+    /**
+     * One running activity's: lets the hub update and end it.
+     */
+    case update
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLiveActivityTokenKind: FfiConverterRustBuffer {
+    typealias SwiftType = LiveActivityTokenKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LiveActivityTokenKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .start
+        
+        case 2: return .update
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: LiveActivityTokenKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .start:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .update:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLiveActivityTokenKind_lift(_ buf: RustBuffer) throws -> LiveActivityTokenKind {
+    return try FfiConverterTypeLiveActivityTokenKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLiveActivityTokenKind_lower(_ value: LiveActivityTokenKind) -> RustBuffer {
+    return FfiConverterTypeLiveActivityTokenKind.lower(value)
+}
+
+
+
+extension LiveActivityTokenKind: Equatable, Hashable {}
 
 
 
@@ -8851,6 +9122,30 @@ fileprivate struct FfiConverterOptionTypeRuntimeDto: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeRuntimeDto.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeTurnCounts: FfiConverterRustBuffer {
+    typealias SwiftType = TurnCounts?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTurnCounts.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTurnCounts.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
