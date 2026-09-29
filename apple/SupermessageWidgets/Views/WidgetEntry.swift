@@ -34,12 +34,15 @@ struct SnapshotEntry: TimelineEntry, Sendable {
 
     /// One entry per frame the core wrote, the first at `now`: WidgetKit
     /// shows each when its time comes, so "active" turns to "idle" on time
-    /// with nothing written.
+    /// with nothing written. Plus one every ten minutes, for the ages.
     static func timeline(for content: Content, now: Date) -> [SnapshotEntry] {
         guard case let .snapshot(snapshot) = content else {
             return [SnapshotEntry(date: now, content: content)]
         }
-        let later = snapshot.frames.map(\.from).filter { $0 > now }
+        // The frames' moments, and every ten minutes for the next hour so the
+        // ages ("3 min") do not sit still.
+        let ticks = (1...6).map { now.addingTimeInterval(Double($0) * 600) }
+        let later = Set(snapshot.frames.map(\.from).filter { $0 > now } + ticks).sorted()
         return [SnapshotEntry(date: now, content: content)]
             + later.map { SnapshotEntry(date: $0, content: content) }
     }

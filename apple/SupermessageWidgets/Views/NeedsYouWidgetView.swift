@@ -71,9 +71,11 @@ struct NeedsYouWidgetView: View {
                 .font(.headline)
                 .widgetAccentable()
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
             if let next {
                 Text("\(next.agent): \(next.question)")
                     .font(.caption)
+                    .multilineTextAlignment(.leading)
                     .lineLimit(2)
             } else {
                 Text(frame.pulse)
@@ -105,7 +107,7 @@ struct NeedsYouWidgetView: View {
         VStack(alignment: .leading, spacing: 6) {
             header(frame)
             if let top {
-                WidgetDecisionCard(decision: top, compact: true)
+                WidgetDecisionCard(decision: top, compact: true, now: entry.date)
             } else {
                 AllClear(frame: frame)
             }
@@ -123,7 +125,7 @@ struct NeedsYouWidgetView: View {
                 AllClear(frame: frame)
             }
             ForEach(decisions.prefix(limit)) { decision in
-                WidgetDecisionCard(decision: decision, compact: false)
+                WidgetDecisionCard(decision: decision, compact: false, now: entry.date)
             }
             if decisions.count > limit {
                 Text("\(decisions.count - limit) more in the app")
@@ -168,6 +170,9 @@ struct WidgetDecisionCard: View {
     let decision: WidgetSnapshot.Decision
     /// The small family: the question takes the width, the buttons go under.
     let compact: Bool
+    /// The entry's moment, which the age is measured from — WidgetKit draws
+    /// later entries ahead of time.
+    let now: Date
 
     private var owed: Bool { decision.answered == nil }
 
@@ -206,7 +211,7 @@ struct WidgetDecisionCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(owed ? WidgetTheme.content : WidgetTheme.contentMuted)
                     .lineLimit(1)
-                Text(decision.askedAt, style: .relative)
+                Text(WidgetAge.since(decision.askedAt, now: now))
                     .font(.caption2)
                     .foregroundStyle(WidgetTheme.contentFaint)
                     .lineLimit(1)
@@ -214,6 +219,7 @@ struct WidgetDecisionCard: View {
             Text(decision.question)
                 .font(compact ? .caption : .footnote)
                 .foregroundStyle(WidgetTheme.content)
+                .multilineTextAlignment(.leading)
                 .lineLimit(compact ? 3 : 2)
             if let answered = decision.answered {
                 Label(answered.line, systemImage: "paperplane")
@@ -251,7 +257,7 @@ struct WidgetDecisionCard: View {
 
     private func label(_ option: WidgetSnapshot.Option) -> some View {
         Text(option.label)
-            .font(.caption.weight(.semibold))
+            .font((compact ? Font.caption2 : Font.caption).weight(.semibold))
             .foregroundStyle(option.declines ? WidgetTheme.content : WidgetTheme.signalSoft)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
@@ -300,5 +306,21 @@ struct WidgetUnavailableView: View {
         case .waiting: return "Open the app once to start."
         case .snapshot: return ""
         }
+    }
+}
+
+/// How long ago, in whole units — "3 min", "2 hr" — fixed at the entry's
+/// moment. Not `Text(_:style: .relative)`: that ticks in seconds ("3 min,
+/// 12 sec"), which a glance does not need and a Home Screen row cannot fit.
+/// The timeline adds an entry every few minutes so it stays close
+/// (`SnapshotEntry.timeline`).
+enum WidgetAge {
+    static func since(_ date: Date, now: Date) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 1
+        formatter.allowedUnits = [.day, .hour, .minute]
+        let seconds = max(60, now.timeIntervalSince(date))
+        return formatter.string(from: seconds) ?? ""
     }
 }

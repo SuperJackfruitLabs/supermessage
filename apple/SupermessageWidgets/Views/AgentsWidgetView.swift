@@ -55,7 +55,8 @@ struct AgentsWidgetView: View {
                 Link(destination: AppLink.room(agent.roomId) ?? URL(string: "supermessage://")!) {
                     WidgetAgentRow(
                         agent: agent,
-                        state: index < frame.states.count ? frame.states[index] : nil)
+                        state: index < frame.states.count ? frame.states[index] : nil,
+                        now: entry.date)
                 }
             }
             Spacer(minLength: 0)
@@ -69,6 +70,7 @@ struct AgentsWidgetView: View {
 struct WidgetAgentRow: View {
     let agent: WidgetSnapshot.Agent
     let state: WidgetSnapshot.AgentState?
+    let now: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -88,7 +90,7 @@ struct WidgetAgentRow: View {
                         .lineLimit(1)
                 }
                 if let last = agent.lastActivity {
-                    Text(last, style: .relative)
+                    Text(WidgetAge.since(last, now: now))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(WidgetTheme.contentFaint)
                         .lineLimit(1)
