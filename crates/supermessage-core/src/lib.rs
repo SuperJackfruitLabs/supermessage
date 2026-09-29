@@ -42,6 +42,7 @@ pub mod gate_outcome;
 pub mod invitation;
 pub mod item_view;
 pub mod live;
+pub mod live_activity;
 pub mod matrix_links;
 pub mod media;
 pub mod mentions;

@@ -39,18 +39,35 @@
 //! the fleet line and every agent's state from each moment one of them
 //! changes — and the widget shows the frame whose time has come, rather than
 //! working out a roster rule of its own.
+//!
+//! ## Since you last opened
+//!
+//! The Home Screen cannot be live: WidgetKit defers a reload asked for from
+//! the background and budgets them (TestFlight 34, 2026-09-29). What is live
+//! is the Lock Screen's Live Activity, which the hub pushes. So the Agents
+//! widget is a *recap*: one row per agent that did something since the app
+//! was last opened ([`apply_opened`]) — failed first, then finished, then
+//! said — and nothing for an agent that was quiet ([`WidgetSnapshot::recap`]).
+//!
+//! ## Reloading
+//!
+//! A decision arriving or leaving reloads the widgets at once: a button that
+//! answers something already answered is worse than a late one. Anything else
+//! reloads only once [`RELOAD_EVERY_MS`] has passed since the last reload,
+//! which keeps a busy fleet inside WidgetKit's daily budget; the timeline
+//! asks again on the same period, so a skipped reload is picked up then.
 
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
 use crate::dto::{Membership, RoomRow, TimelineRow};
-use crate::notification::{ActivityKind, NotificationCategory, NotificationDto};
+use crate::notification::{ActivityKind, NotificationCategory, NotificationDto, TurnCounts};
 use crate::roster::{AgentState, ACTIVE_WITHIN_MS, QUIET_AFTER_MS};
 
 /// The snapshot's shape. A stored snapshot of another schema is not read:
 /// the next write starts afresh rather than guessing at old fields.
-pub const WIDGET_SCHEMA: u32 = 2;
+pub const WIDGET_SCHEMA: u32 = 3;
 
 /// How many decisions the snapshot holds. The large widget shows three; the
 /// rest are what the count is made of.
@@ -77,6 +94,12 @@ pub const ANSWERED_GATE_KEEP_MS: u64 = 24 * 60 * 60 * 1000;
 /// change the roster rule can make; the bound is only a backstop.
 pub const MAX_FRAMES: usize = 1 + 2 * MAX_AGENTS;
 
+/// How long a change that is not a decision waits for a reload after the
+/// last one — and how often the widgets' timeline asks again on its own.
+/// About a hundred a day at most, within WidgetKit's budget of forty to
+/// seventy asked-for reloads plus its own.
+pub const RELOAD_EVERY_MS: u64 = 15 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // The snapshot
 // ---------------------------------------------------------------------------
@@ -96,6 +119,10 @@ pub struct WidgetSnapshot {
     pub roster_at_ms: u64,
     /// When a write last asked the widgets to reload.
     pub reloaded_at_ms: u64,
+    /// When the app was last opened — `0` until it has been, when everything
+    /// an agent did counts as new. What each agent did since is on it
+    /// ([`WidgetAgent::outcome`]), and [`Self::recap`] lists them.
+    pub opened_at_ms: u64,
     pub signed_in: bool,
     /// Newest first, at most [`MAX_DECISIONS`].
     pub decisions: Vec<WidgetDecision>,
@@ -109,6 +136,10 @@ pub struct WidgetSnapshot {
     pub roster_waiting: u32,
     /// What to draw from each moment on; the first is from the write.
     pub frames: Vec<WidgetFrame>,
+    /// One row per agent that did something since [`Self::opened_at_ms`]:
+    /// failed first, then finished, then said, and the most recent first
+    /// within each. An agent that did nothing is not listed.
+    pub recap: Vec<WidgetRecap>,
 }
 
 /// Which kind of question a decision is.
@@ -194,6 +225,51 @@ pub struct WidgetAgent {
     pub step: Option<String>,
     /// Whether the roster itself said this room owes an answer.
     pub roster_needs_you: bool,
+    /// The most telling thing it did since the app was last opened: a turn
+    /// that failed outranks one that finished, which outranks a line.
+    pub outcome: Option<WidgetOutcome>,
+    /// "2 of 7 steps failed", "Finished · 7 steps", or what it said.
+    pub outcome_line: Option<String>,
+    pub outcome_at_ms: Option<u64>,
+    /// Pushes from it since the app was last opened.
+    pub unread: u32,
+    /// The last event counted in `unread`, so a push delivered twice in a
+    /// row counts once.
+    pub counted_event_id: Option<String>,
+}
+
+/// What an agent did since the app was last opened, most telling first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WidgetOutcome {
+    /// A turn ended with a tool call that failed.
+    Failed,
+    /// A turn ended with every tool call done.
+    Finished,
+    /// It said something, or asked something.
+    Said,
+}
+
+impl WidgetOutcome {
+    fn rank(self) -> u8 {
+        match self {
+            Self::Failed => 3,
+            Self::Finished => 2,
+            Self::Said => 1,
+        }
+    }
+}
+
+/// One row of the recap.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetRecap {
+    pub room_id: String,
+    pub name: String,
+    pub outcome: WidgetOutcome,
+    pub line: String,
+    pub unread: u32,
+    pub at_ms: u64,
 }
 
 /// How an agent's state is drawn. Carried beside the word so a host colours
@@ -246,12 +322,14 @@ impl WidgetSnapshot {
             updated_at_ms: 0,
             roster_at_ms: 0,
             reloaded_at_ms: 0,
+            opened_at_ms: 0,
             signed_in,
             decisions: Vec::new(),
             overflow: false,
             agents: Vec::new(),
             roster_waiting: 0,
             frames: Vec::new(),
+            recap: Vec::new(),
         }
     }
 
@@ -275,7 +353,17 @@ impl WidgetSnapshot {
             self.overflow,
             &self.agents,
             self.roster_waiting,
+            self.opened_at_ms,
         )
+    }
+
+    /// Which decisions are shown, and whether each is still owed — what a
+    /// change must reload at once for.
+    fn decisions_shown(&self) -> Vec<(&str, &str, bool)> {
+        self.decisions
+            .iter()
+            .map(|d| (d.room_id.as_str(), d.event_id.as_str(), d.pending()))
+            .collect()
     }
 }
 
@@ -361,6 +449,29 @@ fn needs_you_line(count: u32, overflow: bool) -> String {
         (n, true) => format!("{n}+ need you"),
         (1, false) => "1 needs you".to_string(),
         (n, false) => format!("{n} need you"),
+    }
+}
+
+fn steps(n: u32) -> String {
+    if n == 1 {
+        "1 step".to_string()
+    } else {
+        format!("{n} steps")
+    }
+}
+
+/// What a finished turn's counts say: whether it failed, and in a line.
+fn turn_outcome(turn: TurnCounts) -> (WidgetOutcome, String) {
+    match (turn.failed, turn.total) {
+        (0, 0) => (WidgetOutcome::Finished, "Finished".to_string()),
+        (0, total) => (
+            WidgetOutcome::Finished,
+            format!("Finished · {}", steps(total)),
+        ),
+        (failed, total) => (
+            WidgetOutcome::Failed,
+            format!("{failed} of {} failed", steps(total.max(failed))),
+        ),
     }
 }
 
@@ -451,6 +562,31 @@ fn frames(snapshot: &WidgetSnapshot, now_ms: u64) -> Vec<WidgetFrame> {
         .collect()
 }
 
+/// The agents that did something since the app was last opened, most
+/// telling first.
+fn recap(agents: &[WidgetAgent]) -> Vec<WidgetRecap> {
+    let mut rows: Vec<WidgetRecap> = agents
+        .iter()
+        .filter_map(|a| {
+            Some(WidgetRecap {
+                room_id: a.room_id.clone(),
+                name: a.name.clone(),
+                outcome: a.outcome?,
+                line: a.outcome_line.clone().unwrap_or_default(),
+                unread: a.unread,
+                at_ms: a.outcome_at_ms.unwrap_or(0),
+            })
+        })
+        .collect();
+    rows.sort_by_key(|r| {
+        (
+            std::cmp::Reverse(r.outcome.rank()),
+            std::cmp::Reverse(r.at_ms),
+        )
+    });
+    rows
+}
+
 // ---------------------------------------------------------------------------
 // Writing
 // ---------------------------------------------------------------------------
@@ -483,6 +619,7 @@ fn finish(stored: Option<WidgetSnapshot>, mut next: WidgetSnapshot, now_ms: u64)
     next.agents
         .sort_by_key(|a| std::cmp::Reverse(a.last_activity_ms.unwrap_or(0)));
     next.agents.truncate(MAX_AGENTS);
+    next.recap = recap(&next.agents);
 
     // Nothing stored yet is always a change: the first write is news.
     let before = stored.unwrap_or_else(|| WidgetSnapshot::empty(next.signed_in));
@@ -495,19 +632,27 @@ fn finish(stored: Option<WidgetSnapshot>, mut next: WidgetSnapshot, now_ms: u64)
         };
     }
     next.frames = frames(&next, now_ms);
-    // Every change asks for a reload. WidgetKit already defers and coalesces
-    // reloads asked for from the background (about five minutes on device,
-    // 2026-09-29), so a throttle here only added its own wait on top — and
-    // dropped the reload outright when the app had reloaded just before, with
-    // nothing left to ask again until the timeline's own refresh.
+    // A decision arriving, leaving or answered — or the account signing in
+    // or out — reloads at once: a widget offering a button for something
+    // already answered, or showing the last account, is wrong rather than
+    // late. Anything else waits out the period; the timeline asks again on
+    // the same period, so what is skipped here is drawn then.
+    let urgent =
+        before.decisions_shown() != next.decisions_shown() || before.signed_in != next.signed_in;
+    let due = now_ms.saturating_sub(before.reloaded_at_ms) >= RELOAD_EVERY_MS;
+    let reload = urgent || due;
     next.schema = WIDGET_SCHEMA;
     next.revision = before.revision + 1;
     next.updated_at_ms = now_ms;
-    next.reloaded_at_ms = now_ms;
+    next.reloaded_at_ms = if reload {
+        now_ms
+    } else {
+        before.reloaded_at_ms
+    };
     WidgetWrite {
         json: next.encode(),
         changed: true,
-        reload: true,
+        reload,
     }
 }
 
@@ -532,8 +677,54 @@ fn agent_mut<'a>(
         line: None,
         step: None,
         roster_needs_you: false,
+        outcome: None,
+        outcome_line: None,
+        outcome_at_ms: None,
+        unread: 0,
+        counted_event_id: None,
     });
     snapshot.agents.last_mut()
+}
+
+/// Note for the recap that an agent did something at `at_ms` — unless that
+/// was before the app was last opened, when the reader has seen it. A more
+/// telling outcome is never replaced by a less telling one: a failed turn
+/// the reader has not seen is still the news after the agent's next line.
+fn note_since(
+    agent: &mut WidgetAgent,
+    opened_at_ms: u64,
+    event_id: &str,
+    at_ms: u64,
+    outcome: WidgetOutcome,
+    line: String,
+) {
+    if at_ms < opened_at_ms {
+        return;
+    }
+    if agent.counted_event_id.as_deref() != Some(event_id) {
+        agent.unread += 1;
+        agent.counted_event_id = Some(event_id.to_string());
+    }
+    let replaces = match agent.outcome {
+        None => true,
+        Some(held) => {
+            outcome.rank() > held.rank()
+                || (outcome.rank() == held.rank() && at_ms >= agent.outcome_at_ms.unwrap_or(0))
+        }
+    };
+    if replaces {
+        agent.outcome = Some(outcome);
+        agent.outcome_line = Some(line);
+        agent.outcome_at_ms = Some(at_ms);
+    }
+}
+
+fn clear_since(agent: &mut WidgetAgent) {
+    agent.outcome = None;
+    agent.outcome_line = None;
+    agent.outcome_at_ms = None;
+    agent.unread = 0;
+    agent.counted_event_id = None;
 }
 
 /// Say `line` at `at_ms` for an agent — unless it already said something
@@ -629,7 +820,11 @@ fn start(stored: Option<&str>, signed_in: bool) -> (Option<WidgetSnapshot>, Widg
 ///
 /// - a permission request or a gate is added as a decision (once — the same
 ///   event pushed twice is one question);
-/// - a message moves its agent's line and last activity, never backwards;
+/// - a message moves its agent's line and last activity, never backwards —
+///   and, when the push says how the turn it ends went ([`NotificationDto::turn`]),
+///   notes for the recap that the turn finished or failed;
+/// - a decision and a message both count for the recap, when they came after
+///   the app was last opened;
 /// - a turn card says the turn finished;
 /// - the board's receipt removes the gate it closes, from its own asker only;
 /// - this account's answer from another device removes a permission request
@@ -646,6 +841,7 @@ pub fn apply_notification(
         return finish(stored, next, now_ms);
     };
     let room_id = note.room_id.as_str();
+    let opened_at_ms = next.opened_at_ms;
     match activity.kind {
         ActivityKind::Decision => {
             let known = next.decisions.iter().any(|d| d.event_id == note.event_id);
@@ -664,7 +860,15 @@ pub fn apply_notification(
                         &activity.room_name,
                         activity.room_is_agent,
                     ) {
-                        speak(agent, Some(question), activity.at_ms);
+                        speak(agent, Some(question.clone()), activity.at_ms);
+                        note_since(
+                            agent,
+                            opened_at_ms,
+                            &note.event_id,
+                            activity.at_ms,
+                            WidgetOutcome::Said,
+                            question,
+                        );
                     }
                 }
             }
@@ -680,7 +884,23 @@ pub fn apply_notification(
                 &activity.room_name,
                 activity.room_is_agent,
             ) {
+                let (outcome, outcome_line) = match note.turn {
+                    Some(turn) => turn_outcome(turn),
+                    None => (
+                        WidgetOutcome::Said,
+                        line.clone()
+                            .unwrap_or_else(|| crate::notification::GENERIC_BODY.to_string()),
+                    ),
+                };
                 speak(agent, line, activity.at_ms);
+                note_since(
+                    agent,
+                    opened_at_ms,
+                    &note.event_id,
+                    activity.at_ms,
+                    outcome,
+                    outcome_line,
+                );
             }
         }
         ActivityKind::TurnFinished => {
@@ -804,12 +1024,24 @@ pub fn apply_roster(
                     .and_then(|p| bound(&p.text, LINE_MAX_CHARS)),
                 step: steps.get(id).and_then(|s| bound(s, LINE_MAX_CHARS)),
                 roster_needs_you: row.state == AgentState::NeedsYou,
+                outcome: None,
+                outcome_line: None,
+                outcome_at_ms: None,
+                unread: 0,
+                counted_event_id: None,
             };
             if let Some(pushed) = previous.get(id) {
                 if pushed.last_activity_ms > agent.last_activity_ms {
                     agent.last_activity_ms = pushed.last_activity_ms;
                     agent.line = pushed.line.clone().or(agent.line);
                 }
+                // The roster cannot see what the pushes counted for the
+                // recap; it carries over.
+                agent.outcome = pushed.outcome;
+                agent.outcome_line = pushed.outcome_line.clone();
+                agent.outcome_at_ms = pushed.outcome_at_ms;
+                agent.unread = pushed.unread;
+                agent.counted_event_id = pushed.counted_event_id.clone();
             }
             agent
         })
@@ -955,6 +1187,15 @@ pub fn clear_answer(
     {
         d.answered = None;
     }
+    finish(stored, next, now_ms)
+}
+
+/// The app was opened: what the agents did before now has been seen, so the
+/// recap starts again from here. Called on each foreground, while signed in.
+pub fn apply_opened(stored: Option<&str>, now_ms: u64) -> WidgetWrite {
+    let (stored, mut next) = start(stored, true);
+    next.opened_at_ms = now_ms;
+    next.agents.iter_mut().for_each(clear_since);
     finish(stored, next, now_ms)
 }
 

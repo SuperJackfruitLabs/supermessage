@@ -30,6 +30,27 @@ struct RemotePushTests {
         #expect(RemotePush(userInfo: ["room_id": "!r", "event_id": "$e"])?.unreadCount == nil)
     }
 
+    @Test("an answer's push carries how its turn went, as counts only")
+    func turnCounts() {
+        let base: [AnyHashable: Any] = ["room_id": "!r:hs", "event_id": "$e"]
+        func push(_ turn: Any?) -> RemotePush? {
+            var info = base
+            info["turn"] = turn
+            return RemotePush(userInfo: info)
+        }
+        #expect(push(["total": 7, "failed": 1])?.turn == RemotePush.Turn(total: 7, failed: 1))
+        #expect(push(["total": NSNumber(value: 3), "failed": NSNumber(value: 0)])?.turn == RemotePush.Turn(total: 3, failed: 0))
+        #expect(RemotePush(userInfo: base)?.turn == nil, "most pushes are not an answer")
+        // Half a turn, or something that is not a count, is no turn — and the
+        // push itself still stands.
+        #expect(push(["total": 7])?.turn == nil)
+        #expect(push(["total": -1, "failed": 0])?.turn == nil)
+        #expect(push(["total": 2.5, "failed": 0])?.turn == nil)
+        #expect(push(["total": true, "failed": false])?.turn == nil)
+        #expect(push("7/1")?.turn == nil)
+        #expect(push("7/1")?.eventId == "$e")
+    }
+
     @Test("a push the extension could not improve still opens its room, and answers nothing")
     func openingKeys() {
         let push = RemotePush(userInfo: ["room_id": "!r:hs", "event_id": "$e"])!

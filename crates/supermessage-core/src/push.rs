@@ -9,7 +9,10 @@
 //!
 //! `event_id_only`, always: the push carries a room and an event id and no
 //! message content, so nothing a person wrote passes through the gateway or
-//! Apple. The app fetches and decrypts the event itself — on iOS in its
+//! Apple on its way to a notification. (The hub's fleet Live Activity pushes
+//! are the one exception, by operator decision of 2026-09-29: agent names,
+//! steps and a pending decision's question and options reach Apple in
+//! plaintext there. See `crate::live_activity`.) The app fetches and decrypts the event itself — on iOS in its
 //! Notification Service Extension, through `Session::notification_for`.
 //!
 //! No `default_payload`: the hub's gateway builds the whole APNs payload

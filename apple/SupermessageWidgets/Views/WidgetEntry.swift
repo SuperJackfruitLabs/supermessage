@@ -108,17 +108,34 @@ enum WidgetSample {
             .init(word: "idle", tone: .idle),
             .init(word: "quiet", tone: .quiet),
         ]
+        // What they did since the app was last opened, fifty minutes ago:
+        // the core's order — failed, finished, said.
+        let recap: [WidgetSnapshot.Recap] = [
+            .init(
+                roomId: "!quill", name: "Writer Quill", outcome: .failed,
+                line: "2 of 7 steps failed", unread: 2, atMs: ms - 12 * minute),
+            .init(
+                roomId: "!ganesha", name: "Ganesha", outcome: .finished,
+                line: "Finished · 7 steps", unread: 1, atMs: ms - 20 * minute),
+            .init(
+                roomId: "!atlas", name: "Atlas", outcome: .said,
+                line: "Rebuilt the index; 3 tests still failing", unread: 4, atMs: ms - minute),
+            .init(
+                roomId: "!hermes", name: "Hermes", outcome: .said,
+                line: "Run git push origin main?", unread: 1, atMs: ms - 3 * minute),
+        ]
         let count = UInt32(owed.count)
         let working = UInt32(states.filter { $0.tone == .working || $0.tone == .active }.count)
         let asks = count == 0 ? nil : (count == 1 ? "1 needs you" : "\(count) need you")
         return WidgetSnapshot(
-            signedIn: true, decisions: decisions, agents: agents,
+            openedAtMs: ms - 50 * minute, signedIn: true, decisions: decisions, agents: agents,
             frames: [
                 .init(
                     fromMs: ms, needsYou: count, needsYouCount: "\(count)",
                     needsYouLine: asks ?? "Nothing needs you", working: working,
                     pulse: asks.map { "\(working) working · \($0)" } ?? "\(working) working",
                     states: states)
-            ])
+            ],
+            recap: recap)
     }
 }

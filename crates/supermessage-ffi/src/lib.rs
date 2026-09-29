@@ -360,6 +360,35 @@ impl Core {
         Ok(())
     }
 
+    /// Send a Live Activity push token to the hub on `gateway_url`'s origin,
+    /// authenticated as this session (`core::live_activity`). An error when
+    /// the hub did not take it; the host retries.
+    pub fn register_live_activity_token(
+        &self,
+        gateway_url: String,
+        token: supermessage_core::live_activity::LiveActivityToken,
+    ) -> Result<(), FfiError> {
+        self.block(
+            self.session
+                .register_live_activity_token(&gateway_url, &token),
+        )?;
+        Ok(())
+    }
+
+    /// Ask the hub to forget a Live Activity token: the activity ended.
+    pub fn unregister_live_activity_token(
+        &self,
+        gateway_url: String,
+        kind: supermessage_core::live_activity::LiveActivityTokenKind,
+        activity_id: Option<String>,
+    ) -> Result<(), FfiError> {
+        self.block(
+            self.session
+                .unregister_live_activity_token(&gateway_url, kind, activity_id),
+        )?;
+        Ok(())
+    }
+
     /// Stop syncing while the app is away, so a second process can take the
     /// store lock. Streams stay subscribed. See `Session::pause_sync`.
     pub fn sync_pause(&self) {
@@ -1223,6 +1252,15 @@ pub fn widget_clear_answer(
     now_ms: u64,
 ) -> supermessage_core::widget::WidgetWrite {
     supermessage_core::widget::clear_answer(stored.as_deref(), &room_id, &event_id, now_ms)
+}
+
+/// The app was opened: the widgets' recap starts again from `now_ms`.
+#[uniffi::export]
+pub fn widget_apply_opened(
+    stored: Option<String>,
+    now_ms: u64,
+) -> supermessage_core::widget::WidgetWrite {
+    supermessage_core::widget::apply_opened(stored.as_deref(), now_ms)
 }
 
 /// Signed out: nothing kept.

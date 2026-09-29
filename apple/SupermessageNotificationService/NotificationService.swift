@@ -23,8 +23,9 @@ import WidgetKit
 /// away this is the only thing that sees what happens — so each push it
 /// decides is merged into the widgets' snapshot too (`WidgetFeed`, the core's
 /// `widget::apply_notification`): a decision asked, an agent's latest line, a
-/// finished turn, a gate the board resolved. The app's own roster replaces
-/// those increments when it next runs.
+/// finished turn, a gate the board resolved — and what each agent did since
+/// the app was last opened, for the Agents widget's recap. The app's own
+/// roster replaces the agents' lines when it next runs.
 ///
 /// Kept small on purpose: logging at `warn`, no media fetched, nothing written
 /// but what the SDK's own stores write and the widgets' one small file.
@@ -105,16 +106,19 @@ final class NotificationWorker: @unchecked Sendable {
     {
         guard let core = sharedCore(),
             (try? core.restoreSessionQuietly()) == true,
-            let note = try? core.notificationFor(roomId: push.roomId, eventId: push.eventId)
+            var note = try? core.notificationFor(roomId: push.roomId, eventId: push.eventId)
         else { return base }
+        // The one thing the core cannot read itself: what the push said
+        // about the turn this answer ended, for the widgets' recap.
+        note.turn = push.turn.map { TurnCounts(total: $0.total, failed: $0.failed) }
         Self.feedWidgets(note)
         return Self.apply(note, to: base)
     }
 
-    /// Merge `note` into the widgets' snapshot and, when it changed what a
-    /// widget shows, ask WidgetKit to redraw. WidgetKit defers and coalesces
-    /// reloads asked for from an extension, and budgets them; the core asks
-    /// on every change and leaves the pacing to it.
+    /// Merge `note` into the widgets' snapshot and, when the core says it is
+    /// worth it, ask WidgetKit to redraw: at once for a decision, otherwise
+    /// at most every fifteen minutes (`core::widget`, "Reloading") — WidgetKit
+    /// budgets the reloads an extension asks for.
     static func feedWidgets(_ note: NotificationDto, feed: WidgetFeed? = WidgetFeed.shared()) {
         guard let feed, feed.apply(note) else { return }
         WidgetCenter.shared.reloadAllTimelines()

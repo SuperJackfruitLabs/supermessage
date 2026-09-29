@@ -69,6 +69,8 @@ open class StubCore : CoreInterface {
     override fun setRoomNotifications(roomId: kotlin.String, mode: NotificationMode): Unit = throw NotImplementedError()
     override fun registerPusher(registration: uniffi.supermessage_core.PushRegistration): Unit = throw NotImplementedError()
     override fun unregisterPusher(): Unit = throw NotImplementedError()
+    override fun registerLiveActivityToken(gatewayUrl: String, token: uniffi.supermessage_core.LiveActivityToken): Unit = throw NotImplementedError()
+    override fun unregisterLiveActivityToken(gatewayUrl: String, kind: uniffi.supermessage_core.LiveActivityTokenKind, activityId: String?): Unit = throw NotImplementedError()
     override fun syncPause(): Unit = throw NotImplementedError()
     override fun syncResume(): Unit = throw NotImplementedError()
     override fun notificationFor(roomId: kotlin.String, eventId: kotlin.String): NotificationDto = throw NotImplementedError()

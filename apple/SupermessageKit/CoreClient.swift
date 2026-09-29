@@ -397,4 +397,18 @@ public actor CoreClient {
     public func registerPusher(registration: PushRegistration) async throws {
         try await run { try $0.registerPusher(registration: registration) }
     }
+
+    // MARK: - The fleet Live Activity (see Notifications/LiveActivityTokens.swift)
+
+    public func registerLiveActivityToken(gatewayUrl: String, token: LiveActivityToken) async throws {
+        try await run { try $0.registerLiveActivityToken(gatewayUrl: gatewayUrl, token: token) }
+    }
+
+    public func unregisterLiveActivityToken(
+        gatewayUrl: String, kind: LiveActivityTokenKind, activityId: String?
+    ) async throws {
+        try await run {
+            try $0.unregisterLiveActivityToken(gatewayUrl: gatewayUrl, kind: kind, activityId: activityId)
+        }
+    }
 }

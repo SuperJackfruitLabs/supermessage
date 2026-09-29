@@ -462,6 +462,11 @@ void uniffi_supermessage_ffi_fn_method_core_recover_with_key(void*_Nonnull ptr, 
 RustBuffer uniffi_supermessage_ffi_fn_method_core_recovery_state(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REGISTER_LIVE_ACTIVITY_TOKEN
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REGISTER_LIVE_ACTIVITY_TOKEN
+void uniffi_supermessage_ffi_fn_method_core_register_live_activity_token(void*_Nonnull ptr, RustBuffer gateway_url, RustBuffer token, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REGISTER_PUSHER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_REGISTER_PUSHER
 void uniffi_supermessage_ffi_fn_method_core_register_pusher(void*_Nonnull ptr, RustBuffer registration, RustCallStatus *_Nonnull out_status
@@ -612,6 +617,11 @@ int8_t uniffi_supermessage_ffi_fn_method_core_toggle_reaction(void*_Nonnull ptr,
 void uniffi_supermessage_ffi_fn_method_core_unignore_user(void*_Nonnull ptr, RustBuffer user_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_UNREGISTER_LIVE_ACTIVITY_TOKEN
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_UNREGISTER_LIVE_ACTIVITY_TOKEN
+void uniffi_supermessage_ffi_fn_method_core_unregister_live_activity_token(void*_Nonnull ptr, RustBuffer gateway_url, RustBuffer kind, RustBuffer activity_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_UNREGISTER_PUSHER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_UNREGISTER_PUSHER
 void uniffi_supermessage_ffi_fn_method_core_unregister_pusher(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -715,6 +725,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_widget_answer_for(RustBuffer stored, 
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_NOTIFICATION
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_NOTIFICATION
 RustBuffer uniffi_supermessage_ffi_fn_func_widget_apply_notification(RustBuffer stored, RustBuffer note, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_OPENED
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_OPENED
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_apply_opened(RustBuffer stored, uint64_t now_ms, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_ROSTER
@@ -1130,6 +1145,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_widget_apply_notification(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_OPENED
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_OPENED
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_apply_opened(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_ROSTER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_APPLY_ROSTER
 uint16_t uniffi_supermessage_ffi_checksum_func_widget_apply_roster(void
@@ -1328,6 +1349,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_recovery_state(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REGISTER_LIVE_ACTIVITY_TOKEN
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REGISTER_LIVE_ACTIVITY_TOKEN
+uint16_t uniffi_supermessage_ffi_checksum_method_core_register_live_activity_token(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REGISTER_PUSHER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_REGISTER_PUSHER
 uint16_t uniffi_supermessage_ffi_checksum_method_core_register_pusher(void
@@ -1505,6 +1532,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_toggle_reaction(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_UNIGNORE_USER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_UNIGNORE_USER
 uint16_t uniffi_supermessage_ffi_checksum_method_core_unignore_user(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_UNREGISTER_LIVE_ACTIVITY_TOKEN
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_UNREGISTER_LIVE_ACTIVITY_TOKEN
+uint16_t uniffi_supermessage_ffi_checksum_method_core_unregister_live_activity_token(void
     
 );
 #endif

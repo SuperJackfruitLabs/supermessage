@@ -8,12 +8,15 @@ import WidgetKit
 import SupermessageKit
 #endif
 
-/// Every agent room: its state, what it last said or is doing now, and a
-/// tap into its room.
+/// What the agents did since the app was last opened: one row per agent that
+/// did something — failed first, then finished, then said — and a tap into
+/// its room.
 ///
-/// The state word and its tone for this moment come from the entry's frame
-/// (`core::widget`), so an agent reads "idle" fifteen minutes after it last
-/// spoke without anybody writing anything.
+/// A recap, not a live view. The Home Screen cannot be live (WidgetKit
+/// defers and budgets the reloads a push asks for); the Lock Screen's fleet
+/// Live Activity is what is live. Which agents are listed, in what order and
+/// with what line is the core's (`core::widget`, `WidgetSnapshot.recap`);
+/// an agent that did nothing is not listed at all.
 struct AgentsWidgetView: View {
     let entry: SnapshotEntry
     let family: WidgetFamily
@@ -37,51 +40,74 @@ struct AgentsWidgetView: View {
     private var limit: Int { family == .systemLarge ? 6 : 3 }
 
     private func list(_ snapshot: WidgetSnapshot, _ frame: WidgetSnapshot.Frame) -> some View {
-        let most = max(1, min(limit, snapshot.agents.count))
+        let most = max(1, min(limit, snapshot.recap.count))
+        // Each count of rows first with its "N more" line, then without it:
+        // a row is worth more than the line counting it.
         return ViewThatFits(in: .vertical) {
             ForEach((1...most).reversed(), id: \.self) { rows in
-                list(snapshot, frame, rows: rows)
+                list(snapshot, frame, rows: rows, counted: true)
+                list(snapshot, frame, rows: rows, counted: false)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func list(_ snapshot: WidgetSnapshot, _ frame: WidgetSnapshot.Frame, rows: Int) -> some View {
+    private func list(
+        _ snapshot: WidgetSnapshot, _ frame: WidgetSnapshot.Frame, rows: Int, counted: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: family == .systemLarge ? 10 : 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Agents")
+                Text(since(snapshot))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(WidgetTheme.contentMuted)
+                    .lineLimit(1)
                 Spacer(minLength: 4)
                 Text(frame.pulse)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(frame.needsYou > 0 ? WidgetTheme.accent : WidgetTheme.contentFaint)
                     .lineLimit(1)
             }
-            if snapshot.agents.isEmpty {
-                Text("No agent rooms yet.")
+            if snapshot.recap.isEmpty {
+                Text(nothingNew(snapshot))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(WidgetTheme.content)
+                Text(snapshot.agents.isEmpty ? "No agent rooms yet." : "Quiet while you were away.")
                     .font(.caption)
                     .foregroundStyle(WidgetTheme.contentMuted)
             }
-            ForEach(Array(snapshot.agents.prefix(rows).enumerated()), id: \.element.id) {
-                index, agent in
-                Link(destination: AppLink.room(agent.roomId) ?? URL(string: "supermessage://")!) {
-                    WidgetAgentRow(
-                        agent: agent,
-                        state: index < frame.states.count ? frame.states[index] : nil,
-                        now: entry.date)
+            ForEach(snapshot.recap.prefix(rows)) { row in
+                Link(destination: AppLink.room(row.roomId) ?? URL(string: "supermessage://")!) {
+                    WidgetRecapRow(row: row, now: entry.date)
                 }
+            }
+            if counted, snapshot.recap.count > rows {
+                Text("\(snapshot.recap.count - rows) more in the app")
+                    .font(.caption2)
+                    .foregroundStyle(WidgetTheme.contentFaint)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
+
+    /// "Since 10:42" — when the app was last opened — or plain "Agents"
+    /// before it has been.
+    private func since(_ snapshot: WidgetSnapshot) -> String {
+        // With nothing new, the body says since when; the header need not.
+        guard let opened = snapshot.openedAt, !snapshot.recap.isEmpty else { return "Agents" }
+        return "Since \(opened.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private func nothingNew(_ snapshot: WidgetSnapshot) -> String {
+        guard let opened = snapshot.openedAt else { return "Nothing new" }
+        return "Nothing new since \(opened.formatted(date: .omitted, time: .shortened))"
+    }
 }
 
-/// One agent: a dot and its state, when it last spoke, and under its name
-/// the step it is on or the last thing it said.
-struct WidgetAgentRow: View {
-    let agent: WidgetSnapshot.Agent
-    let state: WidgetSnapshot.AgentState?
+/// One agent in the recap: a dot for how it went, its name, how many pushes
+/// and how long ago, and under its name the line — "2 of 7 steps failed",
+/// "Finished · 7 steps", or what it said.
+struct WidgetRecapRow: View {
+    let row: WidgetSnapshot.Recap
     let now: Date
 
     var body: some View {
@@ -90,46 +116,36 @@ struct WidgetAgentRow: View {
                 Circle()
                     .fill(dot)
                     .frame(width: 7, height: 7)
-                Text(agent.name)
+                Text(row.name)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(WidgetTheme.content)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                if let state {
-                    Text(state.word)
+                if row.unread > 1 {
+                    Text("\(row.unread) new")
                         .font(.caption2)
-                        .foregroundStyle(state.tone == .needsYou ? WidgetTheme.accent : WidgetTheme.contentMuted)
+                        .foregroundStyle(WidgetTheme.contentMuted)
                         .lineLimit(1)
                 }
-                if let last = agent.lastActivity {
-                    Text(WidgetAge.since(last, now: now))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(WidgetTheme.contentFaint)
-                        .lineLimit(1)
-                        .frame(maxWidth: 58, alignment: .trailing)
-                }
-            }
-            if let detail {
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(WidgetTheme.contentMuted)
+                Text(WidgetAge.since(row.at, now: now))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(WidgetTheme.contentFaint)
                     .lineLimit(1)
-                    .padding(.leading, 13)
+                    .frame(maxWidth: 58, alignment: .trailing)
             }
+            Text(row.line)
+                .font(.caption)
+                .foregroundStyle(row.outcome == .failed ? WidgetTheme.danger : WidgetTheme.contentMuted)
+                .lineLimit(1)
+                .padding(.leading, 13)
         }
     }
 
-    /// The step while it works; otherwise what it last said.
-    private var detail: String? {
-        if state?.tone == .working, let step = agent.step { return step }
-        return agent.line
-    }
-
     private var dot: Color {
-        switch state?.tone {
-        case .needsYou?: return WidgetTheme.accent
-        case .working?, .active?: return WidgetTheme.ok
-        default: return WidgetTheme.contentFaint
+        switch row.outcome {
+        case .failed: return WidgetTheme.danger
+        case .finished: return WidgetTheme.ok
+        case .said: return WidgetTheme.accent
         }
     }
 }

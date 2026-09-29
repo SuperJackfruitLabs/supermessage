@@ -138,6 +138,21 @@ pub struct NotificationDto {
     /// Extension's path — and `None` from [`notification_for_row`], whose
     /// caller has the whole timeline to read instead.
     pub activity: Option<NotificationActivity>,
+    /// How the turn this event ended went, when the push said: the hub adds
+    /// `"turn": {"total", "failed"}` to the push of an agent's answer
+    /// (spec 2026-09-29, A5), because the turn card that carries the same
+    /// counts is quiet and never pushed. Only counts, never text. The core
+    /// cannot see the push's payload, so the Notification Service Extension
+    /// sets this from it; every constructor here leaves it `None`.
+    #[uniffi(default = None)]
+    pub turn: Option<TurnCounts>,
+}
+
+/// A turn's tool calls: how many it made and how many of those failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct TurnCounts {
+    pub total: u32,
+    pub failed: u32,
 }
 
 /// What kind of news a pushed event is for the widgets.
@@ -206,6 +221,7 @@ impl NotificationDto {
             fallback_title: None,
             fallback_body: None,
             activity: None,
+            turn: None,
         }
     }
 

@@ -29,6 +29,8 @@ enum WidgetTheme {
     static let accent = dynamic(\.accent)
     static let accentSoft = dynamic(\.accentSoft)
     static let ok = dynamic(\.ok)
+    /// A turn that failed.
+    static let danger = dynamic(\.danger)
 
     /// Amber, and its ground. **Only `WidgetDecisionCard` may draw these** —
     /// the widgets' counterpart of the app's `DecisionCard`, and like it drawn

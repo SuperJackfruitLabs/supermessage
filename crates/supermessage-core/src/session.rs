@@ -45,12 +45,20 @@ use super::rooms::{self, RoomListHandle, SpaceSelection};
 use super::safety;
 use super::search::{self, SearchResultDto};
 use super::secrets::{
-    generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_PUSHER, KEY_STORE_PASSPHRASE,
+    generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_LIVE_ACTIVITY, KEY_PUSHER,
+    KEY_STORE_PASSPHRASE,
 };
 use super::spaces::{self, SpaceSummary};
 use super::sync::{self, SyncHandle};
 use super::timeline::FocusedTimeline;
 use super::tls;
+
+/// What a call to the hub's Live Activity token endpoint does.
+#[derive(Clone, Copy)]
+enum TokenVerb {
+    Register,
+    Delete,
+}
 
 /// Holds the active account's client, if any.
 ///
@@ -272,9 +280,13 @@ impl Session {
             // itself, but that is not in the spec, and one that does not
             // would push this account's messages to a phone signed out of it.
             self.remove_pusher(active).await;
+            // The same for the Live Activity tokens: a hub still holding them
+            // would go on pushing the fleet onto a signed-out Lock Screen.
+            self.remove_live_activity_tokens(active).await;
             self.auth.logout(active, self.store.as_ref()).await?;
         }
         self.store.delete(KEY_PUSHER)?;
+        self.store.delete(KEY_LIVE_ACTIVITY)?;
         self.store.delete(KEY_HOMESERVER_URL)?;
         *self.client.write().await = None;
         // Drop our own strong reference before touching the store directory
@@ -1199,6 +1211,127 @@ impl Session {
         let client = self.require_client().await?;
         self.remove_pusher(&client).await;
         self.store.delete(KEY_PUSHER)
+    }
+
+    /// Send a Live Activity token ActivityKit issued to the hub at
+    /// `gateway_url`'s origin (`crate::live_activity`), authenticated as this
+    /// session. An error when the hub did not take it — the host retries.
+    pub async fn register_live_activity_token(
+        &self,
+        gateway_url: &str,
+        token: &crate::live_activity::LiveActivityToken,
+    ) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        let endpoint = crate::live_activity::endpoint_for(gateway_url)
+            .ok_or_else(|| CoreError::Protocol("no https push gateway".into()))?;
+        let device_id = client
+            .device_id()
+            .ok_or_else(|| CoreError::Protocol("no device id".into()))?
+            .to_string();
+        let body = crate::live_activity::register_body(token, &device_id)
+            .ok_or_else(|| CoreError::Protocol("an update token needs its activity".into()))?;
+        self.live_activity_call(&client, TokenVerb::Register, &endpoint, &body)
+            .await?;
+        let stored = self.stored_live_activity_tokens().added(
+            &endpoint,
+            token.kind,
+            token.activity_id.as_deref(),
+        );
+        self.store.set(KEY_LIVE_ACTIVITY, &stored.encode())
+    }
+
+    /// Ask the hub to forget this device's token of `kind` — for an update
+    /// token, the one for `activity_id` — because the activity ended.
+    pub async fn unregister_live_activity_token(
+        &self,
+        gateway_url: &str,
+        kind: crate::live_activity::LiveActivityTokenKind,
+        activity_id: Option<String>,
+    ) -> CoreResult<()> {
+        let client = self.require_client().await?;
+        let endpoint = crate::live_activity::endpoint_for(gateway_url)
+            .ok_or_else(|| CoreError::Protocol("no https push gateway".into()))?;
+        let device_id = client
+            .device_id()
+            .ok_or_else(|| CoreError::Protocol("no device id".into()))?
+            .to_string();
+        let body = crate::live_activity::delete_body(kind, &device_id, activity_id.as_deref());
+        self.live_activity_call(&client, TokenVerb::Delete, &endpoint, &body)
+            .await?;
+        let stored = self
+            .stored_live_activity_tokens()
+            .removed(kind, activity_id.as_deref());
+        self.store.set(KEY_LIVE_ACTIVITY, &stored.encode())
+    }
+
+    fn stored_live_activity_tokens(&self) -> crate::live_activity::StoredTokens {
+        let json = self.store.get(KEY_LIVE_ACTIVITY).ok().flatten();
+        crate::live_activity::StoredTokens::decode(json.as_deref())
+    }
+
+    /// One authenticated call to the hub's token endpoint, bounded.
+    async fn live_activity_call(
+        &self,
+        client: &Client,
+        verb: TokenVerb,
+        endpoint: &str,
+        body: &serde_json::Value,
+    ) -> CoreResult<()> {
+        let access_token = client
+            .access_token()
+            .ok_or_else(|| CoreError::Protocol("no access token".into()))?;
+        let http = client.http_client();
+        let request = match verb {
+            TokenVerb::Register => http.post(endpoint),
+            TokenVerb::Delete => http.delete(endpoint),
+        };
+        let request = request
+            .bearer_auth(access_token)
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .timeout(std::time::Duration::from_secs(15));
+        let response = request
+            .send()
+            .await
+            .map_err(|e| CoreError::Network(e.to_string()))?;
+        let status = response.status();
+        if status.is_success() {
+            Ok(())
+        } else {
+            Err(CoreError::Network(format!("the hub answered {status}")))
+        }
+    }
+
+    /// Delete every Live Activity token this device registered. Best effort
+    /// and bounded, like [`Self::remove_pusher`]: signing out must not hang
+    /// on the hub, and a token left behind is refused by APNs once the app
+    /// is gone and then deleted by the hub.
+    async fn remove_live_activity_tokens(&self, client: &Client) {
+        let stored = self.stored_live_activity_tokens();
+        let Some(device_id) = client.device_id().map(|d| d.to_string()) else {
+            return;
+        };
+        let removals = async {
+            for entry in &stored.entries {
+                let body = crate::live_activity::delete_body(
+                    entry.kind,
+                    &device_id,
+                    entry.activity_id.as_deref(),
+                );
+                if let Err(e) = self
+                    .live_activity_call(client, TokenVerb::Delete, &stored.endpoint, &body)
+                    .await
+                {
+                    tracing::warn!(error = %e, "could not delete a Live Activity token");
+                }
+            }
+        };
+        if tokio::time::timeout(std::time::Duration::from_secs(5), removals)
+            .await
+            .is_err()
+        {
+            tracing::warn!("deleting this device's Live Activity tokens timed out");
+        }
     }
 
     /// The pusher this device last registered, if any.
@@ -2484,6 +2617,143 @@ mod tests {
         assert!(is_removal(&requests[1], "tok-1"), "{:?}", requests[1]);
         assert_eq!(requests[1]["app_id"], "dev.supermessage.ios");
         assert_eq!(session.store.get(KEY_PUSHER).unwrap(), None);
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// The hub's token endpoint on `server`, answering `status`.
+    async fn live_activity_hub(server: &wiremock::MockServer, status: u16) -> String {
+        use wiremock::matchers::path;
+        use wiremock::{Mock, ResponseTemplate};
+        Mock::given(path(crate::live_activity::TOKENS_PATH))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(server)
+            .await;
+        format!("{}/_matrix/push/v1/notify", server.uri())
+    }
+
+    async fn token_requests(
+        server: &wiremock::MockServer,
+    ) -> Vec<(String, String, serde_json::Value)> {
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| r.url.path() == crate::live_activity::TOKENS_PATH)
+            .map(|r| {
+                let auth = r
+                    .headers
+                    .get("authorization")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or_default()
+                    .to_string();
+                (
+                    r.method.to_string(),
+                    auth,
+                    serde_json::from_slice(&r.body).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn la_token(
+        kind: crate::live_activity::LiveActivityTokenKind,
+        activity_id: Option<&str>,
+    ) -> crate::live_activity::LiveActivityToken {
+        crate::live_activity::LiveActivityToken {
+            kind,
+            token: "beef".into(),
+            sandbox: true,
+            activity_id: activity_id.map(str::to_string),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_live_activity_token_goes_to_the_hub_as_this_session() {
+        use crate::live_activity::LiveActivityTokenKind::{Start, Update};
+        let (session, server, data_dir) = session_for_push("la-register", MAIN_PROCESS).await;
+        let gateway = live_activity_hub(&server, 200).await;
+        session
+            .register_live_activity_token(&gateway, &la_token(Start, None))
+            .await
+            .unwrap();
+        session
+            .register_live_activity_token(&gateway, &la_token(Update, Some("act-1")))
+            .await
+            .unwrap();
+        let requests = token_requests(&server).await;
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        let (verb, auth, body) = &requests[0];
+        assert_eq!(verb, "POST");
+        assert_eq!(auth, "Bearer abc123", "the session's own access token");
+        assert_eq!(
+            body,
+            &serde_json::json!({
+                "kind": "start", "token": "beef", "environment": "sandbox",
+                "device_id": "GHTYAJCE",
+            })
+        );
+        assert_eq!(requests[1].2["activity_id"], "act-1");
+
+        // An activity that ended is deleted, and forgotten.
+        session
+            .unregister_live_activity_token(&gateway, Update, Some("act-1".into()))
+            .await
+            .unwrap();
+        let requests = token_requests(&server).await;
+        assert_eq!(requests[2].0, "DELETE");
+        assert_eq!(
+            requests[2].2,
+            serde_json::json!({"kind": "update", "device_id": "GHTYAJCE", "activity_id": "act-1"})
+        );
+        let stored = session.stored_live_activity_tokens();
+        assert_eq!(stored.entries.len(), 1, "{stored:?}");
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn a_token_the_hub_refuses_is_an_error_to_retry() {
+        use crate::live_activity::LiveActivityTokenKind::Start;
+        let (session, server, data_dir) = session_for_push("la-refused", MAIN_PROCESS).await;
+        let gateway = live_activity_hub(&server, 401).await;
+        let result = session
+            .register_live_activity_token(&gateway, &la_token(Start, None))
+            .await;
+        assert!(result.is_err());
+        assert!(session.stored_live_activity_tokens().entries.is_empty());
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn signing_out_deletes_this_devices_live_activity_tokens() {
+        use crate::live_activity::LiveActivityTokenKind::{Start, Update};
+        let (session, server, data_dir) = session_for_push("la-logout", MAIN_PROCESS).await;
+        let gateway = live_activity_hub(&server, 200).await;
+        session
+            .register_live_activity_token(&gateway, &la_token(Start, None))
+            .await
+            .unwrap();
+        session
+            .register_live_activity_token(&gateway, &la_token(Update, Some("act-1")))
+            .await
+            .unwrap();
+
+        session.logout().await.unwrap();
+
+        let deletions: Vec<serde_json::Value> = token_requests(&server)
+            .await
+            .into_iter()
+            .filter(|(verb, auth, _)| verb == "DELETE" && auth == "Bearer abc123")
+            .map(|(_, _, body)| body)
+            .collect();
+        assert_eq!(
+            deletions,
+            vec![
+                serde_json::json!({"kind": "start", "device_id": "GHTYAJCE"}),
+                serde_json::json!({"kind": "update", "device_id": "GHTYAJCE", "activity_id": "act-1"}),
+            ]
+        );
+        assert_eq!(session.store.get(KEY_LIVE_ACTIVITY).unwrap(), None);
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 
