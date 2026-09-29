@@ -894,6 +894,21 @@ fn the_recap_is_failed_then_finished_then_said_and_newest_first_within_each() {
 }
 
 #[test]
+fn within_a_rank_the_newer_outcome_comes_first_not_the_agent_that_spoke_last() {
+    // Atlas failed long ago and has chattered since; Quill failed just now.
+    // The recap is about what happened, so Quill's failure leads — even
+    // though Atlas is the more recently active agent.
+    let s = snapshot(&pushed(&[
+        named(answer("!a:hs", "$1", "x", NOW - 9 * MIN, 3, 1), "Atlas"),
+        named(answer("!q:hs", "$2", "x", NOW - 5 * MIN, 3, 1), "Quill"),
+        named(message("!a:hs", "$3", "retrying", NOW - MIN), "Atlas"),
+    ]));
+    assert_eq!(s.agents[0].name, "Atlas", "the most recently active");
+    let order: Vec<&str> = s.recap.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(order, vec!["Quill", "Atlas"]);
+}
+
+#[test]
 fn an_agent_that_did_nothing_since_is_left_out() {
     let rows = [
         row(
