@@ -86,6 +86,7 @@ states.
 | Turn error card | `timeline/TurnErrorCard` (no catalogue) | `TurnErrorCardView` 3 | folded into `TimelineRow` (`TurnErrorCardView`, every attempt listed, no disclosure) |
 | Voice note / audio player | `timeline/AudioPlayer` 13 | `VoiceNoteView` 4 (every state per frame) | `AudioPreviews` 11 |
 | Voice transcript | `timeline/VoiceTranscript` 4 | `VoiceTranscriptView` 6 | `VoiceTranscriptView` (no catalogue) |
+| Voice reply (player on the text it speaks) | `timeline/AudioPlayer` 4 (Voice reply, long, dark, after a transcript) | `VoiceNoteView` 5 (Voice reply, long, dark, accessibility3, after a transcript) | `AudioPreviews` 5 (Voice reply, long, dark, huge text, after a transcript) |
 | Log line / placeholder | `timeline/LogLine` 5 | folded into `TimelineRowView` | folded into `TimelineRow` |
 | Unread marker | `timeline/UnreadMarker` 1 | folded into `TimelineRowView` | folded into `TimelineRow` |
 | Rich text | `RichText` (no catalogue) | `RichTextView` 2 | `RichText` 2 |
