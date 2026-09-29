@@ -1,4 +1,4 @@
-# The widget extension (P3 Live Activity, P4 widgets) and the App Group they
+# The widget extension (the fleet Live Activity, P4 widgets) and the App Group they
 # share with the app. Included by ../project.yml ONLY when the project is
 # generated with SM_EXTENSIONS=YES:
 #
@@ -38,7 +38,7 @@ targets:
       - path: Views
       # Shared with the app through SupermessageKit — one declaration each,
       # so the two processes cannot disagree about a shape.
-      - path: ../SupermessageKit/Notifications/AgentActivityAttributes.swift
+      - path: ../SupermessageKit/Notifications/FleetActivityAttributes.swift
       - path: ../SupermessageKit/Notifications/WidgetSnapshot.swift
       # The palette. Generated; never edited by hand.
       - path: ../Supermessage/Generated/ThemeTokens.swift

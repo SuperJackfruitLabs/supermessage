@@ -52,8 +52,16 @@
 		<string>fetch</string>
 	</array>
 
-	<!-- An agent's turn on the Lock Screen and in the Dynamic Island. -->
+	<!--
+	  The fleet on the Lock Screen and in the Dynamic Island: a Live Activity
+	  the AgentPod hub starts, updates and ends by push (FleetActivityController).
+	  Frequent updates, because the hub sends a step change as often as every
+	  three seconds while agents work; without the key iOS throttles an
+	  activity's pushes to a few an hour.
+	-->
 	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
 	<true/>
 
 	<!-- supermessage://open?room=<id>, which widgets and Live Activities open. -->

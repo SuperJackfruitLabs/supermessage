@@ -596,6 +596,12 @@ public final class Session {
         }
     }
 
+    /// The core's calls that hand the fleet Live Activity's tokens to the
+    /// hub, or `nil` when the client behind this session cannot make them.
+    public var liveActivityTokenClient: (any LiveActivityTokenRegistering)? {
+        client as? any LiveActivityTokenRegistering
+    }
+
     /// A room's notification setting, or `nil` when it cannot be read.
     public func notificationMode(of roomId: String) async -> NotificationMode? {
         try? await client.roomInfo(roomId: roomId).notifications

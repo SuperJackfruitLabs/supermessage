@@ -7,7 +7,8 @@ import UserNotifications
 import WidgetKit
 
 /// The platform surfaces that sit outside the view tree: notifications,
-/// push registration, the Live Activity and the widgets' snapshot.
+/// push registration, the fleet Live Activity's tokens and the widgets'
+/// snapshot.
 ///
 /// Each watches the session's stores through Observation and reacts; none
 /// of them changes a store. That is what lets this live beside the views
@@ -15,7 +16,7 @@ import WidgetKit
 @MainActor
 final class PlatformCoordinator {
     let session: Session
-    private let liveActivity = LiveActivityController()
+    private let fleetActivity = FleetActivityController()
 
     private var appActive = UIApplication.shared.applicationState == .active
     private var lastPhase: Session.Phase?
@@ -79,6 +80,10 @@ final class PlatformCoordinator {
     private func activeChanged(_ active: Bool) {
         appActive = active
         if active { catchUpUntil = Date().addingTimeInterval(5) }
+        // The widgets' recap is what happened since the reader last had the
+        // app open — so it starts again both on the way in and on the way
+        // out: what arrived while they were looking is not news later.
+        if session.phase == .signedIn { writeWidgets { $0.opened() } }
     }
 
     private func phaseChanged(_ phase: Session.Phase) {
@@ -92,10 +97,14 @@ final class PlatformCoordinator {
             // already given — it never prompts.
             let justSignedIn = lastPhase == .signedOut
             Task { await self.prepareNotifications(prompt: justSignedIn) }
+            // Every launch and sign-in: the hub needs this device's tokens
+            // to push the fleet onto the Lock Screen.
+            fleetActivity.start(session: session)
+            if appActive { writeWidgets { $0.opened() } }
         case .signedOut:
             if lastPhase == .signedIn {
                 LocalNotifier.removeAll()
-                liveActivity.endAll()
+                fleetActivity.stop()
                 // The pusher itself was removed by the core's logout, before
                 // the token went; this only forgets that one was registered.
                 registeredPusher = nil
@@ -221,13 +230,11 @@ final class PlatformCoordinator {
         return mode
     }
 
-    // MARK: - Live Activity
+    // MARK: - The turn the app is watching
 
+    /// The open room's turn, as the Agents widget's step. The Lock Screen's
+    /// card is the hub's (`FleetActivityController`), not this.
     private func liveChanged(_ seen: LiveSeen) {
-        let name = seen.roomId.flatMap { session.rooms.row(for: $0)?.identity.name }
-            ?? session.rooms.selectedName ?? "Agent"
-        liveActivity.update(
-            summary: seen.summary, finished: seen.finished, roomId: seen.roomId, agentName: name)
         let turn = seen.summary.flatMap { summary in
             seen.roomId.map { WidgetLiveTurn(roomId: $0, step: summary.step) }
         }

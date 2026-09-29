@@ -234,7 +234,14 @@ targets:
   SupermessageKitTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [SupermessageKitTests]
+    sources:
+      - path: SupermessageKitTests
+      # The hub's Live Activity ContentState, the same file agentpod's
+      # contract test holds (spec 2026-09-29, A6): decoded by
+      # FleetActivityAttributesTests, so the two sides are pinned to one
+      # sample rather than to each other's reading of the spec.
+      - path: ../fixtures/fleet-content-state.json
+        buildPhase: resources
     dependencies:
       - target: SupermessageKit
       - target: SupermessageFFI

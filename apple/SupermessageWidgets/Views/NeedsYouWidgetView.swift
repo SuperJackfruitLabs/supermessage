@@ -178,7 +178,9 @@ private struct AllClear: View {
 /// a button may send.
 ///
 /// **The widgets' `DecisionCard`, and the only widget view that may draw
-/// amber** — only while the decision is owed. Once sent it says so in the
+/// amber** — only while the decision is owed. The fleet Live Activity draws
+/// its decision with this too, so the Lock Screen has the same one amber
+/// element. Once sent it says so in the
 /// core's words ("Sent: Approve · waiting for the board"), in the muted rank:
 /// sent is not resolved, and the board's receipt is what takes it away.
 ///
@@ -192,6 +194,9 @@ struct WidgetDecisionCard: View {
     /// The entry's moment, which the age is measured from — WidgetKit draws
     /// later entries ahead of time.
     let now: Date
+    /// Whether to say how long ago it was asked. The fleet Live Activity
+    /// does not know — the hub's decision carries no time.
+    var showsAge = true
 
     private var owed: Bool { decision.answered == nil }
 
@@ -230,10 +235,12 @@ struct WidgetDecisionCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(owed ? WidgetTheme.content : WidgetTheme.contentMuted)
                     .lineLimit(1)
-                Text(WidgetAge.since(decision.askedAt, now: now))
-                    .font(.caption2)
-                    .foregroundStyle(WidgetTheme.contentFaint)
-                    .lineLimit(1)
+                if showsAge {
+                    Text(WidgetAge.since(decision.askedAt, now: now))
+                        .font(.caption2)
+                        .foregroundStyle(WidgetTheme.contentFaint)
+                        .lineLimit(1)
+                }
             }
             Text(decision.question)
                 .font(compact ? .caption : .footnote)
