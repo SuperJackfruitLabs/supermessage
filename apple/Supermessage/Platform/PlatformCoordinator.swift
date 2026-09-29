@@ -45,6 +45,9 @@ final class PlatformCoordinator {
     private let widgets = WidgetFeed.shared()
     /// The turn the app is watching, for the Agents widget's step.
     private var liveTurn: WidgetLiveTurn?
+    /// The agents' pictures, for the fleet Live Activity; `nil` without the
+    /// App Group, and until signed in.
+    private var agentAvatars: AgentAvatarCache?
 
     init(session: Session) {
         self.session = session
@@ -84,6 +87,14 @@ final class PlatformCoordinator {
         // app open — so it starts again both on the way in and on the way
         // out: what arrived while they were looking is not news later.
         if session.phase == .signedIn { writeWidgets { $0.opened() } }
+        // A Guild agent's picture changes on its profile, which the room
+        // list does not see: look again each time the reader comes back.
+        if active, let agentAvatars {
+            Task {
+                await agentAvatars.forget()
+                self.cacheAgentAvatars(self.session.rooms.rooms)
+            }
+        }
     }
 
     private func phaseChanged(_ phase: Session.Phase) {
@@ -100,11 +111,15 @@ final class PlatformCoordinator {
             // Every launch and sign-in: the hub needs this device's tokens
             // to push the fleet onto the Lock Screen.
             fleetActivity.start(session: session)
+            if agentAvatars == nil, let client = session.agentAvatarClient {
+                agentAvatars = AgentAvatarCache.shared(client: client)
+            }
             if appActive { writeWidgets { $0.opened() } }
         case .signedOut:
             if lastPhase == .signedIn {
                 LocalNotifier.removeAll()
                 fleetActivity.stop()
+                agentAvatars = nil
                 // The pusher itself was removed by the core's logout, before
                 // the token went; this only forgets that one was registered.
                 registeredPusher = nil
@@ -185,6 +200,7 @@ final class PlatformCoordinator {
     private func roomsChanged(_ rooms: [RoomRow]) {
         defer { previousRooms = rooms }
         writeWidgetSnapshot(rooms)
+        cacheAgentAvatars(rooms)
         guard session.phase == .signedIn, Date() >= catchUpUntil else { return }
         let notes = NotificationComposer.forRoster(
             previous: previousRooms, next: rooms, context: context)
@@ -270,6 +286,19 @@ final class PlatformCoordinator {
 
     private func widgetsAnswered(roomId: String, eventId: String, optionId: String) {
         writeWidgets { $0.markAnswered(roomId: roomId, eventId: eventId, optionId: optionId) }
+    }
+
+    /// Keep each agent room's agent's picture in the App Group, where the
+    /// fleet Live Activity can read it (spec 2026-09-30, B4). Which rooms are
+    /// agents' is the core's (`AgentDirectory`); who the agent is, and the
+    /// file it goes in, are too (`AgentAvatarCache`).
+    private func cacheAgentAvatars(_ rooms: [RoomRow]) {
+        guard session.phase == .signedIn, let agentAvatars else { return }
+        let agents = AgentDirectory.rows(rooms, now: Date()).map {
+            (roomId: $0.row.room.id, avatar: $0.row.room.avatarUrl)
+        }
+        guard !agents.isEmpty else { return }
+        Task { await agentAvatars.refresh(agents) }
     }
 
     /// Run one write and reload the widgets when the core says it is worth it.
