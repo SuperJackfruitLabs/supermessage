@@ -73,11 +73,6 @@ pub const ANSWERED_PERMISSION_KEEP_MS: u64 = 10 * 60 * 1000;
 /// the widget. A day: past it, the room is the place to find out.
 pub const ANSWERED_GATE_KEEP_MS: u64 = 24 * 60 * 60 * 1000;
 
-/// How often a change that only moves an agent's line may reload the
-/// widgets. WidgetKit budgets reloads from the background, and an agent can
-/// speak every few seconds; a decision arriving or leaving always reloads.
-pub const LINE_RELOAD_EVERY_MS: u64 = 5 * 60 * 1000;
-
 /// How many frames a snapshot carries. Two per agent plus now covers every
 /// change the roster rule can make; the bound is only a backstop.
 pub const MAX_FRAMES: usize = 1 + 2 * MAX_AGENTS;
@@ -500,24 +495,19 @@ fn finish(stored: Option<WidgetSnapshot>, mut next: WidgetSnapshot, now_ms: u64)
         };
     }
     next.frames = frames(&next, now_ms);
-    let counts_moved = before.decisions != next.decisions
-        || before.signed_in != next.signed_in
-        || before.roster_waiting != next.roster_waiting
-        || before.overflow != next.overflow;
-    let reload =
-        counts_moved || now_ms.saturating_sub(before.reloaded_at_ms) >= LINE_RELOAD_EVERY_MS;
+    // Every change asks for a reload. WidgetKit already defers and coalesces
+    // reloads asked for from the background (about five minutes on device,
+    // 2026-09-29), so a throttle here only added its own wait on top — and
+    // dropped the reload outright when the app had reloaded just before, with
+    // nothing left to ask again until the timeline's own refresh.
     next.schema = WIDGET_SCHEMA;
     next.revision = before.revision + 1;
     next.updated_at_ms = now_ms;
-    if reload {
-        next.reloaded_at_ms = now_ms;
-    } else {
-        next.reloaded_at_ms = before.reloaded_at_ms;
-    }
+    next.reloaded_at_ms = now_ms;
     WidgetWrite {
         json: next.encode(),
         changed: true,
-        reload,
+        reload: true,
     }
 }
 
