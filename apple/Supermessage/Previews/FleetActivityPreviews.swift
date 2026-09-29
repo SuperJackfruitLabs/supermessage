@@ -136,7 +136,14 @@ private enum Fleet {
     static let failed = State(agents: [lastQuill], updatedAt: at)
     /// The hub's stale date has passed with an agent working: no clock
     /// moves, nothing claims progress — and a failed row keeps its red.
-    static let stale = State(agents: [lyra, failedQuill], working: 1, updatedAt: at - 20 * 60)
+    static let stale = State(
+        agents: [
+            State.Agent(
+                roomId: "!lyra:hs", mxid: "@agent_artistic-lyra:hs", name: "Artistic Lyra",
+                state: .working, phase: .tools, step: "Running the tests", completed: 3, total: 7,
+                since: at - 20 * 60 - 124),
+            failedQuill,
+        ], working: 1, updatedAt: at - 20 * 60)
 }
 
 private struct Cards: View {
@@ -166,6 +173,19 @@ private struct Cards: View {
 
 #Preview("Fleet card, A + C, larger text, dark") {
     Cards().dynamicTypeSize(.xLarge).preferredColorScheme(.dark)
+}
+
+/// Past the sizes the Lock Screen is tested at: the card gives up the stage
+/// labels, then the rows, then the hero's subtitle, and keeps the header and
+/// the decision whole (spec 2026-09-30, B2).
+#Preview("Fleet card, A + C, accessibility text") {
+    Wallpaper {
+        LockScreenCard(label: "One agent working", state: Fleet.one)
+        LockScreenCard(label: "Three agents working", state: Fleet.three)
+        LockScreenCard(label: "Needs you", state: Fleet.asked)
+        LockScreenCard(label: "Finished, with a failed row", state: Fleet.finished)
+    }
+    .dynamicTypeSize(.accessibility1)
 }
 
 /// The watch's Smart Stack: a small Live Activity, about 170 points wide on
