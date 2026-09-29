@@ -265,7 +265,14 @@ atomic write). The extension merges each push it decides
 turn, a gate's receipt); the app merges its roster over that when it runs
 (`apply_roster`, where an older roster loses to a newer), the open room
 (`apply_timeline`), and a `BGAppRefreshTask` (`WidgetRefresh`) catches up
-while it is away. The snapshot carries *frames* — counts, the fleet line and
+while it is away. **The Home Screen is a recap, not live** (operator,
+2026-09-29): WidgetKit defers and budgets the reloads a push asks for, so
+the Agents widget lists what each agent did *since the app was last opened*
+(`apply_opened`, on each foreground and background) — failed, then finished,
+then said — from the `turn` counts the hub adds to an answer's push, which
+the extension relays into `NotificationDto.turn`. A decision arriving or
+leaving reloads at once; anything else at most every fifteen minutes
+(`RELOAD_EVERY_MS`), and the timeline asks again on the same period. The snapshot carries *frames* — counts, the fleet line and
 each agent's state from each moment one changes — so the widget, which has no
 core, decides nothing, not even when "active" becomes "idle". A widget's
 Allow/Reject/Approve is `AnswerDecisionIntent`, a `LiveActivityIntent` so it
@@ -275,6 +282,26 @@ owes that answer (`widget::answer_for`) before sending it the way a
 notification action does, and marks it *sent*, never resolved — only the
 board's receipt removes a gate. `apple/SupermessageWidgets/Views` is compiled
 into the app too, so the widgets' previews are in the preview gate.
+
+**The fleet Live Activity** is what is live: one card for the whole fleet on
+the Lock Screen (and simply, in the Dynamic Island), **started, updated and
+ended by the hub's APNs pushes**, never by the app — spec
+`docs/superpowers/specs/2026-09-29-fleet-live-activity-and-recap-widgets-design.md`.
+The app only relays ActivityKit's push-to-start and per-activity update
+tokens (`FleetActivityController` → `LiveActivityTokens`, with backoff) to
+the core, which sends them to the hub's
+`/_supermessage/v1/live-activity/tokens` on the push gateway's origin with
+the session's access token (`core::live_activity`; the token never reaches
+Swift), and deletes them on sign-out. `FleetActivityAttributes` mirrors the
+hub's `ContentState` (the contract; decoded leniently, times in Unix
+seconds) and `fixtures/fleet-content-state.json` pins it, shared with
+agentpod. **This is the one place a person's words reach Apple:** agent
+names, steps and a decision's question and options travel in plaintext in
+the Live Activity pushes, by operator decision of 2026-09-29. Message pushes
+stay `event_id_only`. The card's layout is `FleetActivityCard`
+(`SupermessageWidgets/Views`), previewed at the iPhone 13 mini's Lock
+Screen size; its decision is drawn by `WidgetDecisionCard`, the one amber
+element.
 
 **Reproducing timeline scrolling without an account:** launch a Debug build
 with `-fixtureTimeline` (a long local room, `Previews/ScrollFixture.swift`) and
@@ -515,7 +542,7 @@ Already honored in `src/app.css` and `src/app.html`: `viewport-fit=cover` plus
 - **AGPL projects are reference-only, never copy code:** Element X apps, trixnity-messenger/Tammy, mautrix. If an Application Service bridge is ever co-designed, prefer Ruma/ruma-appservice (MIT); avoid mautrix (AGPL).
 - **The push gateway is the AgentPod hub's own** (operator decision of 2026-09-28), not Sygnal, whose maintained element-hq form is AGPL-3.0. It is infrastructure, not a dependency — the client never talks to it (the homeserver POSTs to it); the client only registers an `event_id_only` pusher naming it.
 - E2EE via vodozemac only; never hand-roll cryptography. Note the product call (docs/positioning.md): org rooms are unencrypted by design (knowledge extraction, AS-bridge incompatibility); E2EE stays available for external/DM contexts but is not on the critical path.
-- Push content is fetched and decrypted by the app itself (`event_id_only` pushes) — do not route message content through the push gateway.
+- Push content is fetched and decrypted by the app itself (`event_id_only` pushes) — do not route message content through the push gateway. **One deliberate exception** (operator, 2026-09-29): the hub's fleet Live Activity pushes carry agent names, the current step, and a pending decision's question and options in plaintext through Apple, because a Live Activity cannot fetch and decrypt anything itself. Nothing else a person or agent wrote may be added to those pushes without the same kind of decision.
 
 ## Original milestone sequence (historical planning context)
 
