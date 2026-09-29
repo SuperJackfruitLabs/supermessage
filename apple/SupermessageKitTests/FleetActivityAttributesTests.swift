@@ -12,10 +12,45 @@ struct FleetActivityAttributesTests {
 
     private final class BundleToken {}
 
-    static func fixture() throws -> Data {
-        let url = try #require(
-            Bundle(for: BundleToken.self).url(forResource: "fleet-content-state", withExtension: "json"))
+    static func fixture(_ name: String = "fleet-content-state") throws -> Data {
+        let url = try #require(Bundle(for: BundleToken.self).url(forResource: name, withExtension: "json"))
         return try Data(contentsOf: url)
+    }
+
+    @Test("the v1 fixture has none of the 2026-09-30 additions, and says so as none")
+    func v1HasNoAdditions() throws {
+        let state = try JSONDecoder().decode(State.self, from: Self.fixture())
+        #expect(state.agents.allSatisfy { $0.mxid == nil && $0.phase == nil && $0.endedAt == nil })
+    }
+
+    @Test("the v2 fixture decodes, with each agent's user id, phase and finish")
+    func decodesTheV2Fixture() throws {
+        let state = try JSONDecoder().decode(State.self, from: Self.fixture("fleet-content-state-v2"))
+        #expect(state.agents.map(\.name) == ["Artistic Lyra", "Coder Kai", "Writer Quill"])
+        #expect(
+            state.agents.map(\.mxid) == [
+                "@agent_artistic-lyra:hs", "@agent_coder-kai:hs", "@agent_writer-quill:hs",
+            ])
+        #expect(state.agents.map(\.phase) == [.tools, .thinking, nil])
+        #expect(state.agents.map(\.state) == [.working, .working, .failed])
+        let quill = state.agents[2]
+        #expect(quill.endedAt == 1_790_669_472)
+        #expect(quill.endedDate == Date(timeIntervalSince1970: 1_790_669_472))
+        #expect(quill.since == 1_790_669_400)
+        #expect(state.agents[0].endedAt == nil)
+        #expect(state.decision?.eventId == "$perm1")
+        #expect(state.working == 2)
+        let again = try JSONDecoder().decode(State.self, from: JSONEncoder().encode(state))
+        #expect(again == state)
+    }
+
+    @Test("a phase this build does not know is none, not an unreadable agent")
+    func unknownPhase() throws {
+        let json = #"{"agents": [{"roomId": "!a", "name": "Atlas", "state": "working", "phase": "dreaming", "endedAt": "soon"}]}"#
+        let state = try JSONDecoder().decode(State.self, from: Data(json.utf8))
+        #expect(state.agents.count == 1)
+        #expect(state.agents[0].phase == nil)
+        #expect(state.agents[0].endedAt == nil)
     }
 
     @Test("the shared fixture decodes, every field")
