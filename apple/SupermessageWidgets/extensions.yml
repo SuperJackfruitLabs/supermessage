@@ -32,6 +32,10 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      # The widgets' views and their button's intent. The app compiles these
+      # too (project.yml): the intent runs in the app's process, and the
+      # views' previews render with the app's.
+      - path: Views
       # Shared with the app through SupermessageKit — one declaration each,
       # so the two processes cannot disagree about a shape.
       - path: ../SupermessageKit/Notifications/AgentActivityAttributes.swift
@@ -52,3 +56,7 @@ targets:
         INFOPLIST_FILE: SupermessageWidgets/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: supermessage
         SWIFT_STRICT_CONCURRENCY: complete
+        # Views/ is compiled here and in the app. There `WidgetSnapshot` is
+        # SupermessageKit's; here it is this module's own copy of the file,
+        # and this flag is how a shared file knows not to import the Kit.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) SM_WIDGET_EXTENSION"

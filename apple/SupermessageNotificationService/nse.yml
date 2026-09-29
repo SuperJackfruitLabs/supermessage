@@ -63,6 +63,11 @@ targets:
       - path: ../SupermessageKit/Notifications/RemotePush.swift
       - path: ../SupermessageKit/Notifications/NotificationComposer.swift
       - path: ../SupermessageKit/Notifications/NotificationRouter.swift
+      # The widgets' snapshot: its shape, the locked writer, and the core
+      # merges — so a push the app never saw still reaches the widgets.
+      - path: ../SupermessageKit/Notifications/WidgetSnapshot.swift
+      - path: ../SupermessageKit/Notifications/WidgetSnapshotWriter.swift
+      - path: ../SupermessageKit/Notifications/WidgetFeed.swift
     dependencies:
       # The app embeds the framework (and the core inside it); the extension
       # links the same copy from the app's Frameworks directory.

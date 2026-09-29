@@ -1,6 +1,7 @@
 import SupermessageKit
 import UIKit
 import UserNotifications
+import WidgetKit
 
 /// The three things only an application delegate can receive: the APNs
 /// device token, a notification tapped while the app was not running, and a
@@ -23,6 +24,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         LocalNotifier.registerCategories()
         SessionHooks.willStart = { [weak self] session in self?.attach(session) }
+        // A widget's button runs here, in this process (see
+        // `AnswerDecisionIntent` for why) — installed before launch returns,
+        // because a background launch for the intent runs it right after.
+        DecisionIntentHandling.run = { roomId, eventId, optionId in
+            await AppDelegate.answerFromWidget(roomId: roomId, eventId: eventId, optionId: optionId)
+        }
+        WidgetRefresh.register { [weak self] in
+            await self?.platform?.refreshWidgetsInBackground() ?? false
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { _ in WidgetRefresh.schedule() }
         return true
     }
 
@@ -104,6 +117,26 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             NotificationRouter.shared.request(roomId: roomId)
         case let .answer(answer):
             await send(answer)
+        }
+    }
+
+    /// A widget's button: answer the decision it names, if the widgets'
+    /// snapshot still owes it, the way a notification's action does.
+    ///
+    /// The snapshot is marked sent the moment this starts, so the widget
+    /// stops offering the choice; a send that does not land makes it owed
+    /// again and says so, as a failed notification answer does. Nothing is
+    /// sent for a decision the snapshot no longer has — the board resolved
+    /// it, or it was answered already — and the widget is redrawn without it.
+    private static func answerFromWidget(roomId: String, eventId: String, optionId: String) async {
+        guard let feed = WidgetFeed.shared() else { return }
+        let activity = BackgroundActivity(name: "Answer from a widget")
+        defer { activity.end() }
+        let outcome = await WidgetAnswering.answer(
+            roomId: roomId, eventId: eventId, optionId: optionId, feed: feed,
+            via: CoreClient.shared, reload: { WidgetCenter.shared.reloadAllTimelines() })
+        if outcome == .failed {
+            await LocalNotifier.postFailure(roomId: roomId)
         }
     }
 

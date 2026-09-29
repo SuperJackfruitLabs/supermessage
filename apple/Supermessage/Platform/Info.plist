@@ -37,6 +37,21 @@
 	<key>SMLegacyKeychainAccessGroup</key>
 	<string>$(SM_LEGACY_KEYCHAIN_GROUP)</string>
 
+	<!--
+	  The widgets' refresh: a short background pass that brings the widgets'
+	  snapshot up to date while the app is away (PlatformCoordinator,
+	  WidgetRefresh). `fetch` is what BGAppRefreshTask needs; neither is an
+	  entitlement, so no provisioning profile changes.
+	-->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.supermessage.ios.widgets-refresh</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+
 	<!-- An agent's turn on the Lock Screen and in the Dynamic Island. -->
 	<key>NSSupportsLiveActivities</key>
 	<true/>

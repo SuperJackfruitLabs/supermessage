@@ -1663,6 +1663,96 @@ public object FfiConverterTypeMentionable: FfiConverterRustBuffer<Mentionable> {
 
 
 /**
+ * The facts [`crate::widget`] needs from one pushed event, and nothing the
+ * notification itself does not already know.
+ */
+data class NotificationActivity (
+    var `kind`: ActivityKind, 
+    /**
+     * The room's `RoomIdentity.name` — the agent's or the board's.
+     */
+    var `roomName`: kotlin.String, 
+    /**
+     * Whether the room's name reads as an agent's (a glyph or a role, the
+     * roster's own test), for a room the widgets do not list yet.
+     */
+    var `roomIsAgent`: kotlin.Boolean, 
+    /**
+     * The sender's Matrix id.
+     */
+    var `sender`: kotlin.String, 
+    /**
+     * The event's `origin_server_ts`.
+     */
+    var `atMs`: kotlin.ULong, 
+    /**
+     * `Message`: its preview line. `TurnFinished`: "Finished · 4 steps".
+     * `OwnAnswer`: the plain text sent, when it was a message.
+     */
+    var `line`: kotlin.String?, 
+    /**
+     * `GateOutcome` and a gate `OwnAnswer`: the gate named.
+     */
+    var `gateId`: kotlin.String?, 
+    /**
+     * `GateOutcome` and a gate `OwnAnswer`: the event referenced.
+     */
+    var `references`: kotlin.String?, 
+    /**
+     * A gate `OwnAnswer`: the option chosen.
+     */
+    var `optionId`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationActivity: FfiConverterRustBuffer<NotificationActivity> {
+    override fun read(buf: ByteBuffer): NotificationActivity {
+        return NotificationActivity(
+            FfiConverterTypeActivityKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: NotificationActivity) = (
+            FfiConverterTypeActivityKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`roomName`) +
+            FfiConverterBoolean.allocationSize(value.`roomIsAgent`) +
+            FfiConverterString.allocationSize(value.`sender`) +
+            FfiConverterULong.allocationSize(value.`atMs`) +
+            FfiConverterOptionalString.allocationSize(value.`line`) +
+            FfiConverterOptionalString.allocationSize(value.`gateId`) +
+            FfiConverterOptionalString.allocationSize(value.`references`) +
+            FfiConverterOptionalString.allocationSize(value.`optionId`)
+    )
+
+    override fun write(value: NotificationActivity, buf: ByteBuffer) {
+            FfiConverterTypeActivityKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`roomName`, buf)
+            FfiConverterBoolean.write(value.`roomIsAgent`, buf)
+            FfiConverterString.write(value.`sender`, buf)
+            FfiConverterULong.write(value.`atMs`, buf)
+            FfiConverterOptionalString.write(value.`line`, buf)
+            FfiConverterOptionalString.write(value.`gateId`, buf)
+            FfiConverterOptionalString.write(value.`references`, buf)
+            FfiConverterOptionalString.write(value.`optionId`, buf)
+    }
+}
+
+
+
+/**
  * One notification, decided.
  */
 data class NotificationDto (
@@ -1709,7 +1799,16 @@ data class NotificationDto (
      * steps" — rather than a blank notification or a "New message" that is
      * not one.
      */
-    var `fallbackBody`: kotlin.String?
+    var `fallbackBody`: kotlin.String?, 
+    /**
+     * What this event means for the widgets, as far as a push can tell
+     * (`crate::widget`): a decision asked, an agent's line, a finished turn,
+     * a gate the board resolved, or this account answering from elsewhere.
+     * Set by [`notification_for_event`] — the Notification Service
+     * Extension's path — and `None` from [`notification_for_row`], whose
+     * caller has the whole timeline to read instead.
+     */
+    var `activity`: NotificationActivity?
 ) {
     
     companion object
@@ -1733,6 +1832,7 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterOptionalTypeNotificationSuppression.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalTypeNotificationActivity.read(buf),
         )
     }
 
@@ -1748,7 +1848,8 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterString.allocationSize(value.`threadId`) +
             FfiConverterOptionalTypeNotificationSuppression.allocationSize(value.`suppress`) +
             FfiConverterOptionalString.allocationSize(value.`fallbackTitle`) +
-            FfiConverterOptionalString.allocationSize(value.`fallbackBody`)
+            FfiConverterOptionalString.allocationSize(value.`fallbackBody`) +
+            FfiConverterOptionalTypeNotificationActivity.allocationSize(value.`activity`)
     )
 
     override fun write(value: NotificationDto, buf: ByteBuffer) {
@@ -1764,6 +1865,7 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
             FfiConverterOptionalTypeNotificationSuppression.write(value.`suppress`, buf)
             FfiConverterOptionalString.write(value.`fallbackTitle`, buf)
             FfiConverterOptionalString.write(value.`fallbackBody`, buf)
+            FfiConverterOptionalTypeNotificationActivity.write(value.`activity`, buf)
     }
 }
 
@@ -3725,6 +3827,190 @@ public object FfiConverterTypeVoiceNoteTranscript: FfiConverterRustBuffer<VoiceN
             FfiConverterString.write(value.`accessibilityLabel`, buf)
     }
 }
+
+
+
+/**
+ * What a widget button sends, for an answer the snapshot still owes: the
+ * same facts a notification action carries.
+ */
+data class WidgetAnswer (
+    var `roomId`: kotlin.String, 
+    var `eventId`: kotlin.String, 
+    var `optionId`: kotlin.String, 
+    /**
+     * `Some` for a gate: its `gate_id` and question.
+     */
+    var `gateId`: kotlin.String?, 
+    var `prompt`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetAnswer: FfiConverterRustBuffer<WidgetAnswer> {
+    override fun read(buf: ByteBuffer): WidgetAnswer {
+        return WidgetAnswer(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetAnswer) = (
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterString.allocationSize(value.`eventId`) +
+            FfiConverterString.allocationSize(value.`optionId`) +
+            FfiConverterOptionalString.allocationSize(value.`gateId`) +
+            FfiConverterString.allocationSize(value.`prompt`)
+    )
+
+    override fun write(value: WidgetAnswer, buf: ByteBuffer) {
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterString.write(value.`eventId`, buf)
+            FfiConverterString.write(value.`optionId`, buf)
+            FfiConverterOptionalString.write(value.`gateId`, buf)
+            FfiConverterString.write(value.`prompt`, buf)
+    }
+}
+
+
+
+/**
+ * A turn the app is watching, for [`apply_roster`].
+ */
+data class WidgetLiveTurn (
+    var `roomId`: kotlin.String, 
+    var `step`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetLiveTurn: FfiConverterRustBuffer<WidgetLiveTurn> {
+    override fun read(buf: ByteBuffer): WidgetLiveTurn {
+        return WidgetLiveTurn(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetLiveTurn) = (
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterString.allocationSize(value.`step`)
+    )
+
+    override fun write(value: WidgetLiveTurn, buf: ByteBuffer) {
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterString.write(value.`step`, buf)
+    }
+}
+
+
+
+/**
+ * What a host does with a write.
+ */
+data class WidgetWrite (
+    /**
+     * The snapshot to store. Identical to what was stored when `changed` is
+     * false, so writing it anyway is harmless.
+     */
+    var `json`: kotlin.String, 
+    var `changed`: kotlin.Boolean, 
+    /**
+     * Whether to ask WidgetKit to reload. Only ever with `changed`.
+     */
+    var `reload`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetWrite: FfiConverterRustBuffer<WidgetWrite> {
+    override fun read(buf: ByteBuffer): WidgetWrite {
+        return WidgetWrite(
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetWrite) = (
+            FfiConverterString.allocationSize(value.`json`) +
+            FfiConverterBoolean.allocationSize(value.`changed`) +
+            FfiConverterBoolean.allocationSize(value.`reload`)
+    )
+
+    override fun write(value: WidgetWrite, buf: ByteBuffer) {
+            FfiConverterString.write(value.`json`, buf)
+            FfiConverterBoolean.write(value.`changed`, buf)
+            FfiConverterBoolean.write(value.`reload`, buf)
+    }
+}
+
+
+
+/**
+ * What kind of news a pushed event is for the widgets.
+ */
+
+enum class ActivityKind {
+    
+    /**
+     * A permission request or a gate, asked of the reader.
+     */
+    DECISION,
+    /**
+     * Somebody said something in the room.
+     */
+    MESSAGE,
+    /**
+     * An agent's turn card: the turn is over.
+     */
+    TURN_FINISHED,
+    /**
+     * The hub's receipt that the board accepted an answer to a gate.
+     */
+    GATE_OUTCOME,
+    /**
+     * This account answered, from another device: a permission option's
+     * name, or a gate decision.
+     */
+    OWN_ANSWER;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeActivityKind: FfiConverterRustBuffer<ActivityKind> {
+    override fun read(buf: ByteBuffer) = try {
+        ActivityKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ActivityKind) = 4UL
+
+    override fun write(value: ActivityKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -6055,6 +6341,38 @@ public object FfiConverterOptionalTypeMediaMetaDto: FfiConverterRustBuffer<Media
         } else {
             buf.put(1)
             FfiConverterTypeMediaMetaDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeNotificationActivity: FfiConverterRustBuffer<NotificationActivity?> {
+    override fun read(buf: ByteBuffer): NotificationActivity? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeNotificationActivity.read(buf)
+    }
+
+    override fun allocationSize(value: NotificationActivity?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeNotificationActivity.allocationSize(value)
+        }
+    }
+
+    override fun write(value: NotificationActivity?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeNotificationActivity.write(value, buf)
         }
     }
 }

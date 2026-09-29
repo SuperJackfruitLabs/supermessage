@@ -135,7 +135,14 @@ targets:
   Supermessage:
     type: application
     platform: iOS
-    sources: [Supermessage]
+    sources:
+      - path: Supermessage
+      # The widgets' views and their buttons' intent, compiled here as well
+      # as in the widget extension: a widget's button runs in this process
+      # (`AnswerDecisionIntent`), and the views' previews render with the
+      # app's. Always, not only with SM_EXTENSIONS, so the previews and the
+      # intent's handler compile in every build.
+      - path: SupermessageWidgets/Views
     dependencies:
       - target: SupermessageKit
       - target: SupermessageFFI

@@ -1,6 +1,7 @@
 import Foundation
 import SupermessageFFI
 import UserNotifications
+import WidgetKit
 
 /// Turns the hub gateway's generic "New message" push into the message.
 ///
@@ -17,8 +18,16 @@ import UserNotifications
 /// room to open when tapped: a notification with generic text is better than
 /// none, and the homeserver only pushed because somebody wants the reader.
 ///
+/// It also keeps the widgets current. The app pauses sync in the background so
+/// this process can take the stores' lock, which means that while the app is
+/// away this is the only thing that sees what happens — so each push it
+/// decides is merged into the widgets' snapshot too (`WidgetFeed`, the core's
+/// `widget::apply_notification`): a decision asked, an agent's latest line, a
+/// finished turn, a gate the board resolved. The app's own roster replaces
+/// those increments when it next runs.
+///
 /// Kept small on purpose: logging at `warn`, no media fetched, nothing written
-/// but what the SDK's own stores write.
+/// but what the SDK's own stores write and the widgets' one small file.
 final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
     private let lock = NSLock()
     private var contentHandler: ((UNNotificationContent) -> Void)?
@@ -98,7 +107,18 @@ final class NotificationWorker: @unchecked Sendable {
             (try? core.restoreSessionQuietly()) == true,
             let note = try? core.notificationFor(roomId: push.roomId, eventId: push.eventId)
         else { return base }
+        Self.feedWidgets(note)
         return Self.apply(note, to: base)
+    }
+
+    /// Merge `note` into the widgets' snapshot and, when the core says it is
+    /// worth it, ask WidgetKit to redraw. Reloads from here count against the
+    /// widgets' daily budget, which is why the core throttles a change that
+    /// only moves an agent's line and never one that adds or clears a
+    /// decision.
+    static func feedWidgets(_ note: NotificationDto, feed: WidgetFeed? = WidgetFeed.shared()) {
+        guard let feed, feed.apply(note) else { return }
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     private func sharedCore() -> Core? {

@@ -68,3 +68,4 @@ pub mod timeline;
 pub mod tls;
 pub mod turn_error;
 pub mod voice_transcript;
+pub mod widget;

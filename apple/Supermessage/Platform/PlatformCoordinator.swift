@@ -40,7 +40,10 @@ final class PlatformCoordinator {
     private var registeredPusher: String?
 
     // Widgets
-    private var lastSnapshot: WidgetSnapshot?
+    /// The App Group's snapshot writer; `nil` in a build without the group.
+    private let widgets = WidgetFeed.shared()
+    /// The turn the app is watching, for the Agents widget's step.
+    private var liveTurn: WidgetLiveTurn?
 
     init(session: Session) {
         self.session = session
@@ -64,6 +67,11 @@ final class PlatformCoordinator {
             LiveSeen(summary: LiveTurnSummary.of(session.live), finished: session.live.finished,
                      roomId: session.timeline.roomId)
         }) { [weak self] in self?.liveChanged($0) }
+
+        // A gate answered from its card: the widgets stop offering it.
+        session.decisionAnswered = { [weak self] roomId, eventId, optionId in
+            self?.widgetsAnswered(roomId: roomId, eventId: eventId, optionId: optionId)
+        }
     }
 
     // MARK: - Lifecycle
@@ -92,7 +100,7 @@ final class PlatformCoordinator {
                 // the token went; this only forgets that one was registered.
                 registeredPusher = nil
                 session.pausesSyncInBackground = false
-                writeSnapshot(.empty)
+                writeWidgets { $0.signedOut() }
             }
             previousRooms = []
             notified = []
@@ -175,6 +183,7 @@ final class PlatformCoordinator {
     }
 
     private func timelineChanged() {
+        widgetsSawTimeline()
         let roomId = session.timeline.roomId
         if roomId != timelineRoomId {
             timelineRoomId = roomId
@@ -219,19 +228,55 @@ final class PlatformCoordinator {
             ?? session.rooms.selectedName ?? "Agent"
         liveActivity.update(
             summary: seen.summary, finished: seen.finished, roomId: seen.roomId, agentName: name)
+        let turn = seen.summary.flatMap { summary in
+            seen.roomId.map { WidgetLiveTurn(roomId: $0, step: summary.step) }
+        }
+        if turn != liveTurn {
+            liveTurn = turn
+            writeWidgetSnapshot(session.rooms.rooms)
+        }
     }
 
     // MARK: - Widgets
 
+    /// The roster, as the widgets' authoritative picture of the agents — the
+    /// core merges it over whatever pushes wrote while the app was away
+    /// (`widget::apply_roster`), and an older roster never replaces a newer.
     private func writeWidgetSnapshot(_ rooms: [RoomRow]) {
         guard session.phase == .signedIn else { return }
-        writeSnapshot(WidgetSummary.snapshot(rows: rooms, now: Date()))
+        let asOf = Self.milliseconds(Date())
+        let live = liveTurn.map { [$0] } ?? []
+        writeWidgets { $0.apply(rows: rooms, live: live, asOf: asOf) }
     }
 
-    private func writeSnapshot(_ snapshot: WidgetSnapshot) {
-        if let lastSnapshot, lastSnapshot.sameContent(as: snapshot) { return }
-        lastSnapshot = snapshot
-        if WidgetSnapshotStore.write(snapshot) { WidgetCenter.shared.reloadAllTimelines() }
+    /// The open room can see what no push says: a card the board resolved,
+    /// or a permission answered in the room. Read only when the widgets hold
+    /// a decision for that room — a streaming answer re-emits the timeline
+    /// several times a second, and nearly always there is nothing to check.
+    private func widgetsSawTimeline() {
+        guard session.phase == .signedIn, let roomId = session.timeline.roomId,
+            WidgetSnapshotStore.read()?.decisions.contains(where: { $0.roomId == roomId }) == true
+        else { return }
+        let rows = session.timeline.items
+        writeWidgets { $0.apply(roomId: roomId, timeline: rows) }
+    }
+
+    private func widgetsAnswered(roomId: String, eventId: String, optionId: String) {
+        writeWidgets { $0.markAnswered(roomId: roomId, eventId: eventId, optionId: optionId) }
+    }
+
+    /// Run one write and reload the widgets when the core says it is worth it.
+    private func writeWidgets(_ write: (WidgetFeed) -> WidgetFeed.Reload) {
+        guard let widgets, write(widgets) else { return }
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// A background refresh (`WidgetRefresh`): catch up briefly, then write
+    /// the roster as it now stands.
+    func refreshWidgetsInBackground() async -> Bool {
+        let caughtUp = await session.catchUpInBackground(for: .seconds(8))
+        writeWidgetSnapshot(session.rooms.rooms)
+        return caughtUp
     }
 
     private static func milliseconds(_ date: Date) -> UInt64 {

@@ -1,7 +1,10 @@
+// Compiled into the widget extension, and into the app so the widgets'
+// previews render with its other previews.
+
 import SwiftUI
 import UIKit
 
-/// The palette, for the extension.
+/// The palette, for the widgets.
 ///
 /// The same binding `Theme` makes in the app — `paper` for light, `dark`
 /// for dark — over the same generated `ThemeTokens.swift`, which this target
@@ -26,7 +29,12 @@ enum WidgetTheme {
     static let accent = dynamic(\.accent)
     static let accentSoft = dynamic(\.accentSoft)
     static let ok = dynamic(\.ok)
-    // Deliberately no `signal`. Amber means a pending decision and only
-    // `DecisionCard` may draw it (AGENTS.md); a count of rooms that need you
-    // is a pointer to decisions, not one, so it is drawn in the accent.
+
+    /// Amber, and its ground. **Only `WidgetDecisionCard` may draw these** —
+    /// the widgets' counterpart of the app's `DecisionCard`, and like it drawn
+    /// only while the decision is still owed (docs/design-language.md §2). A
+    /// count of decisions, a "needs you" dot on an agent, a decision already
+    /// sent: none of those is a pending decision, and they use the accent.
+    static let signal = dynamic(\.signal)
+    static let signalSoft = dynamic(\.signalSoft)
 }
