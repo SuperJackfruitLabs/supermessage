@@ -31,9 +31,22 @@ struct AgentsWidgetView: View {
         }
     }
 
+    /// The most rows the family is asked for. Fewer are drawn when these do
+    /// not fit — a larger text size, a long name — rather than letting the
+    /// stack overflow and the widget crop its header and last row.
     private var limit: Int { family == .systemLarge ? 6 : 3 }
 
     private func list(_ snapshot: WidgetSnapshot, _ frame: WidgetSnapshot.Frame) -> some View {
+        let most = max(1, min(limit, snapshot.agents.count))
+        return ViewThatFits(in: .vertical) {
+            ForEach((1...most).reversed(), id: \.self) { rows in
+                list(snapshot, frame, rows: rows)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func list(_ snapshot: WidgetSnapshot, _ frame: WidgetSnapshot.Frame, rows: Int) -> some View {
         VStack(alignment: .leading, spacing: family == .systemLarge ? 10 : 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Agents")
@@ -50,7 +63,7 @@ struct AgentsWidgetView: View {
                     .font(.caption)
                     .foregroundStyle(WidgetTheme.contentMuted)
             }
-            ForEach(Array(snapshot.agents.prefix(limit).enumerated()), id: \.element.id) {
+            ForEach(Array(snapshot.agents.prefix(rows).enumerated()), id: \.element.id) {
                 index, agent in
                 Link(destination: AppLink.room(agent.roomId) ?? URL(string: "supermessage://")!) {
                     WidgetAgentRow(
@@ -59,9 +72,8 @@ struct AgentsWidgetView: View {
                         now: entry.date)
                 }
             }
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 

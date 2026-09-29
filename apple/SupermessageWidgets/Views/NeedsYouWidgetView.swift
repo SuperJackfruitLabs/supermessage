@@ -121,25 +121,39 @@ struct NeedsYouWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// Up to `limit` cards, fewer when they do not fit — a larger text size
+    /// or a two-line question — so the stack never overflows and the widget
+    /// never crops its header; the rest are counted instead.
     private func list(
         _ decisions: [WidgetSnapshot.Decision], _ frame: WidgetSnapshot.Frame, limit: Int
+    ) -> some View {
+        let most = max(1, min(limit, decisions.count))
+        return ViewThatFits(in: .vertical) {
+            ForEach((1...most).reversed(), id: \.self) { cards in
+                list(decisions, frame, cards: cards)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func list(
+        _ decisions: [WidgetSnapshot.Decision], _ frame: WidgetSnapshot.Frame, cards: Int
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             header(frame)
             if decisions.isEmpty {
                 AllClear(frame: frame)
             }
-            ForEach(decisions.prefix(limit)) { decision in
+            ForEach(decisions.prefix(cards)) { decision in
                 WidgetDecisionCard(decision: decision, compact: false, now: entry.date)
             }
-            if decisions.count > limit {
-                Text("\(decisions.count - limit) more in the app")
+            if decisions.count > cards {
+                Text("\(decisions.count - cards) more in the app")
                     .font(.caption2)
                     .foregroundStyle(WidgetTheme.contentFaint)
             }
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 

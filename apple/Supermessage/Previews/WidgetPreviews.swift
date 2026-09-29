@@ -9,9 +9,19 @@ import WidgetKit
 /// only the frame around them is a stand-in for the Home and Lock Screens.
 private struct WidgetFrame<Content: View>: View {
     let family: WidgetFamily
+    /// The smallest phone's widgets (iPhone 13 mini), where rows run out
+    /// first.
+    var mini = false
     @ViewBuilder let content: Content
 
     private var size: CGSize {
+        if mini {
+            switch family {
+            case .systemMedium: return CGSize(width: 329, height: 155)
+            case .systemLarge: return CGSize(width: 329, height: 345)
+            default: break
+            }
+        }
         switch family {
         case .systemSmall: return CGSize(width: 170, height: 170)
         case .systemMedium: return CGSize(width: 364, height: 170)
@@ -44,6 +54,27 @@ private struct WidgetFrame<Content: View>: View {
 
 private func entry(_ snapshot: WidgetSnapshot) -> SnapshotEntry {
     SnapshotEntry(date: .now, content: .snapshot(snapshot))
+}
+
+/// The sample with six agents, the most a widget lists.
+private func fleet() -> WidgetSnapshot {
+    var snapshot = WidgetSample.snapshot(decisions: 0)
+    let ms = UInt64(Date.now.timeIntervalSince1970 * 1000)
+    let hour: UInt64 = 3_600_000
+    snapshot.agents += [
+        .init(
+            roomId: "!ray", name: "Research Ray", lastActivityMs: ms - 26 * hour,
+            line: "Approved, with one required factual correction in the second section"),
+        .init(
+            roomId: "!quill", name: "Writer Quill", lastActivityMs: ms - 50 * hour,
+            line: "Hey! Doing great, thanks for checking in on the draft"),
+    ]
+    for index in snapshot.frames.indices {
+        snapshot.frames[index].states += [
+            .init(word: "quiet", tone: .quiet), .init(word: "quiet", tone: .quiet),
+        ]
+    }
+    return snapshot
 }
 
 private struct Board<Content: View>: View {
@@ -176,6 +207,30 @@ private struct Board<Content: View>: View {
             AgentsWidgetView(entry: entry(WidgetSample.snapshot()), family: .systemLarge)
         }
     }
+}
+
+#Preview("Agents, mini, larger text") {
+    Board {
+        VStack(spacing: 16) {
+            WidgetFrame(family: .systemMedium, mini: true) {
+                AgentsWidgetView(entry: entry(fleet()), family: .systemMedium)
+            }
+            WidgetFrame(family: .systemLarge, mini: true) {
+                AgentsWidgetView(entry: entry(fleet()), family: .systemLarge)
+            }
+        }
+    }
+    .dynamicTypeSize(.xLarge)
+}
+
+#Preview("Needs you, mini, larger text") {
+    Board {
+        WidgetFrame(family: .systemMedium, mini: true) {
+            NeedsYouWidgetView(
+                entry: entry(WidgetSample.snapshot(decisions: 3)), family: .systemMedium)
+        }
+    }
+    .dynamicTypeSize(.xLarge)
 }
 
 #Preview("Agents, large, dark") {
