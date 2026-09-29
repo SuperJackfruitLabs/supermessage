@@ -1137,6 +1137,56 @@ public object FfiConverterTypeAccountDto: FfiConverterRustBuffer<AccountDto> {
 
 
 /**
+ * An agent's avatar, for the App Group's cache (spec 2026-09-30, B4).
+ */
+data class AgentAvatar (
+    /**
+     * The agent's Matrix user id — what the hub's Live Activity names it by.
+     */
+    var `userId`: kotlin.String, 
+    /**
+     * [`avatar_file_name`] of `user_id`.
+     */
+    var `fileName`: kotlin.String, 
+    /**
+     * The picture's bytes as the server scaled them (PNG, JPEG, GIF or
+     * WebP), or `None` when the agent has no avatar — and a file cached
+     * before should go.
+     */
+    var `image`: kotlin.ByteArray?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAgentAvatar: FfiConverterRustBuffer<AgentAvatar> {
+    override fun read(buf: ByteBuffer): AgentAvatar {
+        return AgentAvatar(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalByteArray.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AgentAvatar) = (
+            FfiConverterString.allocationSize(value.`userId`) +
+            FfiConverterString.allocationSize(value.`fileName`) +
+            FfiConverterOptionalByteArray.allocationSize(value.`image`)
+    )
+
+    override fun write(value: AgentAvatar, buf: ByteBuffer) {
+            FfiConverterString.write(value.`userId`, buf)
+            FfiConverterString.write(value.`fileName`, buf)
+            FfiConverterOptionalByteArray.write(value.`image`, buf)
+    }
+}
+
+
+
+/**
  * What an `m.audio` event says about itself beyond being a file: the
  * MSC3245 voice flag, the length, and the MSC3246 waveform — already
  * normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
@@ -6320,6 +6370,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
         } else {
             buf.put(1)
             FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteArray?> {
+    override fun read(buf: ByteBuffer): kotlin.ByteArray? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterByteArray.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.ByteArray?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterByteArray.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.ByteArray?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterByteArray.write(value, buf)
         }
     }
 }

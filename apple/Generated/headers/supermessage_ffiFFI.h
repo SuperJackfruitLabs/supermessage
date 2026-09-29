@@ -327,6 +327,11 @@ void*_Nonnull uniffi_supermessage_ffi_fn_constructor_core_with_secret_store(Rust
 RustBuffer uniffi_supermessage_ffi_fn_method_core_account(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_AGENT_AVATAR
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_AGENT_AVATAR
+RustBuffer uniffi_supermessage_ffi_fn_method_core_agent_avatar(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_DISCARD
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_DISCARD
 void uniffi_supermessage_ffi_fn_method_core_attachment_discard(void*_Nonnull ptr, RustBuffer token, RustCallStatus *_Nonnull out_status
@@ -740,6 +745,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_widget_apply_roster(RustBuffer stored
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_TIMELINE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_APPLY_TIMELINE
 RustBuffer uniffi_supermessage_ffi_fn_func_widget_apply_timeline(RustBuffer stored, RustBuffer room_id, RustBuffer rows, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_AVATAR_FILE_NAME
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_AVATAR_FILE_NAME
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_avatar_file_name(RustBuffer user_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_CLEAR_ANSWER
@@ -1163,6 +1173,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_widget_apply_timeline(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_AVATAR_FILE_NAME
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_AVATAR_FILE_NAME
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_avatar_file_name(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_CLEAR_ANSWER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_CLEAR_ANSWER
 uint16_t uniffi_supermessage_ffi_checksum_func_widget_clear_answer(void
@@ -1184,6 +1200,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_widget_signed_out(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ACCOUNT
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ACCOUNT
 uint16_t uniffi_supermessage_ffi_checksum_method_core_account(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_AGENT_AVATAR
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_AGENT_AVATAR
+uint16_t uniffi_supermessage_ffi_checksum_method_core_agent_avatar(void
     
 );
 #endif

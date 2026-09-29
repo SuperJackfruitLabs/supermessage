@@ -575,6 +575,12 @@ public protocol CoreProtocol : AnyObject {
     func account() throws  -> AccountDto
     
     /**
+     * The agent behind an agent's room, with its avatar's bytes and the
+     * file they are cached in, for the fleet Live Activity.
+     */
+    func agentAvatar(roomId: String) throws  -> AgentAvatar?
+    
+    /**
      * Throw a staged file away without sending it.
      */
     func attachmentDiscard(token: String) 
@@ -1117,6 +1123,18 @@ public static func withSecretStore(dataDir: String, store: HostSecretStore) -> C
 open func account()throws  -> AccountDto {
     return try  FfiConverterTypeAccountDto_lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_account(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * The agent behind an agent's room, with its avatar's bytes and the
+     * file they are cached in, for the fleet Live Activity.
+     */
+open func agentAvatar(roomId: String)throws  -> AgentAvatar? {
+    return try  FfiConverterOptionTypeAgentAvatar.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_agent_avatar(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
     )
 })
 }
@@ -3695,6 +3713,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeAgentAvatar: FfiConverterRustBuffer {
+    typealias SwiftType = AgentAvatar?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAgentAvatar.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAgentAvatar.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeGateAnswers: FfiConverterRustBuffer {
     typealias SwiftType = GateAnswers?
 
@@ -4268,6 +4310,8 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
 
 
 
+
+
 /**
  * A playing note's position as the clock under it reads — `"0:06"`,
  * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -4547,6 +4591,17 @@ public func widgetApplyTimeline(stored: String?, roomId: String, rows: [Timeline
 })
 }
 /**
+ * The file an agent's avatar is cached in, in the App Group's `avatars`
+ * directory, named by its Matrix user id.
+ */
+public func widgetAvatarFileName(userId: String) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_avatar_file_name(
+        FfiConverterString.lower(userId),$0
+    )
+})
+}
+/**
  * The send from a widget failed: the decision is owed again.
  */
 public func widgetClearAnswer(stored: String?, roomId: String, eventId: String, nowMs: UInt64) -> WidgetWrite {
@@ -4663,6 +4718,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_widget_apply_timeline() != 12710) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_widget_avatar_file_name() != 5847) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_widget_clear_answer() != 58905) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4673,6 +4731,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_account() != 48469) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_agent_avatar() != 5049) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741) {
