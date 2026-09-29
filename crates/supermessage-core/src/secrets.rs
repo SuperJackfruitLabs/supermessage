@@ -69,12 +69,18 @@ pub const KEY_HOMESERVER_URL: &str = "homeserver_url";
 /// with the session it belongs to and is deleted with it.
 pub const KEY_PUSHER: &str = "push_pusher";
 
+/// Key under which the Live Activity tokens this device registered with the
+/// hub are remembered (`crate::live_activity::StoredTokens`), so signing out
+/// can delete them. Like [`KEY_PUSHER`], not a secret, but the session's.
+pub const KEY_LIVE_ACTIVITY: &str = "live_activity_tokens";
+
 /// Every key this module stores, for a migration that moves them all.
-pub const ALL_KEYS: [&str; 4] = [
+pub const ALL_KEYS: [&str; 5] = [
     KEY_SESSION,
     KEY_STORE_PASSPHRASE,
     KEY_HOMESERVER_URL,
     KEY_PUSHER,
+    KEY_LIVE_ACTIVITY,
 ];
 
 /// A place to put secrets. Implemented for real by [`KeyringStore`] (the OS
