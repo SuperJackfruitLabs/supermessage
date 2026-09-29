@@ -28,6 +28,7 @@ import uniffi.supermessage_ffi.*
  */
 open class StubCore : CoreInterface {
     override fun account(): AccountDto = throw NotImplementedError()
+    override fun agentAvatar(roomId: kotlin.String): AgentAvatar? = throw NotImplementedError()
     override fun attachmentDiscard(token: kotlin.String): Unit = throw NotImplementedError()
     override fun attachmentMarkVoice(roomId: kotlin.String, token: kotlin.String, durationMs: kotlin.ULong, waveform: List<kotlin.Float>): Unit = throw NotImplementedError()
     override fun attachmentSend(roomId: kotlin.String, token: kotlin.String, caption: kotlin.String?): Unit = throw NotImplementedError()
