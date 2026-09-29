@@ -895,6 +895,39 @@ impl Session {
         media::avatar_thumbnail(&client, &mxc_uri).await
     }
 
+    /// The agent behind an agent's room and its avatar, for the fleet Live
+    /// Activity's cache: the sole other member of a two-person room
+    /// ([`rooms::agent_avatar_source`]), its file name
+    /// ([`crate::widget::avatar_file_name`]) and the picture's bytes. `None`
+    /// when the room has no one agent in it.
+    ///
+    /// Keyed by the member's user id, not by the room's own avatar: the hub
+    /// names each agent on the card by user id (spec 2026-09-30, A1), and
+    /// the Guild's pictures are on the agents' profiles.
+    pub async fn agent_avatar(
+        &self,
+        room_id: &str,
+    ) -> CoreResult<Option<crate::widget::AgentAvatar>> {
+        let client = self.require_client().await?;
+        let parsed_room_id =
+            RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+        let room = client
+            .get_room(&parsed_room_id)
+            .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
+        let Some((user_id, mxc)) = rooms::agent_avatar_source(&room).await? else {
+            return Ok(None);
+        };
+        let image = match mxc {
+            Some(mxc) => media::avatar_thumbnail_bytes(&client, &mxc).await?,
+            None => None,
+        };
+        Ok(Some(crate::widget::AgentAvatar {
+            file_name: crate::widget::avatar_file_name(&user_id),
+            user_id,
+            image,
+        }))
+    }
+
     /// Fetches a room's avatar at its **original** size, for a reader who has
     /// opened the picture rather than a row showing it.
     ///

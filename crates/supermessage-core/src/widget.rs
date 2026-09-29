@@ -311,6 +311,15 @@ pub struct WidgetFrame {
     pub pulse: String,
     /// One per [`WidgetSnapshot::agents`], in order.
     pub states: Vec<WidgetAgentState>,
+    /// Who the pulse counts as working, by name — "Atlas is working",
+    /// "Atlas, Lyra and 3 others are working" — or `None` when nobody is.
+    ///
+    /// For a recap with nothing in it: under a header that says "2 working",
+    /// "Nothing new since 10:42" reads as a contradiction (spec 2026-09-30,
+    /// B5), so the widget says who is working instead. Named from the same
+    /// states the count is, so the two cannot disagree. Absent from a
+    /// snapshot written before it, which serde reads as `None` — nobody.
+    pub busy: Option<String>,
 }
 
 impl WidgetSnapshot {
@@ -539,8 +548,57 @@ fn frame_at(snapshot: &WidgetSnapshot, at_ms: u64) -> WidgetFrame {
         needs_you_line: needs_you_line(needs_you, snapshot.overflow),
         working,
         pulse: pulse(working, needs_you, snapshot.overflow),
+        busy: busy(&snapshot.agents, &states),
         states,
     }
+}
+
+/// Who is working, by name, in the roster's order (most recent first): the
+/// agents whose state the pulse counts as working.
+fn busy(agents: &[WidgetAgent], states: &[WidgetAgentState]) -> Option<String> {
+    let names: Vec<&str> = agents
+        .iter()
+        .zip(states)
+        .filter(|(_, s)| matches!(s.tone, WidgetTone::Working | WidgetTone::Active))
+        .map(|(a, _)| a.name.as_str())
+        .collect();
+    match names.as_slice() {
+        [] => None,
+        [one] => Some(format!("{one} is working")),
+        [a, b] => Some(format!("{a} and {b} are working")),
+        [a, b, c] => Some(format!("{a}, {b} and {c} are working")),
+        [a, b, rest @ ..] => Some(format!("{a}, {b} and {} others are working", rest.len())),
+    }
+}
+
+/// An agent's avatar, for the App Group's cache (spec 2026-09-30, B4).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AgentAvatar {
+    /// The agent's Matrix user id — what the hub's Live Activity names it by.
+    pub user_id: String,
+    /// [`avatar_file_name`] of `user_id`.
+    pub file_name: String,
+    /// The picture's bytes as the server scaled them (PNG, JPEG, GIF or
+    /// WebP), or `None` when the agent has no avatar — and a file cached
+    /// before should go.
+    pub image: Option<Vec<u8>>,
+}
+
+/// The file an agent's avatar is cached in, in the App Group's `avatars`
+/// directory: the SHA-256 of its Matrix user id, in lowercase hex, as a PNG.
+///
+/// The app writes it and the widget extension reads it (spec 2026-09-30,
+/// B4); one rule, here, so the two cannot name the file differently. Hashed
+/// rather than the id itself, so nothing a server chose becomes a path.
+pub fn avatar_file_name(user_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(user_id.as_bytes());
+    let mut name = String::with_capacity(64 + 4);
+    for byte in digest {
+        name.push_str(&format!("{byte:02x}"));
+    }
+    name.push_str(".png");
+    name
 }
 
 /// Every moment after `now_ms` at which some agent's state changes: fifteen

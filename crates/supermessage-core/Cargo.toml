@@ -35,6 +35,10 @@ async-trait = "0.1"
 # transitively (matrix-sdk/reqwest pull base64 0.22.1 — see `cargo tree -p
 # base64`); listed directly since core::media calls it by name.
 base64 = "0.22"
+# The cached avatar's file name (core::widget::avatar_file_name). Already in
+# the tree through matrix-sdk's crypto (see `cargo tree -i sha2`); listed
+# directly since core::widget calls it by name. MIT/Apache-2.0.
+sha2 = "0.10"
 
 # `fs` for `tokio::fs::{metadata, read}` in core::attachments: a `stat` and a
 # whole-file read both block, and doing either on a runtime worker thread

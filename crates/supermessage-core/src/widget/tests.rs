@@ -1117,3 +1117,167 @@ fn the_json_is_camel_case_for_the_widgets_mirror() {
     assert_eq!(value["recap"][0]["outcome"], "said");
     assert!(value["agents"][0]["outcomeLine"].is_string());
 }
+
+// --- who is working, for a recap with nothing in it (spec 2026-09-30, B5)
+
+fn busy_frames(rows: &[RoomRow], live: &[WidgetLiveTurn]) -> Vec<Option<String>> {
+    snapshot(&apply_roster(None, rows, live, NOW, NOW))
+        .frames
+        .into_iter()
+        .map(|f| f.busy)
+        .collect()
+}
+
+#[test]
+fn nobody_working_is_no_busy_line() {
+    let rows = [row(
+        "!a:hs",
+        "✳ Atlas — Platform",
+        Some(NOW - 20 * MIN),
+        Some("x"),
+    )];
+    assert_eq!(busy_frames(&rows, &[])[0], None);
+}
+
+#[test]
+fn the_busy_line_names_who_is_working_as_the_pulse_counts_them() {
+    let one = [row(
+        "!a:hs",
+        "✳ Atlas — Platform",
+        Some(NOW - MIN),
+        Some("x"),
+    )];
+    let s = snapshot(&apply_roster(None, &one, &[], NOW, NOW));
+    assert_eq!(s.frames[0].pulse, "1 working");
+    assert_eq!(s.frames[0].busy.as_deref(), Some("Atlas is working"));
+
+    let two = [
+        row("!a:hs", "✳ Atlas — Platform", Some(NOW - MIN), Some("x")),
+        row("!l:hs", "🎨 Lyra — Art", Some(NOW - 2 * MIN), Some("y")),
+    ];
+    assert_eq!(
+        busy_frames(&two, &[])[0].as_deref(),
+        Some("Atlas and Lyra are working")
+    );
+
+    let three = [
+        row("!a:hs", "✳ Atlas — Platform", Some(NOW - MIN), Some("x")),
+        row("!l:hs", "🎨 Lyra — Art", Some(NOW - 2 * MIN), Some("y")),
+        row("!k:hs", "⌘ Kai — Code", Some(NOW - 3 * MIN), Some("z")),
+    ];
+    assert_eq!(
+        busy_frames(&three, &[])[0].as_deref(),
+        Some("Atlas, Lyra and Kai are working")
+    );
+
+    let five = [
+        row("!a:hs", "✳ Atlas — Platform", Some(NOW - MIN), Some("x")),
+        row("!l:hs", "🎨 Lyra — Art", Some(NOW - 2 * MIN), Some("y")),
+        row("!k:hs", "⌘ Kai — Code", Some(NOW - 3 * MIN), Some("z")),
+        row("!q:hs", "✒ Quill — Words", Some(NOW - 4 * MIN), Some("w")),
+        row("!r:hs", "🔭 Ray — Research", Some(NOW - 5 * MIN), Some("v")),
+    ];
+    let s = snapshot(&apply_roster(None, &five, &[], NOW, NOW));
+    assert_eq!(s.frames[0].pulse, "5 working");
+    assert_eq!(
+        s.frames[0].busy.as_deref(),
+        Some("Atlas, Lyra and 3 others are working")
+    );
+}
+
+#[test]
+fn an_agent_that_needs_you_or_went_quiet_is_not_named_as_working() {
+    let mut waiting = row("!w:hs", "✳ Wren — Ops", Some(NOW - MIN), Some("x"));
+    waiting.preview = Some(crate::room_preview::RoomPreview {
+        text: "Approval needed".into(),
+        pending: true,
+    });
+    let rows = [
+        waiting,
+        row(
+            "!a:hs",
+            "✳ Atlas — Platform",
+            Some(NOW - 2 * MIN),
+            Some("x"),
+        ),
+        row("!q:hs", "✒ Quill — Words", Some(NOW - 30 * MIN), Some("w")),
+    ];
+    let s = snapshot(&apply_roster(None, &rows, &[], NOW, NOW));
+    assert_eq!(s.frames[0].working, 1);
+    assert_eq!(s.frames[0].busy.as_deref(), Some("Atlas is working"));
+}
+
+#[test]
+fn the_busy_line_names_the_working_agent_not_its_quiet_neighbour() {
+    // Two agents in two states, so a name paired with the other's state
+    // would say the wrong one.
+    let rows = [
+        row("!a:hs", "✳ Atlas — Platform", Some(NOW - MIN), Some("x")),
+        row("!q:hs", "✒ Quill — Words", Some(NOW - 30 * MIN), Some("w")),
+    ];
+    assert_eq!(
+        busy_frames(&rows, &[])[0].as_deref(),
+        Some("Atlas is working")
+    );
+}
+
+#[test]
+fn the_busy_line_goes_when_its_agent_goes_idle() {
+    let spoke = NOW - MIN;
+    let rows = [row("!a:hs", "✳ Atlas — Platform", Some(spoke), Some("x"))];
+    let s = snapshot(&apply_roster(None, &rows, &[], NOW, NOW));
+    let lines: Vec<(&str, Option<&str>)> = s
+        .frames
+        .iter()
+        .map(|f| (f.pulse.as_str(), f.busy.as_deref()))
+        .collect();
+    assert_eq!(
+        lines,
+        vec![
+            ("1 working", Some("Atlas is working")),
+            ("All quiet", None),
+            ("All quiet", None),
+        ]
+    );
+}
+
+#[test]
+fn a_snapshot_written_before_the_busy_line_still_reads() {
+    let rows = [row(
+        "!a:hs",
+        "✳ Atlas — Platform",
+        Some(NOW - MIN),
+        Some("x"),
+    )];
+    let json = apply_roster(None, &rows, &[], NOW, NOW).json;
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    for frame in value["frames"].as_array_mut().unwrap() {
+        frame.as_object_mut().unwrap().remove("busy");
+    }
+    let old = serde_json::to_string(&value).unwrap();
+    assert!(WidgetSnapshot::decode(Some(&old)).is_some());
+}
+
+// --- the cached avatar's file (spec 2026-09-30, B4)
+
+#[test]
+fn an_avatar_file_is_the_sha256_of_the_user_id_in_lowercase_hex() {
+    // `printf '%s' '@agent_writer-quill:hs' | shasum -a 256`
+    assert_eq!(
+        avatar_file_name("@agent_writer-quill:hs"),
+        "6dadaa5dfa29f6dd0598959d1ca10c686446b3b03a4431690550ddac757236c9.png"
+    );
+}
+
+#[test]
+fn each_user_has_their_own_avatar_file() {
+    let a = avatar_file_name("@agent_artistic-lyra:id.agentpod.dev");
+    let b = avatar_file_name("@agent_coder-kai:id.agentpod.dev");
+    assert_ne!(a, b);
+    assert_eq!(a.len(), 64 + ".png".len());
+    assert!(a[..64]
+        .chars()
+        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    // Nothing a person wrote reaches the file system as a path.
+    assert!(!avatar_file_name("@../../etc:hs").contains('/'));
+}
