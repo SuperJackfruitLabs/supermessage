@@ -5409,6 +5409,17 @@ public struct TimelineRow {
      * fixtures change for rows that are not voice replies.
      */
     public var voiceReply: VoiceReplyLink?
+    /**
+     * For a transcript notice (`dev.agentpod.voice_transcript`): the note
+     * it transcribes and how it is drawn on its own. `None` for every other
+     * row.
+     *
+     * **A host never needs this**, for the reason [`Self::voice_reply`]
+     * gives: the core folds the transcript into the note's row
+     * (`crate::voice_transcript::reconcile`) and hides this one, and this is
+     * what puts it back standalone when the note goes.
+     */
+    public var voiceTranscript: TranscriptNotice?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -5485,7 +5496,17 @@ public struct TimelineRow {
          *
          * Defaulted, and left off the desktop's JSON when absent, so no host's
          * fixtures change for rows that are not voice replies.
-         */voiceReply: VoiceReplyLink? = nil) {
+         */voiceReply: VoiceReplyLink? = nil, 
+        /**
+         * For a transcript notice (`dev.agentpod.voice_transcript`): the note
+         * it transcribes and how it is drawn on its own. `None` for every other
+         * row.
+         *
+         * **A host never needs this**, for the reason [`Self::voice_reply`]
+         * gives: the core folds the transcript into the note's row
+         * (`crate::voice_transcript::reconcile`) and hides this one, and this is
+         * what puts it back standalone when the note goes.
+         */voiceTranscript: TranscriptNotice? = nil) {
         self.item = item
         self.view = view
         self.senderName = senderName
@@ -5496,6 +5517,7 @@ public struct TimelineRow {
         self.canReplyOrReact = canReplyOrReact
         self.replyPreview = replyPreview
         self.voiceReply = voiceReply
+        self.voiceTranscript = voiceTranscript
     }
 }
 
@@ -5533,6 +5555,9 @@ extension TimelineRow: Equatable, Hashable {
         if lhs.voiceReply != rhs.voiceReply {
             return false
         }
+        if lhs.voiceTranscript != rhs.voiceTranscript {
+            return false
+        }
         return true
     }
 
@@ -5547,6 +5572,7 @@ extension TimelineRow: Equatable, Hashable {
         hasher.combine(canReplyOrReact)
         hasher.combine(replyPreview)
         hasher.combine(voiceReply)
+        hasher.combine(voiceTranscript)
     }
 }
 
@@ -5567,7 +5593,8 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
                 replyQuote: FfiConverterOptionTypeReplyQuoteView.read(from: &buf), 
                 canReplyOrReact: FfiConverterBool.read(from: &buf), 
                 replyPreview: FfiConverterOptionString.read(from: &buf), 
-                voiceReply: FfiConverterOptionTypeVoiceReplyLink.read(from: &buf)
+                voiceReply: FfiConverterOptionTypeVoiceReplyLink.read(from: &buf), 
+                voiceTranscript: FfiConverterOptionTypeTranscriptNotice.read(from: &buf)
         )
     }
 
@@ -5582,6 +5609,7 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
         FfiConverterBool.write(value.canReplyOrReact, into: &buf)
         FfiConverterOptionString.write(value.replyPreview, into: &buf)
         FfiConverterOptionTypeVoiceReplyLink.write(value.voiceReply, into: &buf)
+        FfiConverterOptionTypeTranscriptNotice.write(value.voiceTranscript, into: &buf)
     }
 }
 
@@ -5598,6 +5626,102 @@ public func FfiConverterTypeTimelineRow_lift(_ buf: RustBuffer) throws -> Timeli
 #endif
 public func FfiConverterTypeTimelineRow_lower(_ value: TimelineRow) -> RustBuffer {
     return FfiConverterTypeTimelineRow.lower(value)
+}
+
+
+/**
+ * A transcript notice, as its own row remembers it: the note it replies to
+ * and how it is drawn when that note is not there to carry it.
+ *
+ * Carried on the notice's row ([`TimelineRow::voice_transcript`]) because
+ * the fold is re-settled after every batch and must survive the row being
+ * hidden; the raw event the transcript was read from is gone by then.
+ */
+public struct TranscriptNotice {
+    /**
+     * The voice message the notice replies to (`m.in_reply_to`). `None`
+     * for a notice that replies to nothing, which is never folded.
+     */
+    public var noteEventId: String?
+    public var transcript: VoiceNoteTranscript
+    /**
+     * The standalone view's side — see `ItemView::VoiceTranscript`.
+     */
+    public var onOwnNote: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The voice message the notice replies to (`m.in_reply_to`). `None`
+         * for a notice that replies to nothing, which is never folded.
+         */noteEventId: String?, transcript: VoiceNoteTranscript, 
+        /**
+         * The standalone view's side — see `ItemView::VoiceTranscript`.
+         */onOwnNote: Bool) {
+        self.noteEventId = noteEventId
+        self.transcript = transcript
+        self.onOwnNote = onOwnNote
+    }
+}
+
+
+
+extension TranscriptNotice: Equatable, Hashable {
+    public static func ==(lhs: TranscriptNotice, rhs: TranscriptNotice) -> Bool {
+        if lhs.noteEventId != rhs.noteEventId {
+            return false
+        }
+        if lhs.transcript != rhs.transcript {
+            return false
+        }
+        if lhs.onOwnNote != rhs.onOwnNote {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(noteEventId)
+        hasher.combine(transcript)
+        hasher.combine(onOwnNote)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranscriptNotice: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TranscriptNotice {
+        return
+            try TranscriptNotice(
+                noteEventId: FfiConverterOptionString.read(from: &buf), 
+                transcript: FfiConverterTypeVoiceNoteTranscript.read(from: &buf), 
+                onOwnNote: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TranscriptNotice, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.noteEventId, into: &buf)
+        FfiConverterTypeVoiceNoteTranscript.write(value.transcript, into: &buf)
+        FfiConverterBool.write(value.onOwnNote, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptNotice_lift(_ buf: RustBuffer) throws -> TranscriptNotice {
+    return try FfiConverterTypeTranscriptNotice.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptNotice_lower(_ value: TranscriptNotice) -> RustBuffer {
+    return FfiConverterTypeTranscriptNotice.lower(value)
 }
 
 
@@ -7204,8 +7328,18 @@ public enum ItemView {
      * bubble, any other audio file as a player with its name. Everything a
      * host shows — the length, the bars, what a screen reader says — is on
      * `audio`. See `crate::audio`.
+     *
+     * `transcript` is what the note said, when a transcript notice replying
+     * to it is in the timeline too (`dev.agentpod.voice_transcript`): a host
+     * draws it **directly under the note, in the same row**, and the
+     * notice's own row is [`Self::None`] — so the transcript sits under its
+     * note however late it arrived and whatever was said in between. `None`
+     * for a note nobody has transcribed yet; a transcript whose note is not
+     * loaded is drawn standalone ([`Self::VoiceTranscript`]). See
+     * `crate::voice_transcript::reconcile`, which decides it over the whole
+     * timeline.
      */
-    case audio(audio: AudioView
+    case audio(audio: AudioView, transcript: VoiceNoteTranscript?
     )
     /**
      * An `m.file`/`m.video`: an informative row naming what the message is.
@@ -7309,7 +7443,7 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         case 6: return .image(alt: try FfiConverterString.read(from: &buf), width: try FfiConverterOptionUInt64.read(from: &buf), height: try FfiConverterOptionUInt64.read(from: &buf), caption: try FfiConverterOptionString.read(from: &buf)
         )
         
-        case 7: return .audio(audio: try FfiConverterTypeAudioView.read(from: &buf)
+        case 7: return .audio(audio: try FfiConverterTypeAudioView.read(from: &buf), transcript: try FfiConverterOptionTypeVoiceNoteTranscript.read(from: &buf)
         )
         
         case 8: return .mediaFile(label: try FfiConverterTypeMediaFileLabel.read(from: &buf), filename: try FfiConverterString.read(from: &buf), size: try FfiConverterOptionUInt64.read(from: &buf), mimetype: try FfiConverterOptionString.read(from: &buf)
@@ -7371,9 +7505,10 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
             FfiConverterOptionString.write(caption, into: &buf)
             
         
-        case let .audio(audio):
+        case let .audio(audio,transcript):
             writeInt(&buf, Int32(7))
             FfiConverterTypeAudioView.write(audio, into: &buf)
+            FfiConverterOptionTypeVoiceNoteTranscript.write(transcript, into: &buf)
             
         
         case let .mediaFile(label,filename,size,mimetype):
@@ -9482,6 +9617,30 @@ fileprivate struct FfiConverterOptionTypeRuntimeDto: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeTranscriptNotice: FfiConverterRustBuffer {
+    typealias SwiftType = TranscriptNotice?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTranscriptNotice.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTranscriptNotice.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeTurnCounts: FfiConverterRustBuffer {
     typealias SwiftType = TurnCounts?
 
@@ -9498,6 +9657,30 @@ fileprivate struct FfiConverterOptionTypeTurnCounts: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeTurnCounts.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeVoiceNoteTranscript: FfiConverterRustBuffer {
+    typealias SwiftType = VoiceNoteTranscript?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeVoiceNoteTranscript.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeVoiceNoteTranscript.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

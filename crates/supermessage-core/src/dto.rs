@@ -916,6 +916,17 @@ pub struct TimelineRow {
     #[uniffi(default = None)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice_reply: Option<crate::voice_reply::VoiceReplyLink>,
+    /// For a transcript notice (`dev.agentpod.voice_transcript`): the note
+    /// it transcribes and how it is drawn on its own. `None` for every other
+    /// row.
+    ///
+    /// **A host never needs this**, for the reason [`Self::voice_reply`]
+    /// gives: the core folds the transcript into the note's row
+    /// (`crate::voice_transcript::reconcile`) and hides this one, and this is
+    /// what puts it back standalone when the note goes.
+    #[uniffi(default = None)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_transcript: Option<crate::voice_transcript::TranscriptNotice>,
 }
 
 impl TimelineRow {
@@ -955,7 +966,20 @@ impl TimelineRow {
         own_user: &str,
     ) -> Self {
         let view = crate::item_view::view_for_with_voice_transcript(&item, transcript, own_user);
-        Self::with_view(item, view)
+        let notice = match &view {
+            crate::item_view::ItemView::VoiceTranscript {
+                transcript,
+                on_own_note,
+            } => Some(crate::voice_transcript::TranscriptNotice {
+                note_event_id: item.reply_to.as_ref().map(|r| r.event_id.clone()),
+                transcript: transcript.clone(),
+                on_own_note: *on_own_note,
+            }),
+            _ => None,
+        };
+        let mut row = Self::with_view(item, view);
+        row.voice_transcript = notice;
+        row
     }
 
     fn with_view(item: TimelineItemDto, view: crate::item_view::ItemView) -> Self {
@@ -976,6 +1000,7 @@ impl TimelineRow {
             can_reply_or_react,
             reply_preview,
             voice_reply: None,
+            voice_transcript: None,
         }
     }
 }

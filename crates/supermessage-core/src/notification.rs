@@ -327,6 +327,11 @@ pub fn notification_for_row(
     if row.voice_reply.is_some() {
         return None;
     }
+    // The same for a transcript, whatever it is drawn as: standalone, or
+    // hidden because its note now carries it (`crate::voice_transcript`).
+    if row.voice_transcript.is_some() {
+        return None;
+    }
     match &row.view {
         ItemView::CustomEvent { view, label, .. } => {
             // A card with nothing to decide — a turn, a run, a station
@@ -379,7 +384,7 @@ pub fn notification_for_row(
         )),
         // "Voice message", or the audio file's name — the core's title, not
         // the file name a voice note happens to be uploaded under.
-        ItemView::Audio { audio } => Some(message(
+        ItemView::Audio { audio, .. } => Some(message(
             audio.caption.clone().unwrap_or_else(|| audio.title.clone()),
         )),
         // A failed turn is a message — the one other clients show as its
