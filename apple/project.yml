@@ -77,7 +77,7 @@ settings:
     #
     # MARKETING_VERSION is the human one and tracks package.json. CURRENT_PROJECT_VERSION
     # is the build number, which must increase on every upload and never resets.
-    MARKETING_VERSION: 0.0.14
+    MARKETING_VERSION: 0.0.15
     #
     # 28: the floor is the last number used. TestFlight builds up to 27 have
     # been uploaded, and App Store Connect refuses a number it has seen.
