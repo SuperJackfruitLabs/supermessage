@@ -400,6 +400,21 @@ public actor CoreClient {
         await run { $0.syncResume() }
     }
 
+    // MARK: - Suspension (see Lifecycle/StoreGuard.swift)
+
+    /// Stop sync and close the account's stores (`Core::suspend`). A failure
+    /// has nothing to fall back on — the stores stay as they were — so it is
+    /// not thrown at a caller that could only ignore it.
+    public func suspendStores() async {
+        _ = try? await run { try $0.suspend() }
+    }
+
+    /// Reopen the stores `suspendStores` closed (`Core::resume`). A store
+    /// that did not reopen fails the calls that need it, each on its own.
+    public func resumeStores() async {
+        _ = try? await run { try $0.resume() }
+    }
+
     public func registerPusher(registration: PushRegistration) async throws {
         try await run { try $0.registerPusher(registration: registration) }
     }
