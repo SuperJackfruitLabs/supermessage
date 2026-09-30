@@ -2632,6 +2632,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn starting_the_streams_after_a_suspension_reopens_the_stores_first() {
+        // A background launch restored quietly and was suspended; the reader
+        // opens the app and the host starts the streams on that client.
+        let (session, _server, data_dir) = session_with_a_known_room("suspend-start").await;
+        session.suspend().await.unwrap();
+
+        let started = session
+            .restore_and_start(Arc::new(crate::event::NullSink))
+            .await;
+
+        assert!(
+            !session.stores_closed(),
+            "the streams must not start against closed stores ({started:?})"
+        );
+        assert!(read_state_store(&session).await.is_ok());
+        session.stop_ignore_watch().await;
+        session.stop_room_list().await;
+        session.stop_sync().await;
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
     async fn suspending_with_nobody_signed_in_is_a_no_op() {
         let data_dir =
             std::env::temp_dir().join(format!("sm-suspend-none-{}", rand::random::<u64>()));
