@@ -186,4 +186,31 @@ struct WidgetFeedTests {
         #expect(snapshot.agents.first?.outcomeLine == "Approve \"Ship v2\"?")
         #expect(snapshot.agents.first?.unread == 1)
     }
+
+    @Test("a working agent is named in the frame, so an empty recap never says nothing is new")
+    func busyFromTheCore() throws {
+        let (feed, dir) = Self.feed()
+        feed.apply(
+            rows: [
+                Self.row("!a:hs", name: "Atlas", at: Self.now - Self.minute, says: "On it"),
+                Self.row("!q:hs", name: "Quill", at: Self.now - 40 * Self.minute, says: "Done"),
+            ],
+            live: [], asOf: Self.now)
+        let snapshot = try #require(WidgetSnapshotStore.read(in: dir))
+        let frame = try #require(snapshot.frame(at: Date(timeIntervalSince1970: TimeInterval(Self.now) / 1000)))
+        #expect(snapshot.recap.isEmpty)
+        #expect(frame.pulse == "1 working")
+        #expect(frame.busy == "Atlas is working")
+        // Fifteen minutes on, Atlas has gone idle and the frame says nobody.
+        let later = try #require(snapshot.frames.last)
+        #expect(later.working == 0)
+        #expect(later.busy == nil)
+    }
+
+    @Test("the avatar's file name is the core's: SHA-256 of the user id")
+    func avatarFileName() {
+        #expect(
+            widgetAvatarFileName(userId: "@agent_writer-quill:hs")
+                == "6dadaa5dfa29f6dd0598959d1ca10c686446b3b03a4431690550ddac757236c9.png")
+    }
 }

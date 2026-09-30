@@ -39,47 +39,70 @@ public struct FleetActivityAttributes: ActivityAttributes {
             }
         }
 
+        /// Where a working agent's turn is (spec 2026-09-30, A1): the stage
+        /// the card's track shows.
+        public enum Phase: String, Codable, Hashable, Sendable {
+            case thinking, tools, writing
+        }
+
         public struct Agent: Codable, Hashable, Sendable, Identifiable {
             public var roomId: String
+            /// The agent's Matrix user id, which its cached avatar is keyed
+            /// by. Absent from a hub older than spec 2026-09-30.
+            public var mxid: String?
             public var name: String
             public var state: AgentState
+            /// Only while `working`; a phase this build does not know is none,
+            /// and the track then reads the counts.
+            public var phase: Phase?
             /// The step it is on, or how its turn ended. At most 60 characters.
             public var step: String?
             /// Tool calls done and made so far.
             public var completed: Int?
             public var total: Int?
             /// When its turn started, or when it was last active — Unix seconds.
+            /// For a finished row, the turn's start.
             public var since: Double?
+            /// When a `done` or `failed` turn finished — Unix seconds.
+            public var endedAt: Double?
 
             public var id: String { roomId }
             public var sinceDate: Date? { since.map(Date.init(timeIntervalSince1970:)) }
+            public var endedDate: Date? { endedAt.map(Date.init(timeIntervalSince1970:)) }
 
             public init(
-                roomId: String, name: String, state: AgentState, step: String? = nil,
-                completed: Int? = nil, total: Int? = nil, since: Double? = nil
+                roomId: String, mxid: String? = nil, name: String, state: AgentState,
+                phase: Phase? = nil, step: String? = nil, completed: Int? = nil,
+                total: Int? = nil, since: Double? = nil, endedAt: Double? = nil
             ) {
                 self.roomId = roomId
+                self.mxid = mxid
                 self.name = name
                 self.state = state
+                self.phase = phase
                 self.step = step
                 self.completed = completed
                 self.total = total
                 self.since = since
+                self.endedAt = endedAt
             }
 
             enum CodingKeys: String, CodingKey {
-                case roomId, name, state, step, completed, total, since
+                case roomId, mxid, name, state, phase, step, completed, total, since, endedAt
             }
 
             public init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 roomId = try c.decode(String.self, forKey: .roomId)
+                mxid = try? c.decodeIfPresent(String.self, forKey: .mxid)
                 name = try c.decode(String.self, forKey: .name)
                 state = (try? c.decodeIfPresent(AgentState.self, forKey: .state)) ?? .active
+                phase = try? c.decodeIfPresent(Phase.self, forKey: .phase)
                 step = try? c.decodeIfPresent(String.self, forKey: .step)
                 completed = try? c.decodeIfPresent(Int.self, forKey: .completed)
                 total = try? c.decodeIfPresent(Int.self, forKey: .total)
                 since = try? c.decodeIfPresent(Double.self, forKey: .since)
+                endedAt = try? c.decodeIfPresent(Double.self, forKey: .endedAt)
             }
         }
 

@@ -602,6 +602,13 @@ public final class Session {
         client as? any LiveActivityTokenRegistering
     }
 
+    /// The core's call that fetches an agent room's agent and picture, for
+    /// the fleet Live Activity's avatars, or `nil` when the client behind
+    /// this session cannot make it.
+    public var agentAvatarClient: (any AgentAvatarFetching)? {
+        client as? any AgentAvatarFetching
+    }
+
     /// A room's notification setting, or `nil` when it cannot be read.
     public func notificationMode(of roomId: String) async -> NotificationMode? {
         try? await client.roomInfo(roomId: roomId).notifications

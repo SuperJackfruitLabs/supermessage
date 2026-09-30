@@ -318,6 +318,12 @@ public actor CoreClient {
         try await run { try $0.roomAvatar(roomId: roomId) }
     }
 
+    /// The agent behind an agent's room and its picture, for the fleet
+    /// Live Activity's cache (`AgentAvatarCache`).
+    public func agentAvatar(roomId: String) async throws -> AgentAvatar? {
+        try await run { try $0.agentAvatar(roomId: roomId) }
+    }
+
     public func memberAvatar(mxcUri: String) async throws -> String? {
         try await run { try $0.memberAvatar(mxcUri: mxcUri) }
     }

@@ -242,6 +242,10 @@ targets:
       # sample rather than to each other's reading of the spec.
       - path: ../fixtures/fleet-content-state.json
         buildPhase: resources
+      # The same state with spec 2026-09-30's additions (mxid, phase,
+      # endedAt), which agentpod's contract test round-trips too.
+      - path: ../fixtures/fleet-content-state-v2.json
+        buildPhase: resources
     dependencies:
       - target: SupermessageKit
       - target: SupermessageFFI

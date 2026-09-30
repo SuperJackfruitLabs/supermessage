@@ -32,9 +32,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.AgentAvatar
 import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeAccountDto
+import uniffi.supermessage_core.FfiConverterTypeAgentAvatar
 import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
@@ -90,6 +92,7 @@ import uniffi.supermessage_core.WidgetAnswer
 import uniffi.supermessage_core.WidgetLiveTurn
 import uniffi.supermessage_core.WidgetWrite
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
+import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatar
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
@@ -1033,6 +1036,10 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1066,6 +1073,8 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_supermessage_ffi_fn_method_core_account(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferAccountDto.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_agent_avatar(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_attachment_discard(`ptr`: Pointer,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`durationMs`: Long,`waveform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1232,6 +1241,8 @@ internal interface UniffiLib : Library {
     ): RustBufferWidgetWrite.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_apply_timeline(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`rows`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferWidgetWrite.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_avatar_file_name(`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_clear_answer(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferWidgetWrite.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_mark_answered(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1392,6 +1403,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_widget_apply_timeline(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_avatar_file_name(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_widget_clear_answer(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_widget_mark_answered(
@@ -1399,6 +1412,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_widget_signed_out(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_account(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_agent_avatar(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_attachment_discard(
     ): Short
@@ -1614,6 +1629,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_widget_apply_timeline() != 12710.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_avatar_file_name() != 5847.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_widget_clear_answer() != 58905.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1624,6 +1642,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_account() != 48469.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_agent_avatar() != 5049.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_discard() != 58741.toShort()) {
@@ -2269,6 +2290,12 @@ public interface CoreInterface {
     fun `account`(): AccountDto
     
     /**
+     * The agent behind an agent's room, with its avatar's bytes and the
+     * file they are cached in, for the fleet Live Activity.
+     */
+    fun `agentAvatar`(`roomId`: kotlin.String): AgentAvatar?
+    
+    /**
      * Throw a staged file away without sending it.
      */
     fun `attachmentDiscard`(`token`: kotlin.String)
@@ -2814,6 +2841,23 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_account(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The agent behind an agent's room, with its avatar's bytes and the
+     * file they are cached in, for the fleet Live Activity.
+     */
+    @Throws(FfiException::class)override fun `agentAvatar`(`roomId`: kotlin.String): AgentAvatar? {
+            return FfiConverterOptionalTypeAgentAvatar.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_agent_avatar(
+        it, FfiConverterString.lower(`roomId`),_status)
 }
     }
     )
@@ -5713,6 +5757,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeAgentAvatar: FfiConverterRustBuffer<AgentAvatar?> {
+    override fun read(buf: ByteBuffer): AgentAvatar? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeAgentAvatar.read(buf)
+    }
+
+    override fun allocationSize(value: AgentAvatar?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeAgentAvatar.allocationSize(value)
+        }
+    }
+
+    override fun write(value: AgentAvatar?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeAgentAvatar.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeGateAnswers: FfiConverterRustBuffer<GateAnswers?> {
     override fun read(buf: ByteBuffer): GateAnswers? {
         if (buf.get().toInt() == 0) {
@@ -6434,6 +6510,10 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
 
 
 
+
+
+
+
         /**
          * A playing note's position as the clock under it reads — `"0:06"`,
          * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -6725,6 +6805,19 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_apply_timeline(
         FfiConverterOptionalString.lower(`stored`),FfiConverterString.lower(`roomId`),FfiConverterSequenceTypeTimelineRow.lower(`rows`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The file an agent's avatar is cached in, in the App Group's `avatars`
+         * directory, named by its Matrix user id.
+         */ fun `widgetAvatarFileName`(`userId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_avatar_file_name(
+        FfiConverterString.lower(`userId`),_status)
 }
     )
     }

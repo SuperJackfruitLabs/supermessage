@@ -125,7 +125,10 @@ enum WidgetSample {
                 line: "Run git push origin main?", unread: 1, atMs: ms - 3 * minute),
         ]
         let count = UInt32(owed.count)
-        let working = UInt32(states.filter { $0.tone == .working || $0.tone == .active }.count)
+        let busy = zip(agents, states)
+            .filter { $0.1.tone == .working || $0.1.tone == .active }
+            .map(\.0.name)
+        let working = UInt32(busy.count)
         let asks = count == 0 ? nil : (count == 1 ? "1 needs you" : "\(count) need you")
         return WidgetSnapshot(
             openedAtMs: ms - 50 * minute, signedIn: true, decisions: decisions, agents: agents,
@@ -134,7 +137,11 @@ enum WidgetSample {
                     fromMs: ms, needsYou: count, needsYouCount: "\(count)",
                     needsYouLine: asks ?? "Nothing needs you", working: working,
                     pulse: asks.map { "\(working) working · \($0)" } ?? "\(working) working",
-                    states: states)
+                    states: states,
+                    busy: busy.isEmpty
+                        ? nil
+                        : busy.count == 1
+                            ? "\(busy[0]) is working" : "\(busy.dropLast().joined(separator: ", ")) and \(busy.last!) are working")
             ],
             recap: recap)
     }

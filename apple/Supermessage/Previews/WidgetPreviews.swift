@@ -103,6 +103,21 @@ private func quiet() -> WidgetSnapshot {
     return snapshot
 }
 
+/// Nothing new, and nobody working either: the one case "Nothing new since"
+/// is said in.
+private func allQuiet() -> WidgetSnapshot {
+    var snapshot = quiet()
+    snapshot.frames = snapshot.frames.map { frame in
+        var frame = frame
+        frame.working = 0
+        frame.pulse = "All quiet"
+        frame.busy = nil
+        frame.states = frame.states.map { _ in .init(word: "idle", tone: .idle) }
+        return frame
+    }
+    return snapshot
+}
+
 private struct Board<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
@@ -254,6 +269,14 @@ private struct Board<Content: View>: View {
     Board {
         WidgetFrame(family: .systemMedium, mini: true) {
             AgentsWidgetView(entry: recap(quiet()), family: .systemMedium)
+        }
+    }
+}
+
+#Preview("Agents, nothing new, all quiet") {
+    Board {
+        WidgetFrame(family: .systemMedium, mini: true) {
+            AgentsWidgetView(entry: recap(allQuiet()), family: .systemMedium)
         }
     }
 }

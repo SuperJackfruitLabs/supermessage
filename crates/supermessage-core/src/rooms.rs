@@ -184,6 +184,55 @@ fn resolve_two_person_avatar_url(member_avatar_urls: &[(bool, Option<String>)]) 
         .and_then(|(_, avatar_url)| avatar_url.clone())
 }
 
+/// The one other joined member of a two-person room, with their avatar's
+/// mxc URI if they have one: in an agent's room, the agent.
+///
+/// `members` is `(is_own_member, user_id, avatar_url)` for every joined
+/// member. The same narrowness as [`resolve_two_person_avatar_url`], for the
+/// same reason: in a room of three there is no one member who *is* the room.
+/// Used for the fleet Live Activity's avatars, which the hub keys by the
+/// agent's user id rather than by room ([`agent_avatar_source`]).
+pub fn sole_other_member(
+    members: &[(bool, String, Option<String>)],
+) -> Option<(String, Option<String>)> {
+    match members {
+        [a, b] if a.0 != b.0 => {
+            let (_, user_id, avatar) = if a.0 { b } else { a };
+            Some((user_id.clone(), avatar.clone()))
+        }
+        _ => None,
+    }
+}
+
+/// Who `room`'s agent is and which mxc URI is their avatar: the sole other
+/// joined member of a two-person room ([`sole_other_member`]), read the way
+/// [`resolve_room_avatar_mxc`] reads members — the local store, and the
+/// server's list only when the room claims two members and the store holds
+/// fewer.
+pub async fn agent_avatar_source(room: &Room) -> CoreResult<Option<(String, Option<String>)>> {
+    let mut members = room
+        .members_no_sync(RoomMemberships::JOIN)
+        .await
+        .map_err(|e| CoreError::Protocol(e.to_string()))?;
+    if members.len() < 2 && room.active_members_count() == 2 {
+        members = room
+            .members(RoomMemberships::JOIN)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+    }
+    let members: Vec<(bool, String, Option<String>)> = members
+        .iter()
+        .map(|m| {
+            (
+                m.is_account_user(),
+                m.user_id().to_string(),
+                m.avatar_url().map(|url| url.to_string()),
+            )
+        })
+        .collect();
+    Ok(sole_other_member(&members))
+}
+
 /// Resolves `room`'s avatar to an mxc URI, consulting — in order — the
 /// room's own `m.room.avatar`, a sole hero's avatar
 /// ([`resolve_avatar_url`]), and, when neither fires, the sole *other*
@@ -1170,6 +1219,66 @@ mod tests {
     #[test]
     fn resolve_two_person_avatar_url_is_none_for_an_empty_member_list() {
         assert_eq!(resolve_two_person_avatar_url(&[]), None);
+    }
+
+    fn member(own: bool, id: &str, avatar: Option<&str>) -> (bool, String, Option<String>) {
+        (own, id.to_string(), avatar.map(str::to_string))
+    }
+
+    #[test]
+    fn sole_other_member_is_the_agent_in_a_two_person_room_in_either_order() {
+        let agent = Some((
+            "@agent_lyra:hs".to_string(),
+            Some("mxc://hs/lyra".to_string()),
+        ));
+        assert_eq!(
+            sole_other_member(&[
+                member(true, "@me:hs", Some("mxc://hs/me")),
+                member(false, "@agent_lyra:hs", Some("mxc://hs/lyra")),
+            ]),
+            agent
+        );
+        assert_eq!(
+            sole_other_member(&[
+                member(false, "@agent_lyra:hs", Some("mxc://hs/lyra")),
+                member(true, "@me:hs", Some("mxc://hs/me")),
+            ]),
+            agent
+        );
+    }
+
+    #[test]
+    fn sole_other_member_without_an_avatar_is_still_who_the_agent_is() {
+        assert_eq!(
+            sole_other_member(&[
+                member(true, "@me:hs", None),
+                member(false, "@agent_kai:hs", None)
+            ]),
+            Some(("@agent_kai:hs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn sole_other_member_is_nobody_in_a_room_of_one_three_or_strangers() {
+        assert_eq!(sole_other_member(&[]), None);
+        assert_eq!(sole_other_member(&[member(true, "@me:hs", None)]), None);
+        assert_eq!(
+            sole_other_member(&[
+                member(true, "@me:hs", None),
+                member(false, "@a:hs", Some("mxc://hs/a")),
+                member(false, "@b:hs", Some("mxc://hs/b")),
+            ]),
+            None
+        );
+        // Two members, neither of them this account: not a room this account
+        // is in with one agent.
+        assert_eq!(
+            sole_other_member(&[
+                member(false, "@a:hs", Some("mxc://hs/a")),
+                member(false, "@b:hs", Some("mxc://hs/b")),
+            ]),
+            None
+        );
     }
 
     #[test]

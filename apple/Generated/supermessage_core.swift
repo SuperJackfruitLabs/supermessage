@@ -626,6 +626,105 @@ public func FfiConverterTypeAccountDto_lower(_ value: AccountDto) -> RustBuffer 
 
 
 /**
+ * An agent's avatar, for the App Group's cache (spec 2026-09-30, B4).
+ */
+public struct AgentAvatar {
+    /**
+     * The agent's Matrix user id — what the hub's Live Activity names it by.
+     */
+    public var userId: String
+    /**
+     * [`avatar_file_name`] of `user_id`.
+     */
+    public var fileName: String
+    /**
+     * The picture's bytes as the server scaled them (PNG, JPEG, GIF or
+     * WebP), or `None` when the agent has no avatar — and a file cached
+     * before should go.
+     */
+    public var image: Data?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The agent's Matrix user id — what the hub's Live Activity names it by.
+         */userId: String, 
+        /**
+         * [`avatar_file_name`] of `user_id`.
+         */fileName: String, 
+        /**
+         * The picture's bytes as the server scaled them (PNG, JPEG, GIF or
+         * WebP), or `None` when the agent has no avatar — and a file cached
+         * before should go.
+         */image: Data?) {
+        self.userId = userId
+        self.fileName = fileName
+        self.image = image
+    }
+}
+
+
+
+extension AgentAvatar: Equatable, Hashable {
+    public static func ==(lhs: AgentAvatar, rhs: AgentAvatar) -> Bool {
+        if lhs.userId != rhs.userId {
+            return false
+        }
+        if lhs.fileName != rhs.fileName {
+            return false
+        }
+        if lhs.image != rhs.image {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(userId)
+        hasher.combine(fileName)
+        hasher.combine(image)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAgentAvatar: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AgentAvatar {
+        return
+            try AgentAvatar(
+                userId: FfiConverterString.read(from: &buf), 
+                fileName: FfiConverterString.read(from: &buf), 
+                image: FfiConverterOptionData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AgentAvatar, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterString.write(value.fileName, into: &buf)
+        FfiConverterOptionData.write(value.image, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentAvatar_lift(_ buf: RustBuffer) throws -> AgentAvatar {
+    return try FfiConverterTypeAgentAvatar.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentAvatar_lower(_ value: AgentAvatar) -> RustBuffer {
+    return FfiConverterTypeAgentAvatar.lower(value)
+}
+
+
+/**
  * What an `m.audio` event says about itself beyond being a file: the
  * MSC3245 voice flag, the length, and the MSC3246 waveform — already
  * normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
@@ -8882,6 +8981,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
+    typealias SwiftType = Data?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterData.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterData.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

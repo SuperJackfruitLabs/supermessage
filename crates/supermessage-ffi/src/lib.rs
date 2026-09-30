@@ -589,6 +589,15 @@ impl Core {
         Ok(self.block(self.session.room_avatar_full(&room_id))?)
     }
 
+    /// The agent behind an agent's room, with its avatar's bytes and the
+    /// file they are cached in, for the fleet Live Activity.
+    pub fn agent_avatar(
+        &self,
+        room_id: String,
+    ) -> Result<Option<supermessage_core::widget::AgentAvatar>, FfiError> {
+        Ok(self.block(self.session.agent_avatar(&room_id))?)
+    }
+
     /// A member's avatar as a `data:` URI, given its `mxc:` URI.
     pub fn member_avatar(&self, mxc_uri: String) -> Result<Option<String>, FfiError> {
         Ok(self.block(self.session.member_avatar(&mxc_uri))?)
@@ -1180,6 +1189,13 @@ pub fn notification_gate_answers(
 // whether the widgets are worth reloading. The host reads and writes the file
 // under its lock and decides nothing else.
 // ---------------------------------------------------------------------------
+
+/// The file an agent's avatar is cached in, in the App Group's `avatars`
+/// directory, named by its Matrix user id.
+#[uniffi::export]
+pub fn widget_avatar_file_name(user_id: String) -> String {
+    supermessage_core::widget::avatar_file_name(&user_id)
+}
 
 /// One push, as the Notification Service Extension decided it.
 #[uniffi::export]

@@ -75,6 +75,30 @@ pub async fn avatar_thumbnail(client: &Client, mxc_uri: &str) -> CoreResult<Opti
     .await
 }
 
+/// Fetches `mxc_uri` as an avatar thumbnail and returns its bytes, or `None`
+/// when they are not an image this module recognises ([`sniff_mime`]).
+///
+/// The same request as [`avatar_thumbnail`] — so the SDK's media store
+/// serves both from one fetch — for a host that writes the picture to a file
+/// rather than drawing it: the fleet Live Activity's cached avatars
+/// (`Session::agent_avatar`), which a widget extension reads with no core.
+pub async fn avatar_thumbnail_bytes(client: &Client, mxc_uri: &str) -> CoreResult<Option<Vec<u8>>> {
+    let request = MediaRequestParameters {
+        source: MediaSource::Plain(OwnedMxcUri::from(mxc_uri)),
+        format: MediaFormat::Thumbnail(MediaThumbnailSettings::with_method(
+            Method::Scale,
+            UInt::from(AVATAR_THUMBNAIL_SIZE),
+            UInt::from(AVATAR_THUMBNAIL_SIZE),
+        )),
+    };
+    let bytes = client
+        .media()
+        .get_media_content(&request, true)
+        .await
+        .map_err(|e| CoreError::Network(e.to_string()))?;
+    Ok(sniff_mime(&bytes).is_some().then_some(bytes))
+}
+
 /// Fetches an avatar at its **original** size, for a reader looking at the
 /// picture itself rather than at a row.
 ///

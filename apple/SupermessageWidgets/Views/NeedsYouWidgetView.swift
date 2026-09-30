@@ -197,10 +197,101 @@ struct WidgetDecisionCard: View {
     /// Whether to say how long ago it was asked. The fleet Live Activity
     /// does not know — the hub's decision carries no time.
     var showsAge = true
+    /// The fleet card's form (spec 2026-09-30, B2): who asks beside their
+    /// face, the question in large type under the name, and the two answers
+    /// as wide buttons across the bottom — in place of the card's hero.
+    var banner: Banner?
+
+    struct Banner {
+        /// The asker's face, drawn by the caller (a cached avatar or
+        /// initials).
+        var face: AnyView
+        /// At most this many lines of question; the card asks for one when
+        /// two do not fit.
+        var questionLines = 2
+        /// Whether to draw the buttons. The watch's Smart Stack is a glance:
+        /// a tap there opens the card on the phone.
+        var answers = true
+        /// The tightest form, for the largest text: who and what on one
+        /// line, and smaller buttons — so the decision is never cropped.
+        var tight = false
+    }
 
     private var owed: Bool { decision.answered == nil }
 
     var body: some View {
+        if let banner { bannerBody(banner) } else { standard }
+    }
+
+    /// The fleet card's decision: the one amber element on the Lock Screen.
+    private func bannerBody(_ banner: Banner) -> some View {
+        VStack(alignment: .leading, spacing: banner.tight ? 6 : 8) {
+            Link(destination: link) {
+                HStack(alignment: .center, spacing: 8) {
+                    if banner.tight {
+                        (Text(decision.agent)
+                            .foregroundStyle(owed ? WidgetTheme.signal : WidgetTheme.contentMuted)
+                            + Text(" · \(decision.question)").foregroundStyle(WidgetTheme.content))
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        banner.face
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(decision.agent)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(owed ? WidgetTheme.signal : WidgetTheme.contentMuted)
+                                .lineLimit(1)
+                            Text(decision.question)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(WidgetTheme.content)
+                                .multilineTextAlignment(.leading)
+                                .lineLimit(banner.questionLines)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            if banner.answers, owed, !decision.buttons.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(decision.buttons) { option in
+                        let intent = AnswerDecisionIntent(
+                            roomId: decision.roomId, eventId: decision.eventId, optionId: option.id)
+                        if option.declines {
+                            Button(intent: intent) { wideLabel(option) }
+                                .buttonStyle(.bordered)
+                                .tint(WidgetTheme.contentMuted)
+                        } else {
+                            Button(intent: intent) { wideLabel(option) }
+                                .buttonStyle(.borderedProminent)
+                                .tint(WidgetTheme.signal)
+                        }
+                    }
+                }
+                .buttonBorderShape(.capsule)
+                .controlSize(banner.tight ? .small : .regular)
+            }
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, banner.tight ? 6 : 9)
+        .background {
+            RoundedRectangle(cornerRadius: Metrics.radiusCard)
+                .fill(owed ? WidgetTheme.signal.opacity(0.10) : WidgetTheme.surfaceSunken)
+            RoundedRectangle(cornerRadius: Metrics.radiusCard)
+                .stroke(owed ? WidgetTheme.signal : WidgetTheme.border, lineWidth: 1)
+        }
+    }
+
+    private func wideLabel(_ option: WidgetSnapshot.Option) -> some View {
+        Text(option.label)
+            .font((banner?.tight == true ? Font.caption : Font.subheadline).weight(.semibold))
+            .foregroundStyle(option.declines ? WidgetTheme.content : WidgetTheme.signalSoft)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var standard: some View {
         let layout =
             compact
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
