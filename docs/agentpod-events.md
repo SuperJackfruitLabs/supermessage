@@ -135,8 +135,57 @@ line from the agent, detached from the note.
 
 Present-but-invalid optional fields refuse the whole key; `null` is absent.
 The side comes from the reply's parent sender when the parent loaded, and
-from the notice's own sender otherwise. On iOS a transcript does not raise a
-notification of its own — the note already did.
+from the notice's own sender otherwise. A transcript never raises a
+notification of its own — the note already did — whether it is drawn
+standalone or folded (`core::notification` reads the row's
+`voice_transcript`, not its view).
+
+**Under its note, wherever it lands** (`core::voice_transcript::reconcile`,
+run over the whole timeline after every batch, beside the voice reply's
+pairing). The notice arrives seconds after the note, and anything can land in
+between: on 2026-09-30 the sender typed "Hi?" a second after the note, the
+transcript arrived after "Hi?" — and after the unread divider — and was drawn
+there, reading as a reply to "Hi?". Now:
+
+- **Both loaded** — the notice's `m.in_reply_to` names a voice message drawn
+  as a note: the note's row is `ItemView::Audio { transcript: Some(..) }`,
+  and every host draws the transcript directly under the note in that same
+  row (the same quiet block, on the note's side). The notice's row stays in
+  the list as `ItemView::None`. Both change by `Set` at their own indices —
+  nothing is inserted or moved, so nothing scrolls.
+- **Only the notice loaded** — the note is further back than pagination has
+  reached: the notice is drawn standalone (`ItemView::VoiceTranscript`), as
+  above, and folds in when the note arrives.
+- **Either side goes** — a redacted notice takes the transcript off the note;
+  a redacted or paginated-out note leaves the transcript standalone. An edit
+  of the notice re-folds with the new words.
+- **One per note** — a second transcript of the same note stays standalone,
+  seen for what it is rather than replacing the first.
+- A note drawn as something else (an agent's spoken answer folded into its
+  text, §4a) keeps its transcript standalone.
+- The **unread divider** is hidden while nothing visible follows it (its only
+  new message was a transcript now drawn further up) and drawn again when
+  something does.
+
+The notice's row carries `TimelineRow.voice_transcript` (the note's event id,
+the transcript and its standalone side) so the fold can be undone after the
+raw event is gone; no host reads it. Three linear passes, one hash lookup per
+row.
+
+**Playing an agent's voice note on iOS.** AgentPod's speech service writes
+Ogg/Opus with libsndfile, which ends every stream on a *shorter* packet (the
+tail that does not fill a 20 ms frame goes out as 2.5, 5 or 10 ms). iOS plays
+Opus only from CAF, so `core::opus_container::ogg_to_caf` remuxes; a CAF whose
+`desc` says "0 frames per packet" (a per-packet table) is refused by Apple's
+decoder for a short note (`AVAudioPlayer.prepareToPlay()` false — "This audio
+can't be played here.") and loses its odd packet in a long one. So the remux
+brings an odd packet at either **end** up to the stream's packet length with
+empty Opus frames (RFC 6716 §3.2.1: zero-length, concealed by the decoder),
+which the end trim or a longer pre-skip then discards: every sample the Ogg
+had is kept, byte for byte, and the CAF says one packet length, as Apple's own
+files do. A stream that changes frame length in the middle keeps a per-packet
+table. Android plays the Ogg itself; the desktop remuxes only where WebKit has
+no Ogg.
 
 ## 4a. The voice reply — a key on the voice message that speaks an answer
 

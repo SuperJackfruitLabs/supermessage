@@ -149,8 +149,20 @@ pub enum ItemView {
     /// bubble, any other audio file as a player with its name. Everything a
     /// host shows — the length, the bars, what a screen reader says — is on
     /// `audio`. See `crate::audio`.
+    ///
+    /// `transcript` is what the note said, when a transcript notice replying
+    /// to it is in the timeline too (`dev.agentpod.voice_transcript`): a host
+    /// draws it **directly under the note, in the same row**, and the
+    /// notice's own row is [`Self::None`] — so the transcript sits under its
+    /// note however late it arrived and whatever was said in between. `None`
+    /// for a note nobody has transcribed yet; a transcript whose note is not
+    /// loaded is drawn standalone ([`Self::VoiceTranscript`]). See
+    /// `crate::voice_transcript::reconcile`, which decides it over the whole
+    /// timeline.
     Audio {
         audio: AudioView,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        transcript: Option<VoiceNoteTranscript>,
     },
     /// An `m.file`/`m.video`: an informative row naming what the message is.
     /// `label` is precomputed so a host needs no msgtype table. (`m.audio` was
@@ -622,6 +634,7 @@ fn message_view(item: &TimelineItemDto) -> ItemView {
                     media.and_then(|m| m.mimetype.clone()),
                     image_caption(item),
                 ),
+                transcript: None,
             }
         }
         Some(other) if MediaFileLabel::for_msgtype(other).is_some() => {
@@ -791,7 +804,7 @@ pub fn voice_reply_view(text: &TimelineItemDto, voice: &TimelineItemDto) -> Opti
         _ => return None,
     };
     let event_id = voice.event_id.clone()?;
-    let ItemView::Audio { mut audio } = view_for(voice) else {
+    let ItemView::Audio { mut audio, .. } = view_for(voice) else {
         return None;
     };
     audio.title = "Voice reply".to_string();
@@ -2251,7 +2264,7 @@ mod tests {
             duration_ms: Some(7_400),
             waveform: Some(vec![0.0, 0.5, 1.0]),
         }));
-        let ItemView::Audio { audio } = view_for(&it) else {
+        let ItemView::Audio { audio, .. } = view_for(&it) else {
             panic!("expected a player, got {:?}", view_for(&it));
         };
         assert!(audio.is_voice);
@@ -2272,7 +2285,7 @@ mod tests {
             waveform: None,
         }));
         it.media.as_mut().unwrap().filename = "song.mp3".into();
-        let ItemView::Audio { audio } = view_for(&it) else {
+        let ItemView::Audio { audio, .. } = view_for(&it) else {
             panic!("expected a player");
         };
         assert!(!audio.is_voice);
@@ -2284,7 +2297,7 @@ mod tests {
     fn an_audio_event_with_no_media_block_still_names_itself() {
         let mut it = item("message");
         it.msgtype = Some("m.audio".into());
-        let ItemView::Audio { audio } = view_for(&it) else {
+        let ItemView::Audio { audio, .. } = view_for(&it) else {
             panic!("expected a player");
         };
         assert!(!audio.is_voice);
@@ -2295,7 +2308,7 @@ mod tests {
     fn a_voice_note_with_words_carries_them_as_its_caption() {
         let mut it = voice_note(None);
         it.body = Some("listen to this".into());
-        let ItemView::Audio { audio } = view_for(&it) else {
+        let ItemView::Audio { audio, .. } = view_for(&it) else {
             panic!("expected a player");
         };
         assert_eq!(audio.caption.as_deref(), Some("listen to this"));

@@ -989,6 +989,13 @@ export interface VoiceReplyLink {
   seconds: number | null;
 }
 
+/** A transcript notice as its own row remembers it: `core::voice_transcript::TranscriptNotice`. */
+export interface TranscriptNotice {
+  noteEventId: string | null;
+  transcript: VoiceNoteTranscript;
+  onOwnNote: boolean;
+}
+
 /**
  * The render decision for one item, made by `core::item_view::view_for`.
  */
@@ -1022,7 +1029,17 @@ export type ItemView =
       caption: string | null;
     }
   /** An `m.audio`, drawn as a player; see {@link AudioView}. */
-  | { render: "audio"; audio: AudioView }
+  | {
+      render: "audio";
+      audio: AudioView;
+      /**
+       * What the note said, drawn directly under it in the same row: the core
+       * folded the hub's transcript notice in, wherever it landed, and hid the
+       * notice's own row (`core::voice_transcript::reconcile`). Absent until
+       * the note is transcribed.
+       */
+      transcript?: VoiceNoteTranscript;
+    }
   | {
       render: "mediaFile";
       label: "File" | "Audio" | "Video";
@@ -1100,6 +1117,13 @@ export interface TimelineRow {
    * it is carried so the core can re-settle the pairing after every batch.
    */
   voiceReply?: VoiceReplyLink;
+  /**
+   * For a voice note's transcript notice: the note it transcribes. Absent on
+   * every other row, and read by nothing here either — the core draws the
+   * transcript under its note (the `audio` view's `transcript`) and hides
+   * this row, and keeps this to put it back standalone if the note goes.
+   */
+  voiceTranscript?: TranscriptNotice;
 }
 
 /** A room name split into the suite's `<glyph> <Name> — <Role>` convention. */

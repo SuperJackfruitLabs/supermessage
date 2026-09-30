@@ -3512,6 +3512,37 @@ fn verify_room_focus(requested: &str, focused: &str) -> CoreResult<()> {
 /// before and after this batch was folded in — so the caller can feed
 /// [`should_reseed`] without a second, separately-locked read of the same
 /// state.
+/// The unread divider, drawn only while it marks something: hidden
+/// (`ItemView::None`) when every row after it is folded away — the new
+/// message was a transcript now drawn under its note further up, or a voice
+/// reply now on its text — and drawn again once something visible lands
+/// after it. Returns the divider's index when its view changed.
+///
+/// Without this, the live case of 2026-09-30 left a "New" line at the bottom
+/// with nothing under it: the only unread event was the transcript, and it
+/// had moved up under its note.
+fn settle_unread_marker(rows: &mut [TimelineRow]) -> Vec<usize> {
+    use crate::item_view::ItemView;
+
+    // The SDK inserts at most one.
+    let Some(at) = rows.iter().rposition(|row| row.item.kind == "readMarker") else {
+        return Vec::new();
+    };
+    let marks_something = rows[at + 1..]
+        .iter()
+        .any(|row| !matches!(row.view, ItemView::None | ItemView::DateDivider));
+    let wanted = if marks_something {
+        ItemView::UnreadMarker
+    } else {
+        ItemView::None
+    };
+    if rows[at].view == wanted {
+        return Vec::new();
+    }
+    rows[at].view = wanted;
+    vec![at]
+}
+
 fn emit_ops(
     sink: &Arc<dyn EventSink>,
     state: &Arc<Mutex<TimelineState>>,
@@ -3558,10 +3589,15 @@ fn emit_ops(
         //
         // And one message per spoken answer: an agent's voice reply is drawn
         // on the text it speaks, and its own row hidden — see
-        // `crate::voice_reply`. A row both passes touch is sent once, as it
-        // ends up.
+        // `crate::voice_reply`. And a voice note's transcript is drawn under
+        // the note, however late it landed, and its notice's row hidden —
+        // `crate::voice_transcript`; after the voice replies, which decide
+        // whether a note is drawn as one. A row several passes touch is sent
+        // once, as it ends up.
         let mut settled = crate::embedded::reconcile(&mut guard.1);
         settled.extend(crate::voice_reply::reconcile(&mut guard.1));
+        settled.extend(crate::voice_transcript::reconcile(&mut guard.1));
+        settled.extend(settle_unread_marker(&mut guard.1));
         settled.sort_unstable();
         settled.dedup();
         for index in settled {
@@ -4108,7 +4144,7 @@ mod tests {
         assert_eq!(link.text_event_id, "$text");
         assert_eq!(link.voice, "bf_emma");
         // Alone, it is the voice note it is; pairing is the timeline's call.
-        let crate::item_view::ItemView::Audio { audio } = &row.view else {
+        let crate::item_view::ItemView::Audio { audio, .. } = &row.view else {
             panic!("expected a voice note, got {:?}", row.view);
         };
         assert!(audio.is_voice);
@@ -4127,7 +4163,7 @@ mod tests {
             }),
             false,
         );
-        let crate::item_view::ItemView::Audio { audio } = voice_row(&raw).view else {
+        let crate::item_view::ItemView::Audio { audio, .. } = voice_row(&raw).view else {
             panic!("expected a voice note");
         };
         assert_eq!(audio.duration_ms, Some(4_000));
@@ -4142,7 +4178,7 @@ mod tests {
         );
         let row = voice_row(&raw);
         assert_eq!(row.voice_reply, None);
-        let crate::item_view::ItemView::Audio { audio } = &row.view else {
+        let crate::item_view::ItemView::Audio { audio, .. } = &row.view else {
             panic!("expected a voice note");
         };
         assert_eq!(audio.duration_ms, None, "no key, no borrowed length");
@@ -6796,5 +6832,264 @@ mod gate_decision_tests {
         .await;
 
         focused.clear_and_join().await;
+    }
+
+    /// The live case of 2026-09-30, through the real SDK timeline: a voice
+    /// note, "Hi?" a second later, then the hub's transcript. The transcript
+    /// is drawn **under the note** — the note's row updated in place with a
+    /// `Set` carrying it, the notice's own row hidden — and "Hi?" does not
+    /// move. Redacting the transcript takes it off the note again.
+    #[tokio::test]
+    async fn a_transcript_landing_after_another_message_folds_under_its_note_in_place() {
+        use std::sync::Mutex as StdMutex;
+
+        use matrix_sdk::ruma::{event_id, room_id, user_id};
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+        use matrix_sdk_test::{event_factory::EventFactory, JoinedRoomBuilder};
+
+        use crate::item_view::ItemView;
+
+        struct Envelopes(StdMutex<Vec<DiffEnvelope<TimelineRow>>>);
+        impl EventSink for Envelopes {
+            fn emit(&self, event: crate::event::CoreEvent) {
+                if let crate::event::CoreEvent::TimelineDiff(envelope) = event {
+                    self.0.lock().unwrap().push(envelope);
+                }
+            }
+        }
+
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        server
+            .mock_room_messages()
+            .ok(Default::default())
+            .mount()
+            .await;
+
+        let room_id = room_id!("!notes:example.org");
+        let me = client.user_id().unwrap().to_owned();
+        let hub = user_id!("@agent_scribe:example.org");
+        let f = EventFactory::new().room(room_id);
+
+        let note: Raw<AnySyncTimelineEvent> = serde_json::from_value(serde_json::json!({
+            "type": "m.room.message",
+            "event_id": "$note",
+            "sender": me,
+            "origin_server_ts": 1_700_000_000_000_u64,
+            "content": {
+                "msgtype": "m.audio",
+                "body": "Voice message.ogg",
+                "url": "mxc://example.org/note",
+                "info": { "mimetype": "audio/ogg", "duration": 3_000 },
+                "org.matrix.msc1767.audio": { "duration": 3_000, "waveform": [0, 512, 1024] },
+                "org.matrix.msc3245.voice": {}
+            }
+        }))
+        .unwrap();
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(room_id)
+                        .add_timeline_event(note)
+                        .add_timeline_event(
+                            f.text_msg("Hi?").sender(&me).event_id(event_id!("$hi")),
+                        ),
+                );
+            })
+            .await;
+
+        let sink = Arc::new(Envelopes(StdMutex::new(Vec::new())));
+        let focused = FocusedTimeline::default();
+        focused
+            .subscribe(&client, room_id.as_str(), sink.clone())
+            .await
+            .unwrap();
+
+        async fn wait_for(
+            focused: &FocusedTimeline,
+            what: &str,
+            done: impl Fn(&[TimelineRow]) -> bool,
+        ) -> Vec<TimelineRow> {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                let rows = focused.snapshot().await.unwrap().2;
+                if done(&rows) {
+                    return rows;
+                }
+                assert!(tokio::time::Instant::now() < deadline, "never saw {what}");
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+        let by_event = |rows: &[TimelineRow], id: &str| {
+            rows.iter()
+                .position(|r| r.item.event_id.as_deref() == Some(id))
+        };
+
+        let rows = wait_for(&focused, "the note and Hi?", |rows| {
+            by_event(rows, "$note").is_some() && by_event(rows, "$hi").is_some()
+        })
+        .await;
+        let note_index = by_event(&rows, "$note").unwrap();
+        let hi_index = by_event(&rows, "$hi").unwrap();
+        assert!(matches!(
+            rows[note_index].view,
+            ItemView::Audio {
+                transcript: None,
+                ..
+            }
+        ));
+        let envelopes_before = sink.0.lock().unwrap().len();
+
+        let transcript: Raw<AnySyncTimelineEvent> = serde_json::from_value(serde_json::json!({
+            "type": "m.room.message",
+            "event_id": "$transcript",
+            "sender": hub,
+            "origin_server_ts": 1_700_000_004_000_u64,
+            "content": {
+                "msgtype": "m.notice",
+                "body": "Transcript: Can you move the review to Thursday?",
+                "m.relates_to": { "m.in_reply_to": { "event_id": "$note" } },
+                "dev.agentpod.voice_transcript": {
+                    "schema_version": 1,
+                    "text": "Can you move the review to Thursday?",
+                    "language": "en",
+                    "seconds": 3
+                }
+            }
+        }))
+        .unwrap();
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(room_id).add_timeline_event(transcript),
+                );
+            })
+            .await;
+
+        let folded = |rows: &[TimelineRow]| {
+            by_event(rows, "$note").is_some_and(|i| {
+                matches!(
+                    &rows[i].view,
+                    ItemView::Audio { transcript: Some(t), .. }
+                        if t.text == "Can you move the review to Thursday?"
+                )
+            })
+        };
+        let rows = wait_for(&focused, "the transcript under its note", folded).await;
+        let transcript_index = by_event(&rows, "$transcript").expect("the notice is still a row");
+        assert_eq!(
+            rows[transcript_index].view,
+            ItemView::None,
+            "the notice's row is hidden, not removed"
+        );
+        assert_eq!(
+            by_event(&rows, "$note"),
+            Some(note_index),
+            "the note did not move"
+        );
+        assert_eq!(by_event(&rows, "$hi"), Some(hi_index), "Hi? did not move");
+        assert!(note_index < hi_index && hi_index < transcript_index);
+
+        // How the host heard about it: a `Set` of the note where it was.
+        let envelopes = sink.0.lock().unwrap()[envelopes_before..].to_vec();
+        let note_id = rows[note_index].item.id.clone();
+        assert!(
+            envelopes.iter().flat_map(|e| &e.ops).any(|op| matches!(
+                op,
+                DiffOp::Set { index, value } if *index == note_index && value.item.id == note_id
+                    && matches!(value.view, ItemView::Audio { transcript: Some(_), .. })
+            )),
+            "the note row must be updated in place: {:?}",
+            envelopes
+                .iter()
+                .map(|e| e.ops.iter().map(op_name).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            !envelopes.iter().flat_map(|e| &e.ops).any(|op| matches!(
+                op,
+                DiffOp::Remove { index } if *index == note_index || *index == hi_index
+            )),
+            "neither the note nor Hi? may be removed"
+        );
+
+        // The transcript is redacted: the note is its plain self again.
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(room_id).add_timeline_event(
+                        f.redaction(event_id!("$transcript"))
+                            .sender(hub)
+                            .event_id(event_id!("$redaction")),
+                    ),
+                );
+            })
+            .await;
+        wait_for(&focused, "the note without its transcript", |rows| {
+            by_event(rows, "$note").is_some_and(|i| {
+                matches!(
+                    rows[i].view,
+                    ItemView::Audio {
+                        transcript: None,
+                        ..
+                    }
+                )
+            })
+        })
+        .await;
+
+        focused.clear_and_join().await;
+    }
+
+    #[test]
+    fn an_unread_divider_with_nothing_visible_after_it_is_hidden_until_there_is() {
+        use crate::item_view::ItemView;
+
+        let row = |kind: &str| {
+            TimelineRow::new(project_item_parts(
+                kind,
+                Some(&format!("${kind}")),
+                kind,
+                (kind == "message").then_some("m.text"),
+                None,
+                Some("@a:hs"),
+                None,
+                None,
+                false,
+                Some("hi"),
+                None,
+                None,
+                None,
+                Some(1),
+                false,
+                None,
+                None,
+                false,
+                Vec::new(),
+                Vec::new(),
+            ))
+        };
+        let mut hidden = row("message");
+        hidden.view = ItemView::None;
+        let mut rows = vec![row("message"), row("readMarker"), hidden];
+        assert_eq!(rows[1].view, ItemView::UnreadMarker);
+
+        // Only a folded-away row after it: the divider marks nothing.
+        assert_eq!(settle_unread_marker(&mut rows), vec![1]);
+        assert_eq!(rows[1].view, ItemView::None);
+        assert!(settle_unread_marker(&mut rows).is_empty(), "settled");
+
+        // Something visible lands after it: drawn again.
+        rows.push(row("message"));
+        assert_eq!(settle_unread_marker(&mut rows), vec![1]);
+        assert_eq!(rows[1].view, ItemView::UnreadMarker);
+
+        // No divider at all: nothing to do.
+        let mut plain = vec![row("message")];
+        assert!(settle_unread_marker(&mut plain).is_empty());
     }
 }

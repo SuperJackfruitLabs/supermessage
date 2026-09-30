@@ -224,6 +224,26 @@
 </Story>
 
 <!--
+  The live case of 2026-09-30: your note, "Hi?" a second later, then the
+  hub's transcript. The core folds the transcript into the note's row, so it
+  is drawn under the note, above "Hi?" — not after "Hi?", where it landed.
+-->
+<Story name="Transcript after another message">
+  {#snippet template()}
+    {#snippet body()}
+      {@render note(voiceNoteShort, true, playbackIdle)}
+      <VoiceTranscript transcript={voiceTranscriptShort} onOwnNote={true} />
+      <div class="mt-3 flex justify-end">
+        <div class="max-w-[52ch] rounded-control bg-accent-soft px-3 py-2 font-sans text-body-own text-content">
+          Hi?
+        </div>
+      </div>
+    {/snippet}
+    {@render sheet(body)}
+  {/snippet}
+</Story>
+
+<!--
   An agent's answer, spoken: one message — the voice reply's player, then the
   text it speaks. The voice message's own row is hidden by the core.
 -->

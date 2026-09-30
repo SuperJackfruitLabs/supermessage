@@ -265,17 +265,15 @@ private struct WaveformBars: View {
     PreviewGround(width: 390) {
         VStack(alignment: .leading, spacing: 0) {
             TimelineRowView(
-                row: PreviewFixtures.ownVoiceNote, media: PreviewFixtures.mediaCache(),
+                row: PreviewFixtures.transcribed(
+                    PreviewFixtures.ownVoiceNote, PreviewFixtures.transcriptShort),
+                media: PreviewFixtures.mediaCache(),
                 faces: PreviewFixtures.faceCache(), voice: PreviewFixtures.voicePlayer())
             TimelineRowView(
-                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: true),
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
-            TimelineRowView(
-                row: PreviewFixtures.colleagueVoiceNote, media: PreviewFixtures.mediaCache(),
+                row: PreviewFixtures.transcribed(
+                    PreviewFixtures.colleagueVoiceNote, PreviewFixtures.transcriptShort),
+                media: PreviewFixtures.mediaCache(),
                 faces: PreviewFixtures.faceCache(), voice: PreviewFixtures.voicePlayer())
-            TimelineRowView(
-                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: false),
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
         }
     }
 }
@@ -314,11 +312,10 @@ private struct WaveformBars: View {
     PreviewGround(width: 390) {
         VStack(alignment: .leading, spacing: 0) {
             TimelineRowView(
-                row: PreviewFixtures.ownVoiceNote, media: PreviewFixtures.mediaCache(),
+                row: PreviewFixtures.transcribed(
+                    PreviewFixtures.ownVoiceNote, PreviewFixtures.transcriptShort),
+                media: PreviewFixtures.mediaCache(),
                 faces: PreviewFixtures.faceCache(), voice: PreviewFixtures.voicePlayer())
-            TimelineRowView(
-                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: true),
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
             TimelineRowView(
                 row: PreviewFixtures.voiceReplyShort, media: PreviewFixtures.mediaCache(),
                 faces: PreviewFixtures.faceCache(),

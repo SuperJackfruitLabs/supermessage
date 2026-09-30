@@ -134,33 +134,45 @@ private struct TightLabel: LabelStyle {
 
 #if DEBUG
 // Your own voice note, and the hub's transcript of it directly under it on
-// your side — not a centred system line from the agent.
+// your side, in the note's own row — not a centred system line from the agent.
 #Preview("Transcript under own note") {
     PreviewGround(width: 390) {
-        VStack(alignment: .leading, spacing: 0) {
-            TimelineRowView(
-                row: PreviewFixtures.ownVoiceNote, media: PreviewFixtures.mediaCache(),
-                faces: PreviewFixtures.faceCache())
-            TimelineRowView(
-                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: true),
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
-        }
+        TranscriptGallery(rows: [
+            PreviewFixtures.transcribed(PreviewFixtures.ownVoiceNote, PreviewFixtures.transcriptShort),
+        ])
     }
 }
 
 // The same, in dark.
 #Preview("Transcript under own note, dark") {
     PreviewGround(width: 390) {
-        VStack(alignment: .leading, spacing: 0) {
-            TimelineRowView(
-                row: PreviewFixtures.ownVoiceNote, media: PreviewFixtures.mediaCache(),
-                faces: PreviewFixtures.faceCache())
-            TimelineRowView(
-                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: true),
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
-        }
+        TranscriptGallery(rows: [
+            PreviewFixtures.transcribed(PreviewFixtures.ownVoiceNote, PreviewFixtures.transcriptShort),
+        ])
     }
     .preferredColorScheme(.dark)
+}
+
+// The live case of 2026-09-30: you sent the note, typed "Hi?" a second later,
+// and the transcript landed after that. It is drawn under the note it
+// belongs to, above "Hi?" — the notice's own row, after "Hi?", is hidden.
+#Preview("Transcript under its note, after another message") {
+    PreviewGround(width: 390) {
+        TranscriptGallery(rows: [
+            PreviewFixtures.transcribed(PreviewFixtures.ownVoiceNote, PreviewFixtures.transcriptShort),
+            PreviewFixtures.ownFollowUp,
+        ])
+    }
+}
+
+// The note is further back than the timeline has loaded: the transcript
+// stands on its own, on the note's side, until the note arrives.
+#Preview("Transcript, its note not loaded") {
+    PreviewGround(width: 390) {
+        TranscriptGallery(rows: [
+            PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: true),
+        ])
+    }
 }
 
 // A two-minute note: the transcript opens at six lines, with Show more.
@@ -182,27 +194,31 @@ private struct TightLabel: LabelStyle {
 // the caption says only "Transcript".
 #Preview("Transcript, bare, under a colleague's note") {
     PreviewGround(width: 390) {
-        VStack(alignment: .leading, spacing: 0) {
-            TimelineRowView(
-                row: PreviewFixtures.colleagueVoiceNote, media: PreviewFixtures.mediaCache(),
-                faces: PreviewFixtures.faceCache())
-            TimelineRowView(
-                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptBare, onOwnNote: false),
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
-        }
+        TranscriptGallery(rows: [
+            PreviewFixtures.transcribed(PreviewFixtures.colleagueVoiceNote, PreviewFixtures.transcriptBare),
+        ])
     }
 }
 
 // Devanagari, which sits taller than Latin: its marks must not clip.
 #Preview("Transcript, Hindi") {
     PreviewGround(width: 390) {
+        TranscriptGallery(rows: [
+            PreviewFixtures.transcribed(PreviewFixtures.ownVoiceNote, PreviewFixtures.transcriptHindi),
+        ])
+    }
+}
+
+/// Rows as the timeline draws them, one under the next.
+private struct TranscriptGallery: View {
+    let rows: [TimelineRow]
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TimelineRowView(
-                row: PreviewFixtures.ownVoiceNote, media: PreviewFixtures.mediaCache(),
-                faces: PreviewFixtures.faceCache())
-            TimelineRowView(
-                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptHindi, onOwnNote: true),
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
+            ForEach(rows, id: \.item.id) { row in
+                TimelineRowView(
+                    row: row, media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
+            }
         }
     }
 }

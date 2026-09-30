@@ -3608,7 +3608,18 @@ data class TimelineRow (
      * Defaulted, and left off the desktop's JSON when absent, so no host's
      * fixtures change for rows that are not voice replies.
      */
-    var `voiceReply`: VoiceReplyLink? = null
+    var `voiceReply`: VoiceReplyLink? = null, 
+    /**
+     * For a transcript notice (`dev.agentpod.voice_transcript`): the note
+     * it transcribes and how it is drawn on its own. `None` for every other
+     * row.
+     *
+     * **A host never needs this**, for the reason [`Self::voice_reply`]
+     * gives: the core folds the transcript into the note's row
+     * (`crate::voice_transcript::reconcile`) and hides this one, and this is
+     * what puts it back standalone when the note goes.
+     */
+    var `voiceTranscript`: TranscriptNotice? = null
 ) {
     
     companion object
@@ -3630,6 +3641,7 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalTypeVoiceReplyLink.read(buf),
+            FfiConverterOptionalTypeTranscriptNotice.read(buf),
         )
     }
 
@@ -3643,7 +3655,8 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalTypeReplyQuoteView.allocationSize(value.`replyQuote`) +
             FfiConverterBoolean.allocationSize(value.`canReplyOrReact`) +
             FfiConverterOptionalString.allocationSize(value.`replyPreview`) +
-            FfiConverterOptionalTypeVoiceReplyLink.allocationSize(value.`voiceReply`)
+            FfiConverterOptionalTypeVoiceReplyLink.allocationSize(value.`voiceReply`) +
+            FfiConverterOptionalTypeTranscriptNotice.allocationSize(value.`voiceTranscript`)
     )
 
     override fun write(value: TimelineRow, buf: ByteBuffer) {
@@ -3657,6 +3670,58 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterBoolean.write(value.`canReplyOrReact`, buf)
             FfiConverterOptionalString.write(value.`replyPreview`, buf)
             FfiConverterOptionalTypeVoiceReplyLink.write(value.`voiceReply`, buf)
+            FfiConverterOptionalTypeTranscriptNotice.write(value.`voiceTranscript`, buf)
+    }
+}
+
+
+
+/**
+ * A transcript notice, as its own row remembers it: the note it replies to
+ * and how it is drawn when that note is not there to carry it.
+ *
+ * Carried on the notice's row ([`TimelineRow::voice_transcript`]) because
+ * the fold is re-settled after every batch and must survive the row being
+ * hidden; the raw event the transcript was read from is gone by then.
+ */
+data class TranscriptNotice (
+    /**
+     * The voice message the notice replies to (`m.in_reply_to`). `None`
+     * for a notice that replies to nothing, which is never folded.
+     */
+    var `noteEventId`: kotlin.String?, 
+    var `transcript`: VoiceNoteTranscript, 
+    /**
+     * The standalone view's side — see `ItemView::VoiceTranscript`.
+     */
+    var `onOwnNote`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTranscriptNotice: FfiConverterRustBuffer<TranscriptNotice> {
+    override fun read(buf: ByteBuffer): TranscriptNotice {
+        return TranscriptNotice(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterTypeVoiceNoteTranscript.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TranscriptNotice) = (
+            FfiConverterOptionalString.allocationSize(value.`noteEventId`) +
+            FfiConverterTypeVoiceNoteTranscript.allocationSize(value.`transcript`) +
+            FfiConverterBoolean.allocationSize(value.`onOwnNote`)
+    )
+
+    override fun write(value: TranscriptNotice, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`noteEventId`, buf)
+            FfiConverterTypeVoiceNoteTranscript.write(value.`transcript`, buf)
+            FfiConverterBoolean.write(value.`onOwnNote`, buf)
     }
 }
 
@@ -4638,9 +4703,20 @@ sealed class ItemView {
      * bubble, any other audio file as a player with its name. Everything a
      * host shows — the length, the bars, what a screen reader says — is on
      * `audio`. See `crate::audio`.
+     *
+     * `transcript` is what the note said, when a transcript notice replying
+     * to it is in the timeline too (`dev.agentpod.voice_transcript`): a host
+     * draws it **directly under the note, in the same row**, and the
+     * notice's own row is [`Self::None`] — so the transcript sits under its
+     * note however late it arrived and whatever was said in between. `None`
+     * for a note nobody has transcribed yet; a transcript whose note is not
+     * loaded is drawn standalone ([`Self::VoiceTranscript`]). See
+     * `crate::voice_transcript::reconcile`, which decides it over the whole
+     * timeline.
      */
     data class Audio(
-        val `audio`: AudioView) : ItemView() {
+        val `audio`: AudioView, 
+        val `transcript`: VoiceNoteTranscript?) : ItemView() {
         companion object
     }
     
@@ -4773,6 +4849,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 )
             7 -> ItemView.Audio(
                 FfiConverterTypeAudioView.read(buf),
+                FfiConverterOptionalTypeVoiceNoteTranscript.read(buf),
                 )
             8 -> ItemView.MediaFile(
                 FfiConverterTypeMediaFileLabel.read(buf),
@@ -4851,6 +4928,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
             (
                 4UL
                 + FfiConverterTypeAudioView.allocationSize(value.`audio`)
+                + FfiConverterOptionalTypeVoiceNoteTranscript.allocationSize(value.`transcript`)
             )
         }
         is ItemView.MediaFile -> {
@@ -4941,6 +5019,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
             is ItemView.Audio -> {
                 buf.putInt(7)
                 FfiConverterTypeAudioView.write(value.`audio`, buf)
+                FfiConverterOptionalTypeVoiceNoteTranscript.write(value.`transcript`, buf)
                 Unit
             }
             is ItemView.MediaFile -> {
@@ -6860,6 +6939,38 @@ public object FfiConverterOptionalTypeRuntimeDto: FfiConverterRustBuffer<Runtime
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeTranscriptNotice: FfiConverterRustBuffer<TranscriptNotice?> {
+    override fun read(buf: ByteBuffer): TranscriptNotice? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTranscriptNotice.read(buf)
+    }
+
+    override fun allocationSize(value: TranscriptNotice?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTranscriptNotice.allocationSize(value)
+        }
+    }
+
+    override fun write(value: TranscriptNotice?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTranscriptNotice.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeTurnCounts: FfiConverterRustBuffer<TurnCounts?> {
     override fun read(buf: ByteBuffer): TurnCounts? {
         if (buf.get().toInt() == 0) {
@@ -6882,6 +6993,38 @@ public object FfiConverterOptionalTypeTurnCounts: FfiConverterRustBuffer<TurnCou
         } else {
             buf.put(1)
             FfiConverterTypeTurnCounts.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeVoiceNoteTranscript: FfiConverterRustBuffer<VoiceNoteTranscript?> {
+    override fun read(buf: ByteBuffer): VoiceNoteTranscript? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeVoiceNoteTranscript.read(buf)
+    }
+
+    override fun allocationSize(value: VoiceNoteTranscript?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeVoiceNoteTranscript.allocationSize(value)
+        }
+    }
+
+    override fun write(value: VoiceNoteTranscript?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeVoiceNoteTranscript.write(value, buf)
         }
     }
 }

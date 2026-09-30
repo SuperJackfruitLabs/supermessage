@@ -331,11 +331,11 @@ object PreviewFixtures {
         if (isOwn) {
             row(
                 item(id, sender = "@rakesh:example.org", body = "Voice message.ogg", isOwn = true, msgtype = "m.audio"),
-                ItemView.Audio(view),
+                ItemView.Audio(view, null),
                 senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
             )
         } else {
-            row(item(id, body = "Voice message.ogg", msgtype = "m.audio"), ItemView.Audio(view))
+            row(item(id, body = "Voice message.ogg", msgtype = "m.audio"), ItemView.Audio(view, null))
         }
 
     val voiceOwn: TimelineRowDto get() = voiceRow("\$voice-own", voiceView(), isOwn = true)
@@ -439,37 +439,55 @@ object PreviewFixtures {
                     caption = "Yesterday's standup, for anyone who missed it.",
                     accessibilityLabel = "Audio, standup-2026-09-26.m4a, 3 minutes 5 seconds",
                 ),
+                transcript = null,
             ),
         )
 
-    /** The hub's transcript of [voiceOwn], on the note's side. */
+    /** What [voiceOwn] said. */
+    val ownTranscript: VoiceNoteTranscript = VoiceNoteTranscript(
+        text = "Can you rerun the token diff after the rebase and tell me if the amber changed?",
+        language = "en", seconds = 7u, duration = "0:07",
+        caption = "Transcript · en · 0:07",
+        accessibilityLabel = "Transcript of voice note: Can you rerun the token diff after the rebase and tell me if the amber changed?",
+    )
+
+    /** What [voicePeer] said. */
+    val peerTranscript: VoiceNoteTranscript = VoiceNoteTranscript(
+        text = "It did not. The diff is one line, the new accent-soft value.",
+        language = "en", seconds = 7u, duration = "0:07",
+        caption = "Transcript · en · 0:07",
+        accessibilityLabel = "Transcript of voice note: It did not. The diff is one line, the new accent-soft value.",
+    )
+
+    /**
+     * [note] with [transcript] folded in, as the core draws a note once the
+     * hub's transcript of it is in the timeline too — wherever the notice
+     * landed (`core::voice_transcript::reconcile`).
+     */
+    fun transcribed(note: TimelineRowDto, transcript: VoiceNoteTranscript): TimelineRowDto {
+        val view = note.view as ItemView.Audio
+        return note.copy(view = ItemView.Audio(view.audio, transcript))
+    }
+
+    /** [voiceOwn], transcribed. */
+    val voiceOwnTranscribed: TimelineRowDto get() = transcribed(voiceOwn, ownTranscript)
+
+    /** [voicePeer], transcribed. */
+    val voicePeerTranscribed: TimelineRowDto get() = transcribed(voicePeer, peerTranscript)
+
+    /** What you typed a second after the note — the message the transcript landed after. */
+    val ownFollowUp: TimelineRowDto
+        get() = row(
+            item("\$hi", sender = "@rakesh:example.org", body = "Hi?", isOwn = true),
+            ItemView.Bubble(muted = false, blocks = listOf(RichBlock.Paragraph(listOf(RichInline.Text("Hi?")))), voice = null),
+            senderName = "Rakesh", senderShort = "Rakesh", senderInitial = "R",
+        )
+
+    /** The hub's transcript of [voiceOwn], standalone: drawn so only while the note is not loaded. */
     val voiceOwnTranscript: TimelineRowDto
         get() = row(
             item("\$voice-own-transcript", body = "Transcript", msgtype = "m.notice"),
-            ItemView.VoiceTranscript(
-                VoiceNoteTranscript(
-                    text = "Can you rerun the token diff after the rebase and tell me if the amber changed?",
-                    language = "en", seconds = 7u, duration = "0:07",
-                    caption = "Transcript · en · 0:07",
-                    accessibilityLabel = "Transcript of voice note: Can you rerun the token diff after the rebase and tell me if the amber changed?",
-                ),
-                onOwnNote = true,
-            ),
-        )
-
-    /** The hub's transcript of [voicePeer], on the note's side. */
-    val voicePeerTranscript: TimelineRowDto
-        get() = row(
-            item("\$voice-peer-transcript", body = "Transcript", msgtype = "m.notice"),
-            ItemView.VoiceTranscript(
-                VoiceNoteTranscript(
-                    text = "It did not. The diff is one line, the new accent-soft value.",
-                    language = "en", seconds = 7u, duration = "0:07",
-                    caption = "Transcript · en · 0:07",
-                    accessibilityLabel = "Transcript of voice note: It did not. The diff is one line, the new accent-soft value.",
-                ),
-                onOwnNote = false,
-            ),
+            ItemView.VoiceTranscript(ownTranscript, onOwnNote = true),
         )
 
     val card: TimelineRowDto

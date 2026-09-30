@@ -306,7 +306,7 @@ struct NotificationComposerTests {
             isVoice: true, durationMs: 4_210, lengthLabel: "0:04", waveform: nil,
             title: "Voice reply", filename: "Voice message.ogg", size: nil,
             mimetype: "audio/ogg", caption: nil, accessibilityLabel: "Voice reply, 4 seconds")
-        var voice = timelineRow("$voice", view: .audio(audio: audio), preview: nil)
+        var voice = timelineRow("$voice", view: .audio(audio: audio, transcript: nil), preview: nil)
         voice.voiceReply = VoiceReplyLink(textEventId: "$text", voice: "bf_emma", seconds: 4)
         #expect(timeline([voice]).isEmpty)
 

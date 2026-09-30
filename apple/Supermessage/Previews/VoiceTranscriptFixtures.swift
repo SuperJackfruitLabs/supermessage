@@ -59,7 +59,7 @@ extension PreviewFixtures {
     static var ownVoiceNote: TimelineRow {
         row(
             voiceNote(id: "$note", sender: "@me:example.org", isOwn: true),
-            view: .audio(audio: voiceAudio()),
+            view: .audio(audio: voiceAudio(), transcript: nil),
             senderName: "You", senderShort: "You", senderInitial: "Y")
     }
 
@@ -68,11 +68,31 @@ extension PreviewFixtures {
         let audio = voiceAudio(ms: 12_000, label: "0:12", spoken: "12 seconds", size: 31_200, seed: 5)
         return row(
             voiceNote(id: "$note-krishna", sender: "@krishna:example.org", isOwn: false, audio: audio),
-            view: .audio(audio: audio),
+            view: .audio(audio: audio, transcript: nil),
             senderName: "Krishna", senderShort: "Krishna", senderInitial: "K")
     }
 
-    /// The hub's notice carrying `transcript`, a reply to the note above.
+    /// `note` with `transcript` folded in, as the core draws a note once
+    /// the hub's transcript of it is in the timeline too — wherever the
+    /// notice landed (`core::voice_transcript::reconcile`).
+    static func transcribed(_ note: TimelineRow, _ transcript: VoiceNoteTranscript) -> TimelineRow {
+        guard case let .audio(audio, _) = note.view else { return note }
+        var row = note
+        row.view = .audio(audio: audio, transcript: transcript)
+        return row
+    }
+
+    /// What you typed a second after the note: "Hi?", which the transcript
+    /// landed after — and which the transcript must not be drawn under.
+    static var ownFollowUp: TimelineRow {
+        row(
+            item(id: "$hi", sender: "@me:example.org", body: "Hi?", isOwn: true),
+            view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Hi?")])], voice: nil),
+            senderName: "You", senderShort: "You", senderInitial: "Y")
+    }
+
+    /// The hub's notice carrying `transcript`, a reply to the note above —
+    /// drawn standalone only while that note is not loaded.
     static func transcriptRow(_ transcript: VoiceNoteTranscript, onOwnNote: Bool) -> TimelineRow {
         let body = "Transcript: \(transcript.text)"
         return row(
