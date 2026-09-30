@@ -20,6 +20,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Where this launch is, before anything restores a session: a
+        // background launch (ActivityKit delivering a token, a widget's
+        // button, a refresh) must not open the stores and walk away with
+        // them — see `StoreGuard` and `BackgroundPolicy`.
+        StoreGuard.shared.entered(
+            application.applicationState == .background ? .background : .foreground)
         // Before this returns, or a tap that launched the app is lost.
         UNUserNotificationCenter.current().delegate = self
         LocalNotifier.registerCategories()
@@ -33,9 +39,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         WidgetRefresh.register { [weak self] in
             await self?.platform?.refreshWidgetsInBackground() ?? false
         }
+        // The app-wide moments, not a scene's: iOS suspends the app, not a
+        // scene, and a scene may not exist at all. Delivered on the main
+        // queue, so the guard's background task begins before this returns.
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
-        ) { _ in WidgetRefresh.schedule() }
+        ) { _ in
+            MainActor.assumeIsolated { _ = StoreGuard.shared.entered(.background) }
+            WidgetRefresh.schedule()
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { _ = StoreGuard.shared.entered(.foreground) }
+        }
         return true
     }
 
@@ -130,11 +147,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// it, or it was answered already — and the widget is redrawn without it.
     private static func answerFromWidget(roomId: String, eventId: String, optionId: String) async {
         guard let feed = WidgetFeed.shared() else { return }
-        let activity = BackgroundActivity(name: "Answer from a widget")
-        defer { activity.end() }
-        let outcome = await WidgetAnswering.answer(
-            roomId: roomId, eventId: eventId, optionId: optionId, feed: feed,
-            via: CoreClient.shared, reload: { WidgetCenter.shared.reloadAllTimelines() })
+        // The stores open, the app awake, and both let go of when it is done.
+        let outcome = await StoreGuard.shared.hold("Answer from a widget") {
+            await WidgetAnswering.answer(
+                roomId: roomId, eventId: eventId, optionId: optionId, feed: feed,
+                via: CoreClient.shared, reload: { WidgetCenter.shared.reloadAllTimelines() })
+        }
         if outcome == .failed {
             await LocalNotifier.postFailure(roomId: roomId)
         }
@@ -152,29 +170,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// live the restore is a no-op and the same client sends; when one
     /// starts later it starts sync on the client this restored.
     private func send(_ answer: NotificationAnswer) async {
-        let activity = BackgroundActivity(name: "Answer from a notification")
-        defer { activity.end() }
-        if !(await NotificationAnswerer.send(answer, via: CoreClient.shared)) {
+        // The stores open, the app awake, and both let go of when it is done.
+        let landed = await StoreGuard.shared.hold("Answer from a notification") {
+            await NotificationAnswerer.send(answer, via: CoreClient.shared)
+        }
+        if !landed {
             await LocalNotifier.postFailure(roomId: answer.roomId)
         }
-    }
-}
-
-/// A `beginBackgroundTask` that is ended exactly once — by its owner, or by
-/// the system's expiration handler, whichever comes first.
-@MainActor
-private final class BackgroundActivity {
-    private var id: UIBackgroundTaskIdentifier = .invalid
-
-    init(name: String) {
-        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            self?.end()
-        }
-    }
-
-    func end() {
-        guard id != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(id)
-        id = .invalid
     }
 }

@@ -39,6 +39,9 @@ final class PlatformCoordinator {
     // Push
     private var deviceToken: Data?
     private var registeredPusher: String?
+    /// Set when a background launch signed in: asking about notifications
+    /// and registering the pusher wait for the foreground.
+    private var notificationsDeferred = false
 
     // Widgets
     /// The App Group's snapshot writer; `nil` in a build without the group.
@@ -51,6 +54,13 @@ final class PlatformCoordinator {
 
     init(session: Session) {
         self.session = session
+    }
+
+    /// Whether `work` may start now — see `BackgroundPolicy`. In the
+    /// background only the Live Activity's tokens go out; everything that
+    /// touches the stores or the App Group's files waits for the foreground.
+    private func allows(_ work: BackgroundPolicy.Work) -> Bool {
+        BackgroundPolicy.allows(work, in: StoreGuard.shared.presence)
     }
 
     func start() {
@@ -87,6 +97,15 @@ final class PlatformCoordinator {
         // app open — so it starts again both on the way in and on the way
         // out: what arrived while they were looking is not news later.
         if session.phase == .signedIn { writeWidgets { $0.opened() } }
+        // What a background launch left for the foreground.
+        if active, session.phase == .signedIn {
+            if notificationsDeferred {
+                notificationsDeferred = false
+                Task { await self.prepareNotifications(prompt: false) }
+            } else {
+                Task { await self.registerPusherIfConfigured() }
+            }
+        }
         // A Guild agent's picture changes on its profile, which the room
         // list does not see: look again each time the reader comes back.
         if active, let agentAvatars {
@@ -107,10 +126,16 @@ final class PlatformCoordinator {
             // A restored session only re-registers when permission was
             // already given — it never prompts.
             let justSignedIn = lastPhase == .signedOut
-            Task { await self.prepareNotifications(prompt: justSignedIn) }
-            // Every launch and sign-in: the hub needs this device's tokens
-            // to push the fleet onto the Lock Screen.
-            fleetActivity.start(session: session)
+            if allows(.pushRegistration) {
+                Task { await self.prepareNotifications(prompt: justSignedIn) }
+            } else {
+                notificationsDeferred = true
+            }
+            // Every launch and sign-in, a background one included — it is
+            // what ActivityKit launches the app in the background for: the
+            // hub needs this device's tokens to push the fleet onto the Lock
+            // Screen. HTTP with the session's access token; no store.
+            if allows(.liveActivityTokens) { fleetActivity.start(session: session) }
             if agentAvatars == nil, let client = session.agentAvatarClient {
                 agentAvatars = AgentAvatarCache.shared(client: client)
             }
@@ -123,7 +148,7 @@ final class PlatformCoordinator {
                 // The pusher itself was removed by the core's logout, before
                 // the token went; this only forgets that one was registered.
                 registeredPusher = nil
-                session.pausesSyncInBackground = false
+                notificationsDeferred = false
                 writeWidgets { $0.signedOut() }
             }
             previousRooms = []
@@ -161,7 +186,7 @@ final class PlatformCoordinator {
     }
 
     private func registerPusherIfConfigured() async {
-        guard session.phase == .signedIn, let token = deviceToken,
+        guard session.phase == .signedIn, allows(.pushRegistration), let token = deviceToken,
             let gateway = PushConfiguration.gatewayURL(from: Bundle.main.infoDictionary)
         else { return }
         let hex = PushConfiguration.hex(token)
@@ -176,9 +201,6 @@ final class PlatformCoordinator {
             language: Locale.preferredLanguages.first ?? "en")
         if await session.registerPusher(registration) {
             registeredPusher = hex
-            // From here the extension shows what arrives while the app is
-            // away, and needs the stores' lock to do it.
-            session.pausesSyncInBackground = true
         }
     }
 
@@ -199,8 +221,8 @@ final class PlatformCoordinator {
 
     private func roomsChanged(_ rooms: [RoomRow]) {
         defer { previousRooms = rooms }
-        writeWidgetSnapshot(rooms)
-        cacheAgentAvatars(rooms)
+        if allows(.widgetSnapshot) { writeWidgetSnapshot(rooms) }
+        if allows(.agentAvatars) { cacheAgentAvatars(rooms) }
         guard session.phase == .signedIn, Date() >= catchUpUntil else { return }
         let notes = NotificationComposer.forRoster(
             previous: previousRooms, next: rooms, context: context)
@@ -208,7 +230,7 @@ final class PlatformCoordinator {
     }
 
     private func timelineChanged() {
-        widgetsSawTimeline()
+        if allows(.widgetSnapshot) { widgetsSawTimeline() }
         let roomId = session.timeline.roomId
         if roomId != timelineRoomId {
             timelineRoomId = roomId
@@ -256,7 +278,7 @@ final class PlatformCoordinator {
         }
         if turn != liveTurn {
             liveTurn = turn
-            writeWidgetSnapshot(session.rooms.rooms)
+            if allows(.widgetSnapshot) { writeWidgetSnapshot(session.rooms.rooms) }
         }
     }
 
@@ -308,11 +330,14 @@ final class PlatformCoordinator {
     }
 
     /// A background refresh (`WidgetRefresh`): catch up briefly, then write
-    /// the roster as it now stands.
+    /// the roster as it now stands — both under the store guard's hold, so
+    /// the stores (and sync) are closed again before the app is let go.
     func refreshWidgetsInBackground() async -> Bool {
-        let caughtUp = await session.catchUpInBackground(for: .seconds(8))
-        writeWidgetSnapshot(session.rooms.rooms)
-        return caughtUp
+        await StoreGuard.shared.hold("Refreshing the widgets") {
+            let caughtUp = await self.session.catchUpInBackground(for: .seconds(8))
+            self.writeWidgetSnapshot(self.session.rooms.rooms)
+            return caughtUp
+        }
     }
 
     private static func milliseconds(_ date: Date) -> UInt64 {
