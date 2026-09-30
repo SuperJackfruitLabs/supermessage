@@ -172,16 +172,20 @@ struct TimelineRowView: View {
             MediaFileRow(label: label, filename: filename, size: size, isOwn: item.isOwn)
 
         // A voice note, or any audio: a player on the sender's side. See
-        // `VoiceNoteBubble`.
-        case let .audio(audio):
+        // `VoiceNoteBubble`. `transcript` is what the note said, drawn under
+        // it in this row — the core folded the transcript notice in, however
+        // late it landed, and hid the notice's own row
+        // (`core::voice_transcript::reconcile`).
+        case let .audio(audio, transcript):
             AudioRow(
-                row: row, named: named, audio: audio, continuesRun: continuesRun,
-                endsRun: endsRun, faces: faces, voice: voice ?? InertVoice.player,
-                onReact: onReact)
+                row: row, named: named, audio: audio, transcript: transcript,
+                continuesRun: continuesRun, endsRun: endsRun, faces: faces,
+                voice: voice ?? InertVoice.player, onReact: onReact)
 
-        // What a voice note said, under the note on the note's side. No
-        // header, no reactions: it belongs to the note, not to the agent that
-        // posted it. See `VoiceTranscriptView`.
+        // What a voice note said, when its note is not loaded to carry it:
+        // on the note's side, with no header and no reactions — it belongs
+        // to the note, not to the agent that posted it. See
+        // `VoiceTranscriptView`.
         case let .voiceTranscript(transcript, onOwnNote):
             VoiceTranscriptView(transcript: transcript, onOwnNote: onOwnNote)
 
@@ -775,6 +779,8 @@ private struct AudioRow: View {
     let row: TimelineRow
     let named: String
     let audio: AudioView
+    /// What the note said, under it on its side. `nil` until transcribed.
+    let transcript: VoiceNoteTranscript?
     let continuesRun: Bool
     let endsRun: Bool
     let faces: AvatarCache
@@ -817,6 +823,10 @@ private struct AudioRow: View {
                     .foregroundStyle(Theme.content)
                     .textSelection(.enabled)
                     .frame(maxWidth: 300, alignment: isOwn ? .trailing : .leading)
+            }
+
+            if let transcript {
+                VoiceTranscriptView(transcript: transcript, onOwnNote: isOwn)
             }
 
             // Your own note's time and send state, as under your messages: a

@@ -50,6 +50,7 @@ import dev.supermessage.kit.NotePlayback
 import dev.supermessage.kit.VoicePlayback
 import dev.supermessage.kit.VoiceWaveform
 import uniffi.supermessage_core.AudioView
+import uniffi.supermessage_core.VoiceNoteTranscript
 import uniffi.supermessage_core.VoiceReplyPlayer
 import uniffi.supermessage_ffi.audioClockLabel
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
@@ -70,7 +71,8 @@ val LocalVoicePlayback = staticCompositionLocalOf<VoicePlayback?> { null }
  *
  * A peer's note is named above it the way a peer's picture is, once per run.
  * The row's own event id addresses the file; a local echo has none yet, so
- * it cannot be played until the server has it.
+ * it cannot be played until the server has it. [transcript], when the core
+ * folded one in, is drawn directly under the note, on its side.
  */
 @Composable
 internal fun AudioRow(
@@ -79,6 +81,7 @@ internal fun AudioRow(
     named: String,
     continuesRun: Boolean,
     modifier: Modifier = Modifier,
+    transcript: VoiceNoteTranscript? = null,
 ) {
     val isOwn = row.item.isOwn
     val eventId = row.item.eventId
@@ -110,6 +113,9 @@ internal fun AudioRow(
             onToggle = if (player != null && eventId != null) ({ player.toggle(eventId) }) else null,
             onSeek = if (player != null && eventId != null) ({ f -> player.seek(eventId, f) }) else null,
         )
+        if (transcript != null) {
+            VoiceTranscriptView(transcript = transcript, onOwnNote = isOwn)
+        }
     }
 }
 

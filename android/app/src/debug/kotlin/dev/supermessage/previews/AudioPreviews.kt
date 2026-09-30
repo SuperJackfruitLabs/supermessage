@@ -146,20 +146,43 @@ internal fun VoiceDark() {
 }
 
 /**
- * A note with the hub's transcript under it, on both sides. The transcript
- * is its own row (`ItemView.VoiceTranscript`), placed by the core on the
- * note's side; this is where the two have to read as one thing.
+ * A note with the hub's transcript under it, on both sides. The core folds
+ * the transcript into the note's own row (`ItemView.Audio`'s `transcript`)
+ * and hides the notice; this is where the two have to read as one thing.
  */
 @Preview(name = "Voice notes with transcripts", showBackground = true, heightDp = 420)
 @Composable
 internal fun VoiceWithTranscript() {
     PreviewGround(width = PHONE) {
         Column {
-            TimelineRow(row = PreviewFixtures.voiceOwn, now = NOW)
-            TimelineRow(row = PreviewFixtures.voiceOwnTranscript, now = NOW)
-            TimelineRow(row = PreviewFixtures.voicePeer, now = NOW)
-            TimelineRow(row = PreviewFixtures.voicePeerTranscript, now = NOW)
+            TimelineRow(row = PreviewFixtures.voiceOwnTranscribed, now = NOW)
+            TimelineRow(row = PreviewFixtures.voicePeerTranscribed, now = NOW)
         }
+    }
+}
+
+/**
+ * The live case of 2026-09-30: the note, "Hi?" a second later, then the
+ * transcript. It is drawn under the note it belongs to, above "Hi?"; the
+ * notice's own row, after "Hi?", is hidden by the core.
+ */
+@Preview(name = "Transcript under its note, after another message", showBackground = true, heightDp = 300)
+@Composable
+internal fun TranscriptAfterAnotherMessage() {
+    PreviewGround(width = PHONE) {
+        Column {
+            TimelineRow(row = PreviewFixtures.voiceOwnTranscribed, now = NOW)
+            TimelineRow(row = PreviewFixtures.ownFollowUp, now = NOW)
+        }
+    }
+}
+
+/** The note is not loaded yet: the transcript stands alone, on the note's side. */
+@Preview(name = "Transcript, its note not loaded", showBackground = true, heightDp = 160)
+@Composable
+internal fun TranscriptWithoutItsNote() {
+    PreviewGround(width = PHONE) {
+        TimelineRow(row = PreviewFixtures.voiceOwnTranscript, now = NOW)
     }
 }
 
@@ -224,8 +247,7 @@ internal fun VoiceReplyHugeText() {
 internal fun VoiceReplyAfterTranscript() {
     PreviewGround(width = PHONE) {
         Column {
-            TimelineRow(row = PreviewFixtures.voiceOwn, now = NOW)
-            TimelineRow(row = PreviewFixtures.voiceOwnTranscript, now = NOW)
+            TimelineRow(row = PreviewFixtures.voiceOwnTranscribed, now = NOW)
             TimelineRow(row = PreviewFixtures.voiceReplyShort, now = NOW)
         }
     }

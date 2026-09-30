@@ -1528,6 +1528,15 @@
                   {/if}
                 {/snippet}
                 {@render messageBlock(row, audioContent)}
+                {#if view.transcript}
+                  <!--
+                    What the note said, directly under it on its side and
+                    outside its bubble, as a quote of it — folded into this
+                    row by the core however late the notice landed, and the
+                    notice's own row hidden (`core::voice_transcript::reconcile`).
+                  -->
+                  <VoiceTranscript transcript={view.transcript} onOwnNote={item.isOwn} />
+                {/if}
               {:else if view.render === "customEvent"}
                 <!--
                   The dispatch card (spec §7) — a `kind: "customMessage"`
@@ -1620,10 +1629,12 @@
               {:else if view.render === "voiceTranscript"}
                 <!--
                   What a voice note said, from the hub's transcript notice
-                  (`core::voice_transcript`). Deliberately *not* a
-                  `messageBlock`: it belongs to the note it replies to, not to
-                  the agent that posted it, so it carries no sender line and
-                  sits on the note's side, directly under it.
+                  (`core::voice_transcript`), drawn on its own only while the
+                  note is not loaded — once it is, the core draws it under
+                  the note (the `audio` view's `transcript`) and hides this
+                  row. Deliberately *not* a `messageBlock`: it belongs to the
+                  note it replies to, not to the agent that posted it, so it
+                  carries no sender line and sits on the note's side.
                 -->
                 <VoiceTranscript transcript={view.transcript} onOwnNote={view.onOwnNote} />
               {:else if view.render === "unreadMarker"}

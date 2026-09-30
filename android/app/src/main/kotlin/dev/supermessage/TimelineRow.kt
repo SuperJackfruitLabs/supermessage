@@ -184,9 +184,19 @@ fun TimelineRow(
             )
 
         // `m.audio`: a player, not a file row. Voice note or audio file is
-        // the core's call (`audio.isVoice`); see `AudioNote`.
+        // the core's call (`audio.isVoice`); see `AudioNote`. `transcript` is
+        // what the note said, drawn under it in this row: the core folded the
+        // transcript notice in, however late it landed, and hid the notice's
+        // own row (`core::voice_transcript::reconcile`).
         is ItemView.Audio ->
-            AudioRow(row = row, audio = view.audio, named = named, continuesRun = continuesRun, modifier = modifier)
+            AudioRow(
+                row = row,
+                audio = view.audio,
+                named = named,
+                continuesRun = continuesRun,
+                transcript = view.transcript,
+                modifier = modifier,
+            )
 
         // A suite event — a Superpipeline card or run, a permission request,
         // station status. `DecisionCard` renders the whole fallback-chain
@@ -204,8 +214,9 @@ fun TimelineRow(
         // message. See `TurnErrorCardView`.
         is ItemView.TurnError -> TurnErrorCardView(card = view.card, modifier = modifier)
 
-        // What a voice note said, under the note on the note's side. No
-        // header: it belongs to the note, not to the agent that posted it.
+        // What a voice note said, when its note is not loaded to carry it:
+        // on the note's side, with no header — it belongs to the note, not
+        // to the agent that posted it.
         is ItemView.VoiceTranscript ->
             VoiceTranscriptView(transcript = view.transcript, onOwnNote = view.onOwnNote, modifier = modifier)
 
