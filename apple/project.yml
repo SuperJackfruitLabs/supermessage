@@ -246,6 +246,11 @@ targets:
       # endedAt), which agentpod's contract test round-trips too.
       - path: ../fixtures/fleet-content-state-v2.json
         buildPhase: resources
+      # The core's CAF remux of an agent's spoken reply, pinned to the core
+      # by `the_ios_player_fixture_is_what_the_remuxer_writes`, so
+      # VoiceFixturePlaybackTests runs Apple's decoder over the core's output.
+      - path: SupermessageKitTests/Fixtures/voice-libsndfile-4s.caf
+        buildPhase: resources
     dependencies:
       - target: SupermessageKit
       - target: SupermessageFFI
