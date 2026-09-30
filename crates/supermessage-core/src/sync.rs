@@ -13,6 +13,7 @@
 //! loops would silently kill sync, so nothing here is meant to be used
 //! standalone.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::event::{CoreEvent, EventSink};
@@ -98,6 +99,9 @@ impl ConnectionPayload {
 pub struct SyncHandle {
     service: Arc<SyncService>,
     watcher: JoinHandle<()>,
+    // Set by [`SyncHandle::pause`], cleared by [`SyncHandle::resume`]; the
+    // watcher reads it before a backoff restart.
+    paused: Arc<AtomicBool>,
 }
 
 impl SyncHandle {
@@ -112,12 +116,19 @@ impl SyncHandle {
     /// `SyncService::stop` settles in `Idle`, which the watcher reports as
     /// offline and — by `should_reconnect` — never restarts, so a paused sync
     /// stays paused until [`Self::resume`].
+    ///
+    /// Marked paused *before* stopping: a restart the watcher was already
+    /// waiting out a backoff for (after an error) must not start sync again
+    /// behind the pause — on iOS, into stores `Session::suspend` is about to
+    /// close, in an app about to be suspended.
     pub async fn pause(&self) {
+        self.paused.store(true, Ordering::SeqCst);
         self.service.stop().await;
     }
 
     /// Starts the sync loops [`Self::pause`] stopped.
     pub async fn resume(&self) {
+        self.paused.store(false, Ordering::SeqCst);
         self.service.start().await;
     }
 
@@ -174,6 +185,8 @@ pub async fn start(client: &Client, sink: Arc<dyn EventSink>) -> CoreResult<Sync
     let mut states = service.state();
     emit_connection_state(&sink, &states.get());
 
+    let paused = Arc::new(AtomicBool::new(false));
+    let watcher_paused = Arc::clone(&paused);
     let watcher_sink = Arc::clone(&sink);
     let watcher_service = Arc::clone(&service);
     let watcher = tokio::spawn(async move {
@@ -204,12 +217,18 @@ pub async fn start(client: &Client, sink: Arc<dyn EventSink>) -> CoreResult<Sync
                     "sync service errored; restarting after a backoff"
                 );
                 tokio::time::sleep(delay).await;
-                watcher_service.start().await;
+                if restarts_after_backoff(&watcher_paused) {
+                    watcher_service.start().await;
+                }
             }
         }
     });
 
-    Ok(SyncHandle { service, watcher })
+    Ok(SyncHandle {
+        service,
+        watcher,
+        paused,
+    })
 }
 
 /// The longest this will ever wait before trying to reconnect.
@@ -241,6 +260,12 @@ fn reconnect_delay(attempt: u32) -> Duration {
 /// and reconnect a session the reader just signed out of.
 fn should_reconnect(state: &State) -> bool {
     matches!(state, State::Error(_))
+}
+
+/// Whether a restart that waited out its backoff still happens: not once
+/// the sync was paused meanwhile ([`SyncHandle::pause`]).
+fn restarts_after_backoff(paused: &AtomicBool) -> bool {
+    !paused.load(Ordering::SeqCst)
 }
 
 /// Maps an SDK sync state onto the UI's connection vocabulary.
@@ -335,6 +360,17 @@ mod reconnect_tests {
         assert!(!should_reconnect(&State::Idle));
         assert!(!should_reconnect(&State::Terminated));
         assert!(!should_reconnect(&State::Offline));
+    }
+
+    #[test]
+    fn a_paused_sync_is_not_restarted_after_its_backoff() {
+        let paused = AtomicBool::new(false);
+        assert!(restarts_after_backoff(&paused));
+        paused.store(true, Ordering::SeqCst);
+        assert!(
+            !restarts_after_backoff(&paused),
+            "an app suspended during a backoff must not start syncing again"
+        );
     }
 }
 
