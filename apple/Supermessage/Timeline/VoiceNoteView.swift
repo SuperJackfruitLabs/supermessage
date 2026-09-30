@@ -270,11 +270,10 @@ private struct WaveformBars: View {
                 media: PreviewFixtures.mediaCache(),
                 faces: PreviewFixtures.faceCache(), voice: PreviewFixtures.voicePlayer())
             TimelineRowView(
-                row: PreviewFixtures.colleagueVoiceNote, media: PreviewFixtures.mediaCache(),
+                row: PreviewFixtures.transcribed(
+                    PreviewFixtures.colleagueVoiceNote, PreviewFixtures.transcriptShort),
+                media: PreviewFixtures.mediaCache(),
                 faces: PreviewFixtures.faceCache(), voice: PreviewFixtures.voicePlayer())
-            TimelineRowView(
-                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: false),
-                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
         }
     }
 }
