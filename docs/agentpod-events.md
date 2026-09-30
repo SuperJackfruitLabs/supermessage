@@ -138,6 +138,88 @@ The side comes from the reply's parent sender when the parent loaded, and
 from the notice's own sender otherwise. On iOS a transcript does not raise a
 notification of its own — the note already did.
 
+## 4a. The voice reply — a key on the voice message that speaks an answer
+
+When an agent answers a voice note (or the station always speaks), the hub
+posts the agent's ordinary **text** reply first and then, seconds later, an
+MSC3245 voice message of the same words, sent as the agent: `m.audio` with
+`org.matrix.msc3245.voice`, `org.matrix.msc1767.audio` (duration and a
+waveform), `url` (or `file` in an encrypted room), and one namespaced key naming
+the text it speaks (agentpod `packages/contract/src/matrix-events.ts`,
+`VOICE_REPLY_CONTENT_KEY` / `VoiceReply`):
+
+```json
+"dev.agentpod.voice_reply": {
+  "schema_version": 1,
+  "text_event_id": "$text…",
+  "voice": "bf_emma",
+  "seconds": 4
+}
+```
+
+| Field | Effect |
+|---|---|
+| `schema_version` | Must be exactly `1`, or the key is ignored. |
+| `text_event_id` | Required string, 1–255 characters (code points). The text message this voice speaks. Compared, never displayed. |
+| `voice` | Required string, 1–64 characters: the speech service's voice id or blend (`af_heart:60+af_bella:40`). Not drawn. |
+| `seconds` | Optional integer `0..=3600`. Only used when the audio's own metadata carries no length. |
+
+Unknown fields are ignored; `null` is absent; anything else outside the
+contract refuses the whole key (`core::voice_reply::parse_voice_reply`), and
+the message is the ordinary voice note it would have been without it.
+
+**Plain-text fallback.** The voice message is deliberately *not* an
+`m.in_reply_to`: a client that does not know the key would quote the whole
+answer again above the note. Element, Cinny and every other client show two
+messages — the text, then a voice note — and both are complete on their own.
+
+**The pairing rule** (`core::voice_reply::reconcile`, run over the
+materialised timeline after every batch, next to `embedded::reconcile`, and
+sent as `Set` ops in the same envelope):
+
+- **Both loaded, same sender.** The *text* row becomes the one message:
+  `ItemView::Bubble { voice: Some(VoiceReplyPlayer) }` — the voice note's
+  player (retitled "Voice reply", read as "Voice reply, 4 seconds") drawn
+  **first**, then the text in the ordinary message style, as a voice note sits
+  above its transcript. The voice row stays in the list but is
+  `ItemView::None`, which every host drops before grouping, so it neither
+  draws nor splits the agent's run. The voice message's sender must be the
+  text's: nobody can fold someone else's message into their own audio.
+- **Only the voice loaded** (the text is past the pagination edge, or never
+  came): the voice row is drawn standalone, as the voice note it is. When the
+  text arrives — normally *before* the voice, seconds apart — the rows update
+  in place: the text row gets a `Set` at its own index, the voice row a `Set`
+  to `None`. No row moves, is removed or is re-inserted, so a host's scroll
+  anchor is untouched.
+- **Either side goes.** A redacted voice leaves the plain text (and the
+  ordinary "Message deleted" line where the voice was); a redacted text leaves
+  the voice note standalone beside its "Message deleted".
+- **An edit** (`m.replace`) of the text is folded into the text row by the SDK
+  and keeps the pairing, with the new words under the player.
+- **One voice per text.** The earlier of two voices naming one text pairs; the
+  other stays a standalone voice note.
+- **Never over a decided view.** A text drawn from its raw event — a turn
+  error card, a transcript, a suite decision — is not paired.
+
+**What addresses what.** The paired bubble's primary event is the **text**:
+reactions, replies, edits, copy and "jump to" all use the row's own
+`item.event_id`. The player alone uses `VoiceReplyPlayer.event_id` — the
+voice message — to fetch and play the audio. A reaction someone else's client
+puts on the voice message itself is not shown while the pair is folded.
+`TimelineRow.voice_reply` carries the key on the voice row so the pairing
+survives the row being hidden; no host reads it.
+
+**Cost.** Three linear passes per batch, the text rows found through a hash
+map keyed by event id — never a search per row; a 20,000-row room is pinned
+by `a_long_room_pairs_in_linear_time`.
+
+**Notifications.** The text already notified. The voice reply is quiet at all
+three layers of §6: the hub marks it a quiet hub event (layer 1); the
+`agentpod_voice_reply` account rule matches its `schema_version` (layer 2);
+and `core::notification` returns no notification for a row carrying the key,
+paired or standalone, and "<agent> replied with a voice message" as the quiet
+fallback line when a push cannot be dropped (layer 3).
+
 ## 5. A permission request or a gate — a key on the prose that asks it
 
 AgentPod sends a permission request as an ordinary prose `m.room.message`
@@ -187,13 +269,16 @@ layers now keep them quiet, each catching what the one before cannot:
 | Layer | Where | Covers | Cannot cover |
 |---|---|---|---|
 | 1. Hub gateway | AgentPod hub, `/_matrix/push/v1/notify` | Drops pushes for events the hub itself sends (turn cards, the hub's own reactions/edits) | Events the hub did not send: a harness-mode agent posting its own, another client's edit, a human's reaction |
-| 2. Account push rules | `core::push::quiet_push_rules`, installed by `Session::register_pusher` (every launch that registers a pusher, after login or restore) | Unencrypted events of type `m.reaction`, `dev.agentpod.turn.v1`, `dev.agentpod.permission.v1`, `dev.superpipeline.gate.v1`, and any event whose `content.m\.relates_to.rel_type` is `m.replace` (an edit) — whoever sent them | **Encrypted events**: the homeserver sees only `m.room.encrypted`, never the type or the relation. Org rooms are unencrypted by design; encrypted DMs are not |
+| 2. Account push rules | `core::push::quiet_push_rules`, installed by `Session::register_pusher` (every launch that registers a pusher, after login or restore) | Unencrypted events of type `m.reaction`, `dev.agentpod.turn.v1`, `dev.agentpod.permission.v1`, `dev.superpipeline.gate.v1`, any event whose `content.dev\.agentpod\.voice_reply.schema_version` is `1` (an agent's spoken answer, §4a), and any event whose `content.m\.relates_to.rel_type` is `m.replace` (an edit) — whoever sent them | **Encrypted events**: the homeserver sees only `m.room.encrypted`, never the type or the relation. Org rooms are unencrypted by design; encrypted DMs are not |
 | 3. The extension | `core::notification` + `NotificationService.swift` | Anything still pushed — encrypted events, races, an account whose rules failed to install | — |
 
-**Layer 2** writes five account override rules, ids under
+**Layer 2** writes six account override rules, ids under
 `dev.supermessage.quiet.` (`reaction`, `agentpod_turn`, `agentpod_permission`,
-`superpipeline_gate`, `edit`), each with empty `actions` — the spec's
-don't-notify since v1.7. The edit rule is the spec's own
+`superpipeline_gate`, `agentpod_voice_reply`, `edit`), each with empty
+`actions` — the spec's don't-notify since v1.7. The voice reply rule is
+`event_property_is` on `content.dev\.agentpod\.voice_reply.schema_version`
+= `1`, so a voice note that only mentions the key, or a later schema, still
+notifies. The edit rule is the spec's own
 `.m.rule.suppress_edits` condition (`event_property_is`, key escaped as
 `content.m\.relates_to.rel_type`); the reaction rule is `.m.rule.reaction`'s.
 tuwunel 1.9.1's ruma has both server-default rules and evaluates

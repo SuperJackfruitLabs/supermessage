@@ -13,7 +13,7 @@ extension PreviewFixtures {
     static let agentId = "@agent_ashram_openclaw-atlas:example.org"
 
     static func agentBody(_ text: String) -> ItemView {
-        .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: text)])])
+        .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: text)])], voice: nil)
     }
 
     /// An agent's message, from an id in the `@agent_` namespace: a card, a
@@ -64,12 +64,12 @@ extension PreviewFixtures {
         ]
         let body = String(repeating: paragraph + " ", count: 3)
         return row(
-            item(id: "$report", sender: agentId, body: body), view: .bubble(muted: false, blocks: blocks),
+            item(id: "$report", sender: agentId, body: body), view: .bubble(muted: false, blocks: blocks, voice: nil),
             senderName: "Atlas (OpenClaw on Ashram)", senderShort: "Atlas", senderInitial: "✳")
     }
 
     static var reportBlocks: [RichBlock] {
-        if case let .bubble(_, blocks) = agentReport.view { return blocks }
+        if case let .bubble(_, blocks, _) = agentReport.view { return blocks }
         return []
     }
 

@@ -3592,7 +3592,23 @@ data class TimelineRow (
      * scrolls out of the materialised timeline does not make the preview
      * change or vanish underneath the person writing.
      */
-    var `replyPreview`: kotlin.String?
+    var `replyPreview`: kotlin.String?, 
+    /**
+     * For a voice message that is an agent's answer spoken
+     * (`dev.agentpod.voice_reply`): the text message it speaks. `None` for
+     * every other row.
+     *
+     * **A host never needs this.** The core pairs the two
+     * (`crate::voice_reply::reconcile`) and hands over the result — the text
+     * row's `ItemView::Bubble` carrying the player, this row
+     * `ItemView::None`. It is carried on the row because the pairing is
+     * re-settled after every batch and must survive this row being hidden,
+     * and the raw event it came from is gone by then.
+     *
+     * Defaulted, and left off the desktop's JSON when absent, so no host's
+     * fixtures change for rows that are not voice replies.
+     */
+    var `voiceReply`: VoiceReplyLink? = null
 ) {
     
     companion object
@@ -3613,6 +3629,7 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalTypeReplyQuoteView.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalTypeVoiceReplyLink.read(buf),
         )
     }
 
@@ -3625,7 +3642,8 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalString.allocationSize(value.`membershipVerb`) +
             FfiConverterOptionalTypeReplyQuoteView.allocationSize(value.`replyQuote`) +
             FfiConverterBoolean.allocationSize(value.`canReplyOrReact`) +
-            FfiConverterOptionalString.allocationSize(value.`replyPreview`)
+            FfiConverterOptionalString.allocationSize(value.`replyPreview`) +
+            FfiConverterOptionalTypeVoiceReplyLink.allocationSize(value.`voiceReply`)
     )
 
     override fun write(value: TimelineRow, buf: ByteBuffer) {
@@ -3638,6 +3656,7 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalTypeReplyQuoteView.write(value.`replyQuote`, buf)
             FfiConverterBoolean.write(value.`canReplyOrReact`, buf)
             FfiConverterOptionalString.write(value.`replyPreview`, buf)
+            FfiConverterOptionalTypeVoiceReplyLink.write(value.`voiceReply`, buf)
     }
 }
 
@@ -3975,6 +3994,103 @@ public object FfiConverterTypeVoiceNoteTranscript: FfiConverterRustBuffer<VoiceN
             FfiConverterOptionalString.write(value.`duration`, buf)
             FfiConverterString.write(value.`caption`, buf)
             FfiConverterString.write(value.`accessibilityLabel`, buf)
+    }
+}
+
+
+
+/**
+ * What a voice message says it speaks: the text message it is the voice of.
+ *
+ * Carried on the voice message's own row ([`TimelineRow::voice_reply`]) so
+ * the pairing survives the row being hidden and redrawn; a host has no need
+ * to read it — the paired bubble already carries everything it draws.
+ */
+data class VoiceReplyLink (
+    /**
+     * The agent's text message this voice note speaks.
+     */
+    var `textEventId`: kotlin.String, 
+    /**
+     * The voice it was spoken in, as the speech service names it.
+     */
+    var `voice`: kotlin.String, 
+    /**
+     * The audio's length in whole seconds, when the hub said.
+     */
+    var `seconds`: kotlin.UInt?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeVoiceReplyLink: FfiConverterRustBuffer<VoiceReplyLink> {
+    override fun read(buf: ByteBuffer): VoiceReplyLink {
+        return VoiceReplyLink(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: VoiceReplyLink) = (
+            FfiConverterString.allocationSize(value.`textEventId`) +
+            FfiConverterString.allocationSize(value.`voice`) +
+            FfiConverterOptionalUInt.allocationSize(value.`seconds`)
+    )
+
+    override fun write(value: VoiceReplyLink, buf: ByteBuffer) {
+            FfiConverterString.write(value.`textEventId`, buf)
+            FfiConverterString.write(value.`voice`, buf)
+            FfiConverterOptionalUInt.write(value.`seconds`, buf)
+    }
+}
+
+
+
+/**
+ * The voice note drawn on a text message it speaks: the player, and the
+ * event the player plays.
+ *
+ * `event_id` is the **voice message's**, not the row's: it is what a host
+ * fetches the audio by (`audio_source`, `media_fetch`). Everything else a
+ * host does with the bubble — react, reply, edit, copy — addresses the row's
+ * own item, the text.
+ */
+data class VoiceReplyPlayer (
+    var `eventId`: kotlin.String, 
+    /**
+     * The note, as `ItemView::Audio` would draw it, titled and read as a
+     * reply: `"Voice reply"`, `"Voice reply, 4 seconds"`.
+     */
+    var `audio`: AudioView
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeVoiceReplyPlayer: FfiConverterRustBuffer<VoiceReplyPlayer> {
+    override fun read(buf: ByteBuffer): VoiceReplyPlayer {
+        return VoiceReplyPlayer(
+            FfiConverterString.read(buf),
+            FfiConverterTypeAudioView.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: VoiceReplyPlayer) = (
+            FfiConverterString.allocationSize(value.`eventId`) +
+            FfiConverterTypeAudioView.allocationSize(value.`audio`)
+    )
+
+    override fun write(value: VoiceReplyPlayer, buf: ByteBuffer) {
+            FfiConverterString.write(value.`eventId`, buf)
+            FfiConverterTypeAudioView.write(value.`audio`, buf)
     }
 }
 
@@ -4453,10 +4569,19 @@ sealed class ItemView {
      *
      * `blocks` is the parsed body, so a host draws rich text without
      * touching markdown or HTML itself. See `crate::rich`.
+     *
+     * `voice` is the agent's answer, spoken: a voice message that named this
+     * message as the text it speaks (`dev.agentpod.voice_reply`). A host
+     * draws its player **first**, then the text, as one message — the way a
+     * voice note sits above its transcript — and the voice message's own row
+     * is [`Self::None`]. `None` for every other message. See
+     * `crate::voice_reply`, which decides the pairing over the whole
+     * timeline.
      */
     data class Bubble(
         val `muted`: kotlin.Boolean, 
-        val `blocks`: List<RichBlock>) : ItemView() {
+        val `blocks`: List<RichBlock>, 
+        val `voice`: VoiceReplyPlayer?) : ItemView() {
         companion object
     }
     
@@ -4628,6 +4753,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
             1 -> ItemView.Bubble(
                 FfiConverterBoolean.read(buf),
                 FfiConverterSequenceTypeRichBlock.read(buf),
+                FfiConverterOptionalTypeVoiceReplyPlayer.read(buf),
                 )
             2 -> ItemView.Emote
             3 -> ItemView.System(
@@ -4679,6 +4805,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 4UL
                 + FfiConverterBoolean.allocationSize(value.`muted`)
                 + FfiConverterSequenceTypeRichBlock.allocationSize(value.`blocks`)
+                + FfiConverterOptionalTypeVoiceReplyPlayer.allocationSize(value.`voice`)
             )
         }
         is ItemView.Emote -> {
@@ -4780,6 +4907,7 @@ public object FfiConverterTypeItemView : FfiConverterRustBuffer<ItemView>{
                 buf.putInt(1)
                 FfiConverterBoolean.write(value.`muted`, buf)
                 FfiConverterSequenceTypeRichBlock.write(value.`blocks`, buf)
+                FfiConverterOptionalTypeVoiceReplyPlayer.write(value.`voice`, buf)
                 Unit
             }
             is ItemView.Emote -> {
@@ -6754,6 +6882,70 @@ public object FfiConverterOptionalTypeTurnCounts: FfiConverterRustBuffer<TurnCou
         } else {
             buf.put(1)
             FfiConverterTypeTurnCounts.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeVoiceReplyLink: FfiConverterRustBuffer<VoiceReplyLink?> {
+    override fun read(buf: ByteBuffer): VoiceReplyLink? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeVoiceReplyLink.read(buf)
+    }
+
+    override fun allocationSize(value: VoiceReplyLink?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeVoiceReplyLink.allocationSize(value)
+        }
+    }
+
+    override fun write(value: VoiceReplyLink?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeVoiceReplyLink.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeVoiceReplyPlayer: FfiConverterRustBuffer<VoiceReplyPlayer?> {
+    override fun read(buf: ByteBuffer): VoiceReplyPlayer? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeVoiceReplyPlayer.read(buf)
+    }
+
+    override fun allocationSize(value: VoiceReplyPlayer?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeVoiceReplyPlayer.allocationSize(value)
+        }
+    }
+
+    override fun write(value: VoiceReplyPlayer?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeVoiceReplyPlayer.write(value, buf)
         }
     }
 }

@@ -42,7 +42,7 @@ struct VoiceTranscriptPresentationTests {
         // from that agent after it must still carry its own header.
         let transcript = Self.row(
             id: "$1", view: .voiceTranscript(transcript: Self.transcript, onOwnNote: true), at: 1_000)
-        let message = Self.row(id: "$2", view: .bubble(muted: false, blocks: []), at: 2_000)
+        let message = Self.row(id: "$2", view: .bubble(muted: false, blocks: [], voice: nil), at: 2_000)
         #expect(!TimelineGrouping.continuesRun(message, after: transcript))
         #expect(!TimelineGrouping.continuesRun(transcript, after: message))
     }

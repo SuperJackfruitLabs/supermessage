@@ -50,6 +50,7 @@ import dev.supermessage.kit.NotePlayback
 import dev.supermessage.kit.VoicePlayback
 import dev.supermessage.kit.VoiceWaveform
 import uniffi.supermessage_core.AudioView
+import uniffi.supermessage_core.VoiceReplyPlayer
 import uniffi.supermessage_ffi.audioClockLabel
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 
@@ -110,6 +111,33 @@ internal fun AudioRow(
             onSeek = if (player != null && eventId != null) ({ f -> player.seek(eventId, f) }) else null,
         )
     }
+}
+
+/**
+ * An agent's answer, spoken: the voice note's player drawn on the message it
+ * speaks, above the text ([ItemView.Bubble][uniffi.supermessage_core.ItemView.Bubble]'s
+ * `voice`). The core paired the two and hid the voice message's own row
+ * (`core::voice_reply`); this plays the *voice* event — [VoiceReplyPlayer.eventId]
+ * — while reactions and replies on the bubble address the text.
+ */
+@Composable
+internal fun SpokenReply(spoken: VoiceReplyPlayer, isOwn: Boolean, modifier: Modifier = Modifier) {
+    val eventId = spoken.eventId
+    val player = LocalVoicePlayback.current
+    val playback = if (player != null) {
+        val state by player.state.collectAsStateWithLifecycle()
+        state.of(eventId)
+    } else {
+        NotePlayback.Idle
+    }
+    AudioNote(
+        audio = spoken.audio,
+        isOwn = isOwn,
+        playback = playback,
+        onToggle = if (player != null) ({ player.toggle(eventId) }) else null,
+        onSeek = if (player != null) ({ f -> player.seek(eventId, f) }) else null,
+        modifier = modifier.testTag("spoken-reply"),
+    )
 }
 
 /**
@@ -198,7 +226,8 @@ fun AudioNote(
         ) {
             PlayButton(
                 playback = playback,
-                label = if (audio.isVoice) "Play voice message" else "Play ${audio.title}",
+                // "Play voice message", "Play voice reply": the core's title.
+                label = if (audio.isVoice) "Play ${audio.title.replaceFirstChar { it.lowercase() }}" else "Play ${audio.title}",
                 onToggle = onToggle,
             )
             Waveform(

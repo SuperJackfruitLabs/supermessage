@@ -47,7 +47,7 @@ class TimelineGroupingTest {
                 view = if (system) {
                     ItemView.System(kind = SystemKind.EncryptionEnabled, text = "something happened")
                 } else {
-                    ItemView.Bubble(muted = false, blocks = emptyList())
+                    ItemView.Bubble(muted = false, blocks = emptyList(), voice = null)
                 },
                 senderName = sender,
                 senderShort = sender,

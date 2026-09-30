@@ -174,3 +174,59 @@ internal fun VoiceHugeText() {
         }
     }
 }
+
+/**
+ * An agent's answer, spoken: one message — the voice player, then the text it
+ * speaks. The voice message's own row is hidden by the core.
+ */
+@Preview(name = "Voice reply", showBackground = true, heightDp = 420)
+@Composable
+internal fun VoiceReply() {
+    PreviewGround(width = PHONE) {
+        Column {
+            TimelineRow(row = PreviewFixtures.voiceReplyShort, now = NOW)
+            TimelineRow(row = PreviewFixtures.voiceReplyCode, now = NOW)
+        }
+    }
+}
+
+/** A reply long enough to read as a report; the player stays on top. */
+@Preview(name = "Voice reply, long", showBackground = true, heightDp = 640)
+@Composable
+internal fun VoiceReplyLong() {
+    PreviewGround(width = PHONE) {
+        TimelineRow(row = PreviewFixtures.voiceReplyLong, now = NOW)
+    }
+}
+
+@Preview(name = "Voice reply, dark", showBackground = true, heightDp = 420)
+@Composable
+internal fun VoiceReplyDark() {
+    PreviewGround(dark = true, width = PHONE) {
+        Column {
+            TimelineRow(row = PreviewFixtures.voiceReplyShort, now = NOW)
+            TimelineRow(row = PreviewFixtures.voiceReplyCode, now = NOW)
+        }
+    }
+}
+
+@Preview(name = "Voice reply, huge text", showBackground = true, heightDp = 480, fontScale = 2f)
+@Composable
+internal fun VoiceReplyHugeText() {
+    PreviewGround(width = PHONE) {
+        TimelineRow(row = PreviewFixtures.voiceReplyShort, now = NOW)
+    }
+}
+
+/** Your note, its transcript, and the agent's spoken answer: the whole exchange. */
+@Preview(name = "Voice reply after a transcript", showBackground = true, heightDp = 460)
+@Composable
+internal fun VoiceReplyAfterTranscript() {
+    PreviewGround(width = PHONE) {
+        Column {
+            TimelineRow(row = PreviewFixtures.voiceOwn, now = NOW)
+            TimelineRow(row = PreviewFixtures.voiceOwnTranscript, now = NOW)
+            TimelineRow(row = PreviewFixtures.voiceReplyShort, now = NOW)
+        }
+    }
+}

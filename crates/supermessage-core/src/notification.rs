@@ -320,6 +320,13 @@ pub fn notification_for_row(
         body,
         ..NotificationDto::generic(room_id, event_id, "")
     };
+    // An agent's answer, spoken: posted after the text it speaks, which
+    // already notified — so, like a transcript, never a second interruption.
+    // Read off the row rather than the view: a voice reply whose text is not
+    // loaded is drawn standalone, and it is still not news.
+    if row.voice_reply.is_some() {
+        return None;
+    }
     match &row.view {
         ItemView::CustomEvent { view, label, .. } => {
             // A card with nothing to decide — a turn, a run, a station
@@ -807,6 +814,7 @@ fn decide_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDt
 
     notification_for_row(&row, room_id, event_id, &room_name).unwrap_or_else(|| {
         let line = match &row.view {
+            _ if row.voice_reply.is_some() => format!("{who} replied with a voice message"),
             ItemView::VoiceTranscript { .. } => format!("{who} transcribed a voice message"),
             _ => format!("{who} posted an update"),
         };
@@ -1056,6 +1064,44 @@ mod tests {
             }
         }));
         assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+    }
+
+    fn voice_note(key: Option<Value>) -> Value {
+        let mut content = json!({
+            "msgtype": "m.audio", "body": "Voice message.ogg", "url": "mxc://hs/a",
+            "info": { "mimetype": "audio/ogg", "duration": 4210 },
+            "org.matrix.msc3245.voice": {}
+        });
+        if let Some(key) = key {
+            content["dev.agentpod.voice_reply"] = key;
+        }
+        message(content)
+    }
+
+    /// An agent's answer, spoken, comes after the text it speaks, which
+    /// already notified — so it is quiet, like a transcript, and says so.
+    #[test]
+    fn a_voice_reply_is_not_a_second_notification() {
+        let note = notify(voice_note(Some(json!({
+            "schema_version": 1, "text_event_id": "$text", "voice": "bf_emma", "seconds": 4
+        }))));
+        assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+        assert_eq!(
+            note.fallback_body.as_deref(),
+            Some("Agent Hermes replied with a voice message")
+        );
+    }
+
+    /// Someone's own voice note is news, and so is one whose key is not the
+    /// contract: only the hub's voice reply is quiet.
+    #[test]
+    fn an_ordinary_voice_note_still_notifies() {
+        let broken = json!({ "schema_version": 2, "text_event_id": "$t", "voice": "v" });
+        for key in [None, Some(broken)] {
+            let note = notify(voice_note(key.clone()));
+            assert_eq!(note.suppress, None, "{key:?}");
+            assert_eq!(note.body, "Voice message");
+        }
     }
 
     #[test]

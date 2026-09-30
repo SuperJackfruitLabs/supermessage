@@ -204,6 +204,23 @@ describe("sender runs", () => {
     expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, true]);
   });
 
+  it("draws nothing for a voice reply the core folded into its text, and keeps the run across it", () => {
+    // `core::voice_reply`: the agent's text carries the player, its voice
+    // message's own row is `none`. It must not be an empty row, and must not
+    // end the agent's run before their next message.
+    const hidden = {
+      ...message({ id: "$voice", sender: "@a:x", timestampMs: 2_000 }),
+      view: { render: "none" } as const,
+    };
+    const rows = groupTimelineItems([
+      message({ id: "$text", sender: "@a:x", timestampMs: 1_000 }),
+      hidden,
+      message({ id: "$next", sender: "@a:x", timestampMs: 61_000 }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.item.id)).toEqual(["$text", "$next"]);
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, true]);
+  });
+
   it("breaks a run past the five-minute window", () => {
     const rows = groupTimelineItems([
       message({ id: "$1", sender: "@a:x", timestampMs: 0 }),

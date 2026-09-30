@@ -5393,6 +5393,22 @@ public struct TimelineRow {
      * change or vanish underneath the person writing.
      */
     public var replyPreview: String?
+    /**
+     * For a voice message that is an agent's answer spoken
+     * (`dev.agentpod.voice_reply`): the text message it speaks. `None` for
+     * every other row.
+     *
+     * **A host never needs this.** The core pairs the two
+     * (`crate::voice_reply::reconcile`) and hands over the result — the text
+     * row's `ItemView::Bubble` carrying the player, this row
+     * `ItemView::None`. It is carried on the row because the pairing is
+     * re-settled after every batch and must survive this row being hidden,
+     * and the raw event it came from is gone by then.
+     *
+     * Defaulted, and left off the desktop's JSON when absent, so no host's
+     * fixtures change for rows that are not voice replies.
+     */
+    public var voiceReply: VoiceReplyLink?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -5454,7 +5470,22 @@ public struct TimelineRow {
          * when the reply was started, so a parent that is later redacted or
          * scrolls out of the materialised timeline does not make the preview
          * change or vanish underneath the person writing.
-         */replyPreview: String?) {
+         */replyPreview: String?, 
+        /**
+         * For a voice message that is an agent's answer spoken
+         * (`dev.agentpod.voice_reply`): the text message it speaks. `None` for
+         * every other row.
+         *
+         * **A host never needs this.** The core pairs the two
+         * (`crate::voice_reply::reconcile`) and hands over the result — the text
+         * row's `ItemView::Bubble` carrying the player, this row
+         * `ItemView::None`. It is carried on the row because the pairing is
+         * re-settled after every batch and must survive this row being hidden,
+         * and the raw event it came from is gone by then.
+         *
+         * Defaulted, and left off the desktop's JSON when absent, so no host's
+         * fixtures change for rows that are not voice replies.
+         */voiceReply: VoiceReplyLink? = nil) {
         self.item = item
         self.view = view
         self.senderName = senderName
@@ -5464,6 +5495,7 @@ public struct TimelineRow {
         self.replyQuote = replyQuote
         self.canReplyOrReact = canReplyOrReact
         self.replyPreview = replyPreview
+        self.voiceReply = voiceReply
     }
 }
 
@@ -5498,6 +5530,9 @@ extension TimelineRow: Equatable, Hashable {
         if lhs.replyPreview != rhs.replyPreview {
             return false
         }
+        if lhs.voiceReply != rhs.voiceReply {
+            return false
+        }
         return true
     }
 
@@ -5511,6 +5546,7 @@ extension TimelineRow: Equatable, Hashable {
         hasher.combine(replyQuote)
         hasher.combine(canReplyOrReact)
         hasher.combine(replyPreview)
+        hasher.combine(voiceReply)
     }
 }
 
@@ -5530,7 +5566,8 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
                 membershipVerb: FfiConverterOptionString.read(from: &buf), 
                 replyQuote: FfiConverterOptionTypeReplyQuoteView.read(from: &buf), 
                 canReplyOrReact: FfiConverterBool.read(from: &buf), 
-                replyPreview: FfiConverterOptionString.read(from: &buf)
+                replyPreview: FfiConverterOptionString.read(from: &buf), 
+                voiceReply: FfiConverterOptionTypeVoiceReplyLink.read(from: &buf)
         )
     }
 
@@ -5544,6 +5581,7 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
         FfiConverterOptionTypeReplyQuoteView.write(value.replyQuote, into: &buf)
         FfiConverterBool.write(value.canReplyOrReact, into: &buf)
         FfiConverterOptionString.write(value.replyPreview, into: &buf)
+        FfiConverterOptionTypeVoiceReplyLink.write(value.voiceReply, into: &buf)
     }
 }
 
@@ -6219,6 +6257,188 @@ public func FfiConverterTypeVoiceNoteTranscript_lift(_ buf: RustBuffer) throws -
 #endif
 public func FfiConverterTypeVoiceNoteTranscript_lower(_ value: VoiceNoteTranscript) -> RustBuffer {
     return FfiConverterTypeVoiceNoteTranscript.lower(value)
+}
+
+
+/**
+ * What a voice message says it speaks: the text message it is the voice of.
+ *
+ * Carried on the voice message's own row ([`TimelineRow::voice_reply`]) so
+ * the pairing survives the row being hidden and redrawn; a host has no need
+ * to read it — the paired bubble already carries everything it draws.
+ */
+public struct VoiceReplyLink {
+    /**
+     * The agent's text message this voice note speaks.
+     */
+    public var textEventId: String
+    /**
+     * The voice it was spoken in, as the speech service names it.
+     */
+    public var voice: String
+    /**
+     * The audio's length in whole seconds, when the hub said.
+     */
+    public var seconds: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The agent's text message this voice note speaks.
+         */textEventId: String, 
+        /**
+         * The voice it was spoken in, as the speech service names it.
+         */voice: String, 
+        /**
+         * The audio's length in whole seconds, when the hub said.
+         */seconds: UInt32?) {
+        self.textEventId = textEventId
+        self.voice = voice
+        self.seconds = seconds
+    }
+}
+
+
+
+extension VoiceReplyLink: Equatable, Hashable {
+    public static func ==(lhs: VoiceReplyLink, rhs: VoiceReplyLink) -> Bool {
+        if lhs.textEventId != rhs.textEventId {
+            return false
+        }
+        if lhs.voice != rhs.voice {
+            return false
+        }
+        if lhs.seconds != rhs.seconds {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(textEventId)
+        hasher.combine(voice)
+        hasher.combine(seconds)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoiceReplyLink: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoiceReplyLink {
+        return
+            try VoiceReplyLink(
+                textEventId: FfiConverterString.read(from: &buf), 
+                voice: FfiConverterString.read(from: &buf), 
+                seconds: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VoiceReplyLink, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.textEventId, into: &buf)
+        FfiConverterString.write(value.voice, into: &buf)
+        FfiConverterOptionUInt32.write(value.seconds, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoiceReplyLink_lift(_ buf: RustBuffer) throws -> VoiceReplyLink {
+    return try FfiConverterTypeVoiceReplyLink.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoiceReplyLink_lower(_ value: VoiceReplyLink) -> RustBuffer {
+    return FfiConverterTypeVoiceReplyLink.lower(value)
+}
+
+
+/**
+ * The voice note drawn on a text message it speaks: the player, and the
+ * event the player plays.
+ *
+ * `event_id` is the **voice message's**, not the row's: it is what a host
+ * fetches the audio by (`audio_source`, `media_fetch`). Everything else a
+ * host does with the bubble — react, reply, edit, copy — addresses the row's
+ * own item, the text.
+ */
+public struct VoiceReplyPlayer {
+    public var eventId: String
+    /**
+     * The note, as `ItemView::Audio` would draw it, titled and read as a
+     * reply: `"Voice reply"`, `"Voice reply, 4 seconds"`.
+     */
+    public var audio: AudioView
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(eventId: String, 
+        /**
+         * The note, as `ItemView::Audio` would draw it, titled and read as a
+         * reply: `"Voice reply"`, `"Voice reply, 4 seconds"`.
+         */audio: AudioView) {
+        self.eventId = eventId
+        self.audio = audio
+    }
+}
+
+
+
+extension VoiceReplyPlayer: Equatable, Hashable {
+    public static func ==(lhs: VoiceReplyPlayer, rhs: VoiceReplyPlayer) -> Bool {
+        if lhs.eventId != rhs.eventId {
+            return false
+        }
+        if lhs.audio != rhs.audio {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(eventId)
+        hasher.combine(audio)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoiceReplyPlayer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoiceReplyPlayer {
+        return
+            try VoiceReplyPlayer(
+                eventId: FfiConverterString.read(from: &buf), 
+                audio: FfiConverterTypeAudioView.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VoiceReplyPlayer, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.eventId, into: &buf)
+        FfiConverterTypeAudioView.write(value.audio, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoiceReplyPlayer_lift(_ buf: RustBuffer) throws -> VoiceReplyPlayer {
+    return try FfiConverterTypeVoiceReplyPlayer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoiceReplyPlayer_lower(_ value: VoiceReplyPlayer) -> RustBuffer {
+    return FfiConverterTypeVoiceReplyPlayer.lower(value)
 }
 
 
@@ -6938,8 +7158,16 @@ public enum ItemView {
      *
      * `blocks` is the parsed body, so a host draws rich text without
      * touching markdown or HTML itself. See `crate::rich`.
+     *
+     * `voice` is the agent's answer, spoken: a voice message that named this
+     * message as the text it speaks (`dev.agentpod.voice_reply`). A host
+     * draws its player **first**, then the text, as one message — the way a
+     * voice note sits above its transcript — and the voice message's own row
+     * is [`Self::None`]. `None` for every other message. See
+     * `crate::voice_reply`, which decides the pairing over the whole
+     * timeline.
      */
-    case bubble(muted: Bool, blocks: [RichBlock]
+    case bubble(muted: Bool, blocks: [RichBlock], voice: VoiceReplyPlayer?
     )
     case emote
     case system(kind: SystemKind, text: String
@@ -7065,7 +7293,7 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .bubble(muted: try FfiConverterBool.read(from: &buf), blocks: try FfiConverterSequenceTypeRichBlock.read(from: &buf)
+        case 1: return .bubble(muted: try FfiConverterBool.read(from: &buf), blocks: try FfiConverterSequenceTypeRichBlock.read(from: &buf), voice: try FfiConverterOptionTypeVoiceReplyPlayer.read(from: &buf)
         )
         
         case 2: return .emote
@@ -7108,10 +7336,11 @@ public struct FfiConverterTypeItemView: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .bubble(muted,blocks):
+        case let .bubble(muted,blocks,voice):
             writeInt(&buf, Int32(1))
             FfiConverterBool.write(muted, into: &buf)
             FfiConverterSequenceTypeRichBlock.write(blocks, into: &buf)
+            FfiConverterOptionTypeVoiceReplyPlayer.write(voice, into: &buf)
             
         
         case .emote:
@@ -9269,6 +9498,54 @@ fileprivate struct FfiConverterOptionTypeTurnCounts: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeTurnCounts.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeVoiceReplyLink: FfiConverterRustBuffer {
+    typealias SwiftType = VoiceReplyLink?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeVoiceReplyLink.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeVoiceReplyLink.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeVoiceReplyPlayer: FfiConverterRustBuffer {
+    typealias SwiftType = VoiceReplyPlayer?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeVoiceReplyPlayer.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeVoiceReplyPlayer.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

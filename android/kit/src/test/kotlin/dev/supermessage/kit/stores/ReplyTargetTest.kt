@@ -45,7 +45,7 @@ class ReplyTargetTest {
         )
         return TimelineRow(
             item = item,
-            view = ItemView.Bubble(muted = false, blocks = emptyList()),
+            view = ItemView.Bubble(muted = false, blocks = emptyList(), voice = null),
             senderName = sender,
             senderShort = sender,
             senderInitial = "?",

@@ -314,7 +314,14 @@ export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisp
     // it back into "Krishna updated their membership". Skipping it here also
     // keeps it from splitting the run on either side. iOS and Android drop
     // `none` rows before grouping for the same reason.
-    if (item.kind === "membership" && row.view.render === "none") continue;
+    //
+    // And so is any other row the core marked `none`: a suite event whose
+    // prose message already draws the card, or an agent's voice reply drawn
+    // on the text it speaks (`core::voice_reply`). Kept, it would sit between
+    // the text and the agent's next message as an empty row and end their
+    // sender run, so the next message repeated the header. The raw items
+    // still hold it, which is what marking read and "jump to newest" read.
+    if (row.view.render === "none") continue;
     const continuesMembershipRun =
       item.kind === "membership" && (run.length === 0 || run[0]!.item.detail === item.detail);
     if (continuesMembershipRun) {

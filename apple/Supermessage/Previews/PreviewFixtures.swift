@@ -281,7 +281,7 @@ enum PreviewFixtures {
 
     static var message: TimelineRow {
         row(item(id: "$m1"), view: .bubble(muted: false, blocks: [.paragraph(inlines: [
-            .text(text: "Rebased onto main and the token diff is empty now.")])]))
+            .text(text: "Rebased onto main and the token diff is empty now.")])], voice: nil))
     }
 
     /// `m.notice`, which is what most agent output in this org actually uses.
@@ -296,7 +296,7 @@ enum PreviewFixtures {
             item(id: "$m1", sender: "@rakesh:example.org",
                  body: "Should the contrast contract list every ground?", isOwn: true),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [
-                .text(text: "Should the contrast contract list every ground?")])]),
+                .text(text: "Should the contrast contract list every ground?")])], voice: nil),
             senderName: "Rakesh", senderShort: "Rakesh", senderInitial: "R",
             replyPreview: "Should the contrast contract list every ground?")
     }
@@ -305,14 +305,14 @@ enum PreviewFixtures {
         row(
             item(id: "$m2", body: "pnpm check passed in 41s.", msgtype: "m.notice"),
             view: .bubble(muted: true, blocks: [.paragraph(inlines: [
-                .text(text: "pnpm check passed in 41s.")])]))
+                .text(text: "pnpm check passed in 41s.")])], voice: nil))
     }
 
     static var ownSending: TimelineRow {
         row(
             item(id: "$own1", sender: "@rakesh:example.org", body: "Merging it.",
                  isOwn: true, sendState: .notSentYet),
-            view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Merging it.")])]),
+            view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Merging it.")])], voice: nil),
             senderName: "Rakesh", senderShort: "Rakesh", senderInitial: "R",
             canReplyOrReact: false)
     }
@@ -321,7 +321,7 @@ enum PreviewFixtures {
         row(
             item(id: "$own2", sender: "@rakesh:example.org", body: "Merging it.",
                  isOwn: true, sendState: .sendingFailed),
-            view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Merging it.")])]),
+            view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: "Merging it.")])], voice: nil),
             senderName: "Rakesh", senderShort: "Rakesh", senderInitial: "R",
             canReplyOrReact: false)
     }
@@ -344,7 +344,7 @@ enum PreviewFixtures {
             "dGhpcyBpcyBub3QgYSByZWFsIHRva2VuIGJ1dCBpdCBpcyBsb25nIGVub3VnaCB0byBicmVhayBhIHBob25lIHdpZHRoIGxheW91dA=="
         return row(
             item(id: "$long", body: value),
-            view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: value)])]))
+            view: .bubble(muted: false, blocks: [.paragraph(inlines: [.text(text: value)])], voice: nil))
     }
 
     static var dayDivider: TimelineRow {
@@ -380,7 +380,7 @@ enum PreviewFixtures {
                             senders: []),
             ]),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [
-                .text(text: "Rebased onto main and the token diff is empty now.")])]))
+                .text(text: "Rebased onto main and the token diff is empty now.")])], voice: nil))
     }
 
     static var reply: TimelineRow {
@@ -391,7 +391,7 @@ enum PreviewFixtures {
                     senderDisplayName: "Rakesh",
                     excerpt: "Should the contrast contract list every ground?", label: nil)),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [
-                .text(text: "Agreed — the contract belongs on the token.")])]),
+                .text(text: "Agreed — the contract belongs on the token.")])], voice: nil),
             replyQuote: .available(
                 sender: "Rakesh", excerpt: "Should the contrast contract list every ground?",
                 label: nil, senderId: "@rakesh:example.org"))
@@ -402,7 +402,7 @@ enum PreviewFixtures {
         row(
             item(id: "$orphan", body: "Yes, that one."),
             view: .bubble(muted: false, blocks: [.paragraph(inlines: [
-                .text(text: "Yes, that one.")])]),
+                .text(text: "Yes, that one.")])], voice: nil),
             replyQuote: .unavailable)
     }
 

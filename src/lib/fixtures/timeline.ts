@@ -8,7 +8,7 @@
  * failure after this change means the move broke something, not that a
  * rewrite did.
  */
-import type { TimelineItem, TimelineRow } from "$lib/ipc";
+import type { ItemView, TimelineItem, TimelineRow } from "$lib/ipc";
 
 /**
  * The verbs this file's fixtures need, standing in for the core.
@@ -71,7 +71,7 @@ export function row(dto: TimelineItem): TimelineRow {
     item: dto,
     view:
       membershipVerb === null
-        ? { render: "none" }
+        ? drawnAs(dto)
         : {
             render: "system",
             kind: { about: "membershipChanged", who: senderName, detail: dto.detail },
@@ -88,6 +88,31 @@ export function row(dto: TimelineItem): TimelineRow {
     canReplyOrReact: true,
     replyPreview: null,
   };
+}
+
+/**
+ * A drawn view for a row that is not a membership change — the cheapest one
+ * of its kind. It used to be `none` for all of them, which was harmless while
+ * the grouper only dropped hidden *membership* rows; now that it drops every
+ * row the core hides (a voice reply folded into its text, a suite event whose
+ * prose draws the card), a fixture row must be visible unless a test says
+ * otherwise.
+ */
+function drawnAs(dto: TimelineItem): ItemView {
+  switch (dto.kind) {
+    case "message":
+      return { render: "bubble", muted: dto.msgtype === "m.notice", blocks: [] };
+    case "dateDivider":
+      return { render: "dateDivider" };
+    case "readMarker":
+      return { render: "unreadMarker" };
+    default:
+      return {
+        render: "placeholder",
+        kind: { about: "unsupportedEvent", eventType: dto.detail ?? dto.kind },
+        text: `Unsupported event (${dto.detail ?? dto.kind})`,
+      };
+  }
 }
 
 /** Overrides shape shared by every object-argument fixture builder below. */

@@ -90,12 +90,15 @@ struct TimelineRowView: View {
 
     @ViewBuilder private var content: some View {
         switch row.view {
-        case let .bubble(muted, blocks):
+        // `spoken` is an agent's answer read aloud: the voice note's player
+        // on this message, above its text. The voice message's own row is
+        // `.none` — the core paired them (`core::voice_reply`).
+        case let .bubble(muted, blocks, spoken):
             MessageBlock(
                 row: row, named: named, muted: muted, blocks: blocks,
                 continuesRun: continuesRun, endsRun: endsRun, hidesQuote: hidesQuote,
                 readers: readers, faces: faces, onReact: onReact, onQuoteTap: onQuoteTap,
-                prelude: prelude
+                prelude: prelude, spoken: spoken, voice: voice ?? InertVoice.player
             )
 
         case .emote:
@@ -280,6 +283,11 @@ private struct MessageBlock: View {
     var onReact: ((String) -> Void)?
     var onQuoteTap: (() -> Void)?
     var prelude: AnyView?
+    /// The agent's answer, spoken — drawn at the top of the bubble, above the
+    /// text it speaks. Its event id is the voice message's, which is what
+    /// the player fetches; everything else here addresses the text.
+    var spoken: VoiceReplyPlayer?
+    var voice: VoicePlayer = InertVoice.player
 
     @State private var reading = false
 
@@ -397,6 +405,15 @@ private struct MessageBlock: View {
         VStack(alignment: .leading, spacing: 6) {
             if let quote = row.replyQuote, !hidesQuote {
                 ReplyQuote(quote: quote, onTap: onQuoteTap)
+            }
+
+            // Listen first, then read — as a voice note sits above its
+            // transcript. The player is the voice note's own, without its
+            // card: this bubble is the card. Never clamped with a long text.
+            if let spoken {
+                VoiceNoteBubble(
+                    audio: spoken.audio, eventId: spoken.eventId, isOwn: isOwn, player: voice,
+                    chrome: false)
             }
 
             if isLong {

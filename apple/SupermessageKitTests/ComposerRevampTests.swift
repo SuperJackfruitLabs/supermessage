@@ -399,7 +399,7 @@ struct AcknowledgementTests {
             customPayload: nil, timestampMs: 1, isOwn: own, sendState: nil, replyTo: nil,
             edited: false, reactions: reactions, readBy: [], editable: false, membershipSubject: nil)
         return TimelineRow(
-            item: item, view: .bubble(muted: false, blocks: []), senderName: sender,
+            item: item, view: .bubble(muted: false, blocks: [], voice: nil), senderName: sender,
             senderShort: sender, senderInitial: "?", membershipVerb: membership, replyQuote: nil,
             canReplyOrReact: true, replyPreview: nil)
     }

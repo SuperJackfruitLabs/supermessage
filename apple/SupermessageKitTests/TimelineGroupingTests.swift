@@ -17,7 +17,7 @@ struct TimelineGroupingTests {
             replyTo: nil, edited: false, reactions: [], readBy: [], editable: false, membershipSubject: nil)
         return TimelineRow(
             item: item,
-            view: system ? .system(kind: .encryptionEnabled, text: "something happened") : .bubble(muted: false, blocks: []),
+            view: system ? .system(kind: .encryptionEnabled, text: "something happened") : .bubble(muted: false, blocks: [], voice: nil),
             senderName: sender, senderShort: sender, senderInitial: "?", membershipVerb: nil, replyQuote: nil, canReplyOrReact: true,
             replyPreview: nil)
     }

@@ -971,10 +971,34 @@ export interface VoiceNoteTranscript {
 }
 
 /**
+ * An agent's answer, spoken, drawn on the message it speaks — mirrors
+ * `core::voice_reply::VoiceReplyPlayer`. `eventId` is the **voice message's**:
+ * the player fetches by it. Reactions and replies on the bubble address the
+ * row's own item, the text.
+ */
+export interface VoiceReplyPlayer {
+  eventId: string;
+  /** Titled and read as a reply: "Voice reply", "Voice reply, 4 seconds". */
+  audio: AudioView;
+}
+
+/** What a voice message says it speaks — mirrors `core::voice_reply::VoiceReplyLink`. */
+export interface VoiceReplyLink {
+  textEventId: string;
+  voice: string;
+  seconds: number | null;
+}
+
+/**
  * The render decision for one item, made by `core::item_view::view_for`.
  */
 export type ItemView =
-  | { render: "bubble"; muted: boolean; blocks: RichBlock[] }
+  /**
+   * `voice`, when present, is an agent's answer read aloud: its player above
+   * the text, as one message. The voice message's own row is `none` — the
+   * core paired them (`core::voice_reply`). Absent on every other bubble.
+   */
+  | { render: "bubble"; muted: boolean; blocks: RichBlock[]; voice?: VoiceReplyPlayer }
   | { render: "emote" }
   // `kind` beside `text`, mirroring the Rust. The web renders `text` and
   // ignores `kind`; it is here because this type is hand-maintained against
@@ -1069,6 +1093,13 @@ export interface TimelineRow {
    * row when someone replies to it. `null` when there is nothing to show.
    */
   replyPreview: string | null;
+  /**
+   * For a voice message that is an agent's spoken answer: the text it speaks.
+   * Absent on every other row. **Nothing here reads it** — the core already
+   * drew the pair (the text's bubble carries the player, this row is `none`);
+   * it is carried so the core can re-settle the pairing after every batch.
+   */
+  voiceReply?: VoiceReplyLink;
 }
 
 /** A room name split into the suite's `<glyph> <Name> — <Role>` convention. */

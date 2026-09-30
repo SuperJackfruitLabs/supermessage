@@ -130,6 +130,10 @@ pub const QUIET_EVENT_TYPES: [(&str, &str); 4] = [
 /// dot inside a key (v1.7, "Conditions"): `m.relates_to` is one key.
 pub const EDIT_REL_TYPE_KEY: &str = r"content.m\.relates_to.rel_type";
 
+/// The key an AgentPod voice reply's version is at, escaped the same way:
+/// `dev.agentpod.voice_reply` is one key (`crate::voice_reply`).
+pub const VOICE_REPLY_VERSION_KEY: &str = r"content.dev\.agentpod\.voice_reply.schema_version";
+
 /// The override rules that keep quiet events from being pushed.
 ///
 /// Each is **don't-notify**: an empty `actions` list, which is how the spec
@@ -156,6 +160,19 @@ pub fn quiet_push_rules() -> Vec<NewConditionalPushRule> {
             )
         })
         .collect();
+    // An agent's answer, spoken: the text it speaks was posted first and
+    // notified. Keyed on the version so a voice note that merely mentions the
+    // key in its body does not match, and a later schema is a later decision.
+    rules.push(NewConditionalPushRule::new(
+        format!("{QUIET_RULE_PREFIX}agentpod_voice_reply"),
+        vec![PushCondition::EventPropertyIs(
+            EventPropertyIsConditionData::new(
+                VOICE_REPLY_VERSION_KEY.into(),
+                matrix_sdk::ruma::int!(1).into(),
+            ),
+        )],
+        Vec::new(),
+    ));
     // An edit: the original already notified. The same condition as the
     // spec's `.m.rule.suppress_edits`, which an older stored ruleset lacks.
     rules.push(NewConditionalPushRule::new(
@@ -273,6 +290,14 @@ mod tests {
                     "conditions": [{ "kind": "event_match", "key": "type", "pattern": "dev.superpipeline.gate.v1" }]
                 }),
                 serde_json::json!({
+                    "rule_id": "dev.supermessage.quiet.agentpod_voice_reply", "actions": [],
+                    "conditions": [{
+                        "kind": "event_property_is",
+                        "key": "content.dev\\.agentpod\\.voice_reply.schema_version",
+                        "value": 1
+                    }]
+                }),
+                serde_json::json!({
                     "rule_id": "dev.supermessage.quiet.edit", "actions": [],
                     // One backslash on the wire: `m.relates_to` is one key.
                     "conditions": [{
@@ -345,6 +370,33 @@ mod tests {
             .await,
             vec!["dev.supermessage.quiet.edit"]
         );
+        // The hub's voice reply, and nothing that only resembles one: a
+        // plain voice note, a later schema, the key's name in a body.
+        let voice_reply = |version: serde_json::Value| {
+            json!({
+                "msgtype": "m.audio", "body": "Voice message.ogg",
+                "org.matrix.msc3245.voice": {},
+                "dev.agentpod.voice_reply": {
+                    "schema_version": version, "text_event_id": "$t", "voice": "bf_emma"
+                }
+            })
+        };
+        assert_eq!(
+            matched(event("m.room.message", voice_reply(json!(1)))).await,
+            vec!["dev.supermessage.quiet.agentpod_voice_reply"]
+        );
+        assert!(matched(event("m.room.message", voice_reply(json!(2))))
+            .await
+            .is_empty());
+        assert!(matched(event(
+            "m.room.message",
+            json!({
+                "msgtype": "m.audio", "body": "dev.agentpod.voice_reply",
+                "org.matrix.msc3245.voice": {}
+            })
+        ))
+        .await
+        .is_empty());
         for (name, ty) in QUIET_EVENT_TYPES {
             assert_eq!(
                 matched(event(ty, json!({ "body": "x" }))).await,
@@ -374,7 +426,7 @@ mod tests {
             .into_iter()
             .map(|r| r.rule_id)
             .collect();
-        assert_eq!(needed.len(), 5);
+        assert_eq!(needed.len(), 6);
         assert!(needed.iter().all(|id| id.starts_with(QUIET_RULE_PREFIX)));
     }
 
@@ -419,6 +471,7 @@ mod tests {
                 "dev.supermessage.quiet.agentpod_turn",
                 "dev.supermessage.quiet.agentpod_permission",
                 "dev.supermessage.quiet.superpipeline_gate",
+                "dev.supermessage.quiet.agentpod_voice_reply",
                 "dev.supermessage.quiet.edit",
             ]
         );

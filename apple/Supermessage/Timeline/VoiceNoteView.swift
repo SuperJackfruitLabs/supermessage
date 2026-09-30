@@ -26,6 +26,10 @@ struct VoiceNoteBubble: View {
     let eventId: String?
     let isOwn: Bool
     let player: VoicePlayer
+    /// Drawn as its own card — the default — or bare, inside a message
+    /// bubble that already is one: an agent's spoken answer, whose text sits
+    /// under the player in the same bubble (`ItemView.bubble`'s voice).
+    var chrome: Bool = true
 
     @Environment(\.rendersStill) private var rendersStill
 
@@ -67,12 +71,7 @@ struct VoiceNoteBubble: View {
                     .foregroundStyle(Theme.danger)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            isOwn ? AnyShapeStyle(Theme.accent.opacity(0.13)) : AnyShapeStyle(Theme.surfaceRaised),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .frame(maxWidth: 300, alignment: isOwn ? .trailing : .leading)
+        .modifier(NoteCard(isOwn: isOwn, enabled: chrome))
         // One element for VoiceOver: "Voice message, 7 seconds", its state,
         // and what a double-tap does. Swiping up and down moves five seconds.
         .accessibilityElement(children: .ignore)
@@ -118,6 +117,28 @@ struct VoiceNoteBubble: View {
             .monospacedDigit()
             .foregroundStyle(state.isUnderway ? Theme.accent : Theme.contentMuted)
             .fixedSize()
+    }
+}
+
+/// A voice note's own card: its padding, its ground and its measure. Left
+/// off when the note is drawn inside a message bubble, which supplies all
+/// three.
+private struct NoteCard: ViewModifier {
+    let isOwn: Bool
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    isOwn ? AnyShapeStyle(Theme.accent.opacity(0.13)) : AnyShapeStyle(Theme.surfaceRaised),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(maxWidth: 300, alignment: isOwn ? .trailing : .leading)
+        } else {
+            content
+        }
     }
 }
 
@@ -256,6 +277,71 @@ private struct WaveformBars: View {
                 row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: false),
                 media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
         }
+    }
+}
+
+// An agent's answer, spoken: one bubble — the voice player, then the text it
+// speaks. The voice message's own row is hidden by the core.
+#Preview("Voice reply") {
+    PreviewGround(width: 390) {
+        VoiceReplyGallery(rows: [PreviewFixtures.voiceReplyShort, PreviewFixtures.voiceReplyCode])
+    }
+}
+
+#Preview("Voice reply, long") {
+    PreviewGround(width: 390) {
+        VoiceReplyGallery(rows: [PreviewFixtures.voiceReplyLong])
+    }
+}
+
+#Preview("Voice reply, dark") {
+    PreviewGround(width: 390) {
+        VoiceReplyGallery(rows: [PreviewFixtures.voiceReplyShort, PreviewFixtures.voiceReplyCode])
+    }
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Voice reply, accessibility3") {
+    PreviewGround(width: 390) {
+        VoiceReplyGallery(rows: [PreviewFixtures.voiceReplyShort])
+    }
+    .dynamicTypeSize(.accessibility3)
+}
+
+// The whole exchange: your note, its transcript under it, and the agent's
+// spoken answer — the transcript is unchanged by the pairing.
+#Preview("Voice reply after a transcript") {
+    PreviewGround(width: 390) {
+        VStack(alignment: .leading, spacing: 0) {
+            TimelineRowView(
+                row: PreviewFixtures.ownVoiceNote, media: PreviewFixtures.mediaCache(),
+                faces: PreviewFixtures.faceCache(), voice: PreviewFixtures.voicePlayer())
+            TimelineRowView(
+                row: PreviewFixtures.transcriptRow(PreviewFixtures.transcriptShort, onOwnNote: true),
+                media: PreviewFixtures.mediaCache(), faces: PreviewFixtures.faceCache())
+            TimelineRowView(
+                row: PreviewFixtures.voiceReplyShort, media: PreviewFixtures.mediaCache(),
+                faces: PreviewFixtures.faceCache(),
+                voice: PreviewFixtures.voicePlayer(
+                    "$reply-short-voice", .playing(elapsedMs: 1_600, durationMs: 4_210)))
+        }
+        .environment(\.rendersStill, true)
+    }
+}
+
+/// Voice replies as the timeline draws them, each at rest.
+private struct VoiceReplyGallery: View {
+    let rows: [TimelineRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows, id: \.item.id) { row in
+                TimelineRowView(
+                    row: row, media: PreviewFixtures.mediaCache(),
+                    faces: PreviewFixtures.faceCache(), voice: PreviewFixtures.voicePlayer())
+            }
+        }
+        .environment(\.rendersStill, true)
     }
 }
 

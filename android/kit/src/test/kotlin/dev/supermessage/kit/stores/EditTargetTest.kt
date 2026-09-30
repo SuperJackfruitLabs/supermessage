@@ -42,7 +42,7 @@ class EditTargetTest {
         )
         return TimelineRow(
             item = item,
-            view = ItemView.Bubble(muted = false, blocks = emptyList()),
+            view = ItemView.Bubble(muted = false, blocks = emptyList(), voice = null),
             senderName = "Me",
             senderShort = "Me",
             senderInitial = "?",
