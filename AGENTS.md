@@ -248,9 +248,24 @@ as `main`, and the extension one over the same directory as `nse`; the first
 launch moves an earlier build's stores and keychain items there, in the core
 (`storage::move_dir`, `secrets::MigratingStore`), so nobody is signed out.
 What a notification says is `core::notification`, for both processes — the app
-never words one itself. Once a pusher is registered, the app pauses sync in the
-background (`Core::sync_pause`) so the extension can take the lock, and posts
-local notifications only for what it sees first in the foreground.
+never words one itself. The app posts local notifications only for what it
+sees first in the foreground.
+
+**Never suspended holding the App Group's locks.** iOS kills an app it
+suspends while it holds a lock on a file in a shared container
+(`0xdead10cc` — TestFlight build 40, launched in the background by
+ActivityKit, started sync and was killed 2.3 s later mid-write). So: the
+stores are open only while the app is in the foreground or something holds
+them (`StoreGuard.hold`, which also keeps the app awake); going into the
+background, `StoreGuard` calls `Core::suspend` inside a background task —
+sync stopped, then matrix-sdk's `Client::pause` closes every store
+connection after the write under way commits. `Core::resume`,
+`sync_resume`, `restore_session` and `restore_session_quietly` reopen them
+first, in the core. A launch in the background restores quietly and starts
+only what `BackgroundPolicy` allows there (the Live Activity's tokens, which
+are HTTP with the in-memory access token); sync, the pusher, widget writes
+and avatar fetches wait for the foreground. Anything new that iOS wakes the
+app for goes inside `StoreGuard.hold`.
 Quiet events (reactions, edits, turn cards) are kept from interrupting at three
 layers — the hub gateway, the account push rules `register_pusher` installs,
 and the extension's quiet one-line fallback (dropped instead only with
