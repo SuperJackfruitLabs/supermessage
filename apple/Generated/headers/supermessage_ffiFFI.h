@@ -507,6 +507,11 @@ int8_t uniffi_supermessage_ffi_fn_method_core_restore_session(void*_Nonnull ptr,
 int8_t uniffi_supermessage_ffi_fn_method_core_restore_session_quietly(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RESUME
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_RESUME
+void uniffi_supermessage_ffi_fn_method_core_resume(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_AVATAR
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_AVATAR
 RustBuffer uniffi_supermessage_ffi_fn_method_core_room_avatar(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
@@ -585,6 +590,11 @@ void uniffi_supermessage_ffi_fn_method_core_space_select(void*_Nonnull ptr, Rust
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SPACES_LIST
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SPACES_LIST
 RustBuffer uniffi_supermessage_ffi_fn_method_core_spaces_list(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SUSPEND
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SUSPEND
+void uniffi_supermessage_ffi_fn_method_core_suspend(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SYNC_PAUSE
@@ -1419,6 +1429,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly(vo
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_RESUME
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_RESUME
+uint16_t uniffi_supermessage_ffi_checksum_method_core_resume(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_AVATAR
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_AVATAR
 uint16_t uniffi_supermessage_ffi_checksum_method_core_room_avatar(void
@@ -1512,6 +1528,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_space_select(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SPACES_LIST
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SPACES_LIST
 uint16_t uniffi_supermessage_ffi_checksum_method_core_spaces_list(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SUSPEND
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SUSPEND
+uint16_t uniffi_supermessage_ffi_checksum_method_core_suspend(void
     
 );
 #endif

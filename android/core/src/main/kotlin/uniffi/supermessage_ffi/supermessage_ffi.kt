@@ -1040,6 +1040,10 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1145,6 +1149,8 @@ internal interface UniffiLib : Library {
     ): Byte
     fun uniffi_supermessage_ffi_fn_method_core_restore_session_quietly(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_supermessage_ffi_fn_method_core_resume(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_room_avatar(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_room_avatar_full(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1177,6 +1183,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_spaces_list(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_suspend(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_sync_pause(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_sync_resume(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1485,6 +1493,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_resume(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_room_avatar(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_room_avatar_full(
@@ -1516,6 +1526,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_method_core_space_select(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_spaces_list(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_suspend(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_sync_pause(
     ): Short
@@ -1752,6 +1764,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly() != 65435.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_resume() != 5985.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_room_avatar() != 58138.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1800,10 +1815,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_spaces_list() != 33636.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_suspend() != 34972.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_sync_pause() != 35955.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_sync_resume() != 60926.toShort()) {
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_sync_resume() != 21586.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_timeline_paginate_back() != 54481.toShort()) {
@@ -2547,6 +2565,12 @@ public interface CoreInterface {
     fun `restoreSessionQuietly`(): kotlin.Boolean
     
     /**
+     * Reopen the stores [`Core::suspend`] closed, without starting sync.
+     * Idempotent; see `Session::resume`.
+     */
+    fun `resume`()
+    
+    /**
      * A room's avatar as a `data:` URI, if it has one.
      */
     fun `roomAvatar`(`roomId`: kotlin.String): kotlin.String?
@@ -2672,13 +2696,22 @@ public interface CoreInterface {
     fun `spacesList`(): List<SpaceSummary>
     
     /**
+     * Stop sync and close the account's stores, so this process holds no
+     * lock on them — before iOS may suspend the app, whose stores live in
+     * the App Group (`0xdead10cc`). Waits for a write under way to commit.
+     * Idempotent; see `Session::suspend`.
+     */
+    fun `suspend`()
+    
+    /**
      * Stop syncing while the app is away, so a second process can take the
      * store lock. Streams stay subscribed. See `Session::pause_sync`.
      */
     fun `syncPause`()
     
     /**
-     * Start a sync [`Core::sync_pause`] stopped.
+     * Start a sync [`Core::sync_pause`] or [`Core::suspend`] stopped,
+     * reopening the stores first if they were closed.
      */
     fun `syncResume`()
     
@@ -3482,6 +3515,22 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Reopen the stores [`Core::suspend`] closed, without starting sync.
+     * Idempotent; see `Session::resume`.
+     */
+    @Throws(FfiException::class)override fun `resume`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_resume(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
      * A room's avatar as a `data:` URI, if it has one.
      */
     @Throws(FfiException::class)override fun `roomAvatar`(`roomId`: kotlin.String): kotlin.String? {
@@ -3774,6 +3823,24 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Stop sync and close the account's stores, so this process holds no
+     * lock on them — before iOS may suspend the app, whose stores live in
+     * the App Group (`0xdead10cc`). Waits for a write under way to commit.
+     * Idempotent; see `Session::suspend`.
+     */
+    @Throws(FfiException::class)override fun `suspend`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_suspend(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
      * Stop syncing while the app is away, so a second process can take the
      * store lock. Streams stay subscribed. See `Session::pause_sync`.
      */override fun `syncPause`()
@@ -3789,7 +3856,8 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
-     * Start a sync [`Core::sync_pause`] stopped.
+     * Start a sync [`Core::sync_pause`] or [`Core::suspend`] stopped,
+     * reopening the stores first if they were closed.
      */override fun `syncResume`()
         = 
     callWithPointer {

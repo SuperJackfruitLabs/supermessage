@@ -395,9 +395,26 @@ impl Core {
         self.block(self.session.pause_sync());
     }
 
-    /// Start a sync [`Core::sync_pause`] stopped.
+    /// Start a sync [`Core::sync_pause`] or [`Core::suspend`] stopped,
+    /// reopening the stores first if they were closed.
     pub fn sync_resume(&self) {
         self.block(self.session.resume_sync());
+    }
+
+    /// Stop sync and close the account's stores, so this process holds no
+    /// lock on them — before iOS may suspend the app, whose stores live in
+    /// the App Group (`0xdead10cc`). Waits for a write under way to commit.
+    /// Idempotent; see `Session::suspend`.
+    pub fn suspend(&self) -> Result<(), FfiError> {
+        self.block(self.session.suspend())?;
+        Ok(())
+    }
+
+    /// Reopen the stores [`Core::suspend`] closed, without starting sync.
+    /// Idempotent; see `Session::resume`.
+    pub fn resume(&self) -> Result<(), FfiError> {
+        self.block(self.session.resume())?;
+        Ok(())
     }
 
     /// Pin or unpin a room — the `m.favourite` tag, so it travels between

@@ -832,6 +832,12 @@ public protocol CoreProtocol : AnyObject {
     func restoreSessionQuietly() throws  -> Bool
     
     /**
+     * Reopen the stores [`Core::suspend`] closed, without starting sync.
+     * Idempotent; see `Session::resume`.
+     */
+    func resume() throws 
+    
+    /**
      * A room's avatar as a `data:` URI, if it has one.
      */
     func roomAvatar(roomId: String) throws  -> String?
@@ -957,13 +963,22 @@ public protocol CoreProtocol : AnyObject {
     func spacesList() throws  -> [SpaceSummary]
     
     /**
+     * Stop sync and close the account's stores, so this process holds no
+     * lock on them — before iOS may suspend the app, whose stores live in
+     * the App Group (`0xdead10cc`). Waits for a write under way to commit.
+     * Idempotent; see `Session::suspend`.
+     */
+    func suspend() throws 
+    
+    /**
      * Stop syncing while the app is away, so a second process can take the
      * store lock. Streams stay subscribed. See `Session::pause_sync`.
      */
     func syncPause() 
     
     /**
-     * Start a sync [`Core::sync_pause`] stopped.
+     * Start a sync [`Core::sync_pause`] or [`Core::suspend`] stopped,
+     * reopening the stores first if they were closed.
      */
     func syncResume() 
     
@@ -1597,6 +1612,16 @@ open func restoreSessionQuietly()throws  -> Bool {
 }
     
     /**
+     * Reopen the stores [`Core::suspend`] closed, without starting sync.
+     * Idempotent; see `Session::resume`.
+     */
+open func resume()throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_resume(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
      * A room's avatar as a `data:` URI, if it has one.
      */
 open func roomAvatar(roomId: String)throws  -> String? {
@@ -1826,6 +1851,18 @@ open func spacesList()throws  -> [SpaceSummary] {
 }
     
     /**
+     * Stop sync and close the account's stores, so this process holds no
+     * lock on them — before iOS may suspend the app, whose stores live in
+     * the App Group (`0xdead10cc`). Waits for a write under way to commit.
+     * Idempotent; see `Session::suspend`.
+     */
+open func suspend()throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_suspend(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
      * Stop syncing while the app is away, so a second process can take the
      * store lock. Streams stay subscribed. See `Session::pause_sync`.
      */
@@ -1836,7 +1873,8 @@ open func syncPause() {try! rustCall() {
 }
     
     /**
-     * Start a sync [`Core::sync_pause`] stopped.
+     * Start a sync [`Core::sync_pause`] or [`Core::suspend`] stopped,
+     * reopening the stores first if they were closed.
      */
 open func syncResume() {try! rustCall() {
     uniffi_supermessage_ffi_fn_method_core_sync_resume(self.uniffiClonePointer(),$0
@@ -4841,6 +4879,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_restore_session_quietly() != 65435) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_resume() != 5985) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_room_avatar() != 58138) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4889,10 +4930,13 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_spaces_list() != 33636) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_suspend() != 34972) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_sync_pause() != 35955) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_sync_resume() != 60926) {
+    if (uniffi_supermessage_ffi_checksum_method_core_sync_resume() != 21586) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_timeline_paginate_back() != 54481) {
