@@ -51,11 +51,18 @@ public final class Session {
     private let client: any SessionClient
     private let pump = EventPump()
     private var drainTask: Task<Void, Never>?
+    /// What keeps the App Group's stores closed while the app may be
+    /// suspended (`StoreGuard`); `nil` in tests and previews, which have no
+    /// stores to close.
+    private let storeGuard: StoreGuard?
 
     /// `defaults` is where the safety store keeps reported-and-hidden messages
     /// across launches; `nil` (tests, previews) keeps them in memory.
-    public init(client: any SessionClient, defaults: UserDefaults? = nil) {
+    public init(
+        client: any SessionClient, defaults: UserDefaults? = nil, storeGuard: StoreGuard? = nil
+    ) {
         self.client = client
+        self.storeGuard = storeGuard
         // Marking read from the roster — a swipe — goes through the same core
         // call opening a room makes, so the two cannot mean different things.
         rooms = RoomsStore(
@@ -73,7 +80,7 @@ public final class Session {
     /// A session on the app's one core — the same one a notification action
     /// answers through (`CoreClient.shared`).
     public convenience init() {
-        self.init(client: CoreClient.shared, defaults: .standard)
+        self.init(client: CoreClient.shared, defaults: .standard, storeGuard: .shared)
     }
 
 #if DEBUG
@@ -105,18 +112,43 @@ public final class Session {
     ///
     /// Credentials live in the iOS Data Protection keychain, which the core
     /// configures — this app never sees them.
+    ///
+    /// `presence` is where the app was launched. On screen, sync and the
+    /// streams start at once. In the background — iOS launched the app to
+    /// hand it a Live Activity token, run a widget's button or refresh the
+    /// widgets, and connected a scene for it — the session is restored
+    /// **quietly** (`BackgroundPolicy.restore`): the client only, enough to
+    /// relay tokens and to answer, inside a `StoreGuard` hold that closes
+    /// the stores again when it ends. The streams start when the app comes
+    /// to the foreground (`scenePhaseChanged`). Build 40 started sync here
+    /// and was killed 2.3 s later, suspended mid-write (`0xdead10cc`).
     @discardableResult
-    public func start() async -> Bool {
+    public func start(presence: AppPresence = .foreground) async -> Bool {
         SessionHooks.willStart?(self)  // platform services attach (Notifications/)
+        sceneActive = presence == .foreground
         do {
             prepareForNewSession()
-            let restored = try await client.restoreSession(sink: pump)
-            phase = restored ? .signedIn : .signedOut
-            if restored {
-                beginDraining()
-                await load()
+            switch BackgroundPolicy.restore(in: presence) {
+            case .withStreams:
+                let restored = try await client.restoreSession(sink: pump)
+                phase = restored ? .signedIn : .signedOut
+                if restored {
+                    beginDraining()
+                    await load()
+                }
+                return restored
+            case .quietly:
+                let restored = try await holdingStores("Restoring the session") {
+                    try await self.client.restoreSessionQuietly()
+                }
+                streamsDeferred = restored
+                phase = restored ? .signedIn : .signedOut
+                // The reader opened the app while the restore ran: the
+                // foreground's `scenePhaseChanged` found no session to start
+                // then, so start it now.
+                if restored, sceneActive { await startDeferredStreams() }
+                return restored
             }
-            return restored
         } catch {
             // A failure to *restore* is not a failure to sign in: there may
             // simply be nothing stored. Either way the answer is the login
@@ -124,6 +156,39 @@ public final class Session {
             phase = .signedOut
             return false
         }
+    }
+
+    /// Whether the session was restored quietly in a background launch and
+    /// its sync and streams wait for the foreground.
+    public private(set) var streamsDeferred = false
+
+    /// Start what a quiet restore left for the foreground, on the client it
+    /// built (`restore_and_start` reuses it and reopens its stores).
+    private func startDeferredStreams() async {
+        guard streamsDeferred else { return }
+        streamsDeferred = false
+        do {
+            guard try await client.restoreSession(sink: pump) else {
+                phase = .signedOut
+                return
+            }
+            beginDraining()
+            await load()
+        } catch {
+            // Tried again on the next foreground.
+            streamsDeferred = true
+        }
+    }
+
+    /// `work` under the store guard's hold, or plainly without one.
+    private func holdingStores<T: Sendable>(
+        _ name: String, _ work: @MainActor () async throws -> T
+    ) async throws -> T {
+        guard let storeGuard else { return try await work() }
+        let result: Result<T, any Error> = await storeGuard.hold(name) {
+            do { return .success(try await work()) } catch { return .failure(error) }
+        }
+        return try result.get()
     }
 
     public func signIn(homeserver: String, username: String, password: String) async {
@@ -184,27 +249,27 @@ public final class Session {
     /// empty until the next message, which in these rooms can be hours. This
     /// is exactly what `seed()` was written for, after a webview reload left
     /// the desktop roster empty with a perfectly healthy core behind it.
-    /// Whether going into the background stops sync, and coming back
-    /// starts it.
-    ///
-    /// Set once remote push is registered. The app's encryption sync holds
-    /// the stores' cross-process lock across each long poll, so an app that
-    /// kept syncing in the background would keep the Notification Service
-    /// Extension waiting for it past its thirty seconds — and with push, the
-    /// extension is what shows a message while the app is away. Without push
-    /// this stays `false` and background sync is what local notifications
-    /// ride on.
-    public var pausesSyncInBackground = false
-    private var syncPaused = false
-    /// Whether a scene is in the foreground, as `scenePhaseChanged` last heard.
+    /// Whether a scene is in the foreground, as `scenePhaseChanged` (or a
+    /// launch's `start`) last heard.
     private var sceneActive = true
 
+    /// Sync stops whenever the app leaves the screen, and not here: the
+    /// `StoreGuard` does it, closing the stores with it
+    /// (`Session::suspend`), inside a background task, on
+    /// `didEnterBackground`. The app's encryption sync holds the stores'
+    /// cross-process lock across each long poll, and its writes hold
+    /// SQLite's locks in the App Group — the first keeps the Notification
+    /// Service Extension waiting, the second gets the app killed when iOS
+    /// suspends it (`0xdead10cc`). Coming back, this starts it again: the
+    /// streams a background launch deferred, or the sync the guard stopped
+    /// (`syncResume`, which reopens the stores first, in the core).
     public func scenePhaseChanged(to active: Bool) async {
         sceneActive = active
         guard phase == .signedIn else { return }
         if active {
-            if syncPaused, let pausing = client as? any SyncPausing {
-                syncPaused = false
+            if streamsDeferred {
+                await startDeferredStreams()
+            } else if let pausing = client as? any SyncPausing {
                 await pausing.syncResume()
             }
             await rooms.seed()
@@ -215,37 +280,29 @@ public final class Session {
             // someone is writing who is not even looking at it.
             await setTyping(false, in: roomId)
         }
-        if !active, pausesSyncInBackground, !syncPaused, let pausing = client as? any SyncPausing {
-            syncPaused = true
-            await pausing.syncPause()
-        }
     }
 
-    /// Catch up for a background refresh (`BGAppRefreshTask`): let sync run
-    /// for `duration` if it was paused, read the roster before and after, and
-    /// pause it again — unless the reader brought the app forward meanwhile,
-    /// which resumes it for good.
+    /// Catch up for a background refresh (`BGAppRefreshTask`): run sync for
+    /// `duration` — starting the streams if a background launch deferred
+    /// them — and read the roster before and after.
     ///
-    /// Short on purpose. While sync runs it holds the stores' lock, and a
-    /// push arriving then waits for it in the Notification Service Extension;
-    /// the system's refresh budget is about thirty seconds anyway. Returns
-    /// whether there was a signed-in session to catch up.
+    /// **The caller holds the stores** (`StoreGuard.hold`): it is what keeps
+    /// the app awake for this and closes the stores, stopping sync, when it
+    /// ends — unless the reader brought the app forward meanwhile. Short on
+    /// purpose: while sync runs it holds the stores' lock, and a push
+    /// arriving then waits for it in the Notification Service Extension.
+    /// Returns whether there was a signed-in session to catch up.
     @discardableResult
     public func catchUpInBackground(for duration: Duration) async -> Bool {
         guard phase == .signedIn else { return false }
-        let pausing = client as? any SyncPausing
-        let resumed = syncPaused && pausing != nil
-        if resumed {
-            syncPaused = false
-            await pausing?.syncResume()
+        if streamsDeferred {
+            await startDeferredStreams()
+        } else if let pausing = client as? any SyncPausing {
+            await pausing.syncResume()
         }
         await rooms.seed()
         try? await Task.sleep(for: duration)
         await rooms.seed()
-        if resumed, !sceneActive, pausesSyncInBackground, !syncPaused {
-            syncPaused = true
-            await pausing?.syncPause()
-        }
         return true
     }
 
@@ -698,6 +755,7 @@ public final class Session {
         faces.clear()
         edits.clearAll()
         safety.clear()
+        streamsDeferred = false
         phase = .signedOut
     }
 

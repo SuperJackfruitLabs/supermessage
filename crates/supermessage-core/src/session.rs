@@ -101,6 +101,9 @@ pub struct Session {
     // Which process this is, as the SDK's cross-process store lock names its
     // holder — see [`Session::for_process`].
     process: String,
+    // Whether [`Session::suspend`] closed the client's stores and nothing
+    // has reopened them since. Read and written only under `lifecycle`.
+    stores_closed: std::sync::atomic::AtomicBool,
 }
 
 /// The lock holder the app's own process uses.
@@ -137,6 +140,7 @@ impl Session {
             ignore_watch: RwLock::new(None),
             lifecycle: Mutex::new(()),
             process: process.to_string(),
+            stores_closed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -185,6 +189,7 @@ impl Session {
         // rebuild an identical client without asking the user again.
         self.store.set(KEY_HOMESERVER_URL, homeserver)?;
         *self.client.write().await = Some(client);
+        self.set_stores_closed(false);
         Ok(())
     }
 
@@ -206,6 +211,7 @@ impl Session {
         self.enable_crypto_lock(&client).await;
 
         *self.client.write().await = Some(client);
+        self.set_stores_closed(false);
         Ok(true)
     }
 
@@ -289,6 +295,7 @@ impl Session {
         self.store.delete(KEY_LIVE_ACTIVITY)?;
         self.store.delete(KEY_HOMESERVER_URL)?;
         *self.client.write().await = None;
+        self.set_stores_closed(false);
         // Drop our own strong reference before touching the store directory
         // on disk, so nothing here still has the SQLite files open.
         drop(active);
@@ -353,6 +360,9 @@ impl Session {
     /// for every caller, present and future.
     pub async fn restore_and_start(&self, sink: Arc<dyn EventSink>) -> CoreResult<bool> {
         let _lifecycle = self.lifecycle.lock().await;
+        // Streams read and write the stores from their first moment: a
+        // client [`Self::suspend`] closed is opened again first.
+        self.reopen_stores().await?;
         // Deliberately "already *running*", not merely "a client exists".
         // A client with no streams behind it is exactly the state a failed
         // start leaves behind, and short-circuiting on it would strand the
@@ -399,6 +409,9 @@ impl Session {
     pub async fn restore_quietly(&self) -> CoreResult<bool> {
         let _lifecycle = self.lifecycle.lock().await;
         if self.is_active().await {
+            // What follows a quiet restore uses the stores — an answer
+            // ratchets the crypto store — so a suspended client reopens.
+            self.reopen_stores().await?;
             return Ok(true);
         }
         self.restore().await
@@ -538,11 +551,98 @@ impl Session {
         }
     }
 
-    /// Starts a sync [`Self::pause_sync`] stopped. A no-op with none.
+    /// Starts a sync [`Self::pause_sync`] or [`Self::suspend`] stopped. A
+    /// no-op with none.
+    ///
+    /// Sync writes the stores from its first response, so stores
+    /// [`Self::suspend`] closed are reopened first — the order is this
+    /// function's, not the host's to remember. Should they not reopen, sync
+    /// stays stopped rather than running against closed stores.
     pub async fn resume_sync(&self) {
+        let _lifecycle = self.lifecycle.lock().await;
+        if let Err(e) = self.reopen_stores().await {
+            tracing::warn!(error = %e, "the stores did not reopen; sync stays paused");
+            return;
+        }
         if let Some(handle) = self.sync.read().await.as_ref() {
             handle.resume().await;
         }
+    }
+
+    // --- Suspension --------------------------------------------------------
+    //
+    // iOS kills an app it suspends while that app holds a file lock in a
+    // shared container (`0xdead10cc`), and this account's SQLite stores live
+    // in the App Group the Notification Service Extension shares. A write
+    // under way — a sync response being stored, a key being saved — holds
+    // SQLite's locks until it commits. So before the app may be suspended,
+    // nothing may be writing, and nothing may be able to start writing:
+    // sync stops, and the stores are closed (matrix-sdk 0.18's
+    // `Client::pause`, which waits for in-flight operations, checkpoints the
+    // WAL and drops every connection). Everything that needs the stores
+    // again reopens them first: [`Self::resume`], [`Self::resume_sync`],
+    // [`Self::restore_quietly`] and [`Self::restore_and_start`].
+
+    /// Stops sync and closes this account's stores, so that nothing in this
+    /// process holds, or can take, a lock on them — for an app about to be
+    /// suspended.
+    ///
+    /// In this order, which is `Client::pause`'s documented contract: sync
+    /// first, so no response arrives to be stored into a store that is
+    /// closing; then the stores, which waits for any write already under way
+    /// to commit. Idempotent, and a no-op with no client. The room list and
+    /// the focused timeline are left in place, as [`Self::pause_sync`]
+    /// leaves them; while the stores are closed their reads fail rather than
+    /// lock, and they resume with sync.
+    pub async fn suspend(&self) -> CoreResult<()> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.pause_sync().await;
+        let Some(client) = self.client().await else {
+            return Ok(());
+        };
+        if self.stores_closed() {
+            return Ok(());
+        }
+        client
+            .pause()
+            .await
+            .map_err(|e| CoreError::Store(e.to_string()))?;
+        self.set_stores_closed(true);
+        Ok(())
+    }
+
+    /// Reopens the stores [`Self::suspend`] closed. Does not start sync:
+    /// that is [`Self::resume_sync`], which reopens them itself. Idempotent.
+    pub async fn resume(&self) -> CoreResult<()> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.reopen_stores().await
+    }
+
+    /// Whether [`Self::suspend`] has closed the stores and nothing has
+    /// reopened them.
+    pub fn stores_closed(&self) -> bool {
+        self.stores_closed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn set_stores_closed(&self, closed: bool) {
+        self.stores_closed
+            .store(closed, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// The stores, open again if [`Self::suspend`] closed them. The caller
+    /// holds [`Self::lifecycle`].
+    async fn reopen_stores(&self) -> CoreResult<()> {
+        if !self.stores_closed() {
+            return Ok(());
+        }
+        if let Some(client) = self.client().await {
+            client
+                .resume()
+                .await
+                .map_err(|e| CoreError::Store(e.to_string()))?;
+        }
+        self.set_stores_closed(false);
+        Ok(())
     }
 
     /// The joined room an answer goes to, read from the local store — no
@@ -2412,6 +2512,155 @@ mod tests {
             "answering must not start sync behind the reader's back"
         );
 
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // --- Suspension (0xdead10cc) -------------------------------------------
+
+    /// The stores' `-shm` files. One exists exactly while some connection
+    /// has its WAL database open — it is where SQLite keeps the WAL index
+    /// and its locks, and the last connection to close deletes it — so none
+    /// left means no connection, and no lock, is held.
+    ///
+    /// Polled briefly: `Client::pause` returns once the read pool reports no
+    /// connections, and the last one may still be inside `sqlite3_close` on
+    /// its blocking thread (a `-wal` briefly outliving its `-shm` was seen
+    /// once in two runs). The wait is milliseconds; a connection still open
+    /// after it is a real failure.
+    async fn open_shm_files(data_dir: &std::path::Path) -> Vec<String> {
+        let list = || {
+            let mut found = Vec::new();
+            for entry in std::fs::read_dir(data_dir.join("store")).unwrap() {
+                let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+                if name.ends_with("-shm") {
+                    found.push(name);
+                }
+            }
+            found.sort();
+            found
+        };
+        for _ in 0..40 {
+            if list().is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        list()
+    }
+
+    fn open_shm_files_now(data_dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(data_dir.join("store"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with("-shm"))
+            .collect()
+    }
+
+    /// A read that goes to the state store's SQLite rather than memory.
+    async fn read_state_store(session: &Session) -> Result<(), String> {
+        use matrix_sdk::store::StateStoreDataKey;
+        let client = session.client().await.unwrap();
+        client
+            .state_store()
+            .get_kv_data(StateStoreDataKey::SyncToken)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    #[tokio::test]
+    async fn suspending_closes_every_store_connection() {
+        let (session, _server, data_dir) = session_with_a_known_room("suspend").await;
+        assert!(
+            !open_shm_files_now(&data_dir).is_empty(),
+            "a signed-in session has its WAL stores open"
+        );
+        assert!(read_state_store(&session).await.is_ok());
+
+        session.suspend().await.unwrap();
+
+        assert!(session.stores_closed());
+        assert_eq!(
+            open_shm_files(&data_dir).await,
+            Vec::<String>::new(),
+            "no store connection may survive a suspension"
+        );
+        assert!(
+            read_state_store(&session).await.is_err(),
+            "a closed store refuses a read rather than opening a connection"
+        );
+        // Idempotent: a second suspension, as a second backgrounding sends.
+        session.suspend().await.unwrap();
+
+        session.resume().await.unwrap();
+        assert!(!session.stores_closed());
+        assert!(
+            read_state_store(&session).await.is_ok(),
+            "resuming opens the stores again"
+        );
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn an_answer_after_a_suspension_reopens_the_stores_first() {
+        let (session, server, data_dir) = session_with_a_known_room("suspend-answer").await;
+        session.suspend().await.unwrap();
+
+        // A notification's action in a suspended app: quiet restore, send.
+        assert!(session.restore_quietly().await.unwrap());
+        assert!(
+            !session.stores_closed(),
+            "the quiet restore reopens what the suspension closed"
+        );
+        session
+            .send_permission_answer("!r:localhost", "Allow once")
+            .await
+            .unwrap_or_else(|e| panic!("the answer must land after a suspension: {e:?}"));
+        assert_eq!(sent_messages(&server).await.len(), 1);
+        assert!(!session.is_running().await, "and sync is not started by it");
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn resuming_sync_reopens_the_stores_first() {
+        let (session, _server, data_dir) = session_with_a_known_room("suspend-sync").await;
+        session.suspend().await.unwrap();
+        session.resume_sync().await;
+        assert!(!session.stores_closed());
+        assert!(read_state_store(&session).await.is_ok());
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn starting_the_streams_after_a_suspension_reopens_the_stores_first() {
+        // A background launch restored quietly and was suspended; the reader
+        // opens the app and the host starts the streams on that client.
+        let (session, _server, data_dir) = session_with_a_known_room("suspend-start").await;
+        session.suspend().await.unwrap();
+
+        let started = session
+            .restore_and_start(Arc::new(crate::event::NullSink))
+            .await;
+
+        assert!(
+            !session.stores_closed(),
+            "the streams must not start against closed stores ({started:?})"
+        );
+        assert!(read_state_store(&session).await.is_ok());
+        session.stop_ignore_watch().await;
+        session.stop_room_list().await;
+        session.stop_sync().await;
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn suspending_with_nobody_signed_in_is_a_no_op() {
+        let data_dir =
+            std::env::temp_dir().join(format!("sm-suspend-none-{}", rand::random::<u64>()));
+        let session = Session::new(data_dir.clone(), Box::new(MemoryStore::default()));
+        session.suspend().await.unwrap();
+        assert!(!session.stores_closed());
+        session.resume().await.unwrap();
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 

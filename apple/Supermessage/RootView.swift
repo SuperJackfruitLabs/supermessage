@@ -37,7 +37,9 @@ struct RootView: View {
         }
         .task {
             guard session.phase == .starting else { return }
-            await session.start()
+            // A scene iOS connected for a background launch restores
+            // quietly; see `Session.start(presence:)`.
+            await session.start(presence: StoreGuard.shared.presence)
         }
         .onChange(of: scenePhase) { _, phase in
             Task { await session.scenePhaseChanged(to: phase == .active) }

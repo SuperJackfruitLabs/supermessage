@@ -214,6 +214,41 @@ jobs:
         run: |
           ./scripts/testflight.sh ${{ inputs.upload && '--upload' || '' }}
 
+      # The archive's debug symbols, one dSYM per binary: the app, the
+      # Notification Service Extension, the widgets, SupermessageKit and
+      # SupermessageFFI (the Rust core, statically linked into it — names
+      # from its symbol table; the release profile carries no DWARF).
+      #
+      # TestFlight build 40 was killed with 0xdead10cc and its report came
+      # back as bare addresses, because nothing kept these. Matched to a
+      # report by UUID — its "Binary Images" list — which this step prints,
+      # so the right artifact is findable from the log. Checked before
+      # upload: a missing dSYM is found now, not on the day a crash needs it.
+      - name: Check the dSYMs
+        run: |
+          set -euo pipefail
+          DSYMS=build/Supermessage.xcarchive/dSYMs
+          ls "$DSYMS"
+          for binary in Supermessage.app SupermessageNotificationService.appex \
+              SupermessageWidgets.appex SupermessageKit.framework SupermessageFFI.framework; do
+            [ -d "$DSYMS/$binary.dSYM" ] \
+              || { echo "::error::no dSYM for $binary in the archive"; exit 1; }
+          done
+          build=$(awk '/CURRENT_PROJECT_VERSION:/ {print $2; exit}' apple/project.yml)
+          { echo "build $build, run ${{ github.run_number }}, commit ${{ github.sha }}"
+            dwarfdump --uuid "$DSYMS"/*.dSYM; } | tee "$DSYMS/UUIDS.txt"
+
+      # Kept as long as the build they describe: TestFlight expires a build
+      # after 90 days, and a crash from it can arrive until then.
+      - name: The dSYMs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supermessage-dsyms-run-${{ github.run_number }}
+          path: build/Supermessage.xcarchive/dSYMs/
+          if-no-files-found: warn
+          retention-days: 90
+
       # Kept whether or not the upload ran: an .ipa that was built but not
       # sent is the thing you want to inspect before spending a build number.
       - name: The exported build

@@ -74,6 +74,8 @@ open class StubCore : CoreInterface {
     override fun unregisterLiveActivityToken(gatewayUrl: String, kind: uniffi.supermessage_core.LiveActivityTokenKind, activityId: String?): Unit = throw NotImplementedError()
     override fun syncPause(): Unit = throw NotImplementedError()
     override fun syncResume(): Unit = throw NotImplementedError()
+    override fun `suspend`(): Unit = throw NotImplementedError()
+    override fun `resume`(): Unit = throw NotImplementedError()
     override fun notificationFor(roomId: kotlin.String, eventId: kotlin.String): NotificationDto = throw NotImplementedError()
     override fun setRoomPinned(roomId: kotlin.String, pinned: kotlin.Boolean): Unit = throw NotImplementedError()
     override fun setTyping(roomId: kotlin.String, typing: kotlin.Boolean): Unit = throw NotImplementedError()
