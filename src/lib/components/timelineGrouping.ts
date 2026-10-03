@@ -95,11 +95,18 @@ export type TimelineDisplayRow =
       replyQuote: TimelineRow["replyQuote"];
       /** Who to attribute this item to, resolved by the core. */
       senderName: string;
+      /** The same without the bridge's runtime suffix — the sender line. */
+      senderShort: string;
       /** What the composer shows when someone replies to this item. */
       replyPreview: string | null;
       continuesRun: boolean;
     }
-  | { type: "membershipGroup"; key: string; items: TimelineItem[]; text: string };
+  | { type: "membershipGroup"; key: string; items: TimelineItem[]; text: string }
+  /**
+   * A run of messages this device has no keys for, drawn as one row with a
+   * count and a way to recovery — never a column of identical lines.
+   */
+  | { type: "undecryptableGroup"; key: string; items: TimelineItem[]; count: number };
 
 /**
  * How close two consecutive messages from the same sender must be, in
@@ -279,12 +286,22 @@ function rowKey(item: TimelineItem): string {
  * Pure over the two key arrays, so the decision is testable without a DOM —
  * the rendering it drives is not, which is why the numbers above were measured
  * against the running app and are quoted here rather than asserted.
+ *
+ * `skip` names rows that are not anchors: the SDK keeps the day's date
+ * divider at the top while it inserts older events of the same day *after*
+ * it, so a divider that "did not move" says nothing about the history below
+ * it (measured in "Buddhimaan" on 2026-10-03, 38 -> 48 rows).
  */
-export function shouldShift(previous: readonly string[], next: readonly string[]): boolean {
+export function shouldShift(
+  previous: readonly string[],
+  next: readonly string[],
+  skip: ReadonlySet<string> = new Set(),
+): boolean {
   if (previous.length === 0 || next.length === 0) return false;
 
   const indexInNext = new Map(next.map((key, index) => [key, index]));
   for (let i = 0; i < previous.length; i += 1) {
+    if (skip.has(previous[i]!)) continue;
     const moved = indexInNext.get(previous[i]!);
     if (moved === undefined) continue;
     return moved !== i;
@@ -295,6 +312,18 @@ export function shouldShift(previous: readonly string[], next: readonly string[]
 export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisplayRow[] {
   const rows: TimelineDisplayRow[] = [];
   let run: TimelineRow[] = [];
+  let undecryptable: TimelineRow[] = [];
+
+  function flushUndecryptable(): void {
+    if (undecryptable.length === 0) return;
+    rows.push({
+      type: "undecryptableGroup",
+      key: `utd:${undecryptable[0]!.item.id}`,
+      items: undecryptable.map((row) => row.item),
+      count: undecryptable.length,
+    });
+    undecryptable = [];
+  }
 
   function flushRun(): void {
     if (run.length === 0) return;
@@ -322,6 +351,12 @@ export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisp
     // sender run, so the next message repeated the header. The raw items
     // still hold it, which is what marking read and "jump to newest" read.
     if (row.view.render === "none") continue;
+    if (row.view.render === "placeholder" && row.view.kind.about === "unableToDecrypt") {
+      flushRun();
+      undecryptable.push(row);
+      continue;
+    }
+    flushUndecryptable();
     const continuesMembershipRun =
       item.kind === "membership" && (run.length === 0 || run[0]!.item.detail === item.detail);
     if (continuesMembershipRun) {
@@ -345,12 +380,14 @@ export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisp
         canReplyOrReact: row.canReplyOrReact,
         replyQuote: row.replyQuote,
         senderName: row.senderName,
+        senderShort: row.senderShort,
         replyPreview: row.replyPreview,
         continuesRun: continuesSenderRun(rows.at(-1), item),
       });
     }
   }
   flushRun();
+  flushUndecryptable();
 
   return rows;
 }

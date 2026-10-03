@@ -1034,7 +1034,7 @@
             </div>
           </div>
           {#key roomsStore.selectedId}
-            <Timeline roomId={roomsStore.selectedId} />
+            <Timeline roomId={roomsStore.selectedId} onOpenRecovery={() => void openRecovery()} />
           {/key}
           <!--
             Why the answer is what it is, above the answer itself — the order

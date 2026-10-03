@@ -292,7 +292,15 @@
   import { roomsStore } from "$lib/stores/rooms.svelte";
 
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
-  import { shouldRepin, shouldSettleAtBottom } from "./timelineFollow";
+  import {
+    isReaderScroll,
+    nextFollowBottom,
+    shouldRepin,
+    shouldRepinAfterScroll,
+    shouldRequestOlder,
+    shouldSettleAtBottom,
+    shouldShiftNow,
+  } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
   import DispatchCard from "./timeline/DispatchCard.svelte";
@@ -301,6 +309,7 @@
   import AudioPlayer from "./timeline/AudioPlayer.svelte";
   import { audioPlayback } from "$lib/stores/audioPlayback.svelte";
   import LogLine from "./timeline/LogLine.svelte";
+  import UndecryptableGroup from "./timeline/UndecryptableGroup.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
   import UnreadMarker from "./timeline/UnreadMarker.svelte";
@@ -323,14 +332,10 @@
    * actually on screen — never stale the way a value read off a
    * non-remounted component (`Composer`) would have to guard against.
    */
-  let { roomId }: { roomId: string } = $props();
+  let { roomId, onOpenRecovery }: { roomId: string; onOpenRecovery?: () => void } = $props();
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
   const PAGE_SIZE = 20;
-  /** How close to the top (px) triggers a back-pagination request. */
-  const TOP_THRESHOLD = 200;
-  /** How close to the bottom (px) counts as "still following" the tail. */
-  const BOTTOM_THRESHOLD = 120;
 
   /**
    * The cap (px) an inline image thumbnail is allowed to occupy, regardless
@@ -404,7 +409,10 @@
   let view = $derived.by(() => {
     const rows = groupTimelineItems(timelineStore.items);
     const keys = rows.map((row) => row.key);
-    const shift = shouldShift(previousRowKeys, keys);
+    const dividers = new Set(
+      rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
+    );
+    const shift = shouldShiftNow(shouldShift(previousRowKeys, keys, dividers), isScrollable());
     previousRowKeys = keys;
     return { rows, shift };
   });
@@ -561,8 +569,13 @@
     previousLastId = lastId;
     if (items.length === 0 || !(isFirstLoadForRoom || followBottom)) return;
 
-    const targetIndex = displayRows.length - 1;
-    void tick().then(() => vlist?.scrollToIndex(targetIndex, { align: "end" }));
+    // `scrollTop`, never virtua's `scrollToIndex`: virtua holds its rendered
+    // range until the scroll that call produces, and a room too short to
+    // scroll never produces one — Gate identity probe painted no rows at all
+    // that way (2026-10-03). The resize observer finishes the landing as rows
+    // measure.
+    if (isFirstLoadForRoom) followBottom = true;
+    void tick().then(repinToTail);
   });
 
   /**
@@ -658,6 +671,50 @@
     }
   }
 
+  /**
+   * When the reader last touched the pane — wheel, touch, key or pointer.
+   * Only a scroll close behind one of those is theirs (`isReaderScroll`); the
+   * rest are virtua measuring, `shift` holding position, or the re-pin below.
+   */
+  let lastReaderInputAt: number | null = null;
+
+  function noteReaderInput(): void {
+    lastReaderInputAt = performance.now();
+  }
+
+  /** Puts a following reader back on the newest row; the browser clamps it. */
+  function repinToTail(): void {
+    const scroller = scrollBox?.firstElementChild as HTMLElement | null | undefined;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }
+
+  /**
+   * Sends virtua the scroll event a list shorter than the pane never produces.
+   * Two frames late on purpose: virtua attaches its scroll listener a tick
+   * after mount, and an event sent from the first resize callback (140ms in)
+   * arrived before it and changed nothing.
+   */
+  function resyncShortList(scroller: HTMLElement): void {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!isScrollable()) scroller.dispatchEvent(new Event("scroll"));
+      }),
+    );
+  }
+
+  /** Whether the content is taller than the pane. Not reactive on purpose. */
+  function isScrollable(): boolean {
+    return vlist !== undefined && vlist.getScrollSize() > vlist.getViewportSize();
+  }
+
+  function maybeRequestOlder(offset: number, readerDriven: boolean): void {
+    if (
+      shouldRequestOlder({ offset, readerDriven, scrollable: isScrollable(), paginating, reachedStart })
+    ) {
+      void requestOlderMessages();
+    }
+  }
+
   function handleScroll(offset: number): void {
     // Kept current so `unreadAbove` can tell whether the marker is still
     // above the viewport — the only thing the jump button keys off.
@@ -666,11 +723,10 @@
     if (vlist) firstVisibleIndex = vlist.findItemIndex(offset);
     if (!vlist) return;
     const distanceFromBottom = vlist.getScrollSize() - vlist.getViewportSize() - offset;
-    followBottom = distanceFromBottom < BOTTOM_THRESHOLD;
-
-    if (!paginating && !reachedStart && offset < TOP_THRESHOLD) {
-      void requestOlderMessages();
-    }
+    const readerDriven = isReaderScroll(lastReaderInputAt, performance.now());
+    followBottom = nextFollowBottom(followBottom, distanceFromBottom, readerDriven);
+    if (shouldRepinAfterScroll(followBottom, distanceFromBottom, readerDriven)) repinToTail();
+    maybeRequestOlder(offset, readerDriven);
   }
 
   /**
@@ -751,7 +807,21 @@
         scroller.scrollTop = scroller.scrollHeight;
       }
       previous = next;
+      // A pane the history does not fill cannot be scrolled, so no scroll
+      // event will ever ask for more; a resize is the one signal it gets.
+      maybeRequestOlder(scroller.scrollTop, false);
+      // The same missing event strands virtua: after a measurement or a jump
+      // correction it holds its rendered range until the next scroll event,
+      // and a list shorter than the pane never sends one. Gate identity probe,
+      // Data Diana and Architect Alex all painted no rows at all that way
+      // (2026-10-03) with every item loaded, and one scroll event brought the
+      // rows back each time. Only when nothing can scroll, so a real scroll
+      // is never imitated.
+      resyncShortList(scroller);
     };
+
+    const inputs = ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"] as const;
+    for (const type of inputs) scroller.addEventListener(type, noteReaderInput, { passive: true });
 
     // The pane's own height, and the scrolled content's — the two things
     // `shouldRepin` compares. One observer watches both boxes; which one moved
@@ -761,7 +831,10 @@
     const content = scroller.firstElementChild;
     if (content) observer.observe(content);
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      for (const type of inputs) scroller.removeEventListener(type, noteReaderInput);
+    };
   });
 
   /**
@@ -841,6 +914,10 @@
 
   function jumpToUnread(): void {
     if (unreadIndex < 0) return;
+    // The reader chose to leave the tail; without this the next resize would
+    // re-pin them straight back to it.
+    noteReaderInput();
+    followBottom = false;
     vlist?.scrollToIndex(unreadIndex, { align: "start" });
   }
 
@@ -858,6 +935,7 @@
    */
   function jumpToNewest(): void {
     if (displayRows.length === 0) return;
+    followBottom = true;
     vlist?.scrollToIndex(displayRows.length - 1, { align: "end" });
   }
 
@@ -1051,8 +1129,11 @@
               <span
                 class="min-w-0 truncate text-label"
                 style:color={item.sender ? peerColorVar(item.sender) : undefined}
+                title={row.senderName}
               >
-                {item.senderDisplayName ?? item.sender ?? "Unknown"}
+                <!-- The core's name for the sender, as iOS shows it; the
+                     runtime suffix stays in the tooltip (`senderName`). -->
+                {row.senderShort}
               </span>
               <span class="shrink-0">{formatTime(item.timestampMs)}</span>
             {/if}
@@ -1184,9 +1265,9 @@
       shift={view.shift}
       bufferSize={BUFFER_SIZE}
       onscroll={handleScroll}
-      class="bg-surface-sunken"
+      class="timeline-scroller bg-surface-sunken"
     >
-      {#snippet children(row: TimelineDisplayRow, _index: number)}
+      {#snippet children(row: TimelineDisplayRow, index: number)}
         <!--
           The reading column (spec §6.3.0). *Every* row lays out inside one
           centred `72ch` column: peer blocks align to its left edge, own
@@ -1250,6 +1331,14 @@
           rendered check that this reads as a sheet and not a stripe.
         -->
         <!--
+          The newest row carries `pb-8`: every message's hover actions sit in
+          the gap *below* it (`MessageActions`, `absolute top-full`), and the
+          last row has no row below it to supply that gap. Without the padding
+          the newest message's Reply and reactions were clipped by the
+          scroller — measured on 2026-10-03, the bar started at y=906, exactly
+          the scroller's bottom edge.
+        -->
+        <!--
           `data-testid` is the handle the driven UI test selects rows by
           (`e2e/timeline-rows.spec.ts`). It is here rather than on any inner
           branch because the invariants worth testing are about ROWS — a
@@ -1258,7 +1347,10 @@
         -->
         <div
           data-testid="timeline-row"
-          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-sans text-body lg:max-w-[calc(72ch+4rem)] lg:px-8"
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-sans text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {index ===
+          displayRows.length - 1
+            ? 'pb-8'
+            : ''}"
         >
           {#if row.type === "membershipGroup"}
             <!--
@@ -1268,6 +1360,8 @@
               snippet rather than a copy of its markup.
             -->
             <LogLine text={row.text} />
+          {:else if row.type === "undecryptableGroup"}
+            <UndecryptableGroup count={row.count} {onOpenRecovery} />
           {:else}
             {@const item = row.item}
             {@const continuesRun = row.continuesRun}
@@ -1382,7 +1476,7 @@
                   <p
                     class="selectable min-w-0 max-w-[68ch] text-center font-sans text-body break-words text-content-muted italic"
                   >
-                    {item.senderDisplayName ?? item.sender ?? "Someone"}
+                    {row.senderShort}
                     {item.body}
                   </p>
                 </div>
@@ -1671,6 +1765,27 @@
 </div>
 
 <style>
+  /*
+   * A short room sits at the bottom, against the composer, the way a
+   * conversation does — not at the top of the pane with the field between
+   * it and where the reader types (Data Diana and Gate identity probe on
+   * 2026-10-03 both ended halfway down an empty pane).
+   *
+   * An auto margin rather than `justify-content: flex-end`, because an auto
+   * margin is safe: once the content outgrows the pane it resolves to zero
+   * and nothing overflows past the top where it could not be scrolled to.
+   * While it is non-zero the list cannot scroll at all, so virtua's offsets
+   * (measured from the scroller's top) never see it.
+   */
+  :global(.timeline-scroller) {
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  :global(.timeline-scroller > div) {
+    margin-top: auto;
+  }
+
   /*
    * Arriving, rather than appearing.
    *

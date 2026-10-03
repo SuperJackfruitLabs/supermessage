@@ -19,6 +19,13 @@ describe("typingIndicatorText", () => {
     expect(typingIndicatorText([user("@alice:x.org")])).toBe("@alice:x.org is typing…");
   });
 
+  it("names a typer the way the core does, not by raw display name", () => {
+    // 2026-10-03: the line read `@agent_super-chotu:id.agentpod.d… is typing…`
+    // while the core's `label` for the same person was "Super Chotu".
+    const agent: TypingUser = { userId: "@agent_super-chotu:id.agentpod.dev", displayName: null, label: "Super Chotu" };
+    expect(typingIndicatorText([agent])).toBe("Super Chotu is typing…");
+  });
+
   it("joins exactly two typers with 'and'", () => {
     const text = typingIndicatorText([user("@a:x.org", "Alice"), user("@b:x.org", "Bob")]);
     expect(text).toBe("Alice and Bob are typing…");

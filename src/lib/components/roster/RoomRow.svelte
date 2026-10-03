@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { AgentState, RoomRow } from "$lib/ipc";
-  import { relativeTime } from "../roomIdentity";
+  import { rowTime } from "../roomIdentity";
   import { shownState } from "./rosterState";
 
   /**
@@ -55,7 +55,7 @@
   const room = $derived(row.room);
   const identity = $derived(row.identity);
   const preview = $derived(row.preview);
-  const time = $derived(relativeTime(room.lastActivityMs, now));
+  const time = $derived(rowTime(room.lastActivityMs, now, row.affordance === "respondToInvitation"));
   const recent = $derived(room.lastActivityMs !== null && now - room.lastActivityMs < RECENT_MS);
   /**
    * Each of the two lines below the name asks its own question — there is
