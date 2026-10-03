@@ -1386,10 +1386,18 @@ fn media_preview_text(msgtype: &MessageType) -> Option<String> {
 /// `Timeline.svelte`'s emote branch does — the sender's name followed by the
 /// body, because an emote is a sentence *about* its sender and reads as
 /// nonsense without one.
-fn message_preview_text(msgtype: &MessageType, sender_name: &str) -> Option<(String, bool)> {
+fn message_preview_text(
+    msgtype: &MessageType,
+    sender_name: &str,
+    is_own: bool,
+) -> Option<(String, bool)> {
     match msgtype {
-        MessageType::Text(m) => bound_preview_text(&m.body).map(|text| (text, false)),
-        MessageType::Notice(m) => bound_preview_text(&m.body).map(|text| (text, false)),
+        MessageType::Text(m) => {
+            bound_preview_text(&said_text(&m.body, is_own)).map(|text| (text, false))
+        }
+        MessageType::Notice(m) => {
+            bound_preview_text(&said_text(&m.body, is_own)).map(|text| (text, false))
+        }
         // Bound the *composed* line, not the body alone: a display name is
         // as sender-controlled as the message it prefixes here, and ruma
         // imposes no length limit on either.
@@ -1415,6 +1423,17 @@ fn message_preview_text(msgtype: &MessageType, sender_name: &str) -> Option<(Str
         // timeline already picks — an `Unsupported message (…)` placeholder,
         // which is nothing said, which is no preview.
         _ => None,
+    }
+}
+
+/// What a text body says, as one line of words: a peer's markdown flattened
+/// to the text it renders as (`rich::plain_text`), an own body exactly as
+/// typed — the same split `item_view` makes for the timeline.
+fn said_text(body: &str, is_own: bool) -> String {
+    if is_own {
+        body.to_string()
+    } else {
+        crate::rich::plain_text(&crate::rich::blocks_from_markdown(body))
     }
 }
 
@@ -1447,7 +1466,7 @@ fn preview_from_classification(
 ) -> Option<MessagePreview> {
     match kind {
         "message" => {
-            let (text, names_sender) = message_preview_text(msgtype?, sender_name)?;
+            let (text, names_sender) = message_preview_text(msgtype?, sender_name, is_own)?;
             Some(MessagePreview {
                 text,
                 is_own,
@@ -1672,9 +1691,10 @@ fn project_typing_users(entries: &[(String, Option<String>)]) -> Vec<TypingUserD
         .map(|(user_id, display_name)| {
             // The raw name when there is one, the user id when there is not
             // — then through the same naming rules as everything else.
-            let raw = display_name
-                .clone()
-                .unwrap_or_else(|| crate::display_name::user_label(user_id));
+            let raw = display_name.clone().unwrap_or_else(|| {
+                crate::item_view::agent_name_from_id(user_id)
+                    .unwrap_or_else(|| crate::display_name::user_label(user_id))
+            });
             TypingUserDto {
                 user_id: user_id.clone(),
                 display_name: display_name.clone(),
@@ -5575,7 +5595,7 @@ mod tests {
     /// flag — the two tests that are actually about that flag call the real
     /// function and assert on both halves.
     fn preview_text_of(msgtype: &MessageType, sender_name: &str) -> Option<String> {
-        message_preview_text(msgtype, sender_name).map(|(text, _)| text)
+        message_preview_text(msgtype, sender_name, false).map(|(text, _)| text)
     }
 
     fn image(body: &str, filename: Option<&str>) -> MessageType {
@@ -5652,6 +5672,32 @@ mod tests {
     }
 
     #[test]
+    fn a_peer_markdown_body_previews_as_the_words_it_renders() {
+        // 2026-10-03: Super Chotu's roster row read
+        // "### 1. Workspace contents: `/root/clawd` ```text .clawdhub/ …" —
+        // the markdown source, where the timeline shows a heading and a list.
+        let body = "### 1. Workspace contents: `/root/clawd`\n\n```text\n.clawdhub/\n```\n\n**Done**, nothing changed.";
+        assert_eq!(
+            message_preview_text(&MessageType::text_plain(body), "Super Chotu", false)
+                .map(|(text, _)| text)
+                .as_deref(),
+            Some("1. Workspace contents: /root/clawd .clawdhub/ Done, nothing changed.")
+        );
+    }
+
+    #[test]
+    fn an_own_body_previews_exactly_as_typed() {
+        // You type, they write: an own message is never parsed as markdown
+        // in the timeline, so the roster does not either.
+        assert_eq!(
+            message_preview_text(&MessageType::text_plain("ship *it*"), "Me", true)
+                .map(|(text, _)| text)
+                .as_deref(),
+            Some("ship *it*")
+        );
+    }
+
+    #[test]
     fn message_preview_text_previews_a_plain_text_body() {
         assert_eq!(
             preview_text_of(&MessageType::text_plain("ship it"), "Alice").as_deref(),
@@ -5687,7 +5733,7 @@ mod tests {
         // would render "You: Alice waves". The core states the property; the
         // webview decides what to do about it.
         let (text, names_sender) =
-            message_preview_text(&MessageType::emote_plain("waves"), "Alice")
+            message_preview_text(&MessageType::emote_plain("waves"), "Alice", false)
                 .expect("an emote is previewable");
         assert_eq!(text, "Alice waves");
         assert!(names_sender);
@@ -5703,7 +5749,8 @@ mod tests {
             MessageType::notice_plain("build green"),
             image("photo.png", None),
         ] {
-            let (_, names_sender) = message_preview_text(&msgtype, "Alice").expect("previewable");
+            let (_, names_sender) =
+                message_preview_text(&msgtype, "Alice", false).expect("previewable");
             assert!(
                 !names_sender,
                 "expected {msgtype:?} not to name its own sender"
@@ -6335,6 +6382,17 @@ mod tests {
     fn a_typing_user_with_no_cached_profile_is_still_named() {
         let users = project_typing_users(&[("@cleaner-cody:x.org".to_string(), None)]);
         assert_eq!(users[0].label, "Cleaner Cody");
+    }
+
+    #[test]
+    fn a_typing_bridge_agent_with_no_profile_matches_its_timeline_name() {
+        // Seen on 2026-10-03 in the desktop app: Super Chotu's messages and
+        // its typing line both carried the raw `@agent_super-chotu:…` id. The
+        // timeline names such a sender from the bridge's id convention
+        // (`item_view::agent_name_from_id`); the typing line must agree.
+        let users =
+            project_typing_users(&[("@agent_super-chotu:id.agentpod.dev".to_string(), None)]);
+        assert_eq!(users[0].label, "Super Chotu");
     }
 
     #[test]
