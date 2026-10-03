@@ -30,9 +30,10 @@
       case "network":
         return "Could not reach the homeserver. Check the address and your connection.";
       case "store":
-        // A missing/locked OS keyring surfaces here — a local machine
-        // problem, not a wrong password, so show the core's own message.
-        return err.message;
+        // A missing/locked OS keyring or a saved store that will not open
+        // (left from an earlier install, say) — a problem on this machine,
+        // not the server and not the password. Say so, then the core's words.
+        return `Supermessage could not open what it saved on this computer, so signing in cannot finish. ${err.message}`;
       default:
         return err.message;
     }
