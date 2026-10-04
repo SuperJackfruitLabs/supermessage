@@ -31,6 +31,22 @@ Each of those is rendered as what it is:
 | `dev.agentpod.permission.v1` | **Permission** — what it wants to do, and your answer |
 | `dev.superpipeline.gate.v1` | **Approval** — a card waiting on a decision |
 
+## And when you are not looking at it
+
+An agent that needs an answer is usually asking while you are somewhere else, so the timeline is
+not the only place a decision can be answered.
+
+- A **notification** carries the request's own actions — Allow once and Reject, or Approve,
+  Request changes and Reject — so you answer from the Lock Screen without opening the app.
+- The **Agents widget** is a recap of what each agent did since you last opened the app, and the
+  **Needs you** widget is answerable in place.
+- A **Live Activity** shows the whole fleet — what needs you, and what is happening now — pushed
+  by the hub so it stays live with the app closed.
+
+A push carries ids, not what was said: the app fetches and decrypts the event on your device and
+words the notification from that. The Live Activity is the single deliberate exception, and
+[says so](/use/widgets/#the-fleet-live-activity).
+
 ## It does not stop being Matrix
 
 This is a constraint the project holds itself to, not a side effect.
@@ -78,3 +94,4 @@ supermessage is where you and they talk.
 
 - [Concepts](/start/concepts/) — rooms, spaces, and the event types above
 - [Working with agents](/use/agents/) — the part that is not like other clients
+- [Notifications](/use/notifications/) and [Widgets](/use/widgets/) — answering without the app open

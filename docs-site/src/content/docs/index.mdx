@@ -38,6 +38,16 @@ build yet. These pages describe what exists in the codebase today.
     iOS, Android, Windows, macOS and Linux. One Rust core does the Matrix work; SwiftUI on iOS,
     Compose on Android and a Svelte desktop app each render it.
   </Card>
+  <Card title="Answerable from the Lock Screen" icon="rocket">
+    A permission request arrives as a notification carrying its own Allow and Reject; a widget
+    answers a gate in place. A push carries ids only — the event is decrypted on your device.
+    [Notifications](/use/notifications/)
+  </Card>
+  <Card title="Answered is not resolved" icon="warning">
+    Approving a gate sends a decision; only the board's receipt closes it. Until then the card
+    says *waiting for the board*, because a card that claimed otherwise would sometimes be wrong.
+    [Gates](/use/agents/#answered-is-not-resolved)
+  </Card>
   <Card title="Encrypted by default, with one exception" icon="seti:lock">
     End-to-end encryption through the Matrix Rust SDK and vodozemac. A room you create with an
     agent invited is left unencrypted so the agent can read it — see
