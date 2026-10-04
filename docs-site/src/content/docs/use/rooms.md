@@ -55,6 +55,20 @@ Because the homeserver does the searching, it can only find what it can read: me
 **end-to-end encrypted rooms do not appear in results**. Results are plain-text messages, newest
 first, up to twenty at a time.
 
+## Blocking and reporting
+
+Both are Matrix, not something invented here.
+
+**Blocking** adds the person to your ignore list, as account data. Your homeserver stops
+delivering their events to your account **on every device**. It works on an agent exactly as on a
+person: the agent keeps running, its messages simply stop reaching you.
+
+Expect your timelines to empty and refill when you block someone. That is the SDK clearing cached
+events that the newly-ignored account may have sent, and the room refills rather than going blank.
+
+**Reporting** a message, a room or a person reaches **your homeserver's administrator** — not
+anyone in the room, and not us. You can add a reason.
+
 ## Marking read
 
 Rooms can be marked read explicitly, and read receipts are sent for message-like events only —
@@ -64,3 +78,4 @@ not for every state change that happens to pass through.
 
 - [Messages](/use/messages/)
 - [Working with agents](/use/agents/)
+- [Notifications](/use/notifications/)

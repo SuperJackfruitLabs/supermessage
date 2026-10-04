@@ -25,6 +25,28 @@ where the decision was made, not in a separate audit tool.
 A request whose options are missing or malformed renders as a **description of the request**
 rather than as a card with no buttons. An unanswerable prompt is worse than a plain sentence.
 
+### Answered is not resolved
+
+Sending your answer to a gate does not close it. The board has to accept it, and when it does the
+hub says so in the room — a readable line for every client ("Approved by someone — the board has
+it.") and a structured **receipt** beside it.
+
+Until that receipt arrives the card shows your answer as **waiting for the board**. It is not a
+nicety: decisions once landed for hours while every one of them was being refused at the other
+end, and a card that had read "Approved" would have been wrong about all of them.
+
+When the receipt lands, the card becomes a receipt: no buttons, no amber, naming who decided.
+
+Three things that keep a receipt trustworthy:
+
+- **Only an outcome from the identity that posted the gate counts.** Anyone in a room can send
+  this shape, and closing someone else's approval card is exactly what a forged one would be for.
+- **Order does not matter.** Gate first, outcome first, or the gate paginated in underneath its
+  outcome later — the card reads correctly whenever both are loaded, and stays correct when the
+  room is re-entered.
+- **If the outcome leaves the timeline** — redacted, or paginated out — the card is drawn pending
+  again rather than keeping a conclusion nothing supports.
+
 ## When a turn fails
 
 An agent that could not finish — a usage limit, a rate limit, a model that refused the request —
@@ -44,6 +66,32 @@ transcript, it appears directly under the note it belongs to — under your own 
 side — with a small "Transcript" caption, the detected language and the note's length. A long
 transcript opens at six lines with **Show more**. Other clients see the same transcript as a
 plain reply that starts "Transcript:".
+
+## An agent answering out loud
+
+Where AgentPod is set to speak an agent's replies, the agent's **text** arrives first and a voice
+message of the same words follows seconds later. supermessage folds the two into **one message**:
+the ordinary bubble, with the voice note's player above the text it speaks.
+
+The text row is the primary one — it arrives first, it is what every other client shows, and
+reactions, replies, edits and copy all address it. An edit keeps the pairing, and the player shows
+beside the edited words.
+
+The pairing is honest about every way it can be incomplete:
+
+- **Only the voice has loaded** — the text is further back than pagination has reached, or never
+  came — and the voice note is drawn standalone. When the text arrives, the two fold together.
+- **Either side is redacted** and the other stands alone, as what it is.
+- **Two voice messages naming the same text**: the earlier one pairs, the other stays standalone.
+
+It is deliberately **not** sent as a reply-to. A client that does not know the pairing key would
+quote the whole answer a second time above the audio; such a client simply shows two messages,
+which is the plain-text fallback.
+
+**Anyone who can send to a room can put that key on a message**, so the pairing requires the voice
+message and the text to share a sender. Nobody can fold someone else's words into their own audio.
+A row already drawn as something else — an error card, a transcript, a decision — is never paired:
+those were decided from the event itself, and a voice note does not outrank them.
 
 ## Live output
 

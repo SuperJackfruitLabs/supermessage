@@ -95,6 +95,8 @@ export default defineConfig({
             { label: 'Rooms and spaces', slug: 'use/rooms' },
             { label: 'Messages', slug: 'use/messages' },
             { label: 'Working with agents', slug: 'use/agents' },
+            { label: 'Notifications', slug: 'use/notifications' },
+            { label: 'Widgets and the Lock Screen', slug: 'use/widgets' },
             { label: 'Encryption', slug: 'use/encryption' },
           ],
         },

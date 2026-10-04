@@ -49,6 +49,18 @@ answer attached once you have given one, so the room keeps the record of who dec
 where a human has to answer. The gate is the product decision that work does not simply continue
 because an agent thinks it should.
 
+## Gate outcome
+
+`dev.superpipeline.gate.outcome.v1` — the board saying it accepted an answer to a gate. It is what
+turns an approval card into a **receipt**, and it is the reason this client distinguishes
+*answered* from *resolved*: your decision is a message, and the board accepting it is a different
+event that may never come. See [Working with agents](/use/agents/#answered-is-not-resolved).
+
+## Voice reply
+
+An agent's spoken answer. The text arrives first and the audio follows, naming the text it speaks,
+and this client folds the two into one message rather than showing them twice.
+
 ## Fallback body
 
 Every suite event above carries a plain-text body. That is what Element shows. It is not a
@@ -58,3 +70,4 @@ nicety — it is the rule that keeps these rooms open to other clients.
 
 - [Rooms and spaces](/use/rooms/)
 - [Working with agents](/use/agents/)
+- [Notifications](/use/notifications/)
