@@ -116,3 +116,97 @@ export function shouldSettleAtBottom(
   // before it has a single row, which is exactly the state mount leaves behind.
   return previous.content === 0 && next.content > 0;
 }
+
+/**
+ * How long after the reader's own input (wheel, touch, key, pointer on the
+ * pane) a scroll event is still theirs. Long enough to cover a trackpad
+ * fling's trailing events; short enough that virtua's own corrections, which
+ * arrive with no input at all, never land inside it.
+ */
+export const READER_INPUT_WINDOW_MS = 400;
+
+/**
+ * Whether a scroll event was the reader's.
+ *
+ * Most scroll events in this pane are not: virtua corrects its offset as it
+ * measures rows, `shift` holds position across a prepend, and the re-pin below
+ * assigns `scrollTop` itself. Treating those as the reader moving is what
+ * opened rooms part-way up their history (see the tests for the measurements).
+ */
+export function isReaderScroll(lastReaderInputAt: number | null, now: number): boolean {
+  return lastReaderInputAt !== null && now - lastReaderInputAt <= READER_INPUT_WINDOW_MS;
+}
+
+/** How close to the bottom (px) still counts as at the tail. */
+export const TAIL_THRESHOLD = 120;
+
+/**
+ * Whether the pane follows the tail after a scroll event.
+ *
+ * Only the reader can stop following: a layout-driven scroll, however far from
+ * the tail it lands, leaves `followBottom` set so the next resize re-pins. Any
+ * scroll that reaches the tail resumes following, whoever caused it.
+ */
+export function nextFollowBottom(
+  current: boolean,
+  distanceFromBottom: number,
+  readerDriven: boolean,
+): boolean {
+  const atTail = distanceFromBottom < TAIL_THRESHOLD;
+  if (atTail) return true;
+  return readerDriven ? false : current;
+}
+
+/** How close to the top (px) asks for older history. */
+export const HEAD_THRESHOLD = 200;
+
+export interface OlderHistoryQuery {
+  offset: number;
+  readerDriven: boolean;
+  /** Whether the content is taller than the viewport. */
+  scrollable: boolean;
+  paginating: boolean;
+  reachedStart: boolean;
+}
+
+/**
+ * Whether to fetch older history now.
+ *
+ * Near the top only when the reader went there — a correction that happens to
+ * pass the top must not start a chain of fetches. And whenever the history
+ * does not yet fill the pane, since a pane that cannot scroll will never
+ * produce the scroll that would ask.
+ */
+export function shouldRequestOlder(query: OlderHistoryQuery): boolean {
+  if (query.paginating || query.reachedStart) return false;
+  if (!query.scrollable) return true;
+  return query.readerDriven && query.offset < HEAD_THRESHOLD;
+}
+
+/**
+ * Whether virtua should hold position against the end for this update.
+ *
+ * `headChanged` is `shouldShift`'s answer (`timelineGrouping.ts`). A list that
+ * does not scroll has no position to hold, and virtua's shift freezes its
+ * rendered range until the next scroll event — which such a list never sends.
+ */
+export function shouldShiftNow(headChanged: boolean, scrollable: boolean): boolean {
+  return headChanged && scrollable;
+}
+
+/**
+ * Whether a scroll event should be answered with a re-pin.
+ *
+ * `shouldRepin` covers the pane changing size. This covers the offset moving
+ * while the size does not grow: virtua compensating for rows it measured
+ * shorter than estimated can move a following reader anywhere, content shrinks
+ * at the same time, and no resize rule fires. If the reader is following and
+ * did not make this scroll, the tail is where they belong.
+ */
+export function shouldRepinAfterScroll(
+  followBottom: boolean,
+  distanceFromBottom: number,
+  readerDriven: boolean,
+): boolean {
+  return followBottom && !readerDriven && distanceFromBottom >= TAIL_THRESHOLD;
+}

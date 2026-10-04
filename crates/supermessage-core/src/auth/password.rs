@@ -73,8 +73,9 @@ impl AuthProvider for PasswordAuth {
 
 /// Maps a login failure to the `CoreError` variant that tells the UI what
 /// actually happened: a wrong password (HTTP 403 / `M_FORBIDDEN`, surfaced
-/// as [`CoreError::Auth`]) versus the server being unreachable, timing out,
-/// or returning something else entirely ([`CoreError::Network`]).
+/// as [`CoreError::Auth`]), a store on this device that cannot be opened
+/// ([`CoreError::Store`]), and the server being unreachable, timing out, or
+/// returning something else entirely ([`CoreError::Network`]).
 fn map_login_error(err: matrix_sdk::Error) -> CoreError {
     let is_wrong_password = err.as_client_api_error().is_some_and(|api_err| {
         api_err.status_code.as_u16() == 403
@@ -85,7 +86,23 @@ fn map_login_error(err: matrix_sdk::Error) -> CoreError {
     });
 
     if is_wrong_password {
-        CoreError::Auth(err.to_string())
+        return CoreError::Auth(err.to_string());
+    }
+    // A store on this device that will not open is local, whatever the server
+    // is doing — calling it a network failure sends the reader to check a
+    // connection that is fine (see the test of the same name).
+    let is_local_store = matches!(
+        err,
+        matrix_sdk::Error::CryptoStoreError(_)
+            | matrix_sdk::Error::BadCryptoStoreState
+            | matrix_sdk::Error::StateStore(_)
+            | matrix_sdk::Error::EventCacheStore(_)
+            | matrix_sdk::Error::MediaStore(_)
+            | matrix_sdk::Error::CrossProcessLockError(_)
+            | matrix_sdk::Error::Io(_)
+    );
+    if is_local_store {
+        CoreError::Store(err.to_string())
     } else {
         CoreError::Network(err.to_string())
     }
@@ -199,6 +216,30 @@ mod tests {
             matches!(err, CoreError::Network(_)),
             "an unreachable server must map to CoreError::Network, got {err:?}"
         );
+    }
+
+    // 2026-10-03, desktop: an encrypted store left over from before the
+    // machine was reinstalled could not be opened with the keyring's current
+    // passphrase (`matrix-sdk-sqlite`: "Failed to initialize the store
+    // cipher"). Every non-403 login failure was `Network`, so the sign-in
+    // screen said "Could not reach the homeserver" while the server answered
+    // `/versions` with 200 — and nothing about that message points at the
+    // real fix, which is local.
+    #[test]
+    fn a_store_that_cannot_be_opened_is_a_store_error_not_a_network_one() {
+        for err in [
+            matrix_sdk::Error::CryptoStoreError(Box::new(
+                matrix_sdk::encryption::CryptoStoreError::AccountUnset,
+            )),
+            matrix_sdk::Error::BadCryptoStoreState,
+            matrix_sdk::Error::Io(std::io::Error::other("disk full")),
+        ] {
+            let mapped = map_login_error(err);
+            assert!(
+                matches!(mapped, CoreError::Store(_)),
+                "a local store failure must map to CoreError::Store, got {mapped:?}"
+            );
+        }
     }
 
     #[tokio::test]

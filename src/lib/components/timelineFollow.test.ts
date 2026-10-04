@@ -13,7 +13,15 @@
 //                         estimate before virtua had measured the row
 
 import { describe, expect, it } from "vitest";
-import { shouldRepin } from "./timelineFollow";
+import {
+  isReaderScroll,
+  nextFollowBottom,
+  READER_INPUT_WINDOW_MS,
+  shouldRequestOlder,
+  shouldShiftNow,
+  shouldRepin,
+  shouldRepinAfterScroll,
+} from "./timelineFollow";
 
 /** Shorthand for the two numbers that decide where the tail is. */
 function pane(viewport: number, content: number) {
@@ -83,5 +91,119 @@ describe("shouldRepin", () => {
     // following the tail is at the tail — but only because `followBottom` says
     // they were there to begin with.
     expect(shouldRepin(pane(911, 6043), pane(911, 8088), false)).toBe(false);
+  });
+});
+
+// Whose scroll it was.
+//
+// Measured on 2026-10-03 opening "Buddhimaan" (a room of long agent answers)
+// with a probe on `handleScroll` and the resize observer: 172ms after the
+// room mounted, virtua corrected its own offset to 125 while 5189px of history
+// landed. `handleScroll` read that as the reader being 4138px from the tail and
+// cleared `followBottom` before the observer could re-pin, then the offset
+// being under `TOP_THRESHOLD` fetched older history, which prepended more, four
+// times in 200ms. The room opened at `scrollTop` 0 of 13018. Saraswati and
+// Super Chotu opened 1505px and 2177px short the same way.
+describe("isReaderScroll", () => {
+  it("counts a scroll that follows the reader's own input", () => {
+    expect(isReaderScroll(1000, 1000 + READER_INPUT_WINDOW_MS - 1)).toBe(true);
+  });
+
+  it("does not count a scroll long after the last input", () => {
+    // The 172ms correction above came with no input at all.
+    expect(isReaderScroll(1000, 1000 + READER_INPUT_WINDOW_MS + 1)).toBe(false);
+  });
+
+  it("does not count a scroll when the reader has not touched the pane", () => {
+    expect(isReaderScroll(null, 5000)).toBe(false);
+  });
+});
+
+describe("nextFollowBottom", () => {
+  it("lets the reader leave the tail", () => {
+    expect(nextFollowBottom(true, 4138, true)).toBe(false);
+  });
+
+  it("does not let a layout-driven scroll leave the tail", () => {
+    // The Buddhimaan landing: 4138px away, and nobody scrolled.
+    expect(nextFollowBottom(true, 4138, false)).toBe(true);
+  });
+
+  it("lets any scroll that reaches the tail resume following", () => {
+    expect(nextFollowBottom(false, 10, false)).toBe(true);
+    expect(nextFollowBottom(false, 10, true)).toBe(true);
+  });
+
+  it("keeps a reader who scrolled away where they are", () => {
+    expect(nextFollowBottom(false, 4138, false)).toBe(false);
+  });
+});
+
+describe("shouldRequestOlder", () => {
+  const base = { offset: 50, readerDriven: true, scrollable: true, paginating: false, reachedStart: false };
+
+  it("fetches history when the reader scrolls near the top", () => {
+    expect(shouldRequestOlder(base)).toBe(true);
+  });
+
+  it("does not fetch on a layout-driven offset near the top", () => {
+    // Each of the four fetches above came from a correction, not the reader.
+    expect(shouldRequestOlder({ ...base, readerDriven: false })).toBe(false);
+  });
+
+  it("fills a pane the history does not yet cover, without waiting for a scroll", () => {
+    // A short room cannot be scrolled, so waiting for the reader would never end.
+    expect(shouldRequestOlder({ ...base, readerDriven: false, scrollable: false, offset: 0 })).toBe(true);
+  });
+
+  it("asks once at a time, and never past the start", () => {
+    expect(shouldRequestOlder({ ...base, paginating: true })).toBe(false);
+    expect(shouldRequestOlder({ ...base, reachedStart: true })).toBe(false);
+    expect(shouldRequestOlder({ ...base, scrollable: false, reachedStart: true })).toBe(false);
+  });
+
+  it("leaves a reader far from the top alone", () => {
+    expect(shouldRequestOlder({ ...base, offset: 900 })).toBe(false);
+  });
+});
+
+// virtua freezes its rendered range after a `shift` update until the next
+// scroll event. A list too short to scroll never sends one, so the range stayed
+// at [0, -1]: on 2026-10-03 "Data Diana" had 25 items loaded and painted none,
+// and one synthetic scroll event brought all 16 rows back.
+describe("shouldShiftNow", () => {
+  it("holds position for a head change in a list that scrolls", () => {
+    expect(shouldShiftNow(true, true)).toBe(true);
+  });
+
+  it("never shifts a list that cannot scroll", () => {
+    expect(shouldShiftNow(true, false)).toBe(false);
+  });
+
+  it("never shifts for a change at the tail", () => {
+    expect(shouldShiftNow(false, true)).toBe(false);
+  });
+});
+
+// The second half of the Buddhimaan landing, after the reader-scroll fix: the
+// re-pin fired when 7314px arrived, then virtua measured rows shorter than its
+// estimates and its jump compensation moved the offset to 0 while the content
+// shrank to 7121. `shouldRepin` rightly ignores shrinking content, so nothing
+// carried the still-following reader back.
+describe("shouldRepinAfterScroll", () => {
+  it("carries a following reader back after a scroll they did not make", () => {
+    expect(shouldRepinAfterScroll(true, 6196, false)).toBe(true);
+  });
+
+  it("never fights the reader", () => {
+    expect(shouldRepinAfterScroll(true, 6196, true)).toBe(false);
+  });
+
+  it("leaves a reader who is not following alone", () => {
+    expect(shouldRepinAfterScroll(false, 6196, false)).toBe(false);
+  });
+
+  it("does nothing at the tail", () => {
+    expect(shouldRepinAfterScroll(true, 0, false)).toBe(false);
   });
 });

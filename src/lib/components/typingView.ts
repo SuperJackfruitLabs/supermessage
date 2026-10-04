@@ -29,9 +29,13 @@ function truncateName(name: string): string {
   return `${codePoints.slice(0, DISPLAY_NAME_MAX_CHARS).join("")}…`;
 }
 
-/** A typer's display name, falling back to their user id — same convention every other sender-name field in this codebase uses — then bounded. */
+/**
+ * A typer's name as the core resolves it (`label`), then bounded. Never the raw
+ * display name: an agent with no cached profile was named by its full
+ * `@agent_…` id here while the timeline above called it by name.
+ */
 function shortName(user: TypingUser): string {
-  return truncateName(user.displayName ?? user.userId);
+  return truncateName(user.label);
 }
 
 /**

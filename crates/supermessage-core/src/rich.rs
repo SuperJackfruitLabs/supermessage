@@ -138,6 +138,51 @@ pub enum RichInline {
 /// every other extension is a new syntax for a block this vocabulary has no
 /// member for, and a syntax that parses to nothing is worse than one that does
 /// not parse — it deletes the author's text instead of showing it.
+/// The words a block tree renders as, one space between blocks — for places
+/// that show a message as a single line (the roster's preview), where the
+/// markdown source would show its own punctuation.
+pub fn plain_text(blocks: &[RichBlock]) -> String {
+    fn inline_text(inlines: &[RichInline], out: &mut String) {
+        for inline in inlines {
+            match inline {
+                RichInline::Text { text } | RichInline::Code { text } => out.push_str(text),
+                RichInline::Emphasis { inlines }
+                | RichInline::Strong { inlines }
+                | RichInline::Link { inlines, .. } => inline_text(inlines, out),
+                RichInline::Break => out.push(' '),
+            }
+        }
+    }
+    fn block_text(block: &RichBlock, out: &mut String) {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        match block {
+            RichBlock::Paragraph { inlines } | RichBlock::Heading { inlines, .. } => {
+                inline_text(inlines, out)
+            }
+            RichBlock::CodeBlock { text, .. } => out.push_str(text),
+            RichBlock::BlockQuote { blocks } => blocks.iter().for_each(|b| block_text(b, out)),
+            RichBlock::ListBlock { items, .. } => items
+                .iter()
+                .for_each(|item| item.blocks.iter().for_each(|b| block_text(b, out))),
+            RichBlock::ThematicBreak => {}
+            RichBlock::Table { header, rows } => {
+                for cell in header
+                    .iter()
+                    .chain(rows.iter().flat_map(|row| row.cells.iter()))
+                {
+                    out.push(' ');
+                    inline_text(&cell.inlines, out);
+                }
+            }
+        }
+    }
+    let mut out = String::new();
+    blocks.iter().for_each(|block| block_text(block, &mut out));
+    out
+}
+
 pub fn blocks_from_markdown(source: &str) -> Vec<RichBlock> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);

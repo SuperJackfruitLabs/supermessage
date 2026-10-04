@@ -180,6 +180,18 @@ describe("groupTimelineItems", () => {
     expect(rows[0]).toMatchObject({ text: "@bob:example.org left the room" });
   });
 
+  it("carries the core's short sender name, which is what the sender line shows", () => {
+    // 2026-10-03: the desktop headed Super Chotu's messages with its raw
+    // `@agent_super-chotu:…` id because it read `senderDisplayName` instead
+    // of the name the core resolves for every row.
+    const source = message("m1", "Hi");
+    const named = { ...source, senderName: "Super Chotu (Hermes on Guild)", senderShort: "Super Chotu" };
+    expect(groupTimelineItems([named])[0]).toMatchObject({
+      senderName: "Super Chotu (Hermes on Guild)",
+      senderShort: "Super Chotu",
+    });
+  });
+
   it("handles an empty item list", () => {
     expect(groupTimelineItems([])).toEqual([]);
   });
@@ -188,9 +200,9 @@ describe("groupTimelineItems", () => {
     const items = [message("msg1"), dateDivider("d1"), message("msg2")];
     const rows = groupTimelineItems(items);
     expect(rows).toEqual([
-      { type: "item", key: "msg1:0", item: items[0]!.item, view: items[0]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", replyPreview: null, continuesRun: false },
-      { type: "item", key: "d1:0", item: items[1]!.item, view: items[1]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", replyPreview: null, continuesRun: false },
-      { type: "item", key: "msg2:0", item: items[2]!.item, view: items[2]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", replyPreview: null, continuesRun: false },
+      { type: "item", key: "msg1:0", item: items[0]!.item, view: items[0]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", replyPreview: null, continuesRun: false },
+      { type: "item", key: "d1:0", item: items[1]!.item, view: items[1]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", replyPreview: null, continuesRun: false },
+      { type: "item", key: "msg2:0", item: items[2]!.item, view: items[2]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", replyPreview: null, continuesRun: false },
     ]);
   });
 });
@@ -356,6 +368,23 @@ describe("shouldShift", () => {
     expect(shouldShift(["$a:0", "$b:0"], ["$a:0", "$b:0", "$c:0"])).toBe(false);
   });
 
+  it("is on for history inserted under a date divider the SDK keeps at the top", () => {
+    // Measured 2026-10-03 in "Buddhimaan": paginating back 38 -> 48 rows kept
+    // the day's divider `20:0` at index 0 and inserted the older events after
+    // it. Anchoring on the divider read that as a change at the tail, `shift`
+    // stayed off, and the reader was left looking at the new history instead
+    // of what they had been reading.
+    const dividers = new Set(["20:0"]);
+    expect(
+      shouldShift(["20:0", "21:1", "22:0"], ["20:0", "38:1", "39:0", "21:1", "22:0"], dividers),
+    ).toBe(true);
+  });
+
+  it("still reads an append under a pinned divider as a tail change", () => {
+    const dividers = new Set(["20:0"]);
+    expect(shouldShift(["20:0", "21:1"], ["20:0", "21:1", "22:0"], dividers)).toBe(false);
+  });
+
   it("is on for back-paginated history, which is what the prop is for", () => {
     expect(shouldShift(["$c:0", "$d:0"], ["$a:0", "$b:0", "$c:0", "$d:0"])).toBe(true);
   });
@@ -430,4 +459,36 @@ describe("shouldShift", () => {
     expect(rows[0]).toMatchObject({ text: "Annapurna, Ganesha and 1 other joined the room" });
   });
 
+});
+
+describe("undecryptable runs", () => {
+  // 2026-10-03, a new device before recovery: Krishna's room was a column of
+  // identical "Encrypted message — this device has no key for it" lines, one
+  // per message, with nothing saying what to do about them.
+  function utd(id: string) {
+    return {
+      ...message(id),
+      view: {
+        render: "placeholder" as const,
+        kind: { about: "unableToDecrypt" as const },
+        text: "Encrypted message — this device has no key for it",
+      },
+    };
+  }
+
+  it("collapses consecutive undecryptable messages into one row with a count", () => {
+    const rows = groupTimelineItems([utd("u1"), utd("u2"), utd("u3")]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ type: "undecryptableGroup", key: "utd:u1", count: 3 });
+  });
+
+  it("keeps a lone one as a group of one, so it carries the same way out", () => {
+    expect(groupTimelineItems([utd("u1")])[0]).toMatchObject({ type: "undecryptableGroup", count: 1 });
+  });
+
+  it("is split by anything readable in between", () => {
+    const rows = groupTimelineItems([utd("u1"), message("m1"), utd("u2"), utd("u3")]);
+    expect(rows.map((row) => row.type)).toEqual(["undecryptableGroup", "item", "undecryptableGroup"]);
+    expect(rows[2]).toMatchObject({ count: 2 });
+  });
 });

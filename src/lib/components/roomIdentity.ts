@@ -85,3 +85,16 @@ export function relativeTime(timestampMs: number | null, nowMs: number): string 
 
   return dateFallbackFormatter.format(new Date(timestampMs));
 }
+
+/**
+ * The time a roster row shows, or `null` for none.
+ *
+ * An invitation has no time worth showing: stripped invite state carries no
+ * `origin_server_ts`, so matrix-sdk stamps it with the moment it noticed the
+ * invite (`latest_event/builder.rs`), which after a fresh sign-in is "now"
+ * for every one of them. The core keeps that value for ordering; the row
+ * just does not present it as when the invite was sent.
+ */
+export function rowTime(timestampMs: number | null, nowMs: number, invited: boolean): string | null {
+  return invited ? null : relativeTime(timestampMs, nowMs);
+}
