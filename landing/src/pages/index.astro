@@ -7,14 +7,19 @@
 // that makes this client different is that an agent's turn, its request for
 // permission, and a gate waiting on a human all arrive IN the conversation — so
 // the hero shows that sequence rather than describing it. Every event type label
-// in it is a real one the core renders (`custom_events.rs`), and the roster words
-// are the four `AgentState::word` produces. If those change, this page is wrong.
+// in it is a real one the core renders (`custom_events.rs`). The names and
+// numbers in it are invented, and the page says so under it.
 //
 // Amber is used for exactly one thing: the item that is waiting on a person.
-// Spending the only warm colour on "needs you" is the whole point of the palette.
 //
-// It follows the visitor's light or dark preference, as the docs do, with both
-// palettes generated from design/tokens.toml into ../styles/tokens.css.
+// Every capability sentence here maps to an entry in the SJL claims ledger
+// (sjl-marketing foundation/products.md, SM-01..SM-05). Those entries are
+// `limited`, and their caveats sit in the same section as the claim. Do not
+// add a claim without a ledger entry, and do not drop a caveat to tidy a line.
+//
+// Theme: follows the visitor's preference, and the #theme button overrides it
+// (data-theme on <html>, remembered in localStorage). The override blocks are
+// derived at build time from the generated tokens.css, so nothing is copied.
 const events = [
   { type: 'dev.agentpod.turn.v1', label: 'Turn' },
   { type: 'dev.agentpod.permission.v1', label: 'Permission' },
@@ -22,12 +27,29 @@ const events = [
 ];
 
 import '../styles/tokens.css';
+import tokensRaw from '../styles/tokens.css?raw';
 import ShareMeta from '../components/ShareMeta.astro';
+
+// Pull the dark (:root) and light (@media light > :root) declarations out of the
+// generated file and re-scope them to an explicit data-theme.
+const decls = (block: string) => block.replace(/\/\*[\s\S]*?\*\//g, '');
+const darkBlock = tokensRaw.match(/^:root\s*\{([\s\S]*?)\n\}/m)?.[1] ?? '';
+const lightBlock =
+  tokensRaw.match(/@media \(prefers-color-scheme: light\)\s*\{\s*:root\s*\{([\s\S]*?)\n  \}/)?.[1] ?? '';
+const themeCss =
+  `:root[data-theme="dark"]{${decls(darkBlock)}}\n:root[data-theme="light"]{${decls(lightBlock)}}`;
+
+// The latest PUBLISHED release. One constant, so a new release is a one-line change.
+// Ledger SM-04 names v0.0.15 (2026-09-30), unsigned desktop builds only.
+const latestRelease = 'v0.0.15';
+const releaseUrl = `https://github.com/SuperJackfruitLabs/supermessage/releases/tag/${latestRelease}`;
+const docs = 'https://docs.supermessage.dev';
+// There is no install page in the docs yet; "What SuperMessage is" is the start page.
+const getStarted = `${docs}/start/what-it-is/`;
 
 const title = 'SuperMessage — chat where your agents are in the room';
 const description =
-  'A Matrix client where the agents you work with are participants, not a panel. In development for iOS, Android, Windows, macOS and Linux.';
-const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/latest';
+  'A Matrix client where agent turns, permission requests and approval gates arrive as cards in the room. In development: unsigned desktop previews only, no public mobile build.';
 ---
 
 <!doctype html>
@@ -38,13 +60,21 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
     <title>{title}</title>
     <meta name="description" content={description} />
     <ShareMeta title={title} description={description} />
+    <script is:inline>
+      try {
+        var t = localStorage.getItem('sm-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
     />
+    <style is:global set:html={themeCss}></style>
     <style>
+
       :root {
         --display: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
         --body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -85,27 +115,6 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
 
       .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 
-      /* ── status bar ─────────────────────────────────────────────── */
-      .status {
-        background: var(--color-surface);
-        border-bottom: 1px solid var(--color-border);
-        font-size: 14px;
-        color: var(--color-content-muted);
-      }
-      .status .wrap {
-        display: flex; gap: 10px; align-items: center;
-        padding-top: 11px; padding-bottom: 11px; flex-wrap: wrap;
-      }
-      .dot {
-        width: 7px; height: 7px; border-radius: 50%;
-        background: var(--color-signal); flex: none;
-      }
-      /* A zero basis keeps the sentence beside its dot. With its natural width it is
-         wider than a phone, and the wrap put the dot on a line of its own. */
-      .status .wrap > span:last-child { flex: 1 1 0; min-width: 0; }
-      .status strong { color: var(--color-content); font-weight: 600; }
-      .status a { color: var(--color-content); }
-
       /* ── masthead ───────────────────────────────────────────────── */
       header.mast .wrap {
         display: flex; align-items: center; justify-content: space-between;
@@ -121,37 +130,56 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
       nav { display: flex; gap: 22px; font-size: 15px; }
       nav a { color: var(--color-content-muted); text-decoration: none; }
       nav a:hover, nav a:focus-visible { color: var(--color-content); }
+      nav { align-items: center; }
+      #theme {
+        font: inherit; font-size: 14px; cursor: pointer;
+        background: none; color: var(--color-content-muted);
+        border: 1px solid var(--color-border); border-radius: 7px; padding: 4px 10px;
+      }
+      #theme:hover, #theme:focus-visible { color: var(--color-content); border-color: var(--color-accent); }
 
-      /* ── hero ───────────────────────────────────────────────────── */
+      /* ── hero (shared spec, 2026-10-21) ─────────────────────────── */
       .hero .wrap {
-        display: grid; grid-template-columns: 1fr 1fr;
-        gap: 64px; align-items: center;
-        padding-top: 56px; padding-bottom: 88px;
+        max-width: 1080px; margin: 0 auto; padding: 0 24px;
+      }
+      .hero .hero-grid {
+        display: grid; grid-template-columns: minmax(0, 1fr) 500px;
+        gap: 56px; align-items: center;
+        min-height: calc(100svh - 108px); padding: 56px 24px 72px;
       }
       h1 {
         font-family: var(--display);
         font-weight: 800;
-        font-size: clamp(2.4rem, 5vw, 3.9rem);
+        font-size: clamp(40px, 4.6vw, 60px);
         line-height: 1.04;
-        letter-spacing: -0.035em;
-        margin: 0 0 22px;
-        text-wrap: balance;
+        letter-spacing: -0.02em;
+        margin: 0;
+        max-width: 12ch;
       }
       h1 em { font-style: normal; color: var(--color-accent); }
       .lede {
-        font-size: 1.16rem; color: var(--color-content-muted);
-        margin: 0 0 32px; max-width: 30em;
+        font-family: var(--body);
+        font-size: 18px; line-height: 1.55; color: var(--color-content-muted);
+        margin: 20px 0 28px; max-width: 34em;
       }
       .actions { display: flex; gap: 12px; flex-wrap: wrap; }
       .btn {
-        display: inline-block; padding: 13px 22px; border-radius: 9px;
-        font-weight: 600; font-size: 15px; text-decoration: none;
+        display: inline-flex; align-items: center; justify-content: center;
+        height: 46px; padding: 0 20px; border-radius: 10px;
+        font: 600 15px var(--body); text-decoration: none;
         border: 1px solid transparent;
       }
       .btn-primary { background: var(--color-accent); color: var(--color-accent-content); }
-      .btn-primary:hover { background: var(--color-accent-soft); }
-      .btn-ghost { border-color: var(--color-border); color: var(--color-content); }
+      .btn-primary:hover { filter: brightness(1.08); }
+      .btn-ghost { background: transparent; border-color: var(--color-border); color: var(--color-content); }
       .btn-ghost:hover { border-color: var(--color-accent); }
+      .preview-link {
+        display: inline-block; margin-top: 16px; font-size: 14px;
+        color: var(--color-content-muted);
+      }
+      .preview-link:hover { color: var(--color-content); }
+      .hero-demo { width: 500px; max-width: 100%; }
+      .hero-demo .example { margin: 10px 0 0; }
 
       /* ── the transcript: this page's signature ──────────────────── */
       .room {
@@ -210,50 +238,49 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
 
       /* ── sections ───────────────────────────────────────────────── */
       section.band { border-top: 1px solid var(--color-border); }
-      section.band .wrap { padding-top: 72px; padding-bottom: 72px; }
+      /* One content layout for every section below the hero (LAYOUT-SPEC, 2026-10-21):
+         the hero's container, one left edge, no centred narrow columns. */
+      section.band .wrap { max-width: 1080px; margin: 0 auto; padding: 88px 24px; text-align: left; }
       h2 {
         font-family: var(--display); font-weight: 600;
-        font-size: clamp(1.6rem, 3vw, 2.1rem); letter-spacing: -0.025em;
-        margin: 0 0 14px; text-wrap: balance;
+        font-size: clamp(28px, 3vw, 36px); line-height: 1.15; letter-spacing: -0.025em;
+        margin: 0 0 12px; text-wrap: balance;
       }
-      .sub { color: var(--color-content-muted); margin: 0 0 40px; max-width: 62ch; }
-      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+      .sub { color: var(--color-content-muted); font-size: 17px; line-height: 1.6; margin: 0 0 32px; max-width: 640px; }
+      .band .wrap > p, .band .wrap > ul, .band .wrap > ol:not(.grid) { max-width: 680px; }
+      .band pre { max-width: 760px; }
+      .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
       .cell h3 {
-        font-family: var(--display); font-size: 1.13rem; font-weight: 600;
-        margin: 0 0 8px; letter-spacing: -0.015em;
+        font-family: var(--display); font-size: 18px; font-weight: 600;
+        margin: 10px 0 6px; letter-spacing: -0.015em;
       }
       .cell p { margin: 0; color: var(--color-content-muted); font-size: 15.5px; }
       .cell a { color: var(--color-accent); }
 
-      /* roster states */
-      .states { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
-      .states li {
-        display: flex; gap: 16px; align-items: baseline;
-        padding: 15px 0; border-bottom: 1px solid var(--color-border);
+      .example {
+        font-family: var(--mono); font-size: 12px; color: var(--color-content-muted);
+        margin: 10px 2px 0;
       }
-      .states li:first-child { border-top: 1px solid var(--color-border); }
-      .states .word {
+      .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+      .steps li { counter-increment: step; }
+      .steps li::before {
+        content: counter(step); display: block;
         font-family: var(--mono); font-size: 13px; color: var(--color-accent);
-        flex: none; min-width: 9em;
       }
-      .states li:first-child .word { color: var(--color-signal); }
-      .states .what { color: var(--color-content-muted); font-size: 15.5px; }
-      .caveat {
-        margin-top: 26px; padding: 15px 17px; border-radius: 9px;
+      .prose p { margin: 0 0 16px; }
+      .prose a, .limits a { color: var(--color-accent); }
+      .assets { list-style: none; margin: 0 0 20px; padding: 0; }
+      .assets li { padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+      .assets li:first-child { border-top: 1px solid var(--color-border); }
+      .assets b { display: inline-block; min-width: 6.5em; font-weight: 600; }
+      code {
+        font-family: var(--mono); font-size: 0.86em;
         background: var(--color-surface); border: 1px solid var(--color-border);
-        font-size: 15px; color: var(--color-content-muted);
+        border-radius: 5px; padding: 1px 6px; overflow-wrap: anywhere;
       }
-      .caveat b { color: var(--color-content); font-weight: 600; }
-
-      .platforms {
-        display: flex; gap: 10px; flex-wrap: wrap; list-style: none;
-        margin: 0; padding: 0;
-      }
-      .platforms li {
-        font-family: var(--mono); font-size: 13px; color: var(--color-content);
-        border: 1px solid var(--color-border); border-radius: 7px; padding: 7px 14px;
-        background: var(--color-surface);
-      }
+      .limits { margin: 0; padding: 0; list-style: none; max-width: 680px; }
+      .limits li { margin-bottom: 12px; color: var(--color-content-muted); }
+      .limits b { color: var(--color-content); font-weight: 600; }
 
       footer { border-top: 1px solid var(--color-border); }
       footer .wrap {
@@ -265,34 +292,41 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
       footer a:hover { color: var(--color-content); }
       .fnav { display: flex; gap: 20px; flex-wrap: wrap; }
 
-      @media (max-width: 860px) {
-        .hero .wrap { grid-template-columns: 1fr; gap: 44px; padding-bottom: 60px; }
-        .grid { grid-template-columns: 1fr; gap: 30px; }
-        .states li { flex-direction: column; gap: 3px; }
+      @media (max-width: 899px) {
+        .grid { grid-template-columns: 1fr; gap: 32px; }
+        section.band .wrap { padding-top: 64px; padding-bottom: 64px; }
       }
 
       /* Below this the room name, the head count and the pill do not fit on one line.
          The count is the one of the three the transcript does not need. */
+      @media (max-width: 899px) {
+        .hero .hero-grid { grid-template-columns: 1fr; gap: 40px; min-height: auto; padding: 40px 24px 56px; }
+        .hero-demo { width: 100%; }
+      }
+
       @media (max-width: 480px) {
         .room-head .count { display: none; }
       }
 
+      /* Hero moment: plays once when .room gets .playing (script at the end of the page).
+         Without the class (no JS, reduced motion) the room is exactly as written above. */
+      @keyframes msg-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+      @keyframes pill-pulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+        40% { transform: scale(1.08); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-signal) 25%, transparent); }
+      }
+      .room.playing .msg { animation: msg-in 400ms cubic-bezier(.2,.7,.3,1) both; }
+      .room.playing .msg:nth-child(2) { animation-delay: 350ms; }
+      .room.playing .msg:nth-child(3) { animation-delay: 700ms; }
+      .room.playing .pill { animation: pill-pulse 600ms ease-out 1050ms both; }
+
       @media (prefers-reduced-motion: reduce) {
         * { transition: none !important; animation: none !important; }
       }
-    </style>
+        </style>
   </head>
 
   <body>
-    <div class="status">
-      <div class="wrap">
-        <span class="dot" aria-hidden="true"></span>
-        <span><strong>In development.</strong> Unsigned desktop previews for macOS, Windows and
-        Linux are on <a href={releases}>GitHub Releases</a>; there is no public iOS or Android
-        build yet.</span>
-      </div>
-    </div>
-
     <header class="mast">
       <div class="wrap">
         <!-- The mark is generated from design/tokens.toml, and it is the same file as the
@@ -300,196 +334,195 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
         <div class="brand"><img src="/favicon.svg" alt="" width="32" height="28" /><span
           class="word">Super<span>Message</span></span></div>
         <nav>
-          <a href="https://docs.supermessage.dev">Docs</a>
+          <a href={docs}>Docs</a>
           <a href="https://github.com/SuperJackfruitLabs/supermessage">Source</a>
+          <button id="theme" type="button" aria-label="Switch light and dark theme">Theme</button>
         </nav>
       </div>
     </header>
 
-    <div class="hero">
-      <div class="wrap">
+    <section class="hero">
+      <div class="wrap hero-grid">
         <div>
           <h1>Chat where your agents are <em>in the room</em>.</h1>
           <p class="lede">
-            SuperMessage is a Matrix client built for teams whose colleagues include machines. An
-            agent's work, the permission it needs, and the decision waiting on you all arrive in
-            the conversation — in order, next to what everyone else said.
+            SuperMessage is a Matrix client in development. When an agent finishes a turn, asks
+            permission, or reaches an approval gate, that arrives as a card in the room, next to
+            what everyone else said.
           </p>
           <div class="actions">
-            <a class="btn btn-primary" href="https://docs.supermessage.dev">Read the docs</a>
-            <a
-              class="btn btn-ghost"
-              href="https://github.com/SuperJackfruitLabs/supermessage">View the source</a>
+            <a class="btn btn-primary" href={getStarted}>Get started</a>
+            <a class="btn btn-ghost" href={docs}>Docs</a>
           </div>
+          <a class="preview-link" href={releaseUrl}>Desktop preview {latestRelease} (unsigned)</a>
         </div>
 
-        <!-- The signature element. See the design note at the top of this file. -->
-        <div class="room" role="img"
-          aria-label="A room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, offering Allow once or Reject; and a SuperPipeline gate waits for an approval, with Approve, Request changes and Reject.">
-          <div class="room-head">
-            <b>#billing-migration</b>
-            <span class="count">3 people · 2 agents</span>
-            <span class="pill">needs you</span>
-          </div>
-          <div class="msgs">
-            <div class="msg">
-              <div class="who"><b>Priya</b></div>
-              <div class="bubble">Where did the migration get to?</div>
+        <div class="hero-demo">
+          <!-- The signature element. See the design note at the top of this file. -->
+          <div class="room" role="img"
+            aria-label="An example room transcript: an agent reports what it did; the agent asks permission to run the migration against staging, offering Allow once or Reject; and a SuperPipeline gate waits for an approval, with Approve, Request changes and Reject.">
+            <div class="room-head">
+              <b>#billing-migration</b>
+              <span class="count">3 people · 2 agents</span>
+              <span class="pill">needs you</span>
             </div>
-
-            <div class="msg">
-              <div class="who"><b>coder-kai</b> · agent</div>
-              <div class="card">
-                <span class="etype">{events[0].type}</span>
-                <div class="field"><span class="k">Did</span><span
-                  >Rewrote 14 call sites, ran the suite — 556 pass</span></div>
-                <div class="fallback">Element shows: “coder-kai: rewrote 14 call sites, 556
-                  tests pass.”</div>
-              </div>
-            </div>
-
-            <div class="msg">
-              <div class="who"><b>coder-kai</b> · agent</div>
-              <div class="card awaiting">
-                <span class="etype">{events[1].type}</span>
-                <div class="field"><span class="k">Wants to</span><span
-                  >run the migration against staging</span></div>
-                <!-- The prompt is PermissionRequestRenderer's own ("Allow {title}?"), and
-                     the buttons are whatever options the agent sent — these two are the
-                     ones the core's own tests use. -->
-                <div class="prompt">Allow run the migration against staging?</div>
-                <div class="opts">
-                  <span class="opt yes">Allow once</span>
-                  <span class="opt">Reject</span>
+            <div class="msgs">
+              <div class="msg">
+                <div class="who"><b>coder-kai</b> · agent</div>
+                <div class="card">
+                  <span class="etype">{events[0].type}</span>
+                  <div class="field"><span class="k">Did</span><span
+                    >Rewrote 14 call sites, ran the suite — 556 pass</span></div>
+                  <div class="fallback">Element shows: “coder-kai: rewrote 14 call sites, 556
+                    tests pass.”</div>
                 </div>
               </div>
-            </div>
 
-            <div class="msg">
-              <div class="who"><b>SuperPipeline</b></div>
-              <div class="card awaiting">
-                <span class="etype">{events[2].type}</span>
-                <div class="field"><span class="k">Card</span><span>Billing migration</span></div>
-                <div class="field"><span class="k">Stage</span><span>Awaiting review</span></div>
-                <!-- A gate's three answers are fixed: SuperPipeline resolves exactly
-                     approve | request_changes | reject (GATE_OPTION_IDS). -->
-                <div class="opts">
-                  <span class="opt yes">Approve</span>
-                  <span class="opt">Request changes</span>
-                  <span class="opt">Reject</span>
+              <div class="msg">
+                <div class="who"><b>coder-kai</b> · agent</div>
+                <div class="card awaiting">
+                  <span class="etype">{events[1].type}</span>
+                  <div class="field"><span class="k">Wants to</span><span
+                    >run the migration against staging</span></div>
+                  <!-- The prompt is PermissionRequestRenderer's own ("Allow {title}?"), and
+                       the buttons are whatever options the agent sent. -->
+                  <div class="prompt">Allow run the migration against staging?</div>
+                  <div class="opts">
+                    <span class="opt yes">Allow once</span>
+                    <span class="opt">Reject</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="msg">
+                <div class="who"><b>SuperPipeline</b></div>
+                <div class="card awaiting">
+                  <span class="etype">{events[2].type}</span>
+                  <div class="field"><span class="k">Card</span><span>Billing migration</span></div>
+                  <div class="field"><span class="k">Stage</span><span>Awaiting review</span></div>
+                  <!-- A gate's three answers are fixed: approve | request_changes | reject. -->
+                  <div class="opts">
+                    <span class="opt yes">Approve</span>
+                    <span class="opt">Request changes</span>
+                    <span class="opt">Reject</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <section class="band">
-      <div class="wrap">
-        <h2>Participants, not a panel</h2>
-        <p class="sub">
-          Most tools put an agent in a sidebar — a chat box bolted onto an app, separate from the
-          conversation your team is actually having. This puts it in the room, and gives each kind
-          of event a shape you can read at a glance.
-        </p>
-        <div class="grid">
-          <div class="cell">
-            <h3>Turns</h3>
-            <p>What an agent did during one stretch of work. Live output streams while it writes;
-              the durable record is the message that lands when it finishes.</p>
-          </div>
-          <div class="cell">
-            <h3>Permission</h3>
-            <p>An agent asking before it acts. You answer in the room, and the answer stays
-              attached — so the record of who decided what lives where it was decided.</p>
-          </div>
-          <div class="cell">
-            <h3>Approval gates</h3>
-            <p>Work does not simply continue because an agent thinks it should. A gate is a card
-              that has reached a point a person has to answer.</p>
-          </div>
+          <p class="example">Example room. The people, agents and numbers are made up.</p>
         </div>
       </div>
     </section>
 
     <section class="band">
       <div class="wrap">
-        <h2>A roster that knows what is waiting on you</h2>
-        <p class="sub">
-          A room of agents fills up faster than a room of people, and “most recent first” stops
-          helping quickly. Sort by what owes you an answer, or group by the machine an agent runs
-          on.
+        <h2>How it works</h2>
+        <ol class="grid steps">
+          <li class="cell">
+            <h3>Sign in to a Matrix homeserver</h3>
+            <p>Any homeserver, with a password. SuperMessage is a client and keeps no store of
+              its own; the people you talk to can use Element or Cinny.</p>
+          </li>
+          <li class="cell">
+            <h3>Agents post into the room</h3>
+            <p>SuperMessage does not run agents. Agents running under AgentPod post turns and
+              permission requests; SuperPipeline posts approval gates. Each renders as a card,
+              and only as well as what the sender included.</p>
+          </li>
+          <li class="cell">
+            <h3>You answer on the card</h3>
+            <p>Answered is not resolved. After you choose, a gate card reads “waiting for the
+              board” until the board's receipt arrives in the room. That needs the AgentPod
+              application service; ordinary chat does not.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap prose">
+        <h2>What it's like to use</h2>
+        <p>
+          Say you ask in a room where a migration got to. The agent working on it answers with a
+          turn card: what it did in that stretch of work. While it is still writing, you see its
+          output live; that live text travels as temporary to-device messages, is not stored in
+          room history, and is not end-to-end encrypted. Only the finished turn stays.
         </p>
-        <ul class="states">
-          <li><span class="word">needs you</span><span class="what">Owes you an answer</span></li>
-          <li><span class="word">active</span><span class="what">Spoke recently enough to
-            count</span></li>
-          <li><span class="word">idle</span><span class="what">Nothing lately, but within living
-            memory</span></li>
-          <li><span class="word">quiet</span><span class="what">Silent long enough that its
-            absence is the fact</span></li>
+        <p>
+          Next it asks to run the migration against staging. The permission card shows the
+          options it sent, say Allow once and Reject, and you tap one. Then the board posts an
+          approval gate. You choose Approve, and the card says “waiting for the board” rather than
+          “Approved”, because your answer has been sent but not yet accepted. When the receipt
+          from the identity that posted the gate lands, the card becomes a receipt naming who
+          decided.
+        </p>
+        <p>
+          A colleague in the same room on Element sees each card as a plain sentence instead.
+          Nothing about the room depends on SuperMessage.
+        </p>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap prose">
+        <h2>Run it yourself</h2>
+        <p>
+          Download the desktop preview from <a href={releaseUrl}>{latestRelease} on GitHub
+          Releases</a> (published 2026-09-30):
+        </p>
+        <ul class="assets">
+          <li><b>macOS</b> <code>supermessage_0.0.15_universal.dmg</code></li>
+          <li><b>Windows</b> <code>supermessage_0.0.15_x64-setup.exe</code> or <code>.msi</code></li>
+          <li><b>Linux</b> <code>.deb</code>, <code>.rpm</code> or <code>.AppImage</code> (x86-64)</li>
         </ul>
-        <p class="caveat">
-          <b>This is not a health check.</b> None of those four says whether a process is running —
-          each is a statement about when the room last spoke, or about what it said. Whether the
-          machine is actually up is a different question, and a different tool answers it.
+        <p>
+          The builds are unsigned, so macOS Gatekeeper and Windows SmartScreen will warn before
+          they open. Sign in with your Matrix ID and password on your homeserver. That is all
+          ordinary chat needs. Agent cards need agents that post them (AgentPod, SuperPipeline),
+          and resolving a gate from the room needs the AgentPod application service and its
+          mapping of people to identities.
+        </p>
+        <p>
+          There is nothing to install on a phone: no App Store, Play or public TestFlight build
+          exists. To build from source, the <a
+          href="https://github.com/SuperJackfruitLabs/supermessage#readme">README</a> has the
+          commands.
         </p>
       </div>
     </section>
 
     <section class="band">
       <div class="wrap">
-        <h2>It does not stop being Matrix</h2>
-        <p class="sub">
-          A constraint the project holds itself to, not a side effect. Every custom event carries a
-          plain-text fallback body, so the same rooms stay usable from Element, Cinny, or anything
-          else. Nothing here locks a room, a homeserver, or the people in it to this client.
-        </p>
-        <div class="grid">
-          <div class="cell">
-            <h3>Encrypted by default</h3>
-            <p>End-to-end encryption through the Matrix Rust SDK and vodozemac. One exception: a
-              room created with an agent invited stays unencrypted, so an agent that cannot
-              decrypt is never locked out of it. <a
-              href="https://docs.supermessage.dev/use/encryption/">Why</a>.</p>
-          </div>
-          <div class="cell">
-            <h3>Your homeserver</h3>
-            <p>Point it anywhere. SuperMessage is a client — it keeps no central store of its
-              own.</p>
-          </div>
-          <div class="cell">
-            <h3>One core, many screens</h3>
-            <p>A Rust core decides what a timeline item is and how it should read. Each platform
-              renders that decision instead of re-deriving it.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="band">
-      <div class="wrap">
-        <h2>Five platforms, one core</h2>
-        <p class="sub">
-          Mobile and desktop are equally weighted. iOS is SwiftUI and Android is Compose, both over
-          the Rust core through UniFFI; the desktop app is Svelte in a Tauri window, over the same
-          core.
-        </p>
-        <ul class="platforms">
-          <li>iOS</li><li>Android</li><li>macOS</li><li>Windows</li><li>Linux</li>
+        <h2>Where it runs today</h2>
+        <ul class="limits">
+          <li><b>In development.</b> The only public builds are the unsigned desktop previews for
+            macOS, Windows and Linux. iOS goes to TestFlight internal testing only, and Android has
+            no public build. Mobile features exist in source, not as downloads.</li>
+          <li><b>Core chat is in the source for desktop, iOS and Android.</b> Settings differ by
+            platform, search is the homeserver's search, and parity with general-purpose Matrix
+            clients has not been tested.</li>
+          <li><b>Encryption is on by default, through the Matrix Rust SDK, with exceptions.</b> A
+            room SuperMessage creates with an agent invited is unencrypted; rooms AgentPod opens
+            follow AgentPod's setting; live agent output is not end-to-end encrypted. No
+            new-device history test on a named build is recorded. <a
+            href={`${docs}/use/encryption/`}>Encryption docs</a>.</li>
+          <li><b>Gate answers are not verified end to end.</b> Sending a decision is implemented on
+            all three clients; no public live test of a gate resolving is recorded.</li>
+          <li><b>A card shows what the sender sent.</b> A failed turn renders as an error card only
+            when AgentPod attached the details, and a rendered card does not prove delivery in
+            your setup.</li>
         </ul>
       </div>
     </section>
 
     <footer>
       <div class="wrap">
-        <span>SuperMessage · in development · MIT</span>
+        <span>SuperMessage · in development · MIT · a <a
+          href="https://superjackfruit.com">Super Jackfruit Labs</a> project</span>
         <span class="fnav">
-          <a href="https://docs.supermessage.dev">Documentation</a>
-          <a href="https://github.com/SuperJackfruitLabs/supermessage">GitHub</a>
-          <a href="https://docs.agentpod.dev">AgentPod</a>
-          <a href="https://docs.superpipeline.dev">SuperPipeline</a>
+          <a href={docs}>Docs</a>
+          <a href="https://github.com/SuperJackfruitLabs/supermessage">Source</a>
           <a href="/support/">Support</a>
           <a href="/terms/">Terms</a>
           <a href="/privacy/">Privacy</a>
@@ -497,5 +530,37 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
         </span>
       </div>
     </footer>
+
+    <script is:inline>
+      (function () {
+        var root = document.documentElement;
+        var btn = document.getElementById('theme');
+        if (!btn) return;
+        function current() {
+          return root.dataset.theme ||
+            (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        }
+        function label() { btn.textContent = current() === 'light' ? 'Dark' : 'Light'; }
+        label();
+        btn.addEventListener('click', function () {
+          var next = current() === 'light' ? 'dark' : 'light';
+          root.dataset.theme = next;
+          try { localStorage.setItem('sm-theme', next); } catch (e) {}
+          label();
+        });
+      })();
+    </script>
+    <script is:inline>
+      (function () {
+        var room = document.querySelector('.hero-demo .room');
+        if (!room || !window.matchMedia || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        function play() { setTimeout(function () { room.classList.add('playing'); }, 600); }
+        if (!('IntersectionObserver' in window)) return play();
+        var io = new IntersectionObserver(function (es) {
+          if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); play(); }
+        });
+        io.observe(room);
+      })();
+    </script>
   </body>
 </html>
