@@ -138,36 +138,48 @@ const description =
       }
       #theme:hover, #theme:focus-visible { color: var(--color-content); border-color: var(--color-accent); }
 
-      /* ── hero ───────────────────────────────────────────────────── */
+      /* ── hero (shared spec, 2026-10-21) ─────────────────────────── */
       .hero .wrap {
-        display: grid; grid-template-columns: 1fr 1fr;
-        gap: 64px; align-items: center;
-        padding-top: 56px; padding-bottom: 88px;
+        max-width: 1080px; margin: 0 auto; padding: 0 24px;
+      }
+      .hero .hero-grid {
+        display: grid; grid-template-columns: minmax(0, 1fr) 500px;
+        gap: 56px; align-items: center;
+        min-height: calc(100svh - 108px); padding: 56px 24px 72px;
       }
       h1 {
         font-family: var(--display);
         font-weight: 800;
-        font-size: clamp(2.4rem, 5vw, 3.9rem);
+        font-size: clamp(40px, 4.6vw, 60px);
         line-height: 1.04;
-        letter-spacing: -0.035em;
-        margin: 0 0 22px;
-        text-wrap: balance;
+        letter-spacing: -0.02em;
+        margin: 0;
+        max-width: 12ch;
       }
       h1 em { font-style: normal; color: var(--color-accent); }
       .lede {
-        font-size: 1.16rem; color: var(--color-content-muted);
-        margin: 0 0 32px; max-width: 30em;
+        font-family: var(--body);
+        font-size: 18px; line-height: 1.55; color: var(--color-content-muted);
+        margin: 20px 0 28px; max-width: 34em;
       }
       .actions { display: flex; gap: 12px; flex-wrap: wrap; }
       .btn {
-        display: inline-block; padding: 13px 22px; border-radius: 9px;
-        font-weight: 600; font-size: 15px; text-decoration: none;
+        display: inline-flex; align-items: center; justify-content: center;
+        height: 46px; padding: 0 20px; border-radius: 10px;
+        font: 600 15px var(--body); text-decoration: none;
         border: 1px solid transparent;
       }
       .btn-primary { background: var(--color-accent); color: var(--color-accent-content); }
-      .btn-primary:hover { background: var(--color-accent-soft); }
-      .btn-ghost { border-color: var(--color-border); color: var(--color-content); }
+      .btn-primary:hover { filter: brightness(1.08); }
+      .btn-ghost { background: transparent; border-color: var(--color-border); color: var(--color-content); }
       .btn-ghost:hover { border-color: var(--color-accent); }
+      .preview-link {
+        display: inline-block; margin-top: 16px; font-size: 14px;
+        color: var(--color-content-muted);
+      }
+      .preview-link:hover { color: var(--color-content); }
+      .hero-demo { width: 500px; max-width: 100%; }
+      .hero-demo .example { margin: 10px 0 0; }
 
       /* ── the transcript: this page's signature ──────────────────── */
       .room {
@@ -278,12 +290,16 @@ const description =
       .fnav { display: flex; gap: 20px; flex-wrap: wrap; }
 
       @media (max-width: 860px) {
-        .hero .wrap { grid-template-columns: 1fr; gap: 44px; padding-bottom: 60px; }
         .grid { grid-template-columns: 1fr; gap: 30px; }
       }
 
       /* Below this the room name, the head count and the pill do not fit on one line.
          The count is the one of the three the transcript does not need. */
+      @media (max-width: 899px) {
+        .hero .hero-grid { grid-template-columns: 1fr; gap: 40px; min-height: auto; padding: 40px 24px 56px; }
+        .hero-demo { width: 100%; }
+      }
+
       @media (max-width: 480px) {
         .room-head .count { display: none; }
       }
@@ -309,8 +325,8 @@ const description =
       </div>
     </header>
 
-    <div class="hero">
-      <div class="wrap">
+    <section class="hero">
+      <div class="wrap hero-grid">
         <div>
           <h1>Chat where your agents are <em>in the room</em>.</h1>
           <p class="lede">
@@ -320,25 +336,21 @@ const description =
           </p>
           <div class="actions">
             <a class="btn btn-primary" href={getStarted}>Get started</a>
-            <a class="btn btn-ghost" href={releaseUrl}>Desktop preview {latestRelease}</a>
+            <a class="btn btn-ghost" href={docs}>Docs</a>
           </div>
+          <a class="preview-link" href={releaseUrl}>Desktop preview {latestRelease} (unsigned)</a>
         </div>
 
-        <div>
+        <div class="hero-demo">
           <!-- The signature element. See the design note at the top of this file. -->
           <div class="room" role="img"
-            aria-label="An example room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, offering Allow once or Reject; and a SuperPipeline gate waits for an approval, with Approve, Request changes and Reject.">
+            aria-label="An example room transcript: an agent reports what it did; the agent asks permission to run the migration against staging, offering Allow once or Reject; and a SuperPipeline gate waits for an approval, with Approve, Request changes and Reject.">
             <div class="room-head">
               <b>#billing-migration</b>
               <span class="count">3 people · 2 agents</span>
               <span class="pill">needs you</span>
             </div>
             <div class="msgs">
-              <div class="msg">
-                <div class="who"><b>Priya</b></div>
-                <div class="bubble">Where did the migration get to?</div>
-              </div>
-
               <div class="msg">
                 <div class="who"><b>coder-kai</b> · agent</div>
                 <div class="card">
@@ -385,7 +397,7 @@ const description =
           <p class="example">Example room. The people, agents and numbers are made up.</p>
         </div>
       </div>
-    </div>
+    </section>
 
     <section class="band">
       <div class="wrap">
