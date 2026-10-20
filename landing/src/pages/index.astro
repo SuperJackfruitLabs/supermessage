@@ -238,17 +238,21 @@ const description =
 
       /* ── sections ───────────────────────────────────────────────── */
       section.band { border-top: 1px solid var(--color-border); }
-      section.band .wrap { padding-top: 72px; padding-bottom: 72px; }
+      /* One content layout for every section below the hero (LAYOUT-SPEC, 2026-10-21):
+         the hero's container, one left edge, no centred narrow columns. */
+      section.band .wrap { max-width: 1080px; margin: 0 auto; padding: 88px 24px; text-align: left; }
       h2 {
         font-family: var(--display); font-weight: 600;
-        font-size: clamp(1.6rem, 3vw, 2.1rem); letter-spacing: -0.025em;
-        margin: 0 0 14px; text-wrap: balance;
+        font-size: clamp(28px, 3vw, 36px); line-height: 1.15; letter-spacing: -0.025em;
+        margin: 0 0 12px; text-wrap: balance;
       }
-      .sub { color: var(--color-content-muted); margin: 0 0 40px; max-width: 62ch; }
-      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+      .sub { color: var(--color-content-muted); font-size: 17px; line-height: 1.6; margin: 0 0 32px; max-width: 640px; }
+      .band .wrap > p, .band .wrap > ul, .band .wrap > ol:not(.grid) { max-width: 680px; }
+      .band pre { max-width: 760px; }
+      .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
       .cell h3 {
-        font-family: var(--display); font-size: 1.13rem; font-weight: 600;
-        margin: 0 0 8px; letter-spacing: -0.015em;
+        font-family: var(--display); font-size: 18px; font-weight: 600;
+        margin: 10px 0 6px; letter-spacing: -0.015em;
       }
       .cell p { margin: 0; color: var(--color-content-muted); font-size: 15.5px; }
       .cell a { color: var(--color-accent); }
@@ -261,9 +265,8 @@ const description =
       .steps li { counter-increment: step; }
       .steps li::before {
         content: counter(step); display: block;
-        font-family: var(--mono); font-size: 13px; color: var(--color-accent); margin-bottom: 6px;
+        font-family: var(--mono); font-size: 13px; color: var(--color-accent);
       }
-      .prose { max-width: 64ch; }
       .prose p { margin: 0 0 16px; }
       .prose a, .limits a { color: var(--color-accent); }
       .assets { list-style: none; margin: 0 0 20px; padding: 0; }
@@ -275,7 +278,7 @@ const description =
         background: var(--color-surface); border: 1px solid var(--color-border);
         border-radius: 5px; padding: 1px 6px; overflow-wrap: anywhere;
       }
-      .limits { margin: 0; padding: 0 0 0 1.1em; max-width: 64ch; }
+      .limits { margin: 0; padding: 0; list-style: none; max-width: 680px; }
       .limits li { margin-bottom: 12px; color: var(--color-content-muted); }
       .limits b { color: var(--color-content); font-weight: 600; }
 
@@ -289,8 +292,9 @@ const description =
       footer a:hover { color: var(--color-content); }
       .fnav { display: flex; gap: 20px; flex-wrap: wrap; }
 
-      @media (max-width: 860px) {
-        .grid { grid-template-columns: 1fr; gap: 30px; }
+      @media (max-width: 899px) {
+        .grid { grid-template-columns: 1fr; gap: 32px; }
+        section.band .wrap { padding-top: 64px; padding-bottom: 64px; }
       }
 
       /* Below this the room name, the head count and the pill do not fit on one line.
