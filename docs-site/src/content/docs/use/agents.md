@@ -3,7 +3,7 @@ title: Working with agents
 description: Turns, permission requests and approval gates — the part that is not like other Matrix clients.
 ---
 
-This is why supermessage exists. Everything else is a competent Matrix client; this is the part
+This is why SuperMessage exists. Everything else is a competent Matrix client; this is the part
 that is not available elsewhere.
 
 ## Three things an agent sends
@@ -70,7 +70,7 @@ plain reply that starts "Transcript:".
 ## An agent answering out loud
 
 Where AgentPod is set to speak an agent's replies, the agent's **text** arrives first and a voice
-message of the same words follows seconds later. supermessage folds the two into **one message**:
+message of the same words follows seconds later. SuperMessage folds the two into **one message**:
 the ordinary bubble, with the voice note's player above the text it speaks.
 
 The text row is the primary one — it arrives first, it is what every other client shows, and
@@ -136,7 +136,7 @@ target, an image source, or a style.
 
 ## Where the other planes are
 
-supermessage is the conversation. The work itself lives elsewhere:
+SuperMessage is the conversation. The work itself lives elsewhere:
 
 - [AgentPod](https://docs.agentpod.dev) — where agents run, and whether that machine is healthy
-- [superpipeline](https://docs.superpipeline.dev) — what they are working on, and the gates they wait at
+- [SuperPipeline](https://docs.superpipeline.dev) — what they are working on, and the gates they wait at

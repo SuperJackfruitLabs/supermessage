@@ -1,4 +1,4 @@
-# supermessage
+# SuperMessage
 
 [![CI](https://github.com/SuperJackfruitLabs/supermessage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SuperJackfruitLabs/supermessage/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/SuperJackfruitLabs/supermessage)](https://github.com/SuperJackfruitLabs/supermessage/releases/latest)
@@ -15,7 +15,7 @@ through UniFFI. See [AGENTS.md](AGENTS.md) for the current architecture and
 **[Development guide](AGENTS.md)** ·
 **[Issues](https://github.com/SuperJackfruitLabs/supermessage/issues)**
 
-![supermessage desktop frontend showing a room roster, a conversation with an agent, and a permission card awaiting a decision](docs/assets/desktop-preview.png)
+![SuperMessage desktop frontend showing a room roster, a conversation with an agent, and a permission card awaiting a decision](docs/assets/desktop-preview.png)
 
 *Desktop frontend captured in Chromium with synthetic local fixtures. It shows
 production UI components; no Matrix account or live conversation was used.
@@ -35,7 +35,7 @@ release, or that every operation has been exercised against a live homeserver.
 | New conversations, room joining and accepting invitations | Implemented | Implemented | Implemented |
 | Message search | Homeserver search | Homeserver search | Homeserver search |
 | Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
-| AgentPod turn/permission cards and superpipeline gates | Implemented; gate sender uses shared core | Implemented | Implemented |
+| AgentPod turn/permission cards and SuperPipeline gates | Implemented; gate sender uses shared core | Implemented | Implemented |
 | Block users and agents; report messages, rooms and users | Core only (no UI yet) | Implemented | Core only (no UI yet) |
 | Background push notifications when closed | Not implemented | Implemented (hub gateway + Notification Service Extension; device verification pending) | Not implemented |
 
@@ -67,11 +67,11 @@ capability list.
 
 ## What it is for
 
-supermessage is built for rooms whose occupants include both people and AI
+SuperMessage is built for rooms whose occupants include both people and AI
 agents:
 
 - **Agent-aware rendering.** Production renderers handle AgentPod turns,
-  permission requests and superpipeline gates, with plain-text fallback for
+  permission requests and SuperPipeline gates, with plain-text fallback for
   clients that do not recognize those event schemas.
 - **Approvals from chat.** Gate choices use the shared core's structured
   Matrix decision sender, carrying the gate identifier and the gate event
@@ -79,7 +79,7 @@ agents:
   both can also be answered from a notification's actions (permission:
   Allow once / Reject; gate: Approve / Request changes / Reject, per the
   operator's decision of 2026-09-27) without the room open, through the
-  core's room-addressed senders. Resolving a superpipeline gate also requires
+  core's room-addressed senders. Resolving a SuperPipeline gate also requires
   the AgentPod Application Service and its human-identity mapping; local tests
   do not prove that live integration.
 - **A reading surface for long-form agent output.** Message bodies are set for
@@ -107,7 +107,7 @@ instructions in [AGENTS.md](AGENTS.md), rather than a mobile store release
 published by this repository's release workflow.
 
 Use an existing Matrix account on a homeserver that supports password login.
-Ordinary chat needs no AgentPod or superpipeline installation.
+Ordinary chat needs no AgentPod or SuperPipeline installation.
 
 ## Building
 

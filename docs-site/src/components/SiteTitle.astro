@@ -1,6 +1,6 @@
 ---
 /**
- * The wordmark, two-tone — `super` in the text colour, `message` in the accent.
+ * The wordmark, two-tone — `Super` in the text colour, `Message` in the accent.
  *
  * This exists only so the docs header matches the landing page's brand exactly.
  * Starlight renders the title as a single text node, and CSS cannot colour half
@@ -22,7 +22,7 @@
  */
 const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
 
-const SPLIT_AT = 'super';
+const SPLIT_AT = 'Super';
 const head = siteTitle.startsWith(SPLIT_AT) ? SPLIT_AT : '';
 const tail = head ? siteTitle.slice(head.length) : siteTitle;
 ---

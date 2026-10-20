@@ -24,7 +24,7 @@ const events = [
 import '../styles/tokens.css';
 import ShareMeta from '../components/ShareMeta.astro';
 
-const title = 'supermessage — chat where your agents are in the room';
+const title = 'SuperMessage — chat where your agents are in the room';
 const description =
   'A Matrix client where the agents you work with are participants, not a panel. In development for iOS, Android, Windows, macOS and Linux.';
 const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/latest';
@@ -298,7 +298,7 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
         <!-- The mark is generated from design/tokens.toml, and it is the same file as the
              favicon. Empty alt: the wordmark beside it already says the name. -->
         <div class="brand"><img src="/favicon.svg" alt="" width="32" height="28" /><span
-          class="word">super<span>message</span></span></div>
+          class="word">Super<span>Message</span></span></div>
         <nav>
           <a href="https://docs.supermessage.dev">Docs</a>
           <a href="https://github.com/SuperJackfruitLabs/supermessage">Source</a>
@@ -311,7 +311,7 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
         <div>
           <h1>Chat where your agents are <em>in the room</em>.</h1>
           <p class="lede">
-            supermessage is a Matrix client built for teams whose colleagues include machines. An
+            SuperMessage is a Matrix client built for teams whose colleagues include machines. An
             agent's work, the permission it needs, and the decision waiting on you all arrive in
             the conversation — in order, next to what everyone else said.
           </p>
@@ -325,7 +325,7 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
 
         <!-- The signature element. See the design note at the top of this file. -->
         <div class="room" role="img"
-          aria-label="A room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, offering Allow once or Reject; and a superpipeline gate waits for an approval, with Approve, Request changes and Reject.">
+          aria-label="A room transcript: a person asks about a migration; an agent reports what it did; the agent asks permission to run the migration against staging, offering Allow once or Reject; and a SuperPipeline gate waits for an approval, with Approve, Request changes and Reject.">
           <div class="room-head">
             <b>#billing-migration</b>
             <span class="count">3 people · 2 agents</span>
@@ -366,12 +366,12 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
             </div>
 
             <div class="msg">
-              <div class="who"><b>superpipeline</b></div>
+              <div class="who"><b>SuperPipeline</b></div>
               <div class="card awaiting">
                 <span class="etype">{events[2].type}</span>
                 <div class="field"><span class="k">Card</span><span>Billing migration</span></div>
                 <div class="field"><span class="k">Stage</span><span>Awaiting review</span></div>
-                <!-- A gate's three answers are fixed: superpipeline resolves exactly
+                <!-- A gate's three answers are fixed: SuperPipeline resolves exactly
                      approve | request_changes | reject (GATE_OPTION_IDS). -->
                 <div class="opts">
                   <span class="opt yes">Approve</span>
@@ -456,7 +456,7 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
           </div>
           <div class="cell">
             <h3>Your homeserver</h3>
-            <p>Point it anywhere. supermessage is a client — it keeps no central store of its
+            <p>Point it anywhere. SuperMessage is a client — it keeps no central store of its
               own.</p>
           </div>
           <div class="cell">
@@ -484,12 +484,12 @@ const releases = 'https://github.com/SuperJackfruitLabs/supermessage/releases/la
 
     <footer>
       <div class="wrap">
-        <span>supermessage · in development · MIT</span>
+        <span>SuperMessage · in development · MIT</span>
         <span class="fnav">
           <a href="https://docs.supermessage.dev">Documentation</a>
           <a href="https://github.com/SuperJackfruitLabs/supermessage">GitHub</a>
           <a href="https://docs.agentpod.dev">AgentPod</a>
-          <a href="https://docs.superpipeline.dev">superpipeline</a>
+          <a href="https://docs.superpipeline.dev">SuperPipeline</a>
           <a href="/support/">Support</a>
           <a href="/terms/">Terms</a>
           <a href="/privacy/">Privacy</a>
