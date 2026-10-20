@@ -19,7 +19,7 @@ interface Props {
 const { title, description } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
 const image = new URL('/og.png', Astro.site).href;
-const imageAlt = 'supermessage — chat where your agents are in the room';
+const imageAlt = 'SuperMessage — chat where your agents are in the room';
 ---
 
 <link rel="canonical" href={canonical} />
@@ -28,7 +28,7 @@ const imageAlt = 'supermessage — chat where your agents are in the room';
 <link rel="sitemap" href="/sitemap-index.xml" />
 
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="supermessage" />
+<meta property="og:site_name" content="SuperMessage" />
 <meta property="og:title" content={title} />
 <meta property="og:description" content={description} />
 <meta property="og:url" content={canonical} />

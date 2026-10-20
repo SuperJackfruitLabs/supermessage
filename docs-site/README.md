@@ -1,4 +1,4 @@
-# supermessage docs site
+# SuperMessage docs site
 
 The user-facing documentation for `docs.supermessage.dev`. Astro + Starlight.
 
@@ -26,20 +26,20 @@ The build command has to install, for the reason `landing/README.md` gives: Clou
 
 It was deployed by hand once, and went stale the way that always happens: docs.supermessage.dev
 went on naming `dev.kaambaan.gate.v1` and linking docs.kaambaan.dev long after `main` had moved to
-superpipeline, because nothing fails when a page nobody redeploys drifts. A CI job replaced that
+SuperPipeline, because nothing fails when a page nobody redeploys drifts. A CI job replaced that
 briefly; the Git connection replaced the job, and needs no API token in this repository.
 
 CI's `docs` job still builds the site on every pull request that touches it, so a broken page fails
 the PR rather than the deploy.
 
 **The desktop app has unsigned previews on GitHub Releases, and there is no public mobile build.**
-The home page and "What supermessage is" say so in an "Early preview" notice, which should change
+The home page and "What SuperMessage is" say so in an "Early preview" notice, which should change
 when that does.
 
 ## Why this is not a workspace member
 
 It uses npm and sits at the repo root, outside the pnpm workspace. Astro 7 brings Vite 8, which
-re-resolves a shared tree's vitest and breaks vitest-based suites — in superpipeline the same
+re-resolves a shared tree's vitest and breaks vitest-based suites — in SuperPipeline the same
 arrangement took out 556 tests on a change that touched no product code. The same choice was made
 in all three repos for the same reason.
 

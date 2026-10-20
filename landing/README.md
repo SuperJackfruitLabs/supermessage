@@ -1,4 +1,4 @@
-# supermessage landing page
+# SuperMessage landing page
 
 The public page at `supermessage.dev`. Astro, one page, no framework.
 

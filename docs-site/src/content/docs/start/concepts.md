@@ -7,7 +7,7 @@ Most of this is ordinary Matrix. The last two entries are not.
 
 ## Homeserver
 
-Where your account lives. supermessage is a client; it stores nothing centrally of its own, and
+Where your account lives. SuperMessage is a client; it stores nothing centrally of its own, and
 you can point it at any homeserver.
 
 ## Room
@@ -17,7 +17,7 @@ default, unless you invite an agent while creating one — see [Encryption](/use
 
 ## Space
 
-A room that contains other rooms: a folder for conversations. supermessage shows spaces as a
+A room that contains other rooms: a folder for conversations. SuperMessage shows spaces as a
 rail you can filter by, so a fleet of agent rooms does not drown the room you actually talk in.
 
 ## Timeline
@@ -45,7 +45,7 @@ answer attached once you have given one, so the room keeps the record of who dec
 
 ## Approval gate
 
-`dev.superpipeline.gate.v1` — a [superpipeline](https://docs.superpipeline.dev) card that has reached a point
+`dev.superpipeline.gate.v1` — a [SuperPipeline](https://docs.superpipeline.dev) card that has reached a point
 where a human has to answer. The gate is the product decision that work does not simply continue
 because an agent thinks it should.
 

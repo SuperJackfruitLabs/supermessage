@@ -25,7 +25,7 @@ export default defineConfig({
   },
   integrations: [
     starlight({
-      title: 'supermessage',
+      title: 'SuperMessage',
       description:
         'A Matrix client where the agents you work with are participants, not a panel. ' +
         'Docs for using it across five platforms.',
@@ -49,7 +49,7 @@ export default defineConfig({
           tag: 'meta',
           attrs: {
             property: 'og:image:alt',
-            content: 'supermessage — chat where your agents are in the room',
+            content: 'SuperMessage — chat where your agents are in the room',
           },
         },
         {
@@ -85,7 +85,7 @@ export default defineConfig({
         {
           label: 'Start',
           items: [
-            { label: 'What supermessage is', slug: 'start/what-it-is' },
+            { label: 'What SuperMessage is', slug: 'start/what-it-is' },
             { label: 'Concepts', slug: 'start/concepts' },
           ],
         },
