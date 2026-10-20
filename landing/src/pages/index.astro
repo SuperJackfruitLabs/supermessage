@@ -308,6 +308,18 @@ const description =
         .room-head .count { display: none; }
       }
 
+      /* Hero moment: plays once when .room gets .playing (script at the end of the page).
+         Without the class (no JS, reduced motion) the room is exactly as written above. */
+      @keyframes msg-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+      @keyframes pill-pulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+        40% { transform: scale(1.08); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-signal) 25%, transparent); }
+      }
+      .room.playing .msg { animation: msg-in 400ms cubic-bezier(.2,.7,.3,1) both; }
+      .room.playing .msg:nth-child(2) { animation-delay: 350ms; }
+      .room.playing .msg:nth-child(3) { animation-delay: 700ms; }
+      .room.playing .pill { animation: pill-pulse 600ms ease-out 1050ms both; }
+
       @media (prefers-reduced-motion: reduce) {
         * { transition: none !important; animation: none !important; }
       }
@@ -536,6 +548,18 @@ const description =
           try { localStorage.setItem('sm-theme', next); } catch (e) {}
           label();
         });
+      })();
+    </script>
+    <script is:inline>
+      (function () {
+        var room = document.querySelector('.hero-demo .room');
+        if (!room || !window.matchMedia || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        function play() { setTimeout(function () { room.classList.add('playing'); }, 600); }
+        if (!('IntersectionObserver' in window)) return play();
+        var io = new IntersectionObserver(function (es) {
+          if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); play(); }
+        });
+        io.observe(room);
       })();
     </script>
   </body>
