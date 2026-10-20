@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightLlmsTxt from 'starlight-llms-txt';
 
 export default defineConfig({
   site: 'https://docs.supermessage.dev',
@@ -29,6 +30,25 @@ export default defineConfig({
       description:
         'A Matrix client where the agents you work with are participants, not a panel. ' +
         'Docs for using it across five platforms.',
+      // /llms.txt, /llms-full.txt and /llms-small.txt, for agents reading these docs. Every
+      // page goes into each file; the small one drops asides and <details> only.
+      plugins: [
+        starlightLlmsTxt({
+          projectName: 'SuperMessage',
+          description:
+            'SuperMessage is a Matrix client where the agents you work with are participants in ' +
+            'the room, not a side panel. It runs on iOS, Android, Windows, macOS and Linux: one Rust ' +
+            'core does the Matrix work, with SwiftUI, Compose and a Svelte desktop app rendering it. ' +
+            'Agent permission requests and board gates arrive as cards answerable in the room, from a ' +
+            'notification or from a widget; a gate is resolved only when the board sends its receipt. ' +
+            'Rooms are end-to-end encrypted through the Matrix Rust SDK, and every custom event carries ' +
+            'a plain-text fallback so other Matrix clients stay usable.',
+          optionalLinks: [
+            { label: 'SuperMessage', url: 'https://supermessage.dev', description: 'The product site.' },
+            { label: 'Source', url: 'https://github.com/SuperJackfruitLabs/supermessage', description: 'The SuperMessage repository on GitHub.' },
+          ],
+        }),
+      ],
       // Two-tone wordmark, matching the landing page's brand exactly.
       components: { SiteTitle: './src/components/SiteTitle.astro' },
       // Shared with the landing page — see src/styles/theme.css.
