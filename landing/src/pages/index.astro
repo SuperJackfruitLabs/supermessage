@@ -17,8 +17,8 @@
 // `limited`, and their caveats sit in the same section as the claim. Do not
 // add a claim without a ledger entry, and do not drop a caveat to tidy a line.
 //
-// Theme: follows the visitor's preference, and the #theme button overrides it
-// (data-theme on <html>, remembered in localStorage). The override blocks are
+// Theme: follows the visitor's preference, and the suite frame's switcher overrides it
+// (data-theme on <html>, remembered in localStorage 'sm-theme'). The override blocks are
 // derived at build time from the generated tokens.css, so nothing is copied.
 const events = [
   { type: 'dev.agentpod.turn.v1', label: 'Turn' },
@@ -29,6 +29,8 @@ const events = [
 import '../styles/tokens.css';
 import tokensRaw from '../styles/tokens.css?raw';
 import ShareMeta from '../components/ShareMeta.astro';
+import SuiteHead from '@superjackfruit/frontdoor/components/SuiteHead.astro';
+import Frame from '@superjackfruit/frontdoor/components/Frame.astro';
 
 // Pull the dark (:root) and light (@media light > :root) declarations out of the
 // generated file and re-scope them to an explicit data-theme.
@@ -60,18 +62,13 @@ const description =
     <title>{title}</title>
     <meta name="description" content={description} />
     <ShareMeta title={title} description={description} />
-    <script is:inline>
-      try {
-        var t = localStorage.getItem('sm-theme');
-        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
-      } catch (e) {}
-    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
     />
+    <SuiteHead product="supermessage" />
     <style is:global set:html={themeCss}></style>
     <style>
 
@@ -113,30 +110,8 @@ const description =
         -webkit-font-smoothing: antialiased;
       }
 
-      .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+      .wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
-      /* ── masthead ───────────────────────────────────────────────── */
-      header.mast .wrap {
-        display: flex; align-items: center; justify-content: space-between;
-        padding-top: 26px; padding-bottom: 26px; gap: 20px;
-      }
-      .brand {
-        display: flex; align-items: center; gap: 10px;
-        font-family: var(--display);
-        font-weight: 800; font-size: 21px; letter-spacing: -0.02em;
-      }
-      .brand img { width: 32px; height: auto; flex: none; }
-      .brand .word span { color: var(--color-accent); }
-      nav { display: flex; gap: 22px; font-size: 15px; }
-      nav a { color: var(--color-content-muted); text-decoration: none; }
-      nav a:hover, nav a:focus-visible { color: var(--color-content); }
-      nav { align-items: center; }
-      #theme {
-        font: inherit; font-size: 14px; cursor: pointer;
-        background: none; color: var(--color-content-muted);
-        border: 1px solid var(--color-border); border-radius: 7px; padding: 4px 10px;
-      }
-      #theme:hover, #theme:focus-visible { color: var(--color-content); border-color: var(--color-accent); }
 
       /* ── hero (shared spec, 2026-10-21) ─────────────────────────── */
       .hero .wrap {
@@ -282,15 +257,6 @@ const description =
       .limits li { margin-bottom: 12px; color: var(--color-content-muted); }
       .limits b { color: var(--color-content); font-weight: 600; }
 
-      footer { border-top: 1px solid var(--color-border); }
-      footer .wrap {
-        display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
-        padding-top: 34px; padding-bottom: 46px;
-        font-size: 14.5px; color: var(--color-content-muted);
-      }
-      footer a { color: var(--color-content-muted); }
-      footer a:hover { color: var(--color-content); }
-      .fnav { display: flex; gap: 20px; flex-wrap: wrap; }
 
       @media (max-width: 899px) {
         .grid { grid-template-columns: 1fr; gap: 32px; }
@@ -327,19 +293,16 @@ const description =
   </head>
 
   <body>
-    <header class="mast">
-      <div class="wrap">
-        <!-- The mark is generated from design/tokens.toml, and it is the same file as the
-             favicon. Empty alt: the wordmark beside it already says the name. -->
-        <div class="brand"><img src="/favicon.svg" alt="" width="32" height="28" /><span
-          class="word">Super<span>Message</span></span></div>
-        <nav>
-          <a href={docs}>Docs</a>
-          <a href="https://github.com/SuperJackfruitLabs/supermessage">Source</a>
-          <button id="theme" type="button" aria-label="Switch light and dark theme">Theme</button>
-        </nav>
-      </div>
-    </header>
+    <Frame
+      product="supermessage"
+      cta={{ label: 'Get started', href: getStarted }}
+      links={[
+        { label: 'Support', href: '/support/' },
+        { label: 'Terms', href: '/terms/' },
+        { label: 'Privacy', href: '/privacy/' },
+        { label: 'Delete account', href: '/delete-account/' },
+      ]}
+    >
 
     <section class="hero">
       <div class="wrap hero-grid">
@@ -516,40 +479,8 @@ const description =
       </div>
     </section>
 
-    <footer>
-      <div class="wrap">
-        <span>SuperMessage · in development · MIT · a <a
-          href="https://superjackfruit.com">Super Jackfruit Labs</a> project</span>
-        <span class="fnav">
-          <a href={docs}>Docs</a>
-          <a href="https://github.com/SuperJackfruitLabs/supermessage">Source</a>
-          <a href="/support/">Support</a>
-          <a href="/terms/">Terms</a>
-          <a href="/privacy/">Privacy</a>
-          <a href="/delete-account/">Delete account</a>
-        </span>
-      </div>
-    </footer>
+    </Frame>
 
-    <script is:inline>
-      (function () {
-        var root = document.documentElement;
-        var btn = document.getElementById('theme');
-        if (!btn) return;
-        function current() {
-          return root.dataset.theme ||
-            (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-        }
-        function label() { btn.textContent = current() === 'light' ? 'Dark' : 'Light'; }
-        label();
-        btn.addEventListener('click', function () {
-          var next = current() === 'light' ? 'dark' : 'light';
-          root.dataset.theme = next;
-          try { localStorage.setItem('sm-theme', next); } catch (e) {}
-          label();
-        });
-      })();
-    </script>
     <script is:inline>
       (function () {
         var room = document.querySelector('.hero-demo .room');
