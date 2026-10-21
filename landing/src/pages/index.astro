@@ -52,6 +52,20 @@ const getStarted = `${docs}/start/what-it-is/`;
 const title = 'SuperMessage — chat where your agents are in the room';
 const description =
   'A Matrix client where agent turns, permission requests and approval gates arrive as cards in the room. In development: unsigned desktop previews only, no public mobile build.';
+
+// Structured data for search and agents. Every value is already stated on this page.
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'SuperMessage',
+  description,
+  url: 'https://supermessage.dev/',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Windows, Linux',
+  softwareVersion: latestRelease.replace(/^v/, ''),
+  sameAs: ['https://github.com/SuperJackfruitLabs/supermessage'],
+  publisher: { '@type': 'Organization', name: 'Super Jackfruit Labs', url: 'https://superjackfruit.com' },
+};
 ---
 
 <!doctype html>
@@ -62,6 +76,7 @@ const description =
     <title>{title}</title>
     <meta name="description" content={description} />
     <ShareMeta title={title} description={description} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
