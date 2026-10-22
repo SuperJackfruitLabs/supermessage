@@ -512,3 +512,16 @@ export function afterFailedSend(
     },
   };
 }
+
+/**
+ * Whether a re-staged file may take the chip after a failed send: only when
+ * nothing is staged or the chip still holds the token that was sent. A
+ * different file means the reader attached again mid-send, and their newer
+ * pick must not be replaced.
+ */
+export function shouldAdoptRestaged(
+  current: StagedAttachment | null,
+  sentToken: string,
+): boolean {
+  return current === null || current.token === sentToken;
+}

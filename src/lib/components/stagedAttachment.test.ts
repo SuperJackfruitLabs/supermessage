@@ -8,6 +8,7 @@ import {
   formatAttachmentSize,
   sanitizeFilename,
   sendCaveat,
+  shouldAdoptRestaged,
   stagedStripView,
   StagedAttachmentTracker,
 } from "./stagedAttachment";
@@ -459,5 +460,17 @@ describe("afterFailedSend", () => {
   it("a retry is allowed", () => {
     const next = afterFailedSend(failed({ restaged: staged() }), "holiday.png");
     expect(blocksSend(next.staged, next.failed)).toBe(false);
+  });
+});
+
+describe("shouldAdoptRestaged", () => {
+  it("adopts when the chip is empty", () => {
+    expect(shouldAdoptRestaged(null, "sent")).toBe(true);
+  });
+  it("adopts when the chip still holds the sent token", () => {
+    expect(shouldAdoptRestaged(staged({ token: "sent" }), "sent")).toBe(true);
+  });
+  it("keeps the reader's newer pick", () => {
+    expect(shouldAdoptRestaged(staged({ token: "newer" }), "sent")).toBe(false);
   });
 });

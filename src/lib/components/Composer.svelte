@@ -92,6 +92,7 @@
     sendCaveat,
     stagedStripView,
     afterFailedSend,
+    shouldAdoptRestaged,
     blocksSend,
     type FailedChip,
     StagedAttachmentTracker,
@@ -416,12 +417,20 @@
         // on the chip with the failure; the draft and caption stay put.
         const next = afterFailedSend(outcome, stagedStripView(attachment).filename);
         if (roomId === sentRoomId) {
-          if (next.staged) adoptStaged(sentRoomId, next.staged);
-          else {
-            const abandoned = attachments.takeToken(attachment.token);
-            if (abandoned !== null) discardStaged(abandoned.token);
+          if (!shouldAdoptRestaged(attachments.stagedFor(sentRoomId), attachment.token)) {
+            // The reader attached something else mid-send: their pick stays,
+            // the fresh token is released, and the failure shows as a plain
+            // line rather than on the wrong file's chip.
+            if (next.staged) discardStaged(next.staged.token);
+            failure = next.failed.failure;
+          } else {
+            if (next.staged) adoptStaged(sentRoomId, next.staged);
+            else {
+              const abandoned = attachments.takeToken(attachment.token);
+              if (abandoned !== null) discardStaged(abandoned.token);
+            }
+            failedChip = next.failed;
           }
-          failedChip = next.failed;
         } else {
           // The reader moved rooms mid-send: nothing here to retry from.
           attachments.takeToken(attachment.token);
