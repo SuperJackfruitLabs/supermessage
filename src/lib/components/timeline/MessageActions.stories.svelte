@@ -29,6 +29,13 @@
     canReplyOrReact: false,
   };
 
+  // Someone else's settled message: Copy and Report.
+  const theirs = {
+    ...base,
+    ...message({ id: "m3", eventId: "$e3", isOwn: false, sender: "@atlas:example.org", body: "Ship it." }),
+    canReplyOrReact: true,
+  };
+
   const noop = () => {};
   const args = {
     pickingReactionFor: null,
@@ -38,6 +45,7 @@
     onCopy: noop,
     onEdit: noop,
     onDelete: noop,
+    onReport: noop,
   };
 
   const { Story } = defineMeta({
@@ -96,5 +104,21 @@
 >
   {#snippet template()}
     {@render frame(sending)}
+  {/snippet}
+</Story>
+
+<!-- Someone else's message: "Report…" is last, after a separator, in danger. -->
+<Story
+  name="More menu with Report"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const more = (await settled(() => root.querySelector('[aria-label="More actions"]'))) as HTMLElement;
+    more.focus();
+    more.click();
+    await settled(() => root.querySelector("[role=menu]:not(.invisible) [role=separator], [role=menu]:not(.invisible)"));
+  }}
+>
+  {#snippet template()}
+    {@render frame(theirs)}
   {/snippet}
 </Story>

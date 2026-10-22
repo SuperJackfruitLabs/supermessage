@@ -294,6 +294,9 @@
   import { editTargetStore } from "$lib/stores/editTarget.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { roomsStore } from "$lib/stores/rooms.svelte";
+  import { safetyStore } from "$lib/stores/safety.svelte";
+  import { report, reportSubjectFor, type ReportSubject } from "$lib/safety";
+  import ReportSheet from "./safety/ReportSheet.svelte";
 
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
   import {
@@ -456,9 +459,16 @@
    * `groupTimelineItems` recomputes whenever the store publishes a new
    * `items` array; see this file's top-of-script doc comment for why that's
    * automatic and why it never disturbs the raw array itself.
+   *
+   * Rows reported on this device are dropped before grouping (iOS
+   * `TimelineCollectionView.swift:417`), so a hidden message also leaves its
+   * run, its date divider and its reply quote's target honestly. `visible`
+   * reads the safety store's `hidden` set inside this derivation, so reporting
+   * a message re-runs it at once: the raw `items` array has not changed, and
+   * a derivation keyed on it alone would keep showing the row.
    */
   let view = $derived.by(() => {
-    const rows = groupTimelineItems(timelineStore.items);
+    const rows = groupTimelineItems(safetyStore.visible(timelineStore.items));
     const keys = rows.map((row) => row.key);
     const dividers = new Set(
       rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
@@ -1039,6 +1049,15 @@
     if (edit) editTargetStore.set(roomId, edit);
   }
 
+  /** What the open report sheet is about, if it is open. */
+  let reporting = $state<ReportSubject | null>(null);
+
+  /** Opens the report sheet for someone else's message; a row with no event or sender opens nothing. */
+  async function startReport(row: ItemRow): Promise<void> {
+    const subject = await reportSubjectFor(row, roomId);
+    if (subject !== null) reporting = subject;
+  }
+
   /** The own message awaiting delete confirmation, if the dialog is open. */
   let deleting = $state<ItemRow | null>(null);
 
@@ -1272,13 +1291,22 @@
         </p>
       {/if}
     {/if}
-    <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} />
+    <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} onReport={startReport} />
   </div>
 {/snippet}
 
 <div class="relative min-h-0 flex-1">
   {#if deleting !== null}
     <DeleteConfirm onConfirm={confirmDelete} onCancel={() => (deleting = null)} />
+  {/if}
+  {#if reporting !== null}
+    {@const subject = reporting}
+    <ReportSheet
+      {subject}
+      isBlocked={(userId) => safetyStore.isBlocked(userId)}
+      onSend={(reason, alsoBlock) => report(subject, reason, alsoBlock)}
+      onClose={() => (reporting = null)}
+    />
   {/if}
   {#if unreadAbove}
     <!--
@@ -1801,7 +1829,7 @@
                         hang off the right edge of a left-anchored card.
                       -->
                       <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={false} onToggle={handleToggleReaction} />
-                      <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} />
+                      <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} onReport={startReport} />
                     </div>
                   </div>
                 {/if}

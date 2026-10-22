@@ -31,6 +31,7 @@
     recoverWithKey,
     resetRecovery,
     recoveryState as ipcRecoveryState,
+    roomInviter,
     searchMessages,
     typingView,
   } from "$lib/ipc";
@@ -1115,11 +1116,16 @@
             homeserver takes a message and loses it.
           -->
           {#if (roomsStore.selectedAffordance ?? "compose") === "respondToInvitation"}
+            <!-- Keyed: the inviter is loaded once per invitation shown. -->
+            {#key roomsStore.selectedId}
             <InvitationPanel
+              roomId={roomsStore.selectedId}
+              loadInviter={() => roomInviter(roomsStore.selectedId!)}
               roomName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
               onAccept={acceptSelectedInvitation}
               onDecline={declineSelectedInvitation}
             />
+            {/key}
           {:else if (roomsStore.selectedAffordance ?? "compose") === "compose"}
             <Composer roomId={roomsStore.selectedId} />
           {/if}

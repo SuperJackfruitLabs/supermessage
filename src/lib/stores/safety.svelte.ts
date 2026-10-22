@@ -77,8 +77,14 @@ export function createSafetyStore(storage: SafetyStorage | null) {
       }
     },
     /** Drops rows whose event was hidden. A local echo (no event id) always passes. */
-    visible<T extends { eventId: string | null }>(items: readonly T[]): T[] {
-      return items.filter((item) => item.eventId === null || !hidden.has(item.eventId));
+    visible<T extends { eventId: string | null } | { item: { eventId: string | null } }>(
+      items: readonly T[],
+    ): T[] {
+      // Reads `hidden` here, inside the caller's derivation, so hiding re-runs it.
+      return items.filter((entry) => {
+        const eventId = "item" in entry ? entry.item.eventId : entry.eventId;
+        return eventId === null || !hidden.has(eventId);
+      });
     },
 
     /**

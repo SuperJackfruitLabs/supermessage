@@ -19,8 +19,12 @@
   // an invitation that vanished before the join landed, and came back if it
   // failed, would be worse than one that waits.
 
+  import { onMount } from "svelte";
   import { errorMessage } from "$lib/errorMessage";
-  import { invitationPrompt } from "./invitationView";
+  import { report } from "$lib/safety";
+  import { safetyStore } from "$lib/stores/safety.svelte";
+  import { invitationPrompt, inviterLine } from "./invitationView";
+  import ReportSheet from "./safety/ReportSheet.svelte";
 
   /**
    * The invitation, and what to do about it.
@@ -32,12 +36,32 @@
    * invitation stays on screen either way.
    */
   export interface Props {
+    roomId: string;
     roomName: string;
     onAccept: () => Promise<void>;
     onDecline: () => Promise<void>;
+    /** Who invited, when the core knows. A failure shows no line. */
+    loadInviter: () => Promise<string | null>;
+    /** Sends the report of this invitation's room; defaults to the core's. */
+    onReport?: (reason: string, alsoBlock: boolean) => Promise<string | null>;
   }
 
-  let { roomName, onAccept, onDecline }: Props = $props();
+  let { roomId, roomName, onAccept, onDecline, loadInviter, onReport }: Props = $props();
+
+  let inviter = $state<string | null>(null);
+  let reporting = $state(false);
+
+  onMount(() => {
+    let live = true;
+    loadInviter()
+      .then((who) => {
+        if (live) inviter = who;
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  });
 
   /** Set while a join/leave is in flight, so neither button can be pressed twice. */
   let busy = $state(false);
@@ -70,6 +94,9 @@
 
 <div class="border-t border-border px-4 py-3">
   <p class="text-ui text-content">{invitationPrompt(roomName)}</p>
+  {#if inviterLine(inviter) !== null}
+    <p class="text-meta text-content-muted">{inviterLine(inviter)}</p>
+  {/if}
   <div class="mt-3 flex gap-2">
     <button
       type="button"
@@ -89,6 +116,23 @@
     </button>
   </div>
   {#if failure !== null}
-    <p role="alert" class="mt-2 text-meta text-content-muted">{failure}</p>
+    <p role="alert" class="mt-2 text-meta text-danger">{failure}</p>
+  {/if}
+  <button
+    type="button"
+    disabled={busy}
+    onclick={() => (reporting = true)}
+    title="Reports this invitation to your homeserver's administrators"
+    class="mt-3 text-meta text-danger transition-colors hover:underline disabled:opacity-50"
+  >
+    Report room…
+  </button>
+  {#if reporting}
+    <ReportSheet
+      subject={{ kind: "room", roomId, name: roomName }}
+      isBlocked={(userId) => safetyStore.isBlocked(userId)}
+      onSend={onReport ?? ((reason) => report({ kind: "room", roomId, name: roomName }, reason, false))}
+      onClose={() => (reporting = false)}
+    />
   {/if}
 </div>

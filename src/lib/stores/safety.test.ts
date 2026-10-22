@@ -18,6 +18,13 @@ const b = { id: "b", eventId: "$b" };
 const c = { id: "c", eventId: "$c" };
 
 describe("safety store", () => {
+  it("hidesTimelineRowsByTheirItemsEventId", () => {
+    const store = createSafetyStore(null);
+    const rows = [{ item: { eventId: "$a" } }, { item: { eventId: "$b" } }, { item: { eventId: null } }];
+    store.hide("$b");
+    expect(store.visible(rows)).toEqual([rows[0], rows[2]]);
+  });
+
   it("hidesWhatWasReported", () => {
     const store = createSafetyStore(null);
     store.hide("$b");
