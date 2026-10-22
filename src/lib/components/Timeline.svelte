@@ -289,6 +289,7 @@
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
   import { QUICK_REACTIONS } from "./emojiPicker";
+  import { editTargetStore } from "$lib/stores/editTarget.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { roomsStore } from "$lib/stores/rooms.svelte";
 
@@ -977,6 +978,15 @@
     replyTargetStore.set(roomId, replyTargetStore.fromItem(row));
   }
 
+  /**
+   * Starts an edit of one of your own messages. The composer picks it up from
+   * `editTargetStore`; a row that is not editable starts nothing.
+   */
+  function startEdit(row: ItemRow): void {
+    const edit = editTargetStore.fromRow(row);
+    if (edit) editTargetStore.set(roomId, edit);
+  }
+
   /** The own message awaiting delete confirmation, if the dialog is open. */
   let deleting = $state<ItemRow | null>(null);
 
@@ -1209,7 +1219,7 @@
       </div>
     </div>
     <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} onToggle={handleToggleReaction} />
-    <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={() => {}} onDelete={(r) => (deleting = r)} />
+    <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} />
   </div>
 {/snippet}
 
@@ -1735,7 +1745,7 @@
                         hang off the right edge of a left-anchored card.
                       -->
                       <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={false} onToggle={handleToggleReaction} />
-                      <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={() => {}} onDelete={(r) => (deleting = r)} />
+                      <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} />
                       <SeenMarker item={item} {lastOwnMessageId} alignEnd={false} />
                     </div>
                   </div>

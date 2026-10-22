@@ -69,9 +69,12 @@
   // behind whenever one is present (`sendCaveat`), while the button itself
   // names its object either way.
 
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import MentionMenu from "./composer/MentionMenu.svelte";
   import ReplyBanner from "./composer/ReplyBanner.svelte";
+  import EditBanner from "./composer/EditBanner.svelte";
+  import { EditStash, composerPlaceholder, sendIntent, sendLabel } from "./composer/editMode";
+  import { editTargetStore } from "$lib/stores/editTarget.svelte";
   import StagedAttachmentChip from "./composer/StagedAttachmentChip.svelte";
   import { roomInfo } from "$lib/ipc";
   import { applyMention, findMentionQuery, matchMentions, mentionLabel } from "./mentions";
@@ -93,6 +96,7 @@
   import {
     attachmentDiscard,
     attachmentSend,
+    editMessage,
     attachmentStage,
     onStagedAttachment,
     type CoreError,
@@ -102,6 +106,10 @@
   let { roomId }: { roomId: string } = $props();
 
   const drafts = new DraftTracker();
+  // Holds the half-typed draft while the field shows the message being edited.
+  // The draft is only ever written by `drafts.switchTo`, which the room-switch
+  // effect calls after ending the edit, so no edit text reaches a draft.
+  const stash = new EditStash();
   let value = $state("");
 
   // ── Mentions ──────────────────────────────────────────────────────────────
@@ -463,6 +471,12 @@
       // is the first mount, with no outgoing room to notify — same guard
       // `drafts.switchTo` already uses for "no before room yet".
       if (previousRoomId !== null) stopTyping(previousRoomId);
+      // Leaving the room ends its edit and gives the pre-edit draft back
+      // *before* the tracker saves `value`, so edit text is never a draft.
+      if (stash.editing && previousRoomId !== null) {
+        editTargetStore.clear(previousRoomId);
+        value = stash.end();
+      }
       value = drafts.switchTo(roomId, value);
       // The staged attachment is discarded by the switch rather than kept
       // per room, unlike the draft immediately above — and the asymmetry is
@@ -490,13 +504,36 @@
   /** `roomId`'s own pending reply target, or `null` — see this file's top-of-script doc comment. */
   const replyTarget = $derived(replyTargetStore.get(roomId));
 
+  /** `roomId`'s own pending edit, or `null`. */
+  const editTarget = $derived(editTargetStore.get(roomId));
+
+  // Picks up an edit started from the timeline: show its body, keep the
+  // draft, drop any reply (one strip, edit first — iOS `ComposerView.swift:70-74`).
+  $effect(() => {
+    const edit = editTarget;
+    untrack(() => {
+      if (!edit || stash.editing?.eventId === edit.eventId) return;
+      value = stash.begin(value, edit);
+      replyTargetStore.clear(roomId);
+      input?.focus();
+    });
+  });
+
+  function cancelEdit(): void {
+    editTargetStore.clear(roomId);
+    value = stash.end();
+    failure = null;
+  }
+
   const trimmed = $derived(value.trim());
   /**
    * A staged file is enough on its own — Send is the affirmative half of the
    * confirm step, so it cannot require text the design explicitly does not
    * support sending alongside a file (captions are out of scope, §1).
    */
-  const canSend = $derived((trimmed !== "" || staged !== null) && !sending);
+  const canSend = $derived(
+    sendIntent(editTarget, staged !== null, value) !== "nothing" && !sending
+  );
 
   /** Cancels the pending reply for `roomId` without discarding the draft text. */
   function cancelReply(): void {
@@ -507,6 +544,27 @@
     if (!canSend) return;
     const body = trimmed;
     const sentRoomId = roomId;
+    const editing = stash.editing;
+    if (editing) {
+      // An edit is never sent as a message, and a file waiting on the chip
+      // stays there: Save edit saves the text only.
+      sending = true;
+      failure = null;
+      try {
+        await editMessage(sentRoomId, editing.eventId, value);
+        editTargetStore.clear(sentRoomId);
+        // A room switch mid-flight already ended the edit and restored the draft.
+        if (roomId === sentRoomId && stash.editing) value = stash.end();
+      } catch (err) {
+        console.error("failed to save edit", err);
+        if (roomId === sentRoomId) {
+          failure = { label: "Edit failed", message: "Could not save the edit." };
+        }
+      } finally {
+        sending = false;
+      }
+      return;
+    }
     // The attachment wins whenever there is one, and the draft goes with it
     // as its caption (MSC2530): one event, so the words never arrive without
     // their picture, and an agent gets the picture and the question as one
@@ -626,7 +684,9 @@
   one ground and read as a single contiguous instrument rather than three
   independently bordered bars.
 -->
-{#if replyTarget}
+{#if editTarget}
+  <EditBanner onCancel={cancelEdit} />
+{:else if replyTarget}
   <ReplyBanner
     sender={replyTarget.sender}
     excerpt={replyTarget.excerpt}
@@ -679,7 +739,7 @@
     carries no `in_reply_to`). `sendCaveat` is the one place that wording
     lives, and returns `null` when there is nothing to disambiguate.
   -->
-  {@const caveat = sendCaveat(trimmed !== "", replyTarget !== null)}
+  {@const caveat = editTarget ? null : sendCaveat(trimmed !== "", replyTarget !== null)}
   <StagedAttachmentChip
     filename={view.filename}
     summary={view.summary}
@@ -759,7 +819,7 @@
       oninput={handleInput}
       disabled={sending}
       rows="1"
-      placeholder={replyTarget ? `Reply to ${replyTarget.sender}…` : "Message…"}
+      placeholder={composerPlaceholder(editTarget !== null, replyTarget?.sender ?? null)}
       class="max-h-40 min-h-10 flex-1 resize-none bg-transparent py-1 font-sans text-ui text-content outline-none placeholder:text-content-faint disabled:opacity-60"
     ></textarea>
   </div>
@@ -813,7 +873,7 @@
       the half that is always on screen: a reader who has scrolled the strip
       out of mind still sees that this button is about a file.
     -->
-    {staged ? "Send file" : "Send"}
+    {sendLabel(editTarget !== null, staged !== null)}
     <!--
       80%, not the spec's literal 70% (§6.4). The hint is quieter than the
       label either way, but at 70% `--color-accent-content` composites to
