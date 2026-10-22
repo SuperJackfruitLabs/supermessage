@@ -18,7 +18,8 @@ export function isArrivingRender(render: string): boolean {
  * The item ids in `next` that were not in `previous`, or an empty set when
  * nothing should animate: first fill, reader away from the newest end
  * (pagination, resync), reduced motion (nothing would end the animation to
- * drain the set), or more than {@link ARRIVAL_LIMIT} new messages.
+ * drain the set), or more than {@link ARRIVAL_LIMIT} new items (of any kind) at the tail.
+ * Ids prepended above the previous newest item never animate.
  *
  * Takes **item ids** (`TimelineItem.id`, the SDK's unique id), never row
  * keys: a row key carries the reaction count, so a reaction landing on an
@@ -35,6 +36,16 @@ export function arrivedKeys(
 ): Set<string> {
   if (previous.length === 0 || !following || reducedMotion) return new Set();
   const seen = new Set(previous);
-  const fresh = next.filter((key) => !seen.has(key) && isMessage(key));
-  return fresh.length > ARRIVAL_LIMIT ? new Set() : new Set(fresh);
+  // Only items after the previous newest one are news; ids above it were
+  // prepended history (pagination) and never animate. If the previous newest
+  // item is gone, fall back to the latest previous id still present.
+  let tail = -1;
+  for (let i = next.length - 1; i >= 0 && tail < 0; i--) if (seen.has(next[i]!)) tail = i;
+  if (tail < 0) return new Set();
+  const fresh = next.slice(tail + 1).filter((key) => !seen.has(key));
+  // Like iOS `animates(arrived:had:)`: the limit counts every new item
+  // (dividers, log lines) before narrowing to messages, so a 20-item page
+  // with 2 messages is history, not conversation.
+  if (fresh.length > ARRIVAL_LIMIT) return new Set();
+  return new Set(fresh.filter(isMessage));
 }

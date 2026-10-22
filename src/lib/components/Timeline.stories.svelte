@@ -201,7 +201,18 @@
       if (box.top < view.top || box.bottom > view.bottom) throw new Error("the parent is not in view");
     };
     await assertParentInView();
+    // The wash fades in over 150ms and out over 800ms, and only the washed
+    // row transitions: a theme change must not fade every row.
+    const duration = () => getComputedStyle(parentRow()!).transitionDuration;
+    // Reduced motion (the default capture) zeroes every transition.
+    const motion = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (motion && duration() !== "0.15s") throw new Error(`wash fade-in is ${duration()}, not 0.15s`);
     await settled(() => (!parentRow()?.classList.contains("bg-accent-soft") ? root : null), 3000, "the wash to fade");
+    if (motion && duration() !== "0.8s") throw new Error(`wash fade-out is ${duration()}, not 0.8s`);
+    const other = [...root.querySelectorAll("[data-testid='timeline-row']")].find((r) => r !== parentRow()) as HTMLElement;
+    if (motion && getComputedStyle(other).transitionDuration !== "0s")
+      throw new Error(`a row that was never washed transitions: ${getComputedStyle(other).transitionDuration} ${getComputedStyle(other).transitionProperty} ${other.className}`);
+    if (motion) await settled(() => (duration() === "0s" ? root : null), 3000, "the washed row to stop transitioning");
     // Jump again and stop there, so the recorded frame shows the washed parent.
     // The quote is scrolled out of view now (the parent is at the top), so
     // it is looked up afresh.

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { QUICK_REACTIONS } from "../emojiPicker";
   import { menuActions, menuOpensUp } from "./messageMenu";
 
@@ -74,7 +75,10 @@
       );
     }
     measured = true;
-    menuEl.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    // After the re-render that drops `invisible`: a `visibility: hidden`
+    // element cannot take focus, so focusing now left it on the button.
+    const el = menuEl;
+    void tick().then(() => el.querySelector<HTMLElement>("[role=menuitem]")?.focus());
   });
 
   function choose(fn: (row: ItemRow) => void) {
@@ -83,10 +87,22 @@
   }
 
   function onWindowKeydown(e: KeyboardEvent) {
-    if (menuOpen && e.key === "Escape") {
+    // Another layer's Escape (a panel, a dialog) is not ours to take.
+    if (menuOpen && e.key === "Escape" && !e.defaultPrevented) {
+      e.preventDefault();
       closeMenu();
       moreButton?.focus();
     }
+  }
+
+  // Tabbing away leaves no stale menu to steal a later Escape. A null
+  // `relatedTarget` (a click on a non-focusable spot, which pointerdown
+  // handles, or a browser that does not focus buttons) is not "left".
+  function onMenuFocusOut(e: FocusEvent) {
+    const next = e.relatedTarget as Node | null;
+    if (!menuOpen || !next) return;
+    if ((e.currentTarget as HTMLElement).contains(next)) return;
+    closeMenu();
   }
 
   function onWindowPointerDown(e: PointerEvent) {
@@ -144,7 +160,8 @@
       </button>
     {/if}
     {#if actions.more}
-      <div class="relative">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="relative" onfocusout={onMenuFocusOut}>
         <button
           bind:this={moreButton}
           type="button"

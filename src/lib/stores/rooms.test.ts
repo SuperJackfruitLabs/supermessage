@@ -10,6 +10,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { createRoomsStore } from "./rooms.svelte";
+import { editTargetStore } from "./editTarget.svelte";
+import { replyTargetStore } from "./replyTarget.svelte";
 import type { DiffEnvelope } from "./diff";
 import type { Membership, RoomRow, RoomSummary } from "$lib/ipc";
 
@@ -462,6 +464,33 @@ describe("leaving the selected room", () => {
     expect(leaveRoom).toHaveBeenCalledWith("!a:x");
     expect(store.selectedId).toBeNull();
     expect(store.selectedRoomName).toBeNull();
+  });
+
+  it("leave clears that room's edit and reply targets, and only that room's", async () => {
+    const channel = makeChannel();
+    const store = makeStore(channel);
+    for (const id of ["!a:x", "!b:x"]) {
+      editTargetStore.set(id, { eventId: "$e", body: "hi" });
+      replyTargetStore.set(id, { eventId: "$r", sender: "Ann", excerpt: null });
+    }
+
+    await store.leave("!a:x");
+
+    expect(editTargetStore.get("!a:x")).toBeNull();
+    expect(replyTargetStore.get("!a:x")).toBeNull();
+    expect(editTargetStore.get("!b:x")).not.toBeNull();
+    expect(replyTargetStore.get("!b:x")).not.toBeNull();
+    editTargetStore.clearAll();
+    replyTargetStore.clearAll();
+  });
+
+  it("a failed leave keeps the room's edit target", async () => {
+    const channel = makeChannel();
+    const store = makeStore(channel, vi.fn(), { leaveRoom: vi.fn().mockRejectedValue(new Error("no")) });
+    editTargetStore.set("!a:x", { eventId: "$e", body: "hi" });
+    await expect(store.leave("!a:x")).rejects.toThrow();
+    expect(editTargetStore.get("!a:x")).not.toBeNull();
+    editTargetStore.clearAll();
   });
 
   it("leave refreshes the rail, and a failed refresh does not fail the leave", async () => {

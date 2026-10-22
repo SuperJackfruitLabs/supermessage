@@ -85,6 +85,32 @@
   {/snippet}
 </Story>
 
+<!-- Tabbing out of the open menu closes it, and an Escape meant for another layer is left alone. -->
+<Story
+  name="More menu closes when focus leaves"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const more = (await settled(() => root.querySelector('[aria-label="More actions"]'))) as HTMLElement;
+    more.focus();
+    more.click();
+    await settled(() => root.querySelector("[role=menu]:not(.invisible)"));
+    if (!root.querySelector("[role=menu]")?.contains(document.activeElement)) throw new Error("focus did not enter the menu");
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    outside.focus();
+    await settled(() => (root.querySelector("[role=menu]") ? null : root));
+    // A later Escape meant for another panel is not consumed.
+    const esc = new KeyboardEvent("keydown", { key: "Escape", cancelable: true, bubbles: true });
+    window.dispatchEvent(esc);
+    outside.remove();
+    if (esc.defaultPrevented) throw new Error("a closed menu took an Escape");
+  }}
+>
+  {#snippet template()}
+    {@render frame(own)}
+  {/snippet}
+</Story>
+
 <Story
   name="Copy only (sending)"
   play={async ({ canvasElement }) => {

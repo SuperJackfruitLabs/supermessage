@@ -42,6 +42,8 @@ import {
 import { startGapSync } from "./gapSync";
 import { timelineStore } from "./timeline.svelte";
 import { spacesStore } from "./spaces.svelte";
+import { editTargetStore } from "./editTarget.svelte";
+import { replyTargetStore } from "./replyTarget.svelte";
 
 export interface RoomsStoreDeps {
   roomsResync: typeof defaultRoomsResync;
@@ -58,6 +60,8 @@ export interface RoomsStoreDeps {
    * other until the next launch.
    */
   reloadSpaces: () => Promise<void>;
+  /** Drops the room's edit and reply targets, so a rejoin starts clean. */
+  clearRoomCompose?: (roomId: string) => void;
 }
 
 const defaultDeps: RoomsStoreDeps = {
@@ -68,6 +72,10 @@ const defaultDeps: RoomsStoreDeps = {
   joinRoom: defaultJoinRoom,
   leaveRoom: defaultLeaveRoom,
   reloadSpaces: () => spacesStore.load(),
+  clearRoomCompose: (roomId) => {
+    editTargetStore.clear(roomId);
+    replyTargetStore.clear(roomId);
+  },
 };
 
 export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
@@ -264,6 +272,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
    */
   async function leave(id: string): Promise<void> {
     await deps.leaveRoom(id);
+    (deps.clearRoomCompose ?? defaultDeps.clearRoomCompose!)(id);
     if (selectedId === id) {
       selectedId = null;
       selectedName = null;

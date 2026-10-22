@@ -452,6 +452,8 @@
    * covered.
    */
   function onWindowKeydown(event: KeyboardEvent): void {
+    // Before the `:modal` query below: this runs on every keystroke in the app.
+    if (event.key !== "Escape") return;
     if (
       !escapeClosesPanel({
         key: event.key,
@@ -684,6 +686,8 @@
     }
   }
 
+  // Swallows every error and always navigates to /login, so SignOutConfirm's
+  // inline failure branch is unreachable in the app (by design).
   async function signOut(): Promise<void> {
     if (signingOut) return;
     signingOut = true;

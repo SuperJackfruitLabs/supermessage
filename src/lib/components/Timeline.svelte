@@ -391,7 +391,19 @@
   // The row washed after a jump to a quoted message, for `HIGHLIGHT_MS`.
   let highlightedKey: string | null = $state(null);
   let highlightTimer: ReturnType<typeof setTimeout> | undefined;
-  onDestroy(() => clearTimeout(highlightTimer));
+  /**
+   * Rows that may animate their ground: the washed row and a row still fading
+   * back. `transition-colors` lives only on these, so a theme or accent change
+   * snaps every row with the rest of the window instead of fading over 800ms.
+   */
+  let washKeys: ReadonlySet<string> = $state(new Set());
+  const washTimers = new Set<ReturnType<typeof setTimeout>>();
+  onDestroy(() => {
+    clearTimeout(highlightTimer);
+    for (const t of washTimers) clearTimeout(t);
+  });
+  /** Wash fade-out length; matches `duration-[800ms]` on the row. */
+  const WASH_FADE_OUT_MS = 800;
 
   /**
    * Scrolls the quoted message to the centre and washes it (iOS
@@ -410,6 +422,16 @@
     highlightedKey = displayRows[i]!.key;
     clearTimeout(highlightTimer);
     highlightTimer = setTimeout(() => (highlightedKey = null), HIGHLIGHT_MS);
+    const key = highlightedKey;
+    washKeys = new Set(washKeys).add(key);
+    const done = setTimeout(() => {
+      washTimers.delete(done);
+      if (highlightedKey === key) return;
+      const next = new Set(washKeys);
+      next.delete(key);
+      washKeys = next;
+    }, HIGHLIGHT_MS + WASH_FADE_OUT_MS + 100);
+    washTimers.add(done);
   }
 
   let paginating = $state(false);
@@ -1445,7 +1467,7 @@
           onanimationend={(e) => {
             if (e.target === e.currentTarget && row.type === "item") riseEnded(row.item.id);
           }}
-          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans transition-colors motion-reduce:transition-none {row.key === highlightedKey ? 'bg-accent-soft duration-150' : 'bg-surface duration-[800ms]'} {row.type === "item" && view.rising.has(row.item.id) && !arrivedDone.has(row.item.id) ? 'row-arrive' : ''} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans {washKeys.has(row.key) ? 'transition-colors motion-reduce:transition-none ' + (row.key === highlightedKey ? 'duration-150' : 'duration-[800ms]') : ''} {row.key === highlightedKey ? 'bg-accent-soft' : 'bg-surface'} {row.type === "item" && view.rising.has(row.item.id) && !arrivedDone.has(row.item.id) ? 'row-arrive' : ''} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
             index,
             displayRows.length,
           )}"
