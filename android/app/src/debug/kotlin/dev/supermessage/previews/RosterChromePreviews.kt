@@ -15,6 +15,7 @@ private fun space(id: String, name: String, children: ULong, membership: Members
     SpaceSummary(
         id = id, name = name, avatarUrl = null, childCount = children, membership = membership,
         identity = RoomIdentity(glyph = null, name = name, role = null, initial = name.take(1)),
+        displayName = name,
     )
 
 private val threeSpaces = listOf(

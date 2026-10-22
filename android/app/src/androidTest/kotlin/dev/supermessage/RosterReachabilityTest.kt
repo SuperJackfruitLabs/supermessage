@@ -706,6 +706,7 @@ class RosterReachabilityTest {
     private fun spaceOf(id: String, name: String) = SpaceSummary(
         id = id, name = name, avatarUrl = null, childCount = 3uL, membership = Membership.JOINED,
         identity = RoomIdentity(glyph = null, name = name, role = null, initial = name.take(1)),
+        displayName = name,
     )
 
     @Test
