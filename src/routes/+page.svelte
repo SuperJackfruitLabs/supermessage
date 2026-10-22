@@ -733,7 +733,7 @@
             live, so the title sits alone then.
           -->
           <div class="shrink-0 px-3 pt-3">
-            <h2 class="text-ui-lg font-medium text-content">Rooms</h2>
+            <h2 class="text-ui-lg font-medium text-content">Chats</h2>
             <ConnectionLine state={connectionStore.state} message={connectionStore.message} />
           </div>
           <!--

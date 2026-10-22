@@ -616,7 +616,7 @@
   Separation from the timeline/typing indicator above is a ground change
   (surface → surface-sunken), not a hairline: this strip and `Timeline`'s
   date-divider rule already lean on hairlines constantly (roster rows, the
-  room header, the connection banner), so one more directly under the
+  room header, the connection line), so one more directly under the
   typing indicator would just read as a fourth stacked bar rather than a
   boundary. A change of ground reads as a distinct zone — "you have left
   the reading surface and entered the instrument" — without adding a line,
