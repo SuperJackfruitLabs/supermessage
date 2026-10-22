@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList } = await import("./ipc");
+const { turn, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -245,6 +245,13 @@ describe("cast, typing line and acknowledgement", () => {
       typingAgents: ["Atlas"],
       turnInProgress: true,
     });
+  });
+
+  it("turn asks for one room's record by camelCase roomId", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue(null);
+    expect(await turn("!r:x")).toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith("turn", { roomId: "!r:x" });
   });
 
   it("hasSent invokes has_sent with roomId", async () => {

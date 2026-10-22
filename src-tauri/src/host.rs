@@ -22,6 +22,7 @@ use supermessage_core::safety::IGNORED_USERS_EVENT;
 use supermessage_core::session::Session;
 use supermessage_core::sync::CONNECTION_EVENT;
 use supermessage_core::timeline::{FocusedTimeline, TIMELINE_DIFF_EVENT, TYPING_EVENT};
+use supermessage_core::turns::TURN_EVENT;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_dialog::DialogExt as _;
 
@@ -47,8 +48,7 @@ impl EventSink for TauriSink {
             CoreEvent::Live(p) => self.0.emit(LIVE_EVENT, &p),
             CoreEvent::Thought(p) => self.0.emit(THOUGHT_EVENT, &p),
             CoreEvent::Tool(p) => self.0.emit(TOOL_EVENT, &p),
-            // The `sm://turn` channel is wired with the Tauri commands (C4).
-            CoreEvent::Turn(_) => Ok(()),
+            CoreEvent::Turn(update) => self.0.emit(TURN_EVENT, &update),
             CoreEvent::AttachmentStaged(m) => self.0.emit(STAGED_ATTACHMENT_EVENT, &m),
             CoreEvent::IgnoredUsers(ids) => self.0.emit(IGNORED_USERS_EVENT, &ids),
         };

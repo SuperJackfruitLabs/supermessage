@@ -833,6 +833,10 @@ public final class Session {
                 roomId: roomId, seq: seq, toolCallId: toolCallId, title: title, kind: kind,
                 status: status, phase: phase, statusLabel: statusLabel, locations: locations,
                 input: input, output: output)
+        case .turn:
+            // The core's turn record. The Kit's `LiveStore` follows it in the
+            // next commit; until then it keeps building from the raw events.
+            break
         case .attachmentStaged:
             // Handled by the composer, which owns the staged strip. Listed
             // rather than swept into a `default` so a new variant on the

@@ -1023,6 +1023,13 @@ public protocol CoreProtocol : AnyObject {
     func toggleReaction(roomId: String, eventId: String, key: String) throws  -> Bool
     
     /**
+     * A room's agent turn, whole, for a host opening the room — see
+     * `core::session::Session::turn`. `None` when the room has had none this
+     * sign-in. Synchronous: it reads the session's turn book.
+     */
+    func turn(roomId: String)  -> TurnSnapshot?
+    
+    /**
      * Unblock someone. A no-op when they were not blocked.
      */
     func unignoreUser(userId: String) throws 
@@ -1969,6 +1976,19 @@ open func toggleReaction(roomId: String, eventId: String, key: String)throws  ->
         FfiConverterString.lower(roomId),
         FfiConverterString.lower(eventId),
         FfiConverterString.lower(key),$0
+    )
+})
+}
+    
+    /**
+     * A room's agent turn, whole, for a host opening the room — see
+     * `core::session::Session::turn`. `None` when the room has had none this
+     * sign-in. Synchronous: it reads the session's turn book.
+     */
+open func turn(roomId: String) -> TurnSnapshot? {
+    return try!  FfiConverterOptionTypeTurnSnapshot.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_method_core_turn(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
     )
 })
 }
@@ -3074,6 +3094,14 @@ public enum FfiEvent {
          * `None` from a harness that does not report them.
          */input: String?, output: String?
     )
+    /**
+     * A room's agent turn moved: a summary, and at most one step that
+     * changed. Sent **before** the text event that caused it. Discard an
+     * update whose `summary.revision` is below the one held; see
+     * `core::turns`. M4 hosts render it.
+     */
+    case turn(update: TurnUpdate
+    )
     case attachmentStaged(token: String, filename: String, sizeBytes: UInt64, mime: String
     )
     /**
@@ -3116,10 +3144,13 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), kind: try FfiConverterOptionString.read(from: &buf), status: try FfiConverterString.read(from: &buf), phase: try FfiConverterTypeToolPhase.read(from: &buf), statusLabel: try FfiConverterString.read(from: &buf), locations: try FfiConverterSequenceString.read(from: &buf), input: try FfiConverterOptionString.read(from: &buf), output: try FfiConverterOptionString.read(from: &buf)
         )
         
-        case 8: return .attachmentStaged(token: try FfiConverterString.read(from: &buf), filename: try FfiConverterString.read(from: &buf), sizeBytes: try FfiConverterUInt64.read(from: &buf), mime: try FfiConverterString.read(from: &buf)
+        case 8: return .turn(update: try FfiConverterTypeTurnUpdate.read(from: &buf)
         )
         
-        case 9: return .ignoredUsers(userIds: try FfiConverterSequenceString.read(from: &buf)
+        case 9: return .attachmentStaged(token: try FfiConverterString.read(from: &buf), filename: try FfiConverterString.read(from: &buf), sizeBytes: try FfiConverterUInt64.read(from: &buf), mime: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 10: return .ignoredUsers(userIds: try FfiConverterSequenceString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -3182,8 +3213,13 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterOptionString.write(output, into: &buf)
             
         
-        case let .attachmentStaged(token,filename,sizeBytes,mime):
+        case let .turn(update):
             writeInt(&buf, Int32(8))
+            FfiConverterTypeTurnUpdate.write(update, into: &buf)
+            
+        
+        case let .attachmentStaged(token,filename,sizeBytes,mime):
+            writeInt(&buf, Int32(9))
             FfiConverterString.write(token, into: &buf)
             FfiConverterString.write(filename, into: &buf)
             FfiConverterUInt64.write(sizeBytes, into: &buf)
@@ -3191,7 +3227,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             
         
         case let .ignoredUsers(userIds):
-            writeInt(&buf, Int32(9))
+            writeInt(&buf, Int32(10))
             FfiConverterSequenceString.write(userIds, into: &buf)
             
         }
@@ -4176,6 +4212,30 @@ fileprivate struct FfiConverterOptionTypeRosterRow: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeTurnSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = TurnSnapshot?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTurnSnapshot.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTurnSnapshot.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeWidgetAnswer: FfiConverterRustBuffer {
     typealias SwiftType = WidgetAnswer?
 
@@ -4600,6 +4660,31 @@ fileprivate struct FfiConverterSequenceTypeTimelineRow: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeTurnInput: FfiConverterRustBuffer {
+    typealias SwiftType = [TurnInput]
+
+    public static func write(_ value: [TurnInput], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTurnInput.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TurnInput] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TurnInput]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTurnInput.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer {
     typealias SwiftType = [TypingUserDto]
 
@@ -4646,6 +4731,12 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
         return seq
     }
 }
+
+
+
+
+
+
 
 
 
@@ -4812,6 +4903,17 @@ public func displayInitial(name: String) -> String {
 })
 }
 /**
+ * How long a turn has been running: "8s", "1m 04s" — see
+ * `core::turn_label::elapsed_label`.
+ */
+public func elapsedLabel(elapsedMs: Int64) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_elapsed_label(
+        FfiConverterInt64.lower(elapsedMs),$0
+    )
+})
+}
+/**
  * The demo's next automatic step; it stops at the card.
  */
 public func firstRunAdvance(step: FirstRunStep) -> FirstRunStep {
@@ -4843,6 +4945,18 @@ public func firstRunAnswer(step: FirstRunStep) -> FirstRunStep? {
 public func firstRunScript() -> FirstRunScript {
     return try!  FfiConverterTypeFirstRunScript_lift(try! rustCall() {
     uniffi_supermessage_ffi_fn_func_first_run_script($0
+    )
+})
+}
+/**
+ * Folds `inputs` through a fresh turn book, for previews and fixtures — see
+ * `core::turns::fold_turn`.
+ */
+public func foldTurn(roomId: String, inputs: [TurnInput]) -> TurnSnapshot? {
+    return try!  FfiConverterOptionTypeTurnSnapshot.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_fold_turn(
+        FfiConverterString.lower(roomId),
+        FfiConverterSequenceTypeTurnInput.lower(inputs),$0
     )
 })
 }
@@ -5170,6 +5284,28 @@ public func spaceDisplayName(name: String) -> String {
 })
 }
 /**
+ * "12s", "2m 5s" — see `core::turn_label::turn_duration_label`.
+ */
+public func turnDurationLabel(elapsedMs: UInt64) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_turn_duration_label(
+        FfiConverterUInt64.lower(elapsedMs),$0
+    )
+})
+}
+/**
+ * "Thought for 12s · 2 steps" — see `core::turn_label::turn_record_label`.
+ */
+public func turnRecordLabel(thought: Bool, steps: UInt32, elapsedMs: UInt64?) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_turn_record_label(
+        FfiConverterBool.lower(thought),
+        FfiConverterUInt32.lower(steps),
+        FfiConverterOptionUInt64.lower(elapsedMs),$0
+    )
+})
+}
+/**
  * The typing line and the agents the acknowledgement names — see
  * `core::typing_line`. A free function for the same reason as `peer_color_index`.
  */
@@ -5328,6 +5464,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_display_initial() != 43302) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_elapsed_label() != 44142) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_first_run_advance() != 10288) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5335,6 +5474,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_first_run_script() != 8160) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345) {
@@ -5413,6 +5555,12 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_space_display_name() != 32972) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_turn_duration_label() != 63524) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_turn_record_label() != 9579) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_typing_view() != 62690) {
@@ -5632,6 +5780,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_toggle_reaction() != 6594) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_turn() != 244) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_unignore_user() != 38081) {

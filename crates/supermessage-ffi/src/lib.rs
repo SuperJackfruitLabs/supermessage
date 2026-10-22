@@ -787,6 +787,13 @@ impl Core {
         Ok(self.block(self.session.room_info(&room_id))?)
     }
 
+    /// A room's agent turn, whole, for a host opening the room — see
+    /// `core::session::Session::turn`. `None` when the room has had none this
+    /// sign-in. Synchronous: it reads the session's turn book.
+    pub fn turn(&self, room_id: String) -> Option<supermessage_core::turns::TurnSnapshot> {
+        self.session.turn(&room_id)
+    }
+
     /// Who invited this account to a room, or `None`.
     pub fn room_inviter(&self, room_id: String) -> Result<Option<String>, FfiError> {
         Ok(self.block(self.session.room_inviter(&room_id))?)
@@ -1144,6 +1151,35 @@ pub fn agent_avatar_variants() -> Vec<supermessage_core::agent_avatar::AgentAvat
 #[uniffi::export]
 pub fn audio_clock_label(ms: u64) -> String {
     supermessage_core::audio::audio_clock_label(ms)
+}
+
+/// "Thought for 12s · 2 steps" — see `core::turn_label::turn_record_label`.
+#[uniffi::export]
+pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> String {
+    supermessage_core::turn_label::turn_record_label(thought, steps, elapsed_ms)
+}
+
+/// "12s", "2m 5s" — see `core::turn_label::turn_duration_label`.
+#[uniffi::export]
+pub fn turn_duration_label(elapsed_ms: u64) -> String {
+    supermessage_core::turn_label::turn_duration_label(elapsed_ms)
+}
+
+/// How long a turn has been running: "8s", "1m 04s" — see
+/// `core::turn_label::elapsed_label`.
+#[uniffi::export]
+pub fn elapsed_label(elapsed_ms: i64) -> String {
+    supermessage_core::turn_label::elapsed_label(elapsed_ms)
+}
+
+/// Folds `inputs` through a fresh turn book, for previews and fixtures — see
+/// `core::turns::fold_turn`.
+#[uniffi::export]
+pub fn fold_turn(
+    room_id: String,
+    inputs: Vec<supermessage_core::turns::TurnInput>,
+) -> Option<supermessage_core::turns::TurnSnapshot> {
+    supermessage_core::turns::fold_turn(&room_id, inputs)
 }
 
 /// The cast of a room from facts already in hand — for previews and tests.
