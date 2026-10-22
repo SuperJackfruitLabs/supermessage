@@ -23,7 +23,9 @@
   import { consumeFreshSignIn } from "$lib/stores/freshSignIn";
   import {
     appVersion,
+    blockedUsers,
     createRoom,
+    onIgnoredUsers,
     ensureRecovery,
     joinRoomByAlias,
     recoverWithKey,
@@ -60,6 +62,8 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { appearanceStore } from "$lib/stores/appearance.svelte";
   import { resetComposeState } from "$lib/stores/sessionReset";
+  import { safetyStore } from "$lib/stores/safety.svelte";
+  import { accountStore } from "$lib/stores/account.svelte";
   import { escapeClosesPanel } from "$lib/components/roomInfoView";
 
   let checking = $state(true);
@@ -601,7 +605,24 @@
     };
   });
 
+  // The core's blocked list. Installed before the session restores, because the
+  // core emits it as sync starts. `unlistenIgnored` is a plain variable and not
+  // an `onMount` return value: that callback is `async`, and Svelte only calls a
+  // synchronous one.
+  let unlistenIgnored: (() => void) | null = null;
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+    unlistenIgnored?.();
+  });
+
   onMount(async () => {
+    onIgnoredUsers((ids) => safetyStore.apply(ids))
+      .then((unlisten) => {
+        if (destroyed) unlisten();
+        else unlistenIgnored = unlisten;
+      })
+      .catch((err: unknown) => console.error("could not listen for the blocked list", err));
     try {
       restored = await roomsStore.restoreSession();
     } catch (err) {
@@ -624,6 +645,10 @@
     // roster and timeline, which are already streaming by now, and `load`
     // reports its own failures rather than throwing.
     void spacesStore.load();
+    // The core emits the blocked list once when the session starts, which can be
+    // before the listener above exists; ask for it, and let a later event win.
+    void safetyStore.seed(async () => (await blockedUsers()).map((m) => m.userId));
+    void accountStore.load();
     // Recovery is set up after a fresh sign-in only, never after a restore —
     // `consumeFreshSignIn` is set by /login alone. Not awaited, and a failure
     // is silent: the user is not interrupted, and a device that cannot read its
@@ -700,6 +725,10 @@
       spacesStore.clear();
       // The next account must not inherit this one's pending edits and replies.
       resetComposeState();
+      // Blocked and hidden belong to the account that is leaving (iOS clears
+      // them at sign-out too).
+      safetyStore.clear();
+      accountStore.clear();
       signingOut = false;
     }
     await goto("/login");

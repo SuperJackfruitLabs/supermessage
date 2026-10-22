@@ -29,13 +29,14 @@ describe("dispatch-card answers", () => {
     }]]);
   });
 
-  it("keeps subjectless AgentPod permission replies as ordinary text", async () => {
+  it("a permission answer goes through send_permission_answer", async () => {
     await sendDecisionReply("!room:example.org", "$permission-event", {
       subject: null, prompt: "Allow this tool?", options: [{ id: "Allow once", label: "Allow once" }],
     }, "Allow once");
-    expect(invoke.mock.calls).toEqual([["send_message", {
-      roomId: "!room:example.org", body: "Allow once", mentions: [],
+    expect(invoke.mock.calls).toEqual([["send_permission_answer", {
+      roomId: "!room:example.org", optionId: "Allow once",
     }]]);
+    expect(invoke.mock.calls.some(([name]) => name === "send_message")).toBe(false);
   });
 
   it("refuses an unconfirmed gate without sending a plain-text substitute", async () => {
@@ -52,6 +53,15 @@ describe("dispatch-card answers", () => {
 });
 
 describe("answerDecision", () => {
+  it("a refused permission answer reports false", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    invoke.mockRejectedValueOnce({ kind: "network", message: "" });
+    const permission = { subject: null, prompt: "Allow?", options: [{ id: "Allow once", label: "Allow once" }] };
+    await expect(answerDecision("!room:example.org", "$p", permission, "Allow once")).resolves.toBe(false);
+    expect(invoke.mock.calls[0][0]).toBe("send_permission_answer");
+    log.mockRestore();
+  });
+
   it("answerDecisionReportsSuccess", async () => {
     await expect(answerDecision("!room:example.org", "$gate-event", gate, "approve")).resolves.toBe(true);
   });
@@ -84,8 +94,8 @@ describe("answerDecision", () => {
     await sendDecisionReply("!room:example.org", "$p", {
       subject: null, prompt: "Allow?", options: [{ id: "Allow once", label: "Allow once" }],
     }, "Allow once", "ignored");
-    expect(invoke.mock.calls).toEqual([["send_message", {
-      roomId: "!room:example.org", body: "Allow once", mentions: [],
+    expect(invoke.mock.calls).toEqual([["send_permission_answer", {
+      roomId: "!room:example.org", optionId: "Allow once",
     }]]);
   });
 });

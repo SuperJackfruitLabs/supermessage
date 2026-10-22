@@ -36,7 +36,7 @@ release, or that every operation has been exercised against a live homeserver.
 | Message search | Homeserver search, this room or all rooms | Homeserver search | Homeserver search |
 | Appearance settings | Account panel: mode, dark style, accent and text size (no identity block or blocked-users list yet) | Account panel: mode, dark style, accent and roster options | No in-app setting |
 | Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
-| AgentPod turn/permission cards and SuperPipeline gates | Implemented; gate sender uses shared core; permission answers sent as plain messages | Implemented | Implemented |
+| AgentPod turn/permission cards and SuperPipeline gates | Implemented; gate sender uses shared core; permission answers sent through the core's room-addressed sender (`Session::send_permission_answer`, awaits the homeserver; content is ordinary chat text) | Implemented | Implemented |
 | Block users and agents; report messages, rooms and users | Core only (no UI yet) | Implemented | Core only (no UI yet) |
 | Background push notifications when closed | Not implemented | Implemented (hub gateway + Notification Service Extension; device verification pending) | Not implemented |
 

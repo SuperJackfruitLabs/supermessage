@@ -34,6 +34,11 @@ export function errorMessage(err: unknown): string {
       return "That room is no longer open — nothing was sent.";
     case "refused":
       return detail === "" ? "The homeserver declined." : detail;
+    case "reasonTooLong":
+      // iOS words this with two numbers that reach the desktop only inside the
+      // core's message; the desktop does not parse it. The report sheet stops
+      // Send before the limit, so this is a backstop.
+      return detail === "" ? GENERIC : detail.charAt(0).toUpperCase() + detail.slice(1);
     default:
       return detail === "" ? GENERIC : detail;
   }
