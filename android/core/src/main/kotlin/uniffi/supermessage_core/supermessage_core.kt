@@ -4063,7 +4063,20 @@ data class TimelineRow (
      * (`crate::voice_transcript::reconcile`) and hides this one, and this is
      * what puts it back standalone when the note goes.
      */
-    var `voiceTranscript`: TranscriptNotice? = null
+    var `voiceTranscript`: TranscriptNotice? = null, 
+    /**
+     * Whether an agent sent this row (`crate::item_view::is_agent_row`):
+     * computed once here so no host re-derives it from the sender id.
+     * Defaulted and left off the desktop's JSON when false, like
+     * [`Self::voice_reply`].
+     */
+    var `isAgent`: kotlin.Boolean = false, 
+    /**
+     * Whether this message is long enough to be offered as a long read
+     * (`crate::item_view::is_long_read`, past `LONG_READ_GRAPHEMES`).
+     * Defaulted and left off the wire when false.
+     */
+    var `isLongRead`: kotlin.Boolean = false
 ) {
     
     companion object
@@ -4086,6 +4099,8 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalTypeVoiceReplyLink.read(buf),
             FfiConverterOptionalTypeTranscriptNotice.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -4100,7 +4115,9 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterBoolean.allocationSize(value.`canReplyOrReact`) +
             FfiConverterOptionalString.allocationSize(value.`replyPreview`) +
             FfiConverterOptionalTypeVoiceReplyLink.allocationSize(value.`voiceReply`) +
-            FfiConverterOptionalTypeTranscriptNotice.allocationSize(value.`voiceTranscript`)
+            FfiConverterOptionalTypeTranscriptNotice.allocationSize(value.`voiceTranscript`) +
+            FfiConverterBoolean.allocationSize(value.`isAgent`) +
+            FfiConverterBoolean.allocationSize(value.`isLongRead`)
     )
 
     override fun write(value: TimelineRow, buf: ByteBuffer) {
@@ -4115,6 +4132,8 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalString.write(value.`replyPreview`, buf)
             FfiConverterOptionalTypeVoiceReplyLink.write(value.`voiceReply`, buf)
             FfiConverterOptionalTypeTranscriptNotice.write(value.`voiceTranscript`, buf)
+            FfiConverterBoolean.write(value.`isAgent`, buf)
+            FfiConverterBoolean.write(value.`isLongRead`, buf)
     }
 }
 

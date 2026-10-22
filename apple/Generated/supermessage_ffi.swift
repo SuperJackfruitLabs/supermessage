@@ -4961,6 +4961,17 @@ public func foldTurn(roomId: String, inputs: [TurnInput]) -> TurnSnapshot? {
 })
 }
 /**
+ * How many graphemes a message may have before a row says `is_long_read`
+ * (`core::item_view::LONG_READ_GRAPHEMES`). For hosts that need the figure
+ * itself, such as fixtures and previews. UniFFI only: no Tauri command.
+ */
+public func longReadGraphemes() -> UInt32 {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_long_read_graphemes($0
+    )
+})
+}
+/**
  * What the mute toggle sets next.
  */
 public func nextNotificationMode(current: NotificationMode) -> NotificationMode {
@@ -5477,6 +5488,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_long_read_graphemes() != 62272) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345) {

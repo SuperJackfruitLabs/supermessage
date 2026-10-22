@@ -927,6 +927,19 @@ pub struct TimelineRow {
     #[uniffi(default = None)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice_transcript: Option<crate::voice_transcript::TranscriptNotice>,
+    /// Whether an agent sent this row (`crate::item_view::is_agent_row`):
+    /// computed once here so no host re-derives it from the sender id.
+    /// Defaulted and left off the desktop's JSON when false, like
+    /// [`Self::voice_reply`].
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_agent: bool,
+    /// Whether this message is long enough to be offered as a long read
+    /// (`crate::item_view::is_long_read`, past `LONG_READ_GRAPHEMES`).
+    /// Defaulted and left off the wire when false.
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_long_read: bool,
 }
 
 impl TimelineRow {
@@ -989,6 +1002,8 @@ impl TimelineRow {
         let reply_quote = crate::item_view::reply_quote_view(item.reply_to.as_ref());
         let can_reply_or_react = crate::item_view::can_reply_or_react(&item);
         let reply_preview = crate::item_view::reply_preview_excerpt(item.body.as_deref());
+        let is_agent = crate::item_view::is_agent_row(&item);
+        let is_long_read = crate::item_view::is_long_read(&item);
         Self {
             item,
             view,
@@ -1001,6 +1016,8 @@ impl TimelineRow {
             reply_preview,
             voice_reply: None,
             voice_transcript: None,
+            is_agent,
+            is_long_read,
         }
     }
 }
@@ -1704,6 +1721,24 @@ mod wire_format_golden {
             "an m.text item must classify as a bubble, got {:?}",
             row.view
         );
+    }
+
+    /// Mutation seen failing: removing the `skip_serializing_if` on
+    /// `is_agent` / `is_long_read` puts the false keys on the wire.
+    #[test]
+    fn a_row_leaves_false_facts_off_the_wire() {
+        let plain = serde_json::to_value(TimelineRow::new(a_text_item())).unwrap();
+        assert!(plain.get("isAgent").is_none(), "{plain}");
+        assert!(plain.get("isLongRead").is_none(), "{plain}");
+
+        let mut item = a_text_item();
+        item.sender = Some("@agent_atlas:x".into());
+        item.body = Some("a".repeat(601));
+        let row = TimelineRow::new(item);
+        assert!(row.is_agent && row.is_long_read);
+        let json = serde_json::to_value(&row).unwrap();
+        assert_eq!(json["isAgent"], true);
+        assert_eq!(json["isLongRead"], true);
     }
 
     #[test]

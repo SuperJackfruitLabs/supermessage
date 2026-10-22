@@ -6289,6 +6289,19 @@ public struct TimelineRow {
      * what puts it back standalone when the note goes.
      */
     public var voiceTranscript: TranscriptNotice?
+    /**
+     * Whether an agent sent this row (`crate::item_view::is_agent_row`):
+     * computed once here so no host re-derives it from the sender id.
+     * Defaulted and left off the desktop's JSON when false, like
+     * [`Self::voice_reply`].
+     */
+    public var isAgent: Bool
+    /**
+     * Whether this message is long enough to be offered as a long read
+     * (`crate::item_view::is_long_read`, past `LONG_READ_GRAPHEMES`).
+     * Defaulted and left off the wire when false.
+     */
+    public var isLongRead: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6375,7 +6388,18 @@ public struct TimelineRow {
          * gives: the core folds the transcript into the note's row
          * (`crate::voice_transcript::reconcile`) and hides this one, and this is
          * what puts it back standalone when the note goes.
-         */voiceTranscript: TranscriptNotice? = nil) {
+         */voiceTranscript: TranscriptNotice? = nil, 
+        /**
+         * Whether an agent sent this row (`crate::item_view::is_agent_row`):
+         * computed once here so no host re-derives it from the sender id.
+         * Defaulted and left off the desktop's JSON when false, like
+         * [`Self::voice_reply`].
+         */isAgent: Bool = false, 
+        /**
+         * Whether this message is long enough to be offered as a long read
+         * (`crate::item_view::is_long_read`, past `LONG_READ_GRAPHEMES`).
+         * Defaulted and left off the wire when false.
+         */isLongRead: Bool = false) {
         self.item = item
         self.view = view
         self.senderName = senderName
@@ -6387,6 +6411,8 @@ public struct TimelineRow {
         self.replyPreview = replyPreview
         self.voiceReply = voiceReply
         self.voiceTranscript = voiceTranscript
+        self.isAgent = isAgent
+        self.isLongRead = isLongRead
     }
 }
 
@@ -6427,6 +6453,12 @@ extension TimelineRow: Equatable, Hashable {
         if lhs.voiceTranscript != rhs.voiceTranscript {
             return false
         }
+        if lhs.isAgent != rhs.isAgent {
+            return false
+        }
+        if lhs.isLongRead != rhs.isLongRead {
+            return false
+        }
         return true
     }
 
@@ -6442,6 +6474,8 @@ extension TimelineRow: Equatable, Hashable {
         hasher.combine(replyPreview)
         hasher.combine(voiceReply)
         hasher.combine(voiceTranscript)
+        hasher.combine(isAgent)
+        hasher.combine(isLongRead)
     }
 }
 
@@ -6463,7 +6497,9 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
                 canReplyOrReact: FfiConverterBool.read(from: &buf), 
                 replyPreview: FfiConverterOptionString.read(from: &buf), 
                 voiceReply: FfiConverterOptionTypeVoiceReplyLink.read(from: &buf), 
-                voiceTranscript: FfiConverterOptionTypeTranscriptNotice.read(from: &buf)
+                voiceTranscript: FfiConverterOptionTypeTranscriptNotice.read(from: &buf), 
+                isAgent: FfiConverterBool.read(from: &buf), 
+                isLongRead: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -6479,6 +6515,8 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.replyPreview, into: &buf)
         FfiConverterOptionTypeVoiceReplyLink.write(value.voiceReply, into: &buf)
         FfiConverterOptionTypeTranscriptNotice.write(value.voiceTranscript, into: &buf)
+        FfiConverterBool.write(value.isAgent, into: &buf)
+        FfiConverterBool.write(value.isLongRead, into: &buf)
     }
 }
 

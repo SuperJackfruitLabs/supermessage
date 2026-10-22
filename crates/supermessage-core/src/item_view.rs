@@ -27,6 +27,7 @@ use crate::rich::{blocks_from_markdown, blocks_from_sanitised_html, RichBlock};
 use crate::turn_error::TurnErrorCard;
 use crate::voice_reply::VoiceReplyPlayer;
 use crate::voice_transcript::VoiceNoteTranscript;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// What a [`ItemView::System`] line is *about*, independent of its wording.
 ///
@@ -346,6 +347,43 @@ pub fn agent_name_from_id(user_id: &str) -> Option<String> {
         })
         .collect();
     (!words.is_empty()).then(|| words.join(" "))
+}
+
+/// Past this many characters (graphemes) a message is a report rather than a
+/// line, and gets a "Read" affordance onto the long-read view. This is iOS's
+/// `longReadCharacters`; the core owns it so every host cuts at the same place.
+pub const LONG_READ_GRAPHEMES: usize = 600;
+
+/// Whether this row was sent by an agent: the bridge's `@agent_` namespace
+/// (the same rule as [`agent_name_from_id`], so a row, a roster entry and a
+/// typing line agree). Your own messages never are.
+///
+/// Differs from iOS's old `hasPrefix("@agent_")` in one case: `@agent_:x`, with
+/// nothing after the prefix, is not an agent (ruling 1).
+pub fn is_agent_row(item: &TimelineItemDto) -> bool {
+    !item.is_own
+        && item
+            .sender
+            .as_deref()
+            .and_then(agent_name_from_id)
+            .is_some()
+}
+
+/// Whether this row is long enough to be offered as a long read.
+///
+/// Counted in extended grapheme clusters, what a reader sees, rather than
+/// UTF-16 units or scalars, so a report in Devanagari or emoji is not cut
+/// short by its encoding. Your own messages never are: you know what you wrote.
+pub fn is_long_read(item: &TimelineItemDto) -> bool {
+    if item.is_own {
+        return false;
+    }
+    let Some(body) = item.body.as_deref() else {
+        return false;
+    };
+    // A message can't have `LONG_READ_GRAPHEMES` graphemes in fewer bytes, so
+    // short bodies skip the segmentation.
+    body.len() > LONG_READ_GRAPHEMES && body.graphemes(true).count() > LONG_READ_GRAPHEMES
 }
 
 fn parts_for(display_name: Option<&str>, user_id: Option<&str>) -> (String, String, String) {
@@ -2320,5 +2358,59 @@ mod tests {
         assert_eq!(json["render"], "audio");
         assert_eq!(json["audio"]["title"], "Voice message.ogg");
         assert_eq!(json["audio"]["filename"], "Voice message.ogg");
+    }
+
+    fn row_from(sender: &str, body: Option<&str>, is_own: bool) -> TimelineItemDto {
+        let mut it = item("message");
+        it.sender = Some(sender.to_string());
+        it.body = body.map(str::to_string);
+        it.is_own = is_own;
+        it
+    }
+
+    /// Mutation seen failing: dropping the `!item.is_own` guard in
+    /// `is_agent_row` fails the own-`@agent_x` case; matching `contains`
+    /// instead of the `agent_name_from_id` namespace fails `@my_agent_x`.
+    #[test]
+    fn the_agent_namespace_marks_an_agent_and_nothing_else_does() {
+        let agent = |sender: &str, own: bool| is_agent_row(&row_from(sender, None, own));
+        assert!(agent("@agent_ashram_openclaw-atlas:x", false));
+        assert!(!agent("@atlas:x", false));
+        assert!(!agent("@my_agent_x:x", false));
+        // Your own message is never an agent's, whatever your id looks like.
+        assert!(!agent("@agent_x:x", true));
+        // Ruling 1 (an iOS change): nothing after the prefix is not an agent.
+        assert!(!agent("@agent_:x", false));
+        // No sender at all.
+        let mut anonymous = item("message");
+        anonymous.sender = None;
+        assert!(!is_agent_row(&anonymous));
+    }
+
+    /// Mutation seen failing: `>` to `>=` in `is_long_read` fails the 600 case.
+    #[test]
+    fn past_six_hundred_characters_a_message_is_a_long_read() {
+        let body = |n: usize| row_from("@a:x", Some(&"a".repeat(n)), false);
+        assert_eq!(LONG_READ_GRAPHEMES, 600);
+        assert!(!is_long_read(&body(600)));
+        assert!(is_long_read(&body(601)));
+        assert!(!is_long_read(&row_from("@a:x", None, false)));
+    }
+
+    /// Mutation seen failing: counting `chars()` instead of graphemes fails
+    /// both halves (a thumbs-up with a skin tone is two scalars).
+    #[test]
+    fn characters_are_counted_as_a_reader_sees_them_not_as_utf16() {
+        let emoji = |n: usize| row_from("@a:x", Some(&"👍🏽".repeat(n)), false);
+        assert!(!is_long_read(&emoji(600)));
+        assert!(is_long_read(&emoji(601)));
+    }
+
+    /// Mutation seen failing: dropping the `!item.is_own` guard in
+    /// `is_long_read`.
+    #[test]
+    fn your_own_long_message_is_not_offered_back_to_you_as_a_long_read() {
+        let own = row_from("@me:x", Some(&"a".repeat(601)), true);
+        assert!(!is_long_read(&own));
     }
 }

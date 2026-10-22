@@ -1136,6 +1136,10 @@ export interface TimelineRow {
    * it is carried so the core can re-settle the pairing after every batch.
    */
   voiceReply?: VoiceReplyLink;
+  /** An agent sent this row (the core's rule). Absent when false. */
+  isAgent?: boolean;
+  /** Long enough to be offered as a long read. Absent when false. */
+  isLongRead?: boolean;
   /**
    * For a voice note's transcript notice: the note it transcribes. Absent on
    * every other row, and read by nothing here either — the core draws the

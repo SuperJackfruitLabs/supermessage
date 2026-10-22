@@ -1146,6 +1146,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1337,6 +1339,8 @@ internal interface UniffiLib : Library {
     ): RustBufferFirstRunScript.ByValue
     fun uniffi_supermessage_ffi_fn_func_fold_turn(`roomId`: RustBuffer.ByValue,`inputs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_long_read_graphemes(uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
     fun uniffi_supermessage_ffi_fn_func_next_notification_mode(`current`: RustBufferNotificationMode.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferNotificationMode.ByValue
     fun uniffi_supermessage_ffi_fn_func_notification_category_identifier(`category`: RustBufferNotificationCategory.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1546,6 +1550,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_first_run_script(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_fold_turn(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_long_read_graphemes(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_next_notification_mode(
     ): Short
@@ -1819,6 +1825,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_long_read_graphemes() != 62272.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345.toShort()) {
@@ -7626,6 +7635,20 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_fold_turn(
         FfiConverterString.lower(`roomId`),FfiConverterSequenceTypeTurnInput.lower(`inputs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * How many graphemes a message may have before a row says `is_long_read`
+         * (`core::item_view::LONG_READ_GRAPHEMES`). For hosts that need the figure
+         * itself, such as fixtures and previews. UniFFI only: no Tauri command.
+         */ fun `longReadGraphemes`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_long_read_graphemes(
+        _status)
 }
     )
     }

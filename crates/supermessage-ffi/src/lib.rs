@@ -1172,6 +1172,14 @@ pub fn elapsed_label(elapsed_ms: i64) -> String {
     supermessage_core::turn_label::elapsed_label(elapsed_ms)
 }
 
+/// How many graphemes a message may have before a row says `is_long_read`
+/// (`core::item_view::LONG_READ_GRAPHEMES`). For hosts that need the figure
+/// itself, such as fixtures and previews. UniFFI only: no Tauri command.
+#[uniffi::export]
+pub fn long_read_graphemes() -> u32 {
+    supermessage_core::item_view::LONG_READ_GRAPHEMES as u32
+}
+
 /// Folds `inputs` through a fresh turn book, for previews and fixtures — see
 /// `core::turns::fold_turn`.
 #[uniffi::export]

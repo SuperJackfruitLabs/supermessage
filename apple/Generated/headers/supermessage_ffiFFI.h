@@ -724,6 +724,12 @@ RustBuffer uniffi_supermessage_ffi_fn_func_first_run_script(RustCallStatus *_Non
 RustBuffer uniffi_supermessage_ffi_fn_func_fold_turn(RustBuffer room_id, RustBuffer inputs, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_LONG_READ_GRAPHEMES
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_LONG_READ_GRAPHEMES
+uint32_t uniffi_supermessage_ffi_fn_func_long_read_graphemes(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NEXT_NOTIFICATION_MODE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NEXT_NOTIFICATION_MODE
 RustBuffer uniffi_supermessage_ffi_fn_func_next_notification_mode(RustBuffer current, RustCallStatus *_Nonnull out_status
@@ -1257,6 +1263,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_first_run_script(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FOLD_TURN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FOLD_TURN
 uint16_t uniffi_supermessage_ffi_checksum_func_fold_turn(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_LONG_READ_GRAPHEMES
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_LONG_READ_GRAPHEMES
+uint16_t uniffi_supermessage_ffi_checksum_func_long_read_graphemes(void
     
 );
 #endif
