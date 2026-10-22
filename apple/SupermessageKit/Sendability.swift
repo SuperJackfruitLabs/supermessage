@@ -28,7 +28,10 @@ import SupermessageFFI
 // thread in the first place.
 extension Core: @retroactive @unchecked Sendable {}
 
+extension Acknowledgement: @retroactive @unchecked Sendable {}
+extension AcknowledgementKind: @retroactive @unchecked Sendable {}
 extension ConnectionState: @retroactive @unchecked Sendable {}
+extension Counterpart: @retroactive @unchecked Sendable {}
 extension CustomEventDecision: @retroactive @unchecked Sendable {}
 extension CustomEventDecisionOption: @retroactive @unchecked Sendable {}
 extension CustomEventField: @retroactive @unchecked Sendable {}
@@ -63,6 +66,7 @@ extension RichInline: @retroactive @unchecked Sendable {}
 extension RichListItem: @retroactive @unchecked Sendable {}
 extension RichTableCell: @retroactive @unchecked Sendable {}
 extension RichTableRow: @retroactive @unchecked Sendable {}
+extension RoomCast: @retroactive @unchecked Sendable {}
 extension RoomAffordance: @retroactive @unchecked Sendable {}
 extension RoomDiffEnvelope: @retroactive @unchecked Sendable {}
 extension RoomDiffOp: @retroactive @unchecked Sendable {}
@@ -84,6 +88,7 @@ extension TimelineItemDto: @retroactive @unchecked Sendable {}
 extension TimelineRow: @retroactive @unchecked Sendable {}
 extension TimelineSnapshot: @retroactive @unchecked Sendable {}
 extension TypingUserDto: @retroactive @unchecked Sendable {}
+extension TypingView: @retroactive @unchecked Sendable {}
 extension TurnErrorAttempt: @retroactive @unchecked Sendable {}
 extension TurnErrorCard: @retroactive @unchecked Sendable {}
 extension TurnErrorKind: @retroactive @unchecked Sendable {}

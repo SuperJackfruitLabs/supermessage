@@ -204,6 +204,13 @@ struct PreviewClient: SessionClient {
     func knownPeople() async throws -> [PersonDto] {
         isEmpty ? [] : PreviewFixtures.people
     }
+    func roomCast(roomId: String) async throws -> RoomCast {
+        roomCastFrom(
+            roomId: roomId, everyone: PreviewFixtures.people,
+            memberIds: PreviewFixtures.roomInfo.members.map(\.userId), headerName: nil,
+            isAgentRoom: false)
+    }
+    func hasSent(roomId: String) async -> Bool { false }
     func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {
         isEmpty ? [] : PreviewFixtures.searchResults
     }

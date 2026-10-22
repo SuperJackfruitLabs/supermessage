@@ -27,7 +27,9 @@ struct TimelineView: View {
 
     @State private var isAwayFromNewest = false
     /// Who is in the room: its agents, and who the header names (D11).
-    @State private var cast = RoomCast()
+    @State private var cast: RoomCast?
+    /// Whether the reader has sent here since signing in; the core owns it.
+    @State private var sentHere = false
 
     /// What re-marks the room read: a change to the history, or the reader
     /// coming back to the newest end after being away.
@@ -137,6 +139,11 @@ struct TimelineView: View {
                 .animation(.snappy(duration: 0.22), value: session.typing.line)
             }
             .task(id: timeline.roomId) { await loadCast() }
+            // A delivered send's echo bumps the revision, so this is asked
+            // again exactly when the answer may have changed.
+            .task(id: "\(timeline.roomId ?? "")-\(timeline.revision)") {
+                if let roomId = timeline.roomId { sentHere = await session.hasSent(in: roomId) }
+            }
             // Success when a turn finishes in the room on screen (M2) — only
             // on the change to finished, never when a room opens onto a turn
             // that had already ended.
@@ -158,29 +165,25 @@ struct TimelineView: View {
     }
 
     /// What the dock says: "Sent to Atlas" → "Atlas is on it…" → nothing.
-    /// The rules are `Acknowledgement`'s; this only gathers the facts.
+    /// The rules are the core's (`acknowledgement`); this only gathers the facts.
     private var acknowledgement: Acknowledgement? {
         guard let roomId = timeline.roomId else { return nil }
-        let known = cast.roomId == roomId
-        return Acknowledgement.state(
-            rows: timeline.items, addressee: known ? cast.addressee : nil,
-            agentIds: known ? cast.agentIds : [],
-            sentThisSession: session.typing.hasSent(in: roomId),
+        let known = cast?.roomId == roomId
+        return SupermessageFFI.acknowledgement(
+            rows: timeline.items, addressee: known ? cast?.addressee : nil,
+            agentIds: known ? cast?.agentIds ?? [] : [],
+            sentThisSession: sentHere,
             typingAgents: session.typing.typingAgents,
             turnInProgress: session.live.inProgress)
     }
 
     private func loadCast() async {
         guard let roomId = timeline.roomId else { return }
-        let row = session.rooms.row(for: roomId)
-        await cast.load(
-            roomId: roomId, headerName: row?.identity.name, isAgentRoom: row?.room.runtime != nil,
-            people: { await session.people() },
-            memberIds: { try? await session.roomInfo(roomId).members.map(\.userId) })
+        cast = await session.roomCast(roomId)
         // The same name the header uses, on the typing line and on the live
         // turn — one agent, one name (D11).
-        session.typing.recognise(cast.cast, in: roomId)
-        session.live.setAgentName(cast.counterpart?.name, for: roomId)
+        if let cast { session.typing.recognise(cast, in: roomId) }
+        session.live.setAgentName(cast?.counterpart?.name, for: roomId)
     }
 }
 
@@ -195,8 +198,7 @@ private struct AcknowledgementDock: View {
     @Environment(\.rendersStill) private var rendersStill
 
     private var isWorking: Bool {
-        if case .onIt = acknowledgement { return true }
-        return false
+        acknowledgement.kind == .onIt
     }
 
     var body: some View {
@@ -270,8 +272,10 @@ private struct TypingPill: View {
 #Preview("Acknowledgement") {
     PreviewGround {
         VStack(alignment: .leading, spacing: 8) {
-            AcknowledgementDock(acknowledgement: .sent(to: "Atlas"))
-            AcknowledgementDock(acknowledgement: .onIt(["Atlas"]))
+            AcknowledgementDock(
+                acknowledgement: Acknowledgement(kind: .sent, names: ["Atlas"], text: "Sent to Atlas"))
+            AcknowledgementDock(
+                acknowledgement: Acknowledgement(kind: .onIt, names: ["Atlas"], text: "Atlas is on it…"))
             TypingPill(line: "Krishna is typing…")
         }
     }
