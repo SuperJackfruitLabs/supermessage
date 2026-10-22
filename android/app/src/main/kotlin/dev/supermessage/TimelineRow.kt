@@ -298,7 +298,7 @@ private fun dayLabel(
     }
 }
 
-private fun clockLabel(timestampMs: ULong, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String =
+internal fun clockLabel(timestampMs: ULong, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String =
     DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
         .withLocale(locale)
         .format(Instant.ofEpochMilli(timestampMs.toLong()).atZone(zone))

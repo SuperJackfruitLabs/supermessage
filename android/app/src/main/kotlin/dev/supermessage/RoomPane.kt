@@ -10,6 +10,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -181,54 +182,61 @@ internal fun RoomPane(
             // this pane: leaving either stops it (the key is the
             // room; disposal is the pane going away).
             DisposableEffect(currentRoomId) { onDispose { voice.stop() } }
-            CompositionLocalProvider(LocalVoicePlayback provides voice) {
-                Timeline(
-                    rows = items,
-                    revision = revision,
-                    typingLine = typingLine,
-                    isPaginating = isPaginating,
-                    canPaginate = canPaginate,
-                    onPaginate = { scope.launch { session.timeline.paginateBack() } },
-                    imageUri = { id -> mediaCache[id] ?: session.media.image(id) },
-                    faceUri = { mxc -> faceCache[mxc] },
-                    loadFace = session.faces::load,
-                    onMarkRead = { scope.launch { session.timeline.markRead() } },
-                    liveAnswer = liveAnswer,
-                    liveThought = liveThought,
-                    liveTools = liveTools,
-                    liveFinished = liveFinished,
-                    onReact = { row, key ->
-                        scope.launch {
-                            session.toggleReaction(row.item.eventId, key, currentRoomId)
-                        }
-                    },
-                    // The event id is the gate's own, which the decision
-                    // references; the card supplies what it resolves.
-                    // Both are needed and neither side has both.
-                    // Returns whether the answer landed, so the card can
-                    // stop offering the choice — and keep offering it when
-                    // the send failed.
-                    onDecide = { row, answer ->
-                        val gateId = answer.subject
-                        if (gateId == null) {
-                            // A permission request has no gate; route it
-                            // to the permission sender (iOS
-                            // `TimelineCollectionView.swift:1022-1031`).
-                            session.answerPermission(optionId = answer.optionId, roomId = currentRoomId)
-                        } else session.answerGate(
-                            eventId = row.item.eventId,
-                            gateId = gateId,
-                            optionId = answer.optionId,
-                            comment = answer.comment,
-                            prompt = answer.prompt,
-                            roomId = currentRoomId,
-                        )
-                    },
-                    onReply = { row -> session.replies.start(row, currentRoomId) },
-                    onEdit = { row -> session.edits.start(row, currentRoomId) },
-                    onDelete = { row -> session.delete(row.item.eventId, currentRoomId) },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
+            // Keyed by the room: everything the list holds in memory (an open
+            // message menu, a who-reacted popover, a swipe, the scroll position)
+            // belongs to one room and must not be lent to the next
+            // (`RoomScreen.swift:35-39` resets on `roomId` too).
+            key(currentRoomId) {
+                CompositionLocalProvider(LocalVoicePlayback provides voice) {
+                    Timeline(
+                        rows = items,
+                        revision = revision,
+                        typingLine = typingLine,
+                        isPaginating = isPaginating,
+                        canPaginate = canPaginate,
+                        onPaginate = { scope.launch { session.timeline.paginateBack() } },
+                        imageUri = { id -> mediaCache[id] ?: session.media.image(id) },
+                        faceUri = { mxc -> faceCache[mxc] },
+                        loadFace = session.faces::load,
+                        onMarkRead = { scope.launch { session.timeline.markRead() } },
+                        liveAnswer = liveAnswer,
+                        liveThought = liveThought,
+                        liveTools = liveTools,
+                        liveFinished = liveFinished,
+                        onReact = { row, key ->
+                            scope.launch {
+                                session.toggleReaction(row.item.eventId, key, currentRoomId)
+                            }
+                        },
+                        // The event id is the gate's own, which the decision
+                        // references; the card supplies what it resolves.
+                        // Both are needed and neither side has both.
+                        // Returns whether the answer landed, so the card can
+                        // stop offering the choice — and keep offering it when
+                        // the send failed.
+                        onDecide = { row, answer ->
+                            val gateId = answer.subject
+                            if (gateId == null) {
+                                // A permission request has no gate; route it
+                                // to the permission sender (iOS
+                                // `TimelineCollectionView.swift:1022-1031`).
+                                session.answerPermission(optionId = answer.optionId, roomId = currentRoomId)
+                            } else session.answerGate(
+                                eventId = row.item.eventId,
+                                gateId = gateId,
+                                optionId = answer.optionId,
+                                comment = answer.comment,
+                                prompt = answer.prompt,
+                                roomId = currentRoomId,
+                            )
+                        },
+                        onReply = { row -> session.replies.start(row, currentRoomId) },
+                        onEdit = { row -> session.edits.start(row, currentRoomId) },
+                        onDelete = { row -> session.delete(row.item.eventId, currentRoomId) },
+                        onSwipeReply = { row -> session.replies.start(row, currentRoomId) },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
             }
 
             Composer(

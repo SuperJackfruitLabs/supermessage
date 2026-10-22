@@ -36,6 +36,15 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.testTag as semanticsTestTag
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import kotlin.math.roundToInt
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -130,10 +139,13 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * Delete asks first ([DeleteConfirm]) and then calls [onDelete], whose `false`
  * puts "Not sent. Try again." under the row for a few seconds (no iOS copy:
  * iOS swallows a failed delete). Which row the menu is for is held by id and
- * dropped when that row leaves [rows], so a redacted row's menu closes and a
- * room switch cannot leave the previous room's menu open. No swipe gesture,
- * and no avatar cache: the former would fight this list's own vertical drag,
- * the latter is a different task's wiring.
+ * dropped when that row leaves [rows]. A redacted row does *not* leave: the
+ * core keeps a redacted item's id (`crates/supermessage-core/src/timeline.rs`),
+ * so its menu stays until the room changes (the caller keys this list by room)
+ * or the item drops out of the list, as on iOS. The horizontal swipes live in
+ * [timelineSwipe]; they claim only a mostly horizontal drag, so they neither
+ * fight this list's vertical scroll nor the long press. No avatar cache: a
+ * different task's wiring.
  *
  * ## Reacting
  *
@@ -160,6 +172,7 @@ fun Timeline(
     onReply: (row: TimelineRowDto) -> Unit = {},
     onEdit: (row: TimelineRowDto) -> Unit = {},
     onDelete: suspend (row: TimelineRowDto) -> Boolean = { false },
+    onSwipeReply: (row: TimelineRowDto) -> Unit = {},
     imageUri: (eventId: String) -> String? = { null },
     faceUri: (mxcUri: String) -> String? = { null },
     loadFace: suspend (mxcUri: String) -> Unit = {},
@@ -222,6 +235,8 @@ fun Timeline(
             failedDelete = null
         }
     }
+    val reveal = remember { TimeReveal() }
+    val revealWidthPx = with(LocalDensity.current) { RevealWidthDp.dp.toPx() }
     val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
 
@@ -335,29 +350,54 @@ fun Timeline(
             .testTag("row-${display.id}")
         when (display) {
             is DisplayRow.Row -> Column(modifier = itemModifier) {
-                // No gesture at all when the menu would be empty.
+                // No long-press gesture at all when the menu would be empty;
+                // the swipes decide for themselves (a reply needs
+                // `canReplyOrReact`, a reveal needs a time to show).
                 val row = display.row
                 val hasMenu = !messageMenuActions(row).isEmpty
-                TimelineRow(
-                    row = row,
-                    now = Instant.now(),
-                    continuesRun = continuesRun[row.item.id] ?: false,
-                    endsRun = endsRun[row.item.id] ?: true,
-                    attribution = if (singleSpeaker) row.senderShort else row.senderName,
-                    imageUri = imageUri,
-                    faceUri = faceUri,
-                    loadFace = loadFace,
-                    onReact = { key -> onReact(row, key) },
-                    onDecide = { answer -> onDecide(row, answer) },
-                    modifier = if (hasMenu) {
-                        rowModifier.combinedClickable(
-                            onClick = {},
-                            onLongClick = { menuFor = row.item.id },
+                val time = revealedTime(row, ::clockLabel)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    TimelineRow(
+                        row = row,
+                        now = Instant.now(),
+                        continuesRun = continuesRun[row.item.id] ?: false,
+                        endsRun = endsRun[row.item.id] ?: true,
+                        attribution = if (singleSpeaker) row.senderShort else row.senderName,
+                        imageUri = imageUri,
+                        faceUri = faceUri,
+                        loadFace = loadFace,
+                        onReact = { key -> onReact(row, key) },
+                        onDecide = { answer -> onDecide(row, answer) },
+                        modifier = (
+                            if (hasMenu) {
+                                rowModifier.combinedClickable(
+                                    onClick = {},
+                                    onLongClick = { menuFor = row.item.id },
+                                )
+                            } else {
+                                rowModifier
+                            }
+                            ).timelineSwipe(row, reveal, revealWidthPx, onSwipeReply),
+                    )
+                    // The time waits just past the trailing edge and slides in
+                    // as the rows slide out, fading in with the pull. Hidden
+                    // from accessibility: the row already says when it was
+                    // sent (`TimelineChrome.swift:64-67`).
+                    if (time != null && reveal.offset > 0f) {
+                        Text(
+                            time,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .width(RevealWidthDp.dp)
+                                .offset { IntOffset((revealWidthPx - reveal.offset).roundToInt(), 0) }
+                                .graphicsLayer { alpha = minOf(1f, reveal.offset / revealWidthPx) }
+                                .clearAndSetSemantics { semanticsTestTag = "revealed-time" },
                         )
-                    } else {
-                        rowModifier
-                    },
-                )
+                    }
+                }
                 if (failedDelete == row.item.id) {
                     Text(
                         "Not sent. Try again.",

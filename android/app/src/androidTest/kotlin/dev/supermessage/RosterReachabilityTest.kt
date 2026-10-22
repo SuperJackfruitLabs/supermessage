@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -499,6 +500,80 @@ class RosterReachabilityTest {
         compose.waitForIdle()
         compose.onAllNodesWithText("4 members").assertCountEquals(0)
         stalled.countDown()
+    }
+
+    /**
+     * Opens Alpha, runs [open] on its first message, then switches to Bravo under
+     * it (two panes, so the pane is reused and only the room id changes).
+     * Both rooms hold a message with the same id, the case where "the id left
+     * the list" cannot be what closes the previous room's state.
+     */
+    private fun switchRoomsAfter(open: () -> Unit) {
+        val reacted = ownMessage("\$one", "first").let {
+            it.copy(
+                item = it.item.copy(
+                    reactions = listOf(
+                        uniffi.supermessage_core.ReactionDto("👍", "👍", 1u, false, listOf("@priya:example.org")),
+                    ),
+                ),
+            )
+        }
+        val fake = FakeCore(
+            roomsSnapshotResult = {
+                RoomsSnapshot(
+                    seq = 0uL,
+                    rooms = listOf(joinedRow("!a:example.org", "Alpha"), joinedRow("!b:example.org", "Bravo")),
+                )
+            },
+            roomInfoResult = { infoOf(it, 4uL) },
+            timelineRows = listOf(reacted),
+        )
+        val session = sessionOf(fake)
+        val prefs = preferences()
+        compose.setContent {
+            Box(Modifier.requiredWidth(800.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Alpha").performScrollTo().performClick()
+        compose.waitForIdle()
+        open()
+        // Not a tap on the roster: the menu is modal, and a tap outside it
+        // would dismiss it. A room opened from elsewhere (a notification, a
+        // link) switches under it the way this does.
+        runBlocking { session.open("!b:example.org") }
+        compose.waitForIdle()
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Bravo, about this room"))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitForIdle()
+    }
+
+    /** Review Focus 4: an open message menu does not follow the reader into the next room. */
+    @Test
+    fun anOpenMessageMenuDoesNotSurviveARoomSwitch() {
+        switchRoomsAfter {
+            compose.onNodeWithTag("row-\$one").performTouchInput { longClick() }
+            compose.onNodeWithTag("message-menu").assertIsDisplayed()
+        }
+        compose.onNodeWithTag("row-\$one").assertIsDisplayed()
+        compose.onAllNodesWithTag("message-menu").assertCountEquals(0)
+    }
+
+    /** The who-reacted popover, likewise. */
+    @Test
+    fun aWhoReactedPopoverDoesNotSurviveARoomSwitch() {
+        switchRoomsAfter {
+            compose.onNodeWithTag("reaction-👍").performTouchInput { longClick() }
+            compose.onNodeWithTag("reaction-who").assertIsDisplayed()
+        }
+        compose.onAllNodesWithTag("reaction-who").assertCountEquals(0)
+        // The new room is showing the same chip (it is only off-screen to the
+        // right: the shell is wider than the display), so "gone" is not an
+        // empty room.
+        compose.onNodeWithTag("reaction-👍").assertExists()
     }
 
     /**
