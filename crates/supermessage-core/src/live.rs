@@ -135,7 +135,7 @@ pub struct ToolUpdateToDeviceEventContent {
 /// print it as it arrived or rewrite it by hand: iOS showed `in_progress`,
 /// Android the same, and the desktop `IN PROGRESS`. The phase is decided
 /// here, once, and a host picks a glyph and a colour from it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, uniffi::Enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum ToolPhase {
     /// `pending`: announced, not started.
