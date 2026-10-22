@@ -15,7 +15,7 @@
 use matrix_sdk::notification_settings::RoomNotificationMode;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::{Room, RoomMemberships};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::error::{CoreError, CoreResult};
 
@@ -67,7 +67,7 @@ impl From<RoomNotificationMode> for NotificationMode {
 /// default applies. The SDK expresses that as `Option<RoomNotificationMode>`,
 /// and an `Option` of an enum across a UniFFI boundary makes every host write
 /// the same double-unwrap — so the absence gets a name here instead.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum NotificationMode {
     /// Nothing set for this room; the account default decides.
@@ -75,6 +75,15 @@ pub enum NotificationMode {
     AllMessages,
     MentionsOnly,
     Muted,
+}
+
+/// What the mute toggle sets next: a muted room goes back to the default
+/// rather than to a rule nobody chose; any other mode becomes muted.
+pub fn next_notification_mode(current: NotificationMode) -> NotificationMode {
+    match current {
+        NotificationMode::Muted => NotificationMode::Default,
+        _ => NotificationMode::Muted,
+    }
 }
 
 /// A room's descriptive metadata plus its joined member list, for the
@@ -531,5 +540,20 @@ mod tests {
     #[test]
     fn should_fetch_full_member_list_is_false_for_an_empty_but_genuinely_empty_room() {
         assert!(!should_fetch_full_member_list(0, 0));
+    }
+
+    #[test]
+    fn unmuting_restores_the_default_rather_than_inventing_a_rule() {
+        assert_eq!(
+            next_notification_mode(NotificationMode::Muted),
+            NotificationMode::Default
+        );
+        for from in [
+            NotificationMode::Default,
+            NotificationMode::AllMessages,
+            NotificationMode::MentionsOnly,
+        ] {
+            assert_eq!(next_notification_mode(from), NotificationMode::Muted);
+        }
     }
 }

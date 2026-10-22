@@ -484,6 +484,56 @@ pub fn roster_row(rows: &[RoomRow], room_id: &str, now_ms: u64) -> Option<Roster
         .next()
 }
 
+/// The status a room's header states about its agent.
+///
+/// Not [`AgentState`]: that is read from a room's stored last activity, this
+/// adds the one live fact the header has — whether a turn is running now.
+/// It also differs from `widget::agent_state`'s lower-case "working", which is
+/// a stored step within `ACTIVE_WITHIN_MS`: a different input for a different
+/// surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase")]
+pub enum RoomStatus {
+    Working,
+    NeedsYou,
+    Active,
+    Idle,
+    Quiet,
+}
+
+/// The header status for a room, or `None` when the room is not an agent's.
+///
+/// A debt outranks a live turn: an agent that owes an answer says so even while
+/// it works. `turn_in_progress` is the host's input until M1.3 moves the turn
+/// state into the core (ruling 7).
+pub fn room_status(
+    state: AgentState,
+    describes_agent: bool,
+    turn_in_progress: bool,
+) -> Option<RoomStatus> {
+    if !describes_agent {
+        return None;
+    }
+    Some(match state {
+        AgentState::NeedsYou => RoomStatus::NeedsYou,
+        _ if turn_in_progress => RoomStatus::Working,
+        AgentState::Active => RoomStatus::Active,
+        AgentState::Idle => RoomStatus::Idle,
+        AgentState::Quiet => RoomStatus::Quiet,
+    })
+}
+
+/// The word the header shows for a status.
+pub fn room_status_word(status: RoomStatus) -> &'static str {
+    match status {
+        RoomStatus::Working => "Working",
+        RoomStatus::NeedsYou => "Needs you",
+        RoomStatus::Active => "Active",
+        RoomStatus::Idle => "Idle",
+        RoomStatus::Quiet => "Quiet",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -962,5 +1012,35 @@ mod tests {
         .map(|f| f.title())
         .collect();
         assert_eq!(titles, ["All", "Unread", "Agents", "Needs you"]);
+    }
+
+    #[test]
+    fn the_header_status_vocabulary() {
+        use AgentState::*;
+        assert_eq!(room_status(Active, true, true), Some(RoomStatus::Working));
+        assert_eq!(
+            room_status(NeedsYou, true, true),
+            Some(RoomStatus::NeedsYou)
+        );
+        assert_eq!(room_status(Active, true, false), Some(RoomStatus::Active));
+        assert_eq!(room_status(Idle, true, false), Some(RoomStatus::Idle));
+        assert_eq!(room_status(Quiet, true, false), Some(RoomStatus::Quiet));
+        assert_eq!(room_status(NeedsYou, false, false), None);
+        assert_eq!(room_status(Active, false, true), None);
+    }
+
+    #[test]
+    fn the_status_words() {
+        let words: Vec<&str> = [
+            RoomStatus::Working,
+            RoomStatus::NeedsYou,
+            RoomStatus::Active,
+            RoomStatus::Idle,
+            RoomStatus::Quiet,
+        ]
+        .into_iter()
+        .map(room_status_word)
+        .collect();
+        assert_eq!(words, ["Working", "Needs you", "Active", "Idle", "Quiet"]);
     }
 }
