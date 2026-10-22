@@ -1137,6 +1137,48 @@ public object FfiConverterTypeAccountDto: FfiConverterRustBuffer<AccountDto> {
 
 
 /**
+ * The dock's state: which sentence, who it names, and the sentence itself.
+ */
+data class Acknowledgement (
+    var `kind`: AcknowledgementKind, 
+    /**
+     * Who the sentence names — usually one. Empty only for a bare "On it…".
+     */
+    var `names`: List<kotlin.String>, 
+    var `text`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAcknowledgement: FfiConverterRustBuffer<Acknowledgement> {
+    override fun read(buf: ByteBuffer): Acknowledgement {
+        return Acknowledgement(
+            FfiConverterTypeAcknowledgementKind.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Acknowledgement) = (
+            FfiConverterTypeAcknowledgementKind.allocationSize(value.`kind`) +
+            FfiConverterSequenceString.allocationSize(value.`names`) +
+            FfiConverterString.allocationSize(value.`text`)
+    )
+
+    override fun write(value: Acknowledgement, buf: ByteBuffer) {
+            FfiConverterTypeAcknowledgementKind.write(value.`kind`, buf)
+            FfiConverterSequenceString.write(value.`names`, buf)
+            FfiConverterString.write(value.`text`, buf)
+    }
+}
+
+
+
+/**
  * An agent's avatar, for the App Group's cache (spec 2026-09-30, B4).
  */
 data class AgentAvatar (
@@ -1370,6 +1412,45 @@ public object FfiConverterTypeAudioView: FfiConverterRustBuffer<AudioView> {
             FfiConverterOptionalString.write(value.`mimetype`, buf)
             FfiConverterOptionalString.write(value.`caption`, buf)
             FfiConverterString.write(value.`accessibilityLabel`, buf)
+    }
+}
+
+
+
+/**
+ * The single agent a room's messages go to, as the header names it.
+ *
+ * The typing line and the acknowledgement dock say "Atlas", not the bridge's
+ * `atlas-bot`, because the header already does; the cast carries the header's
+ * name so the three never disagree.
+ */
+data class Counterpart (
+    var `userId`: kotlin.String, 
+    var `name`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCounterpart: FfiConverterRustBuffer<Counterpart> {
+    override fun read(buf: ByteBuffer): Counterpart {
+        return Counterpart(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Counterpart) = (
+            FfiConverterString.allocationSize(value.`userId`) +
+            FfiConverterString.allocationSize(value.`name`)
+    )
+
+    override fun write(value: Counterpart, buf: ByteBuffer) {
+            FfiConverterString.write(value.`userId`, buf)
+            FfiConverterString.write(value.`name`, buf)
     }
 }
 
@@ -2574,6 +2655,72 @@ public object FfiConverterTypeRichTableRow: FfiConverterRustBuffer<RichTableRow>
 
     override fun write(value: RichTableRow, buf: ByteBuffer) {
             FfiConverterSequenceTypeRichTableCell.write(value.`cells`, buf)
+    }
+}
+
+
+
+/**
+ * Who is in the room on screen, as the composer and the typing line need it.
+ *
+ * Built from the people this account shares rooms with (agents first, never
+ * this account) and the room's member ids; it decides nothing about either.
+ */
+data class RoomCast (
+    var `roomId`: kotlin.String, 
+    /**
+     * The room's other members, in the order the core gave them.
+     */
+    var `people`: List<PersonDto>, 
+    var `counterpart`: Counterpart?, 
+    /**
+     * The agents in the room, by id.
+     */
+    var `agentIds`: List<kotlin.String>, 
+    /**
+     * Who a message sent here is for, when that is one agent.
+     */
+    var `addressee`: kotlin.String?, 
+    /**
+     * Everyone a message here could address, named as the picker inserts them.
+     */
+    var `mentionables`: List<Mentionable>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRoomCast: FfiConverterRustBuffer<RoomCast> {
+    override fun read(buf: ByteBuffer): RoomCast {
+        return RoomCast(
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypePersonDto.read(buf),
+            FfiConverterOptionalTypeCounterpart.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceTypeMentionable.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: RoomCast) = (
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterSequenceTypePersonDto.allocationSize(value.`people`) +
+            FfiConverterOptionalTypeCounterpart.allocationSize(value.`counterpart`) +
+            FfiConverterSequenceString.allocationSize(value.`agentIds`) +
+            FfiConverterOptionalString.allocationSize(value.`addressee`) +
+            FfiConverterSequenceTypeMentionable.allocationSize(value.`mentionables`)
+    )
+
+    override fun write(value: RoomCast, buf: ByteBuffer) {
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterSequenceTypePersonDto.write(value.`people`, buf)
+            FfiConverterOptionalTypeCounterpart.write(value.`counterpart`, buf)
+            FfiConverterSequenceString.write(value.`agentIds`, buf)
+            FfiConverterOptionalString.write(value.`addressee`, buf)
+            FfiConverterSequenceTypeMentionable.write(value.`mentionables`, buf)
     }
 }
 
@@ -4176,6 +4323,49 @@ public object FfiConverterTypeTypingUserDto: FfiConverterRustBuffer<TypingUserDt
 
 
 /**
+ * What the typing notices come to.
+ */
+data class TypingView (
+    /**
+     * "Krishna is typing…", "Alice and Bob are typing…", or `None` when no
+     * one other than an agent is.
+     */
+    var `line`: kotlin.String?, 
+    /**
+     * The agents whose typing notice is up, by the name the header gives
+     * them, in notice order.
+     */
+    var `agents`: List<kotlin.String>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTypingView: FfiConverterRustBuffer<TypingView> {
+    override fun read(buf: ByteBuffer): TypingView {
+        return TypingView(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TypingView) = (
+            FfiConverterOptionalString.allocationSize(value.`line`) +
+            FfiConverterSequenceString.allocationSize(value.`agents`)
+    )
+
+    override fun write(value: TypingView, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`line`, buf)
+            FfiConverterSequenceString.write(value.`agents`, buf)
+    }
+}
+
+
+
+/**
  * A voice note's transcript, ready to draw.
  */
 data class VoiceNoteTranscript (
@@ -4473,6 +4663,45 @@ public object FfiConverterTypeWidgetWrite: FfiConverterRustBuffer<WidgetWrite> {
             FfiConverterBoolean.write(value.`reload`, buf)
     }
 }
+
+
+
+/**
+ * Which of the dock's two sentences.
+ */
+
+enum class AcknowledgementKind {
+    
+    /**
+     * "Sent to Atlas" — no sign of the agent yet.
+     */
+    SENT,
+    /**
+     * "Atlas is on it…" — it has reacted, is typing, or has a turn going.
+     */
+    ON_IT;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAcknowledgementKind: FfiConverterRustBuffer<AcknowledgementKind> {
+    override fun read(buf: ByteBuffer) = try {
+        AcknowledgementKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: AcknowledgementKind) = 4UL
+
+    override fun write(value: AcknowledgementKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -6987,6 +7216,38 @@ public object FfiConverterOptionalTypeAudioMetaDto: FfiConverterRustBuffer<Audio
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeCounterpart: FfiConverterRustBuffer<Counterpart?> {
+    override fun read(buf: ByteBuffer): Counterpart? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeCounterpart.read(buf)
+    }
+
+    override fun allocationSize(value: Counterpart?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeCounterpart.allocationSize(value)
+        }
+    }
+
+    override fun write(value: Counterpart?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeCounterpart.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeCustomEventDecision: FfiConverterRustBuffer<CustomEventDecision?> {
     override fun read(buf: ByteBuffer): CustomEventDecision? {
         if (buf.get().toInt() == 0) {
@@ -7697,6 +7958,62 @@ public object FfiConverterSequenceTypeCustomEventField: FfiConverterRustBuffer<L
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeCustomEventField.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer<List<Mentionable>> {
+    override fun read(buf: ByteBuffer): List<Mentionable> {
+        val len = buf.getInt()
+        return List<Mentionable>(len) {
+            FfiConverterTypeMentionable.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<Mentionable>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMentionable.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<Mentionable>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMentionable.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypePersonDto: FfiConverterRustBuffer<List<PersonDto>> {
+    override fun read(buf: ByteBuffer): List<PersonDto> {
+        val len = buf.getInt()
+        return List<PersonDto>(len) {
+            FfiConverterTypePersonDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<PersonDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypePersonDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<PersonDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypePersonDto.write(it, buf)
         }
     }
 }

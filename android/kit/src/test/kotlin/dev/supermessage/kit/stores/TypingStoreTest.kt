@@ -99,4 +99,15 @@ class TypingStoreTest {
         typing.handle(roomId = "!other:x", users = listOf(user("@g:x", "Ganesha")))
         assertNull("another room's typing showed up here", typing.line)
     }
+
+    /** M1.2: the wording is the core's, so a third typer is "1 other", not "2 others". */
+    @Test
+    fun threeTypersAreNamedTheCoresWay() {
+        val typing = store()
+        typing.handle(
+            roomId = "!r:x",
+            users = listOf(user("@a:x", "Ann"), user("@b:x", "Bob"), user("@c:x", "Cy")),
+        )
+        assertEquals("Ann, Bob and 1 other are typing…", typing.line)
+    }
 }

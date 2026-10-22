@@ -416,125 +416,6 @@ struct ElapsedTimeTests {
     }
 }
 
-// MARK: - A3: the acknowledgement
-
-struct AcknowledgementTests {
-    static func row(
-        _ id: String, own: Bool, sender: String, reactions: [ReactionDto] = [],
-        membership: String? = nil
-    ) -> TimelineRow {
-        let item = TimelineItemDto(
-            id: id, eventId: id, kind: "message", msgtype: "m.text", detail: nil, sender: sender,
-            senderDisplayName: sender, senderAvatar: nil, body: "b", formattedBody: nil, media: nil,
-            customPayload: nil, timestampMs: 1, isOwn: own, sendState: nil, replyTo: nil,
-            edited: false, reactions: reactions, readBy: [], editable: false, membershipSubject: nil)
-        return TimelineRow(
-            item: item, view: .bubble(muted: false, blocks: [], voice: nil), senderName: sender,
-            senderShort: sender, senderInitial: "?", membershipVerb: membership, replyQuote: nil,
-            canReplyOrReact: true, replyPreview: nil)
-    }
-
-    static let agents: Set<String> = ["@atlas:x"]
-
-    func state(
-        _ rows: [TimelineRow], sent: Bool = true, typing: [String] = [], live: Bool = false,
-        addressee: String? = "Atlas", agents: Set<String> = agents
-    ) -> Acknowledgement? {
-        Acknowledgement.state(
-            rows: rows, addressee: addressee, agentIds: agents, sentThisSession: sent,
-            typingAgents: typing, turnInProgress: live)
-    }
-
-    @Test("sent, with no sign of the agent yet")
-    func sent() {
-        #expect(state([Self.row("1", own: true, sender: "@me:x")]) == .sent(to: "Atlas"))
-    }
-
-    @Test("a reaction or typing means it is on it; a live turn shows its own card")
-    func onIt() {
-        // Mutation seen failing: ignoring reactions (stayed "Sent to").
-        let mine = Self.row("1", own: true, sender: "@me:x")
-        let reacted = Self.row(
-            "1", own: true, sender: "@me:x",
-            reactions: [ReactionDto(key: "👀", displayKey: "👀", count: 1, byMe: false, senders: ["@atlas:x"])])
-        #expect(state([reacted]) == .onIt(["Atlas"]))
-        #expect(state([mine], typing: ["Atlas"]) == .onIt(["Atlas"]))
-        // A live turn speaks for itself in its card; no pill under it.
-        #expect(state([mine], live: true) == nil)
-    }
-
-    @Test("the agent's done or failed mark ends it, with or without a reply")
-    func finishedMark() {
-        // krishna, 2026-09-26 15:06: "Okay" got ✅ and, on purpose, no reply
-        // (the agent chose NO_REPLY). The dock read ✅ as "on it" and said
-        // "Krishna is on it…" until the room was left. 👀 is working; ✅ and ❌
-        // are the AgentPod hub saying the turn is over.
-        for mark in ["✅", "❌"] {
-            let marked = Self.row(
-                "1", own: true, sender: "@me:x",
-                reactions: [ReactionDto(key: mark, displayKey: mark, count: 1, byMe: false, senders: ["@atlas:x"])])
-            #expect(state([marked]) == nil, "\(mark) should end the dock")
-        }
-        // The reader's own ✅ is not the agent's verdict.
-        let mine = Self.row(
-            "1", own: true, sender: "@me:x",
-            reactions: [ReactionDto(key: "✅", displayKey: "✅", count: 1, byMe: true, senders: ["@me:x"])])
-        #expect(state([mine]) == .sent(to: "Atlas"))
-        // Typing still says working, whatever mark is there.
-        let done = Self.row(
-            "1", own: true, sender: "@me:x",
-            reactions: [ReactionDto(key: "✅", displayKey: "✅", count: 1, byMe: false, senders: ["@atlas:x"])])
-        #expect(state([done], typing: ["Atlas"]) == .onIt(["Atlas"]))
-    }
-
-    @Test("the reader's own reaction is not the agent's")
-    func ownReaction() {
-        let reacted = Self.row(
-            "1", own: true, sender: "@me:x",
-            reactions: [ReactionDto(key: "👍", displayKey: "👍", count: 1, byMe: true, senders: ["@me:x"])])
-        #expect(state([reacted]) == .sent(to: "Atlas"))
-    }
-
-    @Test("the agent's answer ends it; someone else's does not")
-    func answered() {
-        // Mutation seen failing: counting any other member's message as the
-        // answer when the agents are known — a colleague's "+1" cleared it.
-        let mine = Self.row("1", own: true, sender: "@me:x")
-        #expect(state([mine, Self.row("2", own: false, sender: "@atlas:x")]) == nil)
-        #expect(state([mine, Self.row("2", own: false, sender: "@krishna:x")]) == .sent(to: "Atlas"))
-        // A membership line is not an answer.
-        #expect(
-            state([mine, Self.row("2", own: false, sender: "@atlas:x", membership: "joined")])
-                == .sent(to: "Atlas"))
-    }
-
-    @Test("an answer from before the latest send does not count")
-    func answerBeforeSend() {
-        // Mutation seen failing: searching the whole timeline for an agent
-        // message instead of only after the last own one.
-        let rows = [
-            Self.row("1", own: true, sender: "@me:x"),
-            Self.row("2", own: false, sender: "@atlas:x"),
-            Self.row("3", own: true, sender: "@me:x"),
-        ]
-        #expect(state(rows) == .sent(to: "Atlas"))
-    }
-
-    @Test("nothing to say without a send this session, or without an agent")
-    func silent() {
-        let mine = Self.row("1", own: true, sender: "@me:x")
-        #expect(state([mine], sent: false) == nil, "last week's message announced as just sent")
-        #expect(state([mine], addressee: nil) == nil)
-    }
-
-    @Test("several agents typing in a room with no one addressee are all named")
-    func severalAgents() {
-        let result = state([], sent: false, typing: ["Atlas", "Quill"], addressee: nil)
-        #expect(result == .onIt(["Atlas", "Quill"]))
-        #expect(result?.text == "Atlas and Quill are on it…")
-    }
-}
-
 // MARK: - D11: one name, and agents off the typing line
 
 @MainActor
@@ -543,14 +424,20 @@ struct TypingCastTests {
         TypingUserDto(userId: id, displayName: label, label: label)
     }
 
+    static let atlas = PersonDto(
+        userId: "@atlas:x", name: "atlas-bot", initial: "a",
+        runtime: RuntimeDto(harness: "claude", host: "ci"), avatarUrl: nil)
+
     @Test("an agent typing is named by the header, and is not on the people's line")
     func agentUsesHeaderName() {
-        // Mutations seen failing: `name(of:)` returning the label (the dock
-        // said "atlas-bot"); the line not filtering agents (both the dock and
-        // "atlas-bot is typing…" at once).
+        // Mutations seen failing (in the core, where the rule now lives): the
+        // counterpart's name ignored (the dock said "atlas-bot"); the line not
+        // filtering agents (both the dock and "atlas-bot is typing…" at once).
         let typing = TypingStore()
         typing.recognise(
-            .init(agentIds: ["@atlas:x"], counterpart: .init(userId: "@atlas:x", name: "Atlas")),
+            roomCastFrom(
+                roomId: room, everyone: [Self.atlas], memberIds: ["@atlas:x"], headerName: "Atlas",
+                isAgentRoom: true),
             in: room)
         typing.focus(room)
         typing.handle(
@@ -558,76 +445,6 @@ struct TypingCastTests {
 
         #expect(typing.typingAgents == ["Atlas"])
         #expect(typing.line == "Krishna is typing…")
-    }
-
-    @Test("with no cast, everyone typing is on the line, as before")
-    func noCast() {
-        let typing = TypingStore()
-        typing.focus(room)
-        typing.handle(roomId: room, users: [Self.user("@atlas:x", "atlas-bot")])
-        #expect(typing.line == "atlas-bot is typing…")
-        #expect(typing.typingAgents.isEmpty)
-    }
-
-    @Test("a send is remembered per room, and forgotten at sign-out")
-    func sent() {
-        let typing = TypingStore()
-        typing.noteSent(in: room)
-        typing.focus("!other:x")
-        #expect(typing.hasSent(in: room))
-        #expect(!typing.hasSent(in: "!other:x"))
-        typing.focus(nil)
-        #expect(!typing.hasSent(in: room))
-    }
-}
-
-@MainActor
-struct RoomCastTests {
-    static func person(_ id: String, _ name: String, agent: Bool) -> PersonDto {
-        PersonDto(
-            userId: id, name: name, initial: String(name.prefix(1)),
-            runtime: agent ? RuntimeDto(harness: "claude", host: "ci") : nil, avatarUrl: nil)
-    }
-
-    static let atlas = person("@atlas:x", "atlas-bot", agent: true)
-    static let quill = person("@quill:x", "Quill", agent: true)
-    static let krishna = person("@k:x", "Krishna", agent: false)
-
-    @Test("an agent's room with one agent in it: that agent is the header")
-    func counterpart() {
-        // Mutation seen failing: dropping the one-agent check, so a room with
-        // two agents called whichever came first by the room's name.
-        #expect(
-            RoomCast.counterpart(among: [Self.atlas, Self.krishna], headerName: "Atlas", isAgentRoom: true)
-                == .init(userId: "@atlas:x", name: "Atlas"))
-        #expect(
-            RoomCast.counterpart(among: [Self.atlas, Self.quill], headerName: "Atlas", isAgentRoom: true)
-                == nil)
-        #expect(
-            RoomCast.counterpart(among: [Self.atlas], headerName: "Ops", isAgentRoom: false) == nil)
-    }
-
-    @Test("the cast is the room's members, not everyone known")
-    func scopedToMembers() async {
-        let cast = RoomCast()
-        await cast.load(
-            roomId: room, headerName: "Atlas", isAgentRoom: true,
-            people: { [Self.atlas, Self.quill, Self.krishna] },
-            memberIds: { ["@atlas:x", "@k:x", "@me:x"] })
-        #expect(cast.people.map(\.userId) == ["@atlas:x", "@k:x"])
-        #expect(cast.counterpart?.name == "Atlas")
-        #expect(cast.addressee == "Atlas")
-        #expect(cast.mentionables.map(\.displayName) == ["atlas-bot", "Krishna"])
-    }
-
-    @Test("without the members, no counterpart is guessed")
-    func noMembers() async {
-        let cast = RoomCast()
-        await cast.load(
-            roomId: room, headerName: "Atlas", isAgentRoom: true,
-            people: { [Self.atlas] }, memberIds: { nil })
-        #expect(cast.people.count == 1)
-        #expect(cast.counterpart == nil)
     }
 }
 

@@ -29,6 +29,7 @@
 // scaffolding emits a few `extern "C"` symbols the desktop build never calls.
 uniffi::setup_scaffolding!();
 
+pub mod acknowledgement;
 pub mod agent_avatar;
 pub mod attachments;
 pub mod audio;
@@ -54,6 +55,7 @@ pub mod people;
 pub mod push;
 pub mod recovery;
 pub mod rich;
+pub mod room_cast;
 pub mod room_identity;
 pub mod room_info;
 pub mod room_preview;
@@ -62,6 +64,7 @@ pub mod roster;
 pub mod safety;
 pub mod search;
 pub mod secrets;
+pub mod sent_rooms;
 pub mod session;
 pub mod spaces;
 pub mod storage;
@@ -69,6 +72,7 @@ pub mod sync;
 pub mod timeline;
 pub mod tls;
 pub mod turn_error;
+pub mod typing_line;
 pub mod voice_reply;
 pub mod voice_transcript;
 pub mod widget;

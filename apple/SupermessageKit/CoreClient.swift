@@ -203,6 +203,14 @@ public actor CoreClient {
         try await run { try $0.knownPeople() }
     }
 
+    public func roomCast(roomId: String) async throws -> RoomCast {
+        try await run { try $0.roomCast(roomId: roomId) }
+    }
+
+    public func hasSent(roomId: String) async -> Bool {
+        await run { $0.hasSent(roomId: roomId) }
+    }
+
     public func directRoomWith(userId: String) async throws -> String? {
         try await run { try $0.directRoomWith(userId: userId) }
     }
