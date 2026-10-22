@@ -91,6 +91,7 @@
     attachmentFailure,
     sendCaveat,
     stagedStripView,
+    afterFailedSend,
     blocksSend,
     type FailedChip,
     StagedAttachmentTracker,
@@ -386,15 +387,13 @@
    * and the Send button behave identically — see this file's top-of-script
    * comment for why Send is repurposed rather than disabled.
    *
-   * The strip goes on **every** outcome, success or failure, and that is the
-   * fail-closed reading of the token rules rather than a shortcut:
-   * `attachment_send` consumes the token before it reads a byte, so after
-   * any failure past that point there is nothing left to retry, and the two
-   * refusals that *don't* consume (`roomChanged`, `unknownAttachment`) leave
-   * a token this room can't use anyway. Leaving the strip up would offer a
-   * second press of Send that could only ever produce `unknownAttachment` —
-   * or, worse, look like a retry of a send that had actually gone through.
-   * The discard covers the one case where the core may still hold it.
+   * A `sent` outcome clears the strip. A `failed` one keeps the file on it:
+   * the core has already staged the same file again behind a fresh token
+   * (`restaged`), so Send retries it with the current text as its caption,
+   * and the failure is drawn on the chip (D12). With no `restaged` the file
+   * is gone and the chip only carries the failure, which blocks text-alone
+   * sends. A rejection (`roomChanged`, `unknownAttachment`) means the token
+   * was never taken and is unusable here, so that strip goes too.
    *
    * `attachments.takeToken` rather than `take`, so a send that resolves
    * *after* the reader has already attached a different file clears the send
@@ -413,11 +412,22 @@
     try {
       const outcome = await attachmentSend(sentRoomId, attachment.token, caption);
       if (outcome.outcome === "failed") {
-        // The core has put the file behind a fresh token. This composer
-        // still drops the strip on failure (consuming `restaged` is a
-        // later task), so release the fresh token and show the error.
-        if (outcome.restaged) discardStaged(outcome.restaged.token);
-        throw outcome.error;
+        // The core put the file behind a fresh token (or could not). Keep it
+        // on the chip with the failure; the draft and caption stay put.
+        const next = afterFailedSend(outcome, stagedStripView(attachment).filename);
+        if (roomId === sentRoomId) {
+          if (next.staged) adoptStaged(sentRoomId, next.staged);
+          else {
+            const abandoned = attachments.takeToken(attachment.token);
+            if (abandoned !== null) discardStaged(abandoned.token);
+          }
+          failedChip = next.failed;
+        } else {
+          // The reader moved rooms mid-send: nothing here to retry from.
+          attachments.takeToken(attachment.token);
+          if (next.staged) discardStaged(next.staged.token);
+        }
+        return;
       }
       attachments.takeToken(attachment.token);
       // The draft went as the caption, so it has been sent: clear it, in the
@@ -775,6 +785,7 @@
     filename={view.filename}
     summary={view.summary}
     {caveat}
+    failure={failedChip?.failure ?? null}
     onRemove={removeStaged}
   />
 {:else if failedChip}

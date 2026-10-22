@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { StagedAttachment } from "$lib/ipc";
+import type { AttachmentSendOutcome, StagedAttachment } from "$lib/ipc";
 import {
+  afterFailedSend,
   attachmentFailure,
   blocksSend,
   type FailedChip,
@@ -404,5 +405,59 @@ describe("blocksSend", () => {
 
   it("does not block with neither", () => {
     expect(blocksSend(null, null)).toBe(false);
+  });
+});
+
+describe("afterFailedSend", () => {
+  type Failed = Extract<AttachmentSendOutcome, { outcome: "failed" }>;
+  const failed = (over: Partial<Failed> = {}): Failed => ({
+    outcome: "failed",
+    error: { kind: "network", message: "" },
+    restaged: null,
+    ...over,
+  });
+
+  it("keeps the re-staged file", () => {
+    const again = staged({ token: "fresh" });
+    const next = afterFailedSend(failed({ restaged: again }), "holiday.png");
+    expect(next.staged).toBe(again);
+    expect(next.failed.filename).toBe("holiday.png");
+  });
+
+  it("without a re-stage blocks the text", () => {
+    const next = afterFailedSend(failed(), "holiday.png");
+    expect(next.staged).toBeNull();
+    expect(blocksSend(next.staged, next.failed)).toBe(true);
+  });
+
+  it("uses iOS's fallback once re-staged", () => {
+    const next = afterFailedSend(failed({ restaged: staged() }), "holiday.png");
+    expect(next.failed.failure.message).toBe("Couldn't send that file.");
+  });
+
+  it('keeps "Attach it again" without a re-stage', () => {
+    const next = afterFailedSend(failed(), "holiday.png");
+    expect(next.failed.failure.message).toBe("That file wasn't sent. Attach it again.");
+  });
+
+  it("shows the core's words", () => {
+    const next = afterFailedSend(
+      failed({ error: { kind: "network", message: "connection reset" }, restaged: staged() }),
+      "holiday.png",
+    );
+    expect(next.failed.failure.message).toBe("Connection reset");
+  });
+
+  it("keeps a specific refusal's wording even when re-staged", () => {
+    const next = afterFailedSend(
+      failed({ error: { kind: "attachmentTooLarge", message: "" }, restaged: staged() }),
+      "holiday.png",
+    );
+    expect(next.failed.failure.message).toBe("That file is bigger than this homeserver will accept.");
+  });
+
+  it("a retry is allowed", () => {
+    const next = afterFailedSend(failed({ restaged: staged() }), "holiday.png");
+    expect(blocksSend(next.staged, next.failed)).toBe(false);
   });
 });

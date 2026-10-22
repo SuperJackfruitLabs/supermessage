@@ -76,3 +76,14 @@
     failure: attachmentFailure({ kind: "unknownAttachment", message: "" }, "attach"),
   }}
 />
+
+<!-- A send that failed but the file is still staged: the failure shows and Send retries. -->
+<Story
+  name="Failed, ready to retry"
+  args={{
+    filename: "holiday.png",
+    summary: "PNG · 412 KB",
+    caveat: null,
+    failure: attachmentFailure({ kind: "network", message: "connection reset" }, "send", "Couldn't send that file."),
+  }}
+/>
