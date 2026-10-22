@@ -29,6 +29,13 @@
     canReplyOrReact: false,
   };
 
+  // Someone else's settled message: Copy and Report.
+  const theirs = {
+    ...base,
+    ...message({ id: "m3", eventId: "$e3", isOwn: false, sender: "@atlas:example.org", body: "Ship it." }),
+    canReplyOrReact: true,
+  };
+
   const noop = () => {};
   const args = {
     pickingReactionFor: null,
@@ -38,6 +45,7 @@
     onCopy: noop,
     onEdit: noop,
     onDelete: noop,
+    onReport: noop,
   };
 
   const { Story } = defineMeta({
@@ -46,11 +54,11 @@
   });
 </script>
 
-{#snippet frame(row: typeof own)}
+{#snippet frame(row: typeof own, onReport: (row: any, opener: HTMLElement | null) => void = noop)}
   <!-- The `relative group` block the pill is anchored to, as in the timeline. -->
   <div class="group relative mx-auto mt-8 h-44 w-[34rem] bg-surface font-sans text-body">
     <div class="rounded-control bg-surface-sunken px-3 py-2">Ship it.</div>
-    <MessageActions {row} {...args} />
+    <MessageActions {row} {...args} {onReport} />
   </div>
 {/snippet}
 
@@ -122,5 +130,53 @@
 >
   {#snippet template()}
     {@render frame(sending)}
+  {/snippet}
+</Story>
+
+<!-- Someone else's message: "Report…" is last, after a separator, in danger. -->
+<Story
+  name="More menu with Report"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const more = (await settled(() => root.querySelector('[aria-label="More actions"]'))) as HTMLElement;
+    more.focus();
+    more.click();
+    await settled(() => root.querySelector("[role=menu]:not(.invisible) [role=separator], [role=menu]:not(.invisible)"));
+  }}
+>
+  {#snippet template()}
+    {@render frame(theirs)}
+  {/snippet}
+</Story>
+
+<!-- Choosing Report… hands the More button on, so the sheet can return focus there once the menu has closed. -->
+<Story
+  name="Report passes the More button"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const more = (await settled(() => root.querySelector('[aria-label="More actions"]'))) as HTMLElement;
+    more.focus();
+    more.click();
+    const item = (await settled(() =>
+      [...root.querySelectorAll<HTMLElement>("[role=menuitem]")].find((b) => b.textContent?.trim() === "Report…"),
+    )) as HTMLElement;
+    item.click();
+    await settled(() => ((window as any).__reportOpener === more ? more : null), 1000).catch(() => {
+      throw new Error("onReport did not receive the More button");
+    });
+    // The click sets `__reportOpener` synchronously; the menu closes and focus moves afterwards.
+    // End on the settled state, not on the click, so the frame is the same every run.
+    await settled(() => (root.querySelector("[role=menu]") === null ? root : null), 1000).catch(() => {
+      throw new Error("the menu did not close after Report…");
+    });
+    // No sheet exists in this story to take focus, so give it back to More as the sheet does, and
+    // assert it: the frame is then the same state on every run, not whatever focus had reached.
+    more.focus();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (document.activeElement !== more) throw new Error("focus is not on the More button");
+  }}
+>
+  {#snippet template()}
+    {@render frame(theirs, (_row, opener) => ((window as any).__reportOpener = opener))}
   {/snippet}
 </Story>

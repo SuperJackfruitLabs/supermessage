@@ -25,9 +25,14 @@
     await settled(() => canvasElement.querySelector("[role='alert']"));
   };
 
+  const noInviter = () => Promise.resolve(null);
+  const krishna = () => Promise.resolve("Krishna");
+  const click = (el: Element) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
   const { Story } = defineMeta({
     title: "Rooms/InvitationPanel",
     component: InvitationPanel,
+    args: { roomId: "!room:example.org", loadInviter: noInviter },
   });
 </script>
 
@@ -50,4 +55,26 @@
 -->
 <Story name="Accept fails" args={{ roomName: "Guild", onAccept: refuse, onDecline: settle }}
   play={pressAccept}
+/>
+
+<!-- Who invited, in meta under the prompt. -->
+<Story
+  name="With inviter"
+  args={{ roomName: "Cloudchamber", onAccept: settle, onDecline: settle, loadInviter: krishna }}
+  play={async ({ canvasElement }) => {
+    await settled(() => ([...canvasElement.querySelectorAll("p")].find((p) => p.textContent?.trim() === "from Krishna")));
+  }}
+/>
+
+<!-- A quiet "Report room…" under the answers opens the reason sheet. -->
+<Story
+  name="Report room opens the sheet"
+  args={{ roomName: "Cloudchamber", onAccept: settle, onDecline: settle, loadInviter: krishna }}
+  play={async ({ canvasElement }) => {
+    const report = await settled(() =>
+      [...canvasElement.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Report room…"),
+    );
+    click(report);
+    await settled(() => canvasElement.querySelector("dialog[open]"));
+  }}
 />

@@ -41,10 +41,29 @@
     onSelect: (roomId: string) => void;
     /** An avatar that failed to load, so the container can stop retrying. */
     onAvatarFailed: (roomId: string) => void;
+    /**
+     * Asks for the row's menu, at a point: the pointer for a right-click, the row's bottom-left
+     * for Shift+F10 or the ContextMenu key. Rows are drawn the same without it.
+     */
+    onMenu?: (roomId: string, at: { x: number; y: number }) => void;
   }
 
-  let { row, state, describesAgent, selected, avatarUrl, now, onSelect, onAvatarFailed }: Props =
+  let { row, state, describesAgent, selected, avatarUrl, now, onSelect, onAvatarFailed, onMenu }: Props =
     $props();
+
+  function onContextMenu(e: MouseEvent): void {
+    if (!onMenu) return;
+    e.preventDefault();
+    onMenu(row.room.id, { x: e.clientX, y: e.clientY });
+  }
+
+  function onKeydown(e: KeyboardEvent): void {
+    if (!onMenu) return;
+    if (e.key !== "ContextMenu" && !(e.key === "F10" && e.shiftKey)) return;
+    e.preventDefault();
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    onMenu(row.room.id, { x: box.left, y: box.bottom });
+  }
 
   // Rooms active within the last 5 minutes render their time in
   // `--color-content-muted`, older ones in `--color-content-faint`. Recency
@@ -135,6 +154,8 @@
 <button
   type="button"
   onclick={() => onSelect(room.id)}
+  oncontextmenu={onContextMenu}
+  onkeydown={onKeydown}
   aria-current={selected ? "true" : undefined}
   aria-label={rowAriaLabel(
     identity.name,

@@ -128,6 +128,8 @@ tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 
 
 [dev-dependencies]
+# `test` for `tauri::test::mock_app`: commands take `State<Session>`, which only an app can hand out.
+tauri = { version = "2", features = ["test"] }
 supermessage-core = { path = "../crates/supermessage-core" }
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
 # no_retry_test_client_with_server, MatrixMockServer), wiremock to script the
