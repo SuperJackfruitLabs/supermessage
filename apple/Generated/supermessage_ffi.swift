@@ -666,6 +666,12 @@ public protocol CoreProtocol : AnyObject {
     func ensureRecovery() throws  -> String?
     
     /**
+     * Whether this account has sent in `room_id` since signing in — the
+     * session owns it (ruling 12e).
+     */
+    func hasSent(roomId: String)  -> Bool
+    
+    /**
      * Block someone — a person or an agent. Their messages stop reaching
      * this account everywhere; an agent keeps running. The new list arrives
      * as `FfiEvent::IgnoredUsers` once the homeserver echoes it back.
@@ -846,6 +852,12 @@ public protocol CoreProtocol : AnyObject {
      * A room's avatar at its original size, for viewing the picture itself.
      */
     func roomAvatarFull(roomId: String) throws  -> String?
+    
+    /**
+     * Who is in `room_id` — the composer's mention list, the typing line's
+     * counterpart and the acknowledgement's addressee. See `core::room_cast`.
+     */
+    func roomCast(roomId: String) throws  -> RoomCast
     
     /**
      * Everything the info panel shows about a room.
@@ -1310,6 +1322,18 @@ open func ensureRecovery()throws  -> String? {
 }
     
     /**
+     * Whether this account has sent in `room_id` since signing in — the
+     * session owns it (ruling 12e).
+     */
+open func hasSent(roomId: String) -> Bool {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_method_core_has_sent(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+    
+    /**
      * Block someone — a person or an agent. Their messages stop reaching
      * this account everywhere; an agent keeps running. The new list arrives
      * as `FfiEvent::IgnoredUsers` once the homeserver echoes it back.
@@ -1639,6 +1663,18 @@ open func roomAvatar(roomId: String)throws  -> String? {
 open func roomAvatarFull(roomId: String)throws  -> String? {
     return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_room_avatar_full(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+    
+    /**
+     * Who is in `room_id` — the composer's mention list, the typing line's
+     * counterpart and the acknowledgement's addressee. See `core::room_cast`.
+     */
+open func roomCast(roomId: String)throws  -> RoomCast {
+    return try  FfiConverterTypeRoomCast_lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_room_cast(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),$0
     )
 })
@@ -3852,6 +3888,54 @@ fileprivate struct FfiConverterOptionTypeStagedFile: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeAcknowledgement: FfiConverterRustBuffer {
+    typealias SwiftType = Acknowledgement?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAcknowledgement.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAcknowledgement.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeAgentAvatar: FfiConverterRustBuffer {
     typealias SwiftType = AgentAvatar?
 
@@ -3868,6 +3952,30 @@ fileprivate struct FfiConverterOptionTypeAgentAvatar: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeAgentAvatar.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCounterpart: FfiConverterRustBuffer {
+    typealias SwiftType = Counterpart?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCounterpart.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCounterpart.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -4588,6 +4696,31 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
 
 
 
+
+
+
+
+
+
+
+
+/**
+ * What the dock above the composer says after the reader wrote to an agent —
+ * see `core::acknowledgement`. A free function for the same reason as
+ * `peer_color_index`.
+ */
+public func acknowledgement(rows: [TimelineRow], addressee: String?, agentIds: [String], sentThisSession: Bool, typingAgents: [String], turnInProgress: Bool) -> Acknowledgement? {
+    return try!  FfiConverterOptionTypeAcknowledgement.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_acknowledgement(
+        FfiConverterSequenceTypeTimelineRow.lower(rows),
+        FfiConverterOptionString.lower(addressee),
+        FfiConverterSequenceString.lower(agentIds),
+        FfiConverterBool.lower(sentThisSession),
+        FfiConverterSequenceString.lower(typingAgents),
+        FfiConverterBool.lower(turnInProgress),$0
+    )
+})
+}
 /**
  * The generated tile for the room `room_id` — see `core::agent_avatar`. A
  * free function for the same reason as `peer_color_index`: it touches no
@@ -4795,6 +4928,22 @@ public func richBlocksFromMarkdown(source: String) -> [RichBlock] {
 })
 }
 /**
+ * The cast of a room from facts already in hand — for previews and tests.
+ * A free function because it touches no session state; hosts with a session
+ * ask `Core::room_cast`, which gathers the same facts itself.
+ */
+public func roomCastFrom(roomId: String, everyone: [PersonDto], memberIds: [String]?, headerName: String?, isAgentRoom: Bool) -> RoomCast {
+    return try!  FfiConverterTypeRoomCast_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_room_cast_from(
+        FfiConverterString.lower(roomId),
+        FfiConverterSequenceTypePersonDto.lower(everyone),
+        FfiConverterOptionSequenceString.lower(memberIds),
+        FfiConverterOptionString.lower(headerName),
+        FfiConverterBool.lower(isAgentRoom),$0
+    )
+})
+}
+/**
  * The header status of a room, or `None` when it has none to say. See `core::roster::room_status`.
  */
 public func roomStatus(state: AgentState, describesAgent: Bool, turnInProgress: Bool) -> RoomStatus? {
@@ -4943,6 +5092,19 @@ public func rosterState(row: RoomRow, nowMs: UInt64) -> AgentState {
 })
 }
 /**
+ * The typing line and the agents the acknowledgement names — see
+ * `core::typing_line`. A free function for the same reason as `peer_color_index`.
+ */
+public func typingView(typers: [TypingUserDto], agentIds: [String], counterpart: Counterpart?) -> TypingView {
+    return try!  FfiConverterTypeTypingView_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_typing_view(
+        FfiConverterSequenceTypeTypingUserDto.lower(typers),
+        FfiConverterSequenceString.lower(agentIds),
+        FfiConverterOptionTypeCounterpart.lower(counterpart),$0
+    )
+})
+}
+/**
  * What a widget button sends, or `None` when it must send nothing.
  */
 public func widgetAnswerFor(stored: String?, roomId: String, eventId: String, optionId: String) -> WidgetAnswer? {
@@ -5070,6 +5232,9 @@ private var initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_acknowledgement() != 12992) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_agent_avatar_style() != 40859) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5118,6 +5283,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_room_cast_from() != 42135) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_room_status() != 37123) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5155,6 +5323,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_roster_state() != 4121) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_typing_view() != 62690) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_widget_answer_for() != 34951) {
@@ -5221,6 +5392,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_ensure_recovery() != 63369) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_has_sent() != 14164) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_ignore_user() != 7115) {
@@ -5302,6 +5476,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_room_avatar_full() != 19639) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_room_cast() != 55944) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_room_info() != 28126) {

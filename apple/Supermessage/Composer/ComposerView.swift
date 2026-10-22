@@ -41,7 +41,7 @@ struct ComposerView: View {
     @State private var failure: String?
     /// Counts sends that reached the room, for the send haptic (M2).
     @State private var delivered = 0
-    @State private var cast = RoomCast()
+    @State private var cast: RoomCast?
     @State private var recorder = VoiceRecorder()
 
     @FocusState private var focused: Bool
@@ -57,7 +57,7 @@ struct ComposerView: View {
     var body: some View {
         VStack(spacing: 6) {
             if let query = mentionQuery {
-                let people = cast.candidates(matching: query.text)
+                let people = cast?.candidates(matching: query.text) ?? []
                 if !people.isEmpty {
                     MentionPicker(people: people) { person in
                         text = MentionComposing.insert(person, for: query, in: text)
@@ -256,11 +256,7 @@ struct ComposerView: View {
     }
 
     private func loadCast() async {
-        let row = session.rooms.row(for: roomId)
-        await cast.load(
-            roomId: roomId, headerName: row?.identity.name, isAgentRoom: row?.room.runtime != nil,
-            people: { await session.people() },
-            memberIds: { try? await session.roomInfo(roomId).members.map(\.userId) })
+        cast = await session.roomCast(roomId)
     }
 
     // MARK: - Sending
@@ -283,7 +279,7 @@ struct ComposerView: View {
             return
         }
 
-        switch await session.send(text: text, in: roomId, mentioning: cast.mentionables) {
+        switch await session.send(text: text, in: roomId, mentioning: cast?.mentionables ?? []) {
         case .sent:
             failure = nil
             text = ""

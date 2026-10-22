@@ -225,9 +225,6 @@ public final class Session {
             text: text, in: roomId, mentioning: members, staged: staged, replies: replies,
             client: client)
         if result.delivered {
-            // Recorded for the acknowledgement dock: "Sent to …" until the
-            // agent shows it heard. See `Acknowledgement`.
-            typing.noteSent(in: roomId)
             await setTyping(false, in: roomId)
         }
         return result
@@ -537,6 +534,16 @@ public final class Session {
     /// Everyone this account shares a room with, agents first.
     public func people() async -> [PersonDto] {
         (try? await client.knownPeople()) ?? []
+    }
+
+    /// Who is in `roomId`, as the core works it out; `nil` when it could not.
+    public func roomCast(_ roomId: String) async -> RoomCast? {
+        try? await client.roomCast(roomId: roomId)
+    }
+
+    /// Whether this account has sent into `roomId` since signing in.
+    public func hasSent(in roomId: String) async -> Bool {
+        await client.hasSent(roomId: roomId)
     }
 
     /// Open the conversation with `person`, creating it only if there is not

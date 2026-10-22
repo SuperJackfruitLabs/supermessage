@@ -166,6 +166,11 @@ public protocol RoomAdministering: Sendable {
 public protocol AccountDirectory: Sendable {
     func account() async throws -> AccountDto
     func knownPeople() async throws -> [PersonDto]
+    /// Who is in `roomId`, as the composer, typing line and dock need it.
+    func roomCast(roomId: String) async throws -> RoomCast
+    /// Whether this account has sent into `roomId` since signing in. The core
+    /// owns it, so signing out clears it.
+    func hasSent(roomId: String) async -> Bool
     func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto]
 }
 

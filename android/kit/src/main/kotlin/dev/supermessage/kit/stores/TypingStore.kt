@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import uniffi.supermessage_core.TypingUserDto
+import uniffi.supermessage_ffi.typingView
 
 /**
  * Who is typing in the focused room.
@@ -80,16 +81,13 @@ class TypingStore {
      * The line to show, or `null` when nobody is typing.
      *
      * Names rather than a count: in a room of agents, *which* one is about
-     * to speak is the useful half.
+     * to speak is the useful half. The wording is the core's (`typing_view`);
+     * this host no longer keeps its own copy of the rule.
      */
     val line: String?
-        get() {
-            val names = _typers.value.map { it.label }
-            return when (names.size) {
-                0 -> null
-                1 -> "${names[0]} is typing…"
-                2 -> "${names[0]} and ${names[1]} are typing…"
-                else -> "${names[0]} and ${names.size - 1} others are typing…"
-            }
-        }
+        get() = typingView(
+            _typers.value.map { TypingUserDto(it.userId, null, it.label) },
+            emptyList(),
+            null,
+        ).line
 }
