@@ -1,6 +1,40 @@
 package dev.supermessage
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.width
+import androidx.compose.ui.Modifier
+import dev.supermessage.previews.PreviewFixtures
+import kotlinx.coroutines.CompletableDeferred
+import org.junit.Assert.assertTrue
+import uniffi.supermessage_core.ItemView
+import uniffi.supermessage_core.RichBlock
+import uniffi.supermessage_core.RichInline
+import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -53,16 +87,19 @@ class DecisionCardTest {
                     ),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
+                    senderName = "Atlas — Platform",
                 )
                 DecisionCard(
                     view = CustomEventView.FallbackBody(text = "plain body text"),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
+                    senderName = "Atlas — Platform",
                 )
                 DecisionCard(
                     view = CustomEventView.Placeholder(text = "nothing usable"),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
+                    senderName = "Atlas — Platform",
                 )
             }
         }
@@ -85,6 +122,7 @@ class DecisionCardTest {
                 ),
                 label = "Station status",
                 eventType = "dev.supermessage.station.v1",
+                senderName = "Atlas — Platform",
             )
         }
         compose.onNodeWithText("Station").assertIsDisplayed()
@@ -100,15 +138,17 @@ class DecisionCardTest {
                     view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = true, decision = null, link = null, outcome = null),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
+                    senderName = "Atlas — Platform",
                 )
                 DecisionCard(
                     view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null, outcome = null),
                     label = "Turn2",
                     eventType = "dev.agentpod.turn.v1",
+                    senderName = "Atlas — Platform",
                 )
             }
         }
-        compose.onAllNodesWithText("newer version").assertCountEquals(1)
+        compose.onAllNodesWithText("Newer version").assertCountEquals(1)
     }
 
     @Test
@@ -125,6 +165,7 @@ class DecisionCardTest {
                 ),
                 label = "Turn",
                 eventType = "dev.agentpod.turn.v1",
+                senderName = "Atlas — Platform",
             )
         }
         compose.onNodeWithText("because the gateway was flapping").assertDoesNotExist()
@@ -161,11 +202,13 @@ class DecisionCardTest {
                     ),
                     label = "Permission",
                     eventType = "dev.agentpod.permission.v1",
+                    senderName = "Atlas — Platform",
                 )
                 DecisionCard(
                     view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null, outcome = null),
                     label = "Turn",
                     eventType = "dev.agentpod.turn.v1",
+                    senderName = "Atlas — Platform",
                 )
             }
         }
@@ -194,6 +237,7 @@ class DecisionCardTest {
                 ),
                 label = "Permission",
                 eventType = "dev.agentpod.permission.v1",
+                senderName = "Atlas — Platform",
             )
         }
         compose.onNodeWithText("Restart the Hermes gateway?").assertIsDisplayed()
@@ -228,6 +272,7 @@ class DecisionCardTest {
                 ),
                 label = "Permission",
                 eventType = "dev.agentpod.permission.v1",
+                senderName = "Atlas — Platform",
                 onDecide = { answer -> recorded = answer; true },
             )
         }
@@ -267,6 +312,7 @@ class DecisionCardTest {
                 ),
                 label = "Permission",
                 eventType = "dev.agentpod.permission.v1",
+                senderName = "Atlas — Platform",
             )
         }
         compose.onNodeWithText("Approve").assertIsDisplayed()
@@ -298,32 +344,296 @@ class DecisionCardTest {
                 ),
                 label = "Approval",
                 eventType = "dev.superpipeline.gate.v1",
+                senderName = "Atlas — Platform",
                 onDecide = { true },
             )
         }
         compose.onNodeWithTag("decision-resolved").assertIsDisplayed()
         compose.onNodeWithText("Approved by priya", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Approve \"Launch post\"?").assertIsDisplayed()
-        compose.onAllNodesWithTag("decision-option").assertCountEquals(0)
+        compose.onAllNodesWithTag("decision-primary").assertCountEquals(0)
+        compose.onAllNodesWithTag("decision-secondary").assertCountEquals(0)
+        compose.onAllNodesWithTag("decision-reject").assertCountEquals(0)
         compose.onAllNodesWithTag("decision-pending").assertCountEquals(0)
         compose.onAllNodesWithTag("decision-awaiting-board").assertCountEquals(0)
     }
 
+    // ── G1 layout, D7, failure feedback ──────────────────────────────────
+
+    private class RecordingHaptics : HapticFeedback {
+        val played = mutableListOf<HapticFeedbackType>()
+        override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) { played += hapticFeedbackType }
+    }
+
+    private fun gate(
+        vararg options: Pair<String, String>,
+        prompt: String = "Merge this branch into main?",
+        fields: List<CustomEventField> = emptyList(),
+    ) = CustomEventView.Rendered(
+        fields = fields,
+        reasoning = null,
+        newerVersion = false,
+        decision = CustomEventDecision(
+            prompt = prompt,
+            options = options.map { (id, label) -> CustomEventDecisionOption(label = label, id = id) },
+            subject = "gate-1",
+        ),
+        link = null,
+        outcome = null,
+    )
+
+    private val threeOptions = arrayOf("reject" to "Reject", "approve" to "Approve", "request_changes" to "Request changes")
+
+    private fun show(
+        view: CustomEventView,
+        haptics: HapticFeedback = RecordingHaptics(),
+        senderName: String = "Atlas",
+        fontScale: Float? = null,
+        width: androidx.compose.ui.unit.Dp = 411.dp,
+        onDecide: (suspend (GateAnswer) -> Boolean)? = { true },
+    ) {
+        compose.setContent {
+            val base = LocalDensity.current
+            val density = if (fontScale == null) base else Density(base.density, fontScale)
+            CompositionLocalProvider(
+                LocalHapticFeedback provides haptics,
+                LocalDensity provides density,
+                LocalReduceMotion provides true,
+            ) {
+                Box(Modifier.requiredWidth(width)) {
+                    DecisionCard(
+                        view = view,
+                        label = "Gate",
+                        eventType = "dev.superpipeline.gate.v1",
+                        senderName = senderName,
+                        onDecide = onDecide,
+                    )
+                }
+            }
+        }
+    }
+
     @Test
-    fun eventTypeRendersUntouchedByThisLayer() {
-        // The core already truncates and trims `eventType` before it crosses
-        // (`display_event_type` in `item_view.rs`), so this layer must not
-        // impose its own truncation on top — only guard the render against
-        // right-to-left reordering, which is a display-time concern the
-        // core's own string slicing cannot fix on its own.
-        val safeEventType = "…gent.turn.v1"
+    fun rejectComesLastAndApproveLeads() {
+        show(gate(*threeOptions))
+        val card = compose.onNodeWithTag("decision-card").getUnclippedBoundsInRoot()
+        val primary = compose.onNodeWithTag("decision-primary")
+        primary.assertTextEquals("Approve")
+        val p = primary.getUnclippedBoundsInRoot()
+        assertTrue("the primary spans the card, was ${p.width} of ${card.width}", p.width >= card.width * 0.9f)
+        val reject = compose.onNodeWithTag("decision-reject")
+        reject.assertTextEquals("Reject")
+        val r = reject.getUnclippedBoundsInRoot()
+        val secondary = compose.onNodeWithTag("decision-secondary")
+        secondary.assertTextEquals("Request changes")
+        val s = secondary.getUnclippedBoundsInRoot()
+        assertTrue("reject sits at or below the secondary", r.top >= s.top)
+        assertTrue("reject follows the secondary in reading order", r.left >= s.left)
+        assertTrue("the primary leads", p.top < s.top)
+    }
+
+    @Test
+    fun onlyThePrimaryIsAmber() {
+        show(gate(*threeOptions))
+        // Amber is a debt: a secondary and a rejection owe nothing.
+        compose.onAllNodesWithTag("decision-secondary").assertCountEquals(1)
+        compose.onAllNodesWithTag("decision-reject").assertCountEquals(1)
+        compose.onAllNodesWithTag("decision-primary").assertCountEquals(1)
+    }
+
+    @Test
+    fun detailsAreClosedUntilAsked() {
+        show(
+            gate(
+                "approve" to "Approve",
+                prompt = "Approve?",
+                fields = listOf(
+                    CustomEventField("Card", "Launch post"),
+                    CustomEventField("Board", "b".repeat(40)),
+                    CustomEventField("Repository", "SuperJackfruitLabs/supermessage"),
+                ),
+            ),
+        )
+        compose.onNodeWithText("SuperJackfruitLabs/supermessage").assertDoesNotExist()
+        compose.onNodeWithTag("decision-details").performClick()
+        compose.onNodeWithText("SuperJackfruitLabs/supermessage").assertIsDisplayed()
+    }
+
+    @Test
+    fun askedByNamesTheSender() {
+        show(gate("approve" to "Approve"), senderName = "Superpipeline \u2014 Delivery")
+        compose.onNodeWithText("Asked by Superpipeline \u2014 Delivery").assertIsDisplayed()
+    }
+
+    /**
+     * D7: the schema address is for a screen reader and for no one else. The
+     * right-to-left reordering the old header guarded against cannot happen to
+     * a string that is not drawn.
+     */
+    @Test
+    fun eventTypeIsSpokenNotShown() {
+        val safeEventType = "\u2026gent.turn.v1"
         compose.setContent {
             DecisionCard(
                 view = CustomEventView.Rendered(fields = emptyList(), reasoning = null, newerVersion = false, decision = null, link = null, outcome = null),
                 label = "Turn",
                 eventType = safeEventType,
+                senderName = "Atlas",
             )
         }
-        compose.onNodeWithText(safeEventType).assertIsDisplayed()
+        compose.onNodeWithText(safeEventType, substring = true).assertDoesNotExist()
+        compose.onNodeWithTag("decision-card")
+            .assert(hasAnyDescendant(hasContentDescription("Turn, $safeEventType")))
+    }
+
+    @Test
+    fun aFailedAnswerKeepsTheCardAnswerableAndSaysSo() {
+        val haptics = RecordingHaptics()
+        show(gate(*threeOptions), haptics = haptics, onDecide = { false })
+        compose.onNodeWithTag("decision-failed").assertDoesNotExist()
+        compose.onNodeWithText("Approve").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("decision-failed").assertTextEquals("Not sent. Try again.")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        compose.onNodeWithText("Approve").assertIsEnabled()
+        compose.onNodeWithTag("decision-receipt").assertDoesNotExist()
+        assertEquals(listOf(HapticFeedbackType.Reject), haptics.played)
+        compose.onNodeWithText("Approve").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(HapticFeedbackType.Reject, HapticFeedbackType.Reject), haptics.played)
+    }
+
+    @Test
+    fun aLandedAnswerBecomesAReceipt() {
+        val haptics = RecordingHaptics()
+        show(gate(*threeOptions), haptics = haptics, onDecide = { true })
+        compose.onNodeWithText("Approve").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("decision-receipt").assertTextEquals("Approved by you \u00B7 just now")
+        compose.onNodeWithText("Waiting for the board to confirm").assertIsDisplayed()
+        compose.onNodeWithTag("decision-primary").assertDoesNotExist()
+        compose.onNodeWithTag("decision-failed").assertDoesNotExist()
+        assertEquals(listOf(HapticFeedbackType.Confirm), haptics.played)
+    }
+
+    @Test
+    fun aRequestForChangesCanBeCancelledAndSendsNothing() {
+        var sent = 0
+        show(gate(*threeOptions), onDecide = { sent++; true })
+        compose.onNodeWithText("Request changes").performClick()
+        compose.onNodeWithTag("decision-comment").assertIsDisplayed().assertIsFocused()
+        compose.onNodeWithTag("decision-comment-cancel").assertHasClickAction().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("decision-comment").assertDoesNotExist()
+        assertEquals(0, sent)
+        compose.onNodeWithTag("decision-primary").assertIsEnabled()
+    }
+
+    @Test
+    fun aRequestForChangesKeepsItsTextWhenTheSendFails() {
+        var last: GateAnswer? = null
+        var land = false
+        show(gate(*threeOptions), onDecide = { last = it; land })
+        compose.onNodeWithText("Request changes").performClick()
+        compose.onNodeWithTag("decision-comment").performTextInput("tighten the copy")
+        compose.onNodeWithTag("decision-comment-send").performClick()
+        compose.waitForIdle()
+        assertEquals("tighten the copy", last!!.comment)
+        compose.onNodeWithTag("decision-failed").assertIsDisplayed()
+        // Asking again offers the words already typed.
+        compose.onNodeWithText("Request changes").performClick()
+        compose.onNodeWithText("tighten the copy").assertIsDisplayed()
+    }
+
+    @Test
+    fun requestChangesStaysOnOneLineAtFontScaleTwo() {
+        show(gate(*threeOptions), fontScale = 2f)
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("Request changes").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertEquals(1, layouts.single().lineCount)
+    }
+
+    @Test
+    fun theButtonsStackWhenTheRowCannotFit() {
+        show(gate(*threeOptions), fontScale = 2f, width = 230.dp)
+        val s = compose.onNodeWithTag("decision-secondary").getUnclippedBoundsInRoot()
+        val r = compose.onNodeWithTag("decision-reject").getUnclippedBoundsInRoot()
+        assertTrue("reject is below the secondary", r.top >= s.bottom)
+        assertEquals(s.left, r.left)
+    }
+
+    @Test
+    fun theButtonsShareARowWhenTheyFit() {
+        show(gate(*threeOptions))
+        val s = compose.onNodeWithTag("decision-secondary").getUnclippedBoundsInRoot()
+        val r = compose.onNodeWithTag("decision-reject").getUnclippedBoundsInRoot()
+        assertTrue("same row", r.top < s.bottom && r.left >= s.right)
+    }
+
+    // ── Answered on this device lives outside the row ────────────────────
+
+    private fun timelineWithCardAtTheOldEnd(onDecide: suspend (TimelineRowDto, GateAnswer) -> Boolean): Int {
+        val filler = (1..30).map { i ->
+            PreviewFixtures.row(
+                PreviewFixtures.item("\$f$i", body = "filler $i"),
+                ItemView.Bubble(muted = false, blocks = listOf(RichBlock.Paragraph(listOf(RichInline.Text("filler $i")))), voice = null),
+            )
+        }
+        // Newest first is the list's own order, so the card is the oldest.
+        val rows = filler + PreviewFixtures.card
+        compose.setContent {
+            CompositionLocalProvider(LocalReduceMotion provides true) {
+                Box(Modifier.requiredSize(width = 411.dp, height = 600.dp)) {
+                    Timeline(
+                        rows = rows.reversed(),
+                        revision = 0uL,
+                        typingLine = null,
+                        isPaginating = false,
+                        canPaginate = false,
+                        onPaginate = {},
+                        onMarkRead = {},
+                        onDecide = onDecide,
+                    )
+                }
+            }
+        }
+        return rows.lastIndex
+    }
+
+    @Test
+    fun aRecycledRowDoesNotRearmAnAnsweredCard() {
+        val last = timelineWithCardAtTheOldEnd { _, _ -> true }
+        compose.onNodeWithTag("timeline-list").performScrollToIndex(last)
+        compose.onNodeWithTag("decision-primary").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("decision-receipt", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("timeline-list").performScrollToIndex(0)
+        compose.waitForIdle()
+        compose.onNodeWithTag("decision-card").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-list").performScrollToIndex(last)
+        compose.waitForIdle()
+        compose.onNodeWithTag("decision-receipt", useUnmergedTree = true).assertIsDisplayed()
+        compose.onAllNodesWithTag("decision-primary", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun aRowScrolledAwayMidSendIsNotRearmedAndTheSendIsNotCancelled() {
+        val gateOpen = CompletableDeferred<Boolean>()
+        var calls = 0
+        val last = timelineWithCardAtTheOldEnd { _, _ -> calls++; gateOpen.await() }
+        compose.onNodeWithTag("timeline-list").performScrollToIndex(last)
+        compose.onNodeWithTag("decision-primary").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("timeline-list").performScrollToIndex(0)
+        compose.waitForIdle()
+        compose.onNodeWithTag("timeline-list").performScrollToIndex(last)
+        compose.waitForIdle()
+        // Still in flight: the buttons are not live again.
+        compose.onNodeWithTag("decision-primary", useUnmergedTree = true).assertIsNotEnabled()
+        assertEquals(1, calls)
+        gateOpen.complete(true)
+        compose.waitForIdle()
+        compose.onNodeWithTag("decision-receipt", useUnmergedTree = true).assertIsDisplayed()
+        assertEquals(1, calls)
     }
 }

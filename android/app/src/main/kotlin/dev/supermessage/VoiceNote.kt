@@ -37,6 +37,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -172,6 +173,7 @@ fun AudioNote(
     onSeek: ((Float) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
     val position = when (playback) {
         is NotePlayback.Playing -> playback.positionMs to playback.durationMs
         is NotePlayback.Paused -> playback.positionMs to playback.durationMs
@@ -234,7 +236,8 @@ fun AudioNote(
                 playback = playback,
                 // "Play voice message", "Play voice reply": the core's title.
                 label = if (audio.isVoice) "Play ${audio.title.replaceFirstChar { it.lowercase() }}" else "Play ${audio.title}",
-                onToggle = onToggle,
+                // Play and pause are a selection (`VoiceNoteView.swift:168`).
+                onToggle = onToggle?.let { toggle -> { haptics.play(Haptic.Selection); toggle() } },
             )
             Waveform(
                 bars = VoiceWaveform.bars(audio.waveform),

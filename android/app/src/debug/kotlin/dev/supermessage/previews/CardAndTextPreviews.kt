@@ -9,9 +9,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import dev.supermessage.AnsweredHere
 import dev.supermessage.DecisionCard
 import dev.supermessage.LiveTurn
 import dev.supermessage.RichText
+import dev.supermessage.rememberDecisionAnswers
+import java.time.Instant
 
 /** The signature element, and the only place amber appears in this app. */
 @Preview(name = "Card, pending decision", showBackground = true, heightDp = 420)
@@ -22,6 +25,77 @@ internal fun CardPending() {
             view = PreviewFixtures.cardPending,
             label = "Gate",
             eventType = "dev.superpipeline.gate.v1",
+            senderName = "Atlas — Platform",
+            onDecide = { true },
+        )
+    }
+}
+
+/** The remaining fields, opened: the digest line above holds the first two values. */
+@Preview(name = "Card, pending, details open", showBackground = true, heightDp = 520)
+@Composable
+internal fun CardPendingDetailsOpen() {
+    PreviewGround {
+        DecisionCard(
+            view = PreviewFixtures.cardPending,
+            label = "Gate",
+            eventType = "dev.superpipeline.gate.v1",
+            senderName = "Atlas \u2014 Platform",
+            detailsOpenInitially = true,
+            onDecide = { true },
+        )
+    }
+}
+
+/**
+ * A send that did not land: still amber and still answerable, with the reason
+ * in `danger`. The line is the only red on the card.
+ */
+@Preview(name = "Card, send failed", showBackground = true, heightDp = 460)
+@Composable
+internal fun CardSendFailed() {
+    PreviewGround {
+        DecisionCard(
+            view = PreviewFixtures.cardPending,
+            label = "Gate",
+            eventType = "dev.superpipeline.gate.v1",
+            senderName = "Atlas \u2014 Platform",
+            answers = rememberDecisionAnswers(failed = setOf("gate-7f21")),
+            answerKey = "gate-7f21",
+            onDecide = { false },
+        )
+    }
+}
+
+/** Answered on this device: a green check, not amber, and the board has not yet confirmed. */
+@Preview(name = "Card, just answered", showBackground = true, heightDp = 360)
+@Composable
+internal fun CardJustAnswered() {
+    PreviewGround {
+        DecisionCard(
+            view = PreviewFixtures.cardPending,
+            label = "Gate",
+            eventType = "dev.superpipeline.gate.v1",
+            senderName = "Atlas \u2014 Platform",
+            answers = rememberDecisionAnswers(
+                answered = mapOf("gate-7f21" to AnsweredHere("Approved by you", Instant.now())),
+            ),
+            answerKey = "gate-7f21",
+            onDecide = { true },
+        )
+    }
+}
+
+/** The largest text on a narrow phone: the buttons stack and "Request changes" stays on one line. */
+@Preview(name = "Card, large text, narrow", showBackground = true, widthDp = 360, heightDp = 760, fontScale = 2f)
+@Composable
+internal fun CardLargeTextNarrow() {
+    PreviewGround(width = 360.dp) {
+        DecisionCard(
+            view = PreviewFixtures.cardPending,
+            label = "Gate",
+            eventType = "dev.superpipeline.gate.v1",
+            senderName = "Atlas \u2014 Platform",
             onDecide = { true },
         )
     }
@@ -41,6 +115,7 @@ internal fun CardAnswered() {
             view = PreviewFixtures.cardAnswered,
             label = "Gate",
             eventType = "dev.superpipeline.gate.v1",
+            senderName = "Atlas — Platform",
         )
     }
 }
@@ -58,6 +133,7 @@ internal fun CardResolved() {
             view = PreviewFixtures.cardResolved,
             label = "Gate",
             eventType = "dev.superpipeline.gate.v1",
+            senderName = "Atlas — Platform",
             onDecide = { true },
         )
     }
@@ -71,6 +147,7 @@ internal fun CardWithReasoning() {
             view = PreviewFixtures.cardWithReasoning,
             label = "Turn",
             eventType = "dev.agentpod.turn.v1",
+            senderName = "Atlas — Platform",
         )
     }
 }
@@ -91,6 +168,7 @@ internal fun CardLongValue() {
             view = PreviewFixtures.cardLongValue,
             label = "Artifact",
             eventType = "dev.agentpod.artifact.v1",
+            senderName = "Atlas — Platform",
         )
     }
 }
@@ -112,18 +190,21 @@ internal fun CardFallbackChain() {
                 view = PreviewFixtures.cardNewerVersion,
                 label = "Station",
                 eventType = "dev.agentpod.station.v2",
+                senderName = "Atlas — Platform",
             )
             Spacer(Modifier.height(16.dp))
             DecisionCard(
                 view = PreviewFixtures.cardFallback,
                 label = "Station",
                 eventType = "dev.agentpod.station.v2",
+                senderName = "Atlas — Platform",
             )
             Spacer(Modifier.height(16.dp))
             DecisionCard(
                 view = PreviewFixtures.cardPlaceholder,
                 label = "Event",
                 eventType = "dev.agentpod.unknown.v1",
+                senderName = "Atlas — Platform",
             )
         }
     }
@@ -146,6 +227,7 @@ internal fun CardHostileEventType() {
             view = PreviewFixtures.cardAnswered,
             label = "Station",
             eventType = PreviewFixtures.HOSTILE_EVENT_TYPE,
+            senderName = "Atlas — Platform",
         )
     }
 }
@@ -214,6 +296,23 @@ internal fun LiveTurnThinking() {
             thought = PreviewFixtures.LIVE_THOUGHT,
             tools = emptyList(),
             finished = false,
+        )
+    }
+}
+
+/**
+ * An answer with markdown in it: the completed lines are bold, a list and a
+ * heading, and the last line is still the plain tail.
+ */
+@Preview(name = "Live turn, markdown", showBackground = true, heightDp = 260)
+@Composable
+internal fun LiveTurnMarkdown() {
+    PreviewGround {
+        LiveTurn(
+            answer = "# Findings\n**Observed:** the build is green\n- two warnings\n- no failures\nNext I will check the",
+            thought = null,
+            tools = emptyList(),
+            finished = true,
         )
     }
 }

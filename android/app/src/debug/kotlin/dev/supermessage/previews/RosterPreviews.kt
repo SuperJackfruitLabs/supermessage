@@ -94,26 +94,9 @@ internal fun RosterFurnished() {
     PreviewGround {
         Roster(
             sections = PreviewFixtures.rosterSections,
-            hiddenInvitations = 0,
-            now = NOW,
-            avatarUri = { null },
-        )
-    }
-}
-
-/**
- * Invitations hidden, with one behind the count.
- *
- * `hiddenInvitations` is what the roster offers to reveal. Zero in every
- * other preview, so this is the only one showing that affordance at all.
- */
-@Preview(name = "Roster, invitations hidden", showBackground = true, heightDp = 620)
-@Composable
-internal fun RosterWithHiddenInvitations() {
-    PreviewGround {
-        Roster(
-            sections = PreviewFixtures.rosterSections,
-            hiddenInvitations = 1,
+            invitations = PreviewFixtures.rosterInvitations,
+            invitationsOpen = false,
+            onToggleInvitations = {},
             now = NOW,
             avatarUri = { null },
         )
@@ -132,7 +115,9 @@ internal fun RosterEmpty() {
     PreviewGround {
         Roster(
             sections = emptyList(),
-            hiddenInvitations = 0,
+            invitations = emptyList(),
+            invitationsOpen = false,
+            onToggleInvitations = {},
             now = NOW,
             avatarUri = { null },
         )

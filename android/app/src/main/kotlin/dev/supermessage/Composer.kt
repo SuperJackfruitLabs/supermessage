@@ -1,25 +1,58 @@
 package dev.supermessage
 
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import dev.supermessage.kit.MentionComposing
+import uniffi.supermessage_core.PersonDto
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,13 +62,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.stores.EditTarget
 import dev.supermessage.kit.stores.ReplyTarget
+import dev.supermessage.kit.stores.StagedAttachment
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -44,125 +90,56 @@ import kotlinx.coroutines.withContext
 import uniffi.supermessage_ffi.StagedFile
 
 /**
+ * What the chip draws: the staged file, where it came from (for the
+ * thumbnail), and why it could not go. Any of the three may be absent; a
+ * failure with no file is a chip that only says why (iOS `AttachmentChip`).
+ */
+data class ChipState(
+    val file: StagedFile?,
+    val path: String?,
+    val failure: StagedAttachment.Failure?,
+) {
+    /** A failed chip with nothing behind it holds the text back too (iOS `blocksSend`). */
+    val blocksSend: Boolean get() = file == null && failure != null
+}
+
+/**
  * Where a message is written, the shape iOS draws at
- * `apple/Supermessage/Composer/ComposerView.swift`: a text field and a send
- * control next to it, gated on whether there is anything worth sending and
- * on whether a send is already in flight.
+ * `apple/Supermessage/Composer/ComposerView.swift`: one raised capsule that
+ * holds the edit or reply strip, the attachment chip and the field row ("+",
+ * the field, the send control), with the failure line under it and a fade
+ * from the page behind it.
  *
  * ## Per-room drafts are not this composable's job
  *
  * [text] arrives already resolved and [onTextChange] is the whole way this
- * composable reports a change — routing that to [dev.supermessage.kit.stores.DraftStore]
- * (keying by room, clearing on send) is Task 6's wiring, the same way
- * `ComposerView.swift` reads and writes `session.drafts` itself rather than
- * this file reaching for a store directly.
+ * composable reports a change; keying drafts by room is the caller's.
  *
- * ## `canSend` is non-blank text or a staged attachment
+ * ## `canSend`
  *
- * `Session.send` trims (`val body = text.trim()`) before deciding there is
- * anything to send, so enabling the control on whitespace alone would offer
- * a tap that does nothing — the fault
- * [dev.supermessage.ComposerTest.whitespaceAloneDoesNotEnableSend] exists to
- * catch, confirmed by the mandatory mutation (see that file, and this
- * task's report). A staged attachment is sendable on its own: when not
- * editing, Send is enabled with a staged attachment whatever the text, and
- * `Session.send` sends it with `caption = null` when the text is blank. When
- * editing, Save is enabled only by non-blank text, because an edit has no
- * attachment path.
+ * Editing: there must be text. Otherwise a chip that [ChipState.blocksSend]
+ * holds everything back, and else text or a present chip sends. Text is
+ * trimmed (`Session.send` trims), so whitespace alone enables nothing. [sending]
+ * is the caller's double-tap guard, threaded into `enabled`.
  *
- * ## `sending` is a view concern, not a `Session` one
+ * ## An edit replaces the text, and cancelling puts back what was there
  *
- * Exactly the shape `LoginScreen`'s `busy` already established: the double-
- * tap guard belongs to whichever caller is driving a send, not to `Session`,
- * because it guards *this form*, not something true about the session
- * itself. [sending] is threaded straight into `enabled` alongside `canSend`
- * rather than tracked internally, so a caller in the middle of a suspend
- * `send()` call can hold this composer disabled for exactly as long as that
- * call is in flight.
+ * Starting an edit stashes whatever was in the field and shows the message's
+ * body; cancelling replays the stash through [onTextChange]. Nothing beyond
+ * that one round trip is kept here.
  *
- * ## Reply and edit banners
+ * ## Clearing the keyboard
  *
- * [replyTo]/[onCancelReply] render as [ReplyEditBanner]'s reply strip: who
- * the reply is addressed to, the excerpt when the core supplied one, and a
- * cancel action — mirrors `ComposerView.swift`'s `ReplyStrip`. [editing]
- * takes precedence when both are non-null, same as the Swift view's
- * `if pendingEdit != nil { EditStrip } else if let pendingReply { ReplyStrip }`;
- * the two are never shown together.
+ * [MainActivity] draws edge to edge, so the composer's own [imePadding] is
+ * what keeps it above the keyboard.
  *
- * ## An edit replaces the text, and cancelling has to put back what was there
+ * ## Attaching
  *
- * `EditTarget.Pending.body` is a snapshot of the message as it stood when the
- * edit began — exactly what the composer should show while rewriting it. But
- * the reader may have had something of their own half-typed at that moment,
- * and cancelling the edit must not lose it: that would be a normal person's
- * data, silently discarded, not a UI nit.
- *
- * This composable does not touch [dev.supermessage.kit.stores.DraftStore] —
- * per this file's own "per-room drafts are not this composable's job" note,
- * that store only exists once Task 6 wires it in. So the pre-edit text is
- * held right here, in [remember]ed state scoped to the current edit: a
- * [LaunchedEffect] keyed on [editing] captures whatever [text] held the
- * moment an edit starts, before overwriting it with the snapshot body, and
- * the cancel action plays that capture back through [onTextChange] before
- * forgetting it and calling [onCancelEdit]. Restoring through the same
- * [onTextChange] channel the reader's own typing goes through means that once
- * Task 6 does route it to `DraftStore.set`, the restore reasserts the value
- * already sitting there rather than fighting it — an idempotent no-op, the
- * same shape `ComposerView.swift`'s own `text = session.drafts.draft(for:
- * roomId)` gets from its `.onChange(of: text)` guard. Nothing beyond this one
- * edit's round trip is kept — no draft store of this composable's own is
- * being smuggled in.
- *
- * ## Clearing the keyboard (Defect B fix)
- *
- * [MainActivity] calls `enableEdgeToEdge()`, which draws this composable's
- * `Column` behind the soft keyboard rather than leaving the system to
- * reserve space for it — with nothing here compensating, a shown IME used to
- * cover this composable entirely, including [OutlinedTextField] itself.
- * [Modifier.imePadding] on that `Column` is the fix: it adds bottom padding
- * equal to the IME's own height whenever one is shown, so this composable's
- * content is pushed up to clear it rather than being covered by it. It
- * belongs on the composable that needs to stay above the keyboard, not on
- * some ancestor shared with content that has no such requirement — the
- * roster header a few panes over has nothing to do with the IME and should
- * not move because of it.
- *
- * ## Attachments — the one place iOS is not the reference
- *
- * `ComposerView.swift` reaches for `PhotosPickerItem`/`fileImporter`, both
- * SwiftUI presentations with no Android counterpart worth imitating. Android's
- * own contract is [androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia],
- * launched from [rememberLauncherForActivityResult] right here — a platform
- * API, not something [dev.supermessage.kit.stores.StagedAttachment] could be
- * asked to know about.
- *
- * That launcher hands back a content [Uri], and
- * [dev.supermessage.kit.stores.StagedAttachment.stage] takes a `path`, not a
- * `Uri` — so [resolvePickedUri] copies the picked content into this app's
- * cache directory and returns the resulting file's absolute path. That
- * resolution happens *here*, in `:app`, rather than in `:kit` (which holds no
- * Android types by design — see that module's build file) or in the core
- * (which only ever reads a path it is handed, per `attachment_stage_path`'s
- * own doc comment). The copy is named after the picker's own
- * `OpenableColumns.DISPLAY_NAME` when one is available, which is why a staged
- * photo shows a real name rather than a generated one — an improvement this
- * task is free to make precisely because this corner has no iOS behaviour to
- * match.
- *
- * [onAttach] is fired with that resolved path once the copy finishes,
- * exactly the fire-and-forget shape [onSend]/[onCancelReply]/[onCancelEdit]
- * already use: this composable resolves a platform value into a plain one
- * and hands it up, it does not itself call
- * [dev.supermessage.kit.stores.StagedAttachment.stage] — that call is made by
- * whoever wires this callback to the real store (Task 6), the same
- * boundary [text]/[onTextChange] already draws around `DraftStore`.
- * [attachment] is the mirror of [replyTo]/[editing]: a plain snapshot handed
- * in from outside, displayed by name in [AttachmentChip], with
- * [onDiscardAttachment] as its cancel action. Actually sending a staged
- * attachment — calling
- * [dev.supermessage.kit.stores.StagedAttachment.send] — is no part of this
- * file; see this task's own report for why that is Task 6's wiring rather
- * than this one's.
+ * "+" offers Photo (the system photo picker) and File (any document). Both
+ * hand back a content [Uri], copied into the cache by [copyPickedUri] because
+ * the core stages a path. A copy that cannot be read is [onRefuse]d with the
+ * iOS wording, so the chip says so instead of nothing happening. The "+"
+ * stays while editing (iOS keeps it).
  */
 @Composable
 fun Composer(
@@ -175,17 +152,30 @@ fun Composer(
     onCancelReply: () -> Unit = {},
     editing: EditTarget.Pending? = null,
     onCancelEdit: () -> Unit = {},
-    attachment: StagedFile? = null,
-    onAttach: (String) -> Unit = {},
+    attachment: ChipState? = null,
+    onAttach: (path: String) -> Unit = {},
+    onRefuse: (filename: String, message: String) -> Unit = { _, _ -> },
     onDiscardAttachment: () -> Unit = {},
+    mentionCandidates: (query: String) -> List<PersonDto> = { emptyList() },
     modifier: Modifier = Modifier,
 ) {
-    // An edit has no attachment path, so only a send may be carried by a
-    // staged file; Save needs the edited body itself to be non-blank.
-    val canSend = text.isNotBlank() || (editing == null && attachment != null)
+    // Focus anywhere in the composer, picker included: a keyboard user who
+    // moves from the field into the list has taken focus off the field, and the
+    // list must stay open for the Enter that picks.
+    var focused by remember { mutableStateOf(false) }
+    val fieldFocus = remember { FocusRequester() }
+    // Only while the composer has focus (iOS `mentionQuery`; Android has no
+    // recorder in the composer). `activeQuery` is the Kit's, so an email
+    // address opens nothing.
+    val mentionQuery = if (focused) MentionComposing.activeQuery(text) else null
+    val mentionPeople = mentionQuery?.let { mentionCandidates(it.text) }.orEmpty()
+    val canSend = when {
+        editing != null -> text.isNotBlank()
+        attachment?.blocksSend == true -> false
+        else -> text.isNotBlank() || attachment != null
+    }
 
-    // The draft that was sitting in the field the moment this edit began —
-    // see this function's KDoc for why it lives here rather than in a store.
+    // The draft that was sitting in the field the moment this edit began.
     var priorDraft by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(editing) {
@@ -194,98 +184,193 @@ fun Composer(
         onTextChange(current.body)
     }
 
-    // Resolves a picked content Uri to a path and hands it to [onAttach] —
-    // see this function's "Attachments" KDoc section for why that resolution
-    // lives here rather than in :kit or the core.
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val pickMedia = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val path = withContext(Dispatchers.IO) { resolvePickedUri(context, uri) }
-            if (path != null) onAttach(path)
+    val colors = SupermessageTheme.colors
+    val shape = RoundedCornerShape(22.dp)
+    Column(
+        modifier
+            .fillMaxWidth()
+            // A fade from the page into the composer's strip rather than a
+            // bar: the capsule floats and the conversation shows behind it.
+            .background(
+                Brush.verticalGradient(
+                    0f to colors.surface.copy(alpha = 0f),
+                    0.5f to colors.surface,
+                    1f to colors.surface,
+                ),
+            )
+            .onFocusChanged { focused = it.hasFocus }
+            .imePadding()
+            .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        // Above the capsule (iOS `ComposerView.swift:59-67`). The last
+        // non-empty list is kept so the exit animation has rows to draw.
+        var lastPeople by remember { mutableStateOf(mentionPeople) }
+        if (mentionPeople.isNotEmpty()) lastPeople = mentionPeople
+        val reduce = reducesMotion()
+        AnimatedVisibility(
+            visible = mentionQuery != null && mentionPeople.isNotEmpty(),
+            enter = slideInVertically(motion(reduce, tween(200))) { it / 2 } + fadeIn(motion(reduce, tween(200))),
+            exit = slideOutVertically(motion(reduce, tween(200))) { it / 2 } + fadeOut(motion(reduce, tween(200))),
+        ) {
+            MentionPicker(
+                people = lastPeople,
+                onPick = { person ->
+                    if (mentionQuery != null) onTextChange(MentionComposing.insert(person, mentionQuery, text))
+                    // The row that was focused is about to leave; carry on typing in the field.
+                    runCatching { fieldFocus.requestFocus() }
+                },
+            )
         }
-    }
-
-    Column(modifier.fillMaxWidth().imePadding()) {
-        ReplyEditBanner(
-            replyTo = replyTo,
-            onCancelReply = onCancelReply,
-            editing = editing,
-            onCancelEdit = {
-                onTextChange(priorDraft ?: "")
-                priorDraft = null
-                onCancelEdit()
-            },
-        )
-
-        // Below the reply/edit banner, above the failure line — the same
-        // slot `ComposerView.swift`'s AttachmentChip occupies.
-        if (attachment != null) {
-            AttachmentChip(staged = attachment, onDiscard = onDiscardAttachment)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 4.dp,
+                    shape = shape,
+                    ambientColor = colors.scrim.copy(alpha = 0.1f),
+                    spotColor = colors.scrim.copy(alpha = 0.1f),
+                )
+                .background(colors.surfaceRaised, shape)
+                .border(1.dp, colors.border, shape)
+                .testTag("composer-capsule"),
+        ) {
+            ReplyEditBanner(
+                replyTo = replyTo,
+                onCancelReply = onCancelReply,
+                editing = editing,
+                onCancelEdit = {
+                    onTextChange(priorDraft ?: "")
+                    priorDraft = null
+                    onCancelEdit()
+                },
+            )
+            if (attachment != null) {
+                AttachmentChip(
+                    state = attachment,
+                    onDiscard = onDiscardAttachment,
+                    modifier = Modifier.padding(horizontal = 6.dp).padding(top = 6.dp),
+                )
+            }
+            FieldRow(
+                text = text,
+                onTextChange = onTextChange,
+                editing = editing != null,
+                canSend = canSend,
+                sending = sending,
+                onSend = onSend,
+                onAttach = onAttach,
+                onRefuse = onRefuse,
+                focusRequester = fieldFocus,
+            )
         }
 
-        // Only when there is one to show — the placeholder this composable
-        // relies on staying null (rather than an empty string) when nothing
-        // has gone wrong. Mirrors LoginScreen's own failure line.
+        // Below the capsule, in danger (iOS `ComposerView.swift:87-93`).
         if (failure != null) {
             Text(
                 failure,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.danger,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .padding(horizontal = 14.dp)
+                    // Announced when it appears, so TalkBack says why nothing sent.
+                    .semantics { liveRegion = LiveRegionMode.Polite }
                     .testTag("composer-failure"),
             )
         }
+    }
+}
 
-        Row(
+@Composable
+private fun FieldRow(
+    text: String,
+    onTextChange: (String) -> Unit,
+    editing: Boolean,
+    canSend: Boolean,
+    sending: Boolean,
+    onSend: () -> Unit,
+    onAttach: (path: String) -> Unit,
+    onRefuse: (filename: String, message: String) -> Unit,
+    focusRequester: FocusRequester,
+) {
+    val colors = SupermessageTheme.colors
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        AttachMenu(onAttach = onAttach, onRefuse = onRefuse)
+
+        // The caret is held here so that a change the field did not make (a
+        // picked mention, an edit beginning, a draft restored) leaves it at
+        // the end of the new text, where the reader carries on typing; the
+        // string overload would leave it wherever it was.
+        var field by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+        if (field.text != text) field = TextFieldValue(text, TextRange(text.length))
+        BasicTextField(
+            value = field,
+            onValueChange = { next ->
+                field = next
+                if (next.text != text) onTextChange(next.text)
+            },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.content),
+            cursorBrush = SolidColor(colors.accent),
+            minLines = 1,
+            maxLines = 6,
+            keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Default),
+            decorationBox = { inner ->
+                Box(Modifier.padding(vertical = 11.dp), contentAlignment = Alignment.CenterStart) {
+                    if (text.isEmpty()) {
+                        Text(
+                            if (editing) "Edit message" else "Message",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = colors.contentFaint,
+                        )
+                    }
+                    inner()
+                }
+            },
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .weight(1f)
+                .padding(horizontal = 4.dp)
+                .focusRequester(focusRequester)
+                .testTag("composer-text"),
+        )
+
+        IconButton(
+            onClick = onSend,
+            // The double-tap guard: a send already in flight cannot be
+            // started twice.
+            enabled = canSend && !sending,
+            colors = IconButtonDefaults.iconButtonColors(
+                contentColor = colors.accentContent,
+                disabledContentColor = colors.accentContent,
+            ),
+            modifier = Modifier.size(44.dp).testTag("composer-send").semantics {
+                contentDescription = if (editing) "Save edit" else "Send"
+            },
         ) {
-            TextButton(
-                onClick = {
-                    pickMedia.launch(
-                        PickVisualMediaRequest(mediaType = ActivityResultContracts.PickVisualMedia.ImageAndVideo),
-                    )
-                },
-                modifier = Modifier.testTag("composer-attach"),
-            ) {
-                Text("Attach")
-            }
-
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChange,
-                placeholder = { Text(if (editing == null) "Message" else "Edit message") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("composer-text"),
-            )
-
-            Button(
-                onClick = onSend,
-                // The double-tap guard: a send already in flight cannot be
-                // started twice, mirroring LoginScreen's `!busy` clause.
-                enabled = canSend && !sending,
-                modifier = Modifier.testTag("composer-send"),
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (canSend) colors.accent else colors.contentFaint),
+                contentAlignment = Alignment.Center,
             ) {
                 if (sending) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.accentContent,
+                    )
                 } else {
-                    // A tick's-worth of a word rather than an arrow while
-                    // editing: nothing is being sent to anyone, an existing
-                    // message is being replaced. Mirrors ComposerView.swift's
-                    // checkmark-vs-arrow choice, in Material's vocabulary
-                    // (a labeled button) rather than SF Symbols'.
-                    Text(if (editing == null) "Send" else "Save")
+                    // A tick rather than an arrow while editing: nothing is
+                    // being sent to anyone, a message is being replaced.
+                    Icon(
+                        if (editing) Icons.Filled.Check else Icons.AutoMirrored.Filled.Send,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
             }
         }
@@ -293,16 +378,157 @@ fun Composer(
 }
 
 /**
- * The edit strip and reply strip `ComposerView.swift` draws above its text
- * field — see that file's `EditStrip` and `ReplyStrip`. An edit in progress
- * takes precedence over a reply, the same as that file's own
- * `if pendingEdit != nil { EditStrip } else if let pendingReply { ReplyStrip }`;
- * the two never show together, and drawing nothing at all is correct when
- * neither is set.
- *
- * Display plus cancel only, per this task's scope — nothing here sends, and
- * [onCancelEdit] arrives already wrapped by [Composer] with the draft-restore
- * behaviour documented on that function.
+ * The `@` picker: the room's people matching what follows the `@`, agents
+ * first (the core's order), each agent labelled (iOS `MentionPicker`,
+ * `ComposerView.swift:508-549`). A row is the initial in an `accentSoft`
+ * circle, the name, "harness on host" for an agent, and the "Agent" tag; at
+ * least 44dp tall, and read as "name, agent" by TalkBack.
+ */
+@Composable
+internal fun MentionPicker(people: List<PersonDto>, onPick: (PersonDto) -> Unit, modifier: Modifier = Modifier) {
+    val colors = SupermessageTheme.colors
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 4.dp,
+                shape = shape,
+                ambientColor = colors.scrim.copy(alpha = 0.1f),
+                spotColor = colors.scrim.copy(alpha = 0.1f),
+            )
+            .background(colors.surfaceRaised, shape)
+            .border(1.dp, colors.border, shape)
+            .padding(vertical = 4.dp)
+            // Announced when the list opens (a pane appearing), as the failure
+            // lines are: a reader who cannot see it is told it is there.
+            .semantics { paneTitle = if (people.size == 1) "1 suggestion to mention" else "${people.size} suggestions to mention" }
+            .testTag("mention-picker"),
+    ) {
+        people.forEach { person ->
+            val agent = person.runtime
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .clickable(role = Role.Button) { onPick(person) }
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                    .testTag("mention-${person.userId}")
+                    .clearAndSetSemantics {
+                        contentDescription = if (agent != null) "${person.name}, agent" else person.name
+                        role = Role.Button
+                        onClick { onPick(person); true }
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    Modifier.size(30.dp).background(colors.accentSoft, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        person.initial,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.accent,
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        person.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.content,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (agent != null) {
+                        Text(
+                            "${agent.harness} on ${agent.host}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.contentMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (agent != null) {
+                    Text(
+                        "Agent",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.accent,
+                        modifier = Modifier
+                            .background(colors.accentSoft, CircleShape)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** "+", with Photo and File (iOS `attachMenu`). */
+@Composable
+private fun AttachMenu(onAttach: (path: String) -> Unit, onRefuse: (filename: String, message: String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var open by remember { mutableStateOf(false) }
+
+    // Resolves a picked content Uri to a cache path off the main thread and
+    // hands it up; a copy that fails is a refusal the chip will say.
+    fun picked(uri: Uri?, couldNotRead: String) {
+        if (uri == null) return
+        scope.launch {
+            val (name, path) = withContext(Dispatchers.IO) {
+                val name = displayNameOf(context, uri)
+                name to copyPickedUri(context, uri, name)
+            }
+            if (path != null) onAttach(path) else onRefuse(name, couldNotRead)
+        }
+    }
+
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
+        picked(it, "Couldn't read that photo.")
+    }
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
+        picked(it, "Couldn't read that file.")
+    }
+
+    Box {
+        IconButton(onClick = { open = true }, modifier = Modifier.size(44.dp).testTag("composer-attach")) {
+            Icon(
+                Icons.Filled.Add,
+                contentDescription = "Attach",
+                tint = SupermessageTheme.colors.contentMuted,
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Photo") },
+                onClick = {
+                    open = false
+                    pickPhoto.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                    )
+                },
+                modifier = Modifier.testTag("composer-attach-photo"),
+            )
+            DropdownMenuItem(
+                text = { Text("File") },
+                onClick = {
+                    open = false
+                    pickFile.launch(arrayOf("*/*"))
+                },
+                modifier = Modifier.testTag("composer-attach-file"),
+            )
+        }
+    }
+}
+
+/**
+ * The edit strip and reply strip `ComposerView.swift` draws at the top of the
+ * capsule (`EditStrip`, `ReplyStrip`). An edit takes precedence over a reply;
+ * nothing is drawn for neither. Each has a 44dp "Cancel".
  */
 @Composable
 private fun ReplyEditBanner(
@@ -311,98 +537,192 @@ private fun ReplyEditBanner(
     editing: EditTarget.Pending?,
     onCancelEdit: () -> Unit,
 ) {
+    val colors = SupermessageTheme.colors
     if (editing != null) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .padding(start = 14.dp, end = 2.dp)
                 .testTag("composer-edit-banner"),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Icon(
+                Icons.Filled.Edit,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(14.dp),
+            )
             Text(
                 "Editing message",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = colors.content,
+                modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onCancelEdit, modifier = Modifier.testTag("composer-cancel-edit")) {
-                Text("Cancel")
-            }
+            CancelButton(onClick = onCancelEdit, tag = "composer-cancel-edit")
         }
     } else if (replyTo != null) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .padding(start = 14.dp, end = 2.dp, top = 4.dp)
                 .testTag("composer-reply-banner"),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // weight(1f) is what keeps "Cancel" below from starving: an
-            // unweighted Row measures its non-weighted children first and
-            // hands the *rest* of the row to the sole weighted child, so the
-            // button is sized off its own short text before this column ever
-            // sees the row's width — rather than the other way around, which
-            // is what left it almost nothing to render "Cancel" in with a
-            // long sender name.
+            Box(Modifier.size(width = 2.dp, height = 28.dp).background(colors.accent))
+            // weight(1f) keeps the cancel button from being starved by a long
+            // sender name: the unweighted button is measured first.
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Replying to ${replyTo.sender}",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = colors.content,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag("composer-reply-sender"),
                 )
-                // Only when the core supplied one — an absent excerpt (a
-                // redacted or unloaded parent, say) draws the sender line
-                // alone rather than an empty second line under it.
+                // Only when the core supplied one.
                 val excerpt = replyTo.excerpt
                 if (excerpt != null) {
                     Text(
                         excerpt,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.contentMuted,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.testTag("composer-reply-excerpt"),
                     )
                 }
             }
-            TextButton(onClick = onCancelReply, modifier = Modifier.testTag("composer-cancel-reply")) {
-                Text("Cancel")
+            CancelButton(onClick = onCancelReply, tag = "composer-cancel-reply")
+        }
+    }
+}
+
+@Composable
+private fun CancelButton(onClick: () -> Unit, tag: String) {
+    IconButton(onClick = onClick, modifier = Modifier.size(44.dp).testTag(tag)) {
+        Icon(
+            Icons.Filled.Close,
+            contentDescription = "Cancel",
+            tint = SupermessageTheme.colors.contentMuted,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+/**
+ * A file waiting to be sent, or one that could not be and says why (iOS
+ * `AttachmentChip`): a 44dp picture or kind badge, the name in the middle
+ * truncated, then the reason in danger (up to three lines) or the size, and
+ * "Remove attachment". A failure draws a danger border.
+ */
+@Composable
+private fun AttachmentChip(state: ChipState, onDiscard: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = SupermessageTheme.colors
+    val file = state.file
+    val failure = state.failure
+    val shape = RoundedCornerShape(16.dp)
+    val filename = file?.filename ?: failure?.filename ?: "Attachment"
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(colors.surfaceSunken, shape)
+            .border(1.dp, if (failure == null) colors.border else colors.danger, shape)
+            .padding(start = 6.dp, top = 6.dp, bottom = 6.dp)
+            .testTag("composer-attachment-chip"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(colors.surfaceRaised),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (failure != null) {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = colors.danger,
+                    modifier = Modifier.size(18.dp),
+                )
+            } else {
+                KindBadge(file?.mime)
             }
+            if (file != null && file.mime.startsWith("image/") && state.path != null) {
+                Thumbnail(state.path, size = 44.dp, tag = "composer-chip-thumbnail", modifier = Modifier.size(44.dp))
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                filename,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                color = colors.content,
+                maxLines = 1,
+                overflow = TextOverflow.MiddleEllipsis,
+                modifier = Modifier.testTag("composer-attachment-name"),
+            )
+            if (failure != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = colors.danger,
+                        modifier = Modifier.size(14.dp).padding(top = 2.dp),
+                    )
+                    Text(
+                        failure.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.danger,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .semantics { liveRegion = LiveRegionMode.Polite }
+                            .testTag("composer-chip-failure"),
+                    )
+                }
+            } else if (file != null) {
+                Text(
+                    Formatter.formatShortFileSize(LocalContext.current, file.sizeBytes.toLong()),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.contentMuted,
+                )
+            }
+        }
+        IconButton(onClick = onDiscard, modifier = Modifier.size(44.dp).testTag("composer-discard-attachment")) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Remove attachment",
+                tint = colors.contentMuted,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
 
 /**
- * The one file waiting to be sent, shown by name — the mirror of
- * `ComposerView.swift`'s `AttachmentChip`. Display plus discard only, per
- * this task's scope: nothing here calls
- * [dev.supermessage.kit.stores.StagedAttachment.send], and [onDiscard]
- * arrives as a plain callback the same way [onCancelReply]/[onCancelEdit] do
- * — [Composer] does not reach for the store itself, so neither does this.
+ * What kind of thing a staged file is, where there is no picture of it. A word
+ * rather than iOS's SF Symbols: `material-icons-core` has no audio, film or
+ * document glyph, and the extended set is deliberately not a dependency.
  */
 @Composable
-private fun AttachmentChip(staged: StagedFile, onDiscard: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .testTag("composer-attachment-chip"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            staged.filename,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            modifier = Modifier.testTag("composer-attachment-name"),
-        )
-        TextButton(onClick = onDiscard, modifier = Modifier.testTag("composer-discard-attachment")) {
-            Text("Remove")
-        }
+private fun KindBadge(mime: String?) {
+    val word = when {
+        mime == null -> return
+        mime.startsWith("audio/") -> "AUDIO"
+        mime.startsWith("video/") -> "VIDEO"
+        mime.startsWith("image/") -> "IMAGE"
+        else -> "FILE"
     }
+    Text(
+        word,
+        style = MaterialTheme.typography.labelSmall,
+        color = SupermessageTheme.colors.contentMuted,
+        maxLines = 1,
+    )
 }
 
 /**
@@ -426,10 +746,7 @@ private fun AttachmentChip(staged: StagedFile, onDiscard: () -> Unit) {
  * `null` on any failure to open or read the source — a picker result that
  * cannot be read is nothing to stage, not a crash.
  */
-private fun resolvePickedUri(context: Context, uri: Uri): String? {
-    val displayName = queryDisplayName(context, uri)
-        ?: uri.lastPathSegment
-        ?: UUID.randomUUID().toString()
+private fun copyPickedUri(context: Context, uri: Uri, displayName: String): String? {
     val destination = File(context.cacheDir, displayName)
     return try {
         context.contentResolver.openInputStream(uri)?.use { input ->
@@ -437,8 +754,26 @@ private fun resolvePickedUri(context: Context, uri: Uri): String? {
         } ?: return null
         destination.absolutePath
     } catch (error: java.io.IOException) {
+        destination.delete()
+        null
+    } catch (error: SecurityException) {
+        destination.delete()
         null
     }
+}
+
+/**
+ * The name to show and to copy under: the resolver's own, else the last path
+ * segment, else a generated one. Only the final component, so a name with a
+ * slash cannot place the copy outside the cache directory.
+ */
+private fun displayNameOf(context: Context, uri: Uri): String {
+    val raw = try {
+        queryDisplayName(context, uri)
+    } catch (error: Exception) {
+        null
+    } ?: uri.lastPathSegment ?: UUID.randomUUID().toString()
+    return File(raw).name.ifEmpty { UUID.randomUUID().toString() }
 }
 
 /** The display name a content resolver offers for [uri], or `null` if it has none. */

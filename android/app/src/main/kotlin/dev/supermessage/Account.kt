@@ -1,6 +1,18 @@
 package dev.supermessage
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
+import dev.supermessage.kit.RosterChoice
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +73,8 @@ import uniffi.supermessage_ffi.peopleLabel
  *   failure path on top of it, matching [SearchPanel]'s own note on why).
  * @param onSignOut Actually signs out — `Session.signOut`. Only reachable
  *   through the confirmation dialog below.
+ * @param rosterView The stored arrangement, already mapped through
+ *   [RosterChoice.offeredOrDefault]: a Machine left by an older build reads as Waiting.
  * @param onClose What "Done" (or a completed sign-out) does to the pane
  *   holding this panel — this file does not know whether that is a
  *   `ListDetailPaneScaffold`'s extra pane, a sheet, or anything else, the
@@ -71,7 +85,13 @@ fun AccountPanel(
     loadAccount: suspend () -> AccountDto?,
     onSignOut: suspend () -> Unit,
     onClose: () -> Unit,
+    rosterView: RosterChoice,
+    onRosterView: suspend (RosterChoice) -> Unit,
+    showsState: Boolean,
+    onShowsState: suspend (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /** The Appearance section (Task 14's [AppearanceSettings]); empty where there is no theme store. */
+    appearance: @Composable () -> Unit = {},
     // Defaulted so existing callers and tests compile unchanged; the real ones
     // are wired at the call site. A screen that cannot reach recovery shows
     // "unknown", which reads as "checking" — never as "not set up".
@@ -92,6 +112,8 @@ fun AccountPanel(
 
     val name = accountName(account)
 
+    val colors = SupermessageTheme.colors
+
     Column(modifier.fillMaxSize().testTag("account")) {
         Row(
             Modifier.fillMaxWidth().padding(16.dp),
@@ -102,95 +124,152 @@ fun AccountPanel(
             TextButton(onClick = onClose, modifier = Modifier.testTag("account-done")) { Text("Done") }
         }
 
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
+        // Scrolls: the sections together are taller than a short phone, and
+        // Sign out, the last of them, must stay reachable.
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+            AccountSectionHeader("Signed in as")
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // A plain initial in place of a picture — this panel has no
-                // avatar to show, the same choice `AccountPanel.swift`'s own
-                // `initial` fallback makes for every reader.
-                //
-                // The initial comes from the core, not from `name.take(1)`.
-                // Kotlin's `take` counts UTF-16 code units, so an emoji-initial
-                // name yielded half a surrogate pair and rendered as tofu —
-                // the exact defect `room_identity`'s header records shipping
-                // once already. `displayInitial` is code-point-aware, and in
-                // Rust a `char` is a scalar value, so the hazard cannot be
-                // expressed there.
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // A plain initial in place of a picture — this panel has no
+                    // avatar to show, the same choice `AccountPanel.swift`'s own
+                    // `initial` fallback makes for every reader.
+                    //
+                    // The initial comes from the core, not from `name.take(1)`.
+                    // Kotlin's `take` counts UTF-16 code units, so an emoji-initial
+                    // name yielded half a surrogate pair and rendered as tofu —
+                    // the exact defect `room_identity`'s header records shipping
+                    // once already. `displayInitial` is code-point-aware, and in
+                    // Rust a `char` is a scalar value, so the hazard cannot be
+                    // expressed there.
+                    Text(
+                        displayInitial(name),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.testTag("account-initial"),
+                    )
+                }
+
+                Column {
+                    Text(name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("account-name"))
+                    account?.let {
+                        Text(
+                            it.userId,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.contentMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag("account-user-id"),
+                        )
+                    }
+                }
+            }
+
+            account?.let {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    Text("Homeserver", style = MaterialTheme.typography.labelSmall, color = colors.contentMuted)
+                    Text(it.homeserver, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("account-homeserver"))
+                }
+            }
+
+            appearance()
+
+            AccountSectionHeader("Chats")
+            Column(Modifier.selectableGroup()) {
                 Text(
-                    displayInitial(name),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.testTag("account-initial"),
+                    "Order rooms by",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                RosterChoice.offered.forEach { option ->
+                    val tag = if (option == RosterChoice.WAITING) "account-order-waiting" else "account-order-recent"
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .selectable(
+                                selected = rosterView == option,
+                                role = Role.RadioButton,
+                                onClick = { scope.launch { onRosterView(option) } },
+                            )
+                            .padding(horizontal = 16.dp)
+                            .testTag(tag),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        RadioButton(selected = rosterView == option, onClick = null)
+                        Text(if (option == RosterChoice.WAITING) "Waiting first" else "Most recent")
+                    }
+                }
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .toggleable(
+                        value = showsState,
+                        role = Role.Switch,
+                        onValueChange = { scope.launch { onShowsState(it) } },
+                    )
+                    .padding(horizontal = 16.dp)
+                    .testTag("account-agent-state"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Agent state")
+                Switch(checked = showsState, onCheckedChange = null)
+            }
+            AccountSectionFooter(
+                "Waiting first puts what needs an answer at the top. Agent state is the dot and word beside an agent's name.",
+            )
+
+            // No heading, as on iOS: the three links name themselves.
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            HelpLink("Help & support", SupportUrl, "account-link-support")
+            HelpLink("Terms of use", TermsUrl, "account-link-terms")
+            HelpLink("Privacy", PrivacyUrl, "account-link-privacy")
+
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+            // Beside `Sign out` because it is the same rarely-visited class of
+            // account action — and because the day it is needed is the day someone
+            // is setting up a new device and looking for exactly this.
+            TextButton(
+                onClick = {
+                    showingRecovery = true
+                    scope.launch { recovery = runCatching { recoveryState() }.getOrDefault("unknown") }
+                },
+                modifier = Modifier.testTag("account-recovery"),
+            ) { Text("Encryption recovery") }
+
+            if (showingRecovery) {
+                RecoveryPanel(
+                    state = recovery,
+                    onEnable = onEnableRecovery,
+                    onRecover = onRecoverWithKey,
+                    onReset = onResetRecovery,
+                    onClose = { showingRecovery = false },
                 )
             }
 
-            Column {
-                Text(name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("account-name"))
-                account?.let {
-                    Text(
-                        it.userId,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag("account-user-id"),
-                    )
-                }
-            }
+            TextButton(
+                onClick = { confirmingSignOut = true },
+                modifier = Modifier.testTag("account-sign-out"),
+            ) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
+
+            // Said plainly, because it is true and because signing out of this
+            // app is not the small thing it is elsewhere — the encrypted store
+            // goes with it. Mirrors `AccountPanel.swift`'s own footer text.
+            AccountSectionFooter("Signing out removes this account and its messages from this device.")
         }
-
-        account?.let {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-                Text("Homeserver", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                Text(it.homeserver, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("account-homeserver"))
-            }
-        }
-
-        HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-        // Beside `Sign out` because it is the same rarely-visited class of
-        // account action — and because the day it is needed is the day someone
-        // is setting up a new device and looking for exactly this.
-        TextButton(
-            onClick = {
-                showingRecovery = true
-                scope.launch { recovery = runCatching { recoveryState() }.getOrDefault("unknown") }
-            },
-            modifier = Modifier.testTag("account-recovery"),
-        ) { Text("Encryption recovery") }
-
-        if (showingRecovery) {
-            RecoveryPanel(
-                state = recovery,
-                onEnable = onEnableRecovery,
-                onRecover = onRecoverWithKey,
-                onReset = onResetRecovery,
-                onClose = { showingRecovery = false },
-            )
-        }
-
-        TextButton(
-            onClick = { confirmingSignOut = true },
-            modifier = Modifier.testTag("account-sign-out"),
-        ) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
-
-        // Said plainly, because it is true and because signing out of this
-        // app is not the small thing it is elsewhere — the encrypted store
-        // goes with it. Mirrors `AccountPanel.swift`'s own footer text.
-        Text(
-            "Signing out removes this account and its messages from this device.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
     }
 
     if (confirmingSignOut) {
@@ -241,4 +320,47 @@ fun AccountPanel(
 private fun accountName(account: AccountDto?): String {
     val id = account?.userId ?: return "Signed in"
     return peopleLabel(listOf(id))
+}
+
+// The landing site's pages (`AccountPanel.swift:196-202`): the three the
+// stores ask an app with user content to link.
+private const val SupportUrl = "https://supermessage.dev/support/"
+private const val TermsUrl = "https://supermessage.dev/terms/"
+private const val PrivacyUrl = "https://supermessage.dev/privacy/"
+
+/** A section's title: `labelMedium` in `contentMuted`. */
+@Composable
+internal fun AccountSectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = SupermessageTheme.colors.contentMuted,
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
+    )
+}
+
+/** A section's footer: `bodySmall` in `contentFaint`. */
+@Composable
+internal fun AccountSectionFooter(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = SupermessageTheme.colors.contentFaint,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun HelpLink(label: String, url: String, tag: String) {
+    val uriHandler = LocalUriHandler.current
+    Text(
+        label,
+        style = MaterialTheme.typography.bodyLarge,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button) { uriHandler.openUri(url) }
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .testTag(tag),
+    )
 }
