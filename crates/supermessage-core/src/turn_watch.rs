@@ -45,7 +45,17 @@ pub fn answers_a_turn(row: &TimelineRow) -> bool {
 ///
 /// Rows that arrive (`PushBack`, `Append`, `Insert`) count, and so does a
 /// `Set` of an edited row: a bridge that answers by editing its progress
-/// message has no other signal. History (`PushFront`, `Reset`) never does.
+/// message has no other signal. Older history (`PushFront`) never does.
+///
+/// A `Reset` is the room being opened (or the timeline starting over), so it
+/// carries the agent's reply if the agent answered while the reader was
+/// elsewhere. Its rows count only when they have a timestamp, and the book's
+/// skew rule then drops any reply stamped before the turn began, so history
+/// does not end a newer turn.
+///
+/// iOS has no counterpart: it discards an in-progress turn on leaving its room
+/// and reopens clean. The core keeps the turn for every room, so on reopen it
+/// has to learn what happened meanwhile.
 pub fn replies_in(ops: &[DiffOp<TimelineRow>]) -> Vec<Option<u64>> {
     let mut found = Vec::new();
     let mut take = |row: &TimelineRow| {
@@ -58,6 +68,10 @@ pub fn replies_in(ops: &[DiffOp<TimelineRow>]) -> Vec<Option<u64>> {
             DiffOp::Append { values } => values.iter().for_each(&mut take),
             DiffOp::PushBack { value } | DiffOp::Insert { value, .. } => take(value),
             DiffOp::Set { value, .. } if value.item.edited => take(value),
+            DiffOp::Reset { values } => values
+                .iter()
+                .filter(|row| row.item.timestamp_ms.is_some())
+                .for_each(&mut take),
             _ => {}
         }
     }
@@ -335,19 +349,63 @@ mod tests {
         assert!(!answers_a_turn(&own), "the reader's own message");
     }
 
-    /// Mutation seen failing: treating `PushFront` and `Reset` like `PushBack`
-    /// ends the turn.
+    /// Mutation seen failing: treating `PushFront` like `PushBack` ends the
+    /// turn.
     #[test]
-    fn history_does_not_end_a_turn() {
+    fn older_history_does_not_end_a_turn() {
         let book = running_turn();
         let (rec, sink) = wrapped(&book);
-        sink.emit(diff(vec![
-            DiffOp::PushFront { value: agent() },
-            DiffOp::Reset {
-                values: vec![agent()],
-            },
-        ]));
+        sink.emit(diff(vec![DiffOp::PushFront { value: agent() }]));
         assert_eq!(*rec.0.lock().unwrap(), ["diff"]);
+        assert!(book.in_progress(ROOM));
+    }
+
+    fn agent_at(ms: u64) -> TimelineRow {
+        let mut r = agent();
+        r.item.timestamp_ms = Some(ms);
+        r
+    }
+
+    /// C3 review minor 1: the agent answered (by an edit, no `done`) while
+    /// the reader was in another room; opening the room loads the reply.
+    ///
+    /// Mutation seen failing: dropping the `Reset` arm of `replies_in` leaves
+    /// the turn running.
+    #[test]
+    fn opening_a_room_whose_agent_answered_meanwhile_ends_the_turn() {
+        let book = running_turn();
+        let (rec, sink) = wrapped(&book);
+        sink.emit(diff(vec![DiffOp::Reset {
+            values: vec![agent_at(T + 5_000)],
+        }]));
+        assert_eq!(*rec.0.lock().unwrap(), ["diff", "turn"]);
+        assert_eq!(ended_by(&book), Some(TurnEnding::Reply));
+    }
+
+    /// Mutation seen failing: dropping the book's skew check (or counting
+    /// `Reset` rows without it) ends the new turn on an old answer.
+    #[test]
+    fn opening_a_room_with_only_an_older_answer_leaves_the_turn_running() {
+        let book = running_turn();
+        let (rec, sink) = wrapped(&book);
+        sink.emit(diff(vec![DiffOp::Reset {
+            values: vec![agent_at(T - 10 * 60_000)],
+        }]));
+        assert_eq!(*rec.0.lock().unwrap(), ["diff"]);
+        assert!(book.in_progress(ROOM));
+    }
+
+    /// Mutation seen failing: dropping the timestamp filter on `Reset` rows
+    /// ends the turn on a row with no time.
+    #[test]
+    fn a_reset_row_with_no_time_does_not_end_a_turn() {
+        let book = running_turn();
+        let (_rec, sink) = wrapped(&book);
+        let mut undated = agent();
+        undated.item.timestamp_ms = None;
+        sink.emit(diff(vec![DiffOp::Reset {
+            values: vec![undated],
+        }]));
         assert!(book.in_progress(ROOM));
     }
 
@@ -374,9 +432,13 @@ mod tests {
         assert!(book.in_progress(ROOM), "the old sink ended the new turn");
     }
 
+    /// Runs on tokio's paused clock, so no real time passes and a loaded
+    /// machine cannot make it flake.
+    ///
     /// Mutation seen failing: sweeping with `now_ms` of zero (never due)
-    /// leaves the turn running.
-    #[tokio::test]
+    /// leaves the turn running; a loop that never ticks leaves the sink
+    /// empty.
+    #[tokio::test(start_paused = true)]
     async fn the_sweeper_ends_a_turn_and_tells_the_host() {
         let book = Arc::new(TurnBook::default());
         // Activity far in the past, so the first sweep finds it due.
@@ -390,8 +452,13 @@ mod tests {
         );
         let rec = Arc::new(Recorded::default());
         let sink: Arc<dyn EventSink> = rec.clone();
-        let task = sweep_every(Duration::from_millis(20), Arc::clone(&book), sink);
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        let period = Duration::from_secs(30);
+        let task = sweep_every(period, Arc::clone(&book), sink);
+        // Let the task reach its first (immediate) tick, then its wait.
+        tokio::task::yield_now().await;
+        assert!(rec.0.lock().unwrap().is_empty(), "swept before the period");
+        tokio::time::advance(period).await;
+        tokio::task::yield_now().await;
         assert_eq!(*rec.0.lock().unwrap(), ["turn"]);
         assert_eq!(ended_by(&book), Some(TurnEnding::TimedOut));
         task.abort();
