@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -401,6 +402,62 @@ class RosterReachabilityTest {
         compose.waitForIdle()
     }
 
+    private class RecordingHaptics : androidx.compose.ui.hapticfeedback.HapticFeedback {
+        val played = mutableListOf<androidx.compose.ui.hapticfeedback.HapticFeedbackType>()
+        override fun performHapticFeedback(hapticFeedbackType: androidx.compose.ui.hapticfeedback.HapticFeedbackType) {
+            played += hapticFeedbackType
+        }
+    }
+
+    private fun typeAndSend(fake: FakeCore, haptics: RecordingHaptics) {
+        val session = sessionOf(fake)
+        val prefs = preferences()
+        compose.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalHapticFeedback provides haptics,
+            ) {
+                Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                    AppRoot(session = session, prefs = prefs)
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Alpha").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("composer-text").performTextInput("hello there")
+        compose.onNodeWithTag("composer-send").performClick()
+        compose.waitForIdle()
+    }
+
+    /** iOS buzzes lightly for a send that reached the room, and not otherwise (`ComposerView.swift:110-113`). */
+    @Test
+    fun aDeliveredSendIsALightHaptic() {
+        val haptics = RecordingHaptics()
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+        )
+        typeAndSend(fake, haptics)
+        assertEquals(listOf("hello there"), fake.sent)
+        assertEquals(listOf(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick), haptics.played)
+    }
+
+    @Test
+    fun aSendThatFailedIsNoHaptic() {
+        val haptics = RecordingHaptics()
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+            sendResult = { throw IllegalStateException("offline") },
+        )
+        typeAndSend(fake, haptics)
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("composer-failure").fetchSemanticsNodes().isNotEmpty() }
+        // Exists, not displayed: the typing raised a real keyboard, which at a
+        // short screen pans this activity's window (it is not edge to edge).
+        compose.onNodeWithTag("composer-failure").assertExists()
+        assertEquals(emptyList<androidx.compose.ui.hapticfeedback.HapticFeedbackType>(), haptics.played)
+    }
+
     /** The menu's Delete redacts *that* event in *that* room, through the pane's session. */
     @Test
     fun deletingFromTheMenuRedactsThatEventInThatRoom() {
@@ -593,7 +650,15 @@ class RosterReachabilityTest {
         private val roomInfoResult: (String) -> RoomInfoDto = { throw NotImplementedError() },
         private val timelineRows: List<uniffi.supermessage_core.TimelineRow> = emptyList(),
         private val deleteResult: () -> Unit = {},
+        private val sendResult: () -> Unit = {},
     ) : StubCore() {
+        val sent = mutableListOf<String>()
+
+        override fun sendMessage(roomId: String, body: String, mentions: List<String>) {
+            sendResult()
+            sent += body
+        }
+
         val roomInviterCalls = mutableListOf<String>()
         val deleted = mutableListOf<Pair<String, String>>()
 

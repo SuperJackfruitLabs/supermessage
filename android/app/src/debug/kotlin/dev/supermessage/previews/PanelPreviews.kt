@@ -3,6 +3,7 @@ package dev.supermessage.previews
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import dev.supermessage.AccountPanel
+import dev.supermessage.ChipState
 import dev.supermessage.Composer
 import dev.supermessage.InvitationEmptyTimeline
 import dev.supermessage.InvitationView
@@ -37,15 +38,6 @@ private val NOW: Instant = Instant.ofEpochMilli(1_757_700_120_000L)
  * The consequence for a preview is that a stub is one lambda per screen,
  * written at the call site, and there is nothing to fake underneath it.
  */
-
-/** The composer at rest. */
-@Preview(name = "Composer, empty", showBackground = true, heightDp = 140)
-@Composable
-internal fun ComposerEmpty() {
-    PreviewGround {
-        Composer(text = "", onTextChange = {}, onSend = {})
-    }
-}
 
 /** Mid-sentence, and sending. */
 @Preview(name = "Composer, sending", showBackground = true, heightDp = 140)
@@ -86,28 +78,6 @@ internal fun ComposerReplying() {
     }
 }
 
-/**
- * Editing, which seeds the composer with what the message said.
- *
- * Previewed beside the reply state because the two share one banner and the
- * question is whether a reader can tell which of them they are in.
- */
-@Preview(name = "Composer, editing", showBackground = true, heightDp = 180)
-@Composable
-internal fun ComposerEditing() {
-    PreviewGround {
-        Composer(
-            text = "Rebased onto main and the token diff is empty now.",
-            onTextChange = {},
-            onSend = {},
-            editing = EditTarget.Pending(
-                eventId = "\$m1",
-                body = "Rebased onto main and the token diff is empty now.",
-            ),
-        )
-    }
-}
-
 /** An attachment staged, with a filename longer than its room. */
 @Preview(name = "Composer, attachment", showBackground = true, heightDp = 200)
 @Composable
@@ -117,13 +87,17 @@ internal fun ComposerAttachment() {
             text = "",
             onTextChange = {},
             onSend = {},
-            attachment = StagedFile(
-                token = "staged-1",
-                filename = "muster-dark-1500x900-final-for-real-this-time.png",
-                sizeBytes = 184_320uL,
-                mime = "image/png",
-                width = 1500uL,
-                height = 900uL,
+            attachment = ChipState(
+                file = StagedFile(
+                    token = "staged-1",
+                    filename = "muster-dark-1500x900-final-for-real-this-time.png",
+                    sizeBytes = 184_320uL,
+                    mime = "image/png",
+                    width = 1500uL,
+                    height = 900uL,
+                ),
+                path = null,
+                failure = null,
             ),
         )
     }

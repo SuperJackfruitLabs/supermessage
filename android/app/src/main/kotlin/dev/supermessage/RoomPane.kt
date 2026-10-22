@@ -17,6 +17,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.supermessage.kit.RosterArrangement
@@ -155,7 +156,17 @@ internal fun RoomPane(
         // moment the store records it.
         val replyTargets by session.replies.targets.collectAsStateWithLifecycle()
         val editTargets by session.edits.targets.collectAsStateWithLifecycle()
-        val attachment by session.staged.file.collectAsStateWithLifecycle()
+        val stagedFile by session.staged.file.collectAsStateWithLifecycle()
+        val stagedPath by session.staged.path.collectAsStateWithLifecycle()
+        val stagedFailure by session.staged.failure.collectAsStateWithLifecycle()
+        val stagedRoom by session.staged.roomId.collectAsStateWithLifecycle()
+        // The chip follows the room it was staged for, and shows a file, a
+        // failure, or both (iOS `session.staged.isPresent(in:)`). The four
+        // collected above are what recompose this; `isPresent` reads the same.
+        val attachment = if (stagedRoom == currentRoomId && (stagedFile != null || stagedFailure != null)) {
+            ChipState(file = stagedFile, path = stagedPath, failure = stagedFailure)
+        } else null
+        val haptics = LocalHapticFeedback.current
         val editing = editTargets[currentRoomId]
 
         // The composer's own text, held here rather
@@ -286,13 +297,19 @@ internal fun RoomPane(
                                         composerFailure = null
                                         text = ""
                                         session.drafts.clear(currentRoomId)
+                                        // Light, and only for a send that reached the
+                                        // room: a buzz on a failure would contradict
+                                        // the screen (iOS `ComposerView.swift:110-113`).
+                                        if (result.delivered) haptics.play(Haptic.Light)
                                     }
                                     // The reason is on the chip, and the draft stays.
-                                    // Unless the chip carries none (a newer pick took
-                                    // its place mid-send), so say it here.
+                                    // Unless the chip does not say this reason (a newer
+                                    // pick took its place mid-send, with its own state),
+                                    // so say it here.
                                     is SendResult.AttachmentFailed ->
                                         composerFailure =
-                                            if (session.staged.failure.value != null) null else result.message
+                                            if (session.staged.failure.value?.message == result.message) null
+                                            else result.message
                                     is SendResult.TextFailed -> composerFailure = result.message
                                 }
                             }
@@ -308,13 +325,19 @@ internal fun RoomPane(
                 editing = editing,
                 onCancelEdit = { session.edits.cancel(currentRoomId) },
                 attachment = attachment,
+                // A refusal is kept by the tracker and drawn on the chip, not here.
                 onAttach = { path ->
-                    scope.launch {
-                        val refusal = session.staged.stage(path, currentRoomId)
-                        if (refusal != null) composerFailure = refusal
-                    }
+                    composerFailure = null
+                    scope.launch { session.staged.stage(path, currentRoomId) }
                 },
-                onDiscardAttachment = { scope.launch { session.staged.discard() } },
+                onRefuse = { filename, message ->
+                    composerFailure = null
+                    scope.launch { session.staged.refuse(filename, message, currentRoomId) }
+                },
+                onDiscardAttachment = {
+                    composerFailure = null
+                    scope.launch { session.staged.discard() }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
