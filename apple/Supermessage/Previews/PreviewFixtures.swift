@@ -628,17 +628,20 @@ enum PreviewFixtures {
             SpaceSummary(
                 id: "!work:example.org", name: "Work", avatarUrl: nil, childCount: 12,
                 membership: .joined,
-                identity: RoomIdentity(glyph: nil, name: "Work", role: nil, initial: "W")),
+                identity: RoomIdentity(glyph: nil, name: "Work", role: nil, initial: "W"),
+                displayName: spaceDisplayName(name: "Work")),
             SpaceSummary(
                 id: "!suite:example.org", name: "Suite", avatarUrl: nil, childCount: 5,
                 membership: .joined,
-                identity: RoomIdentity(glyph: nil, name: "Suite", role: nil, initial: "S")),
+                identity: RoomIdentity(glyph: nil, name: "Suite", role: nil, initial: "S"),
+                displayName: spaceDisplayName(name: "Suite")),
             // An invitation to a space, which the strip marks rather than
             // treating as somewhere the reader already is.
             SpaceSummary(
                 id: "!estate:example.org", name: "Estate", avatarUrl: nil, childCount: 0,
                 membership: .invited,
-                identity: RoomIdentity(glyph: nil, name: "Estate", role: nil, initial: "E")),
+                identity: RoomIdentity(glyph: nil, name: "Estate", role: nil, initial: "E"),
+                displayName: spaceDisplayName(name: "Estate")),
         ]
     }
 
@@ -849,40 +852,58 @@ enum PreviewFixtures {
     /// a preview: these states are gone in seconds in a running app.
     @MainActor
     static func liveStore(
-        thinking: Bool = true, answering: Bool = true, tools: Bool = true
+        thinking: Bool = true, answering: Bool = true, tools: Bool = true, finished: Bool = false
     ) -> LiveStore {
         let live = LiveStore()
-        live.focus(roomId)
+        live.select(roomId)
+        // The core's own rules fold these into the card. Every input has the
+        // same time, so a still frame says "0s" as it always has.
+        let now: UInt64 = 1_757_700_000_000
+        var inputs: [TurnInput] = []
         var seq: UInt64 = 1
         if thinking {
-            live.handleThought(
-                roomId: roomId, seq: seq,
-                text: "Checking whether the roster is already sorted.", done: false)
+            inputs.append(
+                .thought(
+                    seq: seq, text: "Checking whether the roster is already sorted.", done: false,
+                    atMs: now))
             seq += 1
         }
         if tools {
-            live.handleTool(
-                roomId: roomId, seq: seq, toolCallId: "c1", title: "read docs/tech-stack.md",
-                kind: "read", status: "completed", phase: .done, statusLabel: "Done", locations: ["docs/tech-stack.md"],
-                input: nil, output: nil)
+            inputs.append(
+                .tool(
+                    step: .fixture(
+                        id: "c1", title: "read docs/tech-stack.md", phase: .done, seq: seq,
+                        kind: "read", locations: ["docs/tech-stack.md"]),
+                    atMs: now))
             seq += 1
             // `LiveActivity` on the web names the *last failed* tool ahead of
             // any running one, because a failure is the only state there that
             // still matters after the turn ends. This is the fixture that
             // shows whether iOS does the same.
-            live.handleTool(
-                roomId: roomId, seq: seq, toolCallId: "c2", title: "write src/lib/tokens.css",
-                kind: "write", status: "failed", phase: .failed, statusLabel: "Failed", locations: ["src/lib/tokens.css"],
-                input: nil, output: "permission denied")
+            inputs.append(
+                .tool(
+                    step: .fixture(
+                        id: "c2", title: "write src/lib/tokens.css", phase: .failed, seq: seq,
+                        kind: "write", locations: ["src/lib/tokens.css"],
+                        output: "permission denied"),
+                    atMs: now))
             seq += 1
-            live.handleTool(
-                roomId: roomId, seq: seq, toolCallId: "c3",
-                title: "regenerate every design-token target and diff the checked-in output "
-                    + "against the source that produces it",
-                kind: "run", status: "in_progress", phase: .running, statusLabel: "Running", locations: [], input: nil, output: nil)
+            inputs.append(
+                .tool(
+                    step: .fixture(
+                        id: "c3",
+                        title: "regenerate every design-token target and diff the checked-in "
+                            + "output against the source that produces it",
+                        phase: .running, seq: seq, kind: "run"),
+                    atMs: now))
             seq += 1
         }
         if answering {
+            inputs.append(.answer(seq: seq, done: false, atMs: now))
+        }
+        if finished { inputs.append(.answer(seq: 99, done: true, atMs: now)) }
+        live.restore(foldTurn(roomId: roomId, inputs: inputs))
+        if answering && !finished {
             live.handleLive(
                 roomId: roomId, seq: seq,
                 text: "It is sorted by pending first, then by last activity.", done: false)

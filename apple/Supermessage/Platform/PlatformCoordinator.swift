@@ -78,7 +78,10 @@ final class PlatformCoordinator {
             TimelineSeen(roomId: session.timeline.roomId, revision: session.timeline.revision)
         }) { [weak self] _ in self?.timelineChanged() }
         observe({ [session] in
-            LiveSeen(summary: LiveTurnSummary.of(session.live), finished: session.live.finished,
+            // The core's own words for the step (`TurnSummary.currentStepTitle`),
+            // and only while the turn is going: a finished one is not "an
+            // agent working" on the Lock Screen.
+            LiveSeen(step: session.live.inProgress ? session.live.summary?.currentStepTitle : nil,
                      roomId: session.timeline.roomId)
         }) { [weak self] in self?.liveChanged($0) }
 
@@ -273,8 +276,8 @@ final class PlatformCoordinator {
     /// The open room's turn, as the Agents widget's step. The Lock Screen's
     /// card is the hub's (`FleetActivityController`), not this.
     private func liveChanged(_ seen: LiveSeen) {
-        let turn = seen.summary.flatMap { summary in
-            seen.roomId.map { WidgetLiveTurn(roomId: $0, step: summary.step) }
+        let turn = seen.step.flatMap { step in
+            seen.roomId.map { WidgetLiveTurn(roomId: $0, step: step) }
         }
         if turn != liveTurn {
             liveTurn = turn
@@ -351,8 +354,7 @@ private struct TimelineSeen: Equatable {
 }
 
 private struct LiveSeen: Equatable {
-    let summary: LiveTurnSummary?
-    let finished: Bool
+    let step: String?
     let roomId: String?
 }
 

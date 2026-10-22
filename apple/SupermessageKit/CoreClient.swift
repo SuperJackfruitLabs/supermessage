@@ -211,6 +211,11 @@ public actor CoreClient {
         await run { $0.hasSent(roomId: roomId) }
     }
 
+    /// A room's agent turn, whole — the core's record, kept for every room.
+    public func turn(roomId: String) async -> TurnSnapshot? {
+        await run { $0.turn(roomId: roomId) }
+    }
+
     public func directRoomWith(userId: String) async throws -> String? {
         try await run { try $0.directRoomWith(userId: userId) }
     }

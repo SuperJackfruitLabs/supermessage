@@ -1,3 +1,4 @@
+import SupermessageFFI
 import SupermessageKit
 import SwiftUI
 
@@ -16,7 +17,7 @@ struct SpaceMenu: View {
     let allCount: Int
 
     private var title: String {
-        spaces.selectedName.map(SpaceNames.display) ?? "Chats"
+        spaces.selectedName.map { spaceDisplayName(name: $0) } ?? "Chats"
     }
 
     private var selection: Binding<String?> {
@@ -51,7 +52,7 @@ struct SpaceMenu: View {
                 Picker("Space", selection: selection) {
                     Text("All spaces · \(allCount)").tag(String?.none)
                     ForEach(spaces.spaces, id: \.id) { space in
-                        let name = SpaceNames.display(space.identity.name)
+                        let name = spaceDisplayName(name: space.identity.name)
                         if spaces.isInvitation(space) {
                             // No count: the account cannot see into a space
                             // it has not joined, so one would be invented.

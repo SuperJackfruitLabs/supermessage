@@ -61,6 +61,7 @@ open class StubCore : CoreInterface {
     override fun roomInfo(roomId: kotlin.String): RoomInfoDto = throw NotImplementedError()
     override fun roomCast(roomId: kotlin.String): uniffi.supermessage_core.RoomCast = throw NotImplementedError()
     override fun roomInviter(roomId: kotlin.String): kotlin.String? = throw NotImplementedError()
+    override fun turn(roomId: kotlin.String): uniffi.supermessage_core.TurnSnapshot? = throw NotImplementedError()
     override fun roomsSnapshot(): RoomsSnapshot = throw NotImplementedError()
     override fun searchMessages(term: kotlin.String, roomId: kotlin.String?): List<SearchResultDto> = throw NotImplementedError()
     override fun sendGateDecision(roomId: kotlin.String, gateId: kotlin.String, optionId: kotlin.String, comment: kotlin.String?, inReplyTo: kotlin.String, prompt: kotlin.String): Unit = throw NotImplementedError()
