@@ -455,3 +455,21 @@ export class StagedAttachmentTracker {
     return this.take();
   }
 }
+
+/**
+ * A file whose attach or send failed, kept so the refusal is drawn on its
+ * chip rather than as a loose line (iOS `ComposerView.swift:626-675`).
+ */
+export interface FailedChip {
+  filename: string;
+  failure: AttachmentFailure;
+}
+
+/**
+ * A failed chip with no file behind it blocks sending the text alone
+ * (iOS `StagedAttachment.swift:90-92`): the reader asked to send a file, and
+ * quietly sending only the words would answer a different question.
+ */
+export function blocksSend(staged: StagedAttachment | null, failed: FailedChip | null): boolean {
+  return staged === null && failed !== null;
+}

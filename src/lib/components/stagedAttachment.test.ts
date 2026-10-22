@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { StagedAttachment } from "$lib/ipc";
 import {
   attachmentFailure,
+  blocksSend,
+  type FailedChip,
   formatAttachmentSize,
   sanitizeFilename,
   sendCaveat,
@@ -379,5 +381,24 @@ describe("StagedAttachmentTracker", () => {
     expect(tracker.take()).toBe(file);
     expect(tracker.take()).toBeNull();
     expect(tracker.stagedFor("!a:x.org")).toBeNull();
+  });
+});
+
+describe("blocksSend", () => {
+  const chip: FailedChip = {
+    filename: "holiday.png",
+    failure: attachmentFailure({ kind: "unknownAttachment", message: "" }, "send"),
+  };
+
+  it("blocks when only a failed chip remains", () => {
+    expect(blocksSend(null, chip)).toBe(true);
+  });
+
+  it("does not block with a staged file", () => {
+    expect(blocksSend(staged(), chip)).toBe(false);
+  });
+
+  it("does not block with neither", () => {
+    expect(blocksSend(null, null)).toBe(false);
   });
 });

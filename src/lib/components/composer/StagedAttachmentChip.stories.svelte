@@ -1,6 +1,7 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
 
+  import { attachmentFailure } from "../stagedAttachment";
   import StagedAttachmentChip from "./StagedAttachmentChip.svelte";
 
   const { Story } = defineMeta({
@@ -45,5 +46,33 @@
     filename: "supermessage-design-language-tokens-regenerated-2026-09-12.toml",
     summary: "TOML · 6 KB",
     caveat: null,
+  }}
+/>
+
+<!-- A send that failed: the refusal on the chip, in danger. -->
+<Story
+  name="Send failed on the chip"
+  args={{
+    filename: "disk-image.iso",
+    summary: "",
+    caveat: null,
+    failure: attachmentFailure(
+      {
+        kind: "attachmentTooLarge",
+        message: "that file is 200.0 MiB, but this homeserver accepts at most 50.0 MiB",
+      },
+      "send",
+    ),
+  }}
+/>
+
+<!-- A pick that was refused: no file, so the filename falls back (iOS ComposerView.swift:633). -->
+<Story
+  name="Refused when attaching"
+  args={{
+    filename: "Attachment",
+    summary: "",
+    caveat: null,
+    failure: attachmentFailure({ kind: "unknownAttachment", message: "" }, "attach"),
   }}
 />
