@@ -59,6 +59,22 @@ class ComposerTest {
         compose.onNodeWithTag("composer-send").assertIsNotEnabled()
     }
 
+    /**
+     * A staged attachment is sendable on its own: Send is enabled even when
+     * the caption is whitespace only, and the send carries no caption (the
+     * caller sends `caption = null`, per `Session.send`).
+     */
+    @Test
+    fun stagedAttachmentWithBlankTextEnablesSend() {
+        compose.setContent {
+            Composer(
+                text = "  ", onTextChange = {}, onSend = {},
+                attachment = stubAttachment(),
+            )
+        }
+        compose.onNodeWithTag("composer-send").assertIsEnabled()
+    }
+
     /** A failure is shown inline rather than swallowed. */
     @Test
     fun aFailureIsShown() {

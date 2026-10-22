@@ -57,14 +57,16 @@ import uniffi.supermessage_ffi.StagedFile
  * `ComposerView.swift` reads and writes `session.drafts` itself rather than
  * this file reaching for a store directly.
  *
- * ## `canSend` is non-blank, not non-empty
+ * ## `canSend` is non-blank text or a staged attachment
  *
  * `Session.send` trims (`val body = text.trim()`) before deciding there is
  * anything to send, so enabling the control on whitespace alone would offer
  * a tap that does nothing — the fault
  * [dev.supermessage.ComposerTest.whitespaceAloneDoesNotEnableSend] exists to
  * catch, confirmed by the mandatory mutation (see that file, and this
- * task's report).
+ * task's report). A staged attachment is sendable on its own: with one
+ * present, Send is enabled whatever the text, and `Session.send` sends it
+ * with `caption = null` when the text is blank.
  *
  * ## `sending` is a view concern, not a `Session` one
  *
@@ -176,7 +178,7 @@ fun Composer(
     onDiscardAttachment: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val canSend = text.isNotBlank()
+    val canSend = text.isNotBlank() || attachment != null
 
     // The draft that was sitting in the field the moment this edit began —
     // see this function's KDoc for why it lives here rather than in a store.
