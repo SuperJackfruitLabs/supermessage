@@ -39,6 +39,11 @@ export function invitationPrompt(roomName: string): string {
   return `You have been invited to ${roomName}.`;
 }
 
+/** The quiet line under the prompt saying who invited, or `null` when it is not known. */
+export function inviterLine(inviter: string | null): string | null {
+  return inviter === null ? null : `from ${inviter}`;
+}
+
 /**
  * What the timeline shows in place of history for an invitation.
  *

@@ -9,6 +9,12 @@
 // id and a room alias have exact shapes, and a request built from a typo comes
 // back as an opaque homeserver error rather than "that is not a user id".
 
+import {
+  createRoom as defaultCreateRoom,
+  directRoomWith as defaultDirectRoomWith,
+  type PersonDto,
+} from "$lib/ipc";
+
 /** `@localpart:server`, the shape every Matrix user id has. */
 const USER_ID = /^@[^\s:]+:[^\s:]+(:\d+)?$/;
 /** `#alias:server`, or a `!roomid:server` — both are things to join. */
@@ -72,4 +78,46 @@ export function creationProblem(name: string, invitees: string[]): CreationProbl
  */
 export function shouldBeDirect(invitees: string[]): boolean {
   return invitees.length === 1;
+}
+
+/** The second line of a person's row (iOS `NewRoomPanel.swift:141-205`). */
+export function personSubtitle(person: PersonDto): string {
+  return person.runtime ? `${person.runtime.harness} on ${person.runtime.host}` : person.userId;
+}
+
+/** The list's section title: everyone, or only what the query matched. */
+export function peopleHeading(query: string): "Who you know" | "Matches" {
+  return query.trim() === "" ? "Who you know" : "Matches";
+}
+
+/** What an empty list says (iOS `NewRoomPanel.swift:69-91`). */
+export function emptyState(query: string): { title: string; description: string } {
+  const q = query.trim();
+  return q === ""
+    ? { title: "Nobody yet", description: "Agents and people you share a room with appear here." }
+    : { title: `No one matching ${q}`, description: "Try a name, a machine, or a full address." };
+}
+
+export interface OpenConversationDeps {
+  directRoomWith: (userId: string) => Promise<string | null>;
+  createRoom: (name: string, invite: string[], isDirect: boolean) => Promise<string>;
+}
+
+/**
+ * The room to open for a person: the DM already shared with them, otherwise a new one
+ * (iOS `Session.swift:549-574`). A failed lookup counts as "none"; a failed create rejects
+ * with the core's error, for the panel to word.
+ */
+export async function openConversation(
+  person: PersonDto,
+  deps: OpenConversationDeps = { directRoomWith: defaultDirectRoomWith, createRoom: defaultCreateRoom },
+): Promise<string> {
+  let existing: string | null = null;
+  try {
+    existing = await deps.directRoomWith(person.userId);
+  } catch {
+    existing = null;
+  }
+  if (existing !== null) return existing;
+  return deps.createRoom(person.name, [person.userId], true);
 }

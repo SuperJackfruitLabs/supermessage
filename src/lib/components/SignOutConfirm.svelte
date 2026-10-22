@@ -12,7 +12,7 @@
    * it is inert, focus opens on Cancel rather than the destructive action,
    * and Escape (the `cancel` event) asks the parent to close through
    * `onCancel`. While sign-out is in flight, Cancel and Escape do nothing.
-   * `accountName` is null until M3 brings the core's `account` command.
+   * `accountName` is null only while the account's name is unknown.
    */
   export interface Props {
     accountName: string | null;

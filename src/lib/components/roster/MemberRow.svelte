@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { RoomMember } from "$lib/ipc";
   import { initial, memberDisplayName, splitSigil } from "../roomInfoView";
+  import AgentTag from "../AgentTag.svelte";
+  import { memberName, unblockLabel } from "../safety/memberActions";
 
   /**
    * One member of a room.
@@ -15,9 +17,28 @@
     /** Resolved by the caller, keyed on the member's own `avatarUrl`. */
     avatarUrl: string | null;
     onAvatarFailed: () => void;
+    /** Whether this member is blocked: the name is muted and "Blocked" is said in danger. */
+    blocked?: boolean;
+    /**
+     * Opens the member's actions (block, report). Set on every member but this account; the
+     * name and id stay selectable text, so the affordance is a trailing button, not the row.
+     */
+    onActions?: () => void;
+    /** Set where the row is a blocked person (the Account panel's list): a plain Unblock button. */
+    onUnblock?: () => void;
+    /** An unblock for this member is in flight. */
+    unblocking?: boolean;
   }
 
-  let { member, avatarUrl, onAvatarFailed }: Props = $props();
+  let {
+    member,
+    avatarUrl,
+    onAvatarFailed,
+    blocked = false,
+    onActions,
+    onUnblock,
+    unblocking = false,
+  }: Props = $props();
 </script>
 
 <li class="flex items-center gap-2">
@@ -46,7 +67,9 @@
       `truncate` (nowrap + ellipsis) would also just hide a long
       name outright rather than let the reader see it wrap.
     -->
-    <span class="selectable block font-sans text-ui text-content break-words">
+    <span
+      class="selectable block font-sans text-ui break-words {blocked ? 'text-content-muted' : 'text-content'}"
+    >
       {memberDisplayName(member)}
     </span>
     {#if member.displayName}
@@ -58,4 +81,28 @@
       </span>
     {/if}
   </span>
+  {#if member.isAgent}<AgentTag />{/if}
+  {#if blocked}<span class="shrink-0 text-label text-danger">Blocked</span>{/if}
+  {#if onUnblock}
+    <button
+      type="button"
+      onclick={onUnblock}
+      disabled={unblocking}
+      aria-label={unblockLabel(memberName(member))}
+      class="shrink-0 rounded-control border border-border px-2 py-0.5 text-ui text-content transition-colors hover:bg-surface disabled:opacity-50"
+    >
+      {unblocking ? "Working…" : "Unblock"}
+    </button>
+  {/if}
+  {#if onActions}
+    <button
+      type="button"
+      onclick={onActions}
+      aria-label={blocked ? `Unblock or report ${memberName(member)}` : `Block or report ${memberName(member)}`}
+      aria-haspopup="dialog"
+      class="shrink-0 rounded-control px-1.5 py-0.5 text-ui text-content-muted transition-colors hover:bg-surface hover:text-content"
+    >
+      <span aria-hidden="true">⋯</span>
+    </button>
+  {/if}
 </li>

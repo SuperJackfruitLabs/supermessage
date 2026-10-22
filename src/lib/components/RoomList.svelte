@@ -45,8 +45,14 @@
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import ArrangementMenu from "./roster/ArrangementMenu.svelte";
   import RoomRow from "./roster/RoomRow.svelte";
+  import RowMenu from "./roster/RowMenu.svelte";
+  import { rowMenuItems, type RowMenuItem } from "./roster/rowMenu";
+  import { SETTING_FAILURE, toggleMute, togglePin } from "./roomSettings";
+  import { roomSettingsWrites } from "$lib/stores/roomSettingsWrites.svelte";
+  import InlineFailure from "./timeline/InlineFailure.svelte";
   import RosterSectionHeading from "./roster/RosterSectionHeading.svelte";
   import {
+    roomInfo,
     rosterSections,
     type AgentState,
     type RosterSection,
@@ -63,6 +69,56 @@
   let { onSelect }: { onSelect?: () => void } = $props();
 
   const avatarCache = createAvatarCache();
+
+  /** The open row menu, if any: which room, where, and what it offers. */
+  let menu = $state<{ roomId: string; at: { x: number; y: number }; items: RowMenuItem[] } | null>(null);
+  /** Said above the list when a mute or pin was refused; cleared by the next menu. */
+  let settingFailure = $state<string | null>(null);
+  /** Only the newest request may open the menu. */
+  let menuRequest = 0;
+
+  /**
+   * Opens a row's menu. A joined room is asked what it is set to first (`room_info`), so the
+   * menu says "Unmute" or "Unpin" truthfully; when that fails it says "Mute" and "Pin", and the
+   * toggle then does nothing, as on iOS. A room with nothing to offer opens no menu.
+   */
+  async function openMenu(roomId: string, at: { x: number; y: number }): Promise<void> {
+    const entry = sections.flatMap((s) => s.rows).find((e) => e.row.room.id === roomId);
+    if (!entry) return;
+    const mine = ++menuRequest;
+    settingFailure = null;
+    const info =
+      entry.row.affordance === "compose"
+        ? await roomInfo(roomId)
+            .then((i) => ({ notifications: i.notifications, pinned: i.pinned }))
+            .catch(() => null)
+        : null;
+    if (mine !== menuRequest) return;
+    const items = rowMenuItems(entry.row.affordance, info);
+    menu = items.length === 0 ? null : { roomId, at, items };
+  }
+
+  function closeMenu(): void {
+    menuRequest += 1;
+    menu = null;
+  }
+
+  async function chooseMenuItem(id: RowMenuItem["id"]): Promise<void> {
+    const roomId = menu?.roomId;
+    closeMenu();
+    if (!roomId) return;
+    if (id === "mute" || id === "pin") {
+      const outcome = await roomSettingsWrites.run<unknown>(roomId, () =>
+        id === "mute" ? toggleMute(roomId) : togglePin(roomId),
+      );
+      if (outcome.ran && outcome.value === null) settingFailure = SETTING_FAILURE;
+    } else {
+      await roomsStore.declineInvitation(roomId).catch((err: unknown) => {
+        console.error("decline failed", err);
+        settingFailure = "Couldn't decline that invitation. Try again.";
+      });
+    }
+  }
 
   /**
    * Handles a row click: select the room if it isn't already the selected
@@ -150,6 +206,9 @@
 -->
 <nav aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
   <ArrangementMenu {view} onChange={(next) => (view = next)} />
+  {#if settingFailure !== null}
+    <div class="px-4"><InlineFailure message={settingFailure} /></div>
+  {/if}
 
   <!--
     The list reorders itself constantly — it is sorted by last activity, so
@@ -180,9 +239,14 @@
           {now}
           onSelect={chooseRoom}
           onAvatarFailed={(roomId) => avatarCache.markFailed(roomId)}
+          onMenu={(id, at) => void openMenu(id, at)}
         />
       {/each}
     {/each}
   {/if}
   </div>
 </nav>
+
+{#if menu !== null}
+  <RowMenu items={menu.items} at={menu.at} busy={roomSettingsWrites.busy(menu.roomId)} onChoose={(id) => void chooseMenuItem(id)} onClose={closeMenu} />
+{/if}

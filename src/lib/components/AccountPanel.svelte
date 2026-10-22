@@ -10,12 +10,20 @@
     TEXT_SIZE_LABELS,
     type AppearancePrefs,
   } from "$lib/appearance";
-  import { ACCOUNT_LINKS, APPEARANCE_FOOTER, SIGN_OUT_FOOTER, versionLine } from "./accountView";
+  import type { AccountDto, RoomMember } from "$lib/ipc";
+  import {
+    ACCOUNT_LINKS,
+    APPEARANCE_FOOTER,
+    BLOCKED_FOOTER,
+    REPORT_FOOTER,
+    SIGN_OUT_FOOTER,
+    blockedSectionShown,
+    versionLine,
+  } from "./accountView";
 
   /**
-   * Account (iOS `AccountPanel.swift`): appearance, text size, links,
-   * encryption recovery and sign out. The identity block ("Signed in as") needs
-   * the core's `account` command and arrives with M3.
+   * Account (iOS `AccountPanel.swift`): who is signed in, appearance, text size, the blocked
+   * list (only when someone is in it), links, encryption recovery and sign out.
    *
    * Callbacks rather than stores or IPC so a story can drive it with no Tauri
    * host. Sign out asks first (`SignOutConfirm`); the page's `onSignOut` does
@@ -29,6 +37,14 @@
     onSignOut: () => Promise<void>;
     onOpenLink: (url: string) => void;
     onClose: () => void;
+    /** Who is signed in and where; `null` while unknown. */
+    account: AccountDto | null;
+    /** The core's name for this account (`people_label`); `null` while unknown. */
+    accountName: string | null;
+    /** Everyone this account has blocked; `null` when it could not be read. */
+    blocked: RoomMember[] | null;
+    /** Unblocks one person. Resolves to the refusal text, or `null` when it landed. */
+    onUnblock: (userId: string) => Promise<string | null>;
   }
 </script>
 
@@ -36,9 +52,39 @@
   import { onMount } from "svelte";
   import { appearanceAttributes } from "$lib/appearance";
   import SignOutConfirm from "./SignOutConfirm.svelte";
+  import MemberRow from "./roster/MemberRow.svelte";
+  import { initial } from "./roomInfoView";
 
-  let { version, prefs, onChange, onOpenRecovery, onSignOut, onOpenLink, onClose }: Props =
-    $props();
+  let {
+    version,
+    prefs,
+    onChange,
+    onOpenRecovery,
+    onSignOut,
+    onOpenLink,
+    onClose,
+    account,
+    accountName,
+    blocked,
+    onUnblock,
+  }: Props = $props();
+
+  /** A refused unblock, said in place of the footer. */
+  let unblockFailure = $state<string | null>(null);
+  let unblocking = $state<string | null>(null);
+
+  async function unblockOne(userId: string): Promise<void> {
+    if (unblocking !== null) return;
+    unblocking = userId;
+    unblockFailure = null;
+    try {
+      unblockFailure = await onUnblock(userId);
+    } catch {
+      unblockFailure = "That didn't work.";
+    } finally {
+      unblocking = null;
+    }
+  }
 
   let confirming = $state(false);
   let panel = $state<HTMLElement | null>(null);
@@ -122,6 +168,31 @@
       </button>
     </header>
 
+    <section class="flex items-center gap-3" aria-label="Signed in as">
+      <span
+        aria-hidden="true"
+        class="flex size-11 shrink-0 items-center justify-center rounded-pill bg-surface-raised text-body font-medium text-content"
+      >
+        {initial(accountName ?? "?")}
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="selectable block truncate text-body font-medium text-content">
+          {accountName ?? "Signed in"}
+        </span>
+        {#if account}
+          <span class="selectable block truncate font-mono text-meta text-content-muted">
+            {account.userId}
+          </span>
+        {/if}
+      </span>
+    </section>
+    {#if account}
+      <section class="-mt-3 flex flex-col gap-0.5 px-1" aria-label="Homeserver">
+        <h3 class="text-meta font-medium text-content-muted">Homeserver</h3>
+        <p class="selectable break-all text-ui text-content">{account.homeserver}</p>
+      </section>
+    {/if}
+
     <section class="flex flex-col gap-2" aria-labelledby="account-appearance">
       <h3 id="account-appearance" class="text-meta font-medium text-content-muted">Appearance</h3>
       <div role="radiogroup" aria-label="Appearance" class="flex flex-wrap gap-1">
@@ -204,7 +275,29 @@
       </div>
     </section>
 
-    <section class="flex flex-col" aria-label="Links">
+    {#if blockedSectionShown(blocked)}
+      <section class="flex flex-col gap-2" aria-labelledby="account-blocked">
+        <h3 id="account-blocked" class="text-meta font-medium text-content-muted">Blocked</h3>
+        <ul class="flex flex-col gap-2">
+          {#each blocked ?? [] as member (member.userId)}
+            <MemberRow
+              {member}
+              avatarUrl={null}
+              onAvatarFailed={() => {}}
+              onUnblock={() => void unblockOne(member.userId)}
+              unblocking={unblocking === member.userId}
+            />
+          {/each}
+        </ul>
+        {#if unblockFailure !== null}
+          <p role="alert" class="text-meta text-danger">{unblockFailure}</p>
+        {:else}
+          <p class="text-meta text-content-faint">{BLOCKED_FOOTER}</p>
+        {/if}
+      </section>
+    {/if}
+
+    <section class="flex flex-col gap-1" aria-label="Links">
       {#each ACCOUNT_LINKS as link (link.url)}
         <button
           type="button"
@@ -214,6 +307,7 @@
           {link.label}
         </button>
       {/each}
+      <p class="px-3 pt-1 text-meta text-content-faint">{REPORT_FOOTER}</p>
     </section>
 
     <section class="flex flex-col">
@@ -244,5 +338,5 @@
 </div>
 
 {#if confirming}
-  <SignOutConfirm accountName={null} onConfirm={onSignOut} onCancel={() => (confirming = false)} />
+  <SignOutConfirm accountName={accountName} onConfirm={onSignOut} onCancel={() => (confirming = false)} />
 {/if}

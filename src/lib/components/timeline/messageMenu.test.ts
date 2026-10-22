@@ -23,7 +23,7 @@ describe("menuActions", () => {
     // A local echo cannot be replied to or reacted to, but its text can be copied (iOS offers Copy
     // whenever the body is non-empty, whatever `canReplyOrReact` says).
     const a = menuActions(rowOf({ body: "hi", isOwn: true, eventId: null }, false));
-    expect(a).toEqual({ react: false, copy: true, edit: false, del: false, more: true, bar: true });
+    expect(a).toEqual({ react: false, copy: true, edit: false, del: false, report: false, more: true, bar: true });
   });
   it("pendingMessageWithoutTextHasNoBar", () => {
     expect(menuActions(rowOf({ body: null }, false)).bar).toBe(false);
@@ -63,7 +63,29 @@ describe("menuActions edit and more", () => {
     expect(a.react).toBe(false);
   });
   it("noMoreWhenNothingToOffer", () => {
-    expect(menuActions(rowOf({ body: null, isOwn: false }, true)).more).toBe(false);
+    expect(menuActions(rowOf({ body: null, isOwn: false, sender: null }, true)).more).toBe(false);
+  });
+});
+
+describe("menuActions report", () => {
+  it("reportOfferedOnSomeoneElsesSentMessage", () => {
+    expect(menuActions(rowOf({ isOwn: false, sender: "@a:x" })).report).toBe(true);
+  });
+  it("reportNotOfferedOnYourOwn", () => {
+    expect(menuActions(rowOf({ isOwn: true, sender: "@me:x" })).report).toBe(false);
+  });
+  it("reportNotOfferedWhilePending", () => {
+    expect(menuActions(rowOf({ isOwn: false, sender: "@a:x" }, false)).report).toBe(false);
+  });
+  it("reportNotOfferedWithoutAnEventId", () => {
+    expect(menuActions(rowOf({ isOwn: false, sender: "@a:x", eventId: null })).report).toBe(false);
+  });
+  it("reportNotOfferedWithoutASender", () => {
+    expect(menuActions(rowOf({ isOwn: false, sender: null })).report).toBe(false);
+  });
+  it("reportAloneOpensMore", () => {
+    const a = menuActions(rowOf({ body: null, editable: false, isOwn: false, sender: "@a:x" }));
+    expect(a).toMatchObject({ copy: false, edit: false, del: false, report: true, more: true });
   });
 });
 

@@ -15,21 +15,28 @@ export function menuActions(row: ItemRow): {
   /** Edit follows `editable`, as iOS does (TimelineCollectionView.swift:1110-1117), never `isOwn`. */
   edit: boolean;
   del: boolean;
-  /** Anything for the "More" menu: Copy, Edit or Delete. */
+  /**
+   * Report: someone else's message the server has acknowledged, with a sender
+   * (iOS `TimelineCollectionView.swift:1128-1145`). A report addresses an event and a person.
+   */
+  report: boolean;
+  /** Anything for the "More" menu: Copy, Edit, Delete or Report. */
   more: boolean;
   bar: boolean;
 } {
-  const { body, isOwn, eventId, editable } = row.item;
+  const { body, isOwn, eventId, editable, sender } = row.item;
   const react = row.canReplyOrReact;
   const copy = body !== null && body !== "";
   const edit = editable && eventId !== null;
   const del = isOwn && react && eventId !== null;
-  const more = copy || edit || del;
+  const report = !isOwn && react && eventId !== null && sender !== null;
+  const more = copy || edit || del || report;
   return {
     react,
     copy,
     edit,
     del,
+    report,
     more,
     // A pending message cannot be replied to or reacted to, but its text can
     // still be copied (iOS TimelineCollectionView offers Copy on any body).
