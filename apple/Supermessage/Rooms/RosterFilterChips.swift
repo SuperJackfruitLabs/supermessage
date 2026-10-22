@@ -1,3 +1,4 @@
+import SupermessageFFI
 import SupermessageKit
 import SwiftUI
 
@@ -8,21 +9,18 @@ import SwiftUI
 /// list by something no tab covers. Mentions joins when the core exposes it.
 ///
 /// A chip narrows what the core arranged; it never re-sorts it — see
-/// `RosterFilter.apply`. Each chip says how many rooms it would leave, so it
+/// `rosterFilterSections`. Each chip says how many rooms it would leave, so it
 /// can be chosen without being tried.
 struct RosterFilterChips: View {
-    /// The chips a phone offers.
-    static let offered: [RosterFilter] = [.all, .unread]
-
     @Binding var selection: RosterFilter
-    /// How many rooms each chip would show.
-    let counts: [RosterFilter: Int]
+    /// The chips the core offers, each with how many rooms it would show.
+    let chips: [RosterFilterChip]
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(Self.offered, id: \.self) { filter in
-                    chip(filter)
+                ForEach(chips, id: \.filter) { chip in
+                    self.chip(chip)
                 }
             }
             .padding(.horizontal, 16)
@@ -32,15 +30,16 @@ struct RosterFilterChips: View {
         .sensoryFeedback(.selection, trigger: selection)
     }
 
-    private func chip(_ filter: RosterFilter) -> some View {
+    private func chip(_ chip: RosterFilterChip) -> some View {
+        let filter = chip.filter
         let selected = selection == filter
         return Button {
             selection = filter
         } label: {
             HStack(spacing: 4) {
-                Text(filter.title)
-                if filter != .all, let count = counts[filter], count > 0 {
-                    Text("\(count)")
+                Text(chip.title)
+                if filter != .all, chip.count > 0 {
+                    Text("\(chip.count)")
                         .monospacedDigit()
                         .foregroundStyle(selected ? Theme.accentContent : Theme.contentMuted)
                 }
@@ -54,8 +53,7 @@ struct RosterFilterChips: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityLabel(
-            counts[filter].map { "\(filter.title), \($0)" } ?? filter.title)
+        .accessibilityLabel("\(chip.title), \(chip.count)")
     }
 }
 
@@ -64,7 +62,11 @@ struct RosterFilterChips: View {
     @Previewable @State var filter = RosterFilter.all
     PreviewGround {
         RosterFilterChips(
-            selection: $filter, counts: [.all: 5, .unread: 2, .agents: 3, .needsYou: 1])
+            selection: $filter,
+            chips: [
+                RosterFilterChip(filter: .all, title: "All", count: 5),
+                RosterFilterChip(filter: .unread, title: "Unread", count: 2),
+            ])
     }
 }
 #endif

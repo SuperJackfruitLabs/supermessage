@@ -29,7 +29,7 @@ struct RoomListView: View {
     /// its top every launch would bury the conversations.
     @State private var showsInvitations = false
     @AppStorage("roster.showsState") private var showsState = true
-    @AppStorage("roster.filter") private var storedFilter = RosterFilter.all.rawValue
+    @AppStorage("roster.filter") private var storedFilter = rosterFilterKey(filter: .all)
 
     /// Re-read on every roster change so "2m" does not sit at "2m" all day.
     @State private var now = Date()
@@ -53,13 +53,10 @@ struct RoomListView: View {
     /// The chip in force. A filter that is no longer offered as a chip —
     /// Agents and Needs you, which are tabs — reads as All, so a stored
     /// choice from before cannot leave the list narrowed with no chip lit.
-    private var filter: RosterFilter {
-        let stored = RosterFilter(rawValue: storedFilter) ?? .all
-        return RosterFilterChips.offered.contains(stored) ? stored : .all
-    }
+    private var filter: RosterFilter { rosterFilterFromKey(key: storedFilter) }
 
     private var filterBinding: Binding<RosterFilter> {
-        Binding(get: { filter }, set: { storedFilter = $0.rawValue })
+        Binding(get: { filter }, set: { storedFilter = rosterFilterKey(filter: $0) })
     }
 
     /// The core's arrangement — `core::roster` orders and groups.
@@ -83,20 +80,15 @@ struct RoomListView: View {
     }
 
     /// The arrangement, narrowed by the chip. Never re-ordered.
-    private var sections: [RosterSection] { filter.apply(arranged) }
+    private var sections: [RosterSection] { rosterFilterSections(sections: arranged, filter: filter) }
 
     private var rowIds: [String] { sections.flatMap { $0.rows.map(\.row.room.id) } }
 
     /// What the list animation watches: which rooms are listed, in no order.
     private var roomSet: Set<String> { Set(rowIds) }
 
-    private var counts: [RosterFilter: Int] {
-        let rows = arranged.flatMap(\.rows)
-        return Dictionary(
-            uniqueKeysWithValues: RosterFilter.allCases.map { chip in
-                (chip, rows.filter(chip.admits).count)
-            })
-    }
+    /// The chips the core offers, each with the count it would leave.
+    private var chips: [RosterFilterChip] { rosterFilterChips(sections: arranged) }
 
     private var hiddenInvitations: Int {
         RosterArrangement.hiddenInvitations(session.rooms.rooms, showsInvitations: false)
@@ -117,7 +109,7 @@ struct RoomListView: View {
                 // `SpaceMenu`.
                 VStack(alignment: .leading, spacing: 0) {
                     if !session.rooms.rooms.isEmpty {
-                        RosterFilterChips(selection: filterBinding, counts: counts)
+                        RosterFilterChips(selection: filterBinding, chips: chips)
                     }
                     if invitationCount > 0 {
                         InvitationsRow(count: invitationCount, isOpen: $showsInvitations)
@@ -192,11 +184,11 @@ struct RoomListView: View {
             } else if sections.isEmpty, filter != .all {
                 // The chip left nothing. Say which chip, and offer the way back.
                 ContentUnavailableView {
-                    Label(emptyTitle, systemImage: "line.3.horizontal.decrease.circle")
+                    Label(rosterFilterEmptyState(filter: filter).title, systemImage: "line.3.horizontal.decrease.circle")
                 } description: {
-                    Text(emptyDescription)
+                    Text(rosterFilterEmptyState(filter: filter).description)
                 } actions: {
-                    Button("Show all") { storedFilter = RosterFilter.all.rawValue }
+                    Button("Show all") { storedFilter = rosterFilterKey(filter: .all) }
                 }
             } else if sections.isEmpty, !showsInvitations {
                 // Every room was filtered away. Say so, and say what by —
@@ -213,24 +205,6 @@ struct RoomListView: View {
             RoomInfoPanel(session: session, roomId: request.id) { infoRequest = nil }
                 .presentationDetents([.large, .medium])
                 .paletteSheet()
-        }
-    }
-
-    private var emptyTitle: String {
-        switch filter {
-        case .all: return "Nothing here"
-        case .unread: return "Nothing unread"
-        case .agents: return "No agents here"
-        case .needsYou: return "You're all caught up"
-        }
-    }
-
-    private var emptyDescription: String {
-        switch filter {
-        case .all: return ""
-        case .unread: return "Every room is read."
-        case .agents: return "No room here reads as an agent's."
-        case .needsYou: return "Nothing is waiting on you."
         }
     }
 
@@ -310,7 +284,7 @@ struct RoomListView: View {
     /// how a "Mute" button unmutes something.
     private func toggleMute(_ roomId: String) async {
         guard let info = try? await session.roomInfo(roomId) else { return }
-        let next = RoomToggles.nextNotificationMode(from: info.notifications)
+        let next = nextNotificationMode(current: info.notifications)
         if await session.setNotifications(next, in: roomId) {
             settings[roomId] = KnownSettings(muted: next == .muted, pinned: info.pinned)
             swipeLanded += 1

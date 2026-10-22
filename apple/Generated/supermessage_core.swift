@@ -626,6 +626,89 @@ public func FfiConverterTypeAccountDto_lower(_ value: AccountDto) -> RustBuffer 
 
 
 /**
+ * The dock's state: which sentence, who it names, and the sentence itself.
+ */
+public struct Acknowledgement {
+    public var kind: AcknowledgementKind
+    /**
+     * Who the sentence names — usually one. Empty only for a bare "On it…".
+     */
+    public var names: [String]
+    public var text: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: AcknowledgementKind, 
+        /**
+         * Who the sentence names — usually one. Empty only for a bare "On it…".
+         */names: [String], text: String) {
+        self.kind = kind
+        self.names = names
+        self.text = text
+    }
+}
+
+
+
+extension Acknowledgement: Equatable, Hashable {
+    public static func ==(lhs: Acknowledgement, rhs: Acknowledgement) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.names != rhs.names {
+            return false
+        }
+        if lhs.text != rhs.text {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(names)
+        hasher.combine(text)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAcknowledgement: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Acknowledgement {
+        return
+            try Acknowledgement(
+                kind: FfiConverterTypeAcknowledgementKind.read(from: &buf), 
+                names: FfiConverterSequenceString.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Acknowledgement, into buf: inout [UInt8]) {
+        FfiConverterTypeAcknowledgementKind.write(value.kind, into: &buf)
+        FfiConverterSequenceString.write(value.names, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAcknowledgement_lift(_ buf: RustBuffer) throws -> Acknowledgement {
+    return try FfiConverterTypeAcknowledgement.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAcknowledgement_lower(_ value: Acknowledgement) -> RustBuffer {
+    return FfiConverterTypeAcknowledgement.lower(value)
+}
+
+
+/**
  * An agent's avatar, for the App Group's cache (spec 2026-09-30, B4).
  */
 public struct AgentAvatar {
@@ -1092,6 +1175,79 @@ public func FfiConverterTypeAudioView_lift(_ buf: RustBuffer) throws -> AudioVie
 #endif
 public func FfiConverterTypeAudioView_lower(_ value: AudioView) -> RustBuffer {
     return FfiConverterTypeAudioView.lower(value)
+}
+
+
+/**
+ * The single agent a room's messages go to, as the header names it.
+ *
+ * The typing line and the acknowledgement dock say "Atlas", not the bridge's
+ * `atlas-bot`, because the header already does; the cast carries the header's
+ * name so the three never disagree.
+ */
+public struct Counterpart {
+    public var userId: String
+    public var name: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(userId: String, name: String) {
+        self.userId = userId
+        self.name = name
+    }
+}
+
+
+
+extension Counterpart: Equatable, Hashable {
+    public static func ==(lhs: Counterpart, rhs: Counterpart) -> Bool {
+        if lhs.userId != rhs.userId {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(userId)
+        hasher.combine(name)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCounterpart: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Counterpart {
+        return
+            try Counterpart(
+                userId: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Counterpart, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCounterpart_lift(_ buf: RustBuffer) throws -> Counterpart {
+    return try FfiConverterTypeCounterpart.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCounterpart_lower(_ value: Counterpart) -> RustBuffer {
+    return FfiConverterTypeCounterpart.lower(value)
 }
 
 
@@ -1943,6 +2099,106 @@ public func FfiConverterTypeMentionable_lift(_ buf: RustBuffer) throws -> Mentio
 #endif
 public func FfiConverterTypeMentionable_lower(_ value: Mentionable) -> RustBuffer {
     return FfiConverterTypeMentionable.lower(value)
+}
+
+
+/**
+ * Everything that owes the reader an answer: pending decisions and
+ * invitations, each in the arrangement's newest-first order.
+ */
+public struct NeedsYouInbox {
+    public var decisions: [RosterRow]
+    public var invitations: [RosterRow]
+    /**
+     * Decisions and invitations together.
+     */
+    public var count: UInt32
+    /**
+     * What the tab badge shows: decisions only. Invitations have their own
+     * row, and an invitation alone must not light the badge.
+     */
+    public var badgeCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(decisions: [RosterRow], invitations: [RosterRow], 
+        /**
+         * Decisions and invitations together.
+         */count: UInt32, 
+        /**
+         * What the tab badge shows: decisions only. Invitations have their own
+         * row, and an invitation alone must not light the badge.
+         */badgeCount: UInt32) {
+        self.decisions = decisions
+        self.invitations = invitations
+        self.count = count
+        self.badgeCount = badgeCount
+    }
+}
+
+
+
+extension NeedsYouInbox: Equatable, Hashable {
+    public static func ==(lhs: NeedsYouInbox, rhs: NeedsYouInbox) -> Bool {
+        if lhs.decisions != rhs.decisions {
+            return false
+        }
+        if lhs.invitations != rhs.invitations {
+            return false
+        }
+        if lhs.count != rhs.count {
+            return false
+        }
+        if lhs.badgeCount != rhs.badgeCount {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(decisions)
+        hasher.combine(invitations)
+        hasher.combine(count)
+        hasher.combine(badgeCount)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNeedsYouInbox: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NeedsYouInbox {
+        return
+            try NeedsYouInbox(
+                decisions: FfiConverterSequenceTypeRosterRow.read(from: &buf), 
+                invitations: FfiConverterSequenceTypeRosterRow.read(from: &buf), 
+                count: FfiConverterUInt32.read(from: &buf), 
+                badgeCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NeedsYouInbox, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeRosterRow.write(value.decisions, into: &buf)
+        FfiConverterSequenceTypeRosterRow.write(value.invitations, into: &buf)
+        FfiConverterUInt32.write(value.count, into: &buf)
+        FfiConverterUInt32.write(value.badgeCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNeedsYouInbox_lift(_ buf: RustBuffer) throws -> NeedsYouInbox {
+    return try FfiConverterTypeNeedsYouInbox.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNeedsYouInbox_lower(_ value: NeedsYouInbox) -> RustBuffer {
+    return FfiConverterTypeNeedsYouInbox.lower(value)
 }
 
 
@@ -3363,6 +3619,134 @@ public func FfiConverterTypeRichTableRow_lower(_ value: RichTableRow) -> RustBuf
 
 
 /**
+ * Who is in the room on screen, as the composer and the typing line need it.
+ *
+ * Built from the people this account shares rooms with (agents first, never
+ * this account) and the room's member ids; it decides nothing about either.
+ */
+public struct RoomCast {
+    public var roomId: String
+    /**
+     * The room's other members, in the order the core gave them.
+     */
+    public var people: [PersonDto]
+    public var counterpart: Counterpart?
+    /**
+     * The agents in the room, by id.
+     */
+    public var agentIds: [String]
+    /**
+     * Who a message sent here is for, when that is one agent.
+     */
+    public var addressee: String?
+    /**
+     * Everyone a message here could address, named as the picker inserts them.
+     */
+    public var mentionables: [Mentionable]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(roomId: String, 
+        /**
+         * The room's other members, in the order the core gave them.
+         */people: [PersonDto], counterpart: Counterpart?, 
+        /**
+         * The agents in the room, by id.
+         */agentIds: [String], 
+        /**
+         * Who a message sent here is for, when that is one agent.
+         */addressee: String?, 
+        /**
+         * Everyone a message here could address, named as the picker inserts them.
+         */mentionables: [Mentionable]) {
+        self.roomId = roomId
+        self.people = people
+        self.counterpart = counterpart
+        self.agentIds = agentIds
+        self.addressee = addressee
+        self.mentionables = mentionables
+    }
+}
+
+
+
+extension RoomCast: Equatable, Hashable {
+    public static func ==(lhs: RoomCast, rhs: RoomCast) -> Bool {
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.people != rhs.people {
+            return false
+        }
+        if lhs.counterpart != rhs.counterpart {
+            return false
+        }
+        if lhs.agentIds != rhs.agentIds {
+            return false
+        }
+        if lhs.addressee != rhs.addressee {
+            return false
+        }
+        if lhs.mentionables != rhs.mentionables {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(roomId)
+        hasher.combine(people)
+        hasher.combine(counterpart)
+        hasher.combine(agentIds)
+        hasher.combine(addressee)
+        hasher.combine(mentionables)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomCast: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomCast {
+        return
+            try RoomCast(
+                roomId: FfiConverterString.read(from: &buf), 
+                people: FfiConverterSequenceTypePersonDto.read(from: &buf), 
+                counterpart: FfiConverterOptionTypeCounterpart.read(from: &buf), 
+                agentIds: FfiConverterSequenceString.read(from: &buf), 
+                addressee: FfiConverterOptionString.read(from: &buf), 
+                mentionables: FfiConverterSequenceTypeMentionable.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RoomCast, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterSequenceTypePersonDto.write(value.people, into: &buf)
+        FfiConverterOptionTypeCounterpart.write(value.counterpart, into: &buf)
+        FfiConverterSequenceString.write(value.agentIds, into: &buf)
+        FfiConverterOptionString.write(value.addressee, into: &buf)
+        FfiConverterSequenceTypeMentionable.write(value.mentionables, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomCast_lift(_ buf: RustBuffer) throws -> RoomCast {
+    return try FfiConverterTypeRoomCast.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomCast_lower(_ value: RoomCast) -> RustBuffer {
+    return FfiConverterTypeRoomCast.lower(value)
+}
+
+
+/**
  * The parsed structure of a room name.
  */
 public struct RoomIdentity {
@@ -4320,6 +4704,152 @@ public func FfiConverterTypeRoomSummary_lift(_ buf: RustBuffer) throws -> RoomSu
 #endif
 public func FfiConverterTypeRoomSummary_lower(_ value: RoomSummary) -> RustBuffer {
     return FfiConverterTypeRoomSummary.lower(value)
+}
+
+
+/**
+ * What to say when a chip leaves nothing.
+ */
+public struct RosterEmptyState {
+    public var title: String
+    public var description: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, description: String) {
+        self.title = title
+        self.description = description
+    }
+}
+
+
+
+extension RosterEmptyState: Equatable, Hashable {
+    public static func ==(lhs: RosterEmptyState, rhs: RosterEmptyState) -> Bool {
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(title)
+        hasher.combine(description)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRosterEmptyState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RosterEmptyState {
+        return
+            try RosterEmptyState(
+                title: FfiConverterString.read(from: &buf), 
+                description: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RosterEmptyState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterEmptyState_lift(_ buf: RustBuffer) throws -> RosterEmptyState {
+    return try FfiConverterTypeRosterEmptyState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterEmptyState_lower(_ value: RosterEmptyState) -> RustBuffer {
+    return FfiConverterTypeRosterEmptyState.lower(value)
+}
+
+
+/**
+ * One offered chip with the number of rooms it would leave.
+ */
+public struct RosterFilterChip {
+    public var filter: RosterFilter
+    public var title: String
+    public var count: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(filter: RosterFilter, title: String, count: UInt32) {
+        self.filter = filter
+        self.title = title
+        self.count = count
+    }
+}
+
+
+
+extension RosterFilterChip: Equatable, Hashable {
+    public static func ==(lhs: RosterFilterChip, rhs: RosterFilterChip) -> Bool {
+        if lhs.filter != rhs.filter {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.count != rhs.count {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(filter)
+        hasher.combine(title)
+        hasher.combine(count)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRosterFilterChip: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RosterFilterChip {
+        return
+            try RosterFilterChip(
+                filter: FfiConverterTypeRosterFilter.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                count: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RosterFilterChip, into buf: inout [UInt8]) {
+        FfiConverterTypeRosterFilter.write(value.filter, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterUInt32.write(value.count, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterFilterChip_lift(_ buf: RustBuffer) throws -> RosterFilterChip {
+    return try FfiConverterTypeRosterFilterChip.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterFilterChip_lower(_ value: RosterFilterChip) -> RustBuffer {
+    return FfiConverterTypeRosterFilterChip.lower(value)
 }
 
 
@@ -6356,6 +6886,91 @@ public func FfiConverterTypeTypingUserDto_lower(_ value: TypingUserDto) -> RustB
 
 
 /**
+ * What the typing notices come to.
+ */
+public struct TypingView {
+    /**
+     * "Krishna is typing…", "Alice and Bob are typing…", or `None` when no
+     * one other than an agent is.
+     */
+    public var line: String?
+    /**
+     * The agents whose typing notice is up, by the name the header gives
+     * them, in notice order.
+     */
+    public var agents: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * "Krishna is typing…", "Alice and Bob are typing…", or `None` when no
+         * one other than an agent is.
+         */line: String?, 
+        /**
+         * The agents whose typing notice is up, by the name the header gives
+         * them, in notice order.
+         */agents: [String]) {
+        self.line = line
+        self.agents = agents
+    }
+}
+
+
+
+extension TypingView: Equatable, Hashable {
+    public static func ==(lhs: TypingView, rhs: TypingView) -> Bool {
+        if lhs.line != rhs.line {
+            return false
+        }
+        if lhs.agents != rhs.agents {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(line)
+        hasher.combine(agents)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTypingView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TypingView {
+        return
+            try TypingView(
+                line: FfiConverterOptionString.read(from: &buf), 
+                agents: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TypingView, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.line, into: &buf)
+        FfiConverterSequenceString.write(value.agents, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTypingView_lift(_ buf: RustBuffer) throws -> TypingView {
+    return try FfiConverterTypeTypingView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTypingView_lower(_ value: TypingView) -> RustBuffer {
+    return FfiConverterTypeTypingView.lower(value)
+}
+
+
+/**
  * A voice note's transcript, ready to draw.
  */
 public struct VoiceNoteTranscript {
@@ -6938,6 +7553,79 @@ public func FfiConverterTypeWidgetWrite_lift(_ buf: RustBuffer) throws -> Widget
 public func FfiConverterTypeWidgetWrite_lower(_ value: WidgetWrite) -> RustBuffer {
     return FfiConverterTypeWidgetWrite.lower(value)
 }
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Which of the dock's two sentences.
+ */
+
+public enum AcknowledgementKind {
+    
+    /**
+     * "Sent to Atlas" — no sign of the agent yet.
+     */
+    case sent
+    /**
+     * "Atlas is on it…" — it has reacted, is typing, or has a turn going.
+     */
+    case onIt
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAcknowledgementKind: FfiConverterRustBuffer {
+    typealias SwiftType = AcknowledgementKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AcknowledgementKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .sent
+        
+        case 2: return .onIt
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AcknowledgementKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .sent:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .onIt:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAcknowledgementKind_lift(_ buf: RustBuffer) throws -> AcknowledgementKind {
+    return try FfiConverterTypeAcknowledgementKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAcknowledgementKind_lower(_ value: AcknowledgementKind) -> RustBuffer {
+    return FfiConverterTypeAcknowledgementKind.lower(value)
+}
+
+
+
+extension AcknowledgementKind: Equatable, Hashable {}
+
+
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -8993,6 +9681,187 @@ extension RoomAffordance: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * The status a room's header states about its agent.
+ *
+ * Not [`AgentState`]: that is read from a room's stored last activity, this
+ * adds the one live fact the header has — whether a turn is running now.
+ * It also differs from `widget::agent_state`'s lower-case "working", which is
+ * a stored step within `ACTIVE_WITHIN_MS`: a different input for a different
+ * surface.
+ */
+
+public enum RoomStatus {
+    
+    case working
+    case needsYou
+    case active
+    case idle
+    case quiet
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomStatus: FfiConverterRustBuffer {
+    typealias SwiftType = RoomStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .working
+        
+        case 2: return .needsYou
+        
+        case 3: return .active
+        
+        case 4: return .idle
+        
+        case 5: return .quiet
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RoomStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .working:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .needsYou:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .active:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .quiet:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomStatus_lift(_ buf: RustBuffer) throws -> RoomStatus {
+    return try FfiConverterTypeRoomStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomStatus_lower(_ value: RoomStatus) -> RustBuffer {
+    return FfiConverterTypeRoomStatus.lower(value)
+}
+
+
+
+extension RoomStatus: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Which rooms a chip keeps. Filtering keeps or drops rows; it never orders
+ * them — the arrangement above decides the order, and every filter shows a
+ * subset of it.
+ *
+ * The serialised keys are the iOS raw values, so a choice stored by an older
+ * build still reads. Only [`OFFERED_FILTERS`] are offered as chips; the other
+ * two are the views the Needs you inbox and the Agents directory are built on.
+ */
+
+public enum RosterFilter {
+    
+    case all
+    case unread
+    case agents
+    case needsYou
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRosterFilter: FfiConverterRustBuffer {
+    typealias SwiftType = RosterFilter
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RosterFilter {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .all
+        
+        case 2: return .unread
+        
+        case 3: return .agents
+        
+        case 4: return .needsYou
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RosterFilter, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .all:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .unread:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .agents:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .needsYou:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterFilter_lift(_ buf: RustBuffer) throws -> RosterFilter {
+    return try FfiConverterTypeRosterFilter.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterFilter_lower(_ value: RosterFilter) -> RustBuffer {
+    return FfiConverterTypeRosterFilter.lower(value)
+}
+
+
+
+extension RosterFilter: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Which arrangement the reader chose.
  */
 
@@ -9641,6 +10510,30 @@ fileprivate struct FfiConverterOptionTypeAudioMetaDto: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeCounterpart: FfiConverterRustBuffer {
+    typealias SwiftType = Counterpart?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCounterpart.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCounterpart.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeCustomEventDecision: FfiConverterRustBuffer {
     typealias SwiftType = CustomEventDecision?
 
@@ -10189,6 +11082,56 @@ fileprivate struct FfiConverterSequenceTypeCustomEventField: FfiConverterRustBuf
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeCustomEventField.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer {
+    typealias SwiftType = [Mentionable]
+
+    public static func write(_ value: [Mentionable], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMentionable.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Mentionable] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Mentionable]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMentionable.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypePersonDto: FfiConverterRustBuffer {
+    typealias SwiftType = [PersonDto]
+
+    public static func write(_ value: [PersonDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePersonDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PersonDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PersonDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePersonDto.read(from: &buf))
         }
         return seq
     }

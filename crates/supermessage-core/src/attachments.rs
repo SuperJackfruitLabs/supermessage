@@ -743,7 +743,10 @@ pub async fn send_staged(
     let original_voice = voice.clone();
 
     match send_taken(&client, &timeline, path.clone(), meta, voice, caption).await {
-        Ok(()) => Ok(AttachmentSendOutcome::Sent),
+        Ok(()) => {
+            focused.note_sent(room_id);
+            Ok(AttachmentSendOutcome::Sent)
+        }
         Err(error) => {
             Ok(failure_outcome(&client, staged, room_id, path, original_voice, error).await)
         }

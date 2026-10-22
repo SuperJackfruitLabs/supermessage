@@ -759,6 +759,21 @@ impl Core {
         Ok(self.block(self.session.known_people())?)
     }
 
+    /// Who is in `room_id` — the composer's mention list, the typing line's
+    /// counterpart and the acknowledgement's addressee. See `core::room_cast`.
+    pub fn room_cast(
+        &self,
+        room_id: String,
+    ) -> Result<supermessage_core::room_cast::RoomCast, FfiError> {
+        Ok(self.block(self.session.room_cast(&room_id))?)
+    }
+
+    /// Whether this account has sent in `room_id` since signing in — the
+    /// session owns it (ruling 12e).
+    pub fn has_sent(&self, room_id: String) -> bool {
+        self.session.has_sent(&room_id)
+    }
+
     /// The room this account already shares with `user_id` alone, if any.
     pub fn direct_room_with(&self, user_id: String) -> Result<Option<String>, FfiError> {
         Ok(self.block(self.session.direct_room_with(&user_id))?)
@@ -1131,6 +1146,59 @@ pub fn audio_clock_label(ms: u64) -> String {
     supermessage_core::audio::audio_clock_label(ms)
 }
 
+/// The cast of a room from facts already in hand — for previews and tests.
+/// A free function because it touches no session state; hosts with a session
+/// ask `Core::room_cast`, which gathers the same facts itself.
+#[uniffi::export]
+pub fn room_cast_from(
+    room_id: String,
+    everyone: Vec<supermessage_core::people::PersonDto>,
+    member_ids: Option<Vec<String>>,
+    header_name: Option<String>,
+    is_agent_room: bool,
+) -> supermessage_core::room_cast::RoomCast {
+    supermessage_core::room_cast::cast_from(
+        &room_id,
+        &everyone,
+        member_ids.as_deref(),
+        header_name.as_deref(),
+        is_agent_room,
+    )
+}
+
+/// The typing line and the agents the acknowledgement names — see
+/// `core::typing_line`. A free function for the same reason as `peer_color_index`.
+#[uniffi::export]
+pub fn typing_view(
+    typers: Vec<supermessage_core::dto::TypingUserDto>,
+    agent_ids: Vec<String>,
+    counterpart: Option<supermessage_core::room_cast::Counterpart>,
+) -> supermessage_core::typing_line::TypingView {
+    supermessage_core::typing_line::typing_view(&typers, &agent_ids, counterpart.as_ref())
+}
+
+/// What the dock above the composer says after the reader wrote to an agent —
+/// see `core::acknowledgement`. A free function for the same reason as
+/// `peer_color_index`.
+#[uniffi::export]
+pub fn acknowledgement(
+    rows: Vec<supermessage_core::dto::TimelineRow>,
+    addressee: Option<String>,
+    agent_ids: Vec<String>,
+    sent_this_session: bool,
+    typing_agents: Vec<String>,
+    turn_in_progress: bool,
+) -> Option<supermessage_core::acknowledgement::Acknowledgement> {
+    supermessage_core::acknowledgement::state(
+        &rows,
+        addressee.as_deref(),
+        &agent_ids,
+        sent_this_session,
+        &typing_agents,
+        turn_in_progress,
+    )
+}
+
 /// The user ids a finished message mentions, for `m.mentions`.
 #[uniffi::export]
 pub fn collect_mentions(
@@ -1209,6 +1277,95 @@ pub fn roster_hidden_invitations(
     shows_invitations: bool,
 ) -> u32 {
     supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
+}
+
+/// Keep the rows a filter admits; it keeps or drops, never orders.
+#[uniffi::export]
+pub fn roster_filter_sections(
+    sections: Vec<supermessage_core::roster::RosterSection>,
+    filter: supermessage_core::roster::RosterFilter,
+) -> Vec<supermessage_core::roster::RosterSection> {
+    supermessage_core::roster::filter_sections(&sections, filter)
+}
+
+/// The offered filter chips over `sections`, each with its count.
+#[uniffi::export]
+pub fn roster_filter_chips(
+    sections: Vec<supermessage_core::roster::RosterSection>,
+) -> Vec<supermessage_core::roster::RosterFilterChip> {
+    supermessage_core::roster::filter_chips(&sections)
+}
+
+/// A stored chip key read back; one that is not offered reads as All.
+#[uniffi::export]
+pub fn roster_filter_from_key(key: String) -> supermessage_core::roster::RosterFilter {
+    supermessage_core::roster::filter_from_key(&key)
+}
+
+/// The key a filter is stored under.
+#[uniffi::export]
+pub fn roster_filter_key(filter: supermessage_core::roster::RosterFilter) -> String {
+    filter.key().to_string()
+}
+
+/// What to say when a filter leaves nothing.
+#[uniffi::export]
+pub fn roster_filter_empty_state(
+    filter: supermessage_core::roster::RosterFilter,
+) -> supermessage_core::roster::RosterEmptyState {
+    supermessage_core::roster::filter_empty_state(filter)
+}
+
+/// The Needs you inbox: pending decisions plus invitations.
+#[uniffi::export]
+pub fn roster_needs_you_inbox(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    now_ms: u64,
+) -> supermessage_core::roster::NeedsYouInbox {
+    supermessage_core::roster::needs_you_inbox(&rows, now_ms)
+}
+
+/// Agent rooms, newest first, without invitations.
+#[uniffi::export]
+pub fn roster_agent_directory(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    now_ms: u64,
+) -> Vec<supermessage_core::roster::RosterRow> {
+    supermessage_core::roster::agent_directory(&rows, now_ms)
+}
+
+/// The roster row the core arranged for one room, if it is there.
+#[uniffi::export]
+pub fn roster_row(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    room_id: String,
+    now_ms: u64,
+) -> Option<supermessage_core::roster::RosterRow> {
+    supermessage_core::roster::roster_row(&rows, &room_id, now_ms)
+}
+
+/// The header status of a room, or `None` when it has none to say. See `core::roster::room_status`.
+#[uniffi::export]
+pub fn room_status(
+    state: supermessage_core::roster::AgentState,
+    describes_agent: bool,
+    turn_in_progress: bool,
+) -> Option<supermessage_core::roster::RoomStatus> {
+    supermessage_core::roster::room_status(state, describes_agent, turn_in_progress)
+}
+
+/// The word the header shows for a status.
+#[uniffi::export]
+pub fn room_status_word(status: supermessage_core::roster::RoomStatus) -> String {
+    supermessage_core::roster::room_status_word(status).to_string()
+}
+
+/// What the mute toggle sets next.
+#[uniffi::export]
+pub fn next_notification_mode(
+    current: supermessage_core::room_info::NotificationMode,
+) -> supermessage_core::room_info::NotificationMode {
+    supermessage_core::room_info::next_notification_mode(current)
 }
 
 /// The notification a timeline row deserves, or `None` when it is not news —

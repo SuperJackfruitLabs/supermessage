@@ -1,61 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { MAX_NAMED_TYPERS, typingIndicatorText } from "./typingView";
+import { boundTypers } from "./typingView";
 import type { TypingUser } from "$lib/ipc";
 
-function user(userId: string, displayName: string | null = null): TypingUser {
-  return { userId, displayName, label: displayName ?? userId };
+function user(userId: string, label: string): TypingUser {
+  return { userId, displayName: label, label };
 }
 
-describe("typingIndicatorText", () => {
-  it("is null when no one is typing", () => {
-    expect(typingIndicatorText([])).toBeNull();
+// The wording of the line ("A is typing…", "A and B are typing…",
+// "A, B and 1 other are typing…") is the core's now; its tests are
+// `core::typing_line`'s. Only the desktop's display bound lives here.
+describe("boundTypers", () => {
+  it("truncates an overlong label", () => {
+    const [bounded] = boundTypers([user("@a:x.org", "x".repeat(200))]);
+    expect(bounded.label).toBe(`${"x".repeat(32)}…`);
   });
 
-  it("names a single typer", () => {
-    expect(typingIndicatorText([user("@alice:x.org", "Alice")])).toBe("Alice is typing…");
+  it("leaves a short label alone", () => {
+    const input = [user("@a:x.org", "Alice")];
+    expect(boundTypers(input)).toEqual(input);
   });
 
-  it("falls back to the user id when there is no display name", () => {
-    expect(typingIndicatorText([user("@alice:x.org")])).toBe("@alice:x.org is typing…");
-  });
-
-  it("names a typer the way the core does, not by raw display name", () => {
-    // 2026-10-03: the line read `@agent_super-chotu:id.agentpod.d… is typing…`
-    // while the core's `label` for the same person was "Super Chotu".
-    const agent: TypingUser = { userId: "@agent_super-chotu:id.agentpod.dev", displayName: null, label: "Super Chotu" };
-    expect(typingIndicatorText([agent])).toBe("Super Chotu is typing…");
-  });
-
-  it("joins exactly two typers with 'and'", () => {
-    const text = typingIndicatorText([user("@a:x.org", "Alice"), user("@b:x.org", "Bob")]);
-    expect(text).toBe("Alice and Bob are typing…");
-  });
-
-  it("names up to MAX_NAMED_TYPERS and collapses the rest into 'and N others'", () => {
-    const users = [
-      user("@a:x.org", "Alice"),
-      user("@b:x.org", "Bob"),
-      user("@c:x.org", "Carol"),
-    ];
-    expect(users.length).toBeGreaterThan(MAX_NAMED_TYPERS);
-    expect(typingIndicatorText(users)).toBe("Alice, Bob and 1 other are typing…");
-  });
-
-  it("pluralizes 'others' correctly for more than one extra typer", () => {
-    const users = [
-      user("@a:x.org", "Alice"),
-      user("@b:x.org", "Bob"),
-      user("@c:x.org", "Carol"),
-      user("@d:x.org", "Dave"),
-    ];
-    expect(typingIndicatorText(users)).toBe("Alice, Bob and 2 others are typing…");
-  });
-
-  it("truncates an overlong display name and guards against overflow", () => {
-    const huge = "x".repeat(200);
-    const text = typingIndicatorText([user("@a:x.org", huge)]);
-    expect(text).not.toBeNull();
-    expect(text!.length).toBeLessThan(60);
-    expect(text!.endsWith("… is typing…")).toBe(true);
+  it("counts code points, not UTF-16 units", () => {
+    const [bounded] = boundTypers([user("@a:x.org", "😀".repeat(40))]);
+    expect(Array.from(bounded.label)).toHaveLength(33);
   });
 });

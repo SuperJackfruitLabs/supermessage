@@ -28,7 +28,10 @@ import SupermessageFFI
 // thread in the first place.
 extension Core: @retroactive @unchecked Sendable {}
 
+extension Acknowledgement: @retroactive @unchecked Sendable {}
+extension AcknowledgementKind: @retroactive @unchecked Sendable {}
 extension ConnectionState: @retroactive @unchecked Sendable {}
+extension Counterpart: @retroactive @unchecked Sendable {}
 extension CustomEventDecision: @retroactive @unchecked Sendable {}
 extension CustomEventDecisionOption: @retroactive @unchecked Sendable {}
 extension CustomEventField: @retroactive @unchecked Sendable {}
@@ -38,6 +41,7 @@ extension FfiEvent: @retroactive @unchecked Sendable {}
 extension ItemView: @retroactive @unchecked Sendable {}
 extension MatrixLinkTarget: @retroactive @unchecked Sendable {}
 extension MediaFileLabel: @retroactive @unchecked Sendable {}
+extension NeedsYouInbox: @retroactive @unchecked Sendable {}
 extension NotificationMode: @retroactive @unchecked Sendable {}
 extension PersonDto: @retroactive @unchecked Sendable {}
 extension AgentState: @retroactive @unchecked Sendable {}
@@ -45,6 +49,9 @@ extension AttachmentSendOutcome: @retroactive @unchecked Sendable {}
 extension AudioMetaDto: @retroactive @unchecked Sendable {}
 extension AudioView: @retroactive @unchecked Sendable {}
 extension PlayableAudio: @retroactive @unchecked Sendable {}
+extension RosterEmptyState: @retroactive @unchecked Sendable {}
+extension RosterFilter: @retroactive @unchecked Sendable {}
+extension RosterFilterChip: @retroactive @unchecked Sendable {}
 extension RosterRow: @retroactive @unchecked Sendable {}
 extension RosterSection: @retroactive @unchecked Sendable {}
 extension MediaMetaDto: @retroactive @unchecked Sendable {}
@@ -53,11 +60,13 @@ extension Mentionable: @retroactive @unchecked Sendable {}
 extension ReactionDto: @retroactive @unchecked Sendable {}
 extension ReplyQuoteView: @retroactive @unchecked Sendable {}
 extension ReplyToDto: @retroactive @unchecked Sendable {}
+extension RoomStatus: @retroactive @unchecked Sendable {}
 extension RichBlock: @retroactive @unchecked Sendable {}
 extension RichInline: @retroactive @unchecked Sendable {}
 extension RichListItem: @retroactive @unchecked Sendable {}
 extension RichTableCell: @retroactive @unchecked Sendable {}
 extension RichTableRow: @retroactive @unchecked Sendable {}
+extension RoomCast: @retroactive @unchecked Sendable {}
 extension RoomAffordance: @retroactive @unchecked Sendable {}
 extension RoomDiffEnvelope: @retroactive @unchecked Sendable {}
 extension RoomDiffOp: @retroactive @unchecked Sendable {}
@@ -79,6 +88,7 @@ extension TimelineItemDto: @retroactive @unchecked Sendable {}
 extension TimelineRow: @retroactive @unchecked Sendable {}
 extension TimelineSnapshot: @retroactive @unchecked Sendable {}
 extension TypingUserDto: @retroactive @unchecked Sendable {}
+extension TypingView: @retroactive @unchecked Sendable {}
 extension TurnErrorAttempt: @retroactive @unchecked Sendable {}
 extension TurnErrorCard: @retroactive @unchecked Sendable {}
 extension TurnErrorKind: @retroactive @unchecked Sendable {}

@@ -30,6 +30,7 @@
     resetRecovery,
     recoveryState as ipcRecoveryState,
     searchMessages,
+    typingView,
   } from "$lib/ipc";
   import { connectionStore } from "$lib/stores/connection.svelte";
   // Owned here rather than inside the indicators, so those stay components a
@@ -37,6 +38,7 @@
   import { liveStore } from "$lib/stores/live.svelte";
   import { typingStore } from "$lib/stores/typing.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
+  import { boundTypers } from "$lib/components/typingView";
   import { railEntries } from "$lib/components/spacesRailView";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
@@ -63,6 +65,29 @@
   let checking = $state(true);
   let restored = $state(false);
   let signingOut = $state(false);
+
+  // The typing line's wording is the core's (`typing_view`); the desktop only
+  // bounds each name's length first. `null` until the core answers, and
+  // whenever nobody is typing.
+  let typingLine = $state<string | null>(null);
+  $effect(() => {
+    const users = boundTypers(typingStore.users);
+    let current = true;
+    if (users.length === 0) {
+      typingLine = null;
+      return;
+    }
+    typingView(users, [], null)
+      .then((view) => {
+        if (current) typingLine = view.line;
+      })
+      .catch(() => {
+        if (current) typingLine = null;
+      });
+    return () => {
+      current = false;
+    };
+  });
 
   /**
    * The two responsive breakpoints (spec §9), as media queries rather than
@@ -1052,7 +1077,7 @@
             tools={liveStore.tools(roomsStore.selectedId)}
             thinking={liveStore.thought(roomsStore.selectedId)}
           />
-          <TypingIndicator users={typingStore.users} />
+          <TypingIndicator text={typingLine} />
           <!--
             The composer is for rooms this account is *in*. An invitation gets
             Accept / Decline in the same place instead (issue #1), and a room

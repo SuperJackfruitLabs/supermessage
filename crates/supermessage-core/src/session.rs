@@ -180,6 +180,10 @@ impl Session {
     /// Logs in fresh with a username and password, building a new client
     /// backed by an encrypted store and persisting the resulting session.
     pub async fn login(&self, homeserver: &str, username: &str, password: &str) -> CoreResult<()> {
+        // A new sign-in starts with no room sent in: a send still in flight
+        // when the last account signed out could have noted its room after
+        // `logout` cleared the set.
+        self.focused.clear_sent();
         let client = self.build_client(homeserver).await?;
         self.auth.login(&client, username, password).await?;
         self.enable_crypto_lock(&client).await;
@@ -199,6 +203,8 @@ impl Session {
     /// Returns `Ok(false)` when there is nothing to restore — the normal
     /// first-run path, not an error.
     pub async fn restore(&self) -> CoreResult<bool> {
+        // As in `login`: a restored session starts with no room sent in.
+        self.focused.clear_sent();
         let Some(homeserver) = self.store.get(KEY_HOMESERVER_URL)? else {
             return Ok(false);
         };
@@ -272,6 +278,9 @@ impl Session {
         // existing. Nothing here can fail, so it needs no rollback and can
         // safely precede the parts that can.
         self.staged.clear();
+        // Likewise "sent this session": it belongs to the account signing
+        // out, and must go on every path, including a logout with no client.
+        self.focused.clear_sent();
         self.focused.clear_and_join().await;
         self.stop_ignore_watch().await;
         self.stop_room_list().await;
@@ -1503,6 +1512,42 @@ impl Session {
             .map_err(|e| CoreError::Protocol(e.to_string()))
     }
 
+    /// Whether this account has sent in `room_id` since signing in — the
+    /// acknowledgement's `sent_this_session` input.
+    pub fn has_sent(&self, room_id: &str) -> bool {
+        self.focused.has_sent(room_id)
+    }
+
+    /// Who is in `room_id`, for the composer and the typing line.
+    ///
+    /// The core fetches the people and the member ids itself (ruling 6), so a
+    /// host asks one question. A room whose detail cannot be read falls back
+    /// to everyone known, with no counterpart (see [`room_cast::cast_from`]).
+    /// The header name and whether the room is an agent's come from its roster
+    /// row, by [`crate::roster::describes_agent`]; no row means neither.
+    pub async fn room_cast(&self, room_id: &str) -> CoreResult<crate::room_cast::RoomCast> {
+        let everyone = self.known_people().await?;
+        let members: Option<Vec<String>> = self
+            .room_info(room_id)
+            .await
+            .ok()
+            .map(|info| info.members.into_iter().map(|m| m.user_id).collect());
+        let row = self
+            .rooms_snapshot()
+            .await
+            .ok()
+            .and_then(|(_, rows)| rows.into_iter().find(|r| r.room.id == room_id));
+        let header_name = row.as_ref().map(|r| r.identity.name.clone());
+        let is_agent_room = row.as_ref().is_some_and(crate::roster::describes_agent);
+        Ok(crate::room_cast::cast_from(
+            room_id,
+            &everyone,
+            members.as_deref(),
+            header_name.as_deref(),
+            is_agent_room,
+        ))
+    }
+
     /// Everyone this account shares a room with.
     ///
     /// There is no address book in Matrix, and this is the nearest honest
@@ -1772,6 +1817,9 @@ impl Session {
     /// the next sync, which is the diff the roster is already built to fold
     /// in.
     pub async fn leave_room(&self, room_id: &str) -> CoreResult<()> {
+        // Forgotten even if the leave fails: a retry or a rejoin starts the
+        // room's "sent this session" afresh, and nothing here can fail.
+        self.focused.forget_sent(room_id);
         let client = self.require_client().await?;
         let parsed_room_id =
             RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
@@ -2232,6 +2280,62 @@ mod tests {
             Box::new(MemoryStore::default()),
         );
         assert!(matches!(session.account().await, Err(CoreError::NotReady)));
+    }
+
+    /// Mutation seen failing: `room_cast` not asking `known_people` (an empty
+    /// list instead) fails the `NotReady` match.
+    #[tokio::test]
+    async fn room_cast_without_a_session_is_not_ready() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-cast-none"),
+            Box::new(MemoryStore::default()),
+        );
+        assert!(matches!(
+            session.room_cast("!r:x").await,
+            Err(CoreError::NotReady)
+        ));
+    }
+
+    /// Mutation seen failing: removing the `clear_sent()` call in `logout`
+    /// leaves `has_sent` true.
+    #[tokio::test]
+    async fn signing_out_forgets_every_room_sent_in() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-sent-logout"),
+            Box::new(MemoryStore::default()),
+        );
+        session.focused_timeline().note_sent("!r:x");
+        assert!(session.has_sent("!r:x"));
+        let _ = session.logout().await;
+        assert!(!session.has_sent("!r:x"));
+    }
+
+    /// Mutation seen failing: removing the `clear_sent()` call at the top of
+    /// `login` leaves `has_sent` true (the login itself fails: no server).
+    #[tokio::test]
+    async fn a_fresh_login_starts_with_no_room_sent_in() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-sent-login"),
+            Box::new(MemoryStore::default()),
+        );
+        session.focused_timeline().note_sent("!r:x");
+        let _ = session.login("http://127.0.0.1:1", "u", "p").await;
+        assert!(!session.has_sent("!r:x"));
+    }
+
+    /// Mutation seen failing: removing the `forget_sent` call in `leave_room`
+    /// leaves `has_sent` true (the leave itself fails with `NotReady` here).
+    #[tokio::test]
+    async fn leaving_a_room_forgets_that_it_was_sent_in() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-sent-leave"),
+            Box::new(MemoryStore::default()),
+        );
+        session.focused_timeline().note_sent("!r:x");
+        session.focused_timeline().note_sent("!keep:x");
+        assert!(session.leave_room("!r:x").await.is_err());
+        assert!(!session.has_sent("!r:x"));
+        assert!(session.has_sent("!keep:x"));
     }
 
     #[tokio::test]

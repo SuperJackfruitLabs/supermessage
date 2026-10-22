@@ -498,6 +498,95 @@ pub fn roster_hidden_invitations(
     supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
 }
 
+/// Keep the rows a filter admits; it keeps or drops, never orders.
+#[tauri::command]
+pub fn roster_filter_sections(
+    sections: Vec<supermessage_core::roster::RosterSection>,
+    filter: supermessage_core::roster::RosterFilter,
+) -> Vec<supermessage_core::roster::RosterSection> {
+    supermessage_core::roster::filter_sections(&sections, filter)
+}
+
+/// The offered filter chips over `sections`, each with its count.
+#[tauri::command]
+pub fn roster_filter_chips(
+    sections: Vec<supermessage_core::roster::RosterSection>,
+) -> Vec<supermessage_core::roster::RosterFilterChip> {
+    supermessage_core::roster::filter_chips(&sections)
+}
+
+/// A stored chip key read back; one that is not offered reads as All.
+#[tauri::command]
+pub fn roster_filter_from_key(key: String) -> supermessage_core::roster::RosterFilter {
+    supermessage_core::roster::filter_from_key(&key)
+}
+
+/// The key a filter is stored under.
+#[tauri::command]
+pub fn roster_filter_key(filter: supermessage_core::roster::RosterFilter) -> String {
+    filter.key().to_string()
+}
+
+/// What to say when a filter leaves nothing.
+#[tauri::command]
+pub fn roster_filter_empty_state(
+    filter: supermessage_core::roster::RosterFilter,
+) -> supermessage_core::roster::RosterEmptyState {
+    supermessage_core::roster::filter_empty_state(filter)
+}
+
+/// The Needs you inbox: pending decisions plus invitations.
+#[tauri::command]
+pub fn roster_needs_you_inbox(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    now_ms: u64,
+) -> supermessage_core::roster::NeedsYouInbox {
+    supermessage_core::roster::needs_you_inbox(&rows, now_ms)
+}
+
+/// Agent rooms, newest first, without invitations.
+#[tauri::command]
+pub fn roster_agent_directory(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    now_ms: u64,
+) -> Vec<supermessage_core::roster::RosterRow> {
+    supermessage_core::roster::agent_directory(&rows, now_ms)
+}
+
+/// The roster row the core arranged for one room, if it is there.
+#[tauri::command]
+pub fn roster_row(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    room_id: String,
+    now_ms: u64,
+) -> Option<supermessage_core::roster::RosterRow> {
+    supermessage_core::roster::roster_row(&rows, &room_id, now_ms)
+}
+
+/// The header status of a room, or `None` when it has none to say. See `core::roster::room_status`.
+#[tauri::command]
+pub fn room_status(
+    state: supermessage_core::roster::AgentState,
+    describes_agent: bool,
+    turn_in_progress: bool,
+) -> Option<supermessage_core::roster::RoomStatus> {
+    supermessage_core::roster::room_status(state, describes_agent, turn_in_progress)
+}
+
+/// The word the header shows for a status.
+#[tauri::command]
+pub fn room_status_word(status: supermessage_core::roster::RoomStatus) -> String {
+    supermessage_core::roster::room_status_word(status).to_string()
+}
+
+/// What the mute toggle sets next.
+#[tauri::command]
+pub fn next_notification_mode(
+    current: supermessage_core::room_info::NotificationMode,
+) -> supermessage_core::room_info::NotificationMode {
+    supermessage_core::room_info::next_notification_mode(current)
+}
+
 /// The generated tile for a room — see `core::agent_avatar`.
 #[tauri::command]
 pub fn agent_avatar_style(room_id: String) -> supermessage_core::agent_avatar::AgentAvatarStyle {
@@ -728,6 +817,54 @@ pub fn parse_matrix_link(
     href: String,
 ) -> Option<supermessage_core::matrix_links::MatrixLinkTarget> {
     supermessage_core::matrix_links::parse_matrix_link(&href)
+}
+
+/// Who is in `room_id` — see `core::room_cast`.
+#[tauri::command]
+pub async fn room_cast(
+    room_id: String,
+    session: State<'_, Session>,
+) -> Result<supermessage_core::room_cast::RoomCast, CoreError> {
+    session.room_cast(&room_id).await
+}
+
+/// The typing line and the agents the acknowledgement names — see
+/// `core::typing_line`.
+#[tauri::command]
+pub fn typing_view(
+    typers: Vec<supermessage_core::dto::TypingUserDto>,
+    agent_ids: Vec<String>,
+    counterpart: Option<supermessage_core::room_cast::Counterpart>,
+) -> supermessage_core::typing_line::TypingView {
+    supermessage_core::typing_line::typing_view(&typers, &agent_ids, counterpart.as_ref())
+}
+
+/// Whether this account has sent in `room_id` since signing in.
+#[tauri::command]
+pub fn has_sent(room_id: String, timeline: State<'_, Arc<FocusedTimeline>>) -> bool {
+    timeline.has_sent(&room_id)
+}
+
+/// What the dock above the composer says — see `core::acknowledgement`. Reads
+/// the core's own timeline rows, so the webview sends none.
+#[tauri::command]
+pub async fn acknowledgement(
+    room_id: String,
+    addressee: Option<String>,
+    agent_ids: Vec<String>,
+    typing_agents: Vec<String>,
+    turn_in_progress: bool,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<Option<supermessage_core::acknowledgement::Acknowledgement>, CoreError> {
+    supermessage_core::acknowledgement::for_focused(
+        &timeline,
+        &room_id,
+        addressee.as_deref(),
+        &agent_ids,
+        &typing_agents,
+        turn_in_progress,
+    )
+    .await
 }
 
 /// The user ids a finished message mentions, for `m.mentions`.

@@ -471,7 +471,7 @@ pub struct TimelineItemDto {
 ///
 /// The current user is never present: `subscribe_to_typing_notifications`
 /// filters it out before this project ever sees the id list.
-#[derive(Debug, Clone, PartialEq, Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct TypingUserDto {
     pub user_id: String,

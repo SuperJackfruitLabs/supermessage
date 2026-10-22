@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { attachmentSend, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
+const { acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -164,6 +164,35 @@ describe("agent avatar", () => {
   });
 });
 
+describe("roster views", () => {
+  it("rosterNeedsYouInbox invokes roster_needs_you_inbox with rows and nowMs", async () => {
+    invokeMock.mockReset();
+    const inbox = { decisions: [], invitations: [], count: 0, badgeCount: 0 };
+    invokeMock.mockResolvedValue(inbox);
+    await expect(rosterNeedsYouInbox([], 42)).resolves.toEqual(inbox);
+    expect(invokeMock).toHaveBeenCalledWith("roster_needs_you_inbox", { rows: [], nowMs: 42 });
+  });
+  it("roomStatus passes describesAgent and turnInProgress camelCase", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("working");
+    await expect(roomStatus("active", true, true)).resolves.toBe("working");
+    expect(invokeMock).toHaveBeenCalledWith("room_status", {
+      state: "active",
+      describesAgent: true,
+      turnInProgress: true,
+    });
+  });
+  it("rosterFilterSections passes sections and filter", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    await rosterFilterSections([], "unread");
+    expect(invokeMock).toHaveBeenCalledWith("roster_filter_sections", {
+      sections: [],
+      filter: "unread",
+    });
+  });
+});
+
 describe("attachmentSend", () => {
   it("returns the core's outcome", async () => {
     const outcome = {
@@ -181,5 +210,47 @@ describe("attachmentSend", () => {
       token: "tok",
       caption: null,
     });
+  });
+});
+
+describe("cast, typing line and acknowledgement", () => {
+  it("roomCast invokes room_cast with roomId", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue({ roomId: "!r:x" });
+    await roomCast("!r:x");
+    expect(invokeMock).toHaveBeenCalledWith("room_cast", { roomId: "!r:x" });
+  });
+
+  it("typingView passes typers, agentIds and counterpart", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue({ line: null, agents: [] });
+    const typers = [{ userId: "@a:x", displayName: "A", label: "A" }];
+    const counterpart = { userId: "@a:x", name: "Atlas" };
+    await typingView(typers, ["@a:x"], counterpart);
+    expect(invokeMock).toHaveBeenCalledWith("typing_view", {
+      typers,
+      agentIds: ["@a:x"],
+      counterpart,
+    });
+  });
+
+  it("acknowledgement passes the five facts camelCase", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue(null);
+    await acknowledgement("!r:x", "Atlas", ["@a:x"], ["Atlas"], true);
+    expect(invokeMock).toHaveBeenCalledWith("acknowledgement", {
+      roomId: "!r:x",
+      addressee: "Atlas",
+      agentIds: ["@a:x"],
+      typingAgents: ["Atlas"],
+      turnInProgress: true,
+    });
+  });
+
+  it("hasSent invokes has_sent with roomId", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue(true);
+    expect(await hasSent("!r:x")).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("has_sent", { roomId: "!r:x" });
   });
 });

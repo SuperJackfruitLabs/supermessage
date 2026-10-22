@@ -259,6 +259,16 @@ pub fn user_label(raw: &str) -> String {
 /// who — so the first two are named and the rest are counted.
 pub fn people_label(user_ids: &[String]) -> String {
     let names: Vec<String> = user_ids.iter().map(|id| user_label(id)).collect();
+    names_label(&names)
+}
+
+/// Names that are already names, worded the way [`people_label`] words people:
+/// "A", "A and B", "A, B and 1 other", "A, B and N others".
+///
+/// The typing line and the acknowledgement dock hold display names, not user
+/// ids, so they cannot go through `user_label` — but a list of people reads
+/// the same wherever it appears, so the wording lives here once.
+pub fn names_label(names: &[String]) -> String {
     match names.len() {
         0 => String::new(),
         1 => names[0].clone(),
@@ -620,6 +630,29 @@ mod people_label_tests {
                 "@ganesha:x.org"
             ])),
             "Cleaner Cody, Hanuman and 1 other"
+        );
+    }
+}
+
+#[cfg(test)]
+mod names_label_tests {
+    use super::names_label;
+
+    fn names(raw: &[&str]) -> Vec<String> {
+        raw.iter().map(|n| n.to_string()).collect()
+    }
+
+    /// Mutation seen failing: the 3-name arm counting `n` instead of `n - 2`
+    /// ("A, B and 3 others"), and `others` always plural ("1 others").
+    #[test]
+    fn names_label_names_two_and_counts_the_rest() {
+        assert_eq!(names_label(&names(&[])), "");
+        assert_eq!(names_label(&names(&["A"])), "A");
+        assert_eq!(names_label(&names(&["A", "B"])), "A and B");
+        assert_eq!(names_label(&names(&["A", "B", "C"])), "A, B and 1 other");
+        assert_eq!(
+            names_label(&names(&["A", "B", "C", "D"])),
+            "A, B and 2 others"
         );
     }
 }

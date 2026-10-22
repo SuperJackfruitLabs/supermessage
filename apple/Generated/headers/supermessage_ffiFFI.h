@@ -387,6 +387,11 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_enable_recovery(void*_Nonnull 
 RustBuffer uniffi_supermessage_ffi_fn_method_core_ensure_recovery(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_HAS_SENT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_HAS_SENT
+int8_t uniffi_supermessage_ffi_fn_method_core_has_sent(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_IGNORE_USER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_IGNORE_USER
 void uniffi_supermessage_ffi_fn_method_core_ignore_user(void*_Nonnull ptr, RustBuffer user_id, RustCallStatus *_Nonnull out_status
@@ -522,6 +527,11 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_room_avatar(void*_Nonnull ptr,
 RustBuffer uniffi_supermessage_ffi_fn_method_core_room_avatar_full(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_CAST
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_CAST
+RustBuffer uniffi_supermessage_ffi_fn_method_core_room_cast(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_INFO
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ROOM_INFO
 RustBuffer uniffi_supermessage_ffi_fn_method_core_room_info(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
@@ -652,6 +662,11 @@ void uniffi_supermessage_ffi_fn_init_callback_vtable_eventsink(UniffiVTableCallb
 void uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(UniffiVTableCallbackInterfaceHostSecretStore* _Nonnull vtable
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ACKNOWLEDGEMENT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ACKNOWLEDGEMENT
+RustBuffer uniffi_supermessage_ffi_fn_func_acknowledgement(RustBuffer rows, RustBuffer addressee, RustBuffer agent_ids, int8_t sent_this_session, RustBuffer typing_agents, int8_t turn_in_progress, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_AGENT_AVATAR_STYLE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_AGENT_AVATAR_STYLE
 RustBuffer uniffi_supermessage_ffi_fn_func_agent_avatar_style(RustBuffer room_id, RustCallStatus *_Nonnull out_status
@@ -676,6 +691,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_collect_mentions(RustBuffer text, Rus
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DISPLAY_INITIAL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DISPLAY_INITIAL
 RustBuffer uniffi_supermessage_ffi_fn_func_display_initial(RustBuffer name, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NEXT_NOTIFICATION_MODE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NEXT_NOTIFICATION_MODE
+RustBuffer uniffi_supermessage_ffi_fn_func_next_notification_mode(RustBuffer current, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_CATEGORY_IDENTIFIER
@@ -728,9 +748,64 @@ int64_t uniffi_supermessage_ffi_fn_func_report_reason_remaining(RustBuffer reaso
 RustBuffer uniffi_supermessage_ffi_fn_func_rich_blocks_from_markdown(RustBuffer source, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROOM_CAST_FROM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROOM_CAST_FROM
+RustBuffer uniffi_supermessage_ffi_fn_func_room_cast_from(RustBuffer room_id, RustBuffer everyone, RustBuffer member_ids, RustBuffer header_name, int8_t is_agent_room, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROOM_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROOM_STATUS
+RustBuffer uniffi_supermessage_ffi_fn_func_room_status(RustBuffer state, int8_t describes_agent, int8_t turn_in_progress, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROOM_STATUS_WORD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROOM_STATUS_WORD
+RustBuffer uniffi_supermessage_ffi_fn_func_room_status_word(RustBuffer status, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_AGENT_DIRECTORY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_AGENT_DIRECTORY
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_agent_directory(RustBuffer rows, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_CHIPS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_CHIPS
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_filter_chips(RustBuffer sections, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_EMPTY_STATE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_EMPTY_STATE
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_filter_empty_state(RustBuffer filter, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_FROM_KEY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_FROM_KEY
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_filter_from_key(RustBuffer key, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_KEY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_KEY
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_filter_key(RustBuffer filter, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_SECTIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_FILTER_SECTIONS
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_filter_sections(RustBuffer sections, RustBuffer filter, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_HIDDEN_INVITATIONS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_HIDDEN_INVITATIONS
 uint32_t uniffi_supermessage_ffi_fn_func_roster_hidden_invitations(RustBuffer rows, int8_t shows_invitations, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_NEEDS_YOU_INBOX
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_NEEDS_YOU_INBOX
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_needs_you_inbox(RustBuffer rows, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_ROW
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_ROW
+RustBuffer uniffi_supermessage_ffi_fn_func_roster_row(RustBuffer rows, RustBuffer room_id, uint64_t now_ms, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_SECTIONS
@@ -741,6 +816,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_roster_sections(RustBuffer rows, Rust
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_STATE
 RustBuffer uniffi_supermessage_ffi_fn_func_roster_state(RustBuffer row, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TYPING_VIEW
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TYPING_VIEW
+RustBuffer uniffi_supermessage_ffi_fn_func_typing_view(RustBuffer typers, RustBuffer agent_ids, RustBuffer counterpart, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_ANSWER_FOR
@@ -1068,6 +1148,12 @@ void ffi_supermessage_ffi_rust_future_free_void(uint64_t handle
 void ffi_supermessage_ffi_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ACKNOWLEDGEMENT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ACKNOWLEDGEMENT
+uint16_t uniffi_supermessage_ffi_checksum_func_acknowledgement(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_AGENT_AVATAR_STYLE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_AGENT_AVATAR_STYLE
 uint16_t uniffi_supermessage_ffi_checksum_func_agent_avatar_style(void
@@ -1095,6 +1181,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_collect_mentions(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_DISPLAY_INITIAL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_DISPLAY_INITIAL
 uint16_t uniffi_supermessage_ffi_checksum_func_display_initial(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NEXT_NOTIFICATION_MODE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NEXT_NOTIFICATION_MODE
+uint16_t uniffi_supermessage_ffi_checksum_func_next_notification_mode(void
     
 );
 #endif
@@ -1158,9 +1250,75 @@ uint16_t uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROOM_CAST_FROM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROOM_CAST_FROM
+uint16_t uniffi_supermessage_ffi_checksum_func_room_cast_from(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROOM_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROOM_STATUS
+uint16_t uniffi_supermessage_ffi_checksum_func_room_status(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROOM_STATUS_WORD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROOM_STATUS_WORD
+uint16_t uniffi_supermessage_ffi_checksum_func_room_status_word(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_AGENT_DIRECTORY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_AGENT_DIRECTORY
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_agent_directory(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_CHIPS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_CHIPS
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_filter_chips(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_EMPTY_STATE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_EMPTY_STATE
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_filter_empty_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_FROM_KEY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_FROM_KEY
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_filter_from_key(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_KEY
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_KEY
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_filter_key(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_SECTIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_FILTER_SECTIONS
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_filter_sections(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_HIDDEN_INVITATIONS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_HIDDEN_INVITATIONS
 uint16_t uniffi_supermessage_ffi_checksum_func_roster_hidden_invitations(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_NEEDS_YOU_INBOX
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_NEEDS_YOU_INBOX
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_needs_you_inbox(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_ROW
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_ROW
+uint16_t uniffi_supermessage_ffi_checksum_func_roster_row(void
     
 );
 #endif
@@ -1173,6 +1331,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_roster_sections(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
 uint16_t uniffi_supermessage_ffi_checksum_func_roster_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TYPING_VIEW
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TYPING_VIEW
+uint16_t uniffi_supermessage_ffi_checksum_func_typing_view(void
     
 );
 #endif
@@ -1305,6 +1469,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_enable_recovery(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ENSURE_RECOVERY
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ENSURE_RECOVERY
 uint16_t uniffi_supermessage_ffi_checksum_method_core_ensure_recovery(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_HAS_SENT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_HAS_SENT
+uint16_t uniffi_supermessage_ffi_checksum_method_core_has_sent(void
     
 );
 #endif
@@ -1467,6 +1637,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_room_avatar(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_AVATAR_FULL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_AVATAR_FULL
 uint16_t uniffi_supermessage_ffi_checksum_method_core_room_avatar_full(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_CAST
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ROOM_CAST
+uint16_t uniffi_supermessage_ffi_checksum_method_core_room_cast(void
     
 );
 #endif
