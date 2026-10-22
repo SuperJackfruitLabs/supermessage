@@ -82,6 +82,21 @@ public enum RosterArrangement {
         Int(rosterHiddenInvitations(rows: rows, showsInvitations: showsInvitations))
     }
 
+    /// The Needs you inbox: pending decisions and invitations, the core's.
+    public static func needsYouInbox(_ rows: [RoomRow], now: Date) -> NeedsYouInbox {
+        rosterNeedsYouInbox(rows: rows, nowMs: milliseconds(now))
+    }
+
+    /// Every room that reads as an agent's, in the core's recency order.
+    public static func agentDirectory(_ rows: [RoomRow], now: Date) -> [RosterRow] {
+        rosterAgentDirectory(rows: rows, nowMs: milliseconds(now))
+    }
+
+    /// One room as the roster sees it, for a screen that shows one room.
+    public static func rosterRow(for roomId: String, in rows: [RoomRow], now: Date) -> RosterRow? {
+        SupermessageFFI.rosterRow(rows: rows, roomId: roomId, nowMs: milliseconds(now))
+    }
+
     private static func milliseconds(_ date: Date) -> UInt64 {
         UInt64(max(0, date.timeIntervalSince1970 * 1000))
     }

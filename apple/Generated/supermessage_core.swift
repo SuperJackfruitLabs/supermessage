@@ -1947,6 +1947,106 @@ public func FfiConverterTypeMentionable_lower(_ value: Mentionable) -> RustBuffe
 
 
 /**
+ * Everything that owes the reader an answer: pending decisions and
+ * invitations, each in the arrangement's newest-first order.
+ */
+public struct NeedsYouInbox {
+    public var decisions: [RosterRow]
+    public var invitations: [RosterRow]
+    /**
+     * Decisions and invitations together.
+     */
+    public var count: UInt32
+    /**
+     * What the tab badge shows: decisions only. Invitations have their own
+     * row, and an invitation alone must not light the badge.
+     */
+    public var badgeCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(decisions: [RosterRow], invitations: [RosterRow], 
+        /**
+         * Decisions and invitations together.
+         */count: UInt32, 
+        /**
+         * What the tab badge shows: decisions only. Invitations have their own
+         * row, and an invitation alone must not light the badge.
+         */badgeCount: UInt32) {
+        self.decisions = decisions
+        self.invitations = invitations
+        self.count = count
+        self.badgeCount = badgeCount
+    }
+}
+
+
+
+extension NeedsYouInbox: Equatable, Hashable {
+    public static func ==(lhs: NeedsYouInbox, rhs: NeedsYouInbox) -> Bool {
+        if lhs.decisions != rhs.decisions {
+            return false
+        }
+        if lhs.invitations != rhs.invitations {
+            return false
+        }
+        if lhs.count != rhs.count {
+            return false
+        }
+        if lhs.badgeCount != rhs.badgeCount {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(decisions)
+        hasher.combine(invitations)
+        hasher.combine(count)
+        hasher.combine(badgeCount)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNeedsYouInbox: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NeedsYouInbox {
+        return
+            try NeedsYouInbox(
+                decisions: FfiConverterSequenceTypeRosterRow.read(from: &buf), 
+                invitations: FfiConverterSequenceTypeRosterRow.read(from: &buf), 
+                count: FfiConverterUInt32.read(from: &buf), 
+                badgeCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NeedsYouInbox, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeRosterRow.write(value.decisions, into: &buf)
+        FfiConverterSequenceTypeRosterRow.write(value.invitations, into: &buf)
+        FfiConverterUInt32.write(value.count, into: &buf)
+        FfiConverterUInt32.write(value.badgeCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNeedsYouInbox_lift(_ buf: RustBuffer) throws -> NeedsYouInbox {
+    return try FfiConverterTypeNeedsYouInbox.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNeedsYouInbox_lower(_ value: NeedsYouInbox) -> RustBuffer {
+    return FfiConverterTypeNeedsYouInbox.lower(value)
+}
+
+
+/**
  * The facts [`crate::widget`] needs from one pushed event, and nothing the
  * notification itself does not already know.
  */
@@ -4320,6 +4420,152 @@ public func FfiConverterTypeRoomSummary_lift(_ buf: RustBuffer) throws -> RoomSu
 #endif
 public func FfiConverterTypeRoomSummary_lower(_ value: RoomSummary) -> RustBuffer {
     return FfiConverterTypeRoomSummary.lower(value)
+}
+
+
+/**
+ * What to say when a chip leaves nothing.
+ */
+public struct RosterEmptyState {
+    public var title: String
+    public var description: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, description: String) {
+        self.title = title
+        self.description = description
+    }
+}
+
+
+
+extension RosterEmptyState: Equatable, Hashable {
+    public static func ==(lhs: RosterEmptyState, rhs: RosterEmptyState) -> Bool {
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(title)
+        hasher.combine(description)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRosterEmptyState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RosterEmptyState {
+        return
+            try RosterEmptyState(
+                title: FfiConverterString.read(from: &buf), 
+                description: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RosterEmptyState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterEmptyState_lift(_ buf: RustBuffer) throws -> RosterEmptyState {
+    return try FfiConverterTypeRosterEmptyState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterEmptyState_lower(_ value: RosterEmptyState) -> RustBuffer {
+    return FfiConverterTypeRosterEmptyState.lower(value)
+}
+
+
+/**
+ * One offered chip with the number of rooms it would leave.
+ */
+public struct RosterFilterChip {
+    public var filter: RosterFilter
+    public var title: String
+    public var count: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(filter: RosterFilter, title: String, count: UInt32) {
+        self.filter = filter
+        self.title = title
+        self.count = count
+    }
+}
+
+
+
+extension RosterFilterChip: Equatable, Hashable {
+    public static func ==(lhs: RosterFilterChip, rhs: RosterFilterChip) -> Bool {
+        if lhs.filter != rhs.filter {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.count != rhs.count {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(filter)
+        hasher.combine(title)
+        hasher.combine(count)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRosterFilterChip: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RosterFilterChip {
+        return
+            try RosterFilterChip(
+                filter: FfiConverterTypeRosterFilter.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                count: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RosterFilterChip, into buf: inout [UInt8]) {
+        FfiConverterTypeRosterFilter.write(value.filter, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterUInt32.write(value.count, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterFilterChip_lift(_ buf: RustBuffer) throws -> RosterFilterChip {
+    return try FfiConverterTypeRosterFilterChip.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterFilterChip_lower(_ value: RosterFilterChip) -> RustBuffer {
+    return FfiConverterTypeRosterFilterChip.lower(value)
 }
 
 
@@ -8987,6 +9233,187 @@ public func FfiConverterTypeRoomAffordance_lower(_ value: RoomAffordance) -> Rus
 
 
 extension RoomAffordance: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The status a room's header states about its agent.
+ *
+ * Not [`AgentState`]: that is read from a room's stored last activity, this
+ * adds the one live fact the header has — whether a turn is running now.
+ * It also differs from `widget::agent_state`'s lower-case "working", which is
+ * a stored step within `ACTIVE_WITHIN_MS`: a different input for a different
+ * surface.
+ */
+
+public enum RoomStatus {
+    
+    case working
+    case needsYou
+    case active
+    case idle
+    case quiet
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoomStatus: FfiConverterRustBuffer {
+    typealias SwiftType = RoomStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoomStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .working
+        
+        case 2: return .needsYou
+        
+        case 3: return .active
+        
+        case 4: return .idle
+        
+        case 5: return .quiet
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RoomStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .working:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .needsYou:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .active:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .quiet:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomStatus_lift(_ buf: RustBuffer) throws -> RoomStatus {
+    return try FfiConverterTypeRoomStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoomStatus_lower(_ value: RoomStatus) -> RustBuffer {
+    return FfiConverterTypeRoomStatus.lower(value)
+}
+
+
+
+extension RoomStatus: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Which rooms a chip keeps. Filtering keeps or drops rows; it never orders
+ * them — the arrangement above decides the order, and every filter shows a
+ * subset of it.
+ *
+ * The serialised keys are the iOS raw values, so a choice stored by an older
+ * build still reads. Only [`OFFERED_FILTERS`] are offered as chips; the other
+ * two are the views the Needs you inbox and the Agents directory are built on.
+ */
+
+public enum RosterFilter {
+    
+    case all
+    case unread
+    case agents
+    case needsYou
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRosterFilter: FfiConverterRustBuffer {
+    typealias SwiftType = RosterFilter
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RosterFilter {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .all
+        
+        case 2: return .unread
+        
+        case 3: return .agents
+        
+        case 4: return .needsYou
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RosterFilter, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .all:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .unread:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .agents:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .needsYou:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterFilter_lift(_ buf: RustBuffer) throws -> RosterFilter {
+    return try FfiConverterTypeRosterFilter.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosterFilter_lower(_ value: RosterFilter) -> RustBuffer {
+    return FfiConverterTypeRosterFilter.lower(value)
+}
+
+
+
+extension RosterFilter: Equatable, Hashable {}
 
 
 

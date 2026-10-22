@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { attachmentSend, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
+const { attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -161,6 +161,35 @@ describe("agent avatar", () => {
     invokeMock.mockResolvedValue([]);
     await agentAvatarVariants();
     expect(invokeMock).toHaveBeenCalledWith("agent_avatar_variants");
+  });
+});
+
+describe("roster views", () => {
+  it("rosterNeedsYouInbox invokes roster_needs_you_inbox with rows and nowMs", async () => {
+    invokeMock.mockReset();
+    const inbox = { decisions: [], invitations: [], count: 0, badgeCount: 0 };
+    invokeMock.mockResolvedValue(inbox);
+    await expect(rosterNeedsYouInbox([], 42)).resolves.toEqual(inbox);
+    expect(invokeMock).toHaveBeenCalledWith("roster_needs_you_inbox", { rows: [], nowMs: 42 });
+  });
+  it("roomStatus passes describesAgent and turnInProgress camelCase", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("working");
+    await expect(roomStatus("active", true, true)).resolves.toBe("working");
+    expect(invokeMock).toHaveBeenCalledWith("room_status", {
+      state: "active",
+      describesAgent: true,
+      turnInProgress: true,
+    });
+  });
+  it("rosterFilterSections passes sections and filter", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    await rosterFilterSections([], "unread");
+    expect(invokeMock).toHaveBeenCalledWith("roster_filter_sections", {
+      sections: [],
+      filter: "unread",
+    });
   });
 });
 
