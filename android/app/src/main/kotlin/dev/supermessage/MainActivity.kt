@@ -188,6 +188,10 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
     val rooms by session.rooms.rooms.collectAsStateWithLifecycle()
     val avatarCache by session.avatars.cache.collectAsStateWithLifecycle()
 
+    // Collected so the bar redraws; `isWorthShowing` itself reads the store.
+    val connectionState by session.connection.state.collectAsStateWithLifecycle()
+    val connectionMessage by session.connection.message.collectAsStateWithLifecycle()
+
     // Re-read every 30 seconds so a roster that said "3m" says
     // "4m" without anything else having changed — the clock
     // ticks and is injected, never read fresh inside Roster.
@@ -212,6 +216,11 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
         phase = phase,
         listPaneContent = { _, openDetail, openInfo ->
             Column(Modifier.fillMaxSize()) {
+                ConnectionBar(
+                    state = connectionState,
+                    message = connectionMessage,
+                    worthShowing = session.connection.isWorthShowing,
+                )
                 // Search and the account panel share the
                 // Extra pane with room info, so both are
                 // reached the same way room info already is:
