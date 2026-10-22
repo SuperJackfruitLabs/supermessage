@@ -1,260 +1,56 @@
 import Foundation
 import SupermessageFFI
 
-/// Whether a row continues the run above it.
+/// How the timeline draws the core's grouping.
 ///
-/// Written natively rather than ported: grouping thresholds are presentation,
-/// and a phone may legitimately differ from a workstation. What is *not*
-/// negotiable is the shape of the rule, which is the desktop's — a run breaks
-/// on a different sender, on a gap, and on anything that is not an ordinary
-/// message.
+/// The rules themselves (sender runs, reply quotes, runtime suffixes,
+/// membership runs and stretches) are the core's, decided once in
+/// `timeline_grouping.rs` and carried on every `TimelineRow`. This file keeps
+/// the one thing a host owns: which collapsed stretches the reader has opened,
+/// and the mechanical walk that turns row fields into entries to draw.
 public enum TimelineGrouping {
-    /// How close two messages from one sender must be to read as one turn.
-    public static let runWindowMs: UInt64 = 5 * 60 * 1000
-
-    /// Whether `row` should drop its header because the row above it already
-    /// carries one.
-    public static func continuesRun(_ row: TimelineRow, after previous: TimelineRow?) -> Bool {
-        guard let previous else { return false }
-        // Only ordinary messages group. A system line, a card or an image
-        // carries its own header and ends the run above it — otherwise a
-        // message after a card would look like the card's author said it.
-        guard isGroupable(row), isGroupable(previous) else { return false }
-        guard row.item.sender == previous.item.sender else { return false }
-        guard row.item.isOwn == previous.item.isOwn else { return false }
-        guard let now = row.item.timestampMs, let then = previous.item.timestampMs else {
-            return false
-        }
-        return now >= then && now - then <= runWindowMs
-    }
-
-    private static func isGroupable(_ row: TimelineRow) -> Bool {
-        if case .bubble = row.view { return true }
-        return false
-    }
-
-    /// Whether one agent does all the talking here.
-    ///
-    /// A room with a single speaker repeats `(OpenClaw on Ashram)` under every
-    /// message, where it never changes; a room with several needs it to tell
-    /// them apart. Counts *peers* — your own messages are attributed by
-    /// position rather than by name, so they say nothing about this.
-    ///
-    /// Stops at two: the answer cannot change after that, and this runs over
-    /// every row on every update.
-    public static func hasSingleSpeaker(_ rows: [TimelineRow]) -> Bool {
-        var seen = Set<String>()
-        for row in rows where !row.item.isOwn {
-            guard let sender = row.item.sender else { continue }
-            seen.insert(sender)
-            if seen.count > 1 { return false }
-        }
-        return true
-    }
-
-    /// How many people a grouped membership line names before it counts.
-    ///
-    /// Matches the desktop's `MAX_NAMED`. Two is enough to recognise a run and
-    /// short enough that the sentence stays one line.
-    static let maxNamed = 2
-
-    /// Collapse consecutive membership changes into as few lines as are true.
-    ///
-    /// Ported from the desktop's `groupTimelineItems`, which iOS never had —
-    /// so a room drew every single one, ten identical "updated their
-    /// membership" lines deep in Ganesha's history.
-    ///
-    /// Two rules, applied to each unbroken stretch of membership rows:
-    ///
-    /// 1. **One person's churn is one line**, whatever the verbs. An agent
-    ///    whose bridge reconnects joins, leaves and joins again; three lines
-    ///    about that were three lines of nothing. Consecutive changes about
-    ///    the same person become "Strategy Sam joined the room, then left the
-    ///    room", or "Strategy Sam made 3 membership changes".
-    /// 2. **Different people sharing a verb are one sentence.** Runs of those
-    ///    still break on a **different verb**, so "three joined" and "one
-    ///    left" stay two sentences rather than becoming one that is true of
-    ///    neither.
-    ///
-    /// A run of exactly one reads exactly like the ungrouped line the core
-    /// already composes, never "Alice and 0 others".
-    /// The id a whole stretch of membership lines collapses under, and the
-    /// key the reader expands it by.
-    public static func stretchId(_ firstRowId: String) -> String { "stretch:\(firstRowId)" }
-
     /// Whether a membership-run id is a collapsed stretch the reader can open.
     public static func isStretch(_ id: String) -> Bool { id.hasPrefix("stretch:") }
 
-    /// A stretch that still draws this many lines after the two rules below
-    /// collapses into one summary line.
+    /// The entries to draw for `rows`, in order.
     ///
-    /// A room an agent's bridge joined and left repeatedly scrolled back as
-    /// screen after screen of "invited / accepted / left" — the rules merge a
-    /// person's own churn and a crowd sharing one verb, but several people
-    /// interleaving defeated both. Day dividers still break a stretch, so the
-    /// summary is at most one line per day.
-    public static let stretchCollapseThreshold = 3
-
-    public static func collapseMembershipRuns(
-        _ rows: [TimelineRow], expanded: Set<String> = []
-    ) -> [DisplayRow] {
+    /// - A row whose view is `.none` draws nothing and gets no entry. A cell
+    ///   with no content does not reliably collapse to no height, so
+    ///   deliberately silent has to mean absent, not empty.
+    /// - A membership row with a `membership` placement joins a run entry
+    ///   (`group:<first row>`, the sentence on the run's first row). When its
+    ///   stretch is collapsed (and not in `expanded`) the whole stretch is
+    ///   one entry (`stretch:<first row>`).
+    /// - A membership row with no placement, which the core did not settle, is
+    ///   drawn as the ordinary row it is.
+    public static func displayRows(_ rows: [TimelineRow], expanded: Set<String>) -> [DisplayRow] {
         var out: [DisplayRow] = []
-        var stretch: [TimelineRow] = []
+        // Where each open entry sits in `out`, so later rows of the same run
+        // or stretch land in it.
+        var entryIndex: [String: Int] = [:]
 
-        // `ItemView.none` is the core saying "draw nothing". A row for it is
-        // still a row: a cell with no content does not reliably collapse to no
-        // height, and one turned up on screen as roughly three hundred points
-        // of blank in the middle of two different rooms. Deliberately silent
-        // should mean *absent*, not empty.
-        let rows = rows.filter { row in
-            if case .none = row.view { return false }
-            return true
-        }
-
-        func emit(_ run: [TimelineRow], _ text: String) {
-            guard let first = run.first else { return }
-            out.append(.membershipRun(id: "group:\(first.item.id)", text: text, rows: run))
-        }
-
-        func flushStretch() {
-            guard !stretch.isEmpty else { return }
-            let start = out.count
-            // Rule 1: consecutive changes about one person.
-            var segments: [[TimelineRow]] = []
-            for row in stretch {
-                if let last = segments.last?.last, person(last) == person(row) {
-                    segments[segments.count - 1].append(row)
-                } else {
-                    segments.append([row])
-                }
+        func join(_ id: String, _ text: String?, _ row: TimelineRow) {
+            if let index = entryIndex[id], case let .membershipRun(_, kept, rows) = out[index] {
+                out[index] = .membershipRun(id: id, text: kept, rows: rows + [row])
+            } else if let text {
+                entryIndex[id] = out.count
+                out.append(.membershipRun(id: id, text: text, rows: [row]))
             }
-            // Rule 2: neighbours that each made one kind of change, sharing it.
-            var run: [TimelineRow] = []
-            for segment in segments {
-                let verbs = Set(segment.map(verb))
-                if verbs.count == 1 {
-                    if let first = run.first, verb(first) != verb(segment[0]) {
-                        emit(run, text(for: run))
-                        run = []
-                    }
-                    run.append(contentsOf: segment)
-                } else {
-                    emit(run, text(for: run))
-                    run = []
-                    emit(segment, churnText(for: segment))
-                }
-            }
-            emit(run, text(for: run))
-
-            // Rule 3: still a screenful — one summary line, unless opened.
-            let id = stretchId(stretch[0].item.id)
-            if out.count - start >= stretchCollapseThreshold, !expanded.contains(id) {
-                out.removeSubrange(start...)
-                out.append(.membershipRun(id: id, text: stretchText(for: stretch), rows: stretch))
-            }
-            stretch = []
         }
 
         for row in rows {
-            guard row.item.kind == "membership" else {
-                flushStretch()
+            if case .none = row.view { continue }
+            guard row.item.kind == "membership", let placement = row.membership else {
                 out.append(.row(row))
                 continue
             }
-            stretch.append(row)
+            if let stretch = placement.stretchId, !expanded.contains(stretch) {
+                join(stretch, placement.stretchText, row)
+            } else {
+                join(placement.runId, placement.runText, row)
+            }
         }
-        flushStretch()
         return out
-    }
-
-    /// "7 membership changes · Strategy Sam, Rakesh and 1 other".
-    static func stretchText(for stretch: [TimelineRow]) -> String {
-        var seen = Set<String>()
-        let people = stretch.map(name).filter { seen.insert($0).inserted }
-        let named: String
-        switch people.count {
-        case 0: named = "Someone"
-        case 1: named = people[0]
-        case 2: named = "\(people[0]) and \(people[1])"
-        default:
-            let rest = people.count - 2
-            named = "\(people[0]), \(people[1]) and \(rest) \(rest == 1 ? "other" : "others")"
-        }
-        return "\(stretch.count) membership changes · \(named)"
-    }
-
-    /// Who a membership change is about, for telling one person's churn from
-    /// a crowd's: the name the line opens with. The subject rather than the
-    /// sender, so "Rakesh invited Sam" and "Sam joined" are both about Sam.
-    private static func person(_ row: TimelineRow) -> String { name(row) }
-
-    /// The name a membership line opens with: the person it is about.
-    private static func name(_ row: TimelineRow) -> String {
-        row.item.membershipSubject ?? row.senderShort
-    }
-
-    private static func verb(_ row: TimelineRow) -> String {
-        row.membershipVerb ?? "updated their membership"
-    }
-
-    /// The sentence for one person's churn — two or more changes that are
-    /// not all the same.
-    ///
-    /// Two read as what happened, in order, in the core's own verbs. Past
-    /// that a list of verbs is a paragraph, and the count is what a reader
-    /// wanted: that nothing about this person's place in the room is news.
-    static func churnText(for run: [TimelineRow]) -> String {
-        guard let first = run.first else { return "" }
-        let verbs = run.map(verb)
-        if verbs.count == 2 {
-            return "\(name(first)) \(verbs[0]), then \(verbs[1])"
-        }
-        return "\(name(first)) made \(verbs.count) membership changes"
-    }
-
-    /// The sentence for one run of a single verb.
-    ///
-    /// Both halves come from the core: the verb is carried on the row *apart*
-    /// from the rendered sentence precisely so a run can be composed from many
-    /// names and one verb without parsing that sentence back apart.
-    static func text(for run: [TimelineRow]) -> String {
-        let verb = run.first.map(verb) ?? "updated their membership"
-        // Distinct people, in order. One member can make several changes in
-        // a row, and the desktop and Android both learned this from a real
-        // room: "Annapurna, Annapurna and 1 other updated their membership".
-        var seen = Set<String>()
-        let names = run.map(name).filter { seen.insert($0).inserted }
-        if names.count <= maxNamed {
-            return "\(joined(names)) \(verb)"
-        }
-        let named = names.prefix(maxNamed).joined(separator: ", ")
-        let remaining = names.count - maxNamed
-        return "\(named) and \(remaining) \(remaining == 1 ? "other" : "others") \(verb)"
-    }
-
-    // MARK: - Replies
-
-    /// Whether `row`'s reply quote only repeats the row drawn directly above
-    /// it.
-    ///
-    /// A quote exists to put the parent back in front of the reader. When
-    /// the parent *is* in front of them — the very next row up — the quote is
-    /// the same words twice, one of them in grey. `previous` is the row the
-    /// list actually draws above this one, `nil` when something else (a
-    /// collapsed run, the top of the history) sits there.
-    public static func quoteRepeatsPrevious(_ row: TimelineRow, after previous: TimelineRow?) -> Bool {
-        guard let parent = row.item.replyTo?.eventId, let previous,
-            let above = previous.item.eventId
-        else { return false }
-        return parent == above
-    }
-
-    private static func joined(_ names: [String]) -> String {
-        switch names.count {
-        case 0: return "Someone"
-        case 1: return names[0]
-        default: return "\(names.dropLast().joined(separator: ", ")) and \(names.last!)"
-        }
     }
 }
 

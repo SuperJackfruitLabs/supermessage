@@ -43,7 +43,9 @@ struct VoiceTranscriptPresentationTests {
         let transcript = Self.row(
             id: "$1", view: .voiceTranscript(transcript: Self.transcript, onOwnNote: true), at: 1_000)
         let message = Self.row(id: "$2", view: .bubble(muted: false, blocks: [], voice: nil), at: 2_000)
-        #expect(!TimelineGrouping.continuesRun(message, after: transcript))
-        #expect(!TimelineGrouping.continuesRun(transcript, after: message))
+        let grouped = groupTimelineRows(rows: [transcript, message])
+        #expect(!grouped[1].continuesRun)
+        let reversed = groupTimelineRows(rows: [message, transcript])
+        #expect(!reversed[1].continuesRun)
     }
 }

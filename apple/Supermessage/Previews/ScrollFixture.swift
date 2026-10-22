@@ -31,7 +31,7 @@ enum ScrollFixture {
         }
         session.timeline.handle(
             TimelineDiffEnvelope(
-                channel: "timeline", subject: roomId, seq: 1, ops: [.reset(values: history)]))
+                channel: "timeline", subject: roomId, seq: 1, ops: [.reset(values: groupTimelineRows(rows: history))]))
     }
 
     static var history: [TimelineRow] {

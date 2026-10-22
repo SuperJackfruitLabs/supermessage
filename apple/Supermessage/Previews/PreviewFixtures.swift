@@ -15,7 +15,7 @@ import SwiftUI
 ///
 /// ## Why the builders are copied rather than imported
 ///
-/// `SupermessageKitTests/TimelineGroupingTests.swift` already has the
+/// `SupermessageKitTests/TimelineGroupingTests.swift` (`DisplayRowTests`) has a
 /// `TimelineRow` builder this file needs. **A test target is not visible to
 /// the app target**, so a preview cannot import it — and the app cannot use
 /// `@testable import` the way those tests do. So it is copied, and this
@@ -132,7 +132,9 @@ struct PreviewClient: SessionClient {
     func timelineResync() async throws -> TimelineSnapshot {
         TimelineSnapshot(
             roomId: PreviewFixtures.roomId, seq: 1,
-            items: isEmpty ? [] : PreviewFixtures.history)
+            // The core settles the grouping on every row it emits; a
+            // fixture has no core behind it, so it asks for the same pass.
+            items: isEmpty ? [] : groupTimelineRows(rows: PreviewFixtures.history))
     }
     // `false`: there is no more history behind a fixture, and saying so is
     // what stops a preview's list from trying to paginate forever.
@@ -238,7 +240,7 @@ enum PreviewFixtures {
 
     // MARK: Timeline rows
 
-    /// Copied from `TimelineGroupingTests.row`, for the reason in this file's
+    /// Copied from `DisplayRowTests.item`, for the reason in this file's
     /// header: a test target is invisible to an app target.
     static func item(
         id: String,

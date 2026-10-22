@@ -209,7 +209,7 @@ struct TimelineRowView: View {
 /// reactions any message has. The card itself is `TurnErrorCardView`.
 ///
 /// Always headed: a failure is never the continuation of the answer above
-/// it, which is why `TimelineGrouping` only runs bubbles together.
+/// it, which is why the core only runs bubbles together.
 private struct TurnErrorRow: View {
     let row: TimelineRow
     let named: String
