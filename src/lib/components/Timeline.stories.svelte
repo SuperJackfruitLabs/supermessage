@@ -4,7 +4,10 @@
   import { message, type ItemOverrides } from "$lib/fixtures";
   import { createTimelineStore, type TimelineStoreDeps } from "$lib/stores/timeline.svelte";
   import type { DiffEnvelope } from "$lib/stores/diff";
-  import type { TimelineRow } from "$lib/ipc";
+  import type { LivePayload, TimelineRow, TurnSnapshot, TurnUpdate } from "$lib/ipc";
+  import { createLiveStore } from "$lib/stores/live.svelte";
+  import { turnStep, turnSummary } from "$lib/fixtures";
+  import { storyServices } from "./live/liveCardStoryServices";
 
   import Timeline from "./Timeline.svelte";
 
@@ -115,8 +118,164 @@
     },
   ];
 
+  /**
+   * A turn mirror the story drives by hand: the channels the real one reads
+   * are handlers it can call, and `turn()` answers with the snapshot given.
+   */
+  function liveHarness(snapshot: TurnSnapshot | null = null) {
+    let onTurn: (u: TurnUpdate) => void = () => {};
+    let onLive: (p: LivePayload) => void = () => {};
+    const quiet = async () => () => {};
+    const store = createLiveStore({
+      onTurn: async (h) => {
+        onTurn = h;
+        return () => {};
+      },
+      onLive: async (h) => {
+        onLive = h;
+        return () => {};
+      },
+      onThought: quiet,
+      turn: async () => snapshot,
+    });
+    void store.focus(ROOM);
+    let seq = 0;
+    return {
+      store,
+      turn: (u: TurnUpdate) => onTurn(u),
+      answer: (text: string, done = false) => onLive({ roomId: ROOM, seq: ++seq, text, done }),
+    };
+  }
+
+  const finishedSnapshot = (over: Partial<ReturnType<typeof turnSummary>> = {}): TurnSnapshot => ({
+    summary: turnSummary({
+      turnId: 7,
+      revision: 5,
+      inProgress: false,
+      endedBy: "done",
+      lastActivityMs: 1_700_000_012_000,
+      hasThought: true,
+      totalSteps: 2,
+      completedSteps: 2,
+      recordLabel: "Thought for 12s · 2 steps",
+      ...over,
+    }),
+    steps: [
+      turnStep({ id: "a", title: "read the release notes", seq: 1 }),
+      turnStep({ id: "b", title: "run the 16KB check", seq: 2, kind: "execute" }),
+    ],
+    thought: "The notes name the 16KB device as the open risk.",
+  });
+
+  const finishedHarness = liveHarness(finishedSnapshot());
+  const bridgeHarness = liveHarness(null);
+  const replyHarness = liveHarness(null);
+  const probeHarness = liveHarness(null);
+  const awayHarness = liveHarness(null);
+
   let arrivePush: (row: TimelineRow) => void = () => {};
   let awayPush: (row: TimelineRow) => void = () => {};
+
+  const rowEls = (root: Element) =>
+    [...root.querySelectorAll("[data-testid='timeline-row']")] as HTMLElement[];
+  const liveCard = (root: Element) => root.querySelector("[data-testid='live-card']") as HTMLElement | null;
+  const recordEls = (root: Element) => [...root.querySelectorAll("[data-testid='what-i-did']")] as HTMLElement[];
+  const motionAllowed = () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /** The properties an animation inside the timeline may touch. */
+  const ALLOWED_PROPS = new Set(["opacity", "transform", "offset", "easing", "composite", "computedOffset"]);
+
+  interface Frame {
+    t: number;
+    /** Top of the live row and bottom of the history row just above it. */
+    liveTop: number | null;
+    historyBottom: number | null;
+    historyTop: number | null;
+    /** Distance of the scroller from its tail. */
+    fromTail: number;
+    firstVisibleTop: number | null;
+    badProps: string[];
+    glides: number;
+  }
+
+  /** Records one entry per animation frame until `stop()`. */
+  function sampleFrames(root: HTMLElement) {
+    const frames: Frame[] = [];
+    let running = true;
+    const scroller = root.querySelector(".timeline-scroller") as HTMLElement;
+    // Measured in a task right after the frame is painted, not inside the
+    // `requestAnimationFrame` callback: that runs before the frame's layout and
+    // its resize observers, so it would read a state no frame ever shows.
+    const record = (t: number) => {
+      const rows = rowEls(root);
+      const card = liveCard(root);
+      const liveRow = card?.closest("[data-testid='timeline-row']") as HTMLElement | null;
+      const i = liveRow ? rows.indexOf(liveRow) : -1;
+      const history = i > 0 ? rows[i - 1]! : null;
+      const view = scroller.getBoundingClientRect();
+      const firstVisible = rows.find((r) => r.getBoundingClientRect().bottom > view.top + 1);
+      const badProps: string[] = [];
+      let glides = 0;
+      for (const a of document.getAnimations()) {
+        const effect = a.effect as KeyframeEffect | null;
+        const target = effect?.target;
+        if (!effect || !target || !scroller.contains(target)) continue;
+        // Reduced motion zeroes every duration to 0.01ms (app.css): such a transition
+        // of height or visibility is a style change, not an animation anyone sees.
+        if (Number(effect.getComputedTiming().duration) <= 1) continue;
+        if (effect.composite === "add") glides += 1;
+        for (const frame of effect.getKeyframes())
+          for (const prop of Object.keys(frame))
+            if (!ALLOWED_PROPS.has(prop))
+              badProps.push(`${prop} on <${target.tagName.toLowerCase()} class="${(target as HTMLElement).className}">`);
+      }
+      frames.push({
+        t,
+        liveTop: liveRow ? liveRow.getBoundingClientRect().top : null,
+        historyBottom: history ? history.getBoundingClientRect().bottom : null,
+        historyTop: history ? history.getBoundingClientRect().top : null,
+        fromTail: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+        firstVisibleTop: firstVisible ? firstVisible.getBoundingClientRect().top : null,
+        badProps,
+        glides,
+      });
+    };
+    const loop = (t: number) => {
+      setTimeout(() => record(t), 0);
+      if (running) requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+    return {
+      frames,
+      stop: () => {
+        running = false;
+      },
+    };
+  }
+
+  const SENTENCES = [
+    "Staging is green across all four ABIs, and the promotion window opens at nine.",
+    "The 16KB device is the one left to check before anything ships to the store.",
+    "I compared the release notes with the build manifest and found one stale entry.",
+    "That entry names a build number that was superseded on Tuesday afternoon.",
+    "Correcting it is a one-line change, and I have already prepared the patch.",
+    "After that the only open item is the rollout percentage for the first day.",
+    "I would start at five percent and widen it once the crash-free rate holds.",
+  ];
+
+  /** Grows the answer every 450 ms, like iOS `-fixtureStreaming`'s pace. */
+  async function streamAnswer(h: ReturnType<typeof liveHarness>, startedAt = 1_700_000_000_000) {
+    h.turn({
+      summary: turnSummary({ turnId: 3, revision: 1, startedAtMs: startedAt, lastActivityMs: startedAt, answering: true, currentStepTitle: "Writing the answer" }),
+      step: null,
+    });
+    let text = "";
+    for (let i = 0; i < SENTENCES.length; i++) {
+      text += (i > 0 ? "\n\n" : "") + SENTENCES[i];
+      h.answer(text);
+      await new Promise((r) => setTimeout(r, 450));
+    }
+  }
 
   const { Story } = defineMeta({ title: "Timeline/Rhythm and quiet meta", component: Timeline });
 </script>
@@ -302,6 +461,210 @@
   {#snippet template()}
     <div class="flex h-[560px] w-[760px] flex-col bg-surface">
       <Timeline roomId={ROOM} store={seededStore(jumpRows, (push) => (awayPush = push))} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  A finished turn has no row: its record is drawn inside the answer's own row,
+  between the sender's line and the text, collapsed.
+-->
+<Story
+  name="A finished turn's record in its answer"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (recordEls(root).length > 0 ? root : null), 4000, "the record");
+    if (liveCard(root)) throw new Error("a finished turn has no card");
+    const records = recordEls(root);
+    if (records.length !== 1) throw new Error(`${records.length} records, want one`);
+    const row = records[0]!.closest("[data-testid='timeline-row']")!;
+    if (!row.textContent?.includes("Corrected the build number.")) throw new Error("the record is not in the newest peer row");
+    if (rowEls(root).filter((r) => r !== row && r.querySelector("[data-testid='what-i-did']")).length) throw new Error("another row carries it");
+    if (records[0]!.querySelector("summary")?.textContent?.trim() !== "Thought for 12s · 2 steps") throw new Error("the core's label");
+    if ((records[0] as HTMLDetailsElement).open) throw new Error("collapsed");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore()} live={finishedHarness.store} liveServices={storyServices} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  RF1: a bridge that never sends deltas, only edits its progress message. The
+  core has no turn for it: no card, no record. The edited row is just a message.
+-->
+<Story
+  name="A bridge that only edits its progress message"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (rowEls(root).some((r) => r.textContent?.includes("Searching files")) ? root : null), 3000, "the edited message");
+    await new Promise((r) => setTimeout(r, 300));
+    if (liveCard(root)) throw new Error("no turn, no card");
+    if (recordEls(root).length) throw new Error("no turn, no record");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline
+        roomId={ROOM}
+        store={seededStore([
+          mine("b0", 0, "Find where the tokens are generated."),
+          atlas("b1", 20_000, "🔎 Searching files…", { edited: true }),
+        ])}
+        live={bridgeHarness.store}
+        liveServices={storyServices}
+      />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  RF1: a turn the core ended by the agent's reply. The card goes at that moment
+  and the record appears in the answer's row.
+-->
+<Story
+  name="A turn the core ended by a reply"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (rowEls(root).length >= 2 ? root : null), 3000, "the rows");
+    replyHarness.turn({ summary: turnSummary({ turnId: 9, revision: 1, currentStepTitle: "Starting" }), step: null });
+    await settled(() => liveCard(root), 2000, "the live card");
+    if (recordEls(root).length) throw new Error("no record while the turn is going");
+    replyHarness.turn({
+      summary: turnSummary({
+        turnId: 9,
+        revision: 2,
+        inProgress: false,
+        endedBy: "reply",
+        hasThought: false,
+        totalSteps: 1,
+        completedSteps: 1,
+        recordLabel: "1 step · 12s",
+      }),
+      step: { index: 0, step: turnStep({ id: "r1", title: "read the release notes" }) },
+    });
+    await settled(() => (!liveCard(root) && recordEls(root).length === 1 ? root : null), 2000, "the card to go and the record to show");
+    const row = recordEls(root)[0]!.closest("[data-testid='timeline-row']")!;
+    if (!row.textContent?.includes("design/tokens.toml")) throw new Error("the record is not in the newest peer row");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline
+        roomId={ROOM}
+        store={seededStore([
+          mine("c0", 0, "Find where the tokens are generated."),
+          atlas("c1", 20_000, "They come from design/tokens.toml through the generator."),
+        ])}
+        live={replyHarness.store}
+        liveServices={storyServices}
+      />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  The probe (Review Focus 5): the live card is a row of the virtual list. As the
+  answer grows every 450 ms for 3 s, on every animation frame the newest history
+  row meets the card's row with no gap and no overlap, nothing but opacity and
+  transform animates, and a reader at the tail stays at the tail. With motion
+  allowed (`SNAPSHOT_MOTION=allow`) the history also glides (0.32 s, `glide.ts`):
+  no long frame and no jump larger than a glide step.
+-->
+<Story
+  name="Timeline — a streaming turn"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (rowEls(root).length >= jumpRows.length ? root : null), 4000, "the history");
+    await new Promise((r) => setTimeout(r, 400));
+    const sampler = sampleFrames(root);
+    await streamAnswer(probeHarness, Date.now());
+    await new Promise((r) => setTimeout(r, 500));
+    sampler.stop();
+    const frames = sampler.frames.filter((f) => f.liveTop !== null);
+    if (frames.length < 20) throw new Error(`only ${frames.length} frames with the card`);
+
+    // (a) no gap, no overlap between the newest history row and the card's row.
+    for (const f of frames) {
+      if (f.historyBottom === null || Math.abs(f.historyBottom - f.liveTop!) > 1)
+        throw new Error(`history bottom ${f.historyBottom} vs card top ${f.liveTop}`);
+    }
+    // (b) nothing but opacity and transform animates.
+    const bad = frames.flatMap((f) => f.badProps);
+    if (bad.length) throw new Error(`animated ${[...new Set(bad)].join(", ")}`);
+    // (c) the reader stays at the tail.
+    const off = Math.max(...frames.map((f) => f.fromTail));
+    if (off > 1) {
+      const bad = frames.map((f, i) => [i, Math.round(f.fromTail)] as const).filter(([, d]) => d > 1);
+      throw new Error(`left the tail by ${off}px in ${bad.length} of ${frames.length} frames: ${JSON.stringify(bad.slice(0, 12))}`);
+    }
+
+    const glides = Math.max(...frames.map((f) => f.glides));
+    if (!motionAllowed()) {
+      if (glides !== 0) throw new Error("reduced motion must not glide");
+      return;
+    }
+    // Motion allowed: the stutter check.
+    if (glides === 0) throw new Error("the history never glided");
+    // Skip the first frames: mounting the card is not streaming.
+    const steady = frames.slice(3);
+    const dts = steady.slice(1).map((f, i) => f.t - steady[i]!.t);
+    const longFrames = dts.filter((dt) => dt > 50);
+    if (longFrames.length) throw new Error(`${longFrames.length} long frames, worst ${Math.max(...longFrames).toFixed(0)}ms`);
+    const jumps = steady.slice(1).map((f, i) => Math.abs(f.historyTop! - steady[i]!.historyTop!));
+    const worst = Math.max(...jumps);
+    if (worst > 12) {
+      const at = jumps.map((j, i) => [i, +j.toFixed(1), +dts[i]!.toFixed(0), +steady[i + 1]!.historyTop!.toFixed(1)] as const).filter(([, j]) => j > 5);
+      throw new Error(`the history jumped ${worst.toFixed(1)}px in one frame: [frame, px, dtMs, top] ${JSON.stringify(at.slice(0, 14))}`);
+    }
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(jumpRows)} live={probeHarness.store} liveServices={storyServices} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  The reader has scrolled back 400px: the card grows below the fold and the
+  first visible row does not move.
+-->
+<Story
+  name="Timeline — a streaming turn, scrolled back"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const scroller = (await settled(() => root.querySelector(".timeline-scroller"), 3000, "the scroller")) as HTMLElement;
+    await settled(() => (root.textContent?.includes("Replying to the plan.") ? root : null), 4000, "the newest row");
+    await new Promise((r) => setTimeout(r, 400));
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -400, bubbles: true }));
+    scroller.scrollTop = Math.max(0, scroller.scrollTop - 400);
+    await settled(
+      () => [...root.querySelectorAll("button")].find((b) => /newest|jump/i.test(b.getAttribute("aria-label") ?? b.textContent ?? "")),
+      3000,
+      "the jump-to-newest button",
+    );
+    await new Promise((r) => setTimeout(r, 300));
+    const sampler = sampleFrames(root);
+    // The card is not on screen, so its row is not what is measured: the first visible row is.
+    await new Promise((r) => setTimeout(r, 100));
+    const before = sampler.frames.at(-1)!.firstVisibleTop;
+    await streamAnswer(awayHarness, Date.now());
+    await new Promise((r) => setTimeout(r, 400));
+    sampler.stop();
+    if (before === null) throw new Error("no visible row");
+    const moved = Math.max(...sampler.frames.map((f) => Math.abs((f.firstVisibleTop ?? before) - before)));
+    if (moved > 1) throw new Error(`the first visible row moved ${moved}px while the card grew`);
+    const bad = sampler.frames.flatMap((f) => f.badProps);
+    if (bad.length) throw new Error(`animated ${bad.join(", ")}`);
+    if (sampler.frames.some((f) => f.glides > 0)) throw new Error("a scrolled-back reader's history must not glide");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(jumpRows)} live={awayHarness.store} liveServices={storyServices} />
     </div>
   {/snippet}
 </Story>

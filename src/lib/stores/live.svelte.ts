@@ -28,7 +28,7 @@ import {
 import { untrack } from "svelte";
 import { applyTurnUpdate, emptyTurn, restoreTurn, turnHasGap, type LiveTurnState } from "./liveTurn";
 
-/** One tool call, in the shape the retiring `LiveActivity` strip reads. */
+/** One tool call, as the story fixtures write it (`$lib/fixtures/live`). */
 export interface LiveTool {
   toolCallId: string;
   title: string;
@@ -102,7 +102,11 @@ export function createLiveStore(deps: LiveStoreDeps = defaultDeps) {
   deps
     .onThought((payload: LivePayload) => {
       if (payload.roomId !== state.roomId) return;
-      state = { ...state, thought: payload.done ? null : payload.text };
+      // A thought's own `done` keeps the text (iOS `LiveStore.handleThought`):
+      // it is the record's reasoning, and the answer's row shows it once the
+      // turn has ended. A new turn clears it (`applyTurnUpdate`).
+      if (payload.done) return;
+      state = { ...state, thought: payload.text };
     })
     .catch(guard("agent reasoning"));
 
@@ -172,5 +176,7 @@ export function createLiveStore(deps: LiveStoreDeps = defaultDeps) {
     },
   };
 }
+
+export type LiveStore = ReturnType<typeof createLiveStore>;
 
 export const liveStore = createLiveStore();

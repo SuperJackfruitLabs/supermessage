@@ -134,8 +134,9 @@ describe("liveStore", () => {
     thought.emit(text(ROOM, 1, "Hmm."));
     expect(store.inProgress).toBe(true);
     expect(store.thought).toBe("Hmm.");
+    // The thought's own `done` keeps the text: the record's reasoning.
     thought.emit(text(ROOM, 2, "Hmm.", true));
-    expect(store.thought).toBeNull();
+    expect(store.thought).toBe("Hmm.");
   });
 
   it("an older revision does not rewind the mirror", async () => {

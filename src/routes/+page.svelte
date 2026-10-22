@@ -46,15 +46,11 @@
   import { typingArgs } from "$lib/components/typingView";
   import { castStore } from "$lib/stores/cast.svelte";
   import { turnAgentName } from "$lib/stores/liveTurn";
-  import type { LiveTool } from "$lib/stores/live.svelte";
   import { railEntries } from "$lib/components/spacesRailView";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
-  import AgentReasoning from "$lib/components/AgentReasoning.svelte";
-  import LiveTurn from "$lib/components/LiveTurn.svelte";
-  import LiveActivity from "$lib/components/LiveActivity.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import EmptyRoomState from "$lib/components/layout/EmptyRoomState.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
@@ -82,19 +78,6 @@
   // bounds each name's length first. `null` until the core answers, and
   // whenever nobody is typing.
   let typingLine = $state<string | null>(null);
-  // The steps in the shape the retiring activity strip reads (Task 2 deletes it).
-  // Only while the turn is going: a finished turn's steps are its record, not "now".
-  const liveTools = $derived<LiveTool[]>(
-    (liveStore.inProgress ? liveStore.steps : []).map((s) => ({
-      toolCallId: s.id,
-      title: s.title,
-      kind: s.kind,
-      status: s.status,
-      phase: s.phase,
-      statusLabel: s.statusLabel,
-      locations: s.locations,
-    })),
-  );
   // The agents typing now, for the dock above the composer (a later task reads it).
   let typingAgents = $state<string[]>([]);
 
@@ -1154,31 +1137,6 @@
           {#key roomsStore.selectedId}
             <Timeline roomId={roomsStore.selectedId} onOpenRecovery={() => void openRecovery()} />
           {/key}
-          <!--
-            Why the answer is what it is, above the answer itself — the order
-            the agent produced them in, and the order a reader reconstructs
-            them in. Collapsed unless asked for; see `AgentReasoning.svelte`.
-          -->
-          <AgentReasoning streaming={liveStore.inProgress ? liveStore.thought : null} />
-          <!--
-            The answer as it is written, between the timeline and the typing
-            line: closest to where it will land, and outside the virtual list
-            on purpose — see `LiveTurn.svelte`.
-          -->
-          <LiveTurn
-            roomId={roomsStore.selectedId}
-            senderName={liveStore.agentName(roomsStore.selectedId) ?? roomsStore.selectedRoomName ?? roomsStore.selectedId}
-            answer={liveStore.answer}
-          />
-          <!--
-            What it is *doing*, under what it is saying. One line, never a log:
-            the durable record of a turn's work lands in the room as a card when
-            the turn ends, and this only answers "right now".
-          -->
-          <LiveActivity
-            tools={liveTools}
-            thinking={liveStore.inProgress ? liveStore.thought : null}
-          />
           <TypingIndicator text={typingLine} />
           <!--
             The composer is for rooms this account is *in*. An invitation gets

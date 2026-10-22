@@ -108,7 +108,18 @@ export type TimelineDisplayRow =
    * A run of messages this device has no keys for, drawn as one row with a
    * count and a way to recovery — never a column of identical lines.
    */
-  | { type: "undecryptableGroup"; key: string; items: TimelineItem[]; count: number };
+  | { type: "undecryptableGroup"; key: string; items: TimelineItem[]; count: number }
+  /**
+   * The turn in progress: one row at the newest end (iOS
+   * `TimelineCollectionView.swift:886-913`). Not history, never an arrival.
+   */
+  | { type: "liveTurn"; key: "live-turn" };
+
+/** What the display list is built around besides the items themselves. */
+export interface GroupingOptions {
+  /** A turn is in progress, so the live card is the last row. */
+  liveTurn?: boolean;
+}
 
 /**
  * How close two consecutive messages from the same sender must be, in
@@ -311,7 +322,10 @@ export function shouldShift(
   return false;
 }
 
-export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisplayRow[] {
+export function groupTimelineItems(
+  source: readonly TimelineRow[],
+  options: GroupingOptions = {},
+): TimelineDisplayRow[] {
   const rows: TimelineDisplayRow[] = [];
   let run: TimelineRow[] = [];
   let undecryptable: TimelineRow[] = [];
@@ -391,6 +405,8 @@ export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisp
   }
   flushRun();
   flushUndecryptable();
+  // A finished turn has no row: its record is drawn in its answer's row.
+  if (options.liveTurn === true) rows.push({ type: "liveTurn", key: "live-turn" });
 
   return rows;
 }

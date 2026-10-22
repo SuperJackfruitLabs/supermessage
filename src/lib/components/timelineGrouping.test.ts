@@ -14,6 +14,27 @@ import {
 } from "$lib/fixtures/timeline";
 
 
+describe("the live row", () => {
+  it("the live row is the last row only while in progress", () => {
+    const items = [message("a"), message("b")];
+    const going = groupTimelineItems(items, { liveTurn: true });
+    expect(going.at(-1)).toEqual({ type: "liveTurn", key: "live-turn" });
+    expect(going.filter((r) => r.type === "liveTurn")).toHaveLength(1);
+    expect(groupTimelineItems(items, { liveTurn: false }).some((r) => r.type === "liveTurn")).toBe(false);
+    expect(groupTimelineItems(items).some((r) => r.type === "liveTurn")).toBe(false);
+  });
+
+  it("an empty room still shows the card", () => {
+    expect(groupTimelineItems([], { liveTurn: true })).toEqual([{ type: "liveTurn", key: "live-turn" }]);
+  });
+
+  it("its arrival or departure at the end never shifts the list", () => {
+    const keys = ["a:0", "b:0"];
+    expect(shouldShift(keys, [...keys, "live-turn"])).toBe(false);
+    expect(shouldShift([...keys, "live-turn"], keys)).toBe(false);
+  });
+});
+
 describe("groupTimelineItems", () => {
   it("never mutates or reorders the source array", () => {
     const items = [membership("m1", "joined", "Alice"), message("msg1")];

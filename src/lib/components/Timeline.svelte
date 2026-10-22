@@ -299,6 +299,13 @@
   import ReportSheet from "./safety/ReportSheet.svelte";
 
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
+  import { liveStore as appLiveStore, type LiveStore } from "$lib/stores/live.svelte";
+  import LiveCard from "./live/LiveCard.svelte";
+  import WhatIDid from "./live/WhatIDid.svelte";
+  import type { LiveCardServices } from "./live/liveCardServices";
+  import { writerName } from "./live/liveCardView";
+  import { recordAnchorKey } from "./timeline/recordAnchor";
+  import { glide, glideDistance, shouldGlide } from "./timeline/glide";
   import {
     isReaderScroll,
     nextFollowBottom,
@@ -345,13 +352,29 @@
     roomId,
     onOpenRecovery,
     store,
+    live,
+    liveServices,
   }: {
     roomId: string;
     onOpenRecovery?: () => void;
     /** The store to read. Only stories pass one; the app uses its own. */
     store?: TimelineStore;
+    /** The turn mirror to read. Only stories pass one; the app uses its own. */
+    live?: LiveStore;
+    /** The live card's core calls. Only stories pass them. */
+    liveServices?: LiveCardServices;
   } = $props();
   const timelineStore = $derived(store ?? appTimelineStore);
+  const liveTurn = $derived(live ?? appLiveStore);
+
+  /**
+   * Whether the live card is a row. A boolean on purpose: the mirror's state
+   * object is replaced on every streamed delta, and a derivation that read it
+   * directly would hand `VList` a new `data` array each time.
+   */
+  const liveShown = $derived(liveTurn.isLive && !liveTurn.finished);
+  /** A finished turn's record is drawn in its answer's row. */
+  const recordShown = $derived(liveTurn.finished && liveTurn.summary?.recordLabel != null);
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
   const PAGE_SIZE = 20;
@@ -490,7 +513,7 @@
    * a derivation keyed on it alone would keep showing the row.
    */
   let view = $derived.by(() => {
-    const rows = groupTimelineItems(safetyStore.visible(timelineStore.items));
+    const rows = groupTimelineItems(safetyStore.visible(timelineStore.items), { liveTurn: liveShown });
     const keys = rows.map((row) => row.key);
     const dividers = new Set(
       rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
@@ -514,6 +537,9 @@
   });
 
   let displayRows = $derived(view.rows);
+
+  /** The row that carries the finished turn's record (`recordAnchor.ts`). */
+  const anchorKey = $derived(recordShown ? recordAnchorKey(displayRows) : null);
 
   function riseEnded(id: string) {
     risingKeys.delete(id);
@@ -878,6 +904,12 @@
 
     const react = () => {
       const next = measure();
+      // The card appearing is not the card growing: iOS glides only a cell that
+      // was already there (`before` is nil on the first layout), so the card
+      // simply arrives and the history makes room at once.
+      const cardHeight = liveEl?.offsetHeight ?? 0;
+      const existed = lastCardHeight > 0;
+      lastCardHeight = cardHeight;
       if (shouldSettleAtBottom(previous, next, settled)) {
         // The rows a room opens with have just landed. Same assignment as the
         // repin below, for the same reason: the bottom is exact.
@@ -887,12 +919,20 @@
         return;
       }
       if (shouldRepin(previous, next, followBottom)) {
+        const before = scroller.scrollTop;
         // Assigning `scrollTop` rather than `scrollToIndex`: the bottom of the
         // scroller is exact and needs no index, no measurement and no guess
         // about which row is last, and the browser clamps it for us. It fires
         // an ordinary scroll event, so `handleScroll` recomputes
         // `followBottom` from the corrected position and agrees.
         scroller.scrollTop = scroller.scrollHeight;
+        // The re-pin moved the history up at once; while an answer streams it is
+        // drawn back and eased up (iOS's 0.32 s glide, `glide.ts`).
+        const distance = existed ? glideDistance(before, scroller.scrollTop) : 0;
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (shouldGlide({ streaming: liveShown, following: followBottom, reducedMotion }, distance)) {
+          glide(scroller.querySelectorAll<HTMLElement>("[data-testid='timeline-row']"), distance);
+        }
       }
       previous = next;
       // A pane the history does not fill cannot be scrolled, so no scroll
@@ -911,6 +951,8 @@
     const inputs = ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"] as const;
     for (const type of inputs) scroller.addEventListener(type, noteReaderInput, { passive: true });
 
+    reactToResize = react;
+
     // The pane's own height, and the scrolled content's — the two things
     // `shouldRepin` compares. One observer watches both boxes; which one moved
     // is exactly what the predicate works out.
@@ -920,8 +962,35 @@
     if (content) observer.observe(content);
 
     return () => {
+      reactToResize = null;
       observer.disconnect();
       for (const type of inputs) scroller.removeEventListener(type, noteReaderInput);
+    };
+  });
+
+  /**
+   * The live card's own size, watched directly.
+   *
+   * The observer above sees the *content* grow only once virtua has measured the
+   * card and re-rendered its total height, two frames after the card grew. For
+   * those frames the tail is off the bottom by the growth, and the newest line of
+   * the answer is cut off. The card overflows its row meanwhile, and the
+   * scroller already counts that overflow, so re-pinning from the card's own
+   * resize lands the tail in the same frame the text grew. Same predicate, same
+   * assignment, same glide — only the trigger is earlier.
+   */
+  let reactToResize: (() => void) | null = null;
+  /** The card's height at the last resize observation; 0 while there is no card. */
+  let lastCardHeight = 0;
+  let liveEl = $state<HTMLElement | null>(null);
+  $effect(() => {
+    const el = liveEl;
+    if (!el) return;
+    const observer = new ResizeObserver(() => reactToResize?.());
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      lastCardHeight = 0;
     };
   });
 
@@ -1278,6 +1347,10 @@
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
+        {#if row.key === anchorKey && liveTurn.summary?.recordLabel}
+          <!-- Between the sender's line and the text (iOS `TimelineCollectionView.swift:612-614`). -->
+          <WhatIDid label={liveTurn.summary.recordLabel} thought={liveTurn.thought} steps={liveTurn.steps} />
+        {/if}
         <ReplyQuote
           quote={row.replyQuote}
           isOwn={item.isOwn}
@@ -1502,7 +1575,9 @@
           }}
           class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans {washKeys.has(row.key) ? 'transition-colors motion-reduce:transition-none ' + (row.key === highlightedKey ? 'duration-150' : 'duration-[800ms]') : ''} {row.key === highlightedKey ? 'bg-accent-soft' : 'bg-surface'} {row.type === "item" && view.rising.has(row.item.id) && !arrivedDone.has(row.item.id) ? 'row-arrive' : ''} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
             index,
-            displayRows.length,
+            // The live card is not a message row: the last message keeps its
+            // reserve (and its height) while the card comes and goes under it.
+            row.type === "liveTurn" ? displayRows.length : displayRows.length - (liveShown ? 1 : 0),
           )}"
         >
           {#if row.type === "membershipGroup"}
@@ -1515,6 +1590,22 @@
             <LogLine text={row.text} />
           {:else if row.type === "undecryptableGroup"}
             <UndecryptableGroup count={row.count} {onOpenRecovery} />
+          {:else if row.type === "liveTurn"}
+            <!--
+              The turn in progress: one card at the newest end, inside the
+              same column as the messages. Outer vertical padding 6 (iOS
+              `LiveTurnView.swift:121`).
+            -->
+            <div class="py-1.5" bind:this={liveEl}>
+              <LiveCard
+                summary={liveTurn.summary}
+                steps={liveTurn.steps}
+                thought={liveTurn.thought}
+                answer={liveTurn.answer}
+                name={writerName(liveTurn.agentName(roomId), displayRows)}
+                services={liveServices}
+              />
+            </div>
           {:else}
             {@const item = row.item}
             {@const continuesRun = row.continuesRun}
