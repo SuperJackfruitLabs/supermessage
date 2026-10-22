@@ -185,7 +185,14 @@
     );
     // A beat later, so a scroll that is undone by the tail-following
     // re-pin (the list snapping back to the newest message) is caught too.
+    const inView = () => {
+      const box = parentRow()?.getBoundingClientRect();
+      const view = root.querySelector(".timeline-scroller")!.getBoundingClientRect();
+      return !!box && box.top >= view.top && box.bottom <= view.bottom;
+    };
     const assertParentInView = async () => {
+      // The scroll is smooth when motion is allowed: let it arrive first.
+      await settled(() => (inView() ? root : null), 2000, "the smooth scroll to reach the parent").catch(() => {});
       await new Promise((r) => setTimeout(r, 300));
       const parent = parentRow();
       if (!parent) throw new Error("the parent is no longer rendered");
@@ -237,7 +244,11 @@
       3000,
       "the new message",
     );
-    if (!arrived.classList.contains("row-arrive")) throw new Error("the new message did not rise in");
+    // Under reduced motion nothing rises (and nothing would drain the class).
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (arrived.classList.contains("row-arrive") === reduced) {
+      throw new Error(`row-arrive=${!reduced ? "missing" : "present"} with reduced motion=${reduced}`);
+    }
   }}
 >
   {#snippet template()}

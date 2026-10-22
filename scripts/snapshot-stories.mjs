@@ -66,11 +66,16 @@ stories.sort((a, b) => a.id.localeCompare(b.id))
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
 
+const MOTION_ALLOWED = process.env.SNAPSHOT_MOTION === 'allow'
+
 const browser = await chromium.launch({ args: ['--disable-lcd-text'] })
 const context = await browser.newContext({
   viewport: { width: 900, height: 720 },
   deviceScaleFactor: 1,
-  reducedMotion: 'reduce',
+  // SNAPSHOT_MOTION=allow: a motion check, not a gate run. Plays that assert
+  // an animation runs when motion is allowed can only prove it this way.
+  // Never record frames from such a run.
+  reducedMotion: MOTION_ALLOWED ? 'no-preference' : 'reduce',
   colorScheme: 'light',
   locale: 'en-US',
   timezoneId: 'UTC',

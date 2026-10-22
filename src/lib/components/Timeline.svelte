@@ -429,6 +429,8 @@
    * the derivation that just wrote it.
    */
   let previousRowKeys: string[] = [];
+  /** The item ids behind the last rows; arrivals are decided on identity, not row keys. */
+  let previousItemIds: string[] = [];
 
   /**
    * Message rows that are rising in (`arrivals.ts`). A plain set, grown by
@@ -462,24 +464,28 @@
       rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
     );
     const shift = shouldShiftNow(shouldShift(previousRowKeys, keys, dividers), isScrollable());
-    const messageKeys = new Set(
-      rows.filter((row) => row.type === "item" && isArrivingRender(row.view.render)).map((row) => row.key),
+    const itemRows = rows.filter((row) => row.type === "item");
+    const itemIds = itemRows.map((row) => row.item.id);
+    const messageIds = new Set(
+      itemRows.filter((row) => isArrivingRender(row.view.render)).map((row) => row.item.id),
     );
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // `untrack`: the reader scrolling to or from the newest end must not
     // re-run this derivation, only a change of rows should.
     const following = untrack(() => followBottom);
-    for (const key of arrivedKeys(previousRowKeys, keys, following, (k) => messageKeys.has(k))) {
-      risingKeys.add(key);
+    for (const id of arrivedKeys(previousItemIds, itemIds, following, (i) => messageIds.has(i), reducedMotion)) {
+      risingKeys.add(id);
     }
+    previousItemIds = itemIds;
     previousRowKeys = keys;
     return { rows, shift, rising: new Set(risingKeys) };
   });
 
   let displayRows = $derived(view.rows);
 
-  function riseEnded(key: string) {
-    risingKeys.delete(key);
-    arrivedDone.add(key);
+  function riseEnded(id: string) {
+    risingKeys.delete(id);
+    arrivedDone.add(id);
   }
 
   /**
@@ -1437,9 +1443,9 @@
         <div
           data-testid="timeline-row"
           onanimationend={(e) => {
-            if (e.target === e.currentTarget) riseEnded(row.key);
+            if (e.target === e.currentTarget && row.type === "item") riseEnded(row.item.id);
           }}
-          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans transition-colors motion-reduce:transition-none {row.key === highlightedKey ? 'bg-accent-soft duration-150' : 'bg-surface duration-[800ms]'} {view.rising.has(row.key) && !arrivedDone.has(row.key) ? 'row-arrive' : ''} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans transition-colors motion-reduce:transition-none {row.key === highlightedKey ? 'bg-accent-soft duration-150' : 'bg-surface duration-[800ms]'} {row.type === "item" && view.rising.has(row.item.id) && !arrivedDone.has(row.item.id) ? 'row-arrive' : ''} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
             index,
             displayRows.length,
           )}"
