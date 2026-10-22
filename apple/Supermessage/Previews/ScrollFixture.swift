@@ -111,7 +111,7 @@ extension ScrollFixture {
     @MainActor
     static func stream(_ session: Session) async {
         try? await Task.sleep(for: .seconds(1))
-        session.live.focus(roomId)
+        session.live.select(roomId)
         var text = ""
         for (i, sentence) in answer.enumerated() {
             text += sentence

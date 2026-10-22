@@ -114,9 +114,7 @@ extension PreviewFixtures {
 
     /// A turn that has finished, leaving its steps behind.
     @MainActor static func finishedTurn() -> LiveStore {
-        let live = liveStore(thinking: true, answering: true, tools: true)
-        live.handleLive(roomId: roomId, seq: 99, text: "", done: true)
-        return live
+        liveStore(thinking: true, answering: true, tools: true, finished: true)
     }
 }
 #endif

@@ -1,31 +1,69 @@
+import SupermessageFFI
 import Testing
 
 @testable import SupermessageKit
 
-/// What survives the end of a turn, and what does not.
+/// `LiveStore` mirrors the core's turn record (`core::turns`) for the open
+/// room, and keeps the text the record does not carry.
 ///
-/// Reported: "reasoning gets hidden as soon as the complete message is
-/// delivered even when I am present in the room. I don't get enough time to
-/// read the reasoning." The store threw away the reasoning and the tool calls
-/// on `done`, which meant the record of *how* an agent reached its answer was
-/// only ever on screen while the answer was still being written — and gone by
-/// the time anyone had read the answer it belonged to.
+/// Fixtures are folded by the core's own `foldTurn`, so the summary and steps
+/// in these tests are what the rules produce, not a second copy of them.
+///
+/// Reported, and still what this guards: "reasoning gets hidden as soon as the
+/// complete message is delivered even when I am present in the room." What
+/// survives the end of a turn is the reasoning and the steps; what goes is the
+/// streamed answer.
 @MainActor
 struct LiveStoreTests {
     let room = "!r:x.org"
+    let other = "!other:x.org"
+    let t: UInt64 = 1_757_700_000_000
 
-    func store() -> LiveStore {
-        let live = LiveStore()
-        live.focus(room)
+    /// A fetcher that answers every room with one fixed snapshot.
+    struct StubTurns: TurnFetching {
+        let snapshot: TurnSnapshot?
+        func turn(roomId: String) async -> TurnSnapshot? { snapshot }
+    }
+
+    func store(turns: TurnSnapshot? = nil) -> LiveStore {
+        let live = LiveStore(turns: StubTurns(snapshot: turns))
+        live.select(room)
         return live
     }
 
+    func fold(_ inputs: [TurnInput], room: String? = nil) -> TurnSnapshot {
+        foldTurn(roomId: room ?? self.room, inputs: inputs)!
+    }
+
+    func answer(_ ms: UInt64, done: Bool = false, seq: UInt64 = 1) -> TurnInput {
+        .answer(seq: seq, done: done, atMs: t + ms)
+    }
+
+    func tool(_ id: String, _ phase: ToolPhase, seq: UInt64, ms: UInt64) -> TurnInput {
+        .tool(step: .fixture(id: id, title: "step \(id)", phase: phase, seq: seq), atMs: t + ms)
+    }
+
+    func update(_ snapshot: TurnSnapshot, revision: UInt64? = nil, turnId: UInt64? = nil)
+        -> TurnUpdate
+    {
+        var summary = snapshot.summary
+        if let revision { summary.revision = revision }
+        if let turnId { summary.turnId = turnId }
+        return TurnUpdate(summary: summary, step: nil)
+    }
+
+    // --- what survives the end of a turn --------------------------------
+
     @Test("reasoning outlives the turn that produced it")
     func reasoningSurvivesDone() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): clearing `thought` in `handleLive` on `done`.
         let live = store()
+        let snapshot = fold([.thought(seq: 1, text: "Checking.", done: false, atMs: t), answer(1000)])
+        live.apply(update(snapshot, revision: 1))
         live.handleThought(roomId: room, seq: 1, text: "Checking the logs first.", done: false)
         live.handleLive(roomId: room, seq: 1, text: "Looking…", done: false)
 
+        live.apply(update(fold([.thought(seq: 1, text: "x", done: false, atMs: t), answer(2000, done: true, seq: 2)]), revision: 2))
         live.handleLive(roomId: room, seq: 2, text: "", done: true)
 
         #expect(live.thought == "Checking the logs first.", "the reasoning was thrown away")
@@ -35,14 +73,26 @@ struct LiveStoreTests {
 
     @Test("the streamed answer goes, because the real message says it better")
     func answerIsDroppedOnDone() {
-        // The one thing that *should* go: it is about to arrive on the
-        // timeline as a real message, and two copies of the same sentence
-        // stacked on each other is what this avoids.
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): leaving `answer` set on `done`.
         let live = store()
         live.handleLive(roomId: room, seq: 1, text: "Half an answ", done: false)
         live.handleLive(roomId: room, seq: 2, text: "", done: true)
-
         #expect(live.answer == nil, "the streamed answer outlived the message that replaces it")
+    }
+
+    @Test("a reply that ends the turn takes the streamed answer with it")
+    func replyEndingClearsTheAnswer() {
+        // The core ends a turn when the agent's message lands, with no `done`.
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): clearing the answer only in `handleLive`.
+        let live = store()
+        let running = fold([answer(0)])
+        live.apply(update(running, revision: 1))
+        live.handleLive(roomId: room, seq: 1, text: "Streaming", done: false)
+        var ended = fold([answer(0), .reply(eventMs: t + 500, atMs: t + 600)])
+        ended.summary.revision = 2
+        live.apply(update(ended))
+        #expect(live.finished)
+        #expect(live.answer == nil, "the card kept an answer the room now has")
     }
 
     @Test("a thought's own done does not hide it either")
@@ -50,147 +100,191 @@ struct LiveStoreTests {
         let live = store()
         live.handleThought(roomId: room, seq: 1, text: "Two options here.", done: false)
         live.handleThought(roomId: room, seq: 2, text: "", done: true)
-
         #expect(live.thought == "Two options here.")
-        #expect(live.finished)
     }
 
-    @Test("tool calls outlive the turn too")
-    func toolsSurviveDone() {
+    @Test("a late text delta cannot rewind the text")
+    func textOrder() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): dropping the `seq >= answerSeq` guard.
         let live = store()
-        live.handleTool(
-            roomId: room, seq: 1, toolCallId: "c1", title: "Run tests", kind: "execute",
-            status: "completed", phase: .done, statusLabel: "Done", locations: ["crates/core"], input: "cargo test", output: "ok")
-        live.handleLive(roomId: room, seq: 1, text: "", done: true)
-
-        #expect(live.tools.count == 1)
-        #expect(live.tools[0].output == "ok")
+        live.handleLive(roomId: room, seq: 5, text: "newer", done: false)
+        live.handleLive(roomId: room, seq: 4, text: "older", done: false)
+        #expect(live.answer == "newer")
     }
 
-    @Test("the next turn replaces the last one's record")
-    func aNewTurnClearsTheOldRecord() {
-        // The record has to end somewhere, and this is where: it is replaced,
-        // not expired. Otherwise two turns' reasoning would stack up.
+    // --- following the core ----------------------------------------------
+
+    @Test("an update for another room is not this pane's business")
+    func otherRoomIgnored() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): dropping the `accept` guard in `apply`.
         let live = store()
+        live.apply(update(fold([answer(0)], room: other), revision: 1))
+        #expect(live.summary == nil)
+        #expect(!live.isLive)
+    }
+
+    @Test("an older revision does not rewind the card")
+    func olderRevisionIgnored() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): dropping the revision comparison in `apply`.
+        let live = store()
+        let snapshot = fold([tool("a", .running, seq: 1, ms: 0)])
+        live.apply(update(snapshot, revision: 7))
+        var older = update(snapshot, revision: 3)
+        older.summary.currentStepTitle = "stale"
+        live.apply(older)
+        #expect(live.summary?.revision == 7)
+        #expect(live.summary?.currentStepTitle == "step a")
+    }
+
+    @Test("a new turn drops the last one's steps, reasoning and answer")
+    func newTurnStartsClean() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): not clearing when `turnId` changes.
+        let live = store()
+        let first = fold([tool("a", .done, seq: 1, ms: 0), answer(10)])
+        live.apply(
+            TurnUpdate(
+                summary: first.summary,
+                step: TurnStepChange(index: 0, step: first.steps[0])))
         live.handleThought(roomId: room, seq: 1, text: "First turn's thinking.", done: false)
-        live.handleLive(roomId: room, seq: 1, text: "", done: true)
+        live.handleLive(roomId: room, seq: 1, text: "First answer", done: false)
+        #expect(live.tools.count == 1)
 
-        live.handleLive(roomId: room, seq: 1, text: "Second turn…", done: false)
+        var next = first.summary
+        next.turnId += 1
+        next.revision += 5
+        live.apply(TurnUpdate(summary: next, step: nil))
 
+        #expect(live.tools.isEmpty)
         #expect(live.thought == nil, "the last turn's reasoning survived into the next one")
-        #expect(!live.finished)
-        #expect(live.answer == "Second turn…")
+        #expect(live.answer == nil)
+        live.handleThought(roomId: room, seq: 1, text: "Second turn.", done: false)
+        #expect(live.thought == "Second turn.", "the old sequence blocked the new turn's text")
     }
 
-    @Test("a turn's record does not follow the reader into another room")
-    func focusClearsIt() {
+    @Test("a step change lands at the index the core gave")
+    func stepChangeIndex() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): always appending.
         let live = store()
-        live.handleThought(roomId: room, seq: 1, text: "Room one's thinking.", done: false)
-        live.handleLive(roomId: room, seq: 1, text: "", done: true)
+        let snapshot = fold([tool("a", .running, seq: 1, ms: 0), tool("b", .running, seq: 2, ms: 1)])
+        live.apply(TurnUpdate(summary: snapshot.summary, step: TurnStepChange(index: 0, step: snapshot.steps[0])))
+        live.apply(TurnUpdate(summary: snapshot.summary, step: TurnStepChange(index: 1, step: snapshot.steps[1])))
+        var done = snapshot.steps[0]
+        done.phase = .done
+        done.seq = 3
+        var summary = snapshot.summary
+        summary.revision += 1
+        live.apply(TurnUpdate(summary: summary, step: TurnStepChange(index: 0, step: done)))
 
-        live.focus("!other:x.org")
+        #expect(live.tools.map(\.id) == ["a", "b"], "one call produced two rows or the order moved")
+        #expect(live.tools[0].phase == .done)
+    }
 
-        #expect(!live.isLive, "one room's turn showed up under another room's name")
-        #expect(live.thought == nil)
+    @Test("the summary's words are the core's")
+    func summaryWords() {
+        let live = store()
+        let snapshot = fold([
+            tool("1", .done, seq: 1, ms: 0), tool("2", .running, seq: 2, ms: 1),
+            tool("3", .failed, seq: 3, ms: 2), tool("4", .done, seq: 4, ms: 3),
+        ])
+        live.apply(update(snapshot))
+        #expect(live.summary?.currentStepTitle == "step 2")
+        #expect(live.summary?.stepIsTool == true)
+        #expect(live.summary?.completedSteps == 2)
+        #expect(live.summary?.failedStep == "step 3")
+        #expect(live.inProgress)
     }
 
     @Test("a tool row with nothing behind it does not pretend otherwise")
     func detailIsOptional() {
-        // Every harness today reports title, kind and status and nothing
-        // else. A disclosure triangle opening onto an empty box says there is
-        // something to see.
-        let bare = LiveStore.ToolCall(
-            id: "c1", title: "Read a file", status: "completed", phase: .done, statusLabel: "Done", kind: nil, locations: [],
-            input: nil, output: nil)
-        #expect(!bare.hasDetail)
-
-        let touched = LiveStore.ToolCall(
-            id: "c2", title: "Read a file", status: "completed", phase: .done, statusLabel: "Done", kind: nil,
-            locations: ["src/main.rs"], input: nil, output: nil)
-        #expect(touched.hasDetail)
+        #expect(!TurnStep.fixture(id: "c1", title: "Read a file", phase: .done, seq: 1).hasDetail)
+        #expect(
+            TurnStep.fixture(
+                id: "c2", title: "Read a file", phase: .done, seq: 1, locations: ["src/main.rs"]
+            ).hasDetail)
     }
 
-    @Test("a later report on the same call replaces it rather than stacking")
-    func toolUpdatesMerge() {
-        let live = store()
-        live.handleTool(
-            roomId: room, seq: 1, toolCallId: "c1", title: "Run tests", kind: nil,
-            status: "in_progress", phase: .running, statusLabel: "Running", locations: [], input: nil, output: nil)
-        live.handleTool(
-            roomId: room, seq: 2, toolCallId: "c1", title: "Run tests", kind: nil,
-            status: "completed", phase: .done, statusLabel: "Done", locations: [], input: nil, output: "3 passed")
+    // --- time -------------------------------------------------------------
 
-        #expect(live.tools.count == 1, "one call produced two rows")
-        #expect(live.tools[0].status == "completed")
-        #expect(live.tools[0].output == "3 passed")
+    @Test("elapsed runs from the first event and stops at the end")
+    func elapsed() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): measuring a finished turn to `now`.
+        let live = store()
+        live.apply(update(fold([answer(0), answer(30_000, done: true, seq: 2)])))
+        #expect(live.elapsed(at: Date(timeIntervalSince1970: Double(t) / 1000 + 600)) == 30)
     }
 
-    // --- leaving and coming back ----------------------------------------
+    // --- leaving and coming back -----------------------------------------
 
-    @Test("a finished turn's reasoning survives leaving the room")
-    func survivesLeaving() {
+    @Test("a record belongs to its room")
+    func focusClearsIt() {
         let live = store()
-        live.handleThought(roomId: room, seq: 1, text: "Weighing two options.", done: false)
-        live.handleLive(roomId: room, seq: 1, text: "Option B.", done: false)
-        live.handleLive(roomId: room, seq: 2, text: "", done: true)
+        live.apply(update(fold([.thought(seq: 1, text: "Room one.", done: false, atMs: t)])))
+        live.handleThought(roomId: room, seq: 1, text: "Room one's thinking.", done: false)
+        live.select(other)
+        #expect(!live.isLive, "one room's turn showed up under another room's name")
+        #expect(live.thought == nil)
+        #expect(live.summary == nil)
+    }
 
-        live.focus("!other:x.org")
-        #expect(!live.isLive, "another room's record is not this one's")
+    @Test("opening a room restores its turn from the core")
+    func opening() async {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): `focus` not asking the core.
+        let finished = fold([
+            .thought(seq: 1, text: "Weighing two options.", done: false, atMs: t),
+            tool("a", .done, seq: 1, ms: 5),
+            answer(9000, done: true, seq: 2),
+        ])
+        let live = LiveStore(turns: StubTurns(snapshot: finished))
+        await live.focus(room)
 
-        live.focus(room)
-        #expect(live.thought == "Weighing two options.", "coming back lost the reasoning")
         #expect(live.finished)
+        #expect(live.thought == "Weighing two options.", "coming back lost the reasoning")
+        #expect(live.tools.count == 1)
         #expect(live.answer == nil, "the answer is the room's message now, not the card's")
+        #expect(live.summary?.recordLabel != nil)
     }
 
-    @Test("a turn left mid-way is not kept")
-    func unfinishedIsNotKept() {
+    @Test("a room with no record opens clean")
+    func openingNothing() async {
+        let live = LiveStore(turns: StubTurns(snapshot: nil))
+        await live.focus(room)
+        #expect(!live.isLive)
+        #expect(live.summary == nil)
+    }
+
+    @Test("a snapshot older than what the live channel showed is skipped")
+    func staleSnapshot() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): restoring without the revision check.
         let live = store()
-        live.handleThought(roomId: room, seq: 1, text: "Half a thou", done: false)
-        live.focus("!other:x.org")
-        live.focus(room)
-        #expect(!live.isLive, "a record frozen mid-sentence came back")
+        let snapshot = fold([tool("a", .running, seq: 1, ms: 0)])
+        live.apply(update(snapshot, revision: 9))
+        var old = snapshot
+        old.summary.revision = 2
+        old.steps = []
+        live.restore(old)
+        #expect(live.summary?.revision == 9)
+        #expect(live.tools.isEmpty, "an older snapshot replaced newer steps")
     }
 
-    @Test("the next turn replaces the kept record")
-    func nextTurnReplaces() {
-        let live = store()
-        live.handleThought(roomId: room, seq: 1, text: "First turn.", done: false)
-        live.handleLive(roomId: room, seq: 1, text: "", done: true)
-        live.focus("!other:x.org")
-        live.focus(room)
-        live.handleThought(roomId: room, seq: 1, text: "Second turn.", done: false)
-        #expect(live.thought == "Second turn.")
-        live.handleLive(roomId: room, seq: 1, text: "", done: true)
-        live.focus("!other:x.org")
-        live.focus(room)
-        #expect(live.thought == "Second turn.")
-    }
-
-    @Test("signing out forgets every kept record")
+    @Test("signing out forgets the turn on screen")
     func signOutForgets() {
         let live = store()
+        live.apply(update(fold([.thought(seq: 1, text: "Private.", done: false, atMs: t)])))
         live.handleThought(roomId: room, seq: 1, text: "Private reasoning.", done: false)
-        live.handleLive(roomId: room, seq: 1, text: "", done: true)
-        live.focus("!other:x.org")
         live.clear()
-        live.focus(room)
         #expect(!live.isLive)
+        #expect(live.summary == nil)
+        live.handleLive(roomId: room, seq: 1, text: "late", done: false)
+        #expect(live.answer == nil, "text for a room nobody has open was kept")
     }
 
-    @Test("only so many rooms are remembered")
-    func bounded() {
+    @Test("the header's name is kept per room")
+    func agentName() {
         let live = LiveStore()
-        let rooms = (0...LiveStore.keptRecords).map { "!r\($0):x.org" }
-        for id in rooms {
-            live.focus(id)
-            live.handleThought(roomId: id, seq: 1, text: "Reasoning in \(id)", done: false)
-            live.handleLive(roomId: id, seq: 1, text: "", done: true)
-        }
-        live.focus("!elsewhere:x.org")
-        live.focus(rooms[0])
-        #expect(!live.isLive, "the oldest record should have been let go")
-        live.focus(rooms.last!)
-        #expect(live.thought == "Reasoning in \(rooms.last!)")
+        live.setAgentName("Atlas", for: room)
+        live.select(room)
+        #expect(live.agentName == "Atlas", "focusing the room threw the name away")
+        live.select(other)
+        #expect(live.agentName == nil)
     }
 }

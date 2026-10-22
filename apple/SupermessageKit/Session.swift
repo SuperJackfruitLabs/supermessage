@@ -39,7 +39,8 @@ public final class Session {
     /// Plays voice notes and audio messages, one at a time.
     public let voice: VoicePlayer
     public let timeline: TimelineStore
-    public let live = LiveStore()
+    /// The open room's turn, mirrored from the core's record (`core::turns`).
+    public let live: LiveStore
     public let typing = TypingStore()
     public let drafts = DraftStore()
     public let replies = ReplyTarget()
@@ -73,6 +74,7 @@ public final class Session {
         media = MediaCache(client: client)
         voice = VoicePlayer(client: client)
         timeline = TimelineStore(client: client, sink: pump)
+        live = LiveStore(turns: client)
         staged = StagedAttachment(client: client)
         safety = SafetyStore(defaults: defaults)
     }
@@ -600,7 +602,7 @@ public final class Session {
     /// Open a room: the timeline subscribes, and the transient stores are
     /// re-pointed so nothing from the last room survives the switch.
     public func open(roomId: String) async {
-        live.focus(roomId)
+        await live.focus(roomId)
         typing.focus(roomId)
         await timeline.subscribeTo(roomId)
     }
@@ -826,17 +828,13 @@ public final class Session {
             live.handleLive(roomId: roomId, seq: seq, text: text, done: done)
         case let .thought(roomId, seq, text, done):
             live.handleThought(roomId: roomId, seq: seq, text: text, done: done)
-        case let .tool(
-            roomId, seq, toolCallId, title, kind, status, phase, statusLabel, locations, input,
-            output):
-            live.handleTool(
-                roomId: roomId, seq: seq, toolCallId: toolCallId, title: title, kind: kind,
-                status: status, phase: phase, statusLabel: statusLabel, locations: locations,
-                input: input, output: output)
-        case .turn:
-            // The core's turn record. The Kit's `LiveStore` follows it in the
-            // next commit; until then it keeps building from the raw events.
+        case .tool:
+            // Steps arrive on `.turn` now: the core merges them by call id,
+            // drops a report the network delivered late, and tells us only
+            // what changed. The raw event still flows for hosts that want it.
             break
+        case let .turn(update):
+            live.apply(update)
         case .attachmentStaged:
             // Handled by the composer, which owns the staged strip. Listed
             // rather than swept into a `default` so a new variant on the

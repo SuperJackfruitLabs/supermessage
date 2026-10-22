@@ -40,10 +40,7 @@ struct WhatIDidFooter: View {
                 }
                 .padding(.top, 6)
             } label: {
-                Text(
-                    TurnRecordLabel.text(
-                        thought: live.thought != nil, steps: live.tools.count,
-                        seconds: live.elapsed(at: Date())))
+                Text(live.summary?.recordLabel ?? "")
                     .font(ThemeType.ui)
                     .foregroundStyle(Theme.contentMuted)
             }
@@ -59,7 +56,7 @@ struct WhatIDidFooter: View {
 
 /// One step of a finished turn: what it was, and how it ended.
 private struct Step: View {
-    let tool: LiveStore.ToolCall
+    let tool: TurnStep
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
