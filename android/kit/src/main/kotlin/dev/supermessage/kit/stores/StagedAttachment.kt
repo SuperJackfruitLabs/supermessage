@@ -115,7 +115,9 @@ class StagedAttachment(private val client: CoreClient) {
             when (val outcome =
                 client.attachmentSend(roomId = roomId, token = sent.token, caption = caption)) {
                 is AttachmentSendOutcome.Sent -> {
-                    clear()
+                    // Clear only if the chip still holds the file that went;
+                    // a newer pick made mid-send stays.
+                    if (_file.value?.token == sent.token) clear()
                     null
                 }
                 is AttachmentSendOutcome.Failed -> {
@@ -126,8 +128,7 @@ class StagedAttachment(private val client: CoreClient) {
                     // tracker is empty or still holds the file that was sent;
                     // otherwise release the fresh token and leave the newer
                     // pick alone (the caller still gets the message).
-                    val current = _file.value
-                    if (current == null || current.token == sent.token) {
+                    if (stillOurs(sent)) {
                         _file.value = restaged
                         _failure.value = Failure(sent.filename, message)
                     } else {
@@ -146,7 +147,7 @@ class StagedAttachment(private val client: CoreClient) {
                 // stage again: nothing can be sent from this chip.
                 _file.value = null
             }
-            if (_file.value == null || _file.value?.token == sent.token) {
+            if (stillOurs(sent)) {
                 _failure.value = Failure(sent.filename, message)
             }
             message
@@ -156,6 +157,16 @@ class StagedAttachment(private val client: CoreClient) {
     suspend fun discard() {
         _file.value?.let { client.attachmentDiscard(token = it.token) }
         clear()
+    }
+
+    /**
+     * Whether the tracker is empty or still holds [sent]. A newer pick, or a
+     * newer pick's own failure, means the reader moved on mid-send, and the
+     * old send must not overwrite it.
+     */
+    private fun stillOurs(sent: StagedFile): Boolean {
+        val current = _file.value
+        return if (current != null) current.token == sent.token else _failure.value == null
     }
 
     private fun clear() {

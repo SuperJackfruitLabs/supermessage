@@ -199,6 +199,49 @@ class StagedAttachmentTest {
         assertTrue(fake.discardedTokens.contains("restaged"))
     }
 
+    /** A successful send must not wipe, or leak, a file picked while it was in flight. */
+    @Test
+    fun aSuccessfulSendDoesNotClearAFilePickedMidSend() = runTest {
+        var staged: StagedAttachment? = null
+        var picks = 0
+        val fake = FakeCore(
+            stageResult = { picks += 1; stagedFile("pick-$picks") },
+            sendResult = {
+                runBlocking { staged!!.stage(path = "/tmp/newer.jpg", roomId = "!r") }
+                AttachmentSendOutcome.Sent
+            },
+        )
+        staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!r")
+
+        assertNull(staged.send(roomId = "!r"))
+
+        assertEquals("pick-2", staged.file.value?.token)
+        assertEquals("/tmp/newer.jpg", staged.path.value)
+    }
+
+    /** The newer pick's own refusal is not overwritten by the old send's failure. */
+    @Test
+    fun aFailedSendDoesNotOverwriteTheNewerPicksFailure() = runTest {
+        var staged: StagedAttachment? = null
+        var picks = 0
+        val fake = FakeCore(
+            stageResult = { picks += 1; if (picks == 1) stagedFile("pick-1") else throw FfiException.Store("too large") },
+            sendResult = {
+                runBlocking { staged!!.stage(path = "/tmp/newer.mov", roomId = "!r") }
+                AttachmentSendOutcome.Failed(FfiException.Network("upload failed"), stagedFile("restaged"))
+            },
+        )
+        staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!r")
+
+        staged.send(roomId = "!r")
+
+        assertNull(staged.file.value)
+        assertEquals("newer.mov", staged.failure.value?.filename)
+        assertTrue(fake.discardedTokens.contains("restaged"))
+    }
+
     /** A refusal to stage leaves a failure on the chip that blocks the text. */
     @Test
     fun aRefusedStageLeavesAFailureOnTheChip() = runTest {
