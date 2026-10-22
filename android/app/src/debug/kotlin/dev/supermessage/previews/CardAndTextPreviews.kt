@@ -218,6 +218,23 @@ internal fun LiveTurnThinking() {
     }
 }
 
+/**
+ * An answer with markdown in it: the completed lines are bold, a list and a
+ * heading, and the last line is still the plain tail.
+ */
+@Preview(name = "Live turn, markdown", showBackground = true, heightDp = 260)
+@Composable
+internal fun LiveTurnMarkdown() {
+    PreviewGround {
+        LiveTurn(
+            answer = "# Findings\n**Observed:** the build is green\n- two warnings\n- no failures\nNext I will check the",
+            thought = null,
+            tools = emptyList(),
+            finished = true,
+        )
+    }
+}
+
 /** A finished turn, which is what the composable has to stop showing. */
 @Preview(name = "Live turn, finished", showBackground = true, heightDp = 200)
 @Composable

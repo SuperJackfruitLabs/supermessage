@@ -27,11 +27,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.supermessage.kit.StreamingMarkdown
 import dev.supermessage.kit.StreamingText
 import dev.supermessage.kit.stores.LiveStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_ffi.richBlocksFromMarkdown
 
 /**
  * An agent's turn: while it is arriving, and the record of it afterwards.
@@ -156,11 +158,29 @@ fun LiveTurn(
         tools.forEach { tool -> ToolCallRow(tool) }
 
         if (answer != null) {
-            Text(
-                revealedAnswer,
+            // Completed lines are markdown, through the core's parser — the
+            // one the landed message uses — and only the line still being
+            // written stays plain. See [StreamingMarkdown.split]. This cell
+            // grows as text arrives and must not animate doing so
+            // (AGENTS.md, streaming rules), so nothing here animates size.
+            val (settled, tail) = StreamingMarkdown.split(revealedAnswer, stream.revealed)
+            // Parsed when the settled prefix changes, not on every chunk.
+            val blocks = remember(settled) { if (settled.isEmpty()) emptyList() else richBlocksFromMarkdown(settled) }
+            Column(
                 modifier = Modifier.testTag("live-answer").fillMaxWidth(),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (blocks.isNotEmpty()) RichText(blocks, modifier = Modifier.fillMaxWidth())
+                if (tail.isNotEmpty()) {
+                    Text(
+                        tail,
+                        modifier = Modifier.testTag("live-answer-tail").fillMaxWidth(),
+                        // The same face and size a paragraph is drawn in, so
+                        // the line does not change size when it settles.
+                        fontFamily = SupermessageTheme.typography.body,
+                    )
+                }
+            }
         }
     }
 }
