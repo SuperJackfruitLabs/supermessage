@@ -1219,6 +1219,17 @@ pub fn people_label(user_ids: Vec<String>) -> String {
     supermessage_core::display_name::people_label(&user_ids)
 }
 
+/// How a space's raw name reads to a person — "Runtime 9247e5" for an id,
+/// a host without its `.local`.
+///
+/// A free function for the same reason as `rich_blocks_from_markdown`: it
+/// touches no session state. `SpaceSummary.display_name` already carries it
+/// for every listed space; this is for a name a host holds on its own.
+#[uniffi::export]
+pub fn space_display_name(name: String) -> String {
+    supermessage_core::spaces::space_display_name(&name)
+}
+
 /// Filter a directory by what the reader has typed — name, machine, or id.
 ///
 /// A free function for the same reason as `rich_blocks_from_markdown`: it

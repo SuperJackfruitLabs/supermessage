@@ -816,6 +816,13 @@ pub fn rich_blocks_from_markdown(source: String) -> Vec<supermessage_core::rich:
     supermessage_core::rich::blocks_from_markdown(&source)
 }
 
+/// How a space's raw name reads to a person; see
+/// `supermessage_core::spaces::space_display_name`.
+#[tauri::command]
+pub fn space_display_name(name: String) -> String {
+    supermessage_core::spaces::space_display_name(&name)
+}
+
 /// Parse a matrix.to URL or a `matrix:` URI into what it addresses.
 ///
 /// `None` when the href is not a matrix link at all — the signal

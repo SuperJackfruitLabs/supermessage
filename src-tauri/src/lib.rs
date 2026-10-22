@@ -30,8 +30,9 @@ use crate::commands::{
     rooms_resync, roster_agent_directory, roster_filter_chips, roster_filter_empty_state,
     roster_filter_from_key, roster_filter_key, roster_filter_sections, roster_hidden_invitations,
     roster_needs_you_inbox, roster_row, roster_sections, roster_state, search_messages,
-    send_gate_decision, send_message, send_reply, set_typing, space_select, spaces_list,
-    timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction, typing_view,
+    send_gate_decision, send_message, send_reply, set_typing, space_display_name, space_select,
+    spaces_list, timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
+    typing_view,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -230,6 +231,7 @@ pub fn run() {
             rooms_resync,
             spaces_list,
             space_select,
+            space_display_name,
             timeline_subscribe,
             timeline_paginate_back,
             timeline_resync,

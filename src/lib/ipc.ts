@@ -505,6 +505,12 @@ export interface SpaceSummary {
    * roster row cannot disagree about what something is called.
    */
   identity: RoomIdentity;
+  /**
+   * {@link name} as a person should read it — an id-shaped name becomes
+   * "Runtime 9247e5", a host loses its `.local`. Show this, never `name`;
+   * `name` stays the raw value for keying and sorting.
+   */
+  displayName: string;
   id: string;
   /**
    * The space's display name, **never empty**: the core falls back to the
@@ -2168,6 +2174,15 @@ export async function acknowledgement(
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */
 export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void): Promise<UnlistenFn> {
   return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * How a space's raw name reads to a person — the core's rule, for a name
+ * that is not (yet) on a {@link SpaceSummary}, which already carries it as
+ * {@link SpaceSummary.displayName}.
+ */
+export async function spaceDisplayName(name: string): Promise<string> {
+  return invoke<string>("space_display_name", { name });
 }
 
 /**

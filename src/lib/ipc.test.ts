@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
+const { acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -252,5 +252,12 @@ describe("cast, typing line and acknowledgement", () => {
     invokeMock.mockResolvedValue(true);
     expect(await hasSent("!r:x")).toBe(true);
     expect(invokeMock).toHaveBeenCalledWith("has_sent", { roomId: "!r:x" });
+  });
+
+  it("spaceDisplayName invokes space_display_name with name", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("Runtime 9247e5");
+    expect(await spaceDisplayName("9247e5c1a0b34d2e")).toBe("Runtime 9247e5");
+    expect(invokeMock).toHaveBeenCalledWith("space_display_name", { name: "9247e5c1a0b34d2e" });
   });
 });
