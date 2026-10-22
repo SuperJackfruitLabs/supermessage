@@ -7,6 +7,7 @@ import uniffi.supermessage_core.RosterRow
 import uniffi.supermessage_core.RosterSection
 import uniffi.supermessage_core.RosterView
 import uniffi.supermessage_ffi.rosterHiddenInvitations
+import uniffi.supermessage_ffi.rosterRow
 import uniffi.supermessage_ffi.rosterSections
 import uniffi.supermessage_ffi.rosterState
 
@@ -80,17 +81,11 @@ object RosterArrangement {
 
     /**
      * The roster's account of one room, found by id in [rows], or `null`
-     * when no such room is listed.
-     *
-     * Asked of a single-row roster so that the answer is the core's, not a
-     * second opinion about what describes an agent (`RosterViews.swift:115-120`).
+     * when no such room is listed. The core's `roster_row`
+     * (`RosterViews.swift:115-120` on iOS); this only converts the clock.
      */
-    fun rosterRow(roomId: String, rows: List<RoomRow>, now: Instant): RosterRow? {
-        val row = rows.firstOrNull { it.room.id == roomId } ?: return null
-        return sections(listOf(row), RosterChoice.RECENT, showsInvitations = true, now = now)
-            .flatMap { it.rows }
-            .firstOrNull()
-    }
+    fun rosterRow(roomId: String, rows: List<RoomRow>, now: Instant): RosterRow? =
+        rosterRow(rows, roomId, milliseconds(now))
 
     private fun milliseconds(now: Instant): ULong = maxOf(0L, now.toEpochMilli()).toULong()
 }
