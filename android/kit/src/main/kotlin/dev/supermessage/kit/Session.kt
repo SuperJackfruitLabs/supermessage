@@ -251,8 +251,9 @@ class Session(
             _phase.value = if (restored) Phase.SIGNED_IN else Phase.SIGNED_OUT
             // Nothing restored means no account is signed in; whatever this
             // device remembered about one must not reach the next.
-            if (!restored) safety.clear()
+            if (!restored) safety.clearAll()
             if (restored) {
+                bindSafety(adoptLegacy = true)
                 beginDraining()
                 load()
             }
@@ -263,11 +264,21 @@ class Session(
             // A failure to *restore* is not a failure to sign in: there may
             // simply be nothing stored. Either way the answer is the login
             // screen, and saying more than that would be guessing. What was
-            // hidden stays: an error says nothing about the stored account, and
-            // only a sign-out or a definite "nothing stored" forgets it.
+            // hidden stays stored under its account: an error says nothing
+            // about that account, and only a sign-out or a definite "nothing
+            // stored" forgets it. Whoever signs in next gets their own set.
             _phase.value = Phase.SIGNED_OUT
             false
         }
+    }
+
+    /**
+     * The hidden set is per account: load the one of whoever just reached
+     * signed-in. When the account cannot be read, nothing is hidden and
+     * nothing is saved, rather than guessing whose set this is.
+     */
+    private suspend fun bindSafety(adoptLegacy: Boolean) {
+        safety.bind(account()?.userId, adoptLegacy)
     }
 
     suspend fun signIn(homeserver: String, username: String, password: String) {
@@ -285,6 +296,7 @@ class Session(
             rooms.resume()
             client.login(homeserver = homeserver, username = username, password = password, sink = pump)
             _phase.value = Phase.SIGNED_IN
+            bindSafety(adoptLegacy = false)
             beginDraining()
             load()
             setUpRecoveryIfNeeded()
@@ -574,12 +586,15 @@ class Session(
     }
 
     /** Who this account has blocked; empty when the list cannot be read. */
-    suspend fun blockedUsers(): List<RoomMemberDto> = try {
+    suspend fun blockedUsers(): List<RoomMemberDto> = loadBlockedUsers() ?: emptyList()
+
+    /** Like [blockedUsers], but `null` when the list cannot be read, so a caller can keep what it had. */
+    suspend fun loadBlockedUsers(): List<RoomMemberDto>? = try {
         client.ignoredUsers()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        emptyList()
+        null
     }
 
     /**

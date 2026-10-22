@@ -14,33 +14,51 @@ import org.robolectric.annotation.Config
 class HiddenEventsPreferencesTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
+    private val prefs get() = context.getSharedPreferences("safety", Context.MODE_PRIVATE)
+
     @Test
     fun savedIdsComeBackInANewInstance() {
-        HiddenEventsPreferences(context).save(setOf("\$a", "\$b"))
-        assertEquals(setOf("\$a", "\$b"), HiddenEventsPreferences(context).load())
+        HiddenEventsPreferences(context).save("@a:x", setOf("\$a", "\$b"))
+        assertEquals(setOf("\$a", "\$b"), HiddenEventsPreferences(context).load("@a:x"))
     }
 
     @Test
     fun nothingSavedLoadsEmpty() {
-        assertTrue(HiddenEventsPreferences(context).load().isEmpty())
+        assertTrue(HiddenEventsPreferences(context).load("@a:x").isEmpty())
     }
 
     @Test
-    fun clearRemovesTheStoredKey() {
-        val prefs = HiddenEventsPreferences(context)
-        prefs.save(setOf("\$a"))
-        prefs.clear()
-        assertTrue(HiddenEventsPreferences(context).load().isEmpty())
-        assertTrue(!context.getSharedPreferences("safety", Context.MODE_PRIVATE).contains("safety.hiddenEvents"))
+    fun aSetIsReadBackOnlyForItsOwnAccount() {
+        val store = HiddenEventsPreferences(context)
+        store.save("@a:x", setOf("\$a"))
+        assertTrue(store.load("@b:x").isEmpty())
     }
 
-    /** iOS's key, so the two apps' stored sets mean the same thing. */
     @Test
-    fun usesTheKeyIosUses() {
-        HiddenEventsPreferences(context).save(setOf("\$a"))
-        assertEquals(
-            setOf("\$a"),
-            context.getSharedPreferences("safety", Context.MODE_PRIVATE).getStringSet("safety.hiddenEvents", null),
-        )
+    fun clearRemovesOnlyThatAccountsSet() {
+        val store = HiddenEventsPreferences(context)
+        store.save("@a:x", setOf("\$a"))
+        store.save("@b:x", setOf("\$b"))
+        store.clear("@a:x")
+        assertTrue(store.load("@a:x").isEmpty())
+        assertEquals(setOf("\$b"), store.load("@b:x"))
+    }
+
+    @Test
+    fun clearAllRemovesEverySetAndTheLegacyKey() {
+        val store = HiddenEventsPreferences(context)
+        prefs.edit().putStringSet("safety.hiddenEvents", setOf("\$old")).apply()
+        store.save("@a:x", setOf("\$a"))
+        store.clearAll()
+        assertTrue(prefs.all.isEmpty())
+    }
+
+    @Test
+    fun takeLegacyHandsOverTheDeviceWideSetOnce() {
+        prefs.edit().putStringSet("safety.hiddenEvents", setOf("\$old")).apply()
+        val store = HiddenEventsPreferences(context)
+        assertEquals(setOf("\$old"), store.takeLegacy())
+        assertTrue(store.takeLegacy().isEmpty())
+        assertTrue(!prefs.contains("safety.hiddenEvents"))
     }
 }

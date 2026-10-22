@@ -677,42 +677,88 @@ class SessionTest {
     @Test
     fun signOutForgetsBlockedAndHidden() = runTest {
         val storage = InMemoryHiddenEvents()
-        val session = Session(CoreClient(FakeCore(), Dispatchers.Unconfined), this, storage)
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertTrue(session.start())
         session.safety.apply(listOf("@a"))
         session.safety.hide("\$b")
+        assertEquals(setOf("\$b"), storage.load("@me:x"))
         session.signOut()
         assertTrue(session.safety.blocked.value.isEmpty())
         assertTrue(session.safety.hidden.value.isEmpty())
-        assertTrue(storage.load().isEmpty())
+        assertTrue(storage.load("@me:x").isEmpty())
     }
 
     @Test
     fun aFailedRestoreForgetsBlockedAndHidden() = runTest {
-        val storage = InMemoryHiddenEvents().apply { save(setOf("\$old")) }
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")); seedLegacy(setOf("\$older")) }
         val fake = FakeCore(restoreSessionResult = { false })
         val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
         session.safety.apply(listOf("@a"))
         assertFalse(session.start())
         assertTrue(session.safety.blocked.value.isEmpty())
         assertTrue(session.safety.hidden.value.isEmpty())
-        assertTrue(storage.load().isEmpty())
+        assertTrue(storage.load("@me:x").isEmpty())
+        assertTrue(storage.takeLegacy().isEmpty())
     }
 
     @Test
-    fun aRestoreThatThrowsKeepsWhatWasHidden() = runTest {
-        val storage = InMemoryHiddenEvents().apply { save(setOf("\$old")) }
+    fun aRestoreThatThrowsKeepsWhatWasStored() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
         val fake = FakeCore(restoreFails = true)
         val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
         assertFalse(session.start())
         // A transient error says nothing about the stored account: its
-        // reported messages must still be hidden when it signs in again.
+        // reported messages stay stored for when it signs in again.
+        assertEquals(setOf("\$old"), storage.load("@me:x"))
+    }
+
+    /** RF5: the first account's hidden messages must not show for whoever signs in next. */
+    @Test
+    fun aTransientRestoreErrorThenAnotherAccountSeesNothingHidden() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
+        val fake = FakeCore(restoreFails = true)
+        fake.accountUserId = "@other:x"
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertFalse(session.start())
+        session.signIn(homeserver = "https://x.example", username = "other", password = "p")
+        assertEquals(Session.Phase.SIGNED_IN, session.phase.value)
+        assertTrue(session.safety.hidden.value.isEmpty())
+        session.safety.hide("\$new")
+        assertEquals(setOf("\$old"), storage.load("@me:x"))
+        session.signOut()
+        assertEquals(setOf("\$old"), storage.load("@me:x"))
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun theSameAccountSigningInAfterARestoreErrorKeepsItsSet() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
+        val fake = FakeCore(restoreFails = true)
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertFalse(session.start())
+        session.signIn(homeserver = "https://x.example", username = "me", password = "p")
         assertEquals(setOf("\$old"), session.safety.hidden.value)
-        assertEquals(setOf("\$old"), storage.load())
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aRestoredSessionAdoptsTheOldDeviceWideSet() = runTest {
+        val storage = InMemoryHiddenEvents().apply { seedLegacy(setOf("\$old")) }
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertTrue(session.start())
+        assertEquals(setOf("\$old"), session.safety.hidden.value)
+        assertEquals(setOf("\$old"), storage.load("@me:x"))
+        session.drainJob?.cancel()
+        advanceUntilIdle()
     }
 
     @Test
     fun aRestoredSessionKeepsWhatWasHidden() = runTest {
-        val storage = InMemoryHiddenEvents().apply { save(setOf("\$old")) }
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
         val fake = FakeCore(restoreSessionResult = { true })
         val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
         assertTrue(session.start())
@@ -789,6 +835,9 @@ class SessionTest {
         var ignoredUsersBody: () -> List<RoomMemberDto> = { emptyList() }
         var members: List<RoomMemberDto> = emptyList()
         var roomInfoFails = false
+        var accountUserId = "@me:x"
+
+        override fun account() = AccountDto(userId = accountUserId, homeserver = "https://x.example")
         val roomInfoAsked = mutableListOf<String>()
 
         override fun reportEvent(roomId: String, eventId: String, reason: String) {

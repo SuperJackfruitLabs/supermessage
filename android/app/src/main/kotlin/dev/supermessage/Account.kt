@@ -105,12 +105,20 @@ fun AccountPanel(
     onEnableRecovery: suspend () -> String = { "" },
     onRecoverWithKey: suspend (String) -> Unit = {},
     onResetRecovery: suspend (String) -> String = { throw NotImplementedError() },
-    /** Who this account has blocked; read once when the panel opens and again whenever [blockedNow] changes. */
-    loadBlocked: suspend () -> List<RoomMemberDto> = { emptyList() },
+    /**
+     * Who this account has blocked, read when the panel opens and again only
+     * when [blockedNow] holds someone the loaded list lacks. `null` means the
+     * read failed: the list already shown stays.
+     */
+    loadBlocked: suspend () -> List<RoomMemberDto>? = { emptyList() },
     /** Unblocks one user: `null` when it landed, otherwise the refusal in words. */
     onUnblock: suspend (String) -> String? = { null },
-    /** The session's blocked ids, so the list follows the homeserver's echo (from another device too). */
-    blockedNow: Set<String> = emptySet(),
+    /**
+     * The session's blocked ids. The list drawn is the loaded one filtered by
+     * these, so a landed unblock stays gone while the core's own list is stale
+     * (it changes only on the sync echo). `null` draws the loaded list as is.
+     */
+    blockedNow: Set<String>? = null,
     /** Only for a preview of the refused state. */
     initialUnblockFailure: String? = null,
 ) {
@@ -119,7 +127,9 @@ fun AccountPanel(
     var showingRecovery by remember { mutableStateOf(false) }
     var recovery by remember { mutableStateOf("unknown") }
     val scope = rememberCoroutineScope()
-    var blocked by remember { mutableStateOf<List<RoomMemberDto>>(emptyList()) }
+    var loadedBlocked by remember { mutableStateOf<List<RoomMemberDto>>(emptyList()) }
+    var triedBlocked by remember { mutableStateOf(false) }
+    val blocked = if (blockedNow == null) loadedBlocked else loadedBlocked.filter { it.userId in blockedNow }
     var unblockFailure by remember { mutableStateOf(initialUnblockFailure) }
     var unblocking by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
@@ -127,10 +137,17 @@ fun AccountPanel(
     LaunchedEffect(Unit) {
         account = loadAccount()
     }
-    // The list loads when the panel opens, and again when the core's list
-    // changes (the `IgnoredUsers` echo). A failure shows no section.
+    // Loads when the panel opens (`AccountPanel.swift:177-180`). After that it
+    // reloads only for an id the list lacks, a block made from room info or on
+    // another device. The core's list is its local store, which still holds
+    // someone just unblocked until sync echoes it, so it is never trusted to
+    // remove a row; `blockedNow` does that. A failed read keeps the last list.
     LaunchedEffect(blockedNow) {
-        blocked = runCatching { loadBlocked() }.getOrDefault(emptyList())
+        val missing = blockedNow?.any { id -> loadedBlocked.none { it.userId == id } } == true
+        if (!triedBlocked || missing) {
+            triedBlocked = true
+            loadBlocked()?.let { loadedBlocked = it }
+        }
     }
 
     val name = accountName(account)
@@ -275,7 +292,7 @@ fun AccountPanel(
                                             if (refused != null) {
                                                 unblockFailure = refused
                                             } else {
-                                                blocked = blocked.filter { it.userId != member.userId }
+                                                loadedBlocked = loadedBlocked.filter { it.userId != member.userId }
                                                 haptics.play(Haptic.Success)
                                             }
                                         } finally {

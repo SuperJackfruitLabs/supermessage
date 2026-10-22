@@ -26,14 +26,6 @@ class SafetyStoreTest {
         replyQuote = null, canReplyOrReact = true, replyPreview = null,
     )
 
-    private class SharedStorage : HiddenEventStorage {
-        var ids: Set<String> = emptySet()
-        var cleared = 0
-        override fun load() = ids
-        override fun save(ids: Set<String>) { this.ids = ids }
-        override fun clear() { ids = emptySet(); cleared++ }
-    }
-
     @Test
     fun hidesWhatWasReported() {
         val store = SafetyStore()
@@ -61,14 +53,44 @@ class SafetyStoreTest {
 
     @Test
     fun persistsUntilSignOut() {
-        val storage = SharedStorage()
-        SafetyStore(storage).hide("\$b")
-        val second = SafetyStore(storage)
+        val storage = InMemoryHiddenEvents()
+        SafetyStore(storage).apply { bind("@a:x", adoptLegacy = false); hide("\$b") }
+        val second = SafetyStore(storage).apply { bind("@a:x", adoptLegacy = false) }
         assertEquals(setOf("\$b"), second.hidden.value)
         second.clear()
-        assertTrue(SafetyStore(storage).hidden.value.isEmpty())
-        assertEquals(1, storage.cleared)
-        assertTrue(storage.ids.isEmpty())
+        assertTrue(SafetyStore(storage).apply { bind("@a:x", adoptLegacy = false) }.hidden.value.isEmpty())
+        assertTrue(storage.load("@a:x").isEmpty())
+    }
+
+    @Test
+    fun anotherAccountSeesNothingOfTheFirstsHiddenMessages() {
+        val storage = InMemoryHiddenEvents()
+        SafetyStore(storage).apply { bind("@a:x", adoptLegacy = false); hide("\$b") }
+        val other = SafetyStore(storage).apply { bind("@b:x", adoptLegacy = false) }
+        assertTrue(other.hidden.value.isEmpty())
+        other.hide("\$c")
+        other.clear()
+        assertEquals(setOf("\$b"), storage.load("@a:x"))
+    }
+
+    @Test
+    fun theOldDeviceWideSetGoesToTheRestoredAccountOnce() {
+        val storage = InMemoryHiddenEvents().apply { seedLegacy(setOf("\$old")) }
+        val store = SafetyStore(storage)
+        store.bind("@a:x", adoptLegacy = true)
+        assertEquals(setOf("\$old"), store.hidden.value)
+        assertEquals(setOf("\$old"), storage.load("@a:x"))
+        assertTrue(storage.takeLegacy().isEmpty())
+        assertTrue(SafetyStore(storage).apply { bind("@b:x", adoptLegacy = true) }.hidden.value.isEmpty())
+    }
+
+    @Test
+    fun theOldDeviceWideSetIsDroppedAfterAFreshSignIn() {
+        val storage = InMemoryHiddenEvents().apply { seedLegacy(setOf("\$old")) }
+        val store = SafetyStore(storage)
+        store.bind("@a:x", adoptLegacy = false)
+        assertTrue(store.hidden.value.isEmpty())
+        assertTrue(storage.takeLegacy().isEmpty())
     }
 
     @Test
@@ -87,8 +109,8 @@ class SafetyStoreTest {
     /** A write that began before a clear must not refill the store afterwards. */
     @Test
     fun aWriteFromBeforeAClearIsDropped() {
-        val storage = SharedStorage()
-        val store = SafetyStore(storage)
+        val storage = InMemoryHiddenEvents()
+        val store = SafetyStore(storage).apply { bind("@a:x", adoptLegacy = false) }
         val before = store.generation
         store.clear()
         store.hide("\$late", before)
@@ -96,6 +118,6 @@ class SafetyStoreTest {
         store.apply(listOf("@late"), before)
         assertTrue(store.hidden.value.isEmpty())
         assertTrue(store.blocked.value.isEmpty())
-        assertTrue(storage.ids.isEmpty())
+        assertTrue(storage.load("@a:x").isEmpty())
     }
 }

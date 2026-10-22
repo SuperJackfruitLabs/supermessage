@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -75,8 +77,9 @@ class AccountTest {
         onShowsState: (Boolean) -> Unit = {},
         uriHandler: UriHandler? = null,
         appearance: @Composable () -> Unit = {},
-        loadBlocked: suspend () -> List<RoomMemberDto> = { emptyList() },
+        loadBlocked: suspend () -> List<RoomMemberDto>? = { emptyList() },
         onUnblock: suspend (String) -> String? = { null },
+        blockedNow: (() -> Set<String>?)? = null,
     ) {
         compose.setContent {
             val handler = uriHandler ?: LocalUriHandler.current
@@ -96,6 +99,7 @@ class AccountTest {
                             appearance = appearance,
                             loadBlocked = loadBlocked,
                             onUnblock = onUnblock,
+                            blockedNow = blockedNow?.invoke(),
                         )
                     }
                 }
@@ -439,6 +443,61 @@ class AccountTest {
 
         compose.onNodeWithTag("member-@agent_atlas:example.org").assertExists()
         assertEquals(listOf(HapticFeedbackType.Confirm), haptics.played)
+    }
+
+    /** The core's list is its local store: it still holds an unblocked id until sync echoes it. */
+    @Test
+    fun anUnblockThatLandedStaysGoneWhileTheCoresListIsStale() {
+        val now = mutableStateOf(setOf(priya.userId, atlas.userId))
+        var loads = 0
+        panel(
+            loadBlocked = { loads++; listOf(priya, atlas) },
+            blockedNow = { now.value },
+        )
+        compose.waitForIdle()
+        compose.onNodeWithTag("member-@priya:example.org").assertExists()
+
+        // The session notes the unblock; the core still lists Priya.
+        now.value = setOf(atlas.userId)
+        compose.waitForIdle()
+
+        compose.onAllNodesWithTag("member-@priya:example.org").assertCountEquals(0)
+        compose.onNodeWithTag("member-@agent_atlas:example.org").assertExists()
+        assertEquals(1, loads)
+    }
+
+    @Test
+    fun aBlockMadeElsewhereReloadsTheList() {
+        val now = mutableStateOf(setOf(priya.userId))
+        var core = listOf(priya)
+        panel(loadBlocked = { core }, blockedNow = { now.value })
+        compose.waitForIdle()
+        compose.onAllNodesWithTag("member-@agent_atlas:example.org").assertCountEquals(0)
+
+        core = listOf(priya, atlas)
+        now.value = setOf(priya.userId, atlas.userId)
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("member-@agent_atlas:example.org").assertExists()
+    }
+
+    @Test
+    fun aFailedReloadKeepsTheListAlreadyShown() {
+        val now = mutableStateOf(setOf(priya.userId))
+        var fail = false
+        panel(
+            loadBlocked = { if (fail) null else listOf(priya) },
+            blockedNow = { now.value },
+        )
+        compose.waitForIdle()
+        compose.onNodeWithTag("member-@priya:example.org").assertExists()
+
+        fail = true
+        now.value = setOf(priya.userId, atlas.userId)
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-blocked").assertExists()
+        compose.onNodeWithTag("member-@priya:example.org").assertExists()
     }
 
     @Test

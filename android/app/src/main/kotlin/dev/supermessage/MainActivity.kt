@@ -362,7 +362,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                             onRecoverWithKey = session::recoverWithKey,
                             onResetRecovery = session::resetRecovery,
                             blockedNow = blockedNow,
-                            loadBlocked = session::blockedUsers,
+                            loadBlocked = session::loadBlockedUsers,
                             onUnblock = session::unblock,
                         )
                     }
