@@ -258,7 +258,9 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
    * Leaves the room `id` for good. When it is the open room the selection is
    * cleared, so the pane falls back to its empty state; a failure rethrows
    * with the selection untouched, so the caller can say so and offer a retry.
-   * The roster drops the row on its own, through the diff.
+   * The roster drops the row on its own, through the diff. The rail is a
+   * one-shot fetch, so — as after declining — a left *space* would go on being
+   * listed until the next launch; refreshing it is cosmetic if it fails.
    */
   async function leave(id: string): Promise<void> {
     await deps.leaveRoom(id);
@@ -266,6 +268,9 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
       selectedId = null;
       selectedName = null;
     }
+    await deps.reloadSpaces().catch((err: unknown) => {
+      console.error("failed to refresh spaces after leaving a room", err);
+    });
   }
 
   return {

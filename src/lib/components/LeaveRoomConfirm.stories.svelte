@@ -48,3 +48,32 @@
     await settled(() => root.querySelector("[role='alert']"));
   }}
 />
+
+<!--
+  The dialog is modal: Tab from the last control wraps inside it instead of
+  reaching the page behind, and Escape asks to cancel.
+-->
+<Story
+  name="Modal"
+  args={{ roomName: "Research", onLeave: ok, onCancel: () => {} }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const dialog = (await settled(() => root.querySelector("dialog[open]"))) as HTMLDialogElement;
+    // `:modal` is what makes the rest of the document inert.
+    if (!dialog.matches(":modal")) throw new Error("the dialog is not modal");
+    const leave = button(root, "Leave") as HTMLElement;
+    leave.focus();
+    // Tab order after the last control must not leave the dialog: the only
+    // other tabbables would be outside it, and those are inert.
+    const outside = document.createElement("button");
+    outside.textContent = "outside";
+    document.body.appendChild(outside);
+    try {
+      if (outside.matches(":focus")) throw new Error("outside reachable");
+      outside.focus();
+      if (document.activeElement === outside) throw new Error("background is not inert");
+    } finally {
+      outside.remove();
+    }
+  }}
+/>

@@ -464,6 +464,18 @@ describe("leaving the selected room", () => {
     expect(store.selectedRoomName).toBeNull();
   });
 
+  it("leave refreshes the rail, and a failed refresh does not fail the leave", async () => {
+    const channel = makeChannel();
+    const reloadSpaces = vi.fn().mockRejectedValue(new Error("offline"));
+    const store = makeStore(channel, vi.fn(), { reloadSpaces });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(store.leave("!a:x")).resolves.toBeUndefined();
+
+    expect(reloadSpaces).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
   it("leave keeps another selection", async () => {
     const channel = makeChannel();
     const store = makeStore(channel);
