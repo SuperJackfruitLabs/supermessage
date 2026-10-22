@@ -28,6 +28,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -113,26 +118,22 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * reversing the (shorter) result keeps the newest-first contract with one
  * less thing to reason about than reversing first would.
  *
- * ## Starting a reply or an edit — this list's job, the way iOS's is
+ * ## The message menu — this list's job, the way iOS's is
  *
- * `apple/Supermessage/Timeline/TimelineCollectionView.swift` starts a reply
- * two ways — a leading swipe action, and a long-press context menu that also
- * offers Edit — and both live on the *collection view*, never on
- * `TimelineRowView` itself (whose own `onReply` closure sits unused,
- * mirroring [TimelineRow]'s own "No onReply yet" note). This container is
- * that same layer on Android: a long press on a row that has something to
- * offer calls [onRowLongPress] with the row, and it is left to the caller
- * (which holds [dev.supermessage.kit.stores.ReplyTarget] and
- * [dev.supermessage.kit.stores.EditTarget]) to decide what a long press
- * means. A row with neither `canReplyOrReact` nor `item.editable` gets no
- * gesture at all, rather than a long press that silently does nothing —
- * `TimelineCollectionView.swift`'s own guards (`row.canReplyOrReact`,
- * `row.item.editable`) are read to decide *whether* a menu offers each
- * action; this container's equivalent is *whether the gesture exists at
- * all*, a narrower affordance than iOS's two-item menu, chosen because nothing
- * here builds the menu surface iOS's `UIContextMenuConfiguration` gets for
- * free. No swipe gesture, and no avatar cache: the former would fight this
- * list's own vertical drag, the latter is a different task's wiring.
+ * `apple/Supermessage/Timeline/TimelineCollectionView.swift:1039-1150` builds
+ * one long-press menu on the *collection view*, never on `TimelineRowView`.
+ * This container is that layer: a long press on a row opens [MessageMenu]
+ * for it (react, Reply, Copy, Edit, Delete as [messageMenuActions] allows),
+ * and a row with nothing to offer gets no gesture at all. Reply and edit are
+ * reported through [onReply] and [onEdit], which the caller binds to its
+ * `ReplyTarget`/`EditTarget` stores; Copy is done here through the clipboard;
+ * Delete asks first ([DeleteConfirm]) and then calls [onDelete], whose `false`
+ * puts "Not sent. Try again." under the row for a few seconds (no iOS copy:
+ * iOS swallows a failed delete). Which row the menu is for is held by id and
+ * dropped when that row leaves [rows], so a redacted row's menu closes and a
+ * room switch cannot leave the previous room's menu open. No swipe gesture,
+ * and no avatar cache: the former would fight this list's own vertical drag,
+ * the latter is a different task's wiring.
  *
  * ## Reacting
  *
@@ -156,7 +157,9 @@ fun Timeline(
     liveFinished: Boolean = false,
     onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
     onDecide: suspend (row: TimelineRowDto, answer: GateAnswer) -> Boolean = { _, _ -> false },
-    onRowLongPress: (row: TimelineRowDto) -> Unit = {},
+    onReply: (row: TimelineRowDto) -> Unit = {},
+    onEdit: (row: TimelineRowDto) -> Unit = {},
+    onDelete: suspend (row: TimelineRowDto) -> Boolean = { false },
     imageUri: (eventId: String) -> String? = { null },
     faceUri: (mxcUri: String) -> String? = { null },
     loadFace: suspend (mxcUri: String) -> Unit = {},
@@ -200,6 +203,27 @@ fun Timeline(
     val singleSpeaker = remember(revision) { TimelineGrouping.hasSingleSpeaker(rows) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+
+    // The menu and the delete confirmation are about one row, held by id so
+    // they survive recomposition and die with the row: a redaction, or a
+    // different room's rows, removes the id from `rows` and both close.
+    var menuFor by remember { mutableStateOf<String?>(null) }
+    var confirmingDelete by remember { mutableStateOf<String?>(null) }
+    var failedDelete by remember { mutableStateOf<String?>(null) }
+    val menuRow = menuFor?.let { id -> rows.firstOrNull { it.item.id == id } }
+    val confirmRow = confirmingDelete?.let { id -> rows.firstOrNull { it.item.id == id } }
+    LaunchedEffect(menuFor, menuRow == null) { if (menuFor != null && menuRow == null) menuFor = null }
+    LaunchedEffect(confirmingDelete, confirmRow == null) {
+        if (confirmingDelete != null && confirmRow == null) confirmingDelete = null
+    }
+    LaunchedEffect(failedDelete) {
+        if (failedDelete != null) {
+            delay(DeleteFailureShownMs)
+            failedDelete = null
+        }
+    }
+    val clipboard = LocalClipboardManager.current
+    val haptics = LocalHapticFeedback.current
 
     // Collapse membership runs first — they are consecutive in the
     // chronological order `rows` already arrives in — then reverse. See the
@@ -305,19 +329,15 @@ fun Timeline(
     // is a compile error here rather than a blank row.
     @Composable
     fun HistoryRow(display: DisplayRow, itemModifier: Modifier = Modifier) {
-        val rowModifier = itemModifier
+        val rowModifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .testTag("row-${display.id}")
         when (display) {
-            is DisplayRow.Row -> {
-                // No gesture at all when a long press would have nothing to
-                // do — see this file's class doc's "Starting a reply or an
-                // edit" section for why `canReplyOrReact`/`editable` gate
-                // the gesture's *existence* here, rather than the two-item
-                // menu iOS builds from the same two flags.
+            is DisplayRow.Row -> Column(modifier = itemModifier) {
+                // No gesture at all when the menu would be empty.
                 val row = display.row
-                val longPressable = row.canReplyOrReact || row.item.editable
+                val hasMenu = !messageMenuActions(row).isEmpty
                 TimelineRow(
                     row = row,
                     now = Instant.now(),
@@ -329,19 +349,27 @@ fun Timeline(
                     loadFace = loadFace,
                     onReact = { key -> onReact(row, key) },
                     onDecide = { answer -> onDecide(row, answer) },
-                    modifier = if (longPressable) {
+                    modifier = if (hasMenu) {
                         rowModifier.combinedClickable(
                             onClick = {},
-                            onLongClick = { onRowLongPress(row) },
+                            onLongClick = { menuFor = row.item.id },
                         )
                     } else {
                         rowModifier
                     },
                 )
+                if (failedDelete == row.item.id) {
+                    Text(
+                        "Not sent. Try again.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("delete-failed"),
+                    )
+                }
             }
 
             is DisplayRow.MembershipRun ->
-                SystemLine(text = display.text, modifier = rowModifier)
+                SystemLine(text = display.text, modifier = itemModifier.then(rowModifier))
         }
     }
 
@@ -440,6 +468,36 @@ fun Timeline(
             }
         }
 
+        menuRow?.let { target ->
+            MessageMenu(
+                row = target,
+                onReact = { key ->
+                    haptics.play(Haptic.Selection)
+                    menuFor = null
+                    onReact(target, key)
+                },
+                onReply = { menuFor = null; onReply(target) },
+                onCopy = {
+                    menuFor = null
+                    target.item.body?.let { clipboard.setText(AnnotatedString(it)) }
+                },
+                onEdit = { menuFor = null; onEdit(target) },
+                onDelete = { menuFor = null; confirmingDelete = target.item.id },
+                onDismiss = { menuFor = null },
+            )
+        }
+        confirmRow?.let { target ->
+            DeleteConfirm(
+                onConfirm = {
+                    confirmingDelete = null
+                    scope.launch {
+                        if (!onDelete(target)) failedDelete = target.item.id
+                    }
+                },
+                onDismiss = { confirmingDelete = null },
+            )
+        }
+
         // A way back, and only when there is somewhere to go back from —
         // "scrolling through history with no route home is the thing that
         // makes a long room feel like a trap."
@@ -503,3 +561,6 @@ internal fun JumpToNewestButton(onClick: () -> Unit, modifier: Modifier = Modifi
  * pagination fire before the reader hits a visible dead stop.
  */
 private const val PaginationLookahead = 3
+
+/** How long "Not sent. Try again." stays under a row whose delete failed. */
+private const val DeleteFailureShownMs = 4_000L

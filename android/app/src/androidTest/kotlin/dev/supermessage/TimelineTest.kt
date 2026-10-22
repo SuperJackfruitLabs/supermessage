@@ -45,7 +45,7 @@ class TimelineTest {
 
     private fun row(
         id: String,
-        body: String,
+        body: String?,
         timestampMs: ULong,
         canReplyOrReact: Boolean = true,
         editable: Boolean = false,
@@ -63,7 +63,7 @@ class TimelineTest {
             item = item,
             view = ItemView.Bubble(
                 muted = false,
-                blocks = listOf(RichBlock.Paragraph(inlines = listOf(RichInline.Text(body)))),
+                blocks = listOf(RichBlock.Paragraph(inlines = listOf(RichInline.Text(body.orEmpty())))),
                 voice = null,
             ),
             senderName = "Sender",
@@ -473,15 +473,16 @@ class TimelineTest {
     }
 
     /**
-     * A long press on a row with something to offer (`canReplyOrReact`)
-     * reports that row — Task 6's wiring for starting a reply, the same
-     * layer `TimelineCollectionView.swift`'s own long-press context menu and
-     * swipe action live on, never `TimelineRowView`/`TimelineRow` itself.
+     * A long press on a row opens the menu for *that* row — tapping Reply
+     * reports the row it was opened on, not another one.
      */
     @Test
-    fun aLongPressOnAReplyableRowReportsIt() {
-        var pressed: TimelineRowDto? = null
-        val fixed = listOf(row(id = "1", body = "hello", timestampMs = 1_000uL, canReplyOrReact = true))
+    fun aLongPressOpensTheMenuForThatRow() {
+        var replied: TimelineRowDto? = null
+        val fixed = listOf(
+            row(id = "1", body = "first", timestampMs = 1_000uL),
+            row(id = "2", body = "second", timestampMs = 2_000uL),
+        )
 
         compose.setContent {
             Timeline(
@@ -492,14 +493,18 @@ class TimelineTest {
                 canPaginate = false,
                 onPaginate = {},
                 onMarkRead = {},
-                onRowLongPress = { pressed = it },
+                onReply = { replied = it },
             )
         }
 
+        compose.onNodeWithTag("message-menu").assertDoesNotExist()
         compose.onNodeWithTag("row-1").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-menu").assertIsDisplayed()
+        compose.onNodeWithTag("menu-reply").performClick()
         compose.waitForIdle()
 
-        assertEquals("1", pressed?.item?.id)
+        assertEquals("1", replied?.item?.id)
+        compose.onNodeWithTag("message-menu").assertDoesNotExist()
     }
 
     /**
@@ -512,7 +517,7 @@ class TimelineTest {
     fun aRowWithNothingToOfferGetsNoLongPressGesture() {
         var pressed: TimelineRowDto? = null
         val fixed = listOf(
-            row(id = "1", body = "hello", timestampMs = 1_000uL, canReplyOrReact = false, editable = false),
+            row(id = "1", body = null, timestampMs = 1_000uL, canReplyOrReact = false, editable = false),
         )
 
         compose.setContent {
@@ -524,7 +529,7 @@ class TimelineTest {
                 canPaginate = false,
                 onPaginate = {},
                 onMarkRead = {},
-                onRowLongPress = { pressed = it },
+                onReply = { pressed = it },
             )
         }
 
@@ -532,6 +537,7 @@ class TimelineTest {
         compose.waitForIdle()
 
         assertNull(pressed)
+        compose.onNodeWithTag("message-menu").assertDoesNotExist()
     }
 
     /**

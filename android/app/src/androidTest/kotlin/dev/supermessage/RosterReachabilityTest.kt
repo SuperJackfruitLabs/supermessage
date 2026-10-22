@@ -14,7 +14,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import dev.supermessage.kit.CoreClient
@@ -365,6 +367,92 @@ class RosterReachabilityTest {
         compose.onAllNodesWithText("members", substring = true).assertCountEquals(0)
     }
 
+
+    private fun ownMessage(id: String, body: String) = uniffi.supermessage_core.TimelineRow(
+        item = uniffi.supermessage_core.TimelineItemDto(
+            id = id, eventId = id, kind = "message", msgtype = "m.text", detail = null,
+            sender = "@me:example.org", senderDisplayName = null, senderAvatar = null, body = body,
+            formattedBody = null, media = null, customPayload = null, timestampMs = 1_000uL,
+            isOwn = true, sendState = null, replyTo = null, edited = false,
+            reactions = emptyList(), readBy = emptyList(), editable = true, membershipSubject = null,
+        ),
+        view = uniffi.supermessage_core.ItemView.Bubble(
+            muted = false,
+            blocks = listOf(
+                uniffi.supermessage_core.RichBlock.Paragraph(listOf(uniffi.supermessage_core.RichInline.Text(body))),
+            ),
+            voice = null,
+        ),
+        senderName = "Me", senderShort = "Me", senderInitial = "M", membershipVerb = null,
+        replyQuote = null, canReplyOrReact = true, replyPreview = null,
+    )
+
+    private fun openAlphaWith(fake: FakeCore) {
+        val session = sessionOf(fake)
+        val prefs = preferences()
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Alpha").performScrollTo().performClick()
+        compose.waitForIdle()
+    }
+
+    /** The menu's Delete redacts *that* event in *that* room, through the pane's session. */
+    @Test
+    fun deletingFromTheMenuRedactsThatEventInThatRoom() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+            timelineRows = listOf(ownMessage("\$one", "first"), ownMessage("\$two", "second")),
+        )
+        openAlphaWith(fake)
+        compose.onNodeWithTag("row-\$one").performTouchInput { longClick() }
+        compose.onNodeWithTag("menu-delete").performClick()
+        compose.onNodeWithTag("delete-confirm-button").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("!a:example.org" to "\$one"), fake.deleted)
+    }
+
+    /** A delete the core refuses says so under the row (R1). */
+    @Test
+    fun aRefusedDeleteSaysSoUnderTheRow() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+            timelineRows = listOf(ownMessage("\$one", "first")),
+            deleteResult = { throw IllegalStateException("offline") },
+        )
+        openAlphaWith(fake)
+        compose.onNodeWithTag("row-\$one").performTouchInput { longClick() }
+        compose.onNodeWithTag("menu-delete").performClick()
+        compose.onNodeWithTag("delete-confirm-button").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Not sent. Try again.").assertIsDisplayed()
+    }
+
+    /** Reply and Edit from the menu reach the composer, through the pane's stores. */
+    @Test
+    fun replyAndEditFromTheMenuReachTheComposer() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+            timelineRows = listOf(ownMessage("\$one", "first")),
+        )
+        openAlphaWith(fake)
+        compose.onNodeWithTag("row-\$one").performTouchInput { longClick() }
+        compose.onNodeWithTag("menu-reply").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("composer-reply-banner").assertIsDisplayed()
+
+        compose.onNodeWithTag("row-\$one").performTouchInput { longClick() }
+        compose.onNodeWithTag("menu-edit").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("composer-edit-banner").assertIsDisplayed()
+    }
+
     /** iOS resets the count on `roomId` (`RoomScreen.swift:35-39`). */
     @Test
     fun memberCountResetsWhenTheRoomChanges() {
@@ -428,8 +516,19 @@ class RosterReachabilityTest {
         private val knownPeopleResult: () -> List<PersonDto> = { emptyList() },
         private val roomInviterResult: (String) -> String? = { throw NotImplementedError() },
         private val roomInfoResult: (String) -> RoomInfoDto = { throw NotImplementedError() },
+        private val timelineRows: List<uniffi.supermessage_core.TimelineRow> = emptyList(),
+        private val deleteResult: () -> Unit = {},
     ) : StubCore() {
         val roomInviterCalls = mutableListOf<String>()
+        val deleted = mutableListOf<Pair<String, String>>()
+
+        // The pane paginates when a short timeline is fully visible; "hit the start".
+        override fun timelinePaginateBack(roomId: String, count: UShort): Boolean = true
+
+        override fun deleteMessage(roomId: String, eventId: String) {
+            deleted += roomId to eventId
+            deleteResult()
+        }
         private var subscribedRoomId: String? = null
 
         override fun restoreSession(sink: EventSink): Boolean = true
@@ -444,6 +543,16 @@ class RosterReachabilityTest {
         // invitation row opens it.
         override fun timelineSubscribe(roomId: String, sink: EventSink) {
             subscribedRoomId = roomId
+            if (timelineRows.isNotEmpty()) {
+                sink.onEvent(
+                    uniffi.supermessage_ffi.FfiEvent.TimelineDiff(
+                        uniffi.supermessage_ffi.TimelineDiffEnvelope(
+                            channel = "timeline", subject = roomId, seq = 1uL,
+                            ops = listOf(uniffi.supermessage_ffi.TimelineDiffOp.Append(timelineRows)),
+                        ),
+                    ),
+                )
+            }
         }
 
         // Reached on every foreground (`Session.scenePhaseChanged` ->

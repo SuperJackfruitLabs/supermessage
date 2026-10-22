@@ -38,7 +38,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.window.Popup
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
@@ -61,7 +63,7 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 import uniffi.supermessage_core.VoiceReplyPlayer
 
 /**
- * The reactions a long press on a message offers to add, verbatim from
+ * The reactions a message's menu and its "+" offer to add, verbatim from
  * `TimelineRowView.swift:22`'s `quickReactions` — not a set invented here.
  * That file's own comment is why this is not extended or reordered: "two
  * different quick reactions is two different apps."
@@ -89,16 +91,13 @@ val quickReactions = listOf("✅", "👍", "❌", "👀")
  * No `onReply` yet: unlike [onReact], nothing in this phase calls it, matching
  * `TimelineRowView.swift`'s own unused parameter of the same name.
  *
- * [onReact] toggles the affordance that already renders — an existing
- * reaction chip — and also fires from the "add reaction" affordance this row
- * draws beside them ([AddReactionAffordance]), whose long press opens exactly
- * [quickReactions] and nothing else. iOS reaches its own picker from a
- * context menu on the timeline (`TimelineCollectionView.swift`); this row has
- * no such menu surface (the timeline's own long press is already spoken for —
- * see `Timeline.kt`'s `onRowLongPress` — reply or edit, never both at once,
- * so extending it to a third, mutually-exclusive outcome does not fit), so
- * the picker lives on its own small affordance instead. `canReplyOrReact`
- * gates whether it renders at all, the same guard iOS's own menu entry reads.
+ * [onReact] toggles an existing reaction chip and also fires from the "add
+ * reaction" affordance this row draws beside them ([AddReactionAffordance]),
+ * whose tap opens exactly [quickReactions] and nothing else. The long-press
+ * menu that also carries that strip lives on the list ([Timeline]), as iOS's
+ * does on its collection view. `canReplyOrReact` gates whether the "+" renders
+ * at all, the same guard iOS's own menu entry reads. A long press on a chip
+ * says who reacted.
  *
  * [endsRun] is the other half of [continuesRun]: whether the row *below*
  * this one starts a new run. An own run shows its time once, under its last
@@ -509,49 +508,64 @@ private fun ReactionsRow(
     showAddAffordance: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
     Row(modifier = modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         reactions.forEach { reaction ->
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(
-                        if (reaction.byMe) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                    )
-                    // `key`, not `displayKey`: the wire value is what the
-                    // homeserver matches against what everyone else sent, and
-                    // reacting with the display form would land a *different*
-                    // reaction beside the one the reader meant to join.
-                    // `nil`/`null` `onReact` (no composer in context) leaves
-                    // the chip inert rather than clickable-but-a-no-op.
-                    .let {
-                        if (onReact != null) {
-                            it.clickable(onClickLabel = "React with ${reaction.displayKey}") {
-                                onReact(reaction.key)
-                            }
-                        } else {
-                            it
+            var asking by remember { mutableStateOf(false) }
+            Box {
+                Row(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(
+                            if (reaction.byMe) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                        )
+                        // `key`, not `displayKey`: the wire value is what the
+                        // homeserver matches against what everyone else sent, and
+                        // reacting with the display form would land a *different*
+                        // reaction beside the one the reader meant to join.
+                        // A `null` `onReact` (no composer in context) leaves a tap
+                        // inert; a long press still says who reacted.
+                        .combinedClickable(
+                            onClickLabel = onReact?.let { "React with ${reaction.displayKey}" },
+                            onLongClickLabel = "Who reacted",
+                            onClick = {
+                                if (onReact != null) {
+                                    haptics.play(Haptic.Selection)
+                                    onReact(reaction.key)
+                                }
+                            },
+                            onLongClick = { asking = true },
+                        )
+                        .semantics {
+                            contentDescription = "${reaction.displayKey}, ${reaction.count}" +
+                                if (reaction.byMe) ", including yours" else ""
                         }
+                        .testTag("reaction-${reaction.key}")
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    // `displayKey`, never `key`: `key` is wire data compared
+                    // byte-for-byte against what other clients sent; this one is
+                    // bounded for display.
+                    Text(reaction.displayKey, style = MaterialTheme.typography.labelSmall)
+                    // One reaction is already fully described by its key;
+                    // printing "1" beside it counts nothing anyone wondered about.
+                    if (reaction.count > 1u) {
+                        Text(
+                            "${reaction.count}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (reaction.byMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                        )
                     }
-                    .testTag("reaction-${reaction.key}")
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                // `displayKey`, never `key`: `key` is wire data compared
-                // byte-for-byte against what other clients sent; this one is
-                // bounded for display.
-                Text(reaction.displayKey, style = MaterialTheme.typography.labelSmall)
-                // One reaction is already fully described by its key;
-                // printing "1" beside it counts nothing anyone wondered about.
-                if (reaction.count > 1u) {
-                    Text(
-                        "${reaction.count}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (reaction.byMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                    )
+                }
+                if (asking) {
+                    // Who reacted, as iOS's popover does
+                    // (`TimelineRowView.swift:575-593`): the key and the names.
+                    Popup(onDismissRequest = { asking = false }) { ReactionWhoCard(reaction) }
                 }
             }
         }
@@ -561,20 +575,30 @@ private fun ReactionsRow(
     }
 }
 
+/** The key and the people behind it: what the who-reacted popup shows. */
+@Composable
+internal fun ReactionWhoCard(reaction: ReactionDto, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .widthIn(max = 240.dp)
+            .testTag("reaction-who"),
+    ) {
+        Text(reaction.displayKey, style = MaterialTheme.typography.titleMedium)
+        Text(peopleLabel(reaction.senders), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
 /**
  * The affordance Phase B left out: existing reaction chips toggle
  * ([ReactionsRow]), but nothing added a reaction that was not already on the
- * message. A long press here opens exactly [quickReactions] — the same set
+ * message. A tap here opens exactly [quickReactions] — the same set
  * `TimelineRowView.swift` and the desktop client already offer, chosen once
  * for the reason that file's own comment gives, not reinvented per host.
- *
- * A dedicated small target, not a second long press over the row iOS reaches
- * its picker from a context menu on — Android's row already spends its own
- * long press on reply/edit ([Timeline]'s `onRowLongPress`), one or the other,
- * never both from the same gesture. Nesting this affordance's own long press
- * inside that row does not compete with it: Compose delivers a touch
- * sequence to the innermost handler that claims it, so a press-and-hold that
- * starts on this chip is consumed here and never reaches the row's.
+ * It was a long press until the message menu took that gesture's place on the
+ * row; a tap is what a visible "+" promises.
  */
 @Composable
 private fun AddReactionAffordance(onReact: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -584,11 +608,7 @@ private fun AddReactionAffordance(onReact: (String) -> Unit, modifier: Modifier 
             modifier = Modifier
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .combinedClickable(
-                    onClickLabel = "Add a reaction",
-                    onClick = {},
-                    onLongClick = { pickerOpen = true },
-                )
+                .clickable(onClickLabel = "Add a reaction") { pickerOpen = !pickerOpen }
                 .testTag("add-reaction")
                 .padding(horizontal = 6.dp, vertical = 2.dp),
         ) {

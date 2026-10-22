@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -379,7 +381,9 @@ class TimelineRowTest {
         // row's own timestamp text, must not satisfy this assertion. See
         // this test's own history: `substring = true` on a lone digit
         // matched CI's formatted "12:00" timestamp too.
-        compose.onNodeWithTag("reaction-✅").onChildren().filterToOne(hasText("2")).assertIsDisplayed()
+        // The chip is one accessible node (it carries the who-reacted long press), so
+        // its count is part of its merged text rather than a child node.
+        compose.onNodeWithTag("reaction-✅").assert(hasText("2")).assertIsDisplayed()
         compose.onNodeWithText("Read by", substring = true).assertIsDisplayed()
     }
 
@@ -508,13 +512,13 @@ class TimelineRowTest {
 
     /**
      * The gap Phase B left: existing reaction chips toggle, but nothing adds
-     * a reaction that is not already on the message. A long press on the
+     * a reaction that is not already on the message. A tap on the
      * "add reaction" affordance opens exactly the quick set iOS and desktop
      * already agree on — `quickReactions`, verbatim from
      * `TimelineRowView.swift:22` — not a set invented here.
      */
     @Test
-    fun longPressingAddReactionOffersExactlyTheQuickSet() {
+    fun tappingAddReactionOffersExactlyTheQuickSet() {
         compose.setContent {
             TimelineRow(
                 row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"), voice = null)),
@@ -522,10 +526,46 @@ class TimelineRowTest {
                 onReact = {},
             )
         }
-        compose.onNodeWithTag("add-reaction").performTouchInput { longClick() }
+        compose.onNodeWithTag("add-reaction").performClick()
         quickReactions.forEach { emoji ->
             compose.onNodeWithTag("quick-reaction-$emoji").assertIsDisplayed()
         }
+        compose.onAllNodes(hasTestTagPrefix("quick-reaction-")).assertCountEquals(quickReactions.size)
+    }
+
+    /** The chip's long press says who reacted, by `peopleLabel` (`TimelineRowView.swift:575-593`). */
+    @Test
+    fun longPressingAChipSaysWhoReacted() {
+        val senders = listOf("@ganesha:x", "@priya:x")
+        compose.setContent {
+            TimelineRow(
+                row = row(reactions = listOf(ReactionDto("👍", "👍", 2u, false, senders))),
+                now = now,
+                onReact = {},
+            )
+        }
+        compose.onNodeWithTag("reaction-who").assertDoesNotExist()
+        compose.onNodeWithTag("reaction-👍").performTouchInput { longClick() }
+        compose.onNodeWithTag("reaction-who").assertIsDisplayed()
+        compose.onNodeWithText(uniffi.supermessage_ffi.peopleLabel(senders)).assertIsDisplayed()
+    }
+
+    @Test
+    fun aChipNamesItsCountAndWhetherItIsYours() {
+        compose.setContent {
+            TimelineRow(
+                row = row(
+                    reactions = listOf(
+                        ReactionDto("👍", "👍", 2u, true, listOf("@me:x", "@a:x")),
+                        ReactionDto("👀", "👀", 1u, false, listOf("@a:x")),
+                    ),
+                ),
+                now = now,
+                onReact = {},
+            )
+        }
+        compose.onNodeWithTag("reaction-👍").assertContentDescriptionEquals("👍, 2, including yours")
+        compose.onNodeWithTag("reaction-👀").assertContentDescriptionEquals("👀, 1")
     }
 
     /** Tapping one of the offered quick reactions asks `onReact` to add it. */
@@ -539,7 +579,7 @@ class TimelineRowTest {
                 onReact = { reacted += it },
             )
         }
-        compose.onNodeWithTag("add-reaction").performTouchInput { longClick() }
+        compose.onNodeWithTag("add-reaction").performClick()
         compose.onNodeWithTag("quick-reaction-👀").performClick()
         assertEquals(listOf("👀"), reacted)
     }

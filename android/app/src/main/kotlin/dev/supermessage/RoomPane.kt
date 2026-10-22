@@ -148,7 +148,7 @@ internal fun RoomPane(
         val liveFinished by session.live.finished.collectAsStateWithLifecycle()
 
         // Reply/edit/attachment: reactive so a long
-        // press elsewhere (Timeline's onRowLongPress,
+        // press elsewhere (Timeline's message menu,
         // below) or a picked photo shows up here the
         // moment the store records it.
         val replyTargets by session.replies.targets.collectAsStateWithLifecycle()
@@ -224,20 +224,9 @@ internal fun RoomPane(
                             roomId = currentRoomId,
                         )
                     },
-                    onRowLongPress = { row ->
-                        // Own + editable rewrites the
-                        // message; anything else a long
-                        // press has something to offer
-                        // for is a reply — see Timeline's
-                        // own class doc for why the
-                        // gesture only exists at all when
-                        // one of the two is true.
-                        if (row.item.isOwn && row.item.editable) {
-                            session.edits.start(row, currentRoomId)
-                        } else if (row.canReplyOrReact) {
-                            session.replies.start(row, currentRoomId)
-                        }
-                    },
+                    onReply = { row -> session.replies.start(row, currentRoomId) },
+                    onEdit = { row -> session.edits.start(row, currentRoomId) },
+                    onDelete = { row -> session.delete(row.item.eventId, currentRoomId) },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
             }
