@@ -86,3 +86,16 @@ export function readersFor(item: TimelineItem, faces: Map<string, ReaderFace>): 
   if (!item.isOwn) return [];
   return item.readBy.map((userId) => faces.get(userId) ?? { userId, mxcUri: null, initial: null });
 }
+
+/** How long the jumped-to message stays washed (iOS `TimelineCollectionView.swift:921-950`). */
+export const HIGHLIGHT_MS = 1400;
+
+/**
+ * The index of the row whose message has `eventId`, or -1 when `eventId` is
+ * null or that message is not among the loaded rows. A quote can only jump
+ * to a parent that is loaded; an unloaded one stays inert.
+ */
+export function parentIndex(rows: readonly TimelineDisplayRow[], eventId: string | null): number {
+  if (eventId === null) return -1;
+  return rows.findIndex((r) => r.type === "item" && r.item.eventId === eventId);
+}

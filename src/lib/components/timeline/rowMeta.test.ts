@@ -9,6 +9,8 @@ import {
 import { groupTimelineItems } from "../timelineGrouping";
 import {
   endsRun,
+  HIGHLIGHT_MS,
+  parentIndex,
   ownMeta,
   readerFaces,
   readersFor,
@@ -124,5 +126,30 @@ describe("readersFor", () => {
       { userId: "@a:x", mxcUri: "mxc://x/a", initial: "A" },
       { userId: "@ghost:x", mxcUri: null, initial: null },
     ]);
+  });
+});
+
+describe("parentIndex", () => {
+  const rows = groupTimelineItems([
+    dayDivider,
+    message({ id: "m1", eventId: "$one", sender: "@a:x", timestampMs: 1_700_000_000_000 }),
+    message({ id: "m2", eventId: "$two", sender: "@b:x", timestampMs: 1_700_000_100_000 }),
+  ]);
+
+  it("parentIndex finds the parent by event id", () => {
+    expect(parentIndex(rows, "$one")).toBe(1);
+    expect(parentIndex(rows, "$two")).toBe(2);
+  });
+
+  it("parentIndex is -1 for an unloaded parent", () => {
+    expect(parentIndex(rows, "$elsewhere")).toBe(-1);
+  });
+
+  it("parentIndex is -1 for null", () => {
+    expect(parentIndex(rows, null)).toBe(-1);
+  });
+
+  it("HIGHLIGHT_MS is the iOS wash duration", () => {
+    expect(HIGHLIGHT_MS).toBe(1400);
   });
 });

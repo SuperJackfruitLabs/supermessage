@@ -279,7 +279,7 @@
   //      gone" unreachable — layer 1 only covers the click paths this file
   //      knows about today.
 
-  import { tick, type Snippet } from "svelte";
+  import { onDestroy, tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import Shimmer from "./ai/Shimmer.svelte";
   import { errorMessage } from "$lib/errorMessage";
@@ -315,7 +315,7 @@
   import UndecryptableGroup from "./timeline/UndecryptableGroup.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
-  import { rowEdgeClass } from "./timeline/rowMeta";
+  import { HIGHLIGHT_MS, parentIndex, rowEdgeClass } from "./timeline/rowMeta";
   import DeleteConfirm from "./timeline/DeleteConfirm.svelte";
   import UnreadMarker from "./timeline/UnreadMarker.svelte";
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
@@ -385,6 +385,30 @@
   const BUFFER_SIZE = 600;
 
   let vlist: VListHandle | undefined = $state();
+
+  // The row washed after a jump to a quoted message, for `HIGHLIGHT_MS`.
+  let highlightedKey: string | null = $state(null);
+  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(highlightTimer));
+
+  /**
+   * Scrolls the quoted message to the centre and washes it (iOS
+   * `TimelineCollectionView.swift:921-950`). Animated unless the reader asked
+   * for reduced motion. A second jump cancels the first one's fade timer.
+   */
+  function jumpToParent(eventId: string | null) {
+    const i = parentIndex(displayRows, eventId);
+    if (i < 0) return;
+    // The reader chose to leave the tail; without this the next resize
+    // re-pins them straight back to it (as `jumpToUnread` does).
+    noteReaderInput();
+    followBottom = false;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    vlist?.scrollToIndex(i, { align: "center", smooth: !reducedMotion });
+    highlightedKey = displayRows[i]!.key;
+    clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => (highlightedKey = null), HIGHLIGHT_MS);
+  }
 
   let paginating = $state(false);
   let reachedStart = $state(false);
@@ -1178,7 +1202,13 @@
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
-        <ReplyQuote quote={row.replyQuote} isOwn={item.isOwn} />
+        <ReplyQuote
+          quote={row.replyQuote}
+          isOwn={item.isOwn}
+          onJump={parentIndex(displayRows, item.replyTo?.eventId ?? null) >= 0
+            ? () => jumpToParent(item.replyTo?.eventId ?? null)
+            : null}
+        />
         {@render content()}
         {#if !item.isOwn && continuesRun && item.edited}
           <p class="mt-1 font-sans text-meta text-content-faint">edited</p>
@@ -1381,7 +1411,7 @@
         -->
         <div
           data-testid="timeline-row"
-          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-sans text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans transition-colors duration-700 motion-reduce:transition-none {row.key === highlightedKey ? 'bg-accent-soft' : 'bg-surface'} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
             index,
             displayRows.length,
           )}"

@@ -51,13 +51,13 @@
   ];
 
   /** A store the story fills through the real diff path: a gap forces a resync. */
-  function seededStore() {
+  function seededStore(source: TimelineRow[] = rows) {
     let handler: ((env: DiffEnvelope<TimelineRow>) => void) | null = null;
     const noop = async () => undefined;
     const deps = {
       timelineSubscribe: noop,
       timelinePaginateBack: async () => true,
-      timelineResync: async () => [ROOM, 1, rows] as [string, number, TimelineRow[]],
+      timelineResync: async () => [ROOM, 1, source] as [string, number, TimelineRow[]],
       sendMessage: noop,
       sendReply: noop,
       toggleReaction: async () => true,
@@ -91,6 +91,23 @@
       await new Promise((r) => setTimeout(r, 16));
     }
   };
+
+  /**
+   * A long room whose last message replies to the first: the parent is far
+   * above the viewport, so a jump has to scroll. Filler timestamps are
+   * seconds apart so they collapse into runs and stay short.
+   */
+  const quoted = atlas("q0", 0, "Parent: the plan for the release.");
+  const jumpRows: TimelineRow[] = [
+    quoted,
+    ...Array.from({ length: 30 }, (_, i) => atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`)),
+    {
+      ...mine("r1", 400_000, "Replying to the plan.", {
+        replyTo: { eventId: "$q0", available: true, sender: "@atlas:example.org", senderDisplayName: "Atlas", body: null } as never,
+      }),
+      replyQuote: { state: "available", sender: "Atlas", excerpt: "Parent: the plan for the release.", label: null },
+    },
+  ];
 
   const { Story } = defineMeta({ title: "Timeline/Rhythm and quiet meta", component: Timeline });
 </script>
@@ -129,6 +146,66 @@
   {#snippet template()}
     <div class="flex h-[560px] w-[760px] flex-col bg-surface">
       <Timeline roomId={ROOM} store={seededStore()} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  Clicking a reply's quote scrolls the parent into the viewport and washes it
+  for about 1.4s; the wash fades. The play drives it with a real click on the
+  button and reads the parent row's class, so a quote that did nothing fails.
+-->
+<Story
+  name="Jump to the quoted message"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const quote = (await settled(
+      () => root.querySelector("button[aria-description='Shows the original message']"),
+      4000,
+      "the jumpable quote",
+    )) as HTMLButtonElement;
+    const parentRow = () =>
+      [...root.querySelectorAll("[data-testid='timeline-row']")].find((r) =>
+        r.textContent?.includes("Parent: the plan for the release.") && !r.querySelector("button[aria-description]"),
+      ) as HTMLElement | undefined;
+    quote.click();
+    await settled(
+      () => (parentRow()?.classList.contains("bg-accent-soft") ? root : null),
+      2000,
+      "the parent to be washed",
+    );
+    // A beat later, so a scroll that is undone by the tail-following
+    // re-pin (the list snapping back to the newest message) is caught too.
+    const assertParentInView = async () => {
+      await new Promise((r) => setTimeout(r, 300));
+      const parent = parentRow();
+      if (!parent) throw new Error("the parent is no longer rendered");
+      const box = parent.getBoundingClientRect();
+      const view = root.querySelector(".timeline-scroller")!.getBoundingClientRect();
+      if (box.top < view.top || box.bottom > view.bottom) throw new Error("the parent is not in view");
+    };
+    await assertParentInView();
+    await settled(() => (!parentRow()?.classList.contains("bg-accent-soft") ? root : null), 3000, "the wash to fade");
+    // Jump again and stop there, so the recorded frame shows the washed parent.
+    // The quote is scrolled out of view now (the parent is at the top), so
+    // it is looked up afresh.
+    const again = (await settled(
+      () => root.querySelector("button[aria-description='Shows the original message']"),
+      3000,
+      "the quote to be rendered again",
+    )) as HTMLButtonElement;
+    again.click();
+    await settled(
+      () => (parentRow()?.classList.contains("bg-accent-soft") ? root : null),
+      2000,
+      "the parent to be washed again",
+    );
+    await assertParentInView();
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(jumpRows)} />
     </div>
   {/snippet}
 </Story>
