@@ -1765,6 +1765,101 @@ export async function rosterHiddenInvitations(
   return invoke<number>("roster_hidden_invitations", { rows, showsInvitations });
 }
 
+/** Mirrors `core::roster::RosterFilter`; the values are the keys a host stores. */
+export type RosterFilter = "all" | "unread" | "agents" | "needsYou";
+
+/** Mirrors `core::roster::RosterFilterChip`. */
+export interface RosterFilterChip {
+  filter: RosterFilter;
+  title: string;
+  count: number;
+}
+
+/** Mirrors `core::roster::RosterEmptyState`. */
+export interface RosterEmptyState {
+  title: string;
+  description: string;
+}
+
+/** Mirrors `core::roster::NeedsYouInbox`. */
+export interface NeedsYouInbox {
+  decisions: RosterRow[];
+  invitations: RosterRow[];
+  /** Decisions and invitations together. */
+  count: number;
+  /** What a tab badge shows: decisions only. */
+  badgeCount: number;
+}
+
+/** Mirrors `core::roster::RoomStatus`. */
+export type RoomStatus = "working" | "needsYou" | "active" | "idle" | "quiet";
+
+/** Keep the rows a filter admits; it keeps or drops, never orders. */
+export async function rosterFilterSections(
+  sections: RosterSection[],
+  filter: RosterFilter,
+): Promise<RosterSection[]> {
+  return invoke<RosterSection[]>("roster_filter_sections", { sections, filter });
+}
+
+/** The offered filter chips, each with the count it would leave. */
+export async function rosterFilterChips(sections: RosterSection[]): Promise<RosterFilterChip[]> {
+  return invoke<RosterFilterChip[]>("roster_filter_chips", { sections });
+}
+
+/** A stored chip key read back; one that is not offered reads as `"all"`. */
+export async function rosterFilterFromKey(key: string): Promise<RosterFilter> {
+  return invoke<RosterFilter>("roster_filter_from_key", { key });
+}
+
+/** The key a filter is stored under. */
+export async function rosterFilterKey(filter: RosterFilter): Promise<string> {
+  return invoke<string>("roster_filter_key", { filter });
+}
+
+/** What to say when a filter leaves nothing. */
+export async function rosterFilterEmptyState(filter: RosterFilter): Promise<RosterEmptyState> {
+  return invoke<RosterEmptyState>("roster_filter_empty_state", { filter });
+}
+
+/** Pending decisions plus invitations. */
+export async function rosterNeedsYouInbox(rows: RoomRow[], nowMs: number): Promise<NeedsYouInbox> {
+  return invoke<NeedsYouInbox>("roster_needs_you_inbox", { rows, nowMs });
+}
+
+/** Agent rooms, newest first, without invitations. */
+export async function rosterAgentDirectory(rows: RoomRow[], nowMs: number): Promise<RosterRow[]> {
+  return invoke<RosterRow[]>("roster_agent_directory", { rows, nowMs });
+}
+
+/** The roster row the core arranged for one room, or `null` if it is not there. */
+export async function rosterRow(
+  rows: RoomRow[],
+  roomId: string,
+  nowMs: number,
+): Promise<RosterRow | null> {
+  return invoke<RosterRow | null>("roster_row", { rows, roomId, nowMs });
+}
+
+/** The header status of a room, or `null` when it has none to say. */
+export async function roomStatus(
+  state: AgentState,
+  describesAgent: boolean,
+  turnInProgress: boolean,
+): Promise<RoomStatus | null> {
+  return invoke<RoomStatus | null>("room_status", { state, describesAgent, turnInProgress });
+}
+
+/** The word the header shows for a status. */
+export async function roomStatusWord(status: RoomStatus): Promise<string> {
+  return invoke<string>("room_status_word", { status });
+}
+
+/** What the mute toggle sets next. */
+export async function nextNotificationMode(current: NotificationMode): Promise<NotificationMode> {
+  return invoke<NotificationMode>("next_notification_mode", { current });
+}
+
 /** The generated tile for a room, the same on every device. */
 export async function agentAvatarStyle(roomId: string): Promise<AgentAvatarStyle> {
   return invoke<AgentAvatarStyle>("agent_avatar_style", { roomId });
