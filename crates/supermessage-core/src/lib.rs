@@ -73,6 +73,7 @@ pub mod sync;
 pub mod timeline;
 pub mod tls;
 pub mod turn_error;
+pub mod turn_label;
 pub mod typing_line;
 pub mod voice_reply;
 pub mod voice_transcript;
