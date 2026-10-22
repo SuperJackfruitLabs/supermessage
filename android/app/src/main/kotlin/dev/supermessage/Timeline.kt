@@ -52,7 +52,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import kotlin.math.roundToInt
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.DisplayRow
@@ -262,6 +264,11 @@ fun Timeline(
         }
     }
     val reveal = remember { TimeReveal() }
+    // Whether a pull is showing at all. Rows read this, not `reveal.offset`:
+    // the offset changes on every frame of a drag and of the spring back, and
+    // a row that read it in composition recomposed on each one. The offset
+    // itself is read only in layout and draw lambdas below.
+    val revealing by remember { derivedStateOf { reveal.offset > 0f } }
     val revealWidthPx = with(LocalDensity.current) { RevealWidthDp.dp.toPx() }
     val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
@@ -464,7 +471,7 @@ fun Timeline(
                     // as the rows slide out, fading in with the pull. Hidden
                     // from accessibility: the row already says when it was
                     // sent (`TimelineChrome.swift:64-67`).
-                    if (time != null && reveal.offset > 0f) {
+                    if (time != null && revealing) {
                         Text(
                             time,
                             style = MaterialTheme.typography.labelSmall,
@@ -484,7 +491,12 @@ fun Timeline(
                         "Not sent. Try again.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("delete-failed"),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            // The one failure text that was silent to TalkBack.
+                            .semantics { liveRegion = LiveRegionMode.Polite }
+                            .testTag("delete-failed"),
                     )
                 }
             }

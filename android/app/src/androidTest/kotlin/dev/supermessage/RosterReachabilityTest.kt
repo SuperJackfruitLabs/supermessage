@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.hasText
@@ -471,6 +472,9 @@ class RosterReachabilityTest {
         compose.onNodeWithText("Alpha").performScrollTo().performClick()
         compose.waitForIdle()
         assertEquals(emptyList<androidx.compose.ui.hapticfeedback.HapticFeedbackType>(), haptics.played)
+        // Only the two marks the open itself makes (the pane's, and the
+        // timeline's at its newest end), none from the hidden list's rows.
+        assertEquals(listOf("!a:example.org", "!a:example.org"), fake.markReadCalls)
     }
 
     /** iOS buzzes lightly for a send that reached the room, and not otherwise (`ComposerView.swift:110-113`). */
@@ -533,6 +537,28 @@ class RosterReachabilityTest {
         compose.onNodeWithTag("delete-confirm-button").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Not sent. Try again.").assertIsDisplayed()
+    }
+
+    /** TalkBack hears the refusal, like the composer's and the chip's failures. */
+    @Test
+    fun aRefusedDeleteIsAnnouncedPolitely() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+            timelineRows = listOf(ownMessage("\$one", "first")),
+            deleteResult = { throw IllegalStateException("offline") },
+        )
+        openAlphaWith(fake)
+        compose.onNodeWithTag("row-\$one").performTouchInput { longClick() }
+        compose.onNodeWithTag("menu-delete").performClick()
+        compose.onNodeWithTag("delete-confirm-button").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("delete-failed").assert(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.LiveRegion,
+                androidx.compose.ui.semantics.LiveRegionMode.Polite,
+            ),
+        )
     }
 
     /** Reply and Edit from the menu reach the composer, through the pane's stores. */
@@ -1037,8 +1063,15 @@ class RosterReachabilityTest {
             return roomInfoResult(roomId)
         }
 
-        // Reached on opening any joined room (the pane marks it read).
-        override fun markRoomRead(roomId: String): Unit = Unit
+        // Reached on opening any joined room (the pane marks it read). The
+        // real core marks only the open room and refuses every other, so the
+        // fake does too, and records each ask either way.
+        val markReadCalls = mutableListOf<String>()
+
+        override fun markRoomRead(roomId: String) {
+            markReadCalls += roomId
+            check(roomId == subscribedRoomId) { "not the open room" }
+        }
 
         override fun setRoomNotifications(roomId: String, mode: uniffi.supermessage_core.NotificationMode): Unit = Unit
 

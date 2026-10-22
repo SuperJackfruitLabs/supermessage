@@ -701,6 +701,22 @@ class Session(
     }
 
     /**
+     * Leave the open room, for a phone coming back to the roster.
+     *
+     * Deselecting alone leaves the timeline subscribed and the live and
+     * typing stores focused on the room, so everything still composed for it
+     * (the pane the scaffold keeps at zero size) goes on reading them. iOS
+     * pops the room's view; this is the same: nothing is focused afterwards,
+     * and [open] points everything at a room again.
+     */
+    fun closeRoom() {
+        rooms.deselect()
+        live.focus(null)
+        typing.focus(null)
+        timeline.clear()
+    }
+
+    /**
      * Ask for the state the channels will not volunteer.
      *
      * The diff channels only speak when something *changes*, so a store
