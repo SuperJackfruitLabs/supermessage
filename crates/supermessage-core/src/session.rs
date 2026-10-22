@@ -195,6 +195,7 @@ impl Session {
         // when the last account signed out could have noted its room after
         // `logout` cleared the set.
         self.focused.clear_sent();
+        self.focused.clear_hidden_events();
         // And no turn from the last one.
         self.turns.clear();
         let client = self.build_client(homeserver).await?;
@@ -218,6 +219,7 @@ impl Session {
     pub async fn restore(&self) -> CoreResult<bool> {
         // As in `login`: a restored session starts with no room sent in.
         self.focused.clear_sent();
+        self.focused.clear_hidden_events();
         self.turns.clear();
         let Some(homeserver) = self.store.get(KEY_HOMESERVER_URL)? else {
             return Ok(false);
@@ -295,6 +297,7 @@ impl Session {
         // Likewise "sent this session": it belongs to the account signing
         // out, and must go on every path, including a logout with no client.
         self.focused.clear_sent();
+        self.focused.clear_hidden_events();
         // Every room's turn belongs to the account signing out; the book is
         // session-owned, so it survives the client and must be cleared here.
         self.turns.clear();
@@ -1557,6 +1560,14 @@ impl Session {
         self.focused.has_sent(room_id)
     }
 
+    /// The events the reader hid on this device (reported or hidden messages).
+    /// The host keeps the ids and pushes the full set at sign-in and whenever
+    /// it changes; the focused timeline then groups as if those rows were
+    /// absent and marks them `hidden`.
+    pub fn set_hidden_events(&self, event_ids: Vec<String>) {
+        self.focused.set_hidden_events(event_ids);
+    }
+
     /// Who is in `room_id`, for the composer and the typing line.
     ///
     /// The core fetches the people and the member ids itself (ruling 6), so a
@@ -2459,6 +2470,44 @@ mod tests {
         session.focused_timeline().note_sent("!r:x");
         let _ = session.login("http://127.0.0.1:1", "u", "p").await;
         assert!(!session.has_sent("!r:x"));
+    }
+
+    /// Mutation seen failing: removing the `clear_hidden_events()` call in
+    /// `logout` leaves the id hidden for the next account.
+    #[tokio::test]
+    async fn signing_out_forgets_the_hidden_events() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-hidden-logout"),
+            Box::new(MemoryStore::default()),
+        );
+        session.set_hidden_events(vec!["$e".into()]);
+        assert!(session.focused_timeline().is_hidden("$e"));
+        let _ = session.logout().await;
+        assert!(!session.focused_timeline().is_hidden("$e"));
+    }
+
+    /// Mutation seen failing: removing the call at the top of `login`.
+    #[tokio::test]
+    async fn a_fresh_login_starts_with_nothing_hidden() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-hidden-login"),
+            Box::new(MemoryStore::default()),
+        );
+        session.set_hidden_events(vec!["$e".into()]);
+        let _ = session.login("http://127.0.0.1:1", "u", "p").await;
+        assert!(!session.focused_timeline().is_hidden("$e"));
+    }
+
+    /// Mutation seen failing: removing the call at the top of `restore`.
+    #[tokio::test]
+    async fn a_restore_starts_with_nothing_hidden() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-hidden-restore"),
+            Box::new(MemoryStore::default()),
+        );
+        session.set_hidden_events(vec!["$e".into()]);
+        let _ = session.restore().await;
+        assert!(!session.focused_timeline().is_hidden("$e"));
     }
 
     /// Mutation seen failing: removing the `forget_sent` call in `leave_room`

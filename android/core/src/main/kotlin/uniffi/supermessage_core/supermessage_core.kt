@@ -4163,7 +4163,13 @@ data class TimelineRow (
     /**
      * For a drawn membership row: the run and stretch it belongs to.
      */
-    var `membership`: MembershipPlacement? = null
+    var `membership`: MembershipPlacement? = null, 
+    /**
+     * Whether the reader hid this event on this device
+     * (`crate::hidden_events`). The row stays in the list, and the grouping
+     * above settles as if it were absent; a host leaves it undrawn.
+     */
+    var `hidden`: kotlin.Boolean = false
 ) {
     
     companion object
@@ -4193,6 +4199,7 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalTypeMembershipPlacement.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -4214,7 +4221,8 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterBoolean.allocationSize(value.`endsRun`) +
             FfiConverterBoolean.allocationSize(value.`hidesQuote`) +
             FfiConverterBoolean.allocationSize(value.`showsRuntime`) +
-            FfiConverterOptionalTypeMembershipPlacement.allocationSize(value.`membership`)
+            FfiConverterOptionalTypeMembershipPlacement.allocationSize(value.`membership`) +
+            FfiConverterBoolean.allocationSize(value.`hidden`)
     )
 
     override fun write(value: TimelineRow, buf: ByteBuffer) {
@@ -4236,6 +4244,7 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterBoolean.write(value.`hidesQuote`, buf)
             FfiConverterBoolean.write(value.`showsRuntime`, buf)
             FfiConverterOptionalTypeMembershipPlacement.write(value.`membership`, buf)
+            FfiConverterBoolean.write(value.`hidden`, buf)
     }
 }
 

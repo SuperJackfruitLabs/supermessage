@@ -1168,6 +1168,8 @@ export interface TimelineRow {
   showsRuntime?: boolean;
   /** For a drawn membership row: its run and stretch. Absent on every other row. */
   membership?: MembershipPlacement;
+  /** The reader hid this event on this device: leave the row undrawn. Absent when false. */
+  hidden?: boolean;
   /**
    * For a voice note's transcript notice: the note it transcribes. Absent on
    * every other row, and read by nothing here either — the core draws the
@@ -2176,6 +2178,15 @@ export async function typingView(
 /** Whether this account has sent in `roomId` since signing in. */
 export async function hasSent(roomId: string): Promise<boolean> {
   return invoke<boolean>("has_sent", { roomId });
+}
+
+/**
+ * Tell the core which events the reader hid on this device. The focused
+ * timeline groups as if they were absent and marks their rows `hidden`; the
+ * host leaves those undrawn. Push the full set at sign-in and on every change.
+ */
+export async function setHiddenEvents(eventIds: string[]): Promise<void> {
+  return invoke<void>("set_hidden_events", { eventIds });
 }
 
 /**

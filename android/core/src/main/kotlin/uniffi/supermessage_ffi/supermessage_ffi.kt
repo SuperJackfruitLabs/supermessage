@@ -1155,6 +1155,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1287,6 +1289,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_send_permission_answer(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_reply(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_set_hidden_events(`ptr`: Pointer,`eventIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_set_room_notifications(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`mode`: RustBufferNotificationMode.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1746,6 +1750,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_reply(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_set_hidden_events(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_set_room_notifications(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_set_room_pinned(
@@ -2116,6 +2122,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_set_hidden_events() != 44152.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_set_room_notifications() != 42292.toShort()) {
@@ -2997,6 +3006,13 @@ public interface CoreInterface {
      * Reply to `in_reply_to`, an event id in the focused room.
      */
     fun `sendReply`(`roomId`: kotlin.String, `body`: kotlin.String, `inReplyTo`: kotlin.String)
+    
+    /**
+     * The events the reader hid on this device. The focused timeline groups
+     * as if those rows were absent and marks them `hidden`; the host keeps
+     * the ids and pushes the full set at sign-in and whenever it changes.
+     */
+    fun `setHiddenEvents`(`eventIds`: List<kotlin.String>)
     
     /**
      * Set how loudly a room may interrupt. `Default` unsets the room's own
@@ -4109,6 +4125,22 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_reply(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`body`),FfiConverterString.lower(`inReplyTo`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * The events the reader hid on this device. The focused timeline groups
+     * as if those rows were absent and marks them `hidden`; the host keeps
+     * the ids and pushes the full set at sign-in and whenever it changes.
+     */override fun `setHiddenEvents`(`eventIds`: List<kotlin.String>)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_set_hidden_events(
+        it, FfiConverterSequenceString.lower(`eventIds`),_status)
 }
     }
     

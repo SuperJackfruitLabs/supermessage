@@ -407,14 +407,11 @@ struct TimelineList: UIViewRepresentable {
                 DispatchQueue.main.async { topEdge = edge }
             }
         }
-        // A message reported from this device leaves the list at once (#60).
-        // Read here, so a new report re-runs this update; and a change forces
-        // a regroup, because hiding a row moves nothing the store's revision
-        // counts.
-        let hidden = session.safety.hiddenEvents
-        context.coordinator.noteHidden(hidden)
+        // A message reported from this device (#60) is hidden by the core: it
+        // groups the list as if that row were absent and marks it `hidden`,
+        // and the change arrives as ordinary row updates (`apply` skips it).
         context.coordinator.apply(
-            rows: session.safety.visible(timeline.items), revision: timeline.revision,
+            rows: timeline.items, revision: timeline.revision,
             isPaginating: timeline.isPaginating, isLive: session.live.isLive,
             isFinished: session.live.finished)
         // After the layout this update causes: a room that has just opened,
@@ -688,16 +685,6 @@ struct TimelineList: UIViewRepresentable {
         /// every streaming token. That is what the jitter was: not a missing
         /// animation, but every row on screen being re-measured and laid out
         /// again several times a second.
-        /// The reported-and-hidden set the last apply drew with.
-        private var appliedHidden: Set<String> = []
-
-        /// Regroup on the next apply when the hidden set has moved.
-        func noteHidden(_ hidden: Set<String>) {
-            guard hidden != appliedHidden else { return }
-            appliedHidden = hidden
-            forceRegroup = true
-        }
-
         func apply(
             rows: [TimelineRow], revision: UInt64, isPaginating: Bool, isLive: Bool,
             isFinished: Bool
@@ -736,7 +723,7 @@ struct TimelineList: UIViewRepresentable {
             // a room switch — from an arrival into a room already on screen.
             defer { hasApplied = true }
 
-            writerName = rows.last { !$0.item.isOwn }?.senderName
+            writerName = rows.last { !$0.item.isOwn && !$0.hidden }?.senderName
                 ?? session.rooms.selectedName ?? "Agent"
 
             // The core has already grouped the rows (runs, quotes, runtime

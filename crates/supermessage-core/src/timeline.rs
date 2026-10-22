@@ -2284,7 +2284,11 @@ pub fn mentioning_message(body: &str, mentions: &[String]) -> RoomMessageEventCo
 /// subscription, if any. Exactly one at a time — see this module's doc
 /// comment.
 #[derive(Default)]
-pub struct FocusedTimeline(Mutex<Option<TimelineHandle>>, crate::sent_rooms::SentRooms);
+pub struct FocusedTimeline(
+    Mutex<Option<TimelineHandle>>,
+    crate::sent_rooms::SentRooms,
+    Arc<crate::hidden_events::HiddenEvents>,
+);
 
 impl FocusedTimeline {
     /// Subscribes to `room_id`'s timeline, replacing (and stopping) any
@@ -2377,6 +2381,7 @@ impl FocusedTimeline {
         // exactly what turns this into the true state.
         let state: Arc<Mutex<TimelineState>> = Arc::new(Mutex::new((0, Vec::new())));
         let task_state = Arc::clone(&state);
+        let hidden = Arc::clone(&self.2);
 
         let subject = room_id.to_string();
         let mut paginator = Arc::clone(&timeline);
@@ -2406,7 +2411,7 @@ impl FocusedTimeline {
             let ops = vec![DiffOp::Reset {
                 values: initial_rows,
             }];
-            emit_ops(&sink, &task_state, &mut seq, &subject, ops);
+            emit_ops(&sink, &task_state, &hidden, &mut seq, &subject, ops);
 
             // Seed the room with real history.
             //
@@ -2445,7 +2450,19 @@ impl FocusedTimeline {
             }
 
             let mut current_stream: TimelineDiffStream = stream;
-            while let Some(batch) = current_stream.next().await {
+            loop {
+                // A change to the hidden set wakes this task between batches,
+                // so the one writer of `seq` and the state also re-settles.
+                let batch = tokio::select! {
+                    next = current_stream.next() => match next {
+                        Some(batch) => batch,
+                        None => break,
+                    },
+                    () = hidden.changed() => {
+                        emit_ops(&sink, &task_state, &hidden, &mut seq, &subject, Vec::new());
+                        continue;
+                    }
+                };
                 let ops = project_batch(batch, &own_user);
 
                 // Read-only: just the current length, never a clone of the
@@ -2475,7 +2492,7 @@ impl FocusedTimeline {
                         // nothing", never "three per subscription" — see
                         // `RecoveryBudget`.
                         budget.on_progress();
-                        emit_ops(&sink, &task_state, &mut seq, &subject, ops);
+                        emit_ops(&sink, &task_state, &hidden, &mut seq, &subject, ops);
                     }
                     BatchDecision::ReseedInstead(reason) => {
                         let attempt = budget.on_recovery(reason);
@@ -2611,6 +2628,7 @@ impl FocusedTimeline {
                         emit_ops(
                             &sink,
                             &task_state,
+                            &hidden,
                             &mut seq,
                             &subject,
                             coalesced_reset(fresh),
@@ -2650,6 +2668,7 @@ impl FocusedTimeline {
                         emit_ops(
                             &sink,
                             &task_state,
+                            &hidden,
                             &mut seq,
                             &subject,
                             coalesced_reset(fresh.rows),
@@ -3186,6 +3205,21 @@ impl FocusedTimeline {
         self.1.clear();
     }
 
+    /// The events the reader hid on this device. The focused timeline groups
+    /// as if they were absent; see [`crate::hidden_events`].
+    pub fn set_hidden_events(&self, event_ids: Vec<String>) {
+        self.2.replace(event_ids);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_hidden(&self, event_id: &str) -> bool {
+        self.2.contains(event_id)
+    }
+
+    pub(crate) fn clear_hidden_events(&self) {
+        self.2.clear();
+    }
+
     /// The room the timeline is currently focused on, or `None` when nothing
     /// is focused.
     ///
@@ -3587,10 +3621,14 @@ fn settle_unread_marker(rows: &mut [TimelineRow]) -> Vec<usize> {
 fn emit_ops(
     sink: &Arc<dyn EventSink>,
     state: &Arc<Mutex<TimelineState>>,
+    hidden: &crate::hidden_events::HiddenEvents,
     seq: &mut SeqCounter,
     subject: &str,
     ops: Vec<DiffOp<TimelineRow>>,
 ) -> (usize, usize) {
+    // No ops: the hidden set changed. Nothing is sent when no row moved, and
+    // then no sequence number is used (a gap would read as a dropped event).
+    let resettle_only = ops.is_empty();
     let seq_no = seq.next_seq();
 
     // Captured before `ops` is consumed below: this is the evidence of what the
@@ -3609,6 +3647,7 @@ fn emit_ops(
             .lock()
             .expect("timeline state lock poisoned by an earlier panic");
         let before = guard.1.len();
+        let previous_seq = guard.0;
         // The ids as they stand *before* folding — half of what decides whether
         // this batch moved anything. Ids only, not a clone of the list: the
         // comparison needs identity, and cloning every item on every batch to
@@ -3647,7 +3686,8 @@ fn emit_ops(
         // and whose grouping moved (the one a new message now follows) gets a
         // `Set`. A page of back-paginated history is therefore one `Append`
         // and nothing more.
-        let regrouped = crate::timeline_grouping::settle(&mut guard.1);
+        let mut regrouped = hidden.apply(&mut guard.1);
+        regrouped.extend(crate::timeline_grouping::settle(&mut guard.1));
         let carried: std::collections::HashSet<&str> = wire_ops
             .iter()
             .flat_map(op_values)
@@ -3667,6 +3707,11 @@ fn emit_ops(
                 index,
                 value: guard.1[index].clone(),
             });
+        }
+        if resettle_only && wire_ops.is_empty() {
+            guard.0 = previous_seq;
+            seq.give_back();
+            return (before, before);
         }
         (before, guard.1.len(), wire_ops)
     };
@@ -7339,7 +7384,14 @@ mod grouping_on_the_wire {
             crate::timeline_grouping::group_rows(before),
         )));
         let mut seq = SeqCounter::default();
-        emit_ops(&as_sink, &state, &mut seq, "!room:x", ops);
+        emit_ops(
+            &as_sink,
+            &state,
+            &crate::hidden_events::HiddenEvents::default(),
+            &mut seq,
+            "!room:x",
+            ops,
+        );
         let mut sent = sink.0.lock().unwrap();
         assert_eq!(sent.len(), 1, "one batch, one envelope");
         let envelope = sent.remove(0);
@@ -7449,5 +7501,131 @@ mod grouping_on_the_wire {
         };
         assert_eq!(*index, 2, "the row the new one follows");
         assert!(!value.ends_run, "it no longer ends its run");
+    }
+
+    /// A live timeline for the hidden-set tests: one state, one counter, the
+    /// sink that records every envelope.
+    struct Live {
+        sink: Arc<Recorded>,
+        state: Arc<Mutex<TimelineState>>,
+        hidden: crate::hidden_events::HiddenEvents,
+        seq: SeqCounter,
+    }
+
+    impl Live {
+        fn new(rows: Vec<TimelineRow>) -> Self {
+            Self {
+                sink: Arc::new(Recorded(StdMutex::new(Vec::new()))),
+                state: Arc::new(Mutex::new((0, crate::timeline_grouping::group_rows(rows)))),
+                hidden: crate::hidden_events::HiddenEvents::default(),
+                seq: SeqCounter::default(),
+            }
+        }
+
+        /// One `emit_ops`; the envelopes it sent.
+        fn emit(&mut self, ops: Vec<DiffOp<TimelineRow>>) -> Vec<DiffEnvelope<TimelineRow>> {
+            let sink: Arc<dyn EventSink> = self.sink.clone();
+            emit_ops(
+                &sink,
+                &self.state,
+                &self.hidden,
+                &mut self.seq,
+                "!room:x",
+                ops,
+            );
+            std::mem::take(&mut *self.sink.0.lock().unwrap())
+        }
+
+        fn row(&self, index: usize) -> TimelineRow {
+            self.state.lock().unwrap().1[index].clone()
+        }
+    }
+
+    fn set_indices(envelope: &DiffEnvelope<TimelineRow>) -> Vec<usize> {
+        envelope
+            .ops
+            .iter()
+            .map(|op| match op {
+                DiffOp::Set { index, .. } => *index,
+                other => panic!("only Sets expected: {other:?}"),
+            })
+            .collect()
+    }
+
+    fn five_in_a_run() -> Live {
+        Live::new(
+            (0..5)
+                .map(|n| message(&format!("${n}"), "@a:x", 1_000 * (n + 1)))
+                .collect(),
+        )
+    }
+
+    /// Hiding sends a `Set` for the hidden row and the one neighbour whose
+    /// flags moved, and unhiding sends the same two back. The three rows
+    /// further along are not sent.
+    ///
+    /// Mutation seen failing: a `Set` for every row (`regrouped.extend(0..len)`)
+    /// fails the index assertions; dropping the `hidden.apply` call fails them
+    /// too (nothing is sent).
+    #[test]
+    fn hiding_sends_ops_only_for_the_affected_neighbours() {
+        let mut live = five_in_a_run();
+        live.hidden.replace(vec!["$0".into()]);
+        let sent = live.emit(Vec::new());
+        assert_eq!(sent.len(), 1);
+        assert_eq!(set_indices(&sent[0]), vec![0, 1], "{:?}", sent[0].ops);
+        assert!(live.row(0).hidden);
+        assert!(!live.row(1).continues_run, "the next row has a header");
+
+        live.hidden.replace(Vec::new());
+        let sent = live.emit(Vec::new());
+        assert_eq!(set_indices(&sent[0]), vec![0, 1]);
+        assert!(!live.row(0).hidden);
+        assert!(live.row(1).continues_run, "restored in place");
+        assert_eq!(sent[0].seq, 2);
+    }
+
+    /// Re-pushing the same set changes nothing: no envelope, and no sequence
+    /// number is used (a gap would read as a dropped event).
+    ///
+    /// Mutation seen failing: removing the `resettle_only` early return in
+    /// `emit_ops` sends an empty envelope and the next seq jumps to 3.
+    #[test]
+    fn an_unchanged_set_sends_nothing_and_keeps_the_sequence() {
+        let mut live = five_in_a_run();
+        live.hidden.replace(vec!["$0".into()]);
+        assert_eq!(live.emit(Vec::new()).len(), 1);
+        live.hidden.replace(vec!["$0".into()]);
+        assert!(live.emit(Vec::new()).is_empty());
+        let next = live.emit(vec![DiffOp::PushBack {
+            value: message("$new", "@b:x", 9_000),
+        }]);
+        assert_eq!(next[0].seq, 2, "no number was used by the quiet pass");
+    }
+
+    /// A row that arrives already hidden carries `hidden` in its own op, and
+    /// the row after it is grouped as if it were absent.
+    ///
+    /// Mutation seen failing: removing `value.hidden = settled.hidden` in
+    /// `stamp` sends the arrival undrawn-flag-less.
+    #[test]
+    fn a_row_arriving_hidden_is_sent_hidden() {
+        let mut live = Live::new(vec![message("$0", "@a:x", 1_000)]);
+        live.hidden.replace(vec!["$1".into()]);
+        let _ = live.emit(Vec::new());
+        let sent = live.emit(vec![
+            DiffOp::PushBack {
+                value: message("$1", "@a:x", 2_000),
+            },
+            DiffOp::PushBack {
+                value: message("$2", "@a:x", 3_000),
+            },
+        ]);
+        let values: Vec<&TimelineRow> = sent[0].ops.iter().flat_map(op_values).collect();
+        assert!(values[0].hidden && !values[0].continues_run);
+        assert!(
+            !values[1].hidden && values[1].continues_run,
+            "the run goes on past it"
+        );
     }
 }

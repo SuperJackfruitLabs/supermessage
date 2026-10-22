@@ -799,6 +799,11 @@ impl SeqCounter {
         self.0 += 1;
         self.0
     }
+
+    /// Return the number the last [`Self::next_seq`] gave, unused.
+    pub fn give_back(&mut self) {
+        self.0 -= 1;
+    }
 }
 
 /// A room together with every decision the core made about it.
@@ -965,6 +970,12 @@ pub struct TimelineRow {
     #[uniffi(default = None)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub membership: Option<crate::timeline_grouping::MembershipPlacement>,
+    /// Whether the reader hid this event on this device
+    /// (`crate::hidden_events`). The row stays in the list, and the grouping
+    /// above settles as if it were absent; a host leaves it undrawn.
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 impl TimelineRow {
@@ -1048,6 +1059,7 @@ impl TimelineRow {
             hides_quote: false,
             shows_runtime: false,
             membership: None,
+            hidden: false,
         }
     }
 }

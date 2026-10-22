@@ -42,6 +42,7 @@ open class StubCore : CoreInterface {
     override fun enableRecovery(): kotlin.String = throw NotImplementedError()
     override fun inviteUser(roomId: kotlin.String, userId: kotlin.String): Unit = throw NotImplementedError()
     override fun joinRoom(roomId: kotlin.String): Unit = throw NotImplementedError()
+    override fun setHiddenEvents(eventIds: kotlin.collections.List<kotlin.String>): Unit = throw NotImplementedError()
     override fun hasSent(roomId: kotlin.String): kotlin.Boolean = throw NotImplementedError()
     override fun joinRoomByAlias(aliasOrId: kotlin.String): kotlin.String = throw NotImplementedError()
     override fun knownPeople(): List<PersonDto> = throw NotImplementedError()

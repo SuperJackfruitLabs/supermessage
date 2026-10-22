@@ -6445,6 +6445,12 @@ public struct TimelineRow {
      * For a drawn membership row: the run and stretch it belongs to.
      */
     public var membership: MembershipPlacement?
+    /**
+     * Whether the reader hid this event on this device
+     * (`crate::hidden_events`). The row stays in the list, and the grouping
+     * above settles as if it were absent; a host leaves it undrawn.
+     */
+    public var hidden: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6562,7 +6568,12 @@ public struct TimelineRow {
          */showsRuntime: Bool = false, 
         /**
          * For a drawn membership row: the run and stretch it belongs to.
-         */membership: MembershipPlacement? = nil) {
+         */membership: MembershipPlacement? = nil, 
+        /**
+         * Whether the reader hid this event on this device
+         * (`crate::hidden_events`). The row stays in the list, and the grouping
+         * above settles as if it were absent; a host leaves it undrawn.
+         */hidden: Bool = false) {
         self.item = item
         self.view = view
         self.senderName = senderName
@@ -6581,6 +6592,7 @@ public struct TimelineRow {
         self.hidesQuote = hidesQuote
         self.showsRuntime = showsRuntime
         self.membership = membership
+        self.hidden = hidden
     }
 }
 
@@ -6642,6 +6654,9 @@ extension TimelineRow: Equatable, Hashable {
         if lhs.membership != rhs.membership {
             return false
         }
+        if lhs.hidden != rhs.hidden {
+            return false
+        }
         return true
     }
 
@@ -6664,6 +6679,7 @@ extension TimelineRow: Equatable, Hashable {
         hasher.combine(hidesQuote)
         hasher.combine(showsRuntime)
         hasher.combine(membership)
+        hasher.combine(hidden)
     }
 }
 
@@ -6692,7 +6708,8 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
                 endsRun: FfiConverterBool.read(from: &buf), 
                 hidesQuote: FfiConverterBool.read(from: &buf), 
                 showsRuntime: FfiConverterBool.read(from: &buf), 
-                membership: FfiConverterOptionTypeMembershipPlacement.read(from: &buf)
+                membership: FfiConverterOptionTypeMembershipPlacement.read(from: &buf), 
+                hidden: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -6715,6 +6732,7 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
         FfiConverterBool.write(value.hidesQuote, into: &buf)
         FfiConverterBool.write(value.showsRuntime, into: &buf)
         FfiConverterOptionTypeMembershipPlacement.write(value.membership, into: &buf)
+        FfiConverterBool.write(value.hidden, into: &buf)
     }
 }
 

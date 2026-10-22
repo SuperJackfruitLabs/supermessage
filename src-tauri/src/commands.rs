@@ -875,6 +875,14 @@ pub fn has_sent(room_id: String, timeline: State<'_, Arc<FocusedTimeline>>) -> b
     timeline.has_sent(&room_id)
 }
 
+/// The events the reader hid on this device: the focused timeline groups as
+/// if they were absent and marks them `hidden`. The full set, pushed at
+/// sign-in and whenever it changes.
+#[tauri::command]
+pub fn set_hidden_events(event_ids: Vec<String>, timeline: State<'_, Arc<FocusedTimeline>>) {
+    timeline.set_hidden_events(event_ids);
+}
+
 /// What the dock above the composer says — see `core::acknowledgement`. Reads
 /// the core's own timeline rows, so the webview sends none.
 #[tauri::command]

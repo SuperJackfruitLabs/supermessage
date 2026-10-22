@@ -213,6 +213,7 @@ struct PreviewClient: SessionClient {
             isAgentRoom: false)
     }
     func hasSent(roomId: String) async -> Bool { false }
+    func setHiddenEvents(eventIds: [String]) async {}
     func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {
         isEmpty ? [] : PreviewFixtures.searchResults
     }
