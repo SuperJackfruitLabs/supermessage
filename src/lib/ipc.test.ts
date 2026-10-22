@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { turn, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -252,6 +252,13 @@ describe("cast, typing line and acknowledgement", () => {
     invokeMock.mockResolvedValue(null);
     expect(await turn("!r:x")).toBeNull();
     expect(invokeMock).toHaveBeenCalledWith("turn", { roomId: "!r:x" });
+  });
+
+  it("turnStatusWord passes the ending camelCase and returns the core's word", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("Stopped");
+    expect(await turnStatusWord("timedOut")).toBe("Stopped");
+    expect(invokeMock).toHaveBeenCalledWith("turn_status_word", { endedBy: "timedOut" });
   });
 
   it("hasSent invokes has_sent with roomId", async () => {

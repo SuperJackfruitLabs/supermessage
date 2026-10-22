@@ -12,8 +12,9 @@
 // landed yet, and it is discarded the moment it does.
 //
 // The core drops stale and duplicate *text* deltas before they cross IPC
-// (`core::live::LiveState`), so those are applied as given. Tool updates are
-// not — see `tools` below for why that rule has to live here instead.
+// (`core::live::LiveState`), and stale tool reports too (`core::turns`: a
+// report at or below the call's last sequence is refused), so both are applied
+// as given.
 
 import {
   onLive as defaultOnLive,

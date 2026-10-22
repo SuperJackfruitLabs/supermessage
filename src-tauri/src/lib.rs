@@ -33,7 +33,7 @@ use crate::commands::{
     roster_needs_you_inbox, roster_row, roster_sections, roster_state, search_messages,
     send_gate_decision, send_message, send_reply, set_typing, space_display_name, space_select,
     spaces_list, timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction,
-    turn, turn_duration_label, turn_record_label, typing_view,
+    turn, turn_duration_label, turn_record_label, turn_status_word, typing_view,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -281,6 +281,7 @@ pub fn run() {
             turn,
             turn_record_label,
             turn_duration_label,
+            turn_status_word,
             elapsed_label,
             fold_turn,
             room_cast,

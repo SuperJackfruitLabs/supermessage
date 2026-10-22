@@ -930,6 +930,12 @@ pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> 
     supermessage_core::turn_label::turn_record_label(thought, steps, elapsed_ms)
 }
 
+/// `core::turn_label::turn_status_word`.
+#[tauri::command]
+pub fn turn_status_word(ended_by: Option<supermessage_core::turns::TurnEnding>) -> String {
+    supermessage_core::turn_label::turn_status_word(ended_by)
+}
+
 /// `core::turn_label::turn_duration_label`.
 #[tauri::command]
 pub fn turn_duration_label(elapsed_ms: u64) -> String {

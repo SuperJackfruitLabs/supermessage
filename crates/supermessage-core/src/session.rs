@@ -2351,6 +2351,24 @@ mod tests {
         assert_eq!(session.turn("!r:x"), None);
     }
 
+    /// Mutation seen failing (run): removing `self.stop_turn_sweep().await` from
+    /// `logout` fails this at `session.turn_sweep.read().await.is_none()`.
+    #[tokio::test]
+    async fn logout_stops_the_turn_sweeper() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-turns-logout-sweep"),
+            Box::new(MemoryStore::default()),
+        );
+        // Stands in for the sweeper `start_streams` would have started.
+        let task = tokio::spawn(std::future::pending::<()>());
+        let watch = task.abort_handle();
+        *session.turn_sweep.write().await = Some(task);
+        assert!(!watch.is_finished());
+        let _ = session.logout().await;
+        assert!(session.turn_sweep.read().await.is_none());
+        assert!(watch.is_finished(), "logout left the sweeper running");
+    }
+
     /// Mutation seen failing: removing `self.turns.clear()` from `login`
     /// leaves the snapshot `Some` (the login itself fails: no server).
     #[tokio::test]

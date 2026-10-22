@@ -41,7 +41,19 @@ pub fn answers_a_turn(row: &TimelineRow) -> bool {
             || row.sender_name != row.sender_short)
 }
 
-/// The event time of every row in `ops` that answers a turn.
+/// A row that answers a turn, found in a timeline diff.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundReply {
+    /// The row's own timestamp.
+    pub event_ms: Option<u64>,
+    /// The Matrix user who sent it.
+    pub sender: Option<String>,
+    /// Whether it came from loaded history (`Reset`) rather than arriving
+    /// live. History is judged more strictly by the book.
+    pub from_history: bool,
+}
+
+/// Every row in `ops` that answers a turn.
 ///
 /// Rows that arrive (`PushBack`, `Append`, `Insert`) count, and so does a
 /// `Set` of an edited row: a bridge that answers by editing its progress
@@ -49,29 +61,34 @@ pub fn answers_a_turn(row: &TimelineRow) -> bool {
 ///
 /// A `Reset` is the room being opened (or the timeline starting over), so it
 /// carries the agent's reply if the agent answered while the reader was
-/// elsewhere. Its rows count only when they have a timestamp, and the book's
-/// skew rule then drops any reply stamped before the turn began, so history
-/// does not end a newer turn.
+/// elsewhere. Its rows count only when they have a timestamp, and they are
+/// marked `from_history`: the book then wants them stamped at or after the
+/// turn's start (no backward skew) and from the turn's own writer, so the
+/// previous turn's answer does not end a newer turn.
 ///
 /// iOS has no counterpart: it discards an in-progress turn on leaving its room
 /// and reopens clean. The core keeps the turn for every room, so on reopen it
 /// has to learn what happened meanwhile.
-pub fn replies_in(ops: &[DiffOp<TimelineRow>]) -> Vec<Option<u64>> {
+pub fn replies_in(ops: &[DiffOp<TimelineRow>]) -> Vec<FoundReply> {
     let mut found = Vec::new();
-    let mut take = |row: &TimelineRow| {
+    let mut take = |row: &TimelineRow, from_history: bool| {
         if answers_a_turn(row) {
-            found.push(row.item.timestamp_ms);
+            found.push(FoundReply {
+                event_ms: row.item.timestamp_ms,
+                sender: row.item.sender.clone(),
+                from_history,
+            });
         }
     };
     for op in ops {
         match op {
-            DiffOp::Append { values } => values.iter().for_each(&mut take),
-            DiffOp::PushBack { value } | DiffOp::Insert { value, .. } => take(value),
-            DiffOp::Set { value, .. } if value.item.edited => take(value),
+            DiffOp::Append { values } => values.iter().for_each(|r| take(r, false)),
+            DiffOp::PushBack { value } | DiffOp::Insert { value, .. } => take(value, false),
+            DiffOp::Set { value, .. } if value.item.edited => take(value, false),
             DiffOp::Reset { values } => values
                 .iter()
                 .filter(|row| row.item.timestamp_ms.is_some())
-                .for_each(&mut take),
+                .for_each(|r| take(r, true)),
             _ => {}
         }
     }
@@ -113,15 +130,25 @@ impl EventSink for TurnSink {
             _ => Vec::new(),
         };
         self.inner.emit(event);
-        for event_ms in replies {
-            let outcome = self.turns.apply_in(
-                self.generation,
-                &self.room_id,
-                TurnInput::Reply {
+        for reply in replies {
+            let at_ms = now_ms();
+            let outcome = match (reply.from_history, reply.event_ms) {
+                (true, Some(event_ms)) => self.turns.apply_history_reply_in(
+                    self.generation,
+                    &self.room_id,
+                    reply.sender.as_deref(),
                     event_ms,
-                    at_ms: now_ms(),
-                },
-            );
+                    at_ms,
+                ),
+                _ => self.turns.apply_in(
+                    self.generation,
+                    &self.room_id,
+                    TurnInput::Reply {
+                        event_ms: reply.event_ms,
+                        at_ms,
+                    },
+                ),
+            };
             if let Some(update) = outcome.update {
                 self.inner.emit(CoreEvent::Turn(update));
             }
@@ -382,8 +409,11 @@ mod tests {
         assert_eq!(ended_by(&book), Some(TurnEnding::Reply));
     }
 
-    /// Mutation seen failing: dropping the book's skew check (or counting
-    /// `Reset` rows without it) ends the new turn on an old answer.
+    /// Mutation seen failing (run): dropping the `started_at_ms` check on a
+    /// history reply fails this with `left: ["diff", "turn"], right:
+    /// ["diff"]`. (The 60 s skew on a *live* reply is pinned by
+    /// `turns::a_reply_from_before_the_turn_does_not_end_it`, whose mutant was
+    /// run too.)
     #[test]
     fn opening_a_room_with_only_an_older_answer_leaves_the_turn_running() {
         let book = running_turn();
@@ -393,6 +423,94 @@ mod tests {
         }]));
         assert_eq!(*rec.0.lock().unwrap(), ["diff"]);
         assert!(book.in_progress(ROOM));
+    }
+
+    /// The previous turn's answer, stamped 30 s before this turn began, is
+    /// inside the book's 60 s skew for a reply that *arrives*. In loaded
+    /// history it is the old turn's answer and must not end this one.
+    ///
+    /// Mutation seen failing (run): judging `Reset` rows by the book's 60 s skew
+    /// (or by nothing) fails this with `left: ["diff", "turn"], right:
+    /// ["diff"]`; so does routing `Reset` rows through the live `Reply` path.
+    #[test]
+    fn a_previous_turns_reply_30s_before_this_one_started_does_not_end_it() {
+        let book = running_turn();
+        let (rec, sink) = wrapped(&book);
+        sink.emit(diff(vec![DiffOp::Reset {
+            values: vec![agent_at(T - 30_000)],
+        }]));
+        assert_eq!(*rec.0.lock().unwrap(), ["diff"]);
+        assert!(book.in_progress(ROOM), "the old answer ended the new turn");
+    }
+
+    /// The same row arriving live (not history) is inside the skew and does
+    /// end the turn: the skew is for replies that arrive during a turn.
+    ///
+    /// Mutation seen failing (run): marking every row `from_history` fails this
+    /// with `left: None, right: Some(Reply)`.
+    #[test]
+    fn a_live_reply_stamped_30s_early_still_ends_the_turn() {
+        let book = running_turn();
+        let (_rec, sink) = wrapped(&book);
+        sink.emit(diff(vec![DiffOp::PushBack {
+            value: agent_at(T - 30_000),
+        }]));
+        assert_eq!(ended_by(&book), Some(TurnEnding::Reply));
+    }
+
+    /// One second after the turn began is this turn's answer.
+    ///
+    /// Mutation seen failing (run): requiring the reply to be 10 s after the
+    /// start fails this with `left: ["diff"], right: ["diff", "turn"]`.
+    #[test]
+    fn a_reset_reply_1s_after_the_turn_started_ends_it() {
+        let book = running_turn();
+        let (rec, sink) = wrapped(&book);
+        sink.emit(diff(vec![DiffOp::Reset {
+            values: vec![agent_at(T + 1_000)],
+        }]));
+        assert_eq!(*rec.0.lock().unwrap(), ["diff", "turn"]);
+        assert_eq!(ended_by(&book), Some(TurnEnding::Reply));
+    }
+
+    fn from(sender: &str, ms: u64) -> TimelineRow {
+        let mut r = row("message", None, sender, "Atlas", false, false);
+        r.item.timestamp_ms = Some(ms);
+        r
+    }
+
+    fn running_turn_by(writer: &str) -> Arc<TurnBook> {
+        let book = Arc::new(TurnBook::default());
+        book.apply_from(
+            ROOM,
+            writer,
+            TurnInput::Answer {
+                seq: 1,
+                done: false,
+                at_ms: T,
+            },
+        );
+        book
+    }
+
+    /// Another agent's message in the reopened room is not this agent's
+    /// answer, even when it is dated after the turn began.
+    ///
+    /// Mutation seen failing (run): dropping the writer check fails this with
+    /// `left: ["diff", "turn"], right: ["diff"]`.
+    #[test]
+    fn a_reset_row_from_another_agent_does_not_end_the_turn() {
+        let book = running_turn_by("@agent_atlas:x");
+        let (rec, sink) = wrapped(&book);
+        sink.emit(diff(vec![DiffOp::Reset {
+            values: vec![from("@agent_quill:x", T + 1_000)],
+        }]));
+        assert_eq!(*rec.0.lock().unwrap(), ["diff"]);
+        assert!(book.in_progress(ROOM));
+        sink.emit(diff(vec![DiffOp::Reset {
+            values: vec![from("@agent_atlas:x", T + 1_000)],
+        }]));
+        assert_eq!(ended_by(&book), Some(TurnEnding::Reply));
     }
 
     /// Mutation seen failing: dropping the timestamp filter on `Reset` rows

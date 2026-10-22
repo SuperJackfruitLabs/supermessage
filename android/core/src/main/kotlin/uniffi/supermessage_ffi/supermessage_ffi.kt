@@ -76,6 +76,7 @@ import uniffi.supermessage_core.FfiConverterTypeSearchResultDto
 import uniffi.supermessage_core.FfiConverterTypeSpaceSummary
 import uniffi.supermessage_core.FfiConverterTypeTimelineRow
 import uniffi.supermessage_core.FfiConverterTypeToolPhase
+import uniffi.supermessage_core.FfiConverterTypeTurnEnding
 import uniffi.supermessage_core.FfiConverterTypeTurnInput
 import uniffi.supermessage_core.FfiConverterTypeTurnSnapshot
 import uniffi.supermessage_core.FfiConverterTypeTurnUpdate
@@ -115,6 +116,7 @@ import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_core.TimelineRow
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_core.TurnEnding
 import uniffi.supermessage_core.TurnInput
 import uniffi.supermessage_core.TurnSnapshot
 import uniffi.supermessage_core.TurnUpdate
@@ -161,6 +163,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferSearchResultDto
 import uniffi.supermessage_core.RustBuffer as RustBufferSpaceSummary
 import uniffi.supermessage_core.RustBuffer as RustBufferTimelineRow
 import uniffi.supermessage_core.RustBuffer as RustBufferToolPhase
+import uniffi.supermessage_core.RustBuffer as RustBufferTurnEnding
 import uniffi.supermessage_core.RustBuffer as RustBufferTurnInput
 import uniffi.supermessage_core.RustBuffer as RustBufferTurnSnapshot
 import uniffi.supermessage_core.RustBuffer as RustBufferTurnUpdate
@@ -1146,6 +1149,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1393,6 +1398,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_turn_record_label(`thought`: Byte,`steps`: Int,`elapsedMs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_turn_status_word(`endedBy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_typing_view(`typers`: RustBuffer.ByValue,`agentIds`: RustBuffer.ByValue,`counterpart`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferTypingView.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_answer_for(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1602,6 +1609,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_turn_duration_label(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_turn_record_label(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_turn_status_word(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_typing_view(
     ): Short
@@ -1903,6 +1912,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_turn_record_label() != 9579.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_turn_status_word() != 45599.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_typing_view() != 62690.toShort()) {
@@ -6704,6 +6716,38 @@ public object FfiConverterOptionalTypeRosterRow: FfiConverterRustBuffer<RosterRo
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeTurnEnding: FfiConverterRustBuffer<TurnEnding?> {
+    override fun read(buf: ByteBuffer): TurnEnding? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTurnEnding.read(buf)
+    }
+
+    override fun allocationSize(value: TurnEnding?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTurnEnding.allocationSize(value)
+        }
+    }
+
+    override fun write(value: TurnEnding?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTurnEnding.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeTurnSnapshot: FfiConverterRustBuffer<TurnSnapshot?> {
     override fun read(buf: ByteBuffer): TurnSnapshot? {
         if (buf.get().toInt() == 0) {
@@ -7477,6 +7521,10 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
 
 
 
+
+
+
+
         /**
          * What the dock above the composer says after the reader wrote to an agent —
          * see `core::acknowledgement`. A free function for the same reason as
@@ -8004,6 +8052,18 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_turn_record_label(
         FfiConverterBoolean.lower(`thought`),FfiConverterUInt.lower(`steps`),FfiConverterOptionalULong.lower(`elapsedMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "Working", "Done" or "Stopped" — see `core::turn_label::turn_status_word`.
+         */ fun `turnStatusWord`(`endedBy`: TurnEnding?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_turn_status_word(
+        FfiConverterOptionalTypeTurnEnding.lower(`endedBy`),_status)
 }
     )
     }

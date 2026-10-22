@@ -864,6 +864,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_turn_duration_label(uint64_t elapsed_
 RustBuffer uniffi_supermessage_ffi_fn_func_turn_record_label(int8_t thought, uint32_t steps, RustBuffer elapsed_ms, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_STATUS_WORD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_STATUS_WORD
+RustBuffer uniffi_supermessage_ffi_fn_func_turn_status_word(RustBuffer ended_by, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TYPING_VIEW
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TYPING_VIEW
 RustBuffer uniffi_supermessage_ffi_fn_func_typing_view(RustBuffer typers, RustBuffer agent_ids, RustBuffer counterpart, RustCallStatus *_Nonnull out_status
@@ -1425,6 +1430,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_turn_duration_label(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_RECORD_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_RECORD_LABEL
 uint16_t uniffi_supermessage_ffi_checksum_func_turn_record_label(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_STATUS_WORD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_STATUS_WORD
+uint16_t uniffi_supermessage_ffi_checksum_func_turn_status_word(void
     
 );
 #endif

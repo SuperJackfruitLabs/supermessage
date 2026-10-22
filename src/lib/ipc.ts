@@ -2410,6 +2410,11 @@ export async function turnRecordLabel(thought: boolean, steps: number, elapsedMs
   return invoke<string>("turn_record_label", { thought, steps, elapsedMs });
 }
 
+/** `core::turn_label::turn_status_word`: "Working", "Done", or "Stopped" for a turn that timed out. */
+export async function turnStatusWord(endedBy: TurnEnding | null): Promise<string> {
+  return invoke<string>("turn_status_word", { endedBy });
+}
+
 /** `core::turn_label::turn_duration_label`. */
 export async function turnDurationLabel(elapsedMs: number): Promise<string> {
   return invoke<string>("turn_duration_label", { elapsedMs });

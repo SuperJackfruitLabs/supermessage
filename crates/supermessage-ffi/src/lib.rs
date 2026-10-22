@@ -1159,6 +1159,12 @@ pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> 
     supermessage_core::turn_label::turn_record_label(thought, steps, elapsed_ms)
 }
 
+/// "Working", "Done" or "Stopped" — see `core::turn_label::turn_status_word`.
+#[uniffi::export]
+pub fn turn_status_word(ended_by: Option<supermessage_core::turns::TurnEnding>) -> String {
+    supermessage_core::turn_label::turn_status_word(ended_by)
+}
+
 /// "12s", "2m 5s" — see `core::turn_label::turn_duration_label`.
 #[uniffi::export]
 pub fn turn_duration_label(elapsed_ms: u64) -> String {
