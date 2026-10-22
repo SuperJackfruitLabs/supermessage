@@ -213,6 +213,10 @@ fun Timeline(
         }
         out
     }
+    // Faces for readers, from the messages they have sent here. A receipt
+    // carries only a user id; the room has usually already shown that
+    // person's face beside something they said.
+    val facesBySender = remember(revision) { readerFaces(rows) }
     val singleSpeaker = remember(revision) { TimelineGrouping.hasSingleSpeaker(rows) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -362,6 +366,7 @@ fun Timeline(
                         now = Instant.now(),
                         continuesRun = continuesRun[row.item.id] ?: false,
                         endsRun = endsRun[row.item.id] ?: true,
+                        readers = row.item.readBy.map { facesBySender[it] ?: ReaderFace(it, null, null) },
                         attribution = if (singleSpeaker) row.senderShort else row.senderName,
                         imageUri = imageUri,
                         faceUri = faceUri,
