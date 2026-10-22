@@ -10,6 +10,7 @@
 
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
+  import { markFreshSignIn } from "$lib/stores/freshSignIn";
   import type { CoreError } from "$lib/ipc";
 
   let homeserver = $state("https://id.agentpod.dev");
@@ -47,6 +48,8 @@
     errorMessage = null;
     try {
       await roomsStore.login(homeserver.trim(), username.trim(), password);
+      // The main page sets recovery up once it mounts; see `freshSignIn.ts`.
+      markFreshSignIn();
       await goto("/");
     } catch (err) {
       errorMessage = messageFor(err as CoreError);

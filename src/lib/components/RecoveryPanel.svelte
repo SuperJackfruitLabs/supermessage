@@ -20,13 +20,17 @@
    */
   export interface Props {
     state: "enabled" | "disabled" | "incomplete" | "unknown";
-    onEnable: () => Promise<string>;
+    /**
+     * A key that was just created (recovery set up at sign-in). When set, the
+     * panel opens on the "shown once" screen.
+     */
+    initialKey?: string | null;
     onRecover: (key: string) => Promise<void>;
     onReset: (password: string) => Promise<string>;
     onClose: () => void;
   }
 
-  let { state: recovery, onEnable, onRecover, onReset, onClose }: Props = $props();
+  let { state: recovery, initialKey = null, onRecover, onReset, onClose }: Props = $props();
 
   let busy = $state(false);
   let resetting = $state(false);
@@ -40,22 +44,10 @@
    * because an app that can show you your recovery key again is an app that
    * stored it.
    */
-  let freshKey = $state<string | null>(null);
+  // svelte-ignore state_referenced_locally
+  let freshKey = $state<string | null>(initialKey);
   let copied = $state(false);
   let entered = $state("");
-
-  async function enable(): Promise<void> {
-    if (busy) return;
-    busy = true;
-    failure = null;
-    try {
-      freshKey = await onEnable();
-    } catch (err) {
-      failure = err instanceof Error ? err.message : String(err);
-    } finally {
-      busy = false;
-    }
-  }
 
   /**
    * Throw the old identity away and start again.

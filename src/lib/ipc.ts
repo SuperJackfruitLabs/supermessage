@@ -1274,6 +1274,17 @@ export async function enableRecovery(): Promise<string> {
   return invoke<string>("enable_recovery");
 }
 
+/**
+ * Turn recovery on if the account has none, returning the new key, or `null`
+ * when it was already on.
+ *
+ * What a fresh sign-in calls. The same rule as `enableRecovery` applies to a
+ * returned key: **shown once and never stored, logged or sent anywhere.**
+ */
+export async function ensureRecovery(): Promise<string | null> {
+  return invoke<string | null>("ensure_recovery");
+}
+
 /** Use a recovery key on this device, to read what other devices already hold. */
 export async function recoverWithKey(recoveryKey: string): Promise<void> {
   await invoke<void>("recover_with_key", { recoveryKey });

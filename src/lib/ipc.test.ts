@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
+const { ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -111,5 +111,21 @@ describe("the spaces commands", () => {
 
     await expect(spacesList()).resolves.toEqual(summaries);
     expect(invokeMock).toHaveBeenCalledWith("spaces_list");
+  });
+});
+
+describe("ensureRecovery", () => {
+  it("invokes ensure_recovery and passes the key through", async () => {
+    invokeMock.mockResolvedValueOnce("EsTk abcd");
+
+    await expect(ensureRecovery()).resolves.toBe("EsTk abcd");
+    expect(invokeMock).toHaveBeenCalledWith("ensure_recovery");
+  });
+
+  it("passes null through when recovery was already on", async () => {
+    invokeMock.mockResolvedValueOnce(null);
+
+    await expect(ensureRecovery()).resolves.toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith("ensure_recovery");
   });
 });
