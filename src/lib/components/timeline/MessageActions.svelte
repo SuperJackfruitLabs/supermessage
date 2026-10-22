@@ -31,7 +31,11 @@
     onCopy: (row: ItemRow) => void;
     onEdit: (row: ItemRow) => void;
     onDelete: (row: ItemRow) => void;
-    onReport: (row: ItemRow) => void;
+    /**
+     * Report is handed the More button as well: the menu has closed by the time the report sheet
+     * opens, so the sheet could not otherwise know where to return focus.
+     */
+    onReport: (row: ItemRow, opener: HTMLElement | null) => void;
   }
 
   let {
@@ -79,9 +83,9 @@
     menuEl.querySelector<HTMLElement>("[role=menuitem]")?.focus();
   });
 
-  function choose(fn: (row: ItemRow) => void) {
+  function choose(fn: (row: ItemRow, opener: HTMLElement | null) => void) {
     closeMenu();
-    fn(row);
+    fn(row, moreButton);
   }
 
   function onWindowKeydown(e: KeyboardEvent) {

@@ -1051,11 +1051,15 @@
 
   /** What the open report sheet is about, if it is open. */
   let reporting = $state<ReportSubject | null>(null);
+  /** The More button the report was started from; the sheet returns focus to it. */
+  let reportOpener = $state<HTMLElement | null>(null);
 
   /** Opens the report sheet for someone else's message; a row with no event or sender opens nothing. */
-  async function startReport(row: ItemRow): Promise<void> {
+  async function startReport(row: ItemRow, opener: HTMLElement | null): Promise<void> {
     const subject = await reportSubjectFor(row, roomId);
-    if (subject !== null) reporting = subject;
+    if (subject === null) return;
+    reportOpener = opener;
+    reporting = subject;
   }
 
   /** The own message awaiting delete confirmation, if the dialog is open. */
@@ -1303,6 +1307,7 @@
     {@const subject = reporting}
     <ReportSheet
       {subject}
+      opener={reportOpener}
       isBlocked={(userId) => safetyStore.isBlocked(userId)}
       onSend={(reason, alsoBlock) => report(subject, reason, alsoBlock)}
       onClose={() => (reporting = null)}

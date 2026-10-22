@@ -64,6 +64,7 @@
   import RuntimeRows from "./roster/RuntimeRows.svelte";
   import LeaveRoomConfirm from "./LeaveRoomConfirm.svelte";
   import RoomNotificationsSection from "./RoomNotificationsSection.svelte";
+  import { SETTING_FAILURE } from "./roomSettings";
   import MemberActions from "./safety/MemberActions.svelte";
   import ReportSheet from "./safety/ReportSheet.svelte";
   import { memberIsBlocked, memberName } from "./safety/memberActions";
@@ -144,26 +145,39 @@
     }
   }
 
-  /** Optimistic: show the new value, write it, then take the room's word for it (iOS `:363-397`). */
-  async function changeMode(mode: NotificationMode): Promise<void> {
-    if (info) info = { ...info, notifications: mode };
+  /** A mute or pin write is in flight: the controls are disabled so it cannot be sent twice. */
+  let writing = $state(false);
+  /** Said under the notification controls when a write was refused. */
+  let settingFailure = $state<string | null>(null);
+
+  /**
+   * Optimistic: show the new value, write it, then take the room's word for it (iOS `:363-397`).
+   * A refused write puts the previous value back at once (the reload may fail too) and says so.
+   */
+  async function writeSetting(
+    optimistic: Partial<RoomInfo>,
+    write: () => Promise<void>,
+  ): Promise<void> {
+    if (writing || !info) return;
+    writing = true;
+    settingFailure = null;
+    const before = info;
+    info = { ...info, ...optimistic };
     try {
-      await setRoomNotificationMode(roomId, mode);
+      await write();
     } catch (err) {
-      console.error("failed to set notification mode", roomId, err);
+      console.error("failed to change a room setting", roomId, err);
+      info = before;
+      settingFailure = SETTING_FAILURE;
     }
     await reload();
+    writing = false;
   }
 
-  async function changePinned(pinned: boolean): Promise<void> {
-    if (info) info = { ...info, pinned };
-    try {
-      await setRoomPinned(roomId, pinned);
-    } catch (err) {
-      console.error("failed to pin or unpin", roomId, err);
-    }
-    await reload();
-  }
+  const changeMode = (mode: NotificationMode) =>
+    writeSetting({ notifications: mode }, () => setRoomNotificationMode(roomId, mode));
+  const changePinned = (pinned: boolean) =>
+    writeSetting({ pinned }, () => setRoomPinned(roomId, pinned));
 
   async function blockMember(member: RoomMember): Promise<void> {
     safetyFailure = null;
@@ -300,6 +314,8 @@
     <RoomNotificationsSection
       mode={info.notifications}
       pinned={info.pinned}
+      disabled={writing}
+      failure={settingFailure}
       onMode={(mode) => void changeMode(mode)}
       onPinned={(pinned) => void changePinned(pinned)}
     />

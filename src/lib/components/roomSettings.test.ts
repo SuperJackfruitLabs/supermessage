@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationMode, RoomInfo } from "$lib/ipc";
-import { NOTIFY_OPTIONS, muteTarget, toggleMute, togglePin, type ToggleDeps } from "./roomSettings";
+import { NOTIFY_OPTIONS, exclusively, muteTarget, toggleMute, togglePin, type ToggleDeps } from "./roomSettings";
 
 function deps(info: Partial<RoomInfo> | Error, next: NotificationMode = "muted", writeFails = false) {
   const log: string[] = [];
@@ -64,5 +64,29 @@ describe("room settings", () => {
   it("a refused write reports null", async () => {
     expect(await toggleMute("!a", deps({ notifications: "default" }, "muted", true).d)).toBeNull();
     expect(await togglePin("!a", deps({ pinned: false }, "muted", true).d)).toBeNull();
+  });
+});
+
+describe("exclusively", () => {
+  it("refuses a second run for the same key while the first is in flight", async () => {
+    const busy = new Set<string>();
+    let release!: () => void;
+    const first = exclusively(busy, "!a", () => new Promise<string>((r) => (release = () => r("done"))));
+    const second = await exclusively(busy, "!a", async () => "again");
+    expect(second).toEqual({ ran: false });
+    release();
+    expect(await first).toEqual({ ran: true, value: "done" });
+    expect(await exclusively(busy, "!a", async () => "later")).toEqual({ ran: true, value: "later" });
+  });
+
+  it("lets another key run meanwhile", async () => {
+    const busy = new Set<string>(["!a"]);
+    expect(await exclusively(busy, "!b", async () => 1)).toEqual({ ran: true, value: 1 });
+  });
+
+  it("releases the key when the work throws", async () => {
+    const busy = new Set<string>();
+    await expect(exclusively(busy, "!a", async () => { throw new Error("x"); })).rejects.toThrow("x");
+    expect(busy.has("!a")).toBe(false);
   });
 });

@@ -54,11 +54,11 @@
   });
 </script>
 
-{#snippet frame(row: typeof own)}
+{#snippet frame(row: typeof own, onReport: (row: any, opener: HTMLElement | null) => void = noop)}
   <!-- The `relative group` block the pill is anchored to, as in the timeline. -->
   <div class="group relative mx-auto mt-8 h-44 w-[34rem] bg-surface font-sans text-body">
     <div class="rounded-control bg-surface-sunken px-3 py-2">Ship it.</div>
-    <MessageActions {row} {...args} />
+    <MessageActions {row} {...args} {onReport} />
   </div>
 {/snippet}
 
@@ -120,5 +120,27 @@
 >
   {#snippet template()}
     {@render frame(theirs)}
+  {/snippet}
+</Story>
+
+<!-- Choosing Report… hands the More button on, so the sheet can return focus there once the menu has closed. -->
+<Story
+  name="Report passes the More button"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const more = (await settled(() => root.querySelector('[aria-label="More actions"]'))) as HTMLElement;
+    more.focus();
+    more.click();
+    const item = (await settled(() =>
+      [...root.querySelectorAll<HTMLElement>("[role=menuitem]")].find((b) => b.textContent?.trim() === "Report…"),
+    )) as HTMLElement;
+    item.click();
+    await settled(() => ((window as any).__reportOpener === more ? more : null), 1000).catch(() => {
+      throw new Error("onReport did not receive the More button");
+    });
+  }}
+>
+  {#snippet template()}
+    {@render frame(theirs, (_row, opener) => ((window as any).__reportOpener = opener))}
   {/snippet}
 </Story>

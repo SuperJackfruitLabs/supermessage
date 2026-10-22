@@ -30,9 +30,21 @@
     remaining?: (reason: string) => Promise<number>;
     onSend: (reason: string, alsoBlock: boolean) => Promise<string | null>;
     onClose: () => void;
+    /**
+     * Where focus returns when the sheet closes, when the caller knows better than whatever has
+     * focus as the sheet mounts (a menu that has already closed leaves it on the page body).
+     */
+    opener?: HTMLElement | null;
   }
 
-  let { subject, isBlocked, remaining = reportReasonRemaining, onSend, onClose }: Props = $props();
+  let {
+    subject,
+    isBlocked,
+    remaining = reportReasonRemaining,
+    onSend,
+    onClose,
+    opener: given = null,
+  }: Props = $props();
 
   const target = $derived(blockable(subject));
   const alreadyBlocked = $derived(target !== null && isBlocked(target.userId));
@@ -64,7 +76,7 @@
   const effectiveBlock = $derived(alsoBlock && target !== null && !alreadyBlocked);
 
   onMount(() => {
-    const opener = document.activeElement;
+    const opener = given ?? document.activeElement;
     dialog?.showModal();
     reasonField?.focus();
     void ask(reason);

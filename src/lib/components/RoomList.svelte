@@ -47,7 +47,9 @@
   import RoomRow from "./roster/RoomRow.svelte";
   import RowMenu from "./roster/RowMenu.svelte";
   import { rowMenuItems, type RowMenuItem } from "./roster/rowMenu";
-  import { toggleMute, togglePin } from "./roomSettings";
+  import { SETTING_FAILURE, exclusively, toggleMute, togglePin } from "./roomSettings";
+  import InlineFailure from "./timeline/InlineFailure.svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import RosterSectionHeading from "./roster/RosterSectionHeading.svelte";
   import {
     roomInfo,
@@ -70,6 +72,10 @@
 
   /** The open row menu, if any: which room, where, and what it offers. */
   let menu = $state<{ roomId: string; at: { x: number; y: number }; items: RowMenuItem[] } | null>(null);
+  /** Rooms with a mute or pin write in flight: their Mute and Pin are unavailable meanwhile. */
+  const writing = new SvelteSet<string>();
+  /** Said above the list when a mute or pin was refused; cleared by the next menu. */
+  let settingFailure = $state<string | null>(null);
   /** Only the newest request may open the menu. */
   let menuRequest = 0;
 
@@ -82,6 +88,7 @@
     const entry = sections.flatMap((s) => s.rows).find((e) => e.row.room.id === roomId);
     if (!entry) return;
     const mine = ++menuRequest;
+    settingFailure = null;
     const info =
       entry.row.affordance === "compose"
         ? await roomInfo(roomId)
@@ -102,9 +109,12 @@
     const roomId = menu?.roomId;
     closeMenu();
     if (!roomId) return;
-    if (id === "mute") await toggleMute(roomId);
-    else if (id === "pin") await togglePin(roomId);
-    else await roomsStore.declineInvitation(roomId).catch((err: unknown) => console.error("decline failed", err));
+    if (id === "mute" || id === "pin") {
+      const outcome = await exclusively<unknown>(writing, roomId, () =>
+        id === "mute" ? toggleMute(roomId) : togglePin(roomId),
+      );
+      if (outcome.ran && outcome.value === null) settingFailure = SETTING_FAILURE;
+    } else await roomsStore.declineInvitation(roomId).catch((err: unknown) => console.error("decline failed", err));
   }
 
   /**
@@ -193,6 +203,9 @@
 -->
 <nav aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
   <ArrangementMenu {view} onChange={(next) => (view = next)} />
+  {#if settingFailure !== null}
+    <div class="px-4"><InlineFailure message={settingFailure} /></div>
+  {/if}
 
   <!--
     The list reorders itself constantly — it is sorted by last activity, so
@@ -232,5 +245,5 @@
 </nav>
 
 {#if menu !== null}
-  <RowMenu items={menu.items} at={menu.at} onChoose={(id) => void chooseMenuItem(id)} onClose={closeMenu} />
+  <RowMenu items={menu.items} at={menu.at} busy={writing.has(menu.roomId)} onChoose={(id) => void chooseMenuItem(id)} onClose={closeMenu} />
 {/if}

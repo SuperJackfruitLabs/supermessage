@@ -58,3 +58,24 @@ export async function togglePin(roomId: string, deps: ToggleDeps = defaultDeps):
     return null;
   }
 }
+
+/** What is said when a mute or pin write is refused, under the control that asked for it. */
+export const SETTING_FAILURE = "Couldn't change that. Try again.";
+
+/**
+ * Runs `work` unless one is already running for `key`, and releases the key however it ends. A
+ * switch that can be flipped twice sends two writes whose answers race.
+ */
+export async function exclusively<T>(
+  busy: { has(key: string): boolean; add(key: string): unknown; delete(key: string): unknown },
+  key: string,
+  work: () => Promise<T>,
+): Promise<{ ran: true; value: T } | { ran: false }> {
+  if (busy.has(key)) return { ran: false };
+  busy.add(key);
+  try {
+    return { ran: true, value: await work() };
+  } finally {
+    busy.delete(key);
+  }
+}

@@ -4,6 +4,7 @@
   import type { ReportSubject } from "$lib/safety";
 
   import ReportSheet from "./ReportSheet.svelte";
+  import ReportSheetFocusHarness from "./ReportSheetFocusHarness.svelte";
 
   // Plain DOM, as LeaveRoomConfirm.stories does: no `storybook/test` in the bundle.
   const settled = async (find: () => Element | null | undefined, ms = 2000) => {
@@ -114,3 +115,19 @@
     await settled(() => button(root, "Report and block"));
   }}
 />
+
+<!-- Opened from a menu that has since closed: Cancel returns focus to the button it was started from. -->
+<Story
+  name="Cancel returns focus to the opener"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const opener = (await settled(() => root.querySelector("[data-testid=opener]"))) as HTMLElement;
+    const cancel = (await settled(() => button(root, "Cancel"))) as HTMLElement;
+    cancel.click();
+    await settled(() => (document.activeElement === opener ? opener : null), 1000).catch(() => {
+      throw new Error("focus did not return to the opener");
+    });
+  }}
+>
+  {#snippet template()}<ReportSheetFocusHarness />{/snippet}
+</Story>
