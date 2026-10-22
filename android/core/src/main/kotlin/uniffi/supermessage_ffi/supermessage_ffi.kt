@@ -33,10 +33,12 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.AgentAvatar
+import uniffi.supermessage_core.AgentAvatarStyle
 import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeAccountDto
 import uniffi.supermessage_core.FfiConverterTypeAgentAvatar
+import uniffi.supermessage_core.FfiConverterTypeAgentAvatarStyle
 import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
@@ -93,6 +95,7 @@ import uniffi.supermessage_core.WidgetLiveTurn
 import uniffi.supermessage_core.WidgetWrite
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatar
+import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatarStyle
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
@@ -1044,6 +1047,10 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1084,7 +1091,7 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`durationMs`: Long,`waveform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_attachment_send(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`caption`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_attachment_stage_path(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_connection_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1207,6 +1214,10 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
     ): Unit
+    fun uniffi_supermessage_ffi_fn_func_agent_avatar_style(`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferAgentAvatarStyle.ByValue
+    fun uniffi_supermessage_ffi_fn_func_agent_avatar_variants(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_audio_clock_label(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1369,6 +1380,10 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_supermessage_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_checksum_func_agent_avatar_style(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_agent_avatar_variants(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_audio_clock_label(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_collect_mentions(
@@ -1578,6 +1593,12 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_supermessage_ffi_checksum_func_agent_avatar_style() != 40859.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_agent_avatar_variants() != 3545.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1665,7 +1686,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice() != 59336.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541.toShort()) {
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 1487.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403.toShort()) {
@@ -2339,7 +2360,7 @@ public interface CoreInterface {
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
+    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?): AttachmentSendOutcome
     
     /**
      * Stage a file the host has already chosen.
@@ -2943,15 +2964,16 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
-        = 
+    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?): AttachmentSendOutcome {
+            return FfiConverterTypeAttachmentSendOutcome.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_attachment_send(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`token`),FfiConverterOptionalString.lower(`caption`),_status)
 }
     }
-    
+    )
+    }
     
 
     
@@ -4412,6 +4434,82 @@ public object FfiConverterTypeTimelineSnapshot: FfiConverterRustBuffer<TimelineS
 
 
 
+/**
+ * What `attachment_send` came to once the token was taken.
+ *
+ * An `Err` from `attachment_send` means the send was refused before the
+ * token was consumed, which leaves it live. A `Failed` means it was
+ * consumed: `restaged` is the same file behind a fresh token (a voice mark
+ * re-applied), or `None` when the file could not be staged again.
+ */
+sealed class AttachmentSendOutcome {
+    
+    object Sent : AttachmentSendOutcome()
+    
+    
+    data class Failed(
+        val `error`: FfiException, 
+        val `restaged`: StagedFile?) : AttachmentSendOutcome() {
+        companion object
+    }
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAttachmentSendOutcome : FfiConverterRustBuffer<AttachmentSendOutcome>{
+    override fun read(buf: ByteBuffer): AttachmentSendOutcome {
+        return when(buf.getInt()) {
+            1 -> AttachmentSendOutcome.Sent
+            2 -> AttachmentSendOutcome.Failed(
+                FfiConverterTypeFfiError.read(buf),
+                FfiConverterOptionalTypeStagedFile.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: AttachmentSendOutcome) = when(value) {
+        is AttachmentSendOutcome.Sent -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is AttachmentSendOutcome.Failed -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeFfiError.allocationSize(value.`error`)
+                + FfiConverterOptionalTypeStagedFile.allocationSize(value.`restaged`)
+            )
+        }
+    }
+
+    override fun write(value: AttachmentSendOutcome, buf: ByteBuffer) {
+        when(value) {
+            is AttachmentSendOutcome.Sent -> {
+                buf.putInt(1)
+                Unit
+            }
+            is AttachmentSendOutcome.Failed -> {
+                buf.putInt(2)
+                FfiConverterTypeFfiError.write(value.`error`, buf)
+                FfiConverterOptionalTypeStagedFile.write(value.`restaged`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
 
 
 /**
@@ -5825,6 +5923,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeStagedFile: FfiConverterRustBuffer<StagedFile?> {
+    override fun read(buf: ByteBuffer): StagedFile? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeStagedFile.read(buf)
+    }
+
+    override fun allocationSize(value: StagedFile?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeStagedFile.allocationSize(value)
+        }
+    }
+
+    override fun write(value: StagedFile?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeStagedFile.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeAgentAvatar: FfiConverterRustBuffer<AgentAvatar?> {
     override fun read(buf: ByteBuffer): AgentAvatar? {
         if (buf.get().toInt() == 0) {
@@ -6151,6 +6281,34 @@ public object FfiConverterSequenceTypeTimelineDiffOp: FfiConverterRustBuffer<Lis
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeTimelineDiffOp.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeAgentAvatarStyle: FfiConverterRustBuffer<List<AgentAvatarStyle>> {
+    override fun read(buf: ByteBuffer): List<AgentAvatarStyle> {
+        val len = buf.getInt()
+        return List<AgentAvatarStyle>(len) {
+            FfiConverterTypeAgentAvatarStyle.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<AgentAvatarStyle>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeAgentAvatarStyle.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<AgentAvatarStyle>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeAgentAvatarStyle.write(it, buf)
         }
     }
 }
@@ -6581,6 +6739,37 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
 
 
 
+
+
+
+
+
+        /**
+         * The generated tile for the room `room_id` — see `core::agent_avatar`. A
+         * free function for the same reason as `peer_color_index`: it touches no
+         * session state, and every host must draw the same tile for the same room.
+         */ fun `agentAvatarStyle`(`roomId`: kotlin.String): AgentAvatarStyle {
+            return FfiConverterTypeAgentAvatarStyle.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_agent_avatar_style(
+        FfiConverterString.lower(`roomId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Every avatar tile, in `variant` order. A free function for the same
+         * reason as `peer_color_index`.
+         */ fun `agentAvatarVariants`(): List<AgentAvatarStyle> {
+            return FfiConverterSequenceTypeAgentAvatarStyle.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_agent_avatar_variants(
+        _status)
+}
+    )
+    }
+    
 
         /**
          * A playing note's position as the clock under it reads — `"0:06"`,

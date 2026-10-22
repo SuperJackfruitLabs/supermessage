@@ -606,7 +606,7 @@ public protocol CoreProtocol : AnyObject {
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-    func attachmentSend(roomId: String, token: String, caption: String?) throws 
+    func attachmentSend(roomId: String, token: String, caption: String?) throws  -> AttachmentSendOutcome
     
     /**
      * Stage a file the host has already chosen.
@@ -1193,13 +1193,14 @@ open func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64,
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-open func attachmentSend(roomId: String, token: String, caption: String?)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+open func attachmentSend(roomId: String, token: String, caption: String?)throws  -> AttachmentSendOutcome {
+    return try  FfiConverterTypeAttachmentSendOutcome.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_attachment_send(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),
         FfiConverterString.lower(token),
         FfiConverterOptionString.lower(caption),$0
     )
-}
+})
 }
     
     /**
@@ -2700,6 +2701,82 @@ public func FfiConverterTypeTimelineSnapshot_lower(_ value: TimelineSnapshot) ->
     return FfiConverterTypeTimelineSnapshot.lower(value)
 }
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What `attachment_send` came to once the token was taken.
+ *
+ * An `Err` from `attachment_send` means the send was refused before the
+ * token was consumed, which leaves it live. A `Failed` means it was
+ * consumed: `restaged` is the same file behind a fresh token (a voice mark
+ * re-applied), or `None` when the file could not be staged again.
+ */
+
+public enum AttachmentSendOutcome {
+    
+    case sent
+    case failed(error: FfiError, restaged: StagedFile?
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAttachmentSendOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = AttachmentSendOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AttachmentSendOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .sent
+        
+        case 2: return .failed(error: try FfiConverterTypeFfiError.read(from: &buf), restaged: try FfiConverterOptionTypeStagedFile.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AttachmentSendOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .sent:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .failed(error,restaged):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeFfiError.write(error, into: &buf)
+            FfiConverterOptionTypeStagedFile.write(restaged, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAttachmentSendOutcome_lift(_ buf: RustBuffer) throws -> AttachmentSendOutcome {
+    return try FfiConverterTypeAttachmentSendOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAttachmentSendOutcome_lower(_ value: AttachmentSendOutcome) -> RustBuffer {
+    return FfiConverterTypeAttachmentSendOutcome.lower(value)
+}
+
+
+
+extension AttachmentSendOutcome: Equatable, Hashable {}
+
+
+
 
 /**
  * A failure the host can act on.
@@ -3751,6 +3828,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeStagedFile: FfiConverterRustBuffer {
+    typealias SwiftType = StagedFile?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeStagedFile.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeStagedFile.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeAgentAvatar: FfiConverterRustBuffer {
     typealias SwiftType = AgentAvatar?
 
@@ -4011,6 +4112,31 @@ fileprivate struct FfiConverterSequenceTypeTimelineDiffOp: FfiConverterRustBuffe
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeTimelineDiffOp.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeAgentAvatarStyle: FfiConverterRustBuffer {
+    typealias SwiftType = [AgentAvatarStyle]
+
+    public static func write(_ value: [AgentAvatarStyle], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAgentAvatarStyle.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AgentAvatarStyle] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AgentAvatarStyle]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAgentAvatarStyle.read(from: &buf))
         }
         return seq
     }
@@ -4350,6 +4476,30 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
 
 
 
+
+
+/**
+ * The generated tile for the room `room_id` — see `core::agent_avatar`. A
+ * free function for the same reason as `peer_color_index`: it touches no
+ * session state, and every host must draw the same tile for the same room.
+ */
+public func agentAvatarStyle(roomId: String) -> AgentAvatarStyle {
+    return try!  FfiConverterTypeAgentAvatarStyle_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_agent_avatar_style(
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+/**
+ * Every avatar tile, in `variant` order. A free function for the same
+ * reason as `peer_color_index`.
+ */
+public func agentAvatarVariants() -> [AgentAvatarStyle] {
+    return try!  FfiConverterSequenceTypeAgentAvatarStyle.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_agent_avatar_variants($0
+    )
+})
+}
 /**
  * A playing note's position as the clock under it reads — `"0:06"`,
  * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -4693,6 +4843,12 @@ private var initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_agent_avatar_style() != 40859) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_agent_avatar_variants() != 3545) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4780,7 +4936,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice() != 59336) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541) {
+    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 1487) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403) {

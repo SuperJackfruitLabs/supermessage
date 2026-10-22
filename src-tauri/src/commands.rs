@@ -506,6 +506,18 @@ pub fn roster_hidden_invitations(
     supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
 }
 
+/// The generated tile for a room — see `core::agent_avatar`.
+#[tauri::command]
+pub fn agent_avatar_style(room_id: String) -> supermessage_core::agent_avatar::AgentAvatarStyle {
+    supermessage_core::agent_avatar::style_for_room(&room_id)
+}
+
+/// Every avatar tile, in `variant` order.
+#[tauri::command]
+pub fn agent_avatar_variants() -> Vec<supermessage_core::agent_avatar::AgentAvatarStyle> {
+    supermessage_core::agent_avatar::variants()
+}
+
 #[tauri::command]
 pub async fn search_messages(
     term: String,
@@ -667,6 +679,11 @@ pub async fn attachment_stage(
 /// the homeserver's limit — re-checked here, immediately before the read,
 /// because the file on disk can grow between staging and sending.
 ///
+/// Any failure **after** the token was taken is not an `Err` but
+/// `{ outcome: "failed", error, restaged }`: the core has already staged the
+/// same file again (re-applying a voice mark) and `restaged` carries the
+/// fresh token, or `null` when the file could not be staged again.
+///
 /// Sends through the **send queue** (§6), the same path [`send_message`]
 /// uses, so the attachment gets a local echo, retries across a reconnect,
 /// and orders against other sends. Emits nothing itself: the echo arrives
@@ -679,7 +696,7 @@ pub async fn attachment_send(
     session: State<'_, Session>,
     timeline: State<'_, Arc<FocusedTimeline>>,
     staged: State<'_, Arc<StagedAttachments>>,
-) -> Result<(), CoreError> {
+) -> Result<attachments::AttachmentSendOutcome, CoreError> {
     attachments::send_staged(&session, &timeline, &staged, &room_id, &token, caption).await
 }
 

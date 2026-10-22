@@ -686,10 +686,10 @@ impl Core {
         room_id: String,
         token: String,
         caption: Option<String>,
-    ) -> Result<(), FfiError> {
+    ) -> Result<AttachmentSendOutcome, FfiError> {
         let staged = self.session.staged_attachments();
         let focused = self.session.focused_timeline();
-        self.block(supermessage_core::attachments::send_staged(
+        let outcome = self.block(supermessage_core::attachments::send_staged(
             &self.session,
             &focused,
             &staged,
@@ -697,7 +697,7 @@ impl Core {
             &token,
             caption,
         ))?;
-        Ok(())
+        Ok(outcome.into())
     }
 
     /// Mark a staged recording as a voice message (MSC3245), with its length
@@ -1046,6 +1046,34 @@ impl From<supermessage_core::attachments::StagedAttachment> for StagedFile {
     }
 }
 
+/// What `attachment_send` came to once the token was taken.
+///
+/// An `Err` from `attachment_send` means the send was refused before the
+/// token was consumed, which leaves it live. A `Failed` means it was
+/// consumed: `restaged` is the same file behind a fresh token (a voice mark
+/// re-applied), or `None` when the file could not be staged again.
+#[derive(Debug, uniffi::Enum)]
+pub enum AttachmentSendOutcome {
+    Sent,
+    Failed {
+        error: FfiError,
+        restaged: Option<StagedFile>,
+    },
+}
+
+impl From<supermessage_core::attachments::AttachmentSendOutcome> for AttachmentSendOutcome {
+    fn from(outcome: supermessage_core::attachments::AttachmentSendOutcome) -> Self {
+        use supermessage_core::attachments::AttachmentSendOutcome as Core;
+        match outcome {
+            Core::Sent => Self::Sent,
+            Core::Failed { error, restaged } => Self::Failed {
+                error: error.into(),
+                restaged: restaged.map(Into::into),
+            },
+        }
+    }
+}
+
 /// Parse a live turn's partial markdown into blocks.
 ///
 /// A free function rather than a `Core` method: it touches no session state,
@@ -1077,6 +1105,21 @@ pub fn parse_matrix_link(
 #[uniffi::export]
 pub fn peer_color_index(user_id: String) -> u8 {
     supermessage_core::peer_color::peer_color_index(&user_id)
+}
+
+/// The generated tile for the room `room_id` — see `core::agent_avatar`. A
+/// free function for the same reason as `peer_color_index`: it touches no
+/// session state, and every host must draw the same tile for the same room.
+#[uniffi::export]
+pub fn agent_avatar_style(room_id: String) -> supermessage_core::agent_avatar::AgentAvatarStyle {
+    supermessage_core::agent_avatar::style_for_room(&room_id)
+}
+
+/// Every avatar tile, in `variant` order. A free function for the same
+/// reason as `peer_color_index`.
+#[uniffi::export]
+pub fn agent_avatar_variants() -> Vec<supermessage_core::agent_avatar::AgentAvatarStyle> {
+    supermessage_core::agent_avatar::variants()
 }
 
 /// A playing note's position as the clock under it reads — `"0:06"`,

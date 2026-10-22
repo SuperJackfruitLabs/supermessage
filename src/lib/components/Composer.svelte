@@ -411,7 +411,14 @@
     failure = null;
     failedChip = null;
     try {
-      await attachmentSend(sentRoomId, attachment.token, caption);
+      const outcome = await attachmentSend(sentRoomId, attachment.token, caption);
+      if (outcome.outcome === "failed") {
+        // The core has put the file behind a fresh token. This composer
+        // still drops the strip on failure (consuming `restaged` is a
+        // later task), so release the fresh token and show the error.
+        if (outcome.restaged) discardStaged(outcome.restaged.token);
+        throw outcome.error;
+      }
       attachments.takeToken(attachment.token);
       // The draft went as the caption, so it has been sent: clear it, in the
       // room it was written in (the reader may have moved on meanwhile).

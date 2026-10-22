@@ -41,6 +41,7 @@ extension MediaFileLabel: @retroactive @unchecked Sendable {}
 extension NotificationMode: @retroactive @unchecked Sendable {}
 extension PersonDto: @retroactive @unchecked Sendable {}
 extension AgentState: @retroactive @unchecked Sendable {}
+extension AttachmentSendOutcome: @retroactive @unchecked Sendable {}
 extension AudioMetaDto: @retroactive @unchecked Sendable {}
 extension AudioView: @retroactive @unchecked Sendable {}
 extension PlayableAudio: @retroactive @unchecked Sendable {}
