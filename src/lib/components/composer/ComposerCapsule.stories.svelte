@@ -67,3 +67,14 @@
 <Story name="With a staged file" args={{ field, top: staged, canSend: true, sendLabel: "Send file" }} />
 
 <Story name="With a failed file" args={{ field, top: failedTop }} />
+
+<!-- Inside the real tray row (Composer.svelte): the capsule must fill the 72ch column. -->
+<Story name="Fills the column" args={{ field, top: staged, canSend: true, sendLabel: "Send file" }}>
+  {#snippet template(args)}
+    <div class="w-[900px] bg-surface-sunken px-4 py-3">
+      <div class="relative mx-auto flex w-full max-w-[72ch] items-end gap-2">
+        <ComposerCapsule {...args} />
+      </div>
+    </div>
+  {/snippet}
+</Story>

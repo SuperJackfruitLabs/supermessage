@@ -20,7 +20,7 @@
   let { top, field, onAttach, attachDisabled, sendLabel, canSend, onSend }: Props = $props();
 </script>
 
-<div class="rounded-card border border-border bg-surface">
+<div class="w-full min-w-0 flex-1 rounded-card border border-border bg-surface">
   {#if top}
     <!-- Clips the strips' square corners to the capsule without clipping the field's focus ring. -->
     <div class="overflow-hidden rounded-t-card">{@render top()}</div>

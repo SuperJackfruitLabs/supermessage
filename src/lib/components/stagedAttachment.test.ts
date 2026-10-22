@@ -398,6 +398,10 @@ describe("blocksSend", () => {
     expect(blocksSend(staged(), chip)).toBe(false);
   });
 
+  it("does not block a Save while editing", () => {
+    expect(blocksSend(null, chip, true)).toBe(false);
+  });
+
   it("does not block with neither", () => {
     expect(blocksSend(null, null)).toBe(false);
   });

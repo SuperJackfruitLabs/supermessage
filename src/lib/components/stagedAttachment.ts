@@ -470,6 +470,11 @@ export interface FailedChip {
  * (iOS `StagedAttachment.swift:90-92`): the reader asked to send a file, and
  * quietly sending only the words would answer a different question.
  */
-export function blocksSend(staged: StagedAttachment | null, failed: FailedChip | null): boolean {
-  return staged === null && failed !== null;
+export function blocksSend(
+  staged: StagedAttachment | null,
+  failed: FailedChip | null,
+  editing = false,
+): boolean {
+  // An edit carries no attachment, so a stale failed chip must not stop a Save.
+  return !editing && staged === null && failed !== null;
 }

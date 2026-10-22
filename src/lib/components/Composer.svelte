@@ -555,7 +555,7 @@
   const canSend = $derived(
     sendIntent(editTarget, staged !== null, value) !== "nothing" &&
       !sending &&
-      !blocksSend(staged, failedChip)
+      !blocksSend(staged, failedChip, editTarget !== null)
   );
 
   /** Cancels the pending reply for `roomId` without discarding the draft text. */
