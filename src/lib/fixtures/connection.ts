@@ -1,7 +1,7 @@
 import type { ConnectionState } from "$lib/ipc";
 
 /**
- * What the connection banner can be asked to show.
+ * What the connection line can be asked to show.
  *
  * `ConnectionState` is a four-member union — `offline`, `syncing`, `live`,
  * `error` — and the banner renders three of them and deliberately renders

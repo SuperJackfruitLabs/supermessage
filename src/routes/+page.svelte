@@ -1,6 +1,6 @@
 <script lang="ts">
   // The two-pane chat UI: room list on the left, timeline + composer on the
-  // right, a connection banner across the top when the core isn't "live".
+  // right, the connection line under the roster title when the core isn't "live".
   //
   // Still session-gated the same way the provisional placeholder was: try
   // to restore a prior session, and if there isn't one, fall through to
@@ -37,7 +37,6 @@
   import { typingStore } from "$lib/stores/typing.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { railEntries } from "$lib/components/spacesRailView";
-  import type { ConnectionState } from "$lib/ipc";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
@@ -51,7 +50,7 @@
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
   import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
-  import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
+  import ConnectionLine from "$lib/components/ConnectionLine.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
   import RecoveryPanel from "$lib/components/RecoveryPanel.svelte";
 
@@ -232,26 +231,6 @@
       initial: "?",
     },
   );
-
-  /**
-   * The header connection dot's text alternative (spec §6.2, §9): colour is
-   * never the only channel, so this word always renders beside the dot
-   * inside a `role="status"` wrapper. Lowercase, unlike the banner's
-   * capitalized labels, because the two surfaces have different jobs — the
-   * dot is a compact at-a-glance state, the banner carries a sentence.
-   */
-  function connectionWord(state: ConnectionState): string {
-    switch (state) {
-      case "offline":
-        return "offline";
-      case "syncing":
-        return "syncing";
-      case "live":
-        return "live";
-      case "error":
-        return "error";
-    }
-  }
 
   /**
    * Which pane is on screen. Both, unless the layout has collapsed — and
@@ -695,12 +674,10 @@
   </main>
 {:else if restored}
   <div class="flex h-dvh flex-col bg-surface" style="padding-top: var(--inset-top); padding-bottom: var(--inset-bottom);">
-    <ConnectionBanner state={connectionStore.state} message={connectionStore.message} />
     <!--
       `relative`: the containing block an overlaying `RoomInfoPanel`
       positions against below 840px. It is the pane row, not the whole app
-      shell, so the overlay spans the height between the connection banner
-      and the bottom safe area rather than covering the banner too.
+      shell, so the overlay spans the height between the top and the bottom safe area.
     -->
     <div class="relative flex min-h-0 flex-1">
       <!--
@@ -750,6 +727,15 @@
             ? 'min-w-0 flex-1'
             : 'w-72 shrink-0'} flex-col border-r border-border bg-surface-sunken"
         >
+          <!--
+            The roster's title, and under it the app's one connection line
+            (O4; iOS's subtitle under "Chats"). The line renders nothing when
+            live, so the title sits alone then.
+          -->
+          <div class="shrink-0 px-3 pt-3">
+            <h2 class="text-ui-lg font-medium text-content">Rooms</h2>
+            <ConnectionLine state={connectionStore.state} message={connectionStore.message} />
+          </div>
           <!--
             Starting a conversation sits above the roster, where the list of
             conversations is — not in the room header, which is about the room
@@ -852,7 +838,7 @@
             The only header this room pane has: the selected room's parsed
             identity (avatar, name, role chip — spec §5.1/§6.2, already
             known from `roomsStore.rooms`, no extra fetch) plus the
-            connection dot and the one way to reach the room-info panel —
+            one way to reach the room-info panel —
             there was previously no surface at all for a room's
             topic/alias/member list; see `RoomInfoPanel.svelte`'s doc
             comment.
@@ -938,7 +924,7 @@
                   `min-w-0` and a `max-w`, not `shrink-0`: a `shrink-0` flex
                   item never shrinks below its own nowrap content width, so
                   pairing it with `truncate` makes the truncation dead code
-                  and lets a long role push the connection dot and `Info`
+                  and lets a long role push `Info`
                   button out of the header. The role is bounded to 40
                   characters by `core::room_identity`, which caps the damage
                   but does not prevent it. The name is the more important
@@ -965,7 +951,7 @@
                   (`px-2` = 1rem, and 2px of border). 127px total, 109px of
                   text. `CODE & BUILD` fits with 29px to spare, and the
                   40-character worst case still truncates rather than
-                  reaching the connection dot.
+                  reaching `Info`.
 
                   Those figures are from when the chip was mono capitals
                   with tracking. It is sentence-case sans now
@@ -981,30 +967,6 @@
               {/if}
             </div>
             <div class="flex shrink-0 items-center gap-3">
-              <!--
-                Colour is never the sole channel here (spec §9): the dot's
-                fill state (filled only for "live") and the word beside it
-                both carry the state, and `role="status"` names the pair to
-                assistive tech. Never amber — `--color-signal` is reserved
-                exclusively for the pending-decision card (spec §3, §6.2).
-              -->
-              <span class="flex items-center gap-1.5" role="status">
-                <span
-                  aria-hidden="true"
-                  class="h-2 w-2 rounded-pill {connectionStore.state === 'live'
-                    ? 'bg-content-muted'
-                    : connectionStore.state === 'error'
-                      ? 'border border-danger'
-                      : 'border border-content-muted'}"
-                ></span>
-                <span
-                  class="text-meta {connectionStore.state === 'error'
-                    ? 'text-danger'
-                    : 'text-content-muted'}"
-                >
-                  {connectionWord(connectionStore.state)}
-                </span>
-              </span>
               <!--
                 Both grounds inverted with the header (see its comment):
                 on a sunken bar, `bg-surface-sunken` for hover and pressed
