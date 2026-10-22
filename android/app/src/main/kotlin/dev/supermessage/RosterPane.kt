@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
@@ -19,14 +20,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.supermessage.kit.RoomToggles
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
 import dev.supermessage.kit.Session
 import dev.supermessage.kit.stores.ConnectionStore.Connection
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.RoomAffordance
 import uniffi.supermessage_core.RoomRow as RoomRowDto
+import uniffi.supermessage_core.RosterRow
+
+/** A room's notification and pin settings as a swipe last heard them (`RoomListView.swift:312-316`). */
+internal data class KnownSettings(val muted: Boolean, val pinned: Boolean)
 
 /**
  * The list pane: the title (a menu of spaces), the connection line under it,
@@ -62,6 +70,10 @@ internal fun RosterPane(
             .flatMap { it.rows }
             .filter { it.row.affordance == RoomAffordance.RESPOND_TO_INVITATION }
     }
+
+    // What the last swipe learned, per sign-in: a new session starts empty.
+    val known = remember(session) { mutableStateMapOf<String, KnownSettings>() }
+    val colors = SupermessageTheme.colors
 
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp)) {
@@ -122,7 +134,64 @@ internal fun RosterPane(
             },
             onOpenInfo = { roomId -> openPanel(ExtraPanel.RoomInfo(roomId)) },
             onLoadAvatar = { roomId -> session.avatars.load(roomId) },
+            leadingSwipe = { entry ->
+                if (entry.row.affordance != RoomAffordance.COMPOSE) null
+                else SwipeAction("Mark read", colors.accent) { session.rooms.markRead(entry.row.room.id) }
+            },
+            trailingSwipes = { entry -> swipesFor(entry, session, known, colors) },
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
     }
+}
+
+private fun swipesFor(
+    entry: RosterRow,
+    session: Session,
+    known: MutableMap<String, KnownSettings>,
+    colors: SupermessageColorRoles,
+): List<SwipeAction> {
+    val roomId = entry.row.room.id
+    return when (entry.row.affordance) {
+        // Declining is leaving a room one was only invited to. iOS asks
+        // nothing and plays no haptic for it, so neither does this.
+        RoomAffordance.RESPOND_TO_INVITATION -> listOf(
+            SwipeAction("Decline", colors.danger, destructive = true) {
+                session.leaveRoom(roomId)
+                false
+            },
+        )
+        RoomAffordance.COMPOSE -> {
+            val settings = known[roomId]
+            listOf(
+                SwipeAction(if (settings?.muted == true) "Unmute" else "Mute", colors.contentMuted) {
+                    // Ask the core first: the row does not carry the setting, and
+                    // toggling one this view only believes it knows is how a
+                    // "Mute" button unmutes something.
+                    val info = readInfo(session, roomId) ?: return@SwipeAction false
+                    val next = RoomToggles.nextNotificationMode(info.notifications)
+                    val landed = session.setNotifications(next, roomId)
+                    if (landed) known[roomId] = KnownSettings(muted = next == NotificationMode.MUTED, pinned = info.pinned)
+                    landed
+                },
+                SwipeAction(if (settings?.pinned == true) "Unpin" else "Pin", colors.ok) {
+                    val info = readInfo(session, roomId) ?: return@SwipeAction false
+                    val next = !info.pinned
+                    val landed = session.setPinned(next, roomId)
+                    if (landed) {
+                        known[roomId] = KnownSettings(muted = info.notifications == NotificationMode.MUTED, pinned = next)
+                    }
+                    landed
+                },
+            )
+        }
+        else -> emptyList()
+    }
+}
+
+private suspend fun readInfo(session: Session, roomId: String) = try {
+    session.roomInfo(roomId)
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    null
 }

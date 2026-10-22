@@ -74,28 +74,35 @@ fun Roster(
     onOpenRoom: (roomId: String) -> Unit = {},
     onOpenInfo: (roomId: String) -> Unit = {},
     onLoadAvatar: suspend (roomId: String) -> Unit = {},
+    /** The swipe from the leading edge (iOS "Mark read"), or none for this row. */
+    leadingSwipe: (RosterRow) -> SwipeAction? = { null },
+    /** The swipe buttons from the trailing edge, or none for this row. */
+    trailingSwipes: (RosterRow) -> List<SwipeAction> = { emptyList() },
     modifier: Modifier = Modifier,
 ) {
     @Composable
     fun RosterEntry(entry: RosterRow) {
         val roomId = entry.row.room.id
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClickLabel = "Open ${entry.row.identity.name}") { onOpenRoom(roomId) }
-                .padding(horizontal = 16.dp)
-                .testTag("roster-row"),
-        ) {
-            RoomRow(
-                row = entry.row,
-                avatarUri = avatarUri(roomId),
-                state = entry.state,
-                `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
-                showsState = showsState,
-                hidesHost = hidesHost,
-                describesAgent = entry.describesAgent,
-                onOpenInfo = { onOpenInfo(roomId) },
-            )
+        SwipeActionsRow(leading = leadingSwipe(entry), trailing = trailingSwipes(entry)) { swipeSemantics ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(swipeSemantics)
+                    .clickable(onClickLabel = "Open ${entry.row.identity.name}") { onOpenRoom(roomId) }
+                    .padding(horizontal = 16.dp)
+                    .testTag("roster-row"),
+            ) {
+                RoomRow(
+                    row = entry.row,
+                    avatarUri = avatarUri(roomId),
+                    state = entry.state,
+                    `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
+                    showsState = showsState,
+                    hidesHost = hidesHost,
+                    describesAgent = entry.describesAgent,
+                    onOpenInfo = { onOpenInfo(roomId) },
+                )
+            }
         }
 
         // Mirrors RoomListView.swift's `.task { await session.avatars.load(...) }`
