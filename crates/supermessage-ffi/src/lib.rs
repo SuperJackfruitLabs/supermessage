@@ -1079,6 +1079,21 @@ pub fn peer_color_index(user_id: String) -> u8 {
     supermessage_core::peer_color::peer_color_index(&user_id)
 }
 
+/// The generated tile for the room `room_id` — see `core::agent_avatar`. A
+/// free function for the same reason as `peer_color_index`: it touches no
+/// session state, and every host must draw the same tile for the same room.
+#[uniffi::export]
+pub fn agent_avatar_style(room_id: String) -> supermessage_core::agent_avatar::AgentAvatarStyle {
+    supermessage_core::agent_avatar::style_for_room(&room_id)
+}
+
+/// Every avatar tile, in `variant` order. A free function for the same
+/// reason as `peer_color_index`.
+#[uniffi::export]
+pub fn agent_avatar_variants() -> Vec<supermessage_core::agent_avatar::AgentAvatarStyle> {
+    supermessage_core::agent_avatar::variants()
+}
+
 /// A playing note's position as the clock under it reads — `"0:06"`,
 /// `"1:02:03"` — truncated to the second. See `core::audio`: the length at
 /// rest arrives already formatted on `AudioView`; this is for the one number

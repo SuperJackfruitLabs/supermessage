@@ -506,6 +506,18 @@ pub fn roster_hidden_invitations(
     supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
 }
 
+/// The generated tile for a room — see `core::agent_avatar`.
+#[tauri::command]
+pub fn agent_avatar_style(room_id: String) -> supermessage_core::agent_avatar::AgentAvatarStyle {
+    supermessage_core::agent_avatar::style_for_room(&room_id)
+}
+
+/// Every avatar tile, in `variant` order.
+#[tauri::command]
+pub fn agent_avatar_variants() -> Vec<supermessage_core::agent_avatar::AgentAvatarStyle> {
+    supermessage_core::agent_avatar::variants()
+}
+
 #[tauri::command]
 pub async fn search_messages(
     term: String,
