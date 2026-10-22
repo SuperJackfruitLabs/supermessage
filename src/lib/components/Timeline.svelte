@@ -1015,8 +1015,13 @@
   }
 
   /** Gate answers carry the core's subject and the Matrix event address. */
-  function onDecide(eventId: string | null, decision: CustomEventDecision, optionId: string): Promise<boolean> {
-    return answerDecision(roomId, eventId, decision, optionId);
+  function onDecide(
+    eventId: string | null,
+    decision: CustomEventDecision,
+    optionId: string,
+    comment: string | null,
+  ): Promise<boolean> {
+    return answerDecision(roomId, eventId, decision, optionId, comment);
   }
 
   /**

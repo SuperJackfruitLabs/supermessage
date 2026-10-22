@@ -3,6 +3,8 @@
 
   import {
     dispatchCardAnswered,
+    dispatchCardGate,
+    dispatchCardGateDecision,
     dispatchCardLongValue,
     dispatchCardNewerVersion,
     dispatchCardPending,
@@ -33,6 +35,21 @@
       [...canvasElement.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Approve"),
     );
     approve.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  };
+
+  const clickButton = async (canvasElement: HTMLElement, label: string) => {
+    const button = await settled(() =>
+      [...canvasElement.querySelectorAll("button")].find((b) => b.textContent?.trim() === label),
+    );
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  };
+  // The dialog lifts itself to <body>, so it is found on `document`, not in the canvas.
+  const typeReason = async (canvasElement: HTMLElement, text: string) => {
+    const field = (await settled(() =>
+      document.querySelector("[role='dialog'] textarea"),
+    )) as HTMLTextAreaElement;
+    field.value = text;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
   const { Story } = defineMeta({
@@ -198,6 +215,90 @@
           decision={dispatchCardPendingDecision}
           {item}
           onDecide={() => Promise.resolve(false)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Three answers: Approve leads, Request changes is bordered, Reject is last as danger text. -->
+<Story name="Gate, three answers">
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Request changes asks for the reason before anything is sent. -->
+<Story
+  name="Request changes dialog"
+  play={async ({ canvasElement }) => {
+    await clickButton(canvasElement as HTMLElement, "Request changes");
+    await settled(() => document.querySelector("[role='dialog']"));
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Offline: the dialog keeps the reason, says it was not sent, and the card shows no receipt. -->
+<Story
+  name="Request changes fails"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await clickButton(root, "Request changes");
+    await typeReason(root, "tests fail");
+    await clickButton(document.body, "Send");
+    await settled(() => document.querySelector("[role='dialog'] [role='alert']"));
+    const field = document.querySelector("[role='dialog'] textarea") as HTMLTextAreaElement;
+    if (field.value !== "tests fail") throw new Error("the typed reason was lost");
+    if (root.querySelector("[data-testid='decision-receipt']")) throw new Error("a receipt showed for a failed send");
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(false)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- The send landed: the receipt replaces the buttons, and the amber goes. -->
+<Story
+  name="Answered on this device"
+  play={async ({ canvasElement }) => {
+    await clickApprove(canvasElement as HTMLElement);
+    await settled(() => canvasElement.querySelector("[data-testid='decision-receipt']"));
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
           {formatTime}
         />
       </DispatchCardFrame>

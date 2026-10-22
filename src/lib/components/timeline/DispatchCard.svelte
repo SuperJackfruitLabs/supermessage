@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { CustomEventDecision, ItemView, TimelineItem } from "$lib/ipc";
+  import type { CustomEventDecisionOption } from "$lib/ipc";
+  import { answeredWhen, arrangeOptions, optionRole, receiptOutcome } from "./decisionView";
   import InlineFailure from "./InlineFailure.svelte";
+  import RequestChangesDialog from "./RequestChangesDialog.svelte";
 
   /**
    * The dispatch card — this client's signature element.
@@ -50,6 +53,7 @@
       eventId: string | null,
       decision: CustomEventDecision,
       optionId: string,
+      comment: string | null,
     ) => Promise<boolean>;
     /** How the container renders a timestamp, so both agree. */
     formatTime: (ms: number | null) => string;
@@ -59,23 +63,50 @@
 
   let sending = $state(false);
   let failed = $state(false);
+  /** The option whose "what needs changing?" dialog is open. */
+  let asking = $state<CustomEventDecisionOption | null>(null);
+  /** Set only after the send landed, never while it is in flight or failed. */
+  let answered = $state<{ option: CustomEventDecisionOption; atMs: number } | null>(null);
 
-  /** One answer at a time; a failed send leaves the card answerable. */
-  async function decide(d: CustomEventDecision, optionId: string): Promise<void> {
-    if (sending) return;
+  /**
+   * One answer at a time; a failed send leaves the card answerable. The
+   * failure line belongs to the dialog while the dialog is open.
+   */
+  async function decide(
+    d: CustomEventDecision,
+    option: CustomEventDecisionOption,
+    comment: string | null,
+  ): Promise<boolean> {
+    if (sending) return false;
     sending = true;
     failed = false;
+    let ok = false;
     try {
-      failed = !(await onDecide(item.eventId, d, optionId));
+      ok = await onDecide(item.eventId, d, option.id, comment);
     } catch {
-      failed = true;
+      ok = false;
     } finally {
       sending = false;
     }
+    if (ok) {
+      answered = { option, atMs: Date.now() };
+      asking = null;
+    } else if (asking === null) {
+      failed = true;
+    }
+    return ok;
   }
+
+  /** "Request changes" asks for a reason first; every other answer goes straight out. */
+  function choose(d: CustomEventDecision, option: CustomEventDecisionOption): void {
+    if (optionRole(option) === "requestChanges") asking = option;
+    else void decide(d, option, null);
+  }
+
+  const arranged = $derived(decision ? arrangeOptions(decision.options) : null);
 </script>
 
-                      <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
+                      <div class="dispatch-card {decision && !answered ? 'dispatch-card-pending' : ''}">
 <!--
   Header: what the card is left, the timestamp right,
   a hairline beneath. The *name* the renderer gives
@@ -222,7 +253,20 @@
     </p>
   </div>
 {/if}
-{#if decision}
+{#if decision && answered}
+  <!--
+    Answered on this device. Not amber: nothing is owed any more, and amber
+    never marks a receipt. It is set only after the send landed; the room's
+    own outcome (above) replaces it once the board confirms.
+  -->
+  <div class="border-t border-border px-3 py-2" data-testid="decision-receipt">
+    <p class="selectable break-words text-content-muted">{decision.prompt}</p>
+    <p class="mt-1 font-sans text-label font-medium break-words text-ok">
+      ✓ {receiptOutcome(answered.option)} · {answeredWhen(answered.atMs, Date.now())}
+    </p>
+    <p class="mt-1 font-sans text-meta text-content-muted">Waiting for the board to confirm</p>
+  </div>
+{:else if decision && arranged}
   <!--
     The core supplies the decision's subject. Gate answers also need this
     item's Matrix event address; a UI row id is never a wire reference.
@@ -245,35 +289,64 @@
     <p class="mt-2 font-sans text-label text-signal">
       Awaiting your decision
     </p>
-    <div class="mt-1.5 flex flex-wrap gap-2">
-      <!--
-        Keyed by index, not `option.id`, and for a
-        sharper reason than the field grid above:
-        `boundDecision` guarantees each `id` is a
-        string, but nothing makes two options' ids
-        *distinct* — a renderer echoing a payload
-        could easily produce two `"approve"`s, and a
-        duplicate key is a Svelte runtime error
-        (`each_key_duplicate`) that would take the
-        whole timeline render down. The id is still
-        what `onDecide` receives; it is never a key
-        and never reaches the DOM.
-      -->
-      {#each decision.options as option, i (i)}
+    <!--
+      One answer leads, full width and filled; the others are bordered; a
+      rejection comes last as plain danger text (`DecisionCard.swift:495`).
+
+      Keyed by index, not `option.id`: nothing makes two options' ids
+      *distinct* — a duplicate key is a Svelte runtime error
+      (`each_key_duplicate`) that would take the whole timeline render down.
+      The id is still what `onDecide` receives; it is never a key and never
+      reaches the DOM. `enabled:hover:` so a disabled button has no hover fill.
+    -->
+    <div class="mt-1.5 flex flex-col gap-2">
+      {#if arranged.primary}
+        {@const primary = arranged.primary}
         <button
           type="button"
           disabled={sending}
-          onclick={() => decision && decide(decision, option.id)}
-          class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised disabled:opacity-50"
+          onclick={() => decision && choose(decision, primary)}
+          class="w-full min-w-0 rounded-control bg-signal px-3 py-2 font-sans text-ui font-medium break-words text-signal-soft transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {option.label}
+          {primary.label}
         </button>
-      {/each}
+      {/if}
+      {#if arranged.secondaries.length > 0 || arranged.rejections.length > 0}
+        <div class="flex flex-wrap gap-2">
+          {#each arranged.secondaries as option, i (i)}
+            <button
+              type="button"
+              disabled={sending}
+              onclick={() => decision && choose(decision, option)}
+              class="min-w-0 max-w-full rounded-control border border-border-strong px-3 py-1.5 font-sans text-ui break-words text-content transition-colors enabled:hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {option.label}
+            </button>
+          {/each}
+          {#each arranged.rejections as option, i (i)}
+            <button
+              type="button"
+              disabled={sending}
+              onclick={() => decision && choose(decision, option)}
+              class="min-w-0 max-w-full rounded-control px-3 py-1.5 font-sans text-ui break-words text-danger transition-colors enabled:hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {option.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
     {#if failed}
       <InlineFailure message="Not sent. Try again." />
     {/if}
   </div>
+{/if}
+{#if decision && asking}
+  {@const option = asking}
+  <RequestChangesDialog
+    onSend={(comment) => (decision ? decide(decision, option, comment) : Promise.resolve(false))}
+    onCancel={() => (asking = null)}
+  />
 {/if}
                       </div>
 

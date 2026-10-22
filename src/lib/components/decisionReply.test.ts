@@ -63,4 +63,29 @@ describe("answerDecision", () => {
     expect(log).toHaveBeenCalledTimes(1);
     log.mockRestore();
   });
+
+  it("answerDecision passes the comment and reports failure", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      answerDecision("!room:example.org", "$gate-event", gate, "request_changes", "tests fail"),
+    ).resolves.toBe(true);
+    expect(invoke.mock.calls).toEqual([["send_gate_decision", {
+      roomId: "!room:example.org", gateId: "gate_4e8b", optionId: "request_changes",
+      comment: "tests fail", inReplyTo: "$gate-event", prompt: "Promote build 214?",
+    }]]);
+    invoke.mockRejectedValueOnce({ kind: "network", message: "" });
+    await expect(
+      answerDecision("!room:example.org", "$gate-event", gate, "request_changes", "tests fail"),
+    ).resolves.toBe(false);
+    log.mockRestore();
+  });
+
+  it("ignores the comment for a permission request", async () => {
+    await sendDecisionReply("!room:example.org", "$p", {
+      subject: null, prompt: "Allow?", options: [{ id: "Allow once", label: "Allow once" }],
+    }, "Allow once", "ignored");
+    expect(invoke.mock.calls).toEqual([["send_message", {
+      roomId: "!room:example.org", body: "Allow once", mentions: [],
+    }]]);
+  });
 });
