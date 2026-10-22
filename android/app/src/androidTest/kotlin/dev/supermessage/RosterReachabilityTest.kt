@@ -13,6 +13,7 @@ import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
@@ -403,6 +404,13 @@ class RosterReachabilityTest {
         replyQuote = null, canReplyOrReact = true, replyPreview = null,
     )
 
+    private fun otherMessage(id: String, body: String) = ownMessage(id, body).let { mine ->
+        mine.copy(
+            item = mine.item.copy(sender = "@sam:example.org", isOwn = false, editable = false),
+            senderName = "Sam", senderShort = "Sam", senderInitial = "S",
+        )
+    }
+
     private fun openAlphaWith(fake: FakeCore) {
         val session = sessionOf(fake)
         val prefs = preferences()
@@ -516,6 +524,89 @@ class RosterReachabilityTest {
         compose.onNodeWithTag("delete-confirm-button").performClick()
         compose.waitForIdle()
         assertEquals(listOf("!a:example.org" to "\$one"), fake.deleted)
+    }
+
+    /**
+     * The whole route a reader takes: long-press someone else's message,
+     * Report…, Send, confirm. The core sees the report, and the message is
+     * gone from the list the moment it landed, without a new revision.
+     */
+    @Test
+    fun reportingAMessageHidesIt() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+            timelineRows = listOf(otherMessage("\$one", "first words"), otherMessage("\$two", "second words")),
+        )
+        openAlphaWith(fake)
+        compose.onNodeWithText("first words").assertIsDisplayed()
+        compose.onNodeWithTag("row-\$one").performTouchInput { longClick() }
+        compose.onNodeWithTag("menu-report").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("report-send").performClick()
+        compose.onNodeWithTag("report-confirm-send").performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf(Triple("!a:example.org", "\$one", "")), fake.reportedEvents)
+        compose.onAllNodesWithText("first words").assertCountEquals(0)
+        compose.onNodeWithText("second words").assertIsDisplayed()
+        compose.onAllNodesWithTag("report-sheet").assertCountEquals(0)
+        // The blocked sender: the toggle was on by default.
+        assertEquals(listOf("@sam:example.org"), fake.ignored)
+    }
+
+    /** Cancelling reports nothing, hides nothing, and focus comes back to the row. */
+    @Test
+    fun cancellingAReportLeavesTheMessageAndReturnsFocus() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+            timelineRows = listOf(otherMessage("\$one", "first words")),
+        )
+        openAlphaWith(fake)
+        compose.onNodeWithTag("row-\$one").performTouchInput { longClick() }
+        compose.onNodeWithTag("menu-report").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("report-reason").performTextInput("rude")
+        compose.onNodeWithTag("report-send").performClick()
+        compose.onNodeWithTag("report-confirm-cancel").performClick()
+        compose.onNodeWithTag("report-cancel").performClick()
+        compose.waitForIdle()
+
+        assertTrue(fake.reportedEvents.isEmpty())
+        compose.onNodeWithText("first words").assertIsDisplayed()
+        compose.onNodeWithTag("row-\$one").assertIsFocused()
+    }
+
+    /** A report on an invitation names the room and never blocks anyone. */
+    @Test
+    fun reportingAnInvitationReportsTheRoom() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(invitationRow())) },
+            roomInviterResult = { null },
+        )
+        val session = sessionOf(fake)
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = preferences())
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("invitations-row").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Ops Room").performScrollTo()
+        compose.onNodeWithTag("roster-row").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("invitation-report").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Report room").assertIsDisplayed()
+        compose.onNodeWithTag("report-also-block").assertDoesNotExist()
+        compose.onNodeWithTag("report-send").performClick()
+        compose.onNodeWithTag("report-confirm-send").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("!room:example.org" to ""), fake.reportedRooms)
+        assertTrue(fake.ignored.isEmpty())
+        compose.onNodeWithTag("invitation-report").assertIsFocused()
     }
 
     /** A delete the core refuses says so under the row (R1). */
@@ -966,6 +1057,22 @@ class RosterReachabilityTest {
         override fun sendMessage(roomId: String, body: String, mentions: List<String>) {
             sendResult()
             sent += body
+        }
+
+        val reportedEvents = mutableListOf<Triple<String, String, String>>()
+        val reportedRooms = mutableListOf<Pair<String, String>>()
+        val ignored = mutableListOf<String>()
+
+        override fun reportEvent(roomId: String, eventId: String, reason: String) {
+            reportedEvents += Triple(roomId, eventId, reason)
+        }
+
+        override fun reportRoom(roomId: String, reason: String) {
+            reportedRooms += roomId to reason
+        }
+
+        override fun ignoreUser(userId: String) {
+            ignored += userId
         }
 
         val roomInviterCalls = mutableListOf<String>()

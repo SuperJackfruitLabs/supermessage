@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -32,7 +33,9 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * - react and reply: `row.canReplyOrReact`;
  * - copy: a non-empty `item.body`;
  * - edit: `item.editable`;
- * - delete: `item.isOwn && row.canReplyOrReact`.
+ * - delete: `item.isOwn && row.canReplyOrReact`;
+ * - report: someone else's message the server has acknowledged, with a
+ *   sender to name (`:1128-1145`).
  */
 data class MessageMenuActions(
     val react: Boolean,
@@ -40,9 +43,10 @@ data class MessageMenuActions(
     val copy: Boolean,
     val edit: Boolean,
     val delete: Boolean,
+    val report: Boolean,
 ) {
     /** No menu at all when nothing would be offered (`:1147`). */
-    val isEmpty: Boolean get() = !(react || reply || copy || edit || delete)
+    val isEmpty: Boolean get() = !(react || reply || copy || edit || delete || report)
 }
 
 internal fun messageMenuActions(row: TimelineRowDto): MessageMenuActions = MessageMenuActions(
@@ -51,12 +55,13 @@ internal fun messageMenuActions(row: TimelineRowDto): MessageMenuActions = Messa
     copy = !row.item.body.isNullOrEmpty(),
     edit = row.item.editable,
     delete = row.item.isOwn && row.canReplyOrReact,
+    report = !row.item.isOwn && row.canReplyOrReact && row.item.eventId != null && row.item.sender != null,
 )
 
 /**
  * The long-press menu for one message: a strip of [quickReactions], then
- * Reply, Copy, Edit and Delete as the row allows ([messageMenuActions]).
- * "Report…" is a later milestone and is not offered.
+ * Reply, Copy, Edit and Delete as the row allows ([messageMenuActions]), and
+ * a destructive "Report…" last on someone else's message.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +72,7 @@ fun MessageMenu(
     onCopy: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onReport: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -74,7 +80,7 @@ fun MessageMenu(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         modifier = Modifier.testTag("message-menu"),
     ) {
-        MessageMenuContent(row, onReact, onReply, onCopy, onEdit, onDelete)
+        MessageMenuContent(row, onReact, onReply, onCopy, onEdit, onDelete, onReport)
     }
 }
 
@@ -87,6 +93,7 @@ internal fun MessageMenuContent(
     onCopy: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onReport: () -> Unit,
 ) {
     val actions = messageMenuActions(row)
     Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
@@ -113,6 +120,10 @@ internal fun MessageMenuContent(
         if (actions.copy) MenuItem("Copy", "menu-copy", onCopy)
         if (actions.edit) MenuItem("Edit", "menu-edit", onEdit)
         if (actions.delete) MenuItem("Delete", "menu-delete", onDelete, destructive = true)
+        if (actions.report) {
+            HorizontalDivider()
+            MenuItem("Report…", "menu-report", onReport, destructive = true)
+        }
     }
 }
 

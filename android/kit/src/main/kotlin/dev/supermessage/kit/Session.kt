@@ -605,7 +605,7 @@ class Session(
                 client.ignoreUser(target.userId)
                 safety.noteBlocked(target.userId, generation)
             }
-            if (blockRefused != null) return "Reported, but blocking didn't work: $blockRefused"
+            if (blockRefused != null) return "$REPORTED_BUT_PREFIX $blockRefused"
         }
         return null
     }
@@ -894,6 +894,15 @@ class Session(
         edits.clearAll()
         safety.clear()
         _phase.value = Phase.SIGNED_OUT
+    }
+
+    companion object {
+        /**
+         * What [report] says first when the report went and the block did not.
+         * A screen tells that apart from a refused report by this prefix: the
+         * first must never be offered again, the second can be retried.
+         */
+        const val REPORTED_BUT_PREFIX = "Reported, but blocking didn't work:"
     }
 
     /** The single collector. See this class's KDoc on ordering. */

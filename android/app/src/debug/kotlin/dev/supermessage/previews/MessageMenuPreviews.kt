@@ -8,11 +8,11 @@ import dev.supermessage.ReactionWhoCard
 import uniffi.supermessage_core.ReactionDto
 
 /** Someone else's message: the strip, Reply and Copy. */
-@Preview(name = "Message menu, others", showBackground = true, heightDp = 260)
+@Preview(name = "Message menu, others", showBackground = true, heightDp = 330)
 @Composable
 internal fun MessageMenuOthers() {
     PreviewGround(width = 411.dp) {
-        MessageMenuContent(PreviewFixtures.message, {}, {}, {}, {}, {})
+        MessageMenuContent(PreviewFixtures.message, {}, {}, {}, {}, {}, {})
     }
 }
 
@@ -21,7 +21,7 @@ internal fun MessageMenuOthers() {
 @Composable
 internal fun MessageMenuOwn() {
     PreviewGround(width = 411.dp) {
-        MessageMenuContent(PreviewFixtures.ownLast, {}, {}, {}, {}, {})
+        MessageMenuContent(PreviewFixtures.ownLast, {}, {}, {}, {}, {}, {})
     }
 }
 

@@ -40,6 +40,8 @@ import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.graphicsLayer
@@ -181,6 +183,8 @@ fun Timeline(
     onEdit: (row: TimelineRowDto) -> Unit = {},
     onDelete: suspend (row: TimelineRowDto) -> Boolean = { false },
     onSwipeReply: (row: TimelineRowDto) -> Unit = {},
+    onReport: (row: TimelineRowDto) -> Unit = {},
+    reportingRowId: String? = null,
     imageUri: (eventId: String) -> String? = { null },
     faceUri: (mxcUri: String) -> String? = { null },
     loadFace: suspend (mxcUri: String) -> Unit = {},
@@ -244,6 +248,20 @@ fun Timeline(
     var menuFor by remember { mutableStateOf<String?>(null) }
     var confirmingDelete by remember { mutableStateOf<String?>(null) }
     var failedDelete by remember { mutableStateOf<String?>(null) }
+    // Focus goes back to the row a report was started from once its sheet
+    // closes (a keyboard or TalkBack reader would otherwise land at the top).
+    // A reported message is gone by then, and the request quietly finds no
+    // one to focus.
+    val reportReturn = remember { FocusRequester() }
+    var reportOrigin by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(reportingRowId) {
+        if (reportingRowId != null) {
+            reportOrigin = reportingRowId
+        } else if (reportOrigin != null) {
+            runCatching { reportReturn.requestFocus() }
+            reportOrigin = null
+        }
+    }
     val menuRow = menuFor?.let { id -> rows.firstOrNull { it.item.id == id } }
     val confirmRow = confirmingDelete?.let { id -> rows.firstOrNull { it.item.id == id } }
     LaunchedEffect(menuFor, menuRow == null) { if (menuFor != null && menuRow == null) menuFor = null }
@@ -451,10 +469,14 @@ fun Timeline(
                         decisionAnswers = decisionAnswers,
                         modifier = (
                             if (hasMenu) {
-                                rowModifier.combinedClickable(
-                                    onClick = {},
-                                    onLongClick = { menuFor = row.item.id },
-                                )
+                                rowModifier
+                                    .then(
+                                        if (reportOrigin == row.item.id) Modifier.focusRequester(reportReturn) else Modifier,
+                                    )
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = { menuFor = row.item.id },
+                                    )
                             } else {
                                 rowModifier
                             }
@@ -627,6 +649,7 @@ fun Timeline(
                 },
                 onEdit = { menuFor = null; onEdit(target) },
                 onDelete = { menuFor = null; confirmingDelete = target.item.id },
+                onReport = { menuFor = null; onReport(target) },
                 onDismiss = { menuFor = null },
             )
         }
