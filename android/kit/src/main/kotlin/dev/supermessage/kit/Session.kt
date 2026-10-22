@@ -24,6 +24,7 @@ import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
+import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_ffi.FfiEvent
@@ -601,6 +602,19 @@ class Session(
         throw e
     } catch (e: Exception) {
         emptyList()
+    }
+
+    /**
+     * Who is in [roomId], as the core joins it: the composer's people, its
+     * agents, and the names a message here can address. `null` when the core
+     * cannot answer (no session yet), which leaves the `@` picker empty.
+     */
+    suspend fun roomCast(roomId: String): RoomCast? = try {
+        client.roomCast(roomId)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     /**

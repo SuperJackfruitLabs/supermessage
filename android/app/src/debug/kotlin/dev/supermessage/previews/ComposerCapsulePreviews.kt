@@ -5,7 +5,9 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.remember
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import dev.supermessage.ChipState
@@ -121,5 +123,28 @@ internal fun ComposerEditing() {
                 body = "Rebased onto main and the token diff is empty now.",
             ),
         )
+    }
+}
+
+/** The `@` picker above the capsule: an agent (labelled, with its host) first, then a person (C4). */
+@Preview(name = "MentionPicker", showBackground = true, heightDp = 260)
+@Composable
+internal fun MentionPicker() {
+    PreviewGround {
+        androidx.compose.foundation.layout.Column(
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+            modifier = androidx.compose.ui.Modifier.padding(10.dp),
+        ) {
+            dev.supermessage.MentionPicker(
+                people = listOf(
+                    uniffi.supermessage_core.PersonDto(
+                        "@atlas:x", "Atlas", "A", uniffi.supermessage_core.RuntimeDto("claude", "ci"), null,
+                    ),
+                    uniffi.supermessage_core.PersonDto("@priya:x", "Priya", "P", null, null),
+                ),
+                onPick = {},
+            )
+            Composer(text = "@a", onTextChange = {}, onSend = {})
+        }
     }
 }

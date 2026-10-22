@@ -1,6 +1,22 @@
 package dev.supermessage
 
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import dev.supermessage.kit.MentionComposing
+import uniffi.supermessage_core.PersonDto
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.format.Formatter
@@ -57,6 +73,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.stores.EditTarget
 import dev.supermessage.kit.stores.ReplyTarget
@@ -135,8 +153,15 @@ fun Composer(
     onAttach: (path: String) -> Unit = {},
     onRefuse: (filename: String, message: String) -> Unit = { _, _ -> },
     onDiscardAttachment: () -> Unit = {},
+    mentionCandidates: (query: String) -> List<PersonDto> = { emptyList() },
     modifier: Modifier = Modifier,
 ) {
+    var focused by remember { mutableStateOf(false) }
+    // Only while the field has focus (iOS `mentionQuery`; Android has no
+    // recorder in the composer). `activeQuery` is the Kit's, so an email
+    // address opens nothing.
+    val mentionQuery = if (focused) MentionComposing.activeQuery(text) else null
+    val mentionPeople = mentionQuery?.let { mentionCandidates(it.text) }.orEmpty()
     val canSend = when {
         editing != null -> text.isNotBlank()
         attachment?.blocksSend == true -> false
@@ -170,6 +195,23 @@ fun Composer(
             .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // Above the capsule (iOS `ComposerView.swift:59-67`). The last
+        // non-empty list is kept so the exit animation has rows to draw.
+        var lastPeople by remember { mutableStateOf(mentionPeople) }
+        if (mentionPeople.isNotEmpty()) lastPeople = mentionPeople
+        val reduce = reducesMotion()
+        AnimatedVisibility(
+            visible = mentionQuery != null && mentionPeople.isNotEmpty(),
+            enter = slideInVertically(motion(reduce, tween(200))) { it / 2 } + fadeIn(motion(reduce, tween(200))),
+            exit = slideOutVertically(motion(reduce, tween(200))) { it / 2 } + fadeOut(motion(reduce, tween(200))),
+        ) {
+            MentionPicker(
+                people = lastPeople,
+                onPick = { person ->
+                    if (mentionQuery != null) onTextChange(MentionComposing.insert(person, mentionQuery, text))
+                },
+            )
+        }
         Column(
             Modifier
                 .fillMaxWidth()
@@ -209,6 +251,7 @@ fun Composer(
                 onSend = onSend,
                 onAttach = onAttach,
                 onRefuse = onRefuse,
+                onFocusChange = { focused = it },
             )
         }
 
@@ -239,6 +282,7 @@ private fun FieldRow(
     onSend: () -> Unit,
     onAttach: (path: String) -> Unit,
     onRefuse: (filename: String, message: String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
 ) {
     val colors = SupermessageTheme.colors
     Row(
@@ -247,9 +291,18 @@ private fun FieldRow(
     ) {
         AttachMenu(onAttach = onAttach, onRefuse = onRefuse)
 
+        // The caret is held here so that a change the field did not make (a
+        // picked mention, an edit beginning, a draft restored) leaves it at
+        // the end of the new text, where the reader carries on typing; the
+        // string overload would leave it wherever it was.
+        var field by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+        if (field.text != text) field = TextFieldValue(text, TextRange(text.length))
         BasicTextField(
-            value = text,
-            onValueChange = onTextChange,
+            value = field,
+            onValueChange = { next ->
+                field = next
+                if (next.text != text) onTextChange(next.text)
+            },
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.content),
             cursorBrush = SolidColor(colors.accent),
             minLines = 1,
@@ -267,7 +320,11 @@ private fun FieldRow(
                     inner()
                 }
             },
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp).testTag("composer-text"),
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 4.dp)
+                .onFocusChanged { onFocusChange(it.isFocused) }
+                .testTag("composer-text"),
         )
 
         IconButton(
@@ -303,6 +360,93 @@ private fun FieldRow(
                         if (editing) Icons.Filled.Check else Icons.AutoMirrored.Filled.Send,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The `@` picker: the room's people matching what follows the `@`, agents
+ * first (the core's order), each agent labelled (iOS `MentionPicker`,
+ * `ComposerView.swift:508-549`). A row is the initial in an `accentSoft`
+ * circle, the name, "harness on host" for an agent, and the "Agent" tag; at
+ * least 44dp tall, and read as "name, agent" by TalkBack.
+ */
+@Composable
+internal fun MentionPicker(people: List<PersonDto>, onPick: (PersonDto) -> Unit, modifier: Modifier = Modifier) {
+    val colors = SupermessageTheme.colors
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 4.dp,
+                shape = shape,
+                ambientColor = colors.scrim.copy(alpha = 0.1f),
+                spotColor = colors.scrim.copy(alpha = 0.1f),
+            )
+            .background(colors.surfaceRaised, shape)
+            .border(1.dp, colors.border, shape)
+            .padding(vertical = 4.dp)
+            .testTag("mention-picker"),
+    ) {
+        people.forEach { person ->
+            val agent = person.runtime
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .clickable(role = Role.Button) { onPick(person) }
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                    .testTag("mention-${person.userId}")
+                    .clearAndSetSemantics {
+                        contentDescription = if (agent != null) "${person.name}, agent" else person.name
+                        role = Role.Button
+                        onClick { onPick(person); true }
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    Modifier.size(30.dp).background(colors.accentSoft, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        person.initial,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.accent,
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        person.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.content,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (agent != null) {
+                        Text(
+                            "${agent.harness} on ${agent.host}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.contentMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (agent != null) {
+                    Text(
+                        "Agent",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.accent,
+                        modifier = Modifier
+                            .background(colors.accentSoft, CircleShape)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
             }

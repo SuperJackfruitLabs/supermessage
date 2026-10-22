@@ -671,6 +671,12 @@ class RosterReachabilityTest {
         }
         private var subscribedRoomId: String? = null
 
+        // The composer asks for the room's cast on opening it; nobody here is mentioned.
+        override fun roomCast(roomId: String) = uniffi.supermessage_core.RoomCast(
+            roomId = roomId, people = emptyList(), counterpart = null,
+            agentIds = emptyList(), addressee = null, mentionables = emptyList(),
+        )
+
         override fun restoreSession(sink: EventSink): Boolean = true
         override fun roomsSnapshot(): RoomsSnapshot = roomsSnapshotResult()
         override fun spacesList(): List<SpaceSummary> = spacesListResult()

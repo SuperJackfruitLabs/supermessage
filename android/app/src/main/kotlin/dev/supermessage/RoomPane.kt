@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.supermessage.kit.MentionCast
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.SendResult
 import dev.supermessage.kit.Session
@@ -183,6 +184,13 @@ internal fun RoomPane(
         var text by remember(currentRoomId) {
             mutableStateOf(session.drafts.draft(currentRoomId))
         }
+        // Who an `@` here can name, from the core's cast for this room
+        // (iOS `.task(id: roomId) { loadCast() }`). Keyed by the room so a new
+        // room never starts with the last one's people, and `load` drops an
+        // answer for a room already left.
+        val mentionCast = remember(currentRoomId) { MentionCast() }
+        LaunchedEffect(currentRoomId) { mentionCast.load(currentRoomId, session::roomCast) }
+        val castPeople by mentionCast.cast.collectAsStateWithLifecycle()
         var sending by remember(currentRoomId) { mutableStateOf(false) }
         var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }
 
@@ -292,7 +300,7 @@ internal fun RoomPane(
                                     composerFailure = "Could not save the edit."
                                 }
                             } else {
-                                when (val result = session.send(text, currentRoomId)) {
+                                when (val result = session.send(text, currentRoomId, mentionCast.mentionables)) {
                                     SendResult.Sent, SendResult.NothingToSend -> {
                                         composerFailure = null
                                         text = ""
@@ -318,6 +326,9 @@ internal fun RoomPane(
                         }
                     }
                 },
+                // Reads the collected cast, so the lambda changes (and the composer
+                // recomposes) when the cast arrives.
+                mentionCandidates = { query -> castPeople?.let { mentionCast.candidates(query) }.orEmpty() },
                 sending = sending,
                 failure = composerFailure,
                 replyTo = replyTargets[currentRoomId],

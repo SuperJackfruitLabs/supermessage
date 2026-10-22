@@ -26,6 +26,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
  */
 val LocalReduceMotion = compositionLocalOf<Boolean?> { null }
 
+/** [full], or a jump when motion is reduced: the spec for an animation that has a finite end. */
+internal fun <T> motion(reduce: Boolean, full: androidx.compose.animation.core.FiniteAnimationSpec<T>):
+    androidx.compose.animation.core.FiniteAnimationSpec<T> = if (reduce) snap() else full
+
 /** Whether animation is off, from the test's override if any, else the system. */
 @Composable
 fun reducesMotion(): Boolean = LocalReduceMotion.current ?: systemReducesMotion()
