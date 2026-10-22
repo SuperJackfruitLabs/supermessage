@@ -71,7 +71,7 @@ spec, and no device verification on any platform.
 | B3 | Android | **Images never render.** The row draws a grey box with the alt text. | `TimelineRow.kt:655-687` (`ImageRow` has no image load); the Kit's `MediaCache` is never used by the app. | S |
 | B4 | Android | **App lifecycle not wired.** No reseed on return to the foreground, no typing-off when backgrounded, no sync pause. | `Session.scenePhaseChanged` (`kit/Session.kt:351`) has no caller. | S |
 | B5 | Desktop | Desktop never sets up recovery at sign-in. iOS (`Session.swift:714`) and Android (`kit/Session.kt:713`) call `ensure_recovery` after signing in and show the new key once; desktop has no command for it. Its panel's `enable()` is defined but never called. iOS and Android have no "enable" button either, so the parity fix is `ensure_recovery`, not that button. | `RecoveryPanel.svelte:47`; no `ensure_recovery` in `src-tauri/src/lib.rs` | S |
-| B6 | Desktop | A failed decision send is silent: the error goes only to `console.error`. *Corrected 2026-10-22 during M0:* a failed attachment being dropped is **not** a gap. The core consumes the staged file before sending (`attachments.rs`, `take_for_send`, to prevent duplicate sends), and iOS behaves the same way (`Outbox.swift:38-50`): the error shows and the text stays. | `Timeline.svelte:978-981` | S |
+| B6 | Desktop | A failed decision send is silent: the error goes only to `console.error`. *Corrected 2026-10-22 during M0:* a failed attachment being dropped is **not** a gap. The core consumes the staged file before sending (`attachments.rs`, `take_for_send`, to prevent duplicate sends), and iOS behaves the same way (`Outbox.swift:38-50`): the error shows and the text stays. *Superseded 2026-10-22, during M1 planning: iOS re-stages a failed attachment (`StagedAttachment.swift:143-178`); the M0 correction was wrong; tracked as M1.7.* | `Timeline.svelte:978-981` | S |
 | B7 | Docs | README overstates Android: "editing/deleting own messages: Implemented" (there is no delete UI), and "permission cards Implemented" (see B1). | `README.md:33,36` | S |
 
 ## 3. The matrix
@@ -151,7 +151,7 @@ The "Work" column is the plumbing each gap needs:
 | C2 | Voice message recording | ✗ (no RECORD_AUDIO) | ✗ | Android wrap (`attachmentMarkVoice`); desktop cmd |
 | C3 | Image thumbnail in the composer; errors on the chip | ◐ | ◐ | UI (desktop may need preview bytes) |
 | C4 | `@` picker for people and agents with status | ✗ (`collectMentions` gets an empty member list) | ◐ (agents not marked) | UI |
-| D12 | Failed send keeps the text; text never sent without its attachment; a failed file must be attached again (the core consumes it, as on iOS) | ◐ (**B2**) | ✅ (corrected during M0) | — |
+| D12 | Failed send keeps the text; text never sent without its attachment; a failed file must be attached again (the core consumes it, as on iOS) *Superseded 2026-10-22, during M1 planning: iOS re-stages a failed attachment (`StagedAttachment.swift:143-178`); the M0 correction was wrong; tracked as M1.7.* | ◐ (**B2**) | ✅ (corrected during M0) | — |
 | — | Captions, per-room drafts, reply banner | ✅ | ✅ | — |
 | — | Edit mode | ✅ | ✗ | desktop wrap |
 | — | Any-file attach | ◐ (images and video only) | ✅ (plus drag and drop) | UI |
