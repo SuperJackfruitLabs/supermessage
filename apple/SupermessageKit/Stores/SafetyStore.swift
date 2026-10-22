@@ -52,7 +52,9 @@ public enum ReportSubject: Identifiable, Equatable, Sendable {
 /// Reporting a message hides it here at once. There is no Matrix protocol for
 /// "hide this one event for me", so the set is local — kept in `UserDefaults`
 /// so a reported message does not return on the next launch, and cleared on
-/// sign-out with everything else the account left behind.
+/// sign-out with everything else the account left behind. The core does the
+/// hiding: the session pushes the set to it (`hiddenEventsDidChange`, and at
+/// every sign-in), and rows come back marked `hidden`.
 @MainActor
 @Observable
 public final class SafetyStore {
@@ -64,6 +66,10 @@ public final class SafetyStore {
     /// message menu (UIKit), read by `TimelineView` (SwiftUI) — this store is
     /// the one place both can reach.
     public var pendingReport: ReportSubject?
+
+    /// Called with the whole set after it grows. The session pushes it to the
+    /// core, which groups the timeline as if those rows were absent.
+    @ObservationIgnored public var hiddenEventsDidChange: (@MainActor (Set<String>) -> Void)?
 
     @ObservationIgnored private let defaults: UserDefaults?
     static let hiddenKey = "safety.hiddenEvents"
@@ -91,18 +97,7 @@ public final class SafetyStore {
     public func hide(eventId: String) {
         hiddenEvents.insert(eventId)
         defaults?.set(Array(hiddenEvents), forKey: Self.hiddenKey)
-    }
-
-    /// The rows a timeline should draw: everything but what was reported here.
-    ///
-    /// Keyed on the **event** id. A local echo has none and cannot have been
-    /// reported (the menu does not offer it), so it always passes.
-    public func visible(_ rows: [TimelineRow]) -> [TimelineRow] {
-        guard !hiddenEvents.isEmpty else { return rows }
-        return rows.filter { row in
-            guard let eventId = row.item.eventId else { return true }
-            return !hiddenEvents.contains(eventId)
-        }
+        hiddenEventsDidChange?(hiddenEvents)
     }
 
     /// Forget everything — sign-out.

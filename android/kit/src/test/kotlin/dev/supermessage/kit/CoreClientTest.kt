@@ -64,6 +64,14 @@ class CoreClientTest {
         assertEquals(true, dispatched)
     }
 
+    /** the hidden set reaches the core whole, as given */
+    @Test
+    fun theHiddenSetReachesTheCore() = runTest {
+        val core = FakeCore()
+        CoreClient(core = core).setHiddenEvents(listOf("\$a", "\$b"))
+        assertEquals(listOf(listOf("\$a", "\$b")), core.hiddenPushes)
+    }
+
     /** many blocking calls at once do not starve anything */
     @Test
     fun manyBlockingCallsAtOnceDoNotStarveAnything() = runBlocking {
@@ -143,6 +151,12 @@ class CoreClientTest {
 
         private fun block() {
             if (blockMillis > 0) Thread.sleep(blockMillis)
+        }
+
+        val hiddenPushes = mutableListOf<List<String>>()
+
+        override fun setHiddenEvents(eventIds: List<String>) {
+            hiddenPushes += eventIds
         }
 
         override fun connectionState(): ConnectionState {

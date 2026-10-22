@@ -774,6 +774,13 @@ impl Core {
         self.session.has_sent(&room_id)
     }
 
+    /// The events the reader hid on this device. The focused timeline groups
+    /// as if those rows were absent and marks them `hidden`; the host keeps
+    /// the ids and pushes the full set at sign-in and whenever it changes.
+    pub fn set_hidden_events(&self, event_ids: Vec<String>) {
+        self.session.set_hidden_events(event_ids);
+    }
+
     /// The room this account already shares with `user_id` alone, if any.
     pub fn direct_room_with(&self, user_id: String) -> Result<Option<String>, FfiError> {
         Ok(self.block(self.session.direct_room_with(&user_id))?)

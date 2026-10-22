@@ -14,6 +14,8 @@ public enum TimelineGrouping {
 
     /// The entries to draw for `rows`, in order.
     ///
+    /// - A row the reader hid (`hidden`) is left out; the core has already
+    ///   grouped the others as if it were absent.
     /// - A row whose view is `.none` draws nothing and gets no entry. A cell
     ///   with no content does not reliably collapse to no height, so
     ///   deliberately silent has to mean absent, not empty.
@@ -39,6 +41,7 @@ public enum TimelineGrouping {
         }
 
         for row in rows {
+            if row.hidden { continue }
             if case .none = row.view { continue }
             guard row.item.kind == "membership", let placement = row.membership else {
                 out.append(.row(row))

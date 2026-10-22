@@ -945,6 +945,13 @@ public protocol CoreProtocol : AnyObject {
     func sendReply(roomId: String, body: String, inReplyTo: String) throws 
     
     /**
+     * The events the reader hid on this device. The focused timeline groups
+     * as if those rows were absent and marks them `hidden`; the host keeps
+     * the ids and pushes the full set at sign-in and whenever it changes.
+     */
+    func setHiddenEvents(eventIds: [String]) 
+    
+    /**
      * Set how loudly a room may interrupt. `Default` unsets the room's own
      * rule so the account default applies again.
      */
@@ -1832,6 +1839,18 @@ open func sendReply(roomId: String, body: String, inReplyTo: String)throws  {try
         FfiConverterString.lower(roomId),
         FfiConverterString.lower(body),
         FfiConverterString.lower(inReplyTo),$0
+    )
+}
+}
+    
+    /**
+     * The events the reader hid on this device. The focused timeline groups
+     * as if those rows were absent and marks them `hidden`; the host keeps
+     * the ids and pushes the full set at sign-in and whenever it changes.
+     */
+open func setHiddenEvents(eventIds: [String]) {try! rustCall() {
+    uniffi_supermessage_ffi_fn_method_core_set_hidden_events(self.uniffiClonePointer(),
+        FfiConverterSequenceString.lower(eventIds),$0
     )
 }
 }
@@ -5813,6 +5832,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_set_hidden_events() != 44152) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_set_room_notifications() != 42292) {

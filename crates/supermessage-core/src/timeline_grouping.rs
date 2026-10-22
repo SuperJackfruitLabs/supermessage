@@ -15,8 +15,9 @@
 //! - **membership** ([`MembershipPlacement`]): consecutive membership changes
 //!   collapse into runs, and a stretch of three or more lines into one summary.
 //!
-//! A row whose view is [`ItemView::None`] is not drawn, and so neither
-//! breaks nor joins anything. A host that draws the list reads these fields
+//! A row whose view is [`ItemView::None`], or that the reader hid
+//! ([`TimelineRow::hidden`]), is not drawn, and so neither breaks nor joins
+//! anything. A host that draws the list reads these fields
 //! and applies no rule of its own; the one thing it keeps is which stretches
 //! the reader has opened.
 
@@ -88,7 +89,7 @@ pub fn settle(rows: &mut [TimelineRow]) -> Vec<usize> {
     let mut stretch: Vec<usize> = Vec::new();
 
     for i in 0..rows.len() {
-        if matches!(rows[i].view, ItemView::None) {
+        if undrawn(&rows[i]) {
             let mut dirty = set_flags(rows, i, false, false, false);
             dirty |= std::mem::take(&mut rows[i].ends_run);
             dirty |= rows[i].membership.take().is_some();
@@ -132,7 +133,7 @@ pub fn settle(rows: &mut [TimelineRow]) -> Vec<usize> {
     // `ends_run` is the mirror of the next drawn row's `continues_run`.
     let mut next_continues = false;
     for i in (0..rows.len()).rev() {
-        if matches!(rows[i].view, ItemView::None) {
+        if undrawn(&rows[i]) {
             continue;
         }
         let ends = !next_continues;
@@ -146,6 +147,12 @@ pub fn settle(rows: &mut [TimelineRow]) -> Vec<usize> {
     changed.sort_unstable();
     changed.dedup();
     changed
+}
+
+/// A row the host does not draw: silent, or hidden by the reader. Neither
+/// breaks nor joins anything.
+fn undrawn(row: &TimelineRow) -> bool {
+    row.hidden || matches!(row.view, ItemView::None)
 }
 
 /// Write the three forward flags, reporting whether any differed. `ends_run`
@@ -201,6 +208,7 @@ pub(crate) fn stamp(ops: &mut [DiffOp<TimelineRow>], rows: &[TimelineRow]) {
                 value.hides_quote = settled.hides_quote;
                 value.shows_runtime = settled.shows_runtime;
                 value.membership = settled.membership.clone();
+                value.hidden = settled.hidden;
             }
         }
     }
@@ -225,7 +233,7 @@ fn op_values_mut(op: &mut DiffOp<TimelineRow>) -> Vec<&mut TimelineRow> {
 /// they are attributed by position, not by name. Stops at the second sender.
 fn has_several_speakers(rows: &[TimelineRow]) -> bool {
     let mut first: Option<&str> = None;
-    for row in rows.iter().filter(|row| !row.item.is_own) {
+    for row in rows.iter().filter(|row| !row.item.is_own && !row.hidden) {
         let Some(sender) = row.item.sender.as_deref() else {
             continue;
         };
@@ -502,6 +510,110 @@ mod tests {
             label: None,
         });
         row
+    }
+
+    /// `row` hidden by the reader.
+    fn hid(mut row: TimelineRow) -> TimelineRow {
+        row.hidden = true;
+        row
+    }
+
+    /// Hiding the head of a run gives the next row the header.
+    ///
+    /// Mutation seen failing: `undrawn` ignoring `hidden` (only the `None`
+    /// view) leaves the second row continuing a run whose head is not drawn.
+    #[test]
+    fn hiding_a_run_head_gives_the_next_row_a_header() {
+        let rows = group_rows(vec![
+            hid(msg("$1", "@a:x", 1_000, false)),
+            msg("$2", "@a:x", 2_000, false),
+            msg("$3", "@a:x", 3_000, false),
+        ]);
+        assert!(!rows[1].continues_run, "it is now the first drawn row");
+        assert!(rows[2].continues_run, "and still heads its run");
+        assert!(
+            !rows[0].continues_run && !rows[0].ends_run,
+            "hidden: no flags"
+        );
+    }
+
+    /// Hiding the last row of a run ends the run on the row before.
+    ///
+    /// Mutation seen failing: `undrawn` ignoring `hidden` leaves the middle
+    /// row's `ends_run` false (the hidden row is taken for the end). The
+    /// backward walk's own `undrawn` skip is equivalent here: a hidden row's
+    /// `continues_run` is already reset, so it reads the same either way.
+    #[test]
+    fn hiding_the_last_row_of_a_run_ends_it_on_the_previous_row() {
+        let rows = group_rows(vec![
+            msg("$1", "@a:x", 1_000, false),
+            msg("$2", "@a:x", 2_000, false),
+            hid(msg("$3", "@a:x", 3_000, false)),
+        ]);
+        assert!(rows[1].ends_run, "the last drawn row ends the run");
+        assert!(!rows[0].ends_run);
+    }
+
+    /// A row separated from its run mate only by a hidden row still continues.
+    ///
+    /// Mutation seen failing: `undrawn` ignoring `hidden` makes the hidden
+    /// peer break the run (the last row gets a header).
+    #[test]
+    fn a_hidden_row_between_two_of_a_run_breaks_nothing() {
+        let rows = group_rows(vec![
+            msg("$1", "@a:x", 1_000, false),
+            hid(msg("$2", "@b:x", 2_000, false)),
+            msg("$3", "@a:x", 3_000, false),
+        ]);
+        assert!(rows[2].continues_run);
+        assert!(!rows[0].ends_run, "the run goes on past the hidden row");
+    }
+
+    /// Hiding the parent a reply sits under un-hides the reply's quote.
+    ///
+    /// Mutation seen failing: `undrawn` ignoring `hidden` keeps `hides_quote`
+    /// true although the parent is not drawn.
+    #[test]
+    fn hiding_a_quoted_parent_shows_the_quote() {
+        let parent = msg("$p", "@a:x", 1_000, false);
+        let child = reply("$r", "$p", 2_000);
+        assert!(group_rows(vec![parent.clone(), child.clone()])[1].hides_quote);
+        let rows = group_rows(vec![hid(parent), child]);
+        assert!(!rows[1].hides_quote, "the parent is not drawn above it");
+    }
+
+    /// Unhiding restores exactly what grouping the whole list gave.
+    ///
+    /// Mutation seen failing: `undrawn` ignoring `hidden` leaves the row after
+    /// the hidden head continuing a run (the first assertion).
+    #[test]
+    fn unhiding_restores_the_flags() {
+        let plain = group_rows(vec![
+            msg("$1", "@a:x", 1_000, false),
+            msg("$2", "@a:x", 2_000, false),
+            msg("$3", "@a:x", 3_000, false),
+        ]);
+        let mut rows = plain.clone();
+        rows[0].hidden = true;
+        settle(&mut rows);
+        assert!(!rows[1].continues_run);
+        rows[0].hidden = false;
+        let changed = settle(&mut rows);
+        assert_eq!(rows, plain);
+        assert_eq!(changed, vec![1], "only the row it headed moved");
+    }
+
+    /// A hidden peer does not make the room a multi-speaker room.
+    ///
+    /// Mutation seen failing: counting hidden rows in `has_several_speakers`
+    /// leaves `shows_runtime` true.
+    #[test]
+    fn a_hidden_speaker_does_not_count() {
+        let mut a = msg("$1", "@a:x", 1_000, false);
+        a.sender_name = "A (h on box)".into();
+        let b = msg("$2", "@b:x", 2_000, false);
+        assert!(group_rows(vec![a.clone(), b.clone()])[0].shows_runtime);
+        assert!(!group_rows(vec![a, hid(b)])[0].shows_runtime);
     }
 
     fn continues(rows: Vec<TimelineRow>) -> Vec<bool> {

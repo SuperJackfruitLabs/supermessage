@@ -182,6 +182,10 @@ public protocol AccountDirectory: Sendable {
     /// Whether this account has sent into `roomId` since signing in. The core
     /// owns it, so signing out clears it.
     func hasSent(roomId: String) async -> Bool
+    /// The events the reader hid on this device. The core groups the focused
+    /// timeline as if they were absent and marks their rows `hidden`. The full
+    /// set, pushed at sign-in and whenever it changes.
+    func setHiddenEvents(eventIds: [String]) async
     func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto]
 }
 

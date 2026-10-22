@@ -100,6 +100,16 @@ struct DisplayRowTests {
         // And it does not break the run either: the core skips it too.
         #expect(rows[2].continuesRun)
     }
+
+    @Test("a hidden row gets no entry, and the row after it is grouped as if it were absent")
+    func hiddenRowHasNoEntry() {
+        var head = Self.message("a", at: 1_000)
+        head.hidden = true
+        let rows = groupTimelineRows(rows: [head, Self.message("b", at: 2_000)])
+        #expect(Self.describe(TimelineGrouping.displayRows(rows, expanded: [])) == ["<row b>"])
+        // The core settled it: with its head hidden, "b" starts the run.
+        #expect(!rows[1].continuesRun)
+    }
 }
 
 /// What a day divider says.
