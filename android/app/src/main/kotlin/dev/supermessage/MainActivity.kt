@@ -34,6 +34,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.supermessage.kit.RosterArrangement
@@ -127,6 +128,17 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
     }
     // Backgrounded: stop, and let go of the decoder.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { voice.stop() }
+
+    // Foreground and background reach the session, as iOS's scenePhase does:
+    // coming back re-seeds the stores, going away clears a typing notice.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(session, lifecycleOwner) {
+        val observer = ScenePhaseObserver { active ->
+            scope.launch { session.scenePhaseChanged(active) }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // What the extra pane (see RootScaffold's own KDoc on
     // `extraPaneContent`) is currently showing — at most one
