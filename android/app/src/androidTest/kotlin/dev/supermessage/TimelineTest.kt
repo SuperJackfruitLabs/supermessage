@@ -2,31 +2,38 @@ package dev.supermessage
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasNoClickAction
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.swipeRight
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -38,9 +45,9 @@ import uniffi.supermessage_core.ReplyQuoteView
 import uniffi.supermessage_core.ReplyToDto
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RichInline
+import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
-import uniffi.supermessage_core.SystemKind
 
 /**
  * The scroll container — see `Timeline.kt`'s own KDoc and
@@ -612,14 +619,19 @@ class TimelineTest {
         rows: List<TimelineRowDto>,
         onReply: (TimelineRowDto) -> Unit = {},
         onSwipeReply: (TimelineRowDto) -> Unit = {},
+        liveAnswer: String? = null,
+        liveFinished: Boolean = false,
     ) {
         compose.setContent {
             CompositionLocalProvider(LocalReduceMotion provides true) {
-                Timeline(
-                    rows = rows, revision = 0uL, typingLine = null, isPaginating = false,
-                    canPaginate = false, onPaginate = {}, onMarkRead = {},
-                    onReply = onReply, onSwipeReply = onSwipeReply,
-                )
+                Box(Modifier.requiredWidth(411.dp)) {
+                    Timeline(
+                        rows = rows, revision = 0uL, typingLine = null, isPaginating = false,
+                        canPaginate = false, onPaginate = {}, onMarkRead = {},
+                        onReply = onReply, onSwipeReply = onSwipeReply,
+                        liveAnswer = liveAnswer, liveFinished = liveFinished,
+                    )
+                }
             }
         }
     }
@@ -683,5 +695,57 @@ class TimelineTest {
             .assertContentDescriptionEquals("Read by " + uniffi.supermessage_ffi.peopleLabel(ids))
         compose.onAllNodesWithTag("reader-face", useUnmergedTree = true).assertCountEquals(3)
         compose.onNodeWithText("+1", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    /** The merged row is what TalkBack sees: the jump must be one of its actions, beside Reply. */
+    @Test
+    fun theQuoteJumpIsAnActionOnTheMergedRow() {
+        showQuoting(quoting("r2"))
+        val actions = compose.onNodeWithTag("row-r39").fetchSemanticsNode()
+            .config[SemanticsActions.CustomActions]
+        assertEquals(listOf("Reply", "Show original message"), actions.map { it.label })
+        compose.runOnUiThread { actions.first { it.label == "Show original message" }.action() }
+        compose.waitForIdle()
+        compose.onNodeWithTag("row-r2").assertIsDisplayed()
+    }
+
+    @Test
+    fun aRowWhoseParentIsNotLoadedHasNoJumpAction() {
+        showQuoting(quoting("\$missing"))
+        val labels = compose.onNodeWithTag("row-r39").fetchSemanticsNode()
+            .config[SemanticsActions.CustomActions].map { it.label }
+        assertEquals(listOf("Reply"), labels)
+    }
+
+    @Test
+    fun enterOnTheFocusedQuoteJumps() {
+        showQuoting(quoting("r2"))
+        quoteIn("row-r39").requestFocus()
+        quoteIn("row-r39").performKeyInput { pressKey(Key.Enter) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("row-r2").assertIsDisplayed()
+    }
+
+    private fun assertCentred(rowTag: String) {
+        val list = compose.onNodeWithTag("timeline-list").getUnclippedBoundsInRoot()
+        val r = compose.onNodeWithTag(rowTag).getUnclippedBoundsInRoot()
+        val offBy = ((r.top + r.bottom) / 2 - (list.top + list.bottom) / 2).value
+        assertTrue("$rowTag centre is $offBy dp from the list centre", kotlin.math.abs(offBy) < ((r.bottom - r.top).value / 2))
+    }
+
+    @Test
+    fun theJumpLandsOnTheRightRowBesideALiveTurn() {
+        showQuoting(quoting("r10"), liveAnswer = "thinking")
+        quoteIn("row-r39").performClick()
+        compose.waitForIdle()
+        assertCentred("row-r10")
+    }
+
+    @Test
+    fun theJumpLandsOnTheRightRowBelowAFinishedLiveTurn() {
+        showQuoting(quoting("r10"), liveAnswer = "done", liveFinished = true)
+        quoteIn("row-r39").performClick()
+        compose.waitForIdle()
+        assertCentred("row-r10")
     }
 }

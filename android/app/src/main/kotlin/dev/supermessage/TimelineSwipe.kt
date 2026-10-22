@@ -83,6 +83,7 @@ fun Modifier.timelineSwipe(
     reveal: TimeReveal,
     revealWidthPx: Float,
     onSwipeReply: (TimelineRowDto) -> Unit,
+    extraActions: List<CustomAccessibilityAction> = emptyList(),
 ): Modifier = composed {
     val reduce = reducesMotion()
     val replyPx = with(LocalDensity.current) { ReplyThresholdDp.dp.toPx() }
@@ -95,11 +96,13 @@ fun Modifier.timelineSwipe(
 
     this
         .semantics {
-            if (canReply) {
-                customActions = listOf(
-                    CustomAccessibilityAction("Reply") { latestReply.value(latestRow.value); true },
-                )
-            }
+            // One writer: a second `customActions` on the same node replaces
+            // this list instead of adding to it.
+            val actions = (
+                if (canReply) listOf(CustomAccessibilityAction("Reply") { latestReply.value(latestRow.value); true })
+                else emptyList()
+                ) + extraActions
+            if (actions.isNotEmpty()) customActions = actions
         }
         .pointerInput(revealable, canReply, revealWidthPx, replyPx, reduce) {
             coroutineScope {

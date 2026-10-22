@@ -40,7 +40,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.testTag as semanticsTestTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -397,6 +399,9 @@ fun Timeline(
                 val row = display.row
                 val hasMenu = !messageMenuActions(row).isEmpty
                 val time = revealedTime(row, ::clockLabel)
+                val quoteJump: (() -> Unit)? = row.item.replyTo?.eventId?.let { parent ->
+                    idByEventId[parent]?.let { target -> { jumpTo(target) } }
+                }
                 Box(modifier = Modifier.fillMaxWidth()) {
                     TimelineRow(
                         row = row,
@@ -405,9 +410,7 @@ fun Timeline(
                         endsRun = endsRun[row.item.id] ?: true,
                         readers = row.item.readBy.map { facesBySender[it] ?: ReaderFace(it, null, null) },
                         highlighted = highlightedId == row.item.id,
-                        onQuoteTap = row.item.replyTo?.eventId?.let { parent ->
-                            idByEventId[parent]?.let { target -> { jumpTo(target) } }
-                        },
+                        onQuoteTap = quoteJump,
                         attribution = if (singleSpeaker) row.senderShort else row.senderName,
                         imageUri = imageUri,
                         faceUri = faceUri,
@@ -423,7 +426,14 @@ fun Timeline(
                             } else {
                                 rowModifier
                             }
-                            ).timelineSwipe(row, reveal, revealWidthPx, onSwipeReply),
+                            ).timelineSwipe(
+                                row, reveal, revealWidthPx, onSwipeReply,
+                                // The row merges its children, which drops the quote's own
+                                // action; TalkBack reaches the jump from here.
+                                extraActions = quoteJump?.let {
+                                    listOf(CustomAccessibilityAction("Show original message") { it(); true })
+                                } ?: emptyList(),
+                            ),
                     )
                     // The time waits just past the trailing edge and slides in
                     // as the rows slide out, fading in with the pull. Hidden
