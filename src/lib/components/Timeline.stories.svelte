@@ -109,7 +109,7 @@
   const quoted = atlas("q0", 0, "Parent: the plan for the release.");
   const jumpRows: TimelineRow[] = [
     quoted,
-    ...Array.from({ length: 30 }, (_, i) => atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`)),
+    ...Array.from({ length: 14 }, (_, i) => atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`)),
     {
       ...mine("r1", 400_000, "Replying to the plan.", {
         replyTo: { eventId: "$q0", available: true, sender: "@atlas:example.org", senderDisplayName: "Atlas", body: null } as never,
@@ -277,6 +277,73 @@
     }
   }
 
+
+  // --- Agent cards, the long read, the quote under its parent (M4 Task 3) ---
+
+  const castOf = (...agentIds: string[]) =>
+    ({ roomId: ROOM, people: [], counterpart: null, agentIds, addressee: null, mentionables: [] }) as never;
+  const ATLAS = "@atlas:example.org";
+  const BEA = "@bea:example.org";
+  const MIRA = "@mira:example.org";
+  const mira = (id: string, at: number, body: string, extra: Partial<ItemOverrides> = {}) =>
+    row({ id, sender: MIRA, senderDisplayName: "Mira", timestampMs: T0 + at, body, ...extra }, "M");
+
+  const cardRows: TimelineRow[] = [
+    atlas("c1", 0, "Staging is green across all four ABIs."),
+    mira("c2", 10 * 60_000, "Thanks, promoting now."),
+    mine("c3", 20 * 60_000, "Hold the promotion until Mira confirms."),
+  ];
+
+  const PARAGRAPHS = Array.from(
+    { length: 6 },
+    (_, i) => `Paragraph ${i + 1}: the migration touched every table the importer reads, and each step was checked against the staging copy before it was allowed to run on anything real.`,
+  );
+  PARAGRAPHS[5] = "The very last paragraph of the report.";
+  const longRow: TimelineRow = {
+    ...atlas("l1", 0, PARAGRAPHS.join("\n\n")),
+    view: {
+      render: "bubble",
+      muted: false,
+      blocks: PARAGRAPHS.map((text) => ({ block: "paragraph", inlines: [{ inline: "text", text }] })),
+    },
+  } as TimelineRow;
+  const longRows: TimelineRow[] = [mine("l0", -60_000, "Write up the migration."), longRow];
+
+  const underParent: TimelineRow[] = [
+    atlas("u1", 0, "Ship it."),
+    {
+      ...mira("u2", 60_000, "Agreed, going ahead.", {
+        replyTo: { eventId: "$u1", available: true, sender: ATLAS, senderDisplayName: "Atlas", body: null } as never,
+      }),
+      replyQuote: { state: "available", sender: "Atlas", excerpt: "Quoted: Ship it.", label: null },
+    },
+    atlas("u3", 20 * 60_000, "Something else came up."),
+    {
+      ...mira("u4", 30 * 60_000, "Back to the first point.", {
+        replyTo: { eventId: "$u1", available: true, sender: ATLAS, senderDisplayName: "Atlas", body: null } as never,
+      }),
+      replyQuote: { state: "available", sender: "Atlas", excerpt: "Quoted: Ship it.", label: null },
+    },
+  ];
+
+  const twoAgents: TimelineRow[] = [
+    { ...atlas("t1", 0, "I will take the Android build."), senderName: "Atlas (claude on mac)", senderShort: "Atlas" },
+    {
+      ...row({ id: "t2", sender: BEA, senderDisplayName: "Bea", timestampMs: T0 + 20 * 60_000, body: "And I the iOS one." }, "B"),
+      senderName: "Bea (codex on linux)",
+      senderShort: "Bea",
+    },
+  ];
+
+  const longName = "Atlas, the assistant with an extraordinarily long working title";
+  const longNameRows: TimelineRow[] = [
+    { ...atlas("n1", 0, "Staging is green."), senderName: longName, senderShort: longName },
+  ];
+
+  const cardEls = (root: HTMLElement) =>
+    [...root.querySelectorAll("[data-testid='timeline-row']")] as HTMLElement[];
+  const buttonNamed = (root: ParentNode, name: string) =>
+    [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === name) as HTMLElement | undefined;
   const { Story } = defineMeta({ title: "Timeline/Rhythm and quiet meta", component: Timeline });
 </script>
 
@@ -665,6 +732,123 @@
   {#snippet template()}
     <div class="flex h-[560px] w-[760px] flex-col bg-surface">
       <Timeline roomId={ROOM} store={seededStore(jumpRows)} live={awayHarness.store} liveServices={storyServices} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  Every peer message is a card (O2); "Agent" marks an agent and nobody else.
+-->
+<Story
+  name="An agent and a person, as cards"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (cardEls(root).length >= cardRows.length ? root : null), 4000, "the rows");
+    const [agent, person, own] = cardEls(root) as [HTMLElement, HTMLElement, HTMLElement];
+    const header = (el: HTMLElement) => el.querySelector("[data-testid='sender-header']");
+    if (!header(agent)?.textContent?.includes("Agent")) throw new Error("the agent's header should say Agent");
+    if (header(person)?.textContent?.includes("Agent")) throw new Error("a person's header must not say Agent");
+    if (own.textContent?.includes("Agent")) throw new Error("your own message must not say Agent");
+    const card = (el: HTMLElement) => el.querySelector("[data-testid='message-card']") as HTMLElement | null;
+    if (!card(agent) || !card(person)) throw new Error("every peer message should be a card");
+    if (card(own)) throw new Error("your own message stays on its tint");
+    if (card(agent)!.getBoundingClientRect().width > 600.5) throw new Error("a card is at most 600 wide");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[420px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(cardRows)} cast={castOf(ATLAS)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  A long report is cut at 320px under a fade; "Read" opens the whole message in
+  the serif reading view. Escape closes it and focus returns to "Read".
+-->
+<Story
+  name="A long read"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const read = (await settled(() => buttonNamed(root, "Read"), 4000, "the Read button")) as HTMLElement;
+    const text = read.parentElement!.querySelector(".long-read-cut") as HTMLElement;
+    if (!text || text.getBoundingClientRect().height > 320.5) throw new Error("the text should be cut at 320px");
+    // A click focuses the button; a script has to wait until it can be focused.
+    await settled(() => {
+      read.focus();
+      return document.activeElement === read ? read : null;
+    }, 3000, "the Read button to take focus");
+    read.click();
+    const dialog = (await settled(() => document.querySelector("dialog[open]"), 3000, "the reading view")) as HTMLDialogElement;
+    const body = dialog.querySelector("[data-testid='long-read-body']") as HTMLElement;
+    if (!body.textContent?.includes("The very last paragraph of the report.")) throw new Error("the whole message belongs in the dialog");
+    if (!getComputedStyle(body).fontFamily.toLowerCase().includes("serif")) throw new Error("the reading view is serif");
+    await settled(() => (document.activeElement === buttonNamed(dialog, "Done") ? dialog : null), 3000, "focus on Done");
+    dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+    await settled(() => (document.querySelector("dialog[open]") ? null : root), 3000, "the dialog to close");
+    await settled(() => (document.activeElement === read ? read : null), 3000, "focus to return to Read");
+    read.blur();
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(longRows)} cast={castOf(ATLAS)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!-- The reply directly under its parent drops the quote; a later reply keeps it. -->
+<Story
+  name="A reply under its parent"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (cardEls(root).length >= underParent.length ? root : null), 4000, "the rows");
+    const [, under, , later] = cardEls(root) as [HTMLElement, HTMLElement, HTMLElement, HTMLElement];
+    if (under.textContent?.includes("Quoted: Ship it.")) throw new Error("the quote should hide under its parent");
+    if (!later.textContent?.includes("Quoted: Ship it.")) throw new Error("a later reply keeps its quote");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[460px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(underParent)} cast={castOf(ATLAS)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!-- Two agents in the room: the runtime joins each name. -->
+<Story
+  name="Two agents speaking (runtime shown)"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (cardEls(root).length >= twoAgents.length ? root : null), 4000, "the rows");
+    const names = [...root.querySelectorAll("[data-testid='sender-header'] .truncate")].map((n) => n.textContent?.trim());
+    if (names.join("|") !== "Atlas (claude on mac)|Bea (codex on linux)") throw new Error(`names were ${names.join("|")}`);
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[300px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(twoAgents)} cast={castOf(ATLAS, BEA)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!-- 150 % text in a 600px window: the name truncates, "Agent" stays whole. -->
+<Story
+  name="Largest text at 600px"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (cardEls(root).length >= 1 ? root : null), 4000, "the row");
+    const header = root.querySelector("[data-testid='sender-header']") as HTMLElement;
+    const name = header.querySelector(".truncate") as HTMLElement;
+    if (name.scrollWidth <= name.clientWidth) throw new Error("the long name should truncate");
+    const agent = [...header.querySelectorAll("span")].find((n) => n.textContent === "Agent") as HTMLElement | undefined;
+    if (!agent) throw new Error("Agent should show");
+    if (agent.scrollWidth > agent.clientWidth + 1 || agent.getBoundingClientRect().width < 30) throw new Error("Agent was squeezed");
+  }}
+>
+  {#snippet template()}
+    <div style="zoom: 1.5; width: 400px;" class="flex h-[220px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(longNameRows)} cast={castOf(ATLAS)} />
     </div>
   {/snippet}
 </Story>

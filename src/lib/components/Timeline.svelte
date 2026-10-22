@@ -333,12 +333,18 @@
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
   import ReplyQuote from "./timeline/ReplyQuote.svelte";
   import ReaderFaces from "./timeline/ReaderFaces.svelte";
+  import SenderHeader from "./timeline/SenderHeader.svelte";
+  import LongReadDialog from "./timeline/LongReadDialog.svelte";
+  import { attributionFor, isLongRead, quoteFor, showsAgentLabel, type MessageRow } from "./timeline/messageView";
+  import { stopgapFacts } from "./timeline/batchBStopgap";
+  import { createReaderLabels } from "./timeline/readerLabel";
+  import { castStore } from "$lib/stores/cast.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
   import { endsRun, ownMeta, readerFaces, readersFor, revealsTime, type ItemRow } from "./timeline/rowMeta";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
-  import type { ReplyQuoteView, TimelineItem } from "$lib/ipc";
+  import { peopleLabel, type RichBlock, type ReplyQuoteView, type RoomCast, type TimelineItem } from "$lib/ipc";
 
   /**
    * The room this pane shows — needed only to scope `replyTargetStore`'s
@@ -354,6 +360,7 @@
     store,
     live,
     liveServices,
+    cast,
   }: {
     roomId: string;
     onOpenRecovery?: () => void;
@@ -363,7 +370,10 @@
     live?: LiveStore;
     /** The live card's core calls. Only stories pass them. */
     liveServices?: LiveCardServices;
+    /** The room's cast. Only stories pass one; the app uses its own. */
+    cast?: RoomCast | null;
   } = $props();
+  const agentIds = $derived((cast !== undefined ? cast : castStore.castFor(roomId))?.agentIds ?? []);
   const timelineStore = $derived(store ?? appTimelineStore);
   const liveTurn = $derived(live ?? appLiveStore);
 
@@ -605,6 +615,49 @@
   /** One face per sender, for the readers under an own message. */
   let faces = $derived(readerFaces(displayRows));
   const memberAvatars = createMemberAvatarCache();
+
+  // TODO(batch B): the core's row facts replace these stand-ins; `messageRow`
+  // becomes the row itself and `batchBStopgap.ts` goes.
+  let factsByKey = $derived(
+    new Map(
+      displayRows.flatMap((r, i) => (r.type === "item" ? [[r.key, stopgapFacts(displayRows, i, agentIds)] as const] : [])),
+    ),
+  );
+  function messageRow(row: ItemRow): MessageRow {
+    return {
+      item: row.item,
+      senderName: row.senderName,
+      senderShort: row.senderShort,
+      replyQuote: row.replyQuote,
+      ...factsByKey.get(row.key),
+    };
+  }
+
+  /** "Read by …" per set of readers; the tick re-renders when one is named. */
+  let readerTick = $state(0);
+  const readerLabels = createReaderLabels(peopleLabel, () => readerTick++);
+  function readerLabelFor(readers: { userId: string }[]): string | null {
+    void readerTick;
+    return readerLabels.label(readers.map((r) => r.userId));
+  }
+
+  // `aria-description` (ARIA 1.3) is not in Svelte's attribute types yet.
+  const READ_HINT = { "aria-description": "Opens the whole message in a reading view" };
+
+  /** The long read open in the reading view, if any. */
+  let reading = $state<{ title: string; blocks: RichBlock[] } | null>(null);
+  let readingOpener: HTMLElement | null = null;
+  function openReading(opener: HTMLElement, title: string, blocks: RichBlock[]): void {
+    readingOpener = opener;
+    reading = { title, blocks };
+  }
+  async function closeReading(): Promise<void> {
+    reading = null;
+    await tick();
+    // After the modal is gone: while it is open the page behind is inert.
+    if (readingOpener?.isConnected) readingOpener.focus();
+    readingOpener = null;
+  }
 
   // Tracked outside `$state` on purpose: bookkeeping for the effect below,
   // not a value the template reads.
@@ -1229,6 +1282,7 @@
   {@const item = row.item}
   {@const continuesRun = row.continuesRun}
   {@const ends = runEnds.has(row.key)}
+  {@const mv = messageRow(row)}
   <!--
     The single wrapper every message-shaped render kind
     (`bubble`/`image`/`mediaFile`) shares — see this file's top-of-script
@@ -1313,7 +1367,8 @@
       <div
         class="flex min-w-0 flex-col text-content {item.isOwn
           ? 'max-w-[52ch] rounded-control bg-accent-soft px-3 py-2 font-sans text-body-own'
-          : 'max-w-[68ch] font-sans text-body'}"
+          : 'max-w-[min(68ch,600px)] rounded-control bg-surface-raised px-3 py-2 font-sans text-body'}"
+        data-testid={item.isOwn ? undefined : "message-card"}
       >
         {#if !item.isOwn && !continuesRun}
           <!--
@@ -1330,29 +1385,27 @@
             A collapsed continuation drops this line entirely; its "edited"
             marker goes under the text instead.
           -->
-          <p class="mb-1 flex items-baseline gap-2 font-sans text-meta tabular-nums text-content-muted">
-            <!-- The sender's own colour (`--color-peer-*`, chosen by
-                 user id), so two agents with one name read as two. -->
-            <span
-              class="min-w-0 truncate text-label"
-              style:color={item.sender ? peerColorVar(item.sender) : undefined}
-              title={row.senderName}
-            >
-              <!-- The core's name for the sender, as iOS shows it; the
-                   runtime suffix stays in the tooltip (`senderName`). -->
-              {row.senderShort}
-            </span>
-            <span class="shrink-0">{formatTime(item.timestampMs)}</span>
-            <!-- A meta rank, so no italic. -->
-            {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
-          </p>
+          <!-- The same header heads a message, an audio row and a failed turn:
+               all three render through this snippet. The core's name for the
+               sender, as iOS shows it; the runtime joins it only where the core
+               says it must (`showsRuntime`), and stays in the tooltip. -->
+          <SenderHeader
+            name={attributionFor(mv)}
+            title={row.senderName}
+            initial={row.senderInitial}
+            face={item.senderAvatar ? memberAvatars.get(item.senderAvatar) : null}
+            color={item.sender ? peerColorVar(item.sender) : undefined}
+            isAgent={showsAgentLabel(mv)}
+            time={formatTime(item.timestampMs)}
+            edited={item.edited}
+          />
         {/if}
         {#if row.key === anchorKey && liveTurn.summary?.recordLabel}
           <!-- Between the sender's line and the text (iOS `TimelineCollectionView.swift:612-614`). -->
           <WhatIDid label={liveTurn.summary.recordLabel} thought={liveTurn.thought} steps={liveTurn.steps} />
         {/if}
         <ReplyQuote
-          quote={row.replyQuote}
+          quote={quoteFor(mv)}
           isOwn={item.isOwn}
           onJump={parentIndex(displayRows, item.replyTo?.eventId ?? null) >= 0
             ? () => jumpToParent(item.replyTo?.eventId ?? null)
@@ -1386,7 +1439,7 @@
           {#if meta.state}<span>{meta.state}</span>{/if}
           {#if meta.edited}<span>edited</span>{/if}
           {#if meta.showTime}<span>{formatTime(item.timestampMs)}</span>{/if}
-          <ReaderFaces {readers} faceFor={(mxc) => memberAvatars.get(mxc)} />
+          <ReaderFaces {readers} label={readerLabelFor(readers)} faceFor={(mxc) => memberAvatars.get(mxc)} />
         </p>
       {/if}
     {/if}
@@ -1395,6 +1448,9 @@
 {/snippet}
 
 <div class="relative min-h-0 flex-1">
+  {#if reading !== null}
+    <LongReadDialog title={reading.title} blocks={reading.blocks} onClose={() => void closeReading()} />
+  {/if}
   {#if deleting !== null}
     <DeleteConfirm onConfirm={confirmDelete} onCancel={() => (deleting = null)} />
   {/if}
@@ -1693,7 +1749,7 @@
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
-                      class="message-html selectable {view.muted ? 'text-content-muted' : ''}"
+                      class="message-html selectable {view.muted ? 'text-content-muted' : ''} {isLongRead(messageRow(row)) ? 'long-read-cut' : ''}"
                       onclick={(e: MouseEvent) =>
                         handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
                       onauxclick={(e: MouseEvent) =>
@@ -1701,6 +1757,20 @@
                     >
                       <RichText blocks={view.blocks} />
                     </div>
+                    {#if isLongRead(messageRow(row))}
+                      <!-- The rest opens in the reading view (iOS `TimelineRowView.swift:423-457`). -->
+                      <button
+                        type="button"
+                        class="mt-1 inline-flex items-center gap-1 self-start rounded-control py-1 font-sans text-ui font-semibold text-accent focus-visible:outline-2 focus-visible:outline-accent"
+                        {...READ_HINT}
+                        onclick={(e) => openReading(e.currentTarget, attributionFor(messageRow(row)), view.blocks)}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                          <path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM6 4h5v8l-2.5-1.5L6 12V4Z" />
+                        </svg>
+                        Read
+                      </button>
+                    {/if}
                   {/if}
                 {/snippet}
                 {@render messageBlock(row, bubbleContent)}
@@ -2161,6 +2231,14 @@
    * `ul`/`ol`/`blockquote` below can compound in the first place, rather
    * than trying to cap already-rendered CSS padding after the fact.
    */
+  /* A long read is cut at 320px with a fade (iOS `TimelineRowView.swift:423-457`).
+     Static: a height change inside the virtual list must not animate. */
+  .long-read-cut {
+    max-height: 320px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, black 72%, transparent);
+    mask-image: linear-gradient(to bottom, black 72%, transparent);
+  }
   .message-html {
     overflow-wrap: anywhere;
     overflow-x: auto;
