@@ -40,6 +40,7 @@ pub mod dto;
 pub mod embedded;
 pub mod error;
 pub mod event;
+pub mod first_run;
 pub mod gate_outcome;
 pub mod invitation;
 pub mod item_view;

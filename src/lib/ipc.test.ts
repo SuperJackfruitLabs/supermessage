@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList } = await import("./ipc");
+const { firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -259,5 +259,23 @@ describe("cast, typing line and acknowledgement", () => {
     invokeMock.mockResolvedValue("Runtime 9247e5");
     expect(await spaceDisplayName("9247e5c1a0b34d2e")).toBe("Runtime 9247e5");
     expect(invokeMock).toHaveBeenCalledWith("space_display_name", { name: "9247e5c1a0b34d2e" });
+  });
+
+  it("firstRunAnswer passes the step", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("approved");
+    expect(await firstRunAnswer("waiting")).toBe("approved");
+    expect(invokeMock).toHaveBeenCalledWith("first_run_answer", { step: "waiting" });
+  });
+
+  it("firstRunAdvance passes the step and firstRunScript takes none", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("asking");
+    expect(await firstRunAdvance("greeting")).toBe("asking");
+    expect(invokeMock).toHaveBeenCalledWith("first_run_advance", { step: "greeting" });
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue({ agentName: "Atlas" });
+    expect((await firstRunScript()).agentName).toBe("Atlas");
+    expect(invokeMock).toHaveBeenCalledWith("first_run_script");
   });
 });

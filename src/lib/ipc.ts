@@ -2176,6 +2176,48 @@ export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void
   return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
 }
 
+/** Where the first-run demo conversation is; see `core::first_run`. */
+export type FirstRunStep = "greeting" | "asking" | "waiting" | "approved";
+
+/**
+ * Everything the first-run demo says and shows — `core::first_run::script`.
+ * Local content: nothing in the demo is sent to a homeserver, so the card
+ * must be answered with a local closure, never a session command.
+ */
+export interface FirstRunScript {
+  agentName: string;
+  greeting: string;
+  request: string;
+  banner: string;
+  typingLabel: string;
+  agentTag: string;
+  cardLabel: string;
+  cardEventType: string;
+  roomId: string;
+  initial: string;
+  approvedTitle: string;
+  approvedBody: string;
+  finishLabel: string;
+  skipLabel: string;
+  card: CustomEventView;
+  /** Pause before each automatic advance: greeting to asking, asking to waiting. */
+  stepDelaysMs: number[];
+}
+
+export async function firstRunScript(): Promise<FirstRunScript> {
+  return invoke<FirstRunScript>("first_run_script");
+}
+
+/** The demo's next automatic step; it stops at the card. */
+export async function firstRunAdvance(step: FirstRunStep): Promise<FirstRunStep> {
+  return invoke<FirstRunStep>("first_run_advance", { step });
+}
+
+/** The step after the reader answers the card, or null when there is no card to answer. */
+export async function firstRunAnswer(step: FirstRunStep): Promise<FirstRunStep | null> {
+  return invoke<FirstRunStep | null>("first_run_answer", { step });
+}
+
 /**
  * How a space's raw name reads to a person — the core's rule, for a name
  * that is not (yet) on a {@link SpaceSummary}, which already carries it as

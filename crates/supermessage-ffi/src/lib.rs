@@ -1230,6 +1230,34 @@ pub fn space_display_name(name: String) -> String {
     supermessage_core::spaces::space_display_name(&name)
 }
 
+/// The first-run demo's script — what Atlas says, the permission card, and the
+/// pauses between steps.
+///
+/// **Local, and nothing is sent:** the script is data and the host holds the
+/// step; hand the card a local answer closure, never a session. A free
+/// function for the same reason as `rich_blocks_from_markdown`.
+#[uniffi::export]
+pub fn first_run_script() -> supermessage_core::first_run::FirstRunScript {
+    supermessage_core::first_run::script()
+}
+
+/// The demo's next automatic step; it stops at the card.
+#[uniffi::export]
+pub fn first_run_advance(
+    step: supermessage_core::first_run::FirstRunStep,
+) -> supermessage_core::first_run::FirstRunStep {
+    supermessage_core::first_run::advance(step)
+}
+
+/// The step after the reader answers the card, or `None` when there is no
+/// card to answer.
+#[uniffi::export]
+pub fn first_run_answer(
+    step: supermessage_core::first_run::FirstRunStep,
+) -> Option<supermessage_core::first_run::FirstRunStep> {
+    supermessage_core::first_run::answer(step)
+}
+
 /// Filter a directory by what the reader has typed — name, machine, or id.
 ///
 /// A free function for the same reason as `rich_blocks_from_markdown`: it

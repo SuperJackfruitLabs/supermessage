@@ -816,6 +816,29 @@ pub fn rich_blocks_from_markdown(source: String) -> Vec<supermessage_core::rich:
     supermessage_core::rich::blocks_from_markdown(&source)
 }
 
+/// The first-run demo's script; see `supermessage_core::first_run`. Local
+/// content: nothing in the demo is sent to a homeserver.
+#[tauri::command]
+pub fn first_run_script() -> supermessage_core::first_run::FirstRunScript {
+    supermessage_core::first_run::script()
+}
+
+/// The demo's next automatic step; it stops at the card.
+#[tauri::command]
+pub fn first_run_advance(
+    step: supermessage_core::first_run::FirstRunStep,
+) -> supermessage_core::first_run::FirstRunStep {
+    supermessage_core::first_run::advance(step)
+}
+
+/// The step after the reader answers the card, or `None`.
+#[tauri::command]
+pub fn first_run_answer(
+    step: supermessage_core::first_run::FirstRunStep,
+) -> Option<supermessage_core::first_run::FirstRunStep> {
+    supermessage_core::first_run::answer(step)
+}
+
 /// How a space's raw name reads to a person; see
 /// `supermessage_core::spaces::space_display_name`.
 #[tauri::command]
