@@ -63,7 +63,7 @@
         type="button"
         disabled={busy}
         onclick={confirm}
-        class="rounded-control bg-danger px-3 py-2 text-ui text-on-accent transition-colors disabled:opacity-50"
+        class="rounded-control bg-danger px-3 py-2 text-ui text-accent-content transition-colors disabled:opacity-50"
       >
         Delete
       </button>

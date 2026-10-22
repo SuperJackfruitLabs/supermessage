@@ -185,7 +185,7 @@
         <button
           type="submit"
           disabled={busy || entered.trim() === ""}
-          class="self-start rounded-control bg-accent px-3 py-2 text-ui text-on-accent transition-colors disabled:opacity-50"
+          class="self-start rounded-control bg-accent px-3 py-2 text-ui text-accent-content transition-colors disabled:opacity-50"
         >
           {busy ? "Restoring…" : "Restore"}
         </button>
@@ -230,7 +230,7 @@
             <button
               type="submit"
               disabled={busy || password === ""}
-              class="self-start rounded-control bg-danger px-3 py-2 text-ui text-on-accent transition-colors disabled:opacity-50"
+              class="self-start rounded-control bg-danger px-3 py-2 text-ui text-accent-content transition-colors disabled:opacity-50"
             >
               {busy ? "Starting over…" : "Start over"}
             </button>
