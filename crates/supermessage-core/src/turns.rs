@@ -330,6 +330,8 @@ impl Inner {
         }
         state.ended_by = Some(ending);
         state.ended_at_ms = Some(at_ms);
+        // Whatever ended the turn, nothing is being written now.
+        state.answering = false;
         self.finished_order.push_back(room_id.to_string());
         while self.finished_order.len() > KEPT_RECORDS {
             if let Some(oldest) = self.finished_order.pop_front() {
@@ -376,9 +378,6 @@ impl Inner {
             } => {
                 if !self.is_in_progress(room_id) {
                     return TurnOutcome::accepted(None);
-                }
-                if let Some(state) = self.rooms.get_mut(room_id) {
-                    state.answering = false;
                 }
                 self.end(room_id, TurnEnding::Done, at_ms);
             }
@@ -666,8 +665,8 @@ mod tests {
 
     /// Ported from `ComposerRevampTests.swift`.
     ///
-    /// Mutation seen failing: Seen failing in the RED run (book stubbed to
-    /// ignore every input).
+    /// Mutation seen failing: a new turn's `started_at_ms` set to 0 instead of
+    /// the first delta's `at_ms` failed it.
     #[test]
     fn the_next_turn_starts_its_own_clock() {
         let book = book_with(ROOM, vec![answer(T), answer_done(T + 5_000)]);
@@ -705,8 +704,8 @@ mod tests {
 
     /// Ported from `LiveStoreTests.swift`.
     ///
-    /// Mutation seen failing: Seen failing in the RED run (book stubbed to
-    /// ignore every input).
+    /// Mutation seen failing: clearing the thought in `end()` failed it
+    /// (`thought` None).
     #[test]
     fn reasoning_outlives_the_turn_that_produced_it() {
         let book = book_with(
@@ -725,8 +724,8 @@ mod tests {
 
     /// Ported from `LiveStoreTests.swift`.
     ///
-    /// Mutation seen failing: removing the `answering = false` on `Answer {
-    /// done }` failed it.
+    /// Mutation seen failing: removing the `answering = false` in `end()`
+    /// failed it.
     #[test]
     fn the_streamed_answer_goes_because_the_real_message_says_it_better() {
         let book = book_with(ROOM, vec![answer(T)]);
@@ -767,8 +766,8 @@ mod tests {
 
     /// Ported from `LiveStoreTests.swift`.
     ///
-    /// Mutation seen failing: Seen failing in the RED run (book stubbed to
-    /// ignore every input).
+    /// Mutation seen failing: a new turn inheriting the old record's thought
+    /// failed it (`thought` was `Some("old")`).
     #[test]
     fn the_next_turn_replaces_the_last_ones_record() {
         let book = book_with(
@@ -844,8 +843,8 @@ mod tests {
 
     /// Ported from `LiveStoreTests.swift`.
     ///
-    /// Mutation seen failing: Seen failing in the RED run (book stubbed to
-    /// ignore every input).
+    /// Mutation seen failing: a new turn dropping every other room's finished
+    /// record (`rooms.retain(in_progress)` in `begin_if_needed`) failed it.
     #[test]
     fn a_finished_turns_record_survives_other_rooms_turns() {
         let book = book_with("!a:x.org", vec![answer(T), answer_done(T + 1)]);
@@ -1094,6 +1093,33 @@ mod tests {
         assert_eq!(updates[0].summary.ended_at_ms, Some(last));
         assert!(!book.in_progress(ROOM));
         assert!(book.expire(last + GIVE_UP_AFTER_MS * 2).is_empty());
+    }
+
+    /// New (C1+C2 review, minor 1). iOS clears the streamed answer when a turn
+    /// finishes; it has no reply or time-limit ending, so this keeps that
+    /// invariant for the two endings the core adds: an ended turn never says
+    /// "Writing the answer".
+    ///
+    /// Mutation seen failing: removing the `answering = false` in `end()`
+    /// failed it, and the `done` test above too.
+    #[test]
+    fn a_turn_ended_by_a_reply_or_the_time_limit_is_not_still_answering() {
+        for ending in [TurnEnding::Reply, TurnEnding::TimedOut] {
+            let book = book_with(ROOM, vec![thought(1, "hm", T), answer(T + 1)]);
+            assert!(summary(&book).answering);
+            match ending {
+                TurnEnding::Reply => {
+                    book.apply(ROOM, reply(Some(T), T + 2));
+                }
+                _ => {
+                    book.expire(T + 1 + GIVE_UP_AFTER_MS);
+                }
+            }
+            let s = summary(&book);
+            assert_eq!(s.ended_by, Some(ending));
+            assert!(!s.answering, "{ending:?} left the turn answering");
+            assert_eq!(s.current_step_title, "Thinking");
+        }
     }
 
     /// New.
