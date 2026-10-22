@@ -5,12 +5,15 @@
 //! typing notices into the two — the people the line names, and the agents'
 //! names the dock needs.
 
+use serde::{Deserialize, Serialize};
+
 use crate::display_name::names_label;
 use crate::dto::TypingUserDto;
 use crate::room_cast::Counterpart;
 
 /// What the typing notices come to.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
 pub struct TypingView {
     /// "Krishna is typing…", "Alice and Bob are typing…", or `None` when no
     /// one other than an agent is.
@@ -135,6 +138,28 @@ mod tests {
             line(&typers).as_deref(),
             Some("Alice, Bob and 2 others are typing…")
         );
+    }
+
+    /// The Tauri `typing_view` command returns this over JSON; the webview
+    /// reads `line` and `agents`.
+    ///
+    /// Both field names are single words, so dropping `camelCase` is
+    /// invisible here by construction; the test pins the names themselves.
+    ///
+    /// Mutation seen failing: `rename_all = "SCREAMING_SNAKE_CASE"` (keys
+    /// became `LINE`/`AGENTS`).
+    #[test]
+    fn typing_view_has_the_wire_shape_the_webview_reads() {
+        let view = TypingView {
+            line: Some("Krishna is typing…".into()),
+            agents: vec!["Atlas".into()],
+        };
+        let json = serde_json::to_value(&view).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({ "line": "Krishna is typing…", "agents": ["Atlas"] })
+        );
+        assert_eq!(serde_json::from_value::<TypingView>(json).unwrap(), view);
     }
 
     /// Port of `typingView.test.ts`: a typer is named by `label` (the
