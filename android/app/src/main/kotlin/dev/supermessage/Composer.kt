@@ -51,7 +51,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -219,6 +221,8 @@ fun Composer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp)
+                    // Announced when it appears, so TalkBack says why nothing sent.
+                    .semantics { liveRegion = LiveRegionMode.Polite }
                     .testTag("composer-failure"),
             )
         }
@@ -518,7 +522,9 @@ private fun AttachmentChip(state: ChipState, onDiscard: () -> Unit, modifier: Mo
                         color = colors.danger,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag("composer-chip-failure"),
+                        modifier = Modifier
+                            .semantics { liveRegion = LiveRegionMode.Polite }
+                            .testTag("composer-chip-failure"),
                     )
                 }
             } else if (file != null) {
@@ -591,8 +597,10 @@ private fun copyPickedUri(context: Context, uri: Uri, displayName: String): Stri
         } ?: return null
         destination.absolutePath
     } catch (error: java.io.IOException) {
+        destination.delete()
         null
     } catch (error: SecurityException) {
+        destination.delete()
         null
     }
 }

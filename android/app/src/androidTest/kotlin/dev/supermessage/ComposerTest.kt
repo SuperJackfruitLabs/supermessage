@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -496,9 +497,56 @@ class ComposerTest {
         assertEquals("hello", File(attached.single()).readText())
     }
 
+    /** Both failure lines are live regions, so TalkBack announces them. */
+    @Test
+    fun failuresAreAnnouncedAsLiveRegions() {
+        compose.setContent {
+            Composer(
+                text = "hi", onTextChange = {}, onSend = {},
+                failure = "Couldn't send that.",
+                attachment = ChipState(
+                    file = null, path = null,
+                    failure = StagedAttachment.Failure("big.mov", "That file is too large to send."),
+                ),
+            )
+        }
+        val polite = androidx.compose.ui.semantics.LiveRegionMode.Polite
+        for (tag in listOf("composer-failure", "composer-chip-failure")) {
+            compose.onNodeWithTag(tag).assert(
+                androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                    androidx.compose.ui.semantics.SemanticsProperties.LiveRegion, polite,
+                ),
+            )
+        }
+    }
+
+    /** The File option takes any file, and Photo only images and video. */
+    @Test
+    fun theFileOptionLaunchesWithAnyFileAndPhotoWithImagesAndVideo() {
+        val launched = mutableListOf<Any?>()
+        val missing = Uri.parse("content://dev.supermessage.nobody/missing.jpg")
+        compose.setContent {
+            WithPicker(missing, onLaunched = { launched += it }) {
+                Composer(text = "", onTextChange = {}, onSend = {})
+            }
+        }
+        compose.onNodeWithTag("composer-attach").performClick()
+        compose.onNodeWithTag("composer-attach-file").performClick()
+        compose.waitUntil(5_000) { launched.size == 1 }
+        assertEquals(listOf("*/*"), (launched[0] as Array<*>).toList())
+        compose.onNodeWithTag("composer-attach").performClick()
+        compose.onNodeWithTag("composer-attach-photo").performClick()
+        compose.waitUntil(5_000) { launched.size == 2 }
+        val photo = launched[1] as androidx.activity.result.PickVisualMediaRequest
+        assertEquals(
+            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo,
+            photo.mediaType,
+        )
+    }
+
     /** Answers every picker launch with [result], as the system would. */
     @Composable
-    private fun WithPicker(result: Uri, content: @Composable () -> Unit) {
+    private fun WithPicker(result: Uri, onLaunched: (Any?) -> Unit = {}, content: @Composable () -> Unit) {
         val registry = object : ActivityResultRegistry() {
             override fun <I : Any?, O : Any?> onLaunch(
                 requestCode: Int,
@@ -506,6 +554,7 @@ class ComposerTest {
                 input: I,
                 options: ActivityOptionsCompat?,
             ) {
+                onLaunched(input)
                 @Suppress("UNCHECKED_CAST")
                 dispatchResult(requestCode, result as O)
             }
