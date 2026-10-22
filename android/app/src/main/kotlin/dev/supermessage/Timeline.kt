@@ -33,6 +33,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
@@ -275,6 +278,16 @@ fun Timeline(
     }
     val liveAtZero = isLive && !liveFinished
     val liveAtOne = isLive && liveFinished && newestFirst.isNotEmpty()
+
+    // A turn finishing in the room on screen is a success haptic, once, on the
+    // change to finished (`TimelineView.swift:143`, `!was && now`). A list that
+    // opens onto an already-finished turn starts with `finished` remembered,
+    // and a turn that goes away without finishing never flips it.
+    var wasFinished by remember { mutableStateOf(liveFinished) }
+    LaunchedEffect(liveFinished) {
+        if (!wasFinished && liveFinished) haptics.play(Haptic.Success)
+        wasFinished = liveFinished
+    }
     fun jumpTo(id: String) {
         val position = newestFirst.indexOfFirst { it.id == id }
         if (position < 0) return
@@ -317,20 +330,28 @@ fun Timeline(
     // — so it stays a plain `remember(revision)` read. `isAtNewest` is
     // already derived above, so away-ness costs nothing extra here.
     val previousRowsHolder = remember { mutableStateOf<List<TimelineRowDto>?>(null) }
+    val arrivals = remember { Arrivals() }
     val animatesThisUpdate = remember(revision) {
         val before = previousRowsHolder.value
-        val arrived = if (before == null) {
-            0
-        } else {
-            val previousIds = before.mapTo(HashSet(before.size)) { it.item.id }
-            rows.count { it.item.id !in previousIds }
-        }
-        TimelineAnimation.animates(
-            arrived = arrived,
+        val previousIds = before?.mapTo(HashSet(before.size)) { it.item.id }.orEmpty()
+        // Every new item counts, whatever it is: a membership line is as much
+        // an arrival as a message. The limit is on what arrived, never on what
+        // is left once filtered to messages.
+        val added = rows.withIndex().filter { it.value.item.id !in previousIds }
+        // Where they landed. New items after the newest one already shown are
+        // arrivals; any before it are history being prepended (pagination) or
+        // a resync, and never animate however few there are.
+        val lastKnown = rows.indexOfLast { it.item.id in previousIds }
+        val atNewestEnd = added.filter { it.index > lastKnown }
+        val animates = TimelineAnimation.animates(
+            arrived = added.size,
             had = before?.size ?: 0,
             hasApplied = before != null,
             wasAway = !isAtNewest,
+            prepended = atNewestEnd.size != added.size,
         )
+        arrivals.pending = if (animates) atNewestEnd.mapTo(HashSet()) { it.value.item.id } else emptySet()
+        animates
     }
 
     // The bookkeeping write is different from the decision above: it only
@@ -473,6 +494,22 @@ fun Timeline(
         }
     }
 
+    // What a row does as it arrives and as its neighbours move. The streaming
+    // turn's cell gets none of it, so its growth never animates. While a turn
+    // streams, history rows do not spring either: M4 ports iOS's 0.32 s glide
+    // (owner ruling, M4 Q5), and until then they hold still.
+    @Composable
+    fun androidx.compose.foundation.lazy.LazyItemScope.rowMotion(id: String): Modifier {
+        if (!animatesThisUpdate) return Modifier
+        return Modifier
+            .animateItem(
+                fadeInSpec = null,
+                placementSpec = if (reduceMotion || liveAtZero) null else spring<androidx.compose.ui.unit.IntOffset>(),
+                fadeOutSpec = motion(reduceMotion, tween<Float>(150)),
+            )
+            .arrivalRise(arrivals, id, reduceMotion)
+    }
+
     @Composable
     fun LiveTurnCell() {
         LiveTurn(
@@ -529,15 +566,15 @@ fun Timeline(
                     // answer". The newest message stays at the very bottom.
                     val newest = newestFirst.first()
                     item(key = newest.id) {
-                        HistoryRow(newest, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                        HistoryRow(newest, itemModifier = rowMotion(newest.id))
                     }
                     item(key = "live-turn") { LiveTurnCell() }
                     items(newestFirst.drop(1), key = { it.id }) { row ->
-                        HistoryRow(row, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                        HistoryRow(row, itemModifier = rowMotion(row.id))
                     }
                 } else {
                     items(newestFirst, key = { it.id }) { row ->
-                        HistoryRow(row, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                        HistoryRow(row, itemModifier = rowMotion(row.id))
                     }
                 }
                 if (isPaginating) {
@@ -664,3 +701,35 @@ private const val PaginationLookahead = 3
 
 /** How long "Not sent. Try again." stays under a row whose delete failed. */
 private const val DeleteFailureShownMs = 4_000L
+
+
+/**
+ * The rows that arrived in the latest update and have not yet played their
+ * entrance, the Android counterpart of `TimelineCollectionView`'s `arriving`
+ * set: a row takes its place in it once, when it is first composed, so
+ * scrolling it out of view and back never replays it.
+ */
+internal class Arrivals {
+    var pending: Set<String> = emptySet()
+    private val taken = HashSet<String>()
+
+    fun take(id: String): Boolean = id in pending && taken.add(id)
+}
+
+/** The arrival's spring: 0.38 s, damping 0.78 (`TimelineCollectionView.swift:1186-1189`). */
+private val ArrivalSpring = spring<Float>(dampingRatio = 0.78f, stiffness = 270f)
+private val ArrivalRise = 16.dp
+
+/** A new message rises 16dp and fades in on a spring; under Reduce Motion it is simply there. */
+@Composable
+internal fun Modifier.arrivalRise(arrivals: Arrivals, id: String, reduce: Boolean): Modifier {
+    val arriving = remember(id) { !reduce && arrivals.take(id) }
+    if (!arriving) return this
+    val progress = remember(id) { Animatable(0f) }
+    LaunchedEffect(id) { progress.animateTo(1f, ArrivalSpring) }
+    val rise = with(LocalDensity.current) { ArrivalRise.toPx() }
+    return graphicsLayer {
+        alpha = progress.value.coerceIn(0f, 1f)
+        translationY = (1f - progress.value) * rise
+    }
+}

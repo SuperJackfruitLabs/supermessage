@@ -1,5 +1,13 @@
 package dev.supermessage
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -144,7 +152,16 @@ fun LiveTurn(
                         color = MaterialTheme.colorScheme.outline,
                     )
                 }
-                if (showsThought) {
+                // The disclosure animates; the text streaming into it does not
+                // (no size animation on the body itself).
+                val reduce = reducesMotion()
+                AnimatedVisibility(
+                    visible = showsThought,
+                    modifier = Modifier.testTag("thought-region"),
+                    // Reduce Motion: no transition at all, so it is there on the very next frame.
+                    enter = if (reduce) EnterTransition.None else expandVertically(tween(200)) + fadeIn(tween(200)),
+                    exit = if (reduce) ExitTransition.None else shrinkVertically(tween(200)) + fadeOut(tween(200)),
+                ) {
                     Text(
                         thought,
                         modifier = Modifier.testTag("thought-body"),
