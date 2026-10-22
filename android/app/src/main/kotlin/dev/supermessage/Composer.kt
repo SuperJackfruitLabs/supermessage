@@ -64,9 +64,11 @@ import uniffi.supermessage_ffi.StagedFile
  * a tap that does nothing — the fault
  * [dev.supermessage.ComposerTest.whitespaceAloneDoesNotEnableSend] exists to
  * catch, confirmed by the mandatory mutation (see that file, and this
- * task's report). A staged attachment is sendable on its own: with one
- * present, Send is enabled whatever the text, and `Session.send` sends it
- * with `caption = null` when the text is blank.
+ * task's report). A staged attachment is sendable on its own: when not
+ * editing, Send is enabled with a staged attachment whatever the text, and
+ * `Session.send` sends it with `caption = null` when the text is blank. When
+ * editing, Save is enabled only by non-blank text, because an edit has no
+ * attachment path.
  *
  * ## `sending` is a view concern, not a `Session` one
  *
@@ -178,7 +180,9 @@ fun Composer(
     onDiscardAttachment: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val canSend = text.isNotBlank() || attachment != null
+    // An edit has no attachment path, so only a send may be carried by a
+    // staged file; Save needs the edited body itself to be non-blank.
+    val canSend = text.isNotBlank() || (editing == null && attachment != null)
 
     // The draft that was sitting in the field the moment this edit began —
     // see this function's KDoc for why it lives here rather than in a store.

@@ -75,6 +75,22 @@ class ComposerTest {
         compose.onNodeWithTag("composer-send").assertIsEnabled()
     }
 
+    /**
+     * An edit has no attachment path, so a staged file must not make Save
+     * available while the edited body is blank.
+     */
+    @Test
+    fun editingWithAttachmentAndBlankTextDisablesSave() {
+        compose.setContent {
+            Composer(
+                text = "  ", onTextChange = {}, onSend = {},
+                editing = EditTarget.Pending(eventId = "e1", body = "original text"),
+                attachment = stubAttachment(),
+            )
+        }
+        compose.onNodeWithTag("composer-send").assertIsNotEnabled()
+    }
+
     /** A failure is shown inline rather than swallowed. */
     @Test
     fun aFailureIsShown() {
