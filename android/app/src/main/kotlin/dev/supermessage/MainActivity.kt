@@ -325,6 +325,10 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                 val revision by session.timeline.revision.collectAsStateWithLifecycle()
                 val isPaginating by session.timeline.isPaginating.collectAsStateWithLifecycle()
                 val canPaginate by session.timeline.canPaginate.collectAsStateWithLifecycle()
+                // Collected so a fetch that lands recomposes the rows that
+                // asked for it; the lambdas below read from these.
+                val mediaCache by session.media.cache.collectAsStateWithLifecycle()
+                val faceCache by session.faces.cache.collectAsStateWithLifecycle()
 
                 // `TypingStore.line` is a computed property,
                 // not a StateFlow — `typers` is what is
@@ -378,6 +382,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             isPaginating = isPaginating,
                             canPaginate = canPaginate,
                             onPaginate = { scope.launch { session.timeline.paginateBack() } },
+                            imageUri = { id -> mediaCache[id] ?: session.media.image(id) },
+                            faceUri = { mxc -> faceCache[mxc] },
+                            loadFace = session.faces::load,
                             onMarkRead = { scope.launch { session.timeline.markRead() } },
                             liveAnswer = liveAnswer,
                             liveThought = liveThought,

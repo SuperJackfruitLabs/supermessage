@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -109,7 +111,9 @@ fun TimelineRow(
     continuesRun: Boolean = false,
     endsRun: Boolean = true,
     attribution: String = "",
-    avatarUri: (userId: String) -> String? = { null },
+    imageUri: (eventId: String) -> String? = { null },
+    faceUri: (mxcUri: String) -> String? = { null },
+    loadFace: suspend (mxcUri: String) -> Unit = {},
     onReact: ((String) -> Unit)? = null,
     onDecide: (suspend (GateAnswer) -> Boolean)? = null,
     modifier: Modifier = Modifier,
@@ -131,7 +135,8 @@ fun TimelineRow(
                 spoken = view.voice,
                 continuesRun = continuesRun,
                 endsRun = endsRun,
-                avatarUri = avatarUri,
+                faceUri = faceUri,
+                loadFace = loadFace,
                 onReact = onReact,
                 modifier = modifier,
             )
@@ -169,7 +174,15 @@ fun TimelineRow(
             )
 
         is ItemView.Image ->
-            ImageRow(named = named, alt = view.alt, width = view.width, height = view.height, caption = view.caption, modifier = modifier)
+            ImageRow(
+                named = named,
+                alt = view.alt,
+                width = view.width,
+                height = view.height,
+                caption = view.caption,
+                picture = row.item.eventId?.let(imageUri)?.let { uri -> remember(uri) { uri.decodeDataUri() } },
+                modifier = modifier,
+            )
 
         is ItemView.MediaFile ->
             MediaFileRow(
@@ -301,7 +314,8 @@ private fun MessageBlock(
     spoken: VoiceReplyPlayer?,
     continuesRun: Boolean,
     endsRun: Boolean,
-    avatarUri: (userId: String) -> String?,
+    faceUri: (mxcUri: String) -> String?,
+    loadFace: suspend (mxcUri: String) -> Unit,
     onReact: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -323,7 +337,7 @@ private fun MessageBlock(
                 // beside it — `✳ ✳ Atlas — Platform` under every message. The
                 // core now hands over the glyph and a name without it, the
                 // way RoomIdentity has always done for the roster.
-                SenderFace(userId = row.item.sender, initial = row.senderInitial, avatarUri = avatarUri)
+                SenderFace(mxcUri = row.item.senderAvatar, initial = row.senderInitial, faceUri = faceUri, loadFace = loadFace)
                 Text(
                     named,
                     style = MaterialTheme.typography.labelLarge,
@@ -608,13 +622,18 @@ private fun AddReactionAffordance(onReact: (String) -> Unit, modifier: Modifier 
 /**
  * A sender's face beside their name, or the initial of the name itself.
  *
- * `avatarUri` is keyed by user id, not by an `mxc:` URI already resolved to a
- * cache — the list (Task 6) owns the cache and hands this row only what it
- * needs to draw one face.
+ * Keyed by the sender's `mxc:` avatar, as on iOS: [faceUri] reads the face
+ * cache for it and [loadFace] asks the core to fetch it when it is missing.
  */
 @Composable
-private fun SenderFace(userId: String?, initial: String, avatarUri: (userId: String) -> String?) {
-    val uri = userId?.let(avatarUri)
+private fun SenderFace(
+    mxcUri: String?,
+    initial: String,
+    faceUri: (mxcUri: String) -> String?,
+    loadFace: suspend (mxcUri: String) -> Unit,
+) {
+    LaunchedEffect(mxcUri) { mxcUri?.let { loadFace(it) } }
+    val uri = mxcUri?.let(faceUri)
     val bitmap = remember(uri) { uri?.decodeDataUri() }
     Box(
         modifier = Modifier.size(18.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
@@ -624,7 +643,7 @@ private fun SenderFace(userId: String?, initial: String, avatarUri: (userId: Str
             Image(
                 bitmap = bitmap,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().testTag("sender-face-image"),
                 contentScale = ContentScale.Crop,
             )
         } else {
@@ -647,12 +666,12 @@ private fun SenderFace(userId: String?, initial: String, avatarUri: (userId: Str
 
 /**
  * A thumbnail, reserving its box from [width]/[height] before any bytes are
- * asked for, so a lazy list never reflows once they land. No media loading
- * happens here — a future task wires that in; until then, and whenever it
+ * asked for, so a lazy list never reflows once they land. [picture] is the
+ * decoded image when the cache has one; until then, and whenever the fetch
  * fails, the alt text is what a reader sees rather than a blank box.
  */
 @Composable
-private fun ImageRow(named: String, alt: String, width: ULong?, height: ULong?, caption: String?, modifier: Modifier = Modifier) {
+private fun ImageRow(named: String, alt: String, width: ULong?, height: ULong?, caption: String?, picture: ImageBitmap?, modifier: Modifier = Modifier) {
     val aspect = if (width != null && height != null && height > 0uL) {
         width.toFloat() / height.toFloat()
     } else {
@@ -670,13 +689,22 @@ private fun ImageRow(named: String, alt: String, width: ULong?, height: ULong?, 
                 .semantics { contentDescription = alt },
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                alt,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(8.dp),
-            )
+            if (picture != null) {
+                Image(
+                    bitmap = picture,
+                    contentDescription = alt,
+                    modifier = Modifier.fillMaxSize().testTag("timeline-image"),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Text(
+                    alt,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(8.dp),
+                )
+            }
         }
         // What the sender wrote with it (MSC2530), under the picture: one
         // message, the way it was sent.
