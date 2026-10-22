@@ -10,7 +10,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.supermessage.AppearanceMode
 import dev.supermessage.SupermessageTheme
+import dev.supermessage.ThemeChoice
 
 /**
  * The backdrop every preview in this source set sits on.
@@ -31,9 +33,11 @@ import dev.supermessage.SupermessageTheme
 fun PreviewGround(
     dark: Boolean = false,
     width: Dp? = null,
+    /** A reader's appearance choice, for the previews of the chooser; overrides [dark]. */
+    choice: ThemeChoice? = null,
     content: @Composable () -> Unit,
 ) {
-    SupermessageTheme(darkTheme = dark) {
+    SupermessageTheme(choice = choice ?: ThemeChoice(mode = if (dark) AppearanceMode.DARK else AppearanceMode.LIGHT)) {
         Box(
             modifier = (if (width != null) Modifier.width(width) else Modifier.fillMaxWidth())
                 .background(SupermessageTheme.colors.surface)

@@ -165,6 +165,66 @@ class AccountTest {
         compose.onNodeWithText("slot-content").performScrollTo().assertExists()
     }
 
+    /** Choosing an accent stores it; the first swatch is the house violet and is named so. */
+    @Test
+    fun choosingAnAccentStoresIt() {
+        var stored: String? = "unset"
+        panel(appearance = {
+            AppearanceSettings(
+                choice = ThemeChoice(),
+                onMode = {},
+                onDarkStyle = {},
+                onAccent = { stored = it },
+            )
+        })
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("accent-violet").performScrollTo().assertContentDescriptionEquals("Violet")
+        compose.onNodeWithTag("accent-pink").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals("pink", stored)
+
+        compose.onNodeWithTag("accent-violet").performClick()
+        compose.waitForIdle()
+        assertEquals(null, stored)
+    }
+
+    /** The mode and dark-style segments report the choice made. */
+    @Test
+    fun choosingAModeAndADarkStyleStoresThem() {
+        var mode: AppearanceMode? = null
+        var style: DarkStyle? = null
+        panel(appearance = {
+            AppearanceSettings(
+                choice = ThemeChoice(),
+                onMode = { mode = it },
+                onDarkStyle = { style = it },
+                onAccent = {},
+            )
+        })
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("appearance-mode-dark").performScrollTo().performClick()
+        compose.onNodeWithTag("appearance-dark-black").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        assertEquals(AppearanceMode.DARK, mode)
+        assertEquals(DarkStyle.BLACK, style)
+    }
+
+    /** The Appearance section ends with iOS's footer. */
+    @Test
+    fun theAppearanceFooterIsIosWords() {
+        panel(appearance = {
+            AppearanceSettings(choice = ThemeChoice(), onMode = {}, onDarkStyle = {}, onAccent = {})
+        })
+        compose.waitForIdle()
+
+        compose.onNodeWithText(
+            "Black is true black in dark mode, for OLED screens. The accent colours buttons, links and your own highlights.",
+        ).performScrollTo().assertExists()
+    }
+
     /**
      * The headline is `peopleLabel`'s answer for the id, not the raw local
      * part — `@rakesh:id.agentpod.dev` reads "Rakesh", title-cased the same

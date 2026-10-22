@@ -1,10 +1,19 @@
 package dev.supermessage
 
 import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,12 +68,34 @@ import uniffi.supermessage_core.RoomAffordance
  */
 private val Context.rosterDataStore: DataStore<Preferences> by preferencesDataStore(name = "roster")
 
+/** The theme choice's own store, read before the first frame (see [MainActivity.onCreate]). */
+private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "appearance")
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val appearance = AppearancePreferences(applicationContext.appearanceDataStore)
+        // Read before `setContent`, so the first frame is drawn in the stored
+        // choice rather than in the house palette and then repainted (iOS:
+        // `ThemeState.init`). A small local file; the cost is a few
+        // milliseconds before the first frame, which is the point.
+        val stored = runBlocking { appearance.choice.first() }
+        val systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        applySystemBars(stored.resolvesDark(systemDark))
         setContent {
-            SupermessageTheme {
+            val choice by appearance.choice.collectAsStateWithLifecycle(initialValue = stored)
+            val dark = choice.resolvesDark(isSystemInDarkTheme())
+            val surface = choice.palette(dark).surface
+            // The status and navigation bars follow the chosen scheme, not the
+            // phone's: a Dark choice on a light phone needs light icons.
+            DisposableEffect(dark) {
+                applySystemBars(dark)
+                onDispose {}
+            }
+            // The window behind the first frame, and behind a transition, agrees with the choice.
+            SideEffect { window.setBackgroundDrawable(ColorDrawable(surface.toArgb())) }
+            SupermessageTheme(choice) {
                 Surface {
                     val vm: SessionViewModel = viewModel()
 
@@ -73,11 +104,17 @@ class MainActivity : ComponentActivity() {
                     // the one place in the tree that has one to give it.
                     val prefs = remember { RosterPreferences(applicationContext.rosterDataStore) }
 
-                    AppRoot(session = vm.session, prefs = prefs)
+                    AppRoot(session = vm.session, prefs = prefs, appearance = appearance)
                 }
             }
         }
     }
+}
+
+/** Edge to edge, with bar icons for the scheme in force rather than the phone's. */
+private fun ComponentActivity.applySystemBars(dark: Boolean) {
+    val bar = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+    enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
 }
 
 /**
@@ -98,7 +135,7 @@ class MainActivity : ComponentActivity() {
  * already reaches `AndroidSecretStore.rawForTest`.
  */
 @Composable
-internal fun AppRoot(session: Session, prefs: RosterPreferences) {
+internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: AppearancePreferences? = null) {
     val phase by session.phase.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         if (phase == Session.Phase.STARTING) session.start()
@@ -291,6 +328,17 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             onRosterView = prefs::setView,
                             showsState = showsState,
                             onShowsState = prefs::setShowsState,
+                            appearance = {
+                                if (appearance != null) {
+                                    val choice by appearance.choice.collectAsStateWithLifecycle(initialValue = ThemeChoice())
+                                    AppearanceSettings(
+                                        choice = choice,
+                                        onMode = appearance::setMode,
+                                        onDarkStyle = appearance::setDarkStyle,
+                                        onAccent = appearance::setAccent,
+                                    )
+                                }
+                            },
                             onSignOut = session::signOut,
                             onClose = {
                                 extraPanel = null

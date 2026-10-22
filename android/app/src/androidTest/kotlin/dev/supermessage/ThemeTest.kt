@@ -133,4 +133,52 @@ class ThemeTest {
         assertNotEquals(
             GeneratedThemeTokens.light.surface, GeneratedThemeTokens.paper.surface)
     }
+
+    private fun readSurfaceAndPrimary(choice: ThemeChoice): Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color> {
+        var surface = androidx.compose.ui.graphics.Color.Unspecified
+        var primary = androidx.compose.ui.graphics.Color.Unspecified
+        compose.setContent {
+            SupermessageTheme(choice) {
+                surface = SupermessageTheme.colors.surface
+                primary = androidx.compose.material3.MaterialTheme.colorScheme.primary
+            }
+        }
+        compose.waitForIdle()
+        return surface to primary
+    }
+
+    /** Dark chosen on a phone that is light paints dark. (The emulator is light.) */
+    @Test
+    fun choosingDarkPaintsTheSurfaceDarkOnALightPhone() {
+        val (surface, _) = readSurfaceAndPrimary(ThemeChoice(AppearanceMode.DARK, DarkStyle.TINTED, null))
+        assertEquals(GeneratedThemeTokens.dark.surface, surface)
+    }
+
+    @Test
+    fun blackIsTrueBlack() {
+        val (surface, _) = readSurfaceAndPrimary(ThemeChoice(AppearanceMode.DARK, DarkStyle.BLACK, null))
+        assertEquals(androidx.compose.ui.graphics.Color.Black, surface)
+    }
+
+    @Test
+    fun theAccentReachesMaterialPrimary() {
+        val (_, primary) = readSurfaceAndPrimary(ThemeChoice(AppearanceMode.LIGHT, DarkStyle.TINTED, "green"))
+        assertEquals(GeneratedAccents.green["paper"]!!.accent, primary)
+    }
+
+    /** Black with an accent: the Material background is black and the primary is the accent's black one. */
+    @Test
+    fun blackWithAnAccentStaysBlackInMaterial() {
+        var background = androidx.compose.ui.graphics.Color.Unspecified
+        var primary = androidx.compose.ui.graphics.Color.Unspecified
+        compose.setContent {
+            SupermessageTheme(ThemeChoice(AppearanceMode.DARK, DarkStyle.BLACK, "pink")) {
+                background = androidx.compose.material3.MaterialTheme.colorScheme.background
+                primary = androidx.compose.material3.MaterialTheme.colorScheme.primary
+            }
+        }
+        compose.waitForIdle()
+        assertEquals(androidx.compose.ui.graphics.Color.Black, background)
+        assertEquals(GeneratedAccents.pink["black"]!!.accent, primary)
+    }
 }
