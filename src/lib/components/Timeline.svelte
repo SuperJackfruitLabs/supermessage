@@ -287,7 +287,7 @@
   import { answerDecision } from "./decisionReply";
   import { createAnsweredDecisions } from "$lib/stores/answeredDecisions.svelte";
   import { peerColorVar } from "$lib/peerColor";
-  import { timelineStore } from "$lib/stores/timeline.svelte";
+  import { timelineStore as appTimelineStore, type TimelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
   import { QUICK_REACTIONS } from "./emojiPicker";
   import { editTargetStore } from "$lib/stores/editTarget.svelte";
@@ -336,7 +336,17 @@
    * actually on screen — never stale the way a value read off a
    * non-remounted component (`Composer`) would have to guard against.
    */
-  let { roomId, onOpenRecovery }: { roomId: string; onOpenRecovery?: () => void } = $props();
+  let {
+    roomId,
+    onOpenRecovery,
+    store,
+  }: {
+    roomId: string;
+    onOpenRecovery?: () => void;
+    /** The store to read. Only stories pass one; the app uses its own. */
+    store?: TimelineStore;
+  } = $props();
+  const timelineStore = $derived(store ?? appTimelineStore);
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
   const PAGE_SIZE = 20;
@@ -1073,9 +1083,11 @@
   -->
   <!--
     Vertical rhythm (iOS `TimelineRowView.swift:373-375`): 2px inside a run,
-    12px between turns. The action pill no longer sits in this gap (it
-    straddles the block's own top edge, and the first and last rows reserve
-    room for it — `rowEdgeClass`), so the padding can be the real rhythm.
+    12px between turns. The action pill no longer sits in this gap: it
+    straddles the block's own top edge, so on hover its upper half overlaps
+    the previous row's bottom 12–14px (including that row's reaction chips
+    and meta line). The first and last rows reserve room for it
+    (`rowEdgeClass`), so the padding can be the real rhythm.
   -->
   <!--
     Three nested elements, each earning its place — this is not one wrapper
@@ -1150,20 +1162,18 @@
             marker goes under the text instead.
           -->
           <p class="mb-1 flex items-baseline gap-2 font-sans text-meta tabular-nums text-content-muted">
-            {#if !continuesRun}
-              <!-- The sender's own colour (`--color-peer-*`, chosen by
-                   user id), so two agents with one name read as two. -->
-              <span
-                class="min-w-0 truncate text-label"
-                style:color={item.sender ? peerColorVar(item.sender) : undefined}
-                title={row.senderName}
-              >
-                <!-- The core's name for the sender, as iOS shows it; the
-                     runtime suffix stays in the tooltip (`senderName`). -->
-                {row.senderShort}
-              </span>
-              <span class="shrink-0">{formatTime(item.timestampMs)}</span>
-            {/if}
+            <!-- The sender's own colour (`--color-peer-*`, chosen by
+                 user id), so two agents with one name read as two. -->
+            <span
+              class="min-w-0 truncate text-label"
+              style:color={item.sender ? peerColorVar(item.sender) : undefined}
+              title={row.senderName}
+            >
+              <!-- The core's name for the sender, as iOS shows it; the
+                   runtime suffix stays in the tooltip (`senderName`). -->
+              {row.senderShort}
+            </span>
+            <span class="shrink-0">{formatTime(item.timestampMs)}</span>
             <!-- A meta rank, so no italic. -->
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>

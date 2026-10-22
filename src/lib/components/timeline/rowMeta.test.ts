@@ -84,6 +84,29 @@ describe("revealsTime", () => {
   });
 });
 
+describe("revealsTime by render", () => {
+  const continued = (view: unknown, timestampMs: number | null = 1_700_000_000_000): ItemRow => {
+    const [first, second] = itemRows(senderRun);
+    void first;
+    return { ...second!, item: { ...second!.item, timestampMs }, view } as ItemRow;
+  };
+  const stub = { blocks: [], muted: false };
+
+  it("revealsTime offers image, mediaFile and audio rows", () => {
+    for (const render of ["bubble", "image", "mediaFile", "audio"]) {
+      expect(revealsTime(continued({ render, ...stub }), true), render).toBe(true);
+    }
+  });
+
+  it("revealsTime skips a dispatch card, which shows its own time", () => {
+    expect(revealsTime(continued({ render: "customEvent" }), true)).toBe(false);
+  });
+
+  it("revealsTime skips a row with no timestamp", () => {
+    expect(revealsTime(continued({ render: "bubble", ...stub }, null), true)).toBe(false);
+  });
+});
+
 describe("readersFor", () => {
   it("readersFor ignores peers' messages", () => {
     const [peer] = itemRows([message({ id: "p", sender: "@a:x", readBy: ["@b:x"] })]);

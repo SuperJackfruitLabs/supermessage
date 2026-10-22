@@ -353,9 +353,9 @@ export interface TimelineItem {
    * of view, just from every other member's.
    *
    * Deliberately raw ids, never resolved display names — see that struct's
-   * doc comment for why. `ReaderFaces` (via `rowMeta.readersFor`) is the only
-   * consumer: a plain "Seen"/"Seen by N" count on the reader's own latest
-   * message, never a per-message avatar stack or a name list.
+   * doc comment for why. The timeline turns them into faces under the
+   * reader's own messages (`rowMeta.readersFor`, drawn by `ReaderFaces`,
+   * at most three and then a count); a peer's message never shows readers.
    */
   readBy: string[];
   /**
