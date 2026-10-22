@@ -2284,7 +2284,7 @@ pub fn mentioning_message(body: &str, mentions: &[String]) -> RoomMessageEventCo
 /// subscription, if any. Exactly one at a time — see this module's doc
 /// comment.
 #[derive(Default)]
-pub struct FocusedTimeline(Mutex<Option<TimelineHandle>>);
+pub struct FocusedTimeline(Mutex<Option<TimelineHandle>>, crate::sent_rooms::SentRooms);
 
 impl FocusedTimeline {
     /// Subscribes to `room_id`'s timeline, replacing (and stopping) any
@@ -2742,6 +2742,7 @@ impl FocusedTimeline {
             .send(content)
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        self.note_sent(room_id);
         Ok(())
     }
 
@@ -2800,6 +2801,7 @@ impl FocusedTimeline {
             .send_reply(content, event_id)
             .await
             .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        self.note_sent(room_id);
         Ok(())
     }
 
@@ -3179,6 +3181,25 @@ impl FocusedTimeline {
     /// it is returned. That is acceptable here only because the staged token
     /// it produces is *bound* to whatever room this returned, and the send
     /// that eventually redeems it takes the full guard.
+    /// This account has sent in `room_id` (ruling 12e). Called only after the
+    /// send queue accepted the event.
+    pub fn note_sent(&self, room_id: &str) {
+        self.1.note(room_id);
+    }
+
+    /// Whether this account has sent in `room_id` since signing in.
+    pub fn has_sent(&self, room_id: &str) -> bool {
+        self.1.has(room_id)
+    }
+
+    pub(crate) fn forget_sent(&self, room_id: &str) {
+        self.1.forget(room_id);
+    }
+
+    pub(crate) fn clear_sent(&self) {
+        self.1.clear();
+    }
+
     pub fn focused_room_id(&self) -> Option<String> {
         self.0
             .lock()
@@ -6514,6 +6535,16 @@ mod gate_decision_tests {
             gate_decision_body("approve", "Deploy?")
         );
         assert!(gate_decision_body("approve", "Deploy?").starts_with("Approved"));
+    }
+
+    /// Mutation seen failing: calling `note_sent` before the focus check in
+    /// `send_text` makes `has_sent` true after the refused send.
+    #[tokio::test]
+    async fn a_refused_send_is_not_remembered() {
+        let focused = FocusedTimeline::default();
+        let err = focused.send_text("!r:x", "hi", &[]).await;
+        assert!(matches!(err, Err(CoreError::NotReady)));
+        assert!(!focused.has_sent("!r:x"));
     }
 
     #[tokio::test]
