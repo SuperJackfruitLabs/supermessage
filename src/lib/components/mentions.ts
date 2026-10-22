@@ -15,6 +15,8 @@ export interface Mentionable {
   userId: string;
   /** The member's display name, or null when they have none set. */
   displayName: string | null;
+  /** Carried through the match so the menu can mark agents. */
+  isAgent?: boolean;
 }
 
 /** What a member is called — display name if they have one, else their id. */

@@ -67,6 +67,26 @@ export const dispatchCardPending = customEventView({
   view: { status: "rendered", fields, reasoning: null, newerVersion: false, decision, outcome: null },
 });
 
+/** A gate with the three answers the board offers; its subject makes it a gate, not a permission. */
+export const dispatchCardGateDecision: CustomEventDecision = {
+  subject: "gate_4e8b",
+  prompt: "Promote build 214 to production?",
+  options: [
+    { id: "reject", label: "Reject" },
+    { id: "approve", label: "Approve" },
+    { id: "request_changes", label: "Request changes" },
+  ],
+};
+
+export const dispatchCardGate = customEventView({
+  label: "Gate",
+  eventType: "dev.superpipeline.gate.v1",
+  view: {
+    status: "rendered", fields, reasoning: null, newerVersion: false,
+    decision: dispatchCardGateDecision, outcome: null,
+  },
+});
+
 /** Answered, so the amber is gone and the buttons have settled. */
 export const dispatchCardAnswered = customEventView({
   label: "Permission",

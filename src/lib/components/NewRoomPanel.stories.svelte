@@ -24,7 +24,7 @@
 -->
 <Story
   name="Create fails"
-  args={{ onCreate: async () => { throw new Error("M_ROOM_IN_USE: that alias is taken"); } }}
+  args={{ onCreate: async () => { throw { kind: "refused", message: "M_ROOM_IN_USE: that alias is taken" }; } }}
   play={async ({ canvasElement }) => {
     // `onCreate` only runs when somebody submits, so as a static render this
     // story was the untouched panel — byte-identical to "Create or join"

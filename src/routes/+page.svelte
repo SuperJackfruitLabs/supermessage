@@ -1,6 +1,6 @@
 <script lang="ts">
   // The two-pane chat UI: room list on the left, timeline + composer on the
-  // right, a connection banner across the top when the core isn't "live".
+  // right, the connection line under the roster title when the core isn't "live".
   //
   // Still session-gated the same way the provisional placeholder was: try
   // to restore a prior session, and if there isn't one, fall through to
@@ -22,6 +22,7 @@
   import { spacesStore } from "$lib/stores/spaces.svelte";
   import { consumeFreshSignIn } from "$lib/stores/freshSignIn";
   import {
+    appVersion,
     createRoom,
     ensureRecovery,
     joinRoomByAlias,
@@ -39,7 +40,6 @@
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { boundTypers } from "$lib/components/typingView";
   import { railEntries } from "$lib/components/spacesRailView";
-  import type { ConnectionState } from "$lib/ipc";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
@@ -53,9 +53,14 @@
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
   import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
-  import ConnectionBanner from "$lib/components/ConnectionBanner.svelte";
+  import ConnectionLine from "$lib/components/ConnectionLine.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
   import RecoveryPanel from "$lib/components/RecoveryPanel.svelte";
+  import AccountPanel from "$lib/components/AccountPanel.svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { appearanceStore } from "$lib/stores/appearance.svelte";
+  import { resetComposeState } from "$lib/stores/sessionReset";
+  import { escapeClosesPanel } from "$lib/components/roomInfoView";
 
   let checking = $state(true);
   let restored = $state(false);
@@ -259,26 +264,6 @@
   );
 
   /**
-   * The header connection dot's text alternative (spec §6.2, §9): colour is
-   * never the only channel, so this word always renders beside the dot
-   * inside a `role="status"` wrapper. Lowercase, unlike the banner's
-   * capitalized labels, because the two surfaces have different jobs — the
-   * dot is a compact at-a-glance state, the banner carries a sentence.
-   */
-  function connectionWord(state: ConnectionState): string {
-    switch (state) {
-      case "offline":
-        return "offline";
-      case "syncing":
-        return "syncing";
-      case "live":
-        return "live";
-      case "error":
-        return "error";
-    }
-  }
-
-  /**
    * Which pane is on screen. Both, unless the layout has collapsed — and
    * `roomVisible` additionally insists on a selected room, so a collapsed
    * layout can never show the room pane's "Choose a room from the roster."
@@ -467,7 +452,18 @@
    * covered.
    */
   function onWindowKeydown(event: KeyboardEvent): void {
-    if (!panelIsModal || event.key !== "Escape") return;
+    // Before the `:modal` query below: this runs on every keystroke in the app.
+    if (event.key !== "Escape") return;
+    if (
+      !escapeClosesPanel({
+        key: event.key,
+        panelIsModal,
+        defaultPrevented: event.defaultPrevented,
+        // The search panel is a modal overlay too, and handles its own Escape.
+        modalDialogOpen: searchOpen || accountOpen || document.querySelector("dialog:modal") !== null,
+      })
+    )
+      return;
     event.preventDefault();
     void closeRoomInfo();
   }
@@ -677,6 +673,21 @@
     }
   }
 
+  let accountOpen = $state(false);
+  let version = $state<string | null>(null);
+
+  async function openAccount(): Promise<void> {
+    accountOpen = true;
+    try {
+      version = await appVersion();
+    } catch (err) {
+      // No version line is better than a wrong one (outside Tauri, say).
+      console.error("could not read the app version", err);
+    }
+  }
+
+  // Swallows every error and always navigates to /login, so SignOutConfirm's
+  // inline failure branch is unreachable in the app (by design).
   async function signOut(): Promise<void> {
     if (signingOut) return;
     signingOut = true;
@@ -691,6 +702,8 @@
       // account's mount would render the previous one's rail for the frames
       // between restoring and its own `spaces_list` landing.
       spacesStore.clear();
+      // The next account must not inherit this one's pending edits and replies.
+      resetComposeState();
       signingOut = false;
     }
     await goto("/login");
@@ -720,12 +733,10 @@
   </main>
 {:else if restored}
   <div class="flex h-dvh flex-col bg-surface" style="padding-top: var(--inset-top); padding-bottom: var(--inset-bottom);">
-    <ConnectionBanner state={connectionStore.state} message={connectionStore.message} />
     <!--
       `relative`: the containing block an overlaying `RoomInfoPanel`
       positions against below 840px. It is the pane row, not the whole app
-      shell, so the overlay spans the height between the connection banner
-      and the bottom safe area rather than covering the banner too.
+      shell, so the overlay spans the height between the top and the bottom safe area.
     -->
     <div class="relative flex min-h-0 flex-1">
       <!--
@@ -738,7 +749,7 @@
         of the room pane — so when the roster is showing, the rail is beside
         it, and when the room pane is showing, both are gone. The reader
         reaches the rail exactly the way they already reach the roster: the
-        header's "‹ Rooms" button.
+        header's "‹ Chats" button.
 
         The alternative — hiding the rail below 640px while keeping the
         filter — is the one thing §7 rules out by name: a space selected at
@@ -776,6 +787,15 @@
             : 'w-72 shrink-0'} flex-col border-r border-border bg-surface-sunken"
         >
           <!--
+            The roster's title, and under it the app's one connection line
+            (O4; iOS's subtitle under "Chats"). The line renders nothing when
+            live, so the title sits alone then.
+          -->
+          <div class="shrink-0 px-3 pt-3">
+            <h2 class="text-ui-lg font-medium text-content">Chats</h2>
+            <ConnectionLine state={connectionStore.state} message={connectionStore.message} />
+          </div>
+          <!--
             Starting a conversation sits above the roster, where the list of
             conversations is — not in the room header, which is about the room
             you are already in.
@@ -803,32 +823,17 @@
             <RoomList onSelect={() => (roomPaneOpen = true)} />
           </div>
           <!--
-            The only user-reachable way out of a session: switch accounts,
-            clear a corrupted local store, or wipe local history and crypto
-            keys off this device. Parked at the foot of the sidebar rather
-            than given chrome of its own — it's a rarely-used escape hatch,
-            not a primary action, and M0 has no account menu to hang it off.
+            One "Account" button: appearance, links, encryption recovery and
+            sign out live in the panel it opens (`AccountPanel`).
           -->
           <div class="shrink-0 border-t border-border p-2">
-            <!--
-              Beside `Sign out` because it is the same rarely-visited class of account
-              action — and because the day a user needs it is the day they are setting
-              up a new device and looking for exactly this.
-            -->
             <button
               type="button"
-              onclick={() => void openRecovery()}
-              class="w-full rounded-control px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface-sunken"
-            >
-              Encryption recovery
-            </button>
-            <button
-              type="button"
-              onclick={signOut}
+              onclick={() => void openAccount()}
               disabled={signingOut}
-              class="w-full rounded-control px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
+              class="w-full rounded-control px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface-sunken hover:text-content disabled:opacity-60"
             >
-              {signingOut ? "Signing out…" : "Sign out"}
+              {signingOut ? "Signing out…" : "Account"}
             </button>
           </div>
         </aside>
@@ -877,7 +882,7 @@
             The only header this room pane has: the selected room's parsed
             identity (avatar, name, role chip — spec §5.1/§6.2, already
             known from `roomsStore.rooms`, no extra fetch) plus the
-            connection dot and the one way to reach the room-info panel —
+            one way to reach the room-info panel —
             there was previously no surface at all for a room's
             topic/alias/member list; see `RoomInfoPanel.svelte`'s doc
             comment.
@@ -922,7 +927,7 @@
 
                   A word, not just the `‹`: the glyph is `aria-hidden`
                   decoration in the same mono register as the composer's
-                  `›` prompt, and "Rooms" is what actually names the
+                  `›` prompt, and "Chats" is what actually names the
                   destination. `-ml-1` pulls its padding back so the label
                   optically aligns with the header's own left edge.
 
@@ -938,7 +943,7 @@
                   class="-ml-1 flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
                 >
                   <span aria-hidden="true">‹</span>
-                  Rooms
+                  Chats
                 </button>
               {/if}
               {#if headerAvatar}
@@ -963,7 +968,7 @@
                   `min-w-0` and a `max-w`, not `shrink-0`: a `shrink-0` flex
                   item never shrinks below its own nowrap content width, so
                   pairing it with `truncate` makes the truncation dead code
-                  and lets a long role push the connection dot and `Info`
+                  and lets a long role push `Info`
                   button out of the header. The role is bounded to 40
                   characters by `core::room_identity`, which caps the damage
                   but does not prevent it. The name is the more important
@@ -990,7 +995,7 @@
                   (`px-2` = 1rem, and 2px of border). 127px total, 109px of
                   text. `CODE & BUILD` fits with 29px to spare, and the
                   40-character worst case still truncates rather than
-                  reaching the connection dot.
+                  reaching `Info`.
 
                   Those figures are from when the chip was mono capitals
                   with tracking. It is sentence-case sans now
@@ -1006,30 +1011,6 @@
               {/if}
             </div>
             <div class="flex shrink-0 items-center gap-3">
-              <!--
-                Colour is never the sole channel here (spec §9): the dot's
-                fill state (filled only for "live") and the word beside it
-                both carry the state, and `role="status"` names the pair to
-                assistive tech. Never amber — `--color-signal` is reserved
-                exclusively for the pending-decision card (spec §3, §6.2).
-              -->
-              <span class="flex items-center gap-1.5" role="status">
-                <span
-                  aria-hidden="true"
-                  class="h-2 w-2 rounded-pill {connectionStore.state === 'live'
-                    ? 'bg-content-muted'
-                    : connectionStore.state === 'error'
-                      ? 'border border-danger'
-                      : 'border border-content-muted'}"
-                ></span>
-                <span
-                  class="text-meta {connectionStore.state === 'error'
-                    ? 'text-danger'
-                    : 'text-content-muted'}"
-                >
-                  {connectionWord(connectionStore.state)}
-                </span>
-              </span>
               <!--
                 Both grounds inverted with the header (see its comment):
                 on a sunken bar, `bg-surface-sunken` for hover and pressed
@@ -1213,9 +1194,27 @@
   </div>
 {/if}
 
+{#if accountOpen}
+  <AccountPanel
+    {version}
+    prefs={appearanceStore.prefs}
+    onChange={(patch) => appearanceStore.update(patch)}
+    onOpenRecovery={() => {
+      accountOpen = false;
+      void openRecovery();
+    }}
+    onSignOut={signOut}
+    onOpenLink={(u) => void openUrl(u)}
+    onClose={() => (accountOpen = false)}
+  />
+{/if}
+
 {#if searchOpen}
   <SearchPanel
     rooms={roomsStore.rooms}
+    scope={roomsStore.selectedId
+      ? { roomId: roomsStore.selectedId, name: selectedIdentity.name }
+      : null}
     onSearch={searchMessages}
     onOpenRoom={(roomId) => roomsStore.select(roomId)}
     onClose={() => (searchOpen = false)}

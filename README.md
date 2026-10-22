@@ -31,9 +31,10 @@ release, or that every operation has been exercised against a live homeserver.
 |---|---|---|---|
 | Password login, persistent session, room and timeline sync | Implemented | Implemented | Implemented |
 | Messages, replies, reactions, typing and read receipts | Implemented | Implemented | Implemented |
-| File/image sending and editing/deleting own messages | Sending and deleting implemented; editing in the core only (no UI yet) | Implemented | Sending, editing and deleting implemented |
+| File/image sending and editing/deleting own messages | Sending, editing and deleting implemented | Implemented | Sending, editing and deleting implemented |
 | New conversations, room joining and accepting invitations | Implemented | Implemented | Implemented |
-| Message search | Homeserver search | Homeserver search | Homeserver search |
+| Message search | Homeserver search, this room or all rooms | Homeserver search | Homeserver search |
+| Appearance settings | Account panel: mode, dark style, accent and text size (no identity block or blocked-users list yet) | Account panel: mode, dark style, accent and roster options | No in-app setting |
 | Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
 | AgentPod turn/permission cards and SuperPipeline gates | Implemented; gate sender uses shared core; permission answers sent as plain messages | Implemented | Implemented |
 | Block users and agents; report messages, rooms and users | Core only (no UI yet) | Implemented | Core only (no UI yet) |

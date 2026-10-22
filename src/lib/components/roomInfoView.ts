@@ -86,3 +86,35 @@ export function initial(label: string): string {
   const first = [...trimmed][0];
   return first === undefined ? "?" : first.toUpperCase();
 }
+
+/**
+ * The title of the "Leave room" confirmation, in iOS's words
+ * (`RoomInfoPanel.swift:187`): the room by name when it has one.
+ */
+export function leaveTitle(name: string | null): string {
+  return `Leave ${name ?? "this room"}?`;
+}
+
+/**
+ * Whether a window-level Escape should close the modal room-info panel.
+ *
+ * Not while a modal `<dialog>` is open over it: Escape then belongs to that
+ * dialog (its `cancel` event), and closing the panel underneath would also
+ * suppress the cancel and could drop the panel mid-call. Checked here rather
+ * than by each dialog stopping propagation, so a modal added later is covered
+ * without having to remember to.
+ */
+export function escapeClosesPanel(args: {
+  key: string;
+  panelIsModal: boolean;
+  modalDialogOpen: boolean;
+  /** Something earlier in the event (the search panel) already used this Escape. */
+  defaultPrevented?: boolean;
+}): boolean {
+  return (
+    args.panelIsModal &&
+    args.key === "Escape" &&
+    !args.modalDialogOpen &&
+    !args.defaultPrevented
+  );
+}

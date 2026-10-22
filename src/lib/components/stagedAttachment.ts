@@ -25,7 +25,7 @@
 //
 // Nothing here touches the DOM, Svelte, a store or the clock.
 
-import type { CoreError, StagedAttachment } from "$lib/ipc";
+import type { AttachmentSendOutcome, CoreError, StagedAttachment } from "$lib/ipc";
 
 /**
  * Binary units, one decimal place, matching
@@ -291,7 +291,12 @@ const MAX_FAILURE_CHARS = 300;
  * core supplied a message, that message — a `store`-kind "cannot read that
  * file: permission denied" is far more useful than "something went wrong".
  */
-export function attachmentFailure(err: unknown, phase: AttachmentPhase): AttachmentFailure {
+export function attachmentFailure(
+  err: unknown,
+  phase: AttachmentPhase,
+  /** Replaces the generic wording when the core supplied no message. */
+  fallback?: string,
+): AttachmentFailure {
   const error = err as CoreError | undefined;
   const kind = typeof error?.kind === "string" ? error.kind : undefined;
   // Only a value that actually looks like a `CoreError` gets its `message`
@@ -328,9 +333,10 @@ export function attachmentFailure(err: unknown, phase: AttachmentPhase): Attachm
         label: phase === "send" ? "Send failed" : "Couldn't attach",
         message: capitalize(
           bound(coreMessage) ||
-            (phase === "send"
+            (fallback ??
+              (phase === "send"
               ? "That file wasn't sent. Attach it again."
-              : "That file couldn't be attached."),
+              : "That file couldn't be attached.")),
         ),
       };
   }
@@ -454,4 +460,68 @@ export class StagedAttachmentTracker {
     if (this.#roomId === roomId) return null;
     return this.take();
   }
+}
+
+/**
+ * A file whose attach or send failed, kept so the refusal is drawn on its
+ * chip rather than as a loose line (iOS `ComposerView.swift:626-675`).
+ */
+export interface FailedChip {
+  filename: string;
+  failure: AttachmentFailure;
+}
+
+/**
+ * A failed chip with no file behind it blocks sending the text alone
+ * (iOS `StagedAttachment.swift:90-92`): the reader asked to send a file, and
+ * quietly sending only the words would answer a different question.
+ */
+export function blocksSend(
+  staged: StagedAttachment | null,
+  failed: FailedChip | null,
+  editing = false,
+): boolean {
+  // An edit carries no attachment, so a stale failed chip must not stop a Save.
+  return !editing && staged === null && failed !== null;
+}
+
+/**
+ * What the composer holds after the core reported a failed send
+ * (iOS `StagedAttachment.swift:143-178`): the re-staged file, if the core
+ * could stage it again, and the failure to draw on its chip.
+ *
+ * With a file behind the failure the chip stays sendable, so the generic
+ * "Attach it again." would be false; iOS's "Couldn't send that file." stands
+ * in when the core gave no words. Without one, the default wording stands
+ * and {@link blocksSend} keeps the text from going alone.
+ */
+export function afterFailedSend(
+  outcome: Extract<AttachmentSendOutcome, { outcome: "failed" }>,
+  filename: string,
+): { staged: StagedAttachment | null; failed: FailedChip } {
+  const staged = outcome.restaged;
+  return {
+    staged,
+    failed: {
+      filename,
+      failure: attachmentFailure(
+        outcome.error,
+        "send",
+        staged !== null ? "Couldn't send that file." : undefined,
+      ),
+    },
+  };
+}
+
+/**
+ * Whether a re-staged file may take the chip after a failed send: only when
+ * nothing is staged or the chip still holds the token that was sent. A
+ * different file means the reader attached again mid-send, and their newer
+ * pick must not be replaced.
+ */
+export function shouldAdoptRestaged(
+  current: StagedAttachment | null,
+  sentToken: string,
+): boolean {
+  return current === null || current.token === sentToken;
 }

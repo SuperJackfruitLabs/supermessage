@@ -3,7 +3,11 @@
 
   import MentionMenu from "./MentionMenu.svelte";
 
-  const m = (userId: string, displayName: string | null) => ({ userId, displayName });
+  const m = (userId: string, displayName: string | null, isAgent = false) => ({
+    userId,
+    displayName,
+    isAgent,
+  });
 
   const one = [m("@atlas:id.agentpod.dev", "Atlas")];
   const many = [
@@ -59,7 +63,7 @@
   which looks exactly like the bug being fixed here. Classes that also appear
   in `Composer.svelte` are generated and safe to use.
 -->
-{#snippet inComposer(matches: { userId: string; displayName: string | null }[], activeIndex: number)}
+{#snippet inComposer(matches: { userId: string; displayName: string | null; isAgent?: boolean }[], activeIndex: number)}
   <div style="height: 22rem; display: flex; align-items: flex-end; justify-content: center; padding: 1rem">
     <!-- `flex: none` keeps the row at its stated width. Its only in-flow
          content is nothing — the menu is absolutely positioned and
@@ -91,4 +95,16 @@
 <!-- A candidate with no display name falls back to its matrix id. -->
 <Story name="Unnamed candidate">
   {#snippet template()}{@render inComposer([m("@9247e5a1b3c4:id.agentpod.dev", null)], 0)}{/snippet}
+</Story>
+
+<!-- Agents carry an "Agent" tag; people do not. -->
+<Story name="An agent among people">
+  {#snippet template()}{@render inComposer(
+      [
+        m("@rakesh:id.agentpod.dev", "Rakesh"),
+        m("@atlas:id.agentpod.dev", "Atlas", true),
+        m("@sam:id.agentpod.dev", "Strategy Sam"),
+      ],
+      1
+    )}{/snippet}
 </Story>

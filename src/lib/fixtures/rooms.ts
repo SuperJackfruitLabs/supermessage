@@ -114,6 +114,8 @@ export function member(overrides: Partial<RoomMember> = {}): RoomMember {
     userId: "@atlas:id.agentpod.dev",
     displayName: "Atlas",
     avatarUrl: null,
+    isAgent: false,
+    isIgnored: false,
     ...overrides,
   };
 }
