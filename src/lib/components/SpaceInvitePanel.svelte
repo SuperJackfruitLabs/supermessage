@@ -18,6 +18,7 @@
   // joined. Declining goes the same way through leave. The dialog closes only
   // once the call has come back, so a failure has somewhere to be shown.
 
+  import { errorMessage } from "$lib/errorMessage";
   import { invitationPrompt } from "./invitationView";
 
   /**
@@ -59,8 +60,8 @@
     } catch (err) {
       failure =
         action === "accept"
-          ? `Could not accept: ${err instanceof Error ? err.message : String(err)}`
-          : `Could not decline: ${err instanceof Error ? err.message : String(err)}`;
+          ? `Could not accept: ${errorMessage(err)}`
+          : `Could not decline: ${errorMessage(err)}`;
     } finally {
       busy = false;
     }

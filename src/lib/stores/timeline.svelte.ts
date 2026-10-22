@@ -237,4 +237,6 @@ export function createTimelineStore(deps: TimelineStoreDeps = defaultDeps) {
   };
 }
 
+export type TimelineStore = ReturnType<typeof createTimelineStore>;
+
 export const timelineStore = createTimelineStore();

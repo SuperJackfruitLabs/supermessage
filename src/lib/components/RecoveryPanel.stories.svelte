@@ -36,7 +36,7 @@
   const key = () => Promise.resolve(KEY);
   const settle = () => new Promise<void>((r) => setTimeout(r, 400));
   const refuse = () =>
-    Promise.reject(new Error("M_FORBIDDEN: that is not this account's recovery key"));
+    Promise.reject({ kind: "refused", message: "M_FORBIDDEN: that is not this account's recovery key" });
   const resetTo = () => Promise.resolve(KEY);
 
   const { Story } = defineMeta({

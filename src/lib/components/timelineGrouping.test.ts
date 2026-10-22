@@ -200,9 +200,9 @@ describe("groupTimelineItems", () => {
     const items = [message("msg1"), dateDivider("d1"), message("msg2")];
     const rows = groupTimelineItems(items);
     expect(rows).toEqual([
-      { type: "item", key: "msg1:0", item: items[0]!.item, view: items[0]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", replyPreview: null, continuesRun: false },
-      { type: "item", key: "d1:0", item: items[1]!.item, view: items[1]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", replyPreview: null, continuesRun: false },
-      { type: "item", key: "msg2:0", item: items[2]!.item, view: items[2]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", replyPreview: null, continuesRun: false },
+      { type: "item", key: "msg1:0", item: items[0]!.item, view: items[0]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false },
+      { type: "item", key: "d1:0", item: items[1]!.item, view: items[1]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false },
+      { type: "item", key: "msg2:0", item: items[2]!.item, view: items[2]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false },
     ]);
   });
 });

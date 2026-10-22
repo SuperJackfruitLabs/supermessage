@@ -69,9 +69,13 @@
   // behind whenever one is present (`sendCaveat`), while the button itself
   // names its object either way.
 
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import MentionMenu from "./composer/MentionMenu.svelte";
   import ReplyBanner from "./composer/ReplyBanner.svelte";
+  import EditBanner from "./composer/EditBanner.svelte";
+  import { EditStash, composerPlaceholder, sendIntent, sendLabel } from "./composer/editMode";
+  import { editTargetStore } from "$lib/stores/editTarget.svelte";
+  import ComposerCapsule from "./composer/ComposerCapsule.svelte";
   import StagedAttachmentChip from "./composer/StagedAttachmentChip.svelte";
   import { roomInfo } from "$lib/ipc";
   import { applyMention, findMentionQuery, matchMentions, mentionLabel } from "./mentions";
@@ -87,12 +91,17 @@
     attachmentFailure,
     sendCaveat,
     stagedStripView,
+    afterFailedSend,
+    shouldAdoptRestaged,
+    blocksSend,
+    type FailedChip,
     StagedAttachmentTracker,
     type AttachmentFailure,
   } from "./stagedAttachment";
   import {
     attachmentDiscard,
     attachmentSend,
+    editMessage,
     attachmentStage,
     onStagedAttachment,
     type CoreError,
@@ -102,6 +111,10 @@
   let { roomId }: { roomId: string } = $props();
 
   const drafts = new DraftTracker();
+  // Holds the half-typed draft while the field shows the message being edited.
+  // The draft is only ever written by `drafts.switchTo`, which the room-switch
+  // effect calls after ending the edit, so no edit text reaches a draft.
+  const stash = new EditStash();
   let value = $state("");
 
   // ── Mentions ──────────────────────────────────────────────────────────────
@@ -190,6 +203,14 @@
    * is the one place that mapping lives.
    */
   let failure = $state<AttachmentFailure | null>(null);
+
+  /**
+   * An attachment that failed, drawn on its own chip rather than as a loose
+   * line (iOS `ComposerView.swift:24-29`). While it stands with no file
+   * behind it, text alone cannot be sent (`blocksSend`). Cleared by Remove,
+   * a new attach and a room switch.
+   */
+  let failedChip = $state<FailedChip | null>(null);
 
   /**
    * The one file staged for the currently focused room, or `null` — a
@@ -332,18 +353,22 @@
     const forRoomId = roomId;
     staging = true;
     failure = null;
+    failedChip = null;
     try {
       const picked = await attachmentStage(forRoomId);
       if (picked === null) return;
       if (roomId !== forRoomId) {
         discardStaged(picked.token);
-        failure = attachmentFailure({ kind: "roomChanged", message: "" }, "attach");
+        failedChip = {
+          filename: "Attachment",
+          failure: attachmentFailure({ kind: "roomChanged", message: "" }, "attach"),
+        };
         return;
       }
       adoptStaged(forRoomId, picked);
     } catch (err) {
       console.error("failed to stage an attachment", err);
-      failure = attachmentFailure(err, "attach");
+      failedChip = { filename: "Attachment", failure: attachmentFailure(err, "attach") };
     } finally {
       staging = false;
     }
@@ -354,6 +379,7 @@
     const removed = attachments.take();
     if (removed !== null) discardStaged(removed.token);
     failure = null;
+    failedChip = null;
     refreshStaged();
   }
 
@@ -362,15 +388,13 @@
    * and the Send button behave identically — see this file's top-of-script
    * comment for why Send is repurposed rather than disabled.
    *
-   * The strip goes on **every** outcome, success or failure, and that is the
-   * fail-closed reading of the token rules rather than a shortcut:
-   * `attachment_send` consumes the token before it reads a byte, so after
-   * any failure past that point there is nothing left to retry, and the two
-   * refusals that *don't* consume (`roomChanged`, `unknownAttachment`) leave
-   * a token this room can't use anyway. Leaving the strip up would offer a
-   * second press of Send that could only ever produce `unknownAttachment` —
-   * or, worse, look like a retry of a send that had actually gone through.
-   * The discard covers the one case where the core may still hold it.
+   * A `sent` outcome clears the strip. A `failed` one keeps the file on it:
+   * the core has already staged the same file again behind a fresh token
+   * (`restaged`), so Send retries it with the current text as its caption,
+   * and the failure is drawn on the chip (D12). With no `restaged` the file
+   * is gone and the chip only carries the failure, which blocks text-alone
+   * sends. A rejection (`roomChanged`, `unknownAttachment`) means the token
+   * was never taken and is unusable here, so that strip goes too.
    *
    * `attachments.takeToken` rather than `take`, so a send that resolves
    * *after* the reader has already attached a different file clears the send
@@ -385,14 +409,34 @@
     stopTyping(sentRoomId);
     sending = true;
     failure = null;
+    failedChip = null;
     try {
       const outcome = await attachmentSend(sentRoomId, attachment.token, caption);
       if (outcome.outcome === "failed") {
-        // The core has put the file behind a fresh token. This composer
-        // still drops the strip on failure (consuming `restaged` is a
-        // later task), so release the fresh token and show the error.
-        if (outcome.restaged) discardStaged(outcome.restaged.token);
-        throw outcome.error;
+        // The core put the file behind a fresh token (or could not). Keep it
+        // on the chip with the failure; the draft and caption stay put.
+        const next = afterFailedSend(outcome, stagedStripView(attachment).filename);
+        if (roomId === sentRoomId) {
+          if (!shouldAdoptRestaged(attachments.stagedFor(sentRoomId), attachment.token)) {
+            // The reader attached something else mid-send: their pick stays,
+            // the fresh token is released, and the failure shows as a plain
+            // line rather than on the wrong file's chip.
+            if (next.staged) discardStaged(next.staged.token);
+            failure = next.failed.failure;
+          } else {
+            if (next.staged) adoptStaged(sentRoomId, next.staged);
+            else {
+              const abandoned = attachments.takeToken(attachment.token);
+              if (abandoned !== null) discardStaged(abandoned.token);
+            }
+            failedChip = next.failed;
+          }
+        } else {
+          // The reader moved rooms mid-send: nothing here to retry from.
+          attachments.takeToken(attachment.token);
+          if (next.staged) discardStaged(next.staged.token);
+        }
+        return;
       }
       attachments.takeToken(attachment.token);
       // The draft went as the caption, so it has been sent: clear it, in the
@@ -403,7 +447,10 @@
       }
     } catch (err) {
       console.error("failed to send attachment", err);
-      failure = attachmentFailure(err, "send");
+      failedChip = {
+        filename: stagedStripView(attachment).filename,
+        failure: attachmentFailure(err, "send"),
+      };
       const abandoned = attachments.takeToken(attachment.token);
       if (abandoned !== null) discardStaged(abandoned.token);
     } finally {
@@ -470,6 +517,12 @@
       // is the first mount, with no outgoing room to notify — same guard
       // `drafts.switchTo` already uses for "no before room yet".
       if (previousRoomId !== null) stopTyping(previousRoomId);
+      // Leaving the room ends its edit and gives the pre-edit draft back
+      // *before* the tracker saves `value`, so edit text is never a draft.
+      if (stash.editing && previousRoomId !== null) {
+        editTargetStore.clear(previousRoomId);
+        value = stash.end();
+      }
       value = drafts.switchTo(roomId, value);
       // The staged attachment is discarded by the switch rather than kept
       // per room, unlike the draft immediately above — and the asymmetry is
@@ -491,11 +544,33 @@
       // at now. The same holds for every attachment refusal: each one is
       // about a file that no longer exists in this room's composer.
       failure = null;
+      failedChip = null;
     }
   });
 
   /** `roomId`'s own pending reply target, or `null` — see this file's top-of-script doc comment. */
   const replyTarget = $derived(replyTargetStore.get(roomId));
+
+  /** `roomId`'s own pending edit, or `null`. */
+  const editTarget = $derived(editTargetStore.get(roomId));
+
+  // Picks up an edit started from the timeline: show its body, keep the
+  // draft, drop any reply (one strip, edit first — iOS `ComposerView.swift:70-74`).
+  $effect(() => {
+    const edit = editTarget;
+    untrack(() => {
+      if (!edit || stash.editing?.eventId === edit.eventId) return;
+      value = stash.begin(value, edit);
+      replyTargetStore.clear(roomId);
+      input?.focus();
+    });
+  });
+
+  function cancelEdit(): void {
+    editTargetStore.clear(roomId);
+    value = stash.end();
+    failure = null;
+  }
 
   const trimmed = $derived(value.trim());
   /**
@@ -503,7 +578,11 @@
    * confirm step, so it cannot require text the design explicitly does not
    * support sending alongside a file (captions are out of scope, §1).
    */
-  const canSend = $derived((trimmed !== "" || staged !== null) && !sending);
+  const canSend = $derived(
+    sendIntent(editTarget, staged !== null, value) !== "nothing" &&
+      !sending &&
+      !blocksSend(staged, failedChip, editTarget !== null)
+  );
 
   /** Cancels the pending reply for `roomId` without discarding the draft text. */
   function cancelReply(): void {
@@ -514,6 +593,27 @@
     if (!canSend) return;
     const body = trimmed;
     const sentRoomId = roomId;
+    const editing = stash.editing;
+    if (editing) {
+      // An edit is never sent as a message, and a file waiting on the chip
+      // stays there: Save edit saves the text only.
+      sending = true;
+      failure = null;
+      try {
+        await editMessage(sentRoomId, editing.eventId, value);
+        editTargetStore.clear(sentRoomId);
+        // A room switch mid-flight already ended the edit and restored the draft.
+        if (roomId === sentRoomId && stash.editing) value = stash.end();
+      } catch (err) {
+        console.error("failed to save edit", err);
+        if (roomId === sentRoomId) {
+          failure = { label: "Edit failed", message: "Could not save the edit." };
+        }
+      } finally {
+        sending = false;
+      }
+      return;
+    }
     // The attachment wins whenever there is one, and the draft goes with it
     // as its caption (MSC2530): one event, so the words never arrive without
     // their picture, and an agent gets the picture and the question as one
@@ -623,7 +723,7 @@
   Separation from the timeline/typing indicator above is a ground change
   (surface → surface-sunken), not a hairline: this strip and `Timeline`'s
   date-divider rule already lean on hairlines constantly (roster rows, the
-  room header, the connection banner), so one more directly under the
+  room header, the connection line), so one more directly under the
   typing indicator would just read as a fourth stacked bar rather than a
   boundary. A change of ground reads as a distinct zone — "you have left
   the reading surface and entered the instrument" — without adding a line,
@@ -633,13 +733,6 @@
   one ground and read as a single contiguous instrument rather than three
   independently bordered bars.
 -->
-{#if replyTarget}
-  <ReplyBanner
-    sender={replyTarget.sender}
-    excerpt={replyTarget.excerpt}
-    onCancel={cancelReply}
-  />
-{/if}
 {#if failure}
   <div class="shrink-0 bg-surface-sunken px-4 py-2">
     <div class="mx-auto flex w-full max-w-[72ch] flex-col gap-0.5">
@@ -647,6 +740,16 @@
     <p class="selectable text-ui text-content" role="alert">{failure.message}</p>
     </div>
   </div>
+{/if}
+{#snippet capsuleTop()}
+{#if editTarget}
+  <EditBanner onCancel={cancelEdit} />
+{:else if replyTarget}
+  <ReplyBanner
+    sender={replyTarget.sender}
+    excerpt={replyTarget.excerpt}
+    onCancel={cancelReply}
+  />
 {/if}
 <!--
   The staged-attachment strip: the review step the attachments design's §2
@@ -686,14 +789,43 @@
     carries no `in_reply_to`). `sendCaveat` is the one place that wording
     lives, and returns `null` when there is nothing to disambiguate.
   -->
-  {@const caveat = sendCaveat(trimmed !== "", replyTarget !== null)}
+  {@const caveat = editTarget ? null : sendCaveat(trimmed !== "", replyTarget !== null)}
   <StagedAttachmentChip
     filename={view.filename}
     summary={view.summary}
     {caveat}
+    failure={failedChip?.failure ?? null}
+    onRemove={removeStaged}
+  />
+{:else if failedChip}
+  <StagedAttachmentChip
+    filename={failedChip.filename}
+    summary=""
+    caveat={null}
+    failure={failedChip.failure}
     onRemove={removeStaged}
   />
 {/if}
+{/snippet}
+{#snippet capsuleField()}
+  <div
+    class="flex min-w-0 flex-1 items-end gap-1.5 rounded-control px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
+  >
+    <span class="shrink-0 pb-1.5 text-content-faint" aria-hidden="true">›</span>
+    <textarea
+      bind:this={input}
+      bind:value
+      onkeydown={handleKeydown}
+      onclick={refreshMentionQuery}
+      onkeyup={refreshMentionQuery}
+      oninput={handleInput}
+      disabled={sending}
+      rows="1"
+      placeholder={composerPlaceholder(editTarget !== null, replyTarget?.sender ?? null)}
+      class="max-h-40 min-h-10 flex-1 resize-none bg-transparent py-1 font-sans text-ui text-content outline-none placeholder:text-content-faint disabled:opacity-60"
+    ></textarea>
+  </div>
+{/snippet}
 <!--
   The strip's ground runs edge to edge, but its contents sit in the same
   centred `72ch` column the timeline uses (spec §6.3.0). Before this, the
@@ -743,97 +875,15 @@
       onPick={chooseMention}
     />
   {/if}
-  <button
-    type="button"
-    onclick={attach}
-    disabled={staging}
-    aria-label="Attach a file"
-    title="Attach a file — or drop one on the window"
-    class="flex shrink-0 items-center justify-center rounded-control px-2.5 py-2 text-ui-lg text-content-muted transition-colors hover:bg-surface hover:text-content disabled:text-content-faint disabled:hover:bg-transparent"
-  >
-    <span aria-hidden="true">+</span>
-  </button>
-  <div
-    class="flex min-w-0 flex-1 items-end gap-1.5 rounded-control px-2 py-1 outline-offset-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-accent"
-  >
-    <span class="shrink-0 pb-1.5 text-content-faint" aria-hidden="true">›</span>
-    <textarea
-      bind:this={input}
-      bind:value
-      onkeydown={handleKeydown}
-      onclick={refreshMentionQuery}
-      onkeyup={refreshMentionQuery}
-      oninput={handleInput}
-      disabled={sending}
-      rows="1"
-      placeholder={replyTarget ? `Reply to ${replyTarget.sender}…` : "Message…"}
-      class="max-h-40 min-h-10 flex-1 resize-none bg-transparent py-1 font-sans text-ui text-content outline-none placeholder:text-content-faint disabled:opacity-60"
-    ></textarea>
-  </div>
-  <!--
-    Disabled is a *ghost*, not a faded fill. `disabled:opacity-60` over the
-    accent fill measured 2.04:1 light / 2.17:1 dark. WCAG exempts inactive
-    controls, so that was not a violation — but this button is disabled
-    whenever the composer is empty, which is most of the time, and an
-    illegible label on the primary instrument's main control most of the
-    time is a usability problem the exemption does not make go away.
-    Dropping the fill rather than fading it keeps the label readable *and*
-    strengthens the inert signal instead of weakening it: an unfilled
-    button plainly is not the primary action, whereas a washed-out filled
-    one just looks broken.
-
-    **The label is `content-muted`, and the ground is not `surface`.** The
-    commit that made this a ghost recorded the label at 4.92:1 — which is
-    `content-faint` on `--color-surface`, a ground this button has never
-    had. Dropping the fill exposes whatever is behind it, and that is the
-    composer tray: `--color-surface-sunken`. Re-measured there by
-    compositing the painted stack, `content-faint` is **4.516:1 light /
-    4.911:1 dark** — over §9's floor, but in light by 0.016, which is
-    rounding, not margin. So the rank moves up one: `content-muted` on the
-    same ground measures **7.492:1 light / 9.697:1 dark** — not the 8.2:1
-    muted reads on the sheet, for the same reason the faint figure moved:
-    the ground here is sunken, and every number about this button has to
-    be taken against it.
-
-    Nothing is lost by that. The disabled state was never carried by the
-    label's colour — it is carried by the missing accent fill and the
-    hairline border that replaces it, which is exactly the argument for
-    the ghost in the first place. Fading the label *as well* was belt and
-    braces that cost legibility for a signal already fully delivered.
-
-    The border is `border-transparent` when enabled rather than absent, so
-    the box measures the same in both states — adding a border only on
-    `:disabled` would shift the button by a pixel every time the composer
-    goes from empty to non-empty, which is on the first keystroke of every
-    message.
-  -->
-  <button
-    type="button"
-    onclick={send}
-    disabled={!canSend}
-    class="flex shrink-0 items-center gap-1.5 rounded-control border border-transparent bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:border-border disabled:bg-transparent disabled:text-content-muted"
-  >
-    <!--
-      The label names its object whenever there is one. This is half of the
-      "never ambiguous at the same moment" rule §8 sets — the other half is
-      the strip's own line about what happens to the draft text — and it is
-      the half that is always on screen: a reader who has scrolled the strip
-      out of mind still sees that this button is about a file.
-    -->
-    {staged ? "Send file" : "Send"}
-    <!--
-      80%, not the spec's literal 70% (§6.4). The hint is quieter than the
-      label either way, but at 70% `--color-accent-content` composites to
-      4.32:1 (light) / 4.14:1 (dark) against `--color-accent` — under the
-      4.5:1 floor §9 sets for the same design. 80% reads 5.12:1 / 5.09:1 and
-      is still visibly secondary. Same precedent as the palette's own
-      revisions: where §9's floor and a literal value in the spec disagree,
-      the floor wins and the value moves. Measured by compositing the layer
-      stack in a canvas, not by parsing `getComputedStyle` — this element's
-      colour is an alpha over an accent ground, which is precisely the case
-      an rgba-parsing probe gets wrong.
-    -->
-    <span aria-hidden="true" class="opacity-80">⏎</span>
-  </button>
+  <!-- Send is a ghost when disabled; see ComposerCapsule.svelte. -->
+  <ComposerCapsule
+    top={capsuleTop}
+    field={capsuleField}
+    onAttach={attach}
+    attachDisabled={staging || sending}
+    sendLabel={sendLabel(editTarget !== null, staged !== null)}
+    {canSend}
+    onSend={send}
+  />
   </div>
 </div>

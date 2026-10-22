@@ -105,6 +105,11 @@ export function createReplyTargetStore() {
       targets = next;
     },
 
+    /** Drops every room's reply target (sign-out). */
+    clearAll(): void {
+      targets = {};
+    },
+
     /**
      * Builds the {@link PendingReply} `startReply` stores for a given row.
      *

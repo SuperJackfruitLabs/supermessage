@@ -2,6 +2,7 @@
   import "../app.css";
   import { onMount } from "svelte";
   import { installWebviewLogBridge } from "$lib/webviewLog";
+  import { appearanceStore } from "$lib/stores/appearance.svelte";
 
   let { children } = $props();
 
@@ -12,6 +13,10 @@
   onMount(() => {
     if (import.meta.env.DEV) installWebviewLogBridge();
   });
+
+  // Theme, accent and text size. `app.html` has already set the attributes
+  // before first paint; this keeps them live and applies the zoom.
+  onMount(() => appearanceStore.install());
 </script>
 
 {@render children()}

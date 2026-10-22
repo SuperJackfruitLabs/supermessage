@@ -58,3 +58,49 @@ export function projectSearchResults(
     timestampMs: result.timestampMs,
   }));
 }
+
+/** The room a search was opened from. */
+export interface SearchScope {
+  roomId: string;
+  name: string;
+}
+
+/** What the panel says before the first search. */
+export function searchHint(scope: SearchScope | null, narrowed: boolean): string {
+  return scope !== null && narrowed
+    ? `Find a message in ${scope.name}.`
+    : "Find a message across your rooms.";
+}
+
+/** The room id to pass to the search, or undefined to search every room. */
+export function scopedRoomId(scope: SearchScope | null, narrowed: boolean): string | undefined {
+  return scope !== null && narrowed ? scope.roomId : undefined;
+}
+
+/**
+ * Ticket counter for requests where only the newest answer may be used.
+ *
+ * Changing the scope re-runs a search while the older one may still be in
+ * flight; whichever resolves last would otherwise win, even if it is the
+ * older query.
+ */
+export function createLatestOnly(): { begin(): number; isCurrent(ticket: number): boolean } {
+  let current = 0;
+  return {
+    begin: () => ++current,
+    isCurrent: (ticket) => ticket === current,
+  };
+}
+
+/**
+ * Whether changing the scope should run the search again: only when a search
+ * was made (a failed one counts, so the reader can retry by changing scope)
+ * and there is still a term to run.
+ */
+export function rerunsOnScopeChange(args: {
+  changed: boolean;
+  searched: boolean;
+  term: string;
+}): boolean {
+  return args.changed && args.searched && args.term.trim() !== "";
+}

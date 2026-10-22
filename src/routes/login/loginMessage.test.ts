@@ -17,4 +17,18 @@ describe("loginMessage", () => {
       "Incorrect username or password.",
     );
   });
+
+  it("networkWhitespaceIsGeneric", () => {
+    expect(loginMessage({ kind: "network", message: "  " })).toBe("Can't reach the homeserver.");
+  });
+
+  it("storeNamesTheLocalStore", () => {
+    const text = loginMessage({ kind: "store", message: "disk full" });
+    expect(text.startsWith("Supermessage could not open what it saved on this computer")).toBe(true);
+    expect(text.endsWith("disk full")).toBe(true);
+  });
+
+  it("otherKindsShowTheCoresMessage", () => {
+    expect(loginMessage({ kind: "protocol", message: "M_UNKNOWN" })).toBe("M_UNKNOWN");
+  });
 });

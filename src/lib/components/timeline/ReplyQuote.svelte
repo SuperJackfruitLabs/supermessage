@@ -11,12 +11,22 @@
   export interface Props {
     quote: ReplyQuoteView | null;
     isOwn: boolean;
+    /**
+     * Set when the quoted message is loaded and can be scrolled to; the
+     * quote is then a button. Unset, the quote is inert, exactly as before
+     * (iOS `TimelineRowView.swift:80-89`).
+     */
+    onJump?: (() => void) | null;
   }
 
-  let { quote, isOwn }: Props = $props();
+  // `aria-description` (ARIA 1.3) is not in Svelte's attribute types yet, so
+  // it goes in as a spread rather than a literal attribute.
+  const HINT = { "aria-description": "Shows the original message" };
+
+  let { quote, isOwn, onJump = null }: Props = $props();
 </script>
 
-{#if quote}
+{#snippet lines(quote: ReplyQuoteView)}
   <!--
     A 2px rail rather than a filled inset, matching the composer's
     "Replying to" strip (spec §6.4) so the same relationship reads the
@@ -26,7 +36,6 @@
     `--color-border` is legible on either ground — the old
     `accent-content` pair would have been near-invisible on both.
   -->
-  <div class="mb-1.5 border-l-2 border-border pl-2 text-content-muted">
     {#if quote.state === "available"}
       <!--
         `truncate` alone here (no `break-words`): `truncate` is
@@ -36,14 +45,14 @@
         top-of-script doc comment for why `break-words` *does* matter,
         genuinely, on the two lines below that actually allow wrapping.
       -->
-      <p class="truncate font-sans text-label">{quote.sender}</p>
+      <span class="block truncate font-sans text-label">{quote.sender}</span>
       {#if quote.excerpt}
         <!-- `quote.excerpt` is already truncated in the core
              (`core::timeline::REPLY_EXCERPT_MAX_CHARS`) — `break-words`
              here guards against a long space-free run within that bound,
              not the length itself. See this file's top-of-script doc
              comment. -->
-        <p class="mt-0.5 line-clamp-2 font-sans text-ui break-words">{quote.excerpt}</p>
+        <span class="mt-0.5 line-clamp-2 block font-sans text-ui break-words">{quote.excerpt}</span>
       {:else if quote.label}
         <!-- The parent loaded but had nothing to quote (redacted, a
              sticker, a poll, undecryptable, ...) — `quote.label` is the
@@ -69,22 +78,44 @@
              by compositing the layer stack in a canvas — the numbers a
              token-pair calculator gives for `faint` on `surface` (4.92)
              do not describe this ground at all. -->
-        <p
-          class="mt-0.5 font-sans text-meta break-words {isOwn
+        <span
+          class="mt-0.5 block font-sans text-meta break-words {isOwn
             ? 'text-content-muted'
             : 'text-content-faint'}"
         >
           {quote.label}
-        </p>
+        </span>
       {/if}
     {:else}
-      <p
-        class="font-sans text-meta break-words {isOwn
+      <span
+        class="block font-sans text-meta break-words {isOwn
           ? 'text-content-muted'
           : 'text-content-faint'}"
       >
         Original message unavailable
-      </p>
+      </span>
     {/if}
-  </div>
+{/snippet}
+
+{#if quote}
+  {#if onJump}
+    <!--
+      A real button, so Tab reaches it and Enter or Space activates it. It
+      wraps only the quote, and the click is not stopped: the rest of the row
+      keeps its own interactions. `aria-description` is the hint iOS gives
+      ("Shows the original message").
+    -->
+    <button
+      type="button"
+      class="mb-1.5 block w-full cursor-pointer rounded-control border-l-2 border-border pl-2 text-left text-content-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      {...HINT}
+      onclick={onJump}
+    >
+      {@render lines(quote)}
+    </button>
+  {:else}
+    <div class="mb-1.5 border-l-2 border-border pl-2 text-content-muted">
+      {@render lines(quote)}
+    </div>
+  {/if}
 {/if}

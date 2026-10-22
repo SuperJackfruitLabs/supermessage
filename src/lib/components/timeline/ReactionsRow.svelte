@@ -16,11 +16,17 @@
     item: TimelineItem;
     interactive: boolean;
     alignEnd: boolean;
+    /**
+     * Pulls the row up over the bubble's bottom edge (iOS `spacing: -8`,
+     * inset 10). Set only under an own bubble, which has a corner to tuck
+     * into; a peer block or a card keeps the plain gap.
+     */
+    overlap?: boolean;
     /** Adding or removing the reader's own reaction. */
     onToggle: (eventId: string | null, key: string) => void;
   }
 
-  let { item, interactive, alignEnd, onToggle }: Props = $props();
+  let { item, interactive, alignEnd, overlap = false, onToggle }: Props = $props();
 </script>
 
 <!--
@@ -45,11 +51,11 @@
   would just get a chip sitting too close to the text above it.
 -->
 {#if item.reactions.length > 0}
-  <div class="mt-1.5 flex flex-wrap gap-1 {alignEnd ? 'justify-end' : ''}">
+  <div class="flex flex-wrap gap-1 {overlap ? 'relative -mt-2 px-2.5' : 'mt-1.5'} {alignEnd ? 'justify-end' : ''}">
     {#each item.reactions as reaction (reaction.key)}
       {@const chipClass = reaction.byMe
         ? "reaction-chip-mine border-accent font-medium text-accent"
-        : "border-border bg-surface-sunken text-content-muted hover:border-border-strong hover:text-content"}
+        : "border-border bg-surface-raised text-content-muted hover:border-border-strong hover:text-content"}
       <!--
         `displayReactionKey` caps a reaction key's rendered length (a key
         is arbitrary sender-controlled text, not necessarily one emoji);
@@ -97,7 +103,7 @@
         aria-label={`${reaction.displayKey}, ${reaction.count} ${reaction.count === 1 ? "reaction" : "reactions"}${reaction.byMe ? ", including yours" : ""} — toggle`}
         class="rounded-pill border px-2 py-0.5 font-sans text-ui break-words transition-colors disabled:cursor-not-allowed disabled:opacity-60 {chipClass}"
       >
-        {reaction.displayKey} {reaction.count}
+        {reaction.displayKey}{#if reaction.count > 1} {reaction.count}{/if}
       </button>
     {/each}
   </div>
