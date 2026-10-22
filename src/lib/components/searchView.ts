@@ -91,3 +91,16 @@ export function createLatestOnly(): { begin(): number; isCurrent(ticket: number)
     isCurrent: (ticket) => ticket === current,
   };
 }
+
+/**
+ * Whether changing the scope should run the search again: only when a search
+ * was made (a failed one counts, so the reader can retry by changing scope)
+ * and there is still a term to run.
+ */
+export function rerunsOnScopeChange(args: {
+  changed: boolean;
+  searched: boolean;
+  term: string;
+}): boolean {
+  return args.changed && args.searched && args.term.trim() !== "";
+}

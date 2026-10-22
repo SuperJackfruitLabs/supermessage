@@ -122,6 +122,10 @@ describe("escapeClosesPanel", () => {
     expect(escapeClosesPanel({ ...base, modalDialogOpen: true })).toBe(false);
   });
 
+  it("leaves an Escape another handler already consumed", () => {
+    expect(escapeClosesPanel({ ...base, defaultPrevented: true })).toBe(false);
+  });
+
   it("does nothing in the column layout or on other keys", () => {
     expect(escapeClosesPanel({ ...base, panelIsModal: false })).toBe(false);
     expect(escapeClosesPanel({ ...base, key: "Enter" })).toBe(false);

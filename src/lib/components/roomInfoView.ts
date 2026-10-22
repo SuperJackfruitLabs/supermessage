@@ -108,6 +108,13 @@ export function escapeClosesPanel(args: {
   key: string;
   panelIsModal: boolean;
   modalDialogOpen: boolean;
+  /** Something earlier in the event (the search panel) already used this Escape. */
+  defaultPrevented?: boolean;
 }): boolean {
-  return args.panelIsModal && args.key === "Escape" && !args.modalDialogOpen;
+  return (
+    args.panelIsModal &&
+    args.key === "Escape" &&
+    !args.modalDialogOpen &&
+    !args.defaultPrevented
+  );
 }

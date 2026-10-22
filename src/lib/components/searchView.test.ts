@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createLatestOnly,
   projectSearchResults,
+  rerunsOnScopeChange,
   roomLabel,
   scopedRoomId,
   searchHint,
@@ -125,5 +126,17 @@ describe("createLatestOnly", () => {
     const second = latest.begin();
     expect(latest.isCurrent(first)).toBe(false);
     expect(latest.isCurrent(second)).toBe(true);
+  });
+});
+
+describe("rerunsOnScopeChange", () => {
+  const base = { changed: true, searched: true, term: "build" };
+  it("re-runs a search that was made", () => {
+    expect(rerunsOnScopeChange(base)).toBe(true);
+  });
+  it("does not run before a search, without a change, or without a term", () => {
+    expect(rerunsOnScopeChange({ ...base, searched: false })).toBe(false);
+    expect(rerunsOnScopeChange({ ...base, changed: false })).toBe(false);
+    expect(rerunsOnScopeChange({ ...base, term: "  " })).toBe(false);
   });
 });

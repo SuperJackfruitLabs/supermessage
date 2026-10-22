@@ -426,6 +426,7 @@
       !escapeClosesPanel({
         key: event.key,
         panelIsModal,
+        defaultPrevented: event.defaultPrevented,
         // The search panel is a modal overlay too, and handles its own Escape.
         modalDialogOpen: searchOpen || document.querySelector("dialog:modal") !== null,
       })

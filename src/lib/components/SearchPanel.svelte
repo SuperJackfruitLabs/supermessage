@@ -17,6 +17,7 @@
   import {
     createLatestOnly,
     projectSearchResults,
+    rerunsOnScopeChange,
     scopedRoomId,
     searchHint,
     type SearchScope,
@@ -81,6 +82,8 @@
       if (!latest.isCurrent(ticket)) return;
       results = [];
       failure = errorMessage(err);
+      // A failed search was still made: changing scope retries it.
+      searched = true;
     } finally {
       if (latest.isCurrent(ticket)) searching = false;
     }
@@ -88,9 +91,9 @@
 
   /** Changing the scope re-runs a search already made. */
   function setNarrowed(value: boolean): void {
-    if (narrowed === value) return;
+    const changed = narrowed !== value;
     narrowed = value;
-    if (searched && term.trim() !== "") void run();
+    if (rerunsOnScopeChange({ changed, searched, term })) void run();
   }
 
   function open(roomId: string): void {
@@ -113,7 +116,12 @@
     aria-label="Search"
     class="relative z-10 flex max-h-[70vh] w-full max-w-2xl flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-overlay"
     onkeydown={(e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        // Consumed here: the page's window handler must not also close the
+        // room-info panel underneath on this same keypress.
+        e.preventDefault();
+        onClose();
+      }
     }}
   >
     <form
@@ -147,6 +155,17 @@
             type="button"
             role="radio"
             aria-checked={narrowed === option.value}
+            tabindex={narrowed === option.value ? 0 : -1}
+            onkeydown={(e: KeyboardEvent) => {
+              if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setNarrowed(!narrowed);
+              const other = [...(e.currentTarget as HTMLElement).parentElement!.children].find(
+                (n) => n !== e.currentTarget,
+              ) as HTMLElement;
+              other.focus();
+            }}
             onclick={() => setNarrowed(option.value)}
             class="max-w-[50%] truncate rounded-control border px-3 py-1 text-ui transition-colors {narrowed ===
             option.value
