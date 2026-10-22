@@ -1815,6 +1815,57 @@ public object FfiConverterTypeMentionable: FfiConverterRustBuffer<Mentionable> {
 
 
 /**
+ * Everything that owes the reader an answer: pending decisions and
+ * invitations, each in the arrangement's newest-first order.
+ */
+data class NeedsYouInbox (
+    var `decisions`: List<RosterRow>, 
+    var `invitations`: List<RosterRow>, 
+    /**
+     * Decisions and invitations together.
+     */
+    var `count`: kotlin.UInt, 
+    /**
+     * What the tab badge shows: decisions only. Invitations have their own
+     * row, and an invitation alone must not light the badge.
+     */
+    var `badgeCount`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNeedsYouInbox: FfiConverterRustBuffer<NeedsYouInbox> {
+    override fun read(buf: ByteBuffer): NeedsYouInbox {
+        return NeedsYouInbox(
+            FfiConverterSequenceTypeRosterRow.read(buf),
+            FfiConverterSequenceTypeRosterRow.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: NeedsYouInbox) = (
+            FfiConverterSequenceTypeRosterRow.allocationSize(value.`decisions`) +
+            FfiConverterSequenceTypeRosterRow.allocationSize(value.`invitations`) +
+            FfiConverterUInt.allocationSize(value.`count`) +
+            FfiConverterUInt.allocationSize(value.`badgeCount`)
+    )
+
+    override fun write(value: NeedsYouInbox, buf: ByteBuffer) {
+            FfiConverterSequenceTypeRosterRow.write(value.`decisions`, buf)
+            FfiConverterSequenceTypeRosterRow.write(value.`invitations`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
+            FfiConverterUInt.write(value.`badgeCount`, buf)
+    }
+}
+
+
+
+/**
  * The facts [`crate::widget`] needs from one pushed event, and nothing the
  * notification itself does not already know.
  */
@@ -3010,6 +3061,80 @@ public object FfiConverterTypeRoomSummary: FfiConverterRustBuffer<RoomSummary> {
             FfiConverterOptionalULong.write(value.`lastActivityMs`, buf)
             FfiConverterOptionalTypeRuntimeDto.write(value.`runtime`, buf)
             FfiConverterTypeMembership.write(value.`membership`, buf)
+    }
+}
+
+
+
+/**
+ * What to say when a chip leaves nothing.
+ */
+data class RosterEmptyState (
+    var `title`: kotlin.String, 
+    var `description`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRosterEmptyState: FfiConverterRustBuffer<RosterEmptyState> {
+    override fun read(buf: ByteBuffer): RosterEmptyState {
+        return RosterEmptyState(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: RosterEmptyState) = (
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterString.allocationSize(value.`description`)
+    )
+
+    override fun write(value: RosterEmptyState, buf: ByteBuffer) {
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterString.write(value.`description`, buf)
+    }
+}
+
+
+
+/**
+ * One offered chip with the number of rooms it would leave.
+ */
+data class RosterFilterChip (
+    var `filter`: RosterFilter, 
+    var `title`: kotlin.String, 
+    var `count`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRosterFilterChip: FfiConverterRustBuffer<RosterFilterChip> {
+    override fun read(buf: ByteBuffer): RosterFilterChip {
+        return RosterFilterChip(
+            FfiConverterTypeRosterFilter.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: RosterFilterChip) = (
+            FfiConverterTypeRosterFilter.allocationSize(value.`filter`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterUInt.allocationSize(value.`count`)
+    )
+
+    override fun write(value: RosterFilterChip, buf: ByteBuffer) {
+            FfiConverterTypeRosterFilter.write(value.`filter`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
     }
 }
 
@@ -6221,6 +6346,89 @@ public object FfiConverterTypeRoomAffordance: FfiConverterRustBuffer<RoomAfforda
     override fun allocationSize(value: RoomAffordance) = 4UL
 
     override fun write(value: RoomAffordance, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * The status a room's header states about its agent.
+ *
+ * Not [`AgentState`]: that is read from a room's stored last activity, this
+ * adds the one live fact the header has — whether a turn is running now.
+ * It also differs from `widget::agent_state`'s lower-case "working", which is
+ * a stored step within `ACTIVE_WITHIN_MS`: a different input for a different
+ * surface.
+ */
+
+enum class RoomStatus {
+    
+    WORKING,
+    NEEDS_YOU,
+    ACTIVE,
+    IDLE,
+    QUIET;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRoomStatus: FfiConverterRustBuffer<RoomStatus> {
+    override fun read(buf: ByteBuffer) = try {
+        RoomStatus.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: RoomStatus) = 4UL
+
+    override fun write(value: RoomStatus, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Which rooms a chip keeps. Filtering keeps or drops rows; it never orders
+ * them — the arrangement above decides the order, and every filter shows a
+ * subset of it.
+ *
+ * The serialised keys are the iOS raw values, so a choice stored by an older
+ * build still reads. Only [`OFFERED_FILTERS`] are offered as chips; the other
+ * two are the views the Needs you inbox and the Agents directory are built on.
+ */
+
+enum class RosterFilter {
+    
+    ALL,
+    UNREAD,
+    AGENTS,
+    NEEDS_YOU;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRosterFilter: FfiConverterRustBuffer<RosterFilter> {
+    override fun read(buf: ByteBuffer) = try {
+        RosterFilter.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: RosterFilter) = 4UL
+
+    override fun write(value: RosterFilter, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }

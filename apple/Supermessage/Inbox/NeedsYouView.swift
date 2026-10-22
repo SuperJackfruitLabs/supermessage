@@ -15,7 +15,7 @@ struct NeedsYouView: View {
     @AppStorage("roster.showsState") private var showsState = true
     @State private var now = Date()
 
-    private var inbox: NeedsYouInbox { NeedsYouInbox.from(session.rooms.rooms, now: now) }
+    private var inbox: NeedsYouInbox { RosterArrangement.needsYouInbox(session.rooms.rooms, now: now) }
 
     var body: some View {
         List(selection: $selection) {
@@ -43,7 +43,7 @@ struct NeedsYouView: View {
         .listStyle(.inset)
         .paletteListGround()
         .overlay {
-            if inbox.isEmpty { CaughtUpView() }
+            if inbox.count == 0 { CaughtUpView() }
         }
         // A row leaving is the inbox being finished; let it be seen to go.
         .animation(.default, value: inbox)

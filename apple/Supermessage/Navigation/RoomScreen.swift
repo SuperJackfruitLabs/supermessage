@@ -78,7 +78,7 @@ struct RoomScreen: View {
     @ViewBuilder private func room(row: RoomRow) -> some View {
         let arranged = rosterRow(row)
         let describesAgent = arranged?.describesAgent ?? false
-        let status = RoomStatus.of(
+        let status = roomStatus(
             state: arranged?.state ?? RosterArrangement.state(for: row, now: now),
             describesAgent: describesAgent,
             turnInProgress: session.live.isLive && !session.live.finished)
@@ -237,7 +237,7 @@ struct StatusPill: View {
                 .symbolEffect(
                     .pulse, options: .repeating,
                     isActive: status == .working && !reduceMotion)
-            Text(status.word)
+            Text(roomStatusWord(status: status))
                 .metaFace()
                 .foregroundStyle(status == .needsYou ? Theme.signal : Theme.contentMuted)
                 .lineLimit(1)
@@ -246,7 +246,7 @@ struct StatusPill: View {
         .padding(.vertical, compact ? 1 : 3)
         .background(background, in: Capsule())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(status.word)
+        .accessibilityLabel(roomStatusWord(status: status))
     }
 
     private var dotColour: Color {
@@ -269,7 +269,7 @@ struct StatusPill: View {
 #Preview("Header statuses") {
     PreviewGround {
         VStack(spacing: 16) {
-            ForEach(RoomStatus.allCases, id: \.self) { status in
+            ForEach(([.working, .needsYou, .active, .idle, .quiet] as [RoomStatus]), id: \.self) { status in
                 RoomHeader(name: "Atlas", status: status, memberCount: nil)
             }
             RoomHeader(name: "Design review", status: nil, memberCount: 4)
@@ -281,7 +281,7 @@ struct StatusPill: View {
 #Preview("Header statuses, dark") {
     PreviewGround {
         VStack(spacing: 16) {
-            ForEach(RoomStatus.allCases, id: \.self) { status in
+            ForEach(([.working, .needsYou, .active, .idle, .quiet] as [RoomStatus]), id: \.self) { status in
                 RoomHeader(name: "Atlas", status: status, memberCount: nil)
             }
         }
