@@ -929,8 +929,10 @@ class RosterReachabilityTest {
         )
         val session = sessionOf(fake)
         val prefs = preferences()
+        var backDispatcher: androidx.activity.OnBackPressedDispatcher? = null
         val haptics = RecordingHaptics()
         compose.setContent {
+            backDispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current!!.onBackPressedDispatcher
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.ui.platform.LocalHapticFeedback provides haptics,
             ) {
@@ -956,13 +958,13 @@ class RosterReachabilityTest {
         compose.waitForIdle()
         assertEquals("!alpha:example.org", session.rooms.selectedRow?.room?.id)
 
-        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-        // sendKeyDownUpSync returns once the key is injected, not once the app
-        // has run its back callback: on API 36 the system hands Back to the
-        // app's OnBackInvokedCallback asynchronously, and waitForIdle only
-        // waits on Compose, which has nothing pending until that callback
-        // lands. On a slow emulator the assertion below ran first. Wait on the
-        // real condition, the store clearing, then let Compose settle.
+        // Back goes through the activity's OnBackPressedDispatcher, which is
+        // what the app's BackHandler registers with. An injected KEYCODE_BACK
+        // also depends on the window manager routing it to this window, and
+        // on the CI AVD (API 36, predictive back, headless) it never arrived:
+        // the room stayed open for the full 10 s wait. Key routing is the
+        // platform's, not ours; the BackHandler -> closeRoom path is.
+        compose.runOnUiThread { backDispatcher!!.onBackPressed() }
         compose.waitUntil(timeoutMillis = 10_000) { session.rooms.selectedRow == null }
         compose.waitForIdle()
 
