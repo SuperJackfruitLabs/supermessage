@@ -51,7 +51,7 @@
   ];
 
   /** A store the story fills through the real diff path: a gap forces a resync. */
-  function seededStore(source: TimelineRow[] = rows) {
+  function seededStore(source: TimelineRow[] = rows, expose?: (push: (row: TimelineRow) => void) => void) {
     let handler: ((env: DiffEnvelope<TimelineRow>) => void) | null = null;
     const noop = async () => undefined;
     const deps = {
@@ -69,6 +69,12 @@
       },
     } as unknown as TimelineStoreDeps;
     const store = createTimelineStore(deps);
+    // After the resync (seq 1), the next envelope is seq 2.
+    let seq = 1;
+    expose?.((value) => {
+      if (handler === null) throw new Error("the store is not subscribed yet");
+      handler({ channel: "timeline", subject: ROOM, seq: ++seq, ops: [{ op: "pushBack", value }] });
+    });
     // The store listens asynchronously: wait for it, then send an envelope
     // that is out of sequence, which makes the store resync from `rows`.
     // Not during render: subscribing writes state, which a render may not do.
@@ -108,6 +114,9 @@
       replyQuote: { state: "available", sender: "Atlas", excerpt: "Parent: the plan for the release.", label: null },
     },
   ];
+
+  let arrivePush: (row: TimelineRow) => void = () => {};
+  let awayPush: (row: TimelineRow) => void = () => {};
 
   const { Story } = defineMeta({ title: "Timeline/Rhythm and quiet meta", component: Timeline });
 </script>
@@ -206,6 +215,71 @@
   {#snippet template()}
     <div class="flex h-[560px] w-[760px] flex-col bg-surface">
       <Timeline roomId={ROOM} store={seededStore(jumpRows)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  A message that lands while the reader is at the newest end rises in: the row
+  gets `row-arrive`. The rows of the first fill never do. The play reads the
+  class the moment the row appears, which is before it can end.
+-->
+<Story
+  name="A new message arrives at the newest end"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const rowEls = () => [...root.querySelectorAll("[data-testid='timeline-row']")] as HTMLElement[];
+    await settled(() => (rowEls().length >= rows.length ? root : null), 3000, "the first fill");
+    if (rowEls().some((r) => r.classList.contains("row-arrive"))) throw new Error("the first fill animated");
+    arrivePush(atlas("n1", 700_000, "Promoted. Build 412 is live."));
+    const arrived = await settled(
+      () => rowEls().find((r) => r.textContent?.includes("Promoted. Build 412 is live.")),
+      3000,
+      "the new message",
+    );
+    if (!arrived.classList.contains("row-arrive")) throw new Error("the new message did not rise in");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(rows, (push) => (arrivePush = push))} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  The reader has scrolled away from the newest end: a message that lands
+  must not animate or move anything. The play waits for the jump-to-newest
+  button, appends, jumps, and checks the new row never rose.
+-->
+<Story
+  name="A message arrives while scrolled away"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const scroller = (await settled(() => root.querySelector(".timeline-scroller"), 3000, "the scroller")) as HTMLElement;
+    await settled(() => (root.textContent?.includes("Replying to the plan.") ? root : null), 3000, "the newest row");
+    // A scroll only counts as the reader's after a wheel/touch/key input.
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -400, bubbles: true }));
+    scroller.scrollTop = 0;
+    const jump = (await settled(
+      () => [...root.querySelectorAll("button")].find((b) => /newest|jump/i.test(b.getAttribute("aria-label") ?? b.textContent ?? "")),
+      3000,
+      "the jump-to-newest button",
+    )) as HTMLButtonElement;
+    awayPush(atlas("n2", 800_000, "Landed while you were away."));
+    await new Promise((r) => setTimeout(r, 200));
+    jump.click();
+    const landed = await settled(
+      () => [...root.querySelectorAll("[data-testid='timeline-row']")].find((r) => r.textContent?.includes("Landed while you were away.")),
+      3000,
+      "the new message after jumping",
+    );
+    if (landed.classList.contains("row-arrive")) throw new Error("a message animated while the reader was away");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(jumpRows, (push) => (awayPush = push))} />
     </div>
   {/snippet}
 </Story>

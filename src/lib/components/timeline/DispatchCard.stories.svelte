@@ -52,6 +52,9 @@
     field.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
+  const getAnimations = (el: HTMLElement) => el.getAnimations().length > 0;
+  const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   const sentFromCancelStory: (string | null)[] = [];
   const sentFromTrimStory: (string | null)[] = [];
 
@@ -292,7 +295,13 @@
   name="Answered on this device"
   play={async ({ canvasElement }) => {
     await clickApprove(canvasElement as HTMLElement);
-    await settled(() => canvasElement.querySelector("[data-testid='decision-receipt']"));
+    const receipt = (await settled(() =>
+      canvasElement.querySelector("[data-testid='decision-receipt']"),
+    )) as HTMLElement;
+    // The receipt settles in (opacity + scale, 250ms) unless the reader asked
+    // for reduced motion, in which case it just appears.
+    const running = receipt.getAnimations().length > 0;
+    if (running === reducedMotion()) throw new Error(`receipt animation running=${running} with reduced motion=${reducedMotion()}`);
   }}
 >
   {#snippet template()}
@@ -300,6 +309,31 @@
         <DispatchCard
           view={dispatchCardGate}
           decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Opening the reasoning fades its text in (opacity only; the snapshot gate renders without motion). -->
+<Story
+  name="Reasoning opened"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const details = (await settled(() => root.querySelector("details"))) as HTMLDetailsElement;
+    details.open = true;
+    const body = (await settled(() => root.querySelector("details .reasoning-body"))) as HTMLElement;
+    const fading = getAnimations(body);
+    if (fading === reducedMotion()) throw new Error(`reasoning fade running=${fading} with reduced motion=${reducedMotion()}`);
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardWithReasoning}
+          decision={null}
           {item}
           onDecide={() => Promise.resolve(true)}
           {formatTime}

@@ -279,7 +279,8 @@
   //      gone" unreachable — layer 1 only covers the click paths this file
   //      knows about today.
 
-  import { onDestroy, tick, type Snippet } from "svelte";
+  import { onDestroy, tick, untrack, type Snippet } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import { VList, type VListHandle } from "virtua/svelte";
   import Shimmer from "./ai/Shimmer.svelte";
   import { errorMessage } from "$lib/errorMessage";
@@ -315,6 +316,7 @@
   import UndecryptableGroup from "./timeline/UndecryptableGroup.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
+  import { arrivedKeys, isArrivingRender } from "./timeline/arrivals";
   import { HIGHLIGHT_MS, parentIndex, rowEdgeClass } from "./timeline/rowMeta";
   import DeleteConfirm from "./timeline/DeleteConfirm.svelte";
   import UnreadMarker from "./timeline/UnreadMarker.svelte";
@@ -429,6 +431,15 @@
   let previousRowKeys: string[] = [];
 
   /**
+   * Message rows that are rising in (`arrivals.ts`). A plain set, grown by
+   * the derivation below and shrunk when a row's animation ends, so a later
+   * derivation does not cut a still-running animation short.
+   */
+  const risingKeys = new Set<string>();
+  /** Rows whose rise has finished; keeps a virtua remount from replaying it. */
+  const arrivedDone = new SvelteSet<string>();
+
+  /**
    * The rows `VList` renders, **and** the `shift` value that describes how
    * they changed — derived together, in one pass, on purpose.
    *
@@ -451,11 +462,25 @@
       rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
     );
     const shift = shouldShiftNow(shouldShift(previousRowKeys, keys, dividers), isScrollable());
+    const messageKeys = new Set(
+      rows.filter((row) => row.type === "item" && isArrivingRender(row.view.render)).map((row) => row.key),
+    );
+    // `untrack`: the reader scrolling to or from the newest end must not
+    // re-run this derivation, only a change of rows should.
+    const following = untrack(() => followBottom);
+    for (const key of arrivedKeys(previousRowKeys, keys, following, (k) => messageKeys.has(k))) {
+      risingKeys.add(key);
+    }
     previousRowKeys = keys;
-    return { rows, shift };
+    return { rows, shift, rising: new Set(risingKeys) };
   });
 
   let displayRows = $derived(view.rows);
+
+  function riseEnded(key: string) {
+    risingKeys.delete(key);
+    arrivedDone.add(key);
+  }
 
   /**
    * Whether the wait for this room has outlasted a flinch.
@@ -1411,7 +1436,10 @@
         -->
         <div
           data-testid="timeline-row"
-          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans transition-colors duration-700 motion-reduce:transition-none {row.key === highlightedKey ? 'bg-accent-soft' : 'bg-surface'} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
+          onanimationend={(e) => {
+            if (e.target === e.currentTarget) riseEnded(row.key);
+          }}
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans transition-colors motion-reduce:transition-none {row.key === highlightedKey ? 'bg-accent-soft duration-150' : 'bg-surface duration-[800ms]'} {view.rising.has(row.key) && !arrivedDone.has(row.key) ? 'row-arrive' : ''} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
             index,
             displayRows.length,
           )}"
@@ -1828,6 +1856,25 @@
 </div>
 
 <style>
+  /*
+   * A new message rises in (iOS `TimelineCollectionView` `:1180-1201`):
+   * opacity and transform only, never height — a height change inside
+   * `VList` would break virtua's measurements. Gated on the media query as
+   * well as the global reduced-motion rule in `app.css`.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    .row-arrive {
+      animation: row-arrive 380ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+    }
+  }
+
+  @keyframes row-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+  }
+
   /*
    * A short room sits at the bottom, against the composer, the way a
    * conversation does — not at the top of the pane with the field between

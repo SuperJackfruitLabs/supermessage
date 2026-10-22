@@ -7,8 +7,25 @@
   } from "$lib/ipc";
   import type { AnsweredDecision } from "$lib/stores/answeredDecisions.svelte";
   import { answeredWhen, arrangeOptions, optionRole, receiptOutcome } from "./decisionView";
+  import { cubicOut } from "svelte/easing";
   import InlineFailure from "./InlineFailure.svelte";
   import RequestChangesDialog from "./RequestChangesDialog.svelte";
+
+  /**
+   * The receipt settling in once an answer has landed (iOS
+   * `DecisionCard.swift:191-194`): opacity plus a 0.97 scale from the top
+   * edge, 250ms. Transform and opacity only, so the row's height is never
+   * animated. Zero under reduced motion.
+   */
+  function receiptIn(node: Element) {
+    const reduce =
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    return {
+      duration: reduce ? 0 : 250,
+      easing: cubicOut,
+      css: (t: number) => `opacity: ${t}; transform: scale(${0.97 + 0.03 * t}); transform-origin: top;`,
+    };
+  }
 
   /**
    * The dispatch card — this client's signature element.
@@ -218,7 +235,7 @@
         Reasoning
       </summary>
       <p
-        class="selectable mt-2 mb-0 break-words whitespace-pre-wrap text-meta text-content-muted"
+        class="reasoning-body selectable mt-2 mb-0 break-words whitespace-pre-wrap text-meta text-content-muted"
       >
         {view.view.reasoning}
       </p>
@@ -277,7 +294,7 @@
     never marks a receipt. It is set only after the send landed; the room's
     own outcome (above) replaces it once the board confirms.
   -->
-  <div class="border-t border-border px-3 py-2" data-testid="decision-receipt">
+  <div class="border-t border-border px-3 py-2" data-testid="decision-receipt" in:receiptIn>
     <p class="selectable break-words text-content-muted">{decision.prompt}</p>
     <p class="mt-1 font-sans text-label font-medium break-words text-ok">
       ✓ {receiptOutcome(answered.option)} · {answeredWhen(answered.atMs, Date.now())}
@@ -420,6 +437,21 @@
     transition:
       background-color var(--duration-quick),
       border-color var(--duration-quick);
+  }
+
+  /* The reasoning fades in as the disclosure opens (iOS
+     `WhatIDidFooter.swift:25-26`). Opacity only: `<details>` has no height
+     animation to run, and none is wanted inside `VList`. */
+  @media (prefers-reduced-motion: no-preference) {
+    details[open] > .reasoning-body {
+      animation: reasoning-in 200ms var(--ease-standard);
+    }
+  }
+
+  @keyframes reasoning-in {
+    from {
+      opacity: 0;
+    }
   }
 
   .dispatch-card-pending {
