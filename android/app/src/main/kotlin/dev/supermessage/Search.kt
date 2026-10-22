@@ -2,6 +2,8 @@ package dev.supermessage
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -122,11 +124,16 @@ fun SearchPanel(
     var narrowed by remember { mutableStateOf(true) }
     val coroutineScope = rememberCoroutineScope()
 
+    // Which search is the newest. Changing the scope while one is in flight
+    // starts another; an older answer arriving after it must not overwrite it.
+    val latest = remember { intArrayOf(0) }
+
     suspend fun run() {
         val query = term.trim()
         if (query.isEmpty()) return
+        val mine = ++latest[0]
         state = SearchState.Searching(query)
-        state = try {
+        val outcome: SearchState = try {
             val results = search(query, if (narrowed) scope?.roomId else null)
             if (results.isEmpty()) SearchState.Empty(query) else SearchState.Found(results)
         } catch (e: CancellationException) {
@@ -136,6 +143,7 @@ fun SearchPanel(
         } catch (e: Exception) {
             SearchState.Failed(query, "Couldn't search.")
         }
+        if (mine == latest[0]) state = outcome
     }
 
     fun rerunIfAlreadyAsked() {
@@ -298,7 +306,7 @@ private fun ScopeChip(label: String, selected: Boolean, testTag: String, onClick
             .testTag(testTag)
             .clip(RoundedCornerShape(16.dp))
             .background(background)
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp)
             .wrapContentSize(),
     ) {

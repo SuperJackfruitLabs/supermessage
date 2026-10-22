@@ -229,4 +229,64 @@ class SearchTest {
 
         assertEquals("switching to All rooms re-ran unscoped", "null", lastRoomId)
     }
+
+    /** A scope change after a failure asks again, in the new scope. */
+    @Test
+    fun changingTheScopeReRunsAFailedSearch() {
+        val asked = mutableListOf<String?>()
+        compose.setContent {
+            SearchPanel(
+                scope = SearchPanelScope(roomId = "!ops:example.org", name = "Ops Room"),
+                onOpen = {},
+                onClose = {},
+                search = { _, roomId ->
+                    asked += roomId
+                    if (roomId != null) throw FfiException.Network("") else emptyList()
+                },
+            )
+        }
+        compose.onNodeWithTag("search-field").performTextInput("pager")
+        compose.onNodeWithTag("search-field").performImeAction()
+        compose.waitForIdle()
+        compose.onNodeWithTag("search-failed").assertIsDisplayed()
+
+        compose.onNodeWithTag("search-scope-all").performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf("!ops:example.org", null), asked)
+        compose.onNodeWithTag("search-empty").assertIsDisplayed()
+        compose.onNodeWithTag("search-failed").assertDoesNotExist()
+    }
+
+    /** The older scope's slow answer must not replace the newer scope's. */
+    @Test
+    fun aStaleAnswerDoesNotOverwriteTheNewerScope() {
+        val narrow = CompletableDeferred<List<SearchResultDto>>()
+        compose.setContent {
+            SearchPanel(
+                scope = SearchPanelScope(roomId = "!ops:example.org", name = "Ops Room"),
+                onOpen = {},
+                onClose = {},
+                search = { _, roomId ->
+                    if (roomId != null) narrow.await()
+                    else listOf(hit("wide", body = "from every room", timestampMs = 1_000uL))
+                },
+            )
+        }
+        compose.onNodeWithTag("search-field").performTextInput("pager")
+        compose.onNodeWithTag("search-field").performImeAction()
+        compose.waitForIdle()
+        compose.onNodeWithTag("search-loading").assertIsDisplayed()
+
+        compose.onNodeWithTag("search-scope-all").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("search-result-wide").assertIsDisplayed()
+
+        // The narrowed search finally answers, with nothing.
+        narrow.complete(emptyList())
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("search-result-wide").assertIsDisplayed()
+        compose.onNodeWithTag("search-empty").assertDoesNotExist()
+    }
 }

@@ -4,10 +4,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -29,6 +33,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_core.AccountDto
@@ -76,11 +81,9 @@ class RosterReachabilityTest {
         Session(client = CoreClient(core = core, dispatcher = dispatcher), scope = CoroutineScope(Dispatchers.Unconfined))
 
     /** A `RosterPreferences` over a real, throwaway `DataStore` — no `Context` needed. */
-    private fun preferences(showsInvitations: Boolean = false): RosterPreferences {
+    private fun preferences(): RosterPreferences {
         val file = File.createTempFile("roster-reachability", ".preferences_pb")
-        val prefs = RosterPreferences(PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.Unconfined)) { file })
-        if (showsInvitations) runBlocking { prefs.setShowsInvitations(true) }
-        return prefs
+        return RosterPreferences(PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.Unconfined)) { file })
     }
 
     // roomName and identityName default to the same string, so every
@@ -160,7 +163,7 @@ class RosterReachabilityTest {
             roomInviterResult = { "@cody:example.org" },
         )
         val session = sessionOf(fake)
-        val prefs = preferences(showsInvitations = true)
+        val prefs = preferences()
 
         compose.setContent {
             // Width is required — it is what `paneCountFor` reads, so a phone
@@ -181,6 +184,8 @@ class RosterReachabilityTest {
         // on screen depends on the device's height. These two passed on a
         // 2400px phone and failed at 1280px — the same layout-luck dependency
         // that cost three CI round-trips in RoomInfoTest.
+        compose.onNodeWithTag("invitations-row").performClick()
+        compose.waitForIdle()
         compose.onNodeWithText("Ops Room").performScrollTo().assertIsDisplayed()
 
         compose.onNodeWithTag("roster-row").performClick()
@@ -216,7 +221,7 @@ class RosterReachabilityTest {
             roomInviterResult = { null },
         )
         val session = sessionOf(fake)
-        val prefs = preferences(showsInvitations = true)
+        val prefs = preferences()
 
         compose.setContent {
             // Width is required — it is what `paneCountFor` reads, so a phone
@@ -238,6 +243,8 @@ class RosterReachabilityTest {
         // on screen depends on the device's height. These two passed on a
         // 2400px phone and failed at 1280px — the same layout-luck dependency
         // that cost three CI round-trips in RoomInfoTest.
+        compose.onNodeWithTag("invitations-row").performClick()
+        compose.waitForIdle()
         compose.onNodeWithText("Workspace").performScrollTo().assertIsDisplayed()
 
         compose.onNodeWithTag("roster-row").performClick()
@@ -324,12 +331,14 @@ class RosterReachabilityTest {
             roomInfoResult = { infoOf(it, 4uL) },
         )
         val session = sessionOf(fake)
-        val prefs = preferences(showsInvitations = true)
+        val prefs = preferences()
         compose.setContent {
             Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
                 AppRoot(session = session, prefs = prefs)
             }
         }
+        compose.waitForIdle()
+        compose.onNodeWithTag("invitations-row").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Ops Room").performScrollTo().performClick()
         compose.waitForIdle()
@@ -633,6 +642,130 @@ class RosterReachabilityTest {
         compose.onNodeWithTag("reaction-👍").assertExists()
     }
 
+    private fun spaceOf(id: String, name: String) = SpaceSummary(
+        id = id, name = name, avatarUrl = null, childCount = 3uL, membership = Membership.JOINED,
+        identity = RoomIdentity(glyph = null, name = name, role = null, initial = name.take(1)),
+    )
+
+    @Test
+    fun theSpacesMenuFiltersTheRosterThroughTheCore() {
+        val fake = FakeCore(spacesListResult = { listOf(spaceOf("!ops:x", "Ops")) })
+        val session = sessionOf(fake)
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = preferences())
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("space-menu").performClick()
+        compose.onNodeWithTag("space-!ops:x").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf<String?>("!ops:x"), fake.spaceSelected)
+    }
+
+    /** Opened with a room selected, search offers that room, narrowed (`SplitShell.swift:121-127`). */
+    @Test
+    fun searchOpenedFromARoomOffersThatRoom() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Atlas"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+        )
+        val session = sessionOf(fake)
+        compose.setContent {
+            // Two panes: the roster stays on screen beside the open room.
+            Box(Modifier.requiredWidth(800.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = preferences())
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Atlas").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("roster-open-search").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("search-scope-room").assertTextEquals("Atlas").assertIsSelected()
+    }
+
+    /** With nothing open, search offers no scope at all. */
+    @Test
+    fun searchOpenedWithNoRoomOffersNoScope() {
+        val session = sessionOf(FakeCore())
+        compose.setContent {
+            Box(Modifier.requiredWidth(800.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = preferences())
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("roster-open-search").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("search-field").assertIsDisplayed()
+        compose.onAllNodesWithTag("search-scope-room").assertCountEquals(0)
+    }
+
+    /** O4: one connection line, under the roster title (like iOS). */
+    @Test
+    fun theConnectionLineSitsUnderTheRosterTitle() {
+        val fake = FakeCore()
+        val session = sessionOf(fake)
+        session.connection.apply(ConnectionState("offline", null))
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = preferences())
+            }
+        }
+        compose.waitForIdle()
+        compose.onNode(
+            androidx.compose.ui.test.hasTestTag("connection-bar") and
+                androidx.compose.ui.test.hasAnyDescendant(androidx.compose.ui.test.hasText("Offline")),
+        ).assertIsDisplayed()
+        val titleBottom = compose.onNodeWithTag("roster-title").fetchSemanticsNode().boundsInRoot.bottom
+        val barTop = compose.onNodeWithTag("connection-bar").fetchSemanticsNode().boundsInRoot.top
+        assertTrue("bar top $barTop must be at or below the title bottom $titleBottom", barTop >= titleBottom)
+    }
+
+    @Test
+    fun noConnectionLineWhenLive() {
+        val session = sessionOf(FakeCore())
+        session.connection.apply(ConnectionState("live", null))
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = preferences())
+            }
+        }
+        compose.waitForIdle()
+        compose.onAllNodesWithTag("connection-bar").assertCountEquals(0)
+    }
+
+    /** The open state is not stored (`RoomListView.swift:27-30`): a fresh start finds it closed. */
+    @Test
+    fun invitationsOpenAfterRestartAreClosed() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(invitationRow())) },
+            roomInviterResult = { null },
+        )
+        val session = sessionOf(fake)
+        val file = File.createTempFile("roster-restart", ".preferences_pb")
+        val store = PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.Unconfined)) { file }
+        var generation by androidx.compose.runtime.mutableStateOf(0)
+        compose.setContent {
+            androidx.compose.runtime.key(generation) {
+                val prefs = androidx.compose.runtime.remember { RosterPreferences(store) }
+                Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                    AppRoot(session = session, prefs = prefs)
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("invitations-row").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Ops Room").assertIsDisplayed()
+
+        generation++ // a fresh AppRoot over the same store
+        compose.waitForIdle()
+        compose.onNodeWithTag("invitations-row").assertIsDisplayed()
+        compose.onNodeWithText("Ops Room").assertDoesNotExist()
+    }
+
     /**
      * A [CoreInterface] tailored to what this file drives, in the house
      * pattern [NewRoomTest] and [InvitationTest] already set: every method
@@ -660,6 +793,11 @@ class RosterReachabilityTest {
         }
 
         val roomInviterCalls = mutableListOf<String>()
+        val spaceSelected = mutableListOf<String?>()
+
+        override fun spaceSelect(spaceId: String?) {
+            spaceSelected += spaceId
+        }
         val deleted = mutableListOf<Pair<String, String>>()
 
         // The pane paginates when a short timeline is fully visible; "hit the start".

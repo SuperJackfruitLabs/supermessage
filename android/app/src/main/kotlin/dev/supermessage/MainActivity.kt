@@ -176,23 +176,12 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
         NewRecoveryKeyDialog(key = key, onDone = session::clearNewRecoveryKey)
     }
 
-    // The roster's own three remembered choices — see
-    // RosterPreferences for why each defaults the way it does.
-    val rosterView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
-    val showsInvitations by prefs.showsInvitations.collectAsStateWithLifecycle(initialValue = false)
-    val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
-
     // Reactive, not a one-time snapshot: collectAsStateWithLifecycle
     // is what makes a later RoomsDiff actually redraw this
     // tree — see Roster.kt's own KDoc for the failure mode a
     // plain `.value` read here would reproduce.
     val rooms by session.rooms.rooms.collectAsStateWithLifecycle()
     val avatarCache by session.avatars.cache.collectAsStateWithLifecycle()
-
-    // Collected so the bar redraws; whether to show it is derived from the
-    // collected state below, never read off the store.
-    val connectionState by session.connection.state.collectAsStateWithLifecycle()
-    val connectionMessage by session.connection.message.collectAsStateWithLifecycle()
 
     // Re-read every 30 seconds so a roster that said "3m" says
     // "4m" without anything else having changed — the clock
@@ -205,89 +194,24 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
         }
     }
 
-    val sections = remember(rooms, rosterView, showsInvitations, now) {
-        RosterArrangement.sections(
-            rows = rooms, view = rosterView, showsInvitations = showsInvitations, now = now,
-        )
-    }
-    val hiddenInvitations = remember(rooms, showsInvitations) {
-        RosterArrangement.hiddenInvitations(rows = rooms, showsInvitations = showsInvitations)
-    }
-
     RootScaffold(
         phase = phase,
         listPaneContent = { _, openDetail, openInfo ->
-            Column(Modifier.fillMaxSize()) {
-                ConnectionBar(
-                    state = connectionState,
-                    message = connectionMessage,
-                    worthShowing = connectionState != Connection.Live,
-                )
-                // Search and the account panel share the
-                // Extra pane with room info, so both are
-                // reached the same way room info already is:
-                // set which panel `extraPaneContent` below
-                // should show, then ask RootScaffold to open
-                // it. Plain text buttons, not icons — this
-                // app declares no material-icons-extended
-                // dependency, and these two are the whole
-                // affordance for now.
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    // The new-room affordance: unreachable until this task
-                    // (see AppRoot's own KDoc) — `NewRoomPanel` shared the
-                    // Extra pane's ExtraPanel machinery already built for
-                    // room info/search/account, but nothing ever set
-                    // `extraPanel` to show it.
-                    TextButton(
-                        onClick = { extraPanel = ExtraPanel.NewRoom; openInfo() },
-                        modifier = Modifier.testTag("roster-open-new-room"),
-                    ) { Text("New room") }
-                    TextButton(
-                        onClick = { extraPanel = ExtraPanel.Search; openInfo() },
-                        modifier = Modifier.testTag("roster-open-search"),
-                    ) { Text("Search") }
-                    TextButton(
-                        onClick = { extraPanel = ExtraPanel.Account; openInfo() },
-                        modifier = Modifier.testTag("roster-open-account"),
-                    ) { Text("Account") }
-                }
-
-                Roster(
-                    sections = sections,
-                    hiddenInvitations = hiddenInvitations,
-                    now = now,
-                    avatarUri = { roomId -> avatarCache[roomId] },
-                    showsState = showsState,
-                    hidesHost = rosterView == RosterChoice.MACHINE,
-                    onOpenRoom = { roomId ->
-                        session.rooms.select(roomId)
-                        scope.launch { session.open(roomId) }
-                        openDetail()
-                    },
-                    // A dead affordance from A1 until Task 2:
-                    // nothing threaded the tapped room any
-                    // further, because the info pane itself was
-                    // still RootScaffold's default placeholder.
-                    // `extraPanel` is what `extraPaneContent`
-                    // below reads to know which room it is about.
-                    onOpenInfo = { roomId ->
-                        extraPanel = ExtraPanel.RoomInfo(roomId)
-                        openInfo()
-                    },
-                    onLoadAvatar = { roomId -> session.avatars.load(roomId) },
-                    // The other half of this task: the roster already says
-                    // out loud that invitations are being withheld (see
-                    // Roster.kt's own KDoc on this parameter) — this is what
-                    // lets tapping that admission actually do something
-                    // about it, rather than only ever naming a count nobody
-                    // can act on.
-                    onRevealInvitations = { scope.launch { prefs.setShowsInvitations(true) } },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-            }
+            // Search and the account panel share the Extra pane with room
+            // info: set which panel `extraPaneContent` below should show, then
+            // ask RootScaffold to open it.
+            RosterPane(
+                session = session,
+                prefs = prefs,
+                rooms = rooms,
+                avatarCache = avatarCache,
+                now = now,
+                openDetail = openDetail,
+                openPanel = { panel ->
+                    extraPanel = panel
+                    openInfo()
+                },
+            )
         },
         detailPaneContent = { _, openInfo ->
             RoomPane(
@@ -343,9 +267,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             onLeaveRoom = { session.leaveRoom(panel.roomId) },
                         )
 
-                    ExtraPanel.Search ->
+                    is ExtraPanel.Search ->
                         SearchPanel(
-                            scope = null,
+                            scope = panel.scope,
                             onOpen = { roomId ->
                                 session.rooms.select(roomId)
                                 scope.launch { session.open(roomId) }
@@ -429,6 +353,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
 internal sealed class ExtraPanel {
     object NewRoom : ExtraPanel()
     data class RoomInfo(val roomId: String) : ExtraPanel()
-    object Search : ExtraPanel()
+    /** [scope] is the room it was opened from, if any: search offers it, narrowed. */
+    data class Search(val scope: SearchPanelScope?) : ExtraPanel()
     object Account : ExtraPanel()
 }

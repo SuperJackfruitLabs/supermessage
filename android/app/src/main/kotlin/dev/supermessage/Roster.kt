@@ -8,6 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.RelativeTime
 import java.time.Instant
+import uniffi.supermessage_core.RosterRow
 import uniffi.supermessage_core.RosterSection
 
 /**
@@ -28,7 +36,7 @@ import uniffi.supermessage_core.RosterSection
  * [RoomRow] per entry.
  *
  * **This composable parses nothing and decides nothing.** [sections] and
- * [hiddenInvitations] arrive already arranged — by
+ * [invitations] arrive already arranged — by
  * `dev.supermessage.kit.RosterArrangement`, from the caller (`MainActivity`'s
  * `listPaneContent`) — and [now] arrives already ticking from that same
  * caller's own `LaunchedEffect`. Nothing here sorts, filters, groups, or
@@ -56,7 +64,9 @@ import uniffi.supermessage_core.RosterSection
 @Composable
 fun Roster(
     sections: List<RosterSection>,
-    hiddenInvitations: Int,
+    invitations: List<RosterRow>,
+    invitationsOpen: Boolean,
+    onToggleInvitations: () -> Unit,
     now: Instant,
     avatarUri: (roomId: String) -> String?,
     showsState: Boolean = true,
@@ -64,37 +74,47 @@ fun Roster(
     onOpenRoom: (roomId: String) -> Unit = {},
     onOpenInfo: (roomId: String) -> Unit = {},
     onLoadAvatar: suspend (roomId: String) -> Unit = {},
-    onRevealInvitations: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    @Composable
+    fun RosterEntry(entry: RosterRow) {
+        val roomId = entry.row.room.id
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = "Open ${entry.row.identity.name}") { onOpenRoom(roomId) }
+                .padding(horizontal = 16.dp)
+                .testTag("roster-row"),
+        ) {
+            RoomRow(
+                row = entry.row,
+                avatarUri = avatarUri(roomId),
+                state = entry.state,
+                `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
+                showsState = showsState,
+                hidesHost = hidesHost,
+                describesAgent = entry.describesAgent,
+                onOpenInfo = { onOpenInfo(roomId) },
+            )
+        }
+
+        // Mirrors RoomListView.swift's `.task { await session.avatars.load(...) }`
+        // on every appearance — including a row that scrolls back
+        // into view, which is exactly the case the avatar cache's
+        // own KDoc describes going stale without.
+        LaunchedEffect(roomId) { onLoadAvatar(roomId) }
+    }
+
     LazyColumn(modifier = modifier.testTag("roster")) {
-        // Admits to what is being withheld, the same rule
-        // `RoomListView.swift`'s toolbar menu states out loud: hidden must
-        // never mean gone silently, so a nonzero count always says so
-        // somewhere on screen, not only in a menu a reader has to open.
-        //
-        // Tapping it is the whole reveal affordance: the only thing this
-        // banner is withholding is `showsInvitations` itself, and a banner
-        // that only ever *names* what it hides without a way to ask for it
-        // back would repeat the defect it exists to call out (see
-        // MainActivity's own `onRevealInvitations` KDoc for where this
-        // leads — `prefs.setShowsInvitations(true)`).
-        if (hiddenInvitations > 0) {
-            item(key = "hidden-invitations") {
-                Text(
-                    if (hiddenInvitations == 1) {
-                        "1 invitation hidden"
-                    } else {
-                        "$hiddenInvitations invitations hidden"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClickLabel = "Show invitations", onClick = onRevealInvitations)
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .testTag("hidden-invitations"),
-                )
+        // Invitations are one row that opens in place (`RoomListView.swift:122-136`),
+        // not a preference: the core's sections never carry them, and the open
+        // state is deliberately not remembered.
+        if (invitations.isNotEmpty()) {
+            item(key = "invitations-row") {
+                InvitationsRow(count = invitations.size, open = invitationsOpen, onToggle = onToggleInvitations)
+            }
+            if (invitationsOpen) {
+                items(invitations, key = { "invitation-${it.row.room.id}" }) { entry -> RosterEntry(entry) }
             }
         }
 
@@ -106,34 +126,43 @@ fun Roster(
                 }
             }
 
-            items(section.rows, key = { it.row.room.id }) { entry ->
-                val roomId = entry.row.room.id
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClickLabel = "Open ${entry.row.identity.name}") { onOpenRoom(roomId) }
-                        .padding(horizontal = 16.dp)
-                        .testTag("roster-row"),
-                ) {
-                    RoomRow(
-                        row = entry.row,
-                        avatarUri = avatarUri(roomId),
-                        state = entry.state,
-                        `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
-                        showsState = showsState,
-                        hidesHost = hidesHost,
-                        describesAgent = entry.describesAgent,
-                        onOpenInfo = { onOpenInfo(roomId) },
-                    )
-                }
-
-                // Mirrors RoomListView.swift's `.task { await session.avatars.load(...) }`
-                // on every appearance — including a row that scrolls back
-                // into view, which is exactly the case the avatar cache's
-                // own KDoc describes going stale without.
-                LaunchedEffect(roomId) { onLoadAvatar(roomId) }
-            }
+            items(section.rows, key = { it.row.room.id }) { entry -> RosterEntry(entry) }
         }
+    }
+}
+
+/** "1 invitation" or "N invitations" (`RoomListView.swift:355-390`). */
+internal fun invitationsLabel(count: Int): String = if (count == 1) "1 invitation" else "$count invitations"
+
+/** The envelope, the count and a chevron that turns over when open. */
+@Composable
+internal fun InvitationsRow(count: Int, open: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = if (open) "Hides them" else "Shows them", onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .testTag("invitations-row"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Email,
+            contentDescription = null,
+            tint = SupermessageTheme.colors.accent,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            invitationsLabel(count),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = null,
+            tint = SupermessageTheme.colors.contentMuted,
+            modifier = Modifier.size(20.dp).rotate(if (open) 180f else 0f),
+        )
     }
 }
 
