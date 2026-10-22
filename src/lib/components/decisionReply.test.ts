@@ -6,7 +6,7 @@ const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
-import { sendDecisionReply } from "./decisionReply";
+import { answerDecision, sendDecisionReply } from "./decisionReply";
 
 const gate = {
   subject: "gate_4e8b",
@@ -48,5 +48,19 @@ describe("dispatch-card answers", () => {
     await expect(sendDecisionReply("!room:example.org", "$gate-event", gate, "approve")).rejects.toThrow("room changed");
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(invoke.mock.calls[0][0]).toBe("send_gate_decision");
+  });
+});
+
+describe("answerDecision", () => {
+  it("answerDecisionReportsSuccess", async () => {
+    await expect(answerDecision("!room:example.org", "$gate-event", gate, "approve")).resolves.toBe(true);
+  });
+
+  it("answerDecisionReportsFailure", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    invoke.mockRejectedValueOnce(new Error("offline"));
+    await expect(answerDecision("!room:example.org", "$gate-event", gate, "approve")).resolves.toBe(false);
+    expect(log).toHaveBeenCalledTimes(1);
+    log.mockRestore();
   });
 });

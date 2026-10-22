@@ -283,7 +283,7 @@
   import { VList, type VListHandle } from "virtua/svelte";
   import Shimmer from "./ai/Shimmer.svelte";
   import { mediaDownload, type CustomEventDecision } from "$lib/ipc";
-  import { sendDecisionReply } from "./decisionReply";
+  import { answerDecision } from "./decisionReply";
   import { peerColorVar } from "$lib/peerColor";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
@@ -975,10 +975,8 @@
   }
 
   /** Gate answers carry the core's subject and the Matrix event address. */
-  function onDecide(eventId: string | null, decision: CustomEventDecision, optionId: string): void {
-    void sendDecisionReply(roomId, eventId, decision, optionId).catch((err: unknown) => {
-      console.error("failed to send a decision", { eventId, optionId, err });
-    });
+  function onDecide(eventId: string | null, decision: CustomEventDecision, optionId: string): Promise<boolean> {
+    return answerDecision(roomId, eventId, decision, optionId);
   }
 
   /**
