@@ -10,7 +10,9 @@
 
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
+  import { markFreshSignIn } from "$lib/stores/freshSignIn";
   import type { CoreError } from "$lib/ipc";
+  import { loginMessage } from "./loginMessage";
 
   let homeserver = $state("https://id.agentpod.dev");
   let username = $state("");
@@ -22,23 +24,6 @@
     !submitting && homeserver.trim() !== "" && username.trim() !== "" && password !== "",
   );
 
-  /** Maps a `CoreError.kind` to copy a user can act on, never the raw message. */
-  function messageFor(err: CoreError): string {
-    switch (err.kind) {
-      case "auth":
-        return "Incorrect username or password.";
-      case "network":
-        return "Could not reach the homeserver. Check the address and your connection.";
-      case "store":
-        // A missing/locked OS keyring or a saved store that will not open
-        // (left from an earlier install, say) — a problem on this machine,
-        // not the server and not the password. Say so, then the core's words.
-        return `Supermessage could not open what it saved on this computer, so signing in cannot finish. ${err.message}`;
-      default:
-        return err.message;
-    }
-  }
-
   async function handleSubmit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (!canSubmit) return;
@@ -47,9 +32,11 @@
     errorMessage = null;
     try {
       await roomsStore.login(homeserver.trim(), username.trim(), password);
+      // The main page sets recovery up once it mounts; see `freshSignIn.ts`.
+      markFreshSignIn();
       await goto("/");
     } catch (err) {
-      errorMessage = messageFor(err as CoreError);
+      errorMessage = loginMessage(err as CoreError);
     } finally {
       submitting = false;
     }

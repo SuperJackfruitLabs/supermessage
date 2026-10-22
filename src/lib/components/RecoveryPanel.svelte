@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { keyToShow } from "$lib/recoveryKey";
+
   // The key that gets a conversation back.
   //
   // Room keys live in this device's encrypted store. Without recovery, a lost
@@ -20,13 +23,17 @@
    */
   export interface Props {
     state: "enabled" | "disabled" | "incomplete" | "unknown";
-    onEnable: () => Promise<string>;
+    /**
+     * A key that was just created (recovery set up at sign-in). When set, the
+     * panel opens on the "shown once" screen.
+     */
+    initialKey?: string | null;
     onRecover: (key: string) => Promise<void>;
     onReset: (password: string) => Promise<string>;
     onClose: () => void;
   }
 
-  let { state: recovery, onEnable, onRecover, onReset, onClose }: Props = $props();
+  let { state: recovery, initialKey = null, onRecover, onReset, onClose }: Props = $props();
 
   let busy = $state(false);
   let resetting = $state(false);
@@ -41,21 +48,13 @@
    * stored it.
    */
   let freshKey = $state<string | null>(null);
+  // Adopts a key on mount and whenever one arrives later while the panel is
+  // open (`ensureRecovery` can finish after the reader opened it).
+  $effect(() => {
+    freshKey = keyToShow(untrack(() => freshKey), initialKey);
+  });
   let copied = $state(false);
   let entered = $state("");
-
-  async function enable(): Promise<void> {
-    if (busy) return;
-    busy = true;
-    failure = null;
-    try {
-      freshKey = await onEnable();
-    } catch (err) {
-      failure = err instanceof Error ? err.message : String(err);
-    } finally {
-      busy = false;
-    }
-  }
 
   /**
    * Throw the old identity away and start again.
@@ -193,7 +192,7 @@
         <button
           type="submit"
           disabled={busy || entered.trim() === ""}
-          class="self-start rounded-control bg-accent px-3 py-2 text-ui text-on-accent transition-colors disabled:opacity-50"
+          class="self-start rounded-control bg-accent px-3 py-2 text-ui text-accent-content transition-colors disabled:opacity-50"
         >
           {busy ? "Restoring…" : "Restore"}
         </button>
@@ -238,7 +237,7 @@
             <button
               type="submit"
               disabled={busy || password === ""}
-              class="self-start rounded-control bg-danger px-3 py-2 text-ui text-on-accent transition-colors disabled:opacity-50"
+              class="self-start rounded-control bg-danger px-3 py-2 text-ui text-accent-content transition-colors disabled:opacity-50"
             >
               {busy ? "Starting over…" : "Start over"}
             </button>

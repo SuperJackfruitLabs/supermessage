@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CustomEventDecision, ItemView, TimelineItem } from "$lib/ipc";
+  import InlineFailure from "./InlineFailure.svelte";
 
   /**
    * The dispatch card — this client's signature element.
@@ -45,12 +46,33 @@
      * that supermessage acts only through Matrix, so answering a gate is a
      * decision *event*, never a REST call to Superpipeline.
      */
-    onDecide: (eventId: string | null, decision: CustomEventDecision, optionId: string) => void;
+    onDecide: (
+      eventId: string | null,
+      decision: CustomEventDecision,
+      optionId: string,
+    ) => Promise<boolean>;
     /** How the container renders a timestamp, so both agree. */
     formatTime: (ms: number | null) => string;
   }
 
   let { view, decision, item, onDecide, formatTime }: Props = $props();
+
+  let sending = $state(false);
+  let failed = $state(false);
+
+  /** One answer at a time; a failed send leaves the card answerable. */
+  async function decide(d: CustomEventDecision, optionId: string): Promise<void> {
+    if (sending) return;
+    sending = true;
+    failed = false;
+    try {
+      failed = !(await onDecide(item.eventId, d, optionId));
+    } catch {
+      failed = true;
+    } finally {
+      sending = false;
+    }
+  }
 </script>
 
                       <div class="dispatch-card {decision ? 'dispatch-card-pending' : ''}">
@@ -240,13 +262,17 @@
       {#each decision.options as option, i (i)}
         <button
           type="button"
-          onclick={() => decision && onDecide(item.eventId, decision, option.id)}
-          class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised"
+          disabled={sending}
+          onclick={() => decision && decide(decision, option.id)}
+          class="min-w-0 max-w-full rounded border border-signal px-2.5 py-1 font-sans text-ui font-medium break-words text-signal transition-colors hover:bg-signal hover:text-surface-raised disabled:opacity-50"
         >
           {option.label}
         </button>
       {/each}
     </div>
+    {#if failed}
+      <InlineFailure message="Not sent. Try again." />
+    {/if}
   </div>
 {/if}
                       </div>

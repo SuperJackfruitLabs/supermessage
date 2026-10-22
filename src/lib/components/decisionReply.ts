@@ -16,3 +16,23 @@ export async function sendDecisionReply(
     await sendMessage(roomId, optionId);
   }
 }
+
+/**
+ * Answer a decision and say whether it went out. Never rejects: the card
+ * stays answerable after a failed send, so the caller needs a verdict, not an
+ * exception to catch.
+ */
+export async function answerDecision(
+  roomId: string,
+  eventId: string | null,
+  decision: CustomEventDecision,
+  optionId: string,
+): Promise<boolean> {
+  try {
+    await sendDecisionReply(roomId, eventId, decision, optionId);
+    return true;
+  } catch (err) {
+    console.error("failed to send a decision", { eventId, optionId, err });
+    return false;
+  }
+}

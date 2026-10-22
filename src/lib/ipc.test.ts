@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
+const { deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -111,5 +111,36 @@ describe("the spaces commands", () => {
 
     await expect(spacesList()).resolves.toEqual(summaries);
     expect(invokeMock).toHaveBeenCalledWith("spaces_list");
+  });
+});
+
+describe("ensureRecovery", () => {
+  it("invokes ensure_recovery and passes the key through", async () => {
+    invokeMock.mockResolvedValueOnce("EsTk abcd");
+
+    await expect(ensureRecovery()).resolves.toBe("EsTk abcd");
+    expect(invokeMock).toHaveBeenCalledWith("ensure_recovery");
+  });
+
+  it("passes null through when recovery was already on", async () => {
+    invokeMock.mockResolvedValueOnce(null);
+
+    await expect(ensureRecovery()).resolves.toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith("ensure_recovery");
+  });
+});
+
+describe("message edit and delete", () => {
+  it("deleteMessage invokes delete_message with the room and event", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue(undefined);
+    await deleteMessage("!r:x", "$e");
+    expect(invokeMock).toHaveBeenCalledWith("delete_message", { roomId: "!r:x", eventId: "$e" });
+  });
+  it("editMessage invokes edit_message with the new body", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue(undefined);
+    await editMessage("!r:x", "$e", "fixed");
+    expect(invokeMock).toHaveBeenCalledWith("edit_message", { roomId: "!r:x", eventId: "$e", body: "fixed" });
   });
 });

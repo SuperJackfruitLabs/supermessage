@@ -52,7 +52,7 @@
 -->
 <Story
   name="Already on"
-  args={{ state: "enabled", onEnable: key, onRecover: settle, onReset: resetTo, onClose: () => {} }}
+  args={{ state: "enabled", onRecover: settle, onReset: resetTo, onClose: () => {} }}
 />
 
 <!--
@@ -67,7 +67,6 @@
   name="This device is missing keys"
   args={{
     state: "incomplete",
-    onEnable: key,
     onRecover: settle,
     onReset: resetTo,
     onClose: () => {},
@@ -80,7 +79,7 @@
 -->
 <Story
   name="Still checking"
-  args={{ state: "unknown", onEnable: key, onRecover: settle, onReset: resetTo, onClose: () => {} }}
+  args={{ state: "unknown", onRecover: settle, onReset: resetTo, onClose: () => {} }}
 />
 
 <!--
@@ -95,7 +94,6 @@
   name="Starting over"
   args={{
     state: "incomplete",
-    onEnable: key,
     onRecover: settle,
     onReset: resetTo,
     onClose: () => {},
@@ -118,7 +116,6 @@
   name="The key, shown once"
   args={{
     state: "incomplete",
-    onEnable: key,
     onRecover: settle,
     onReset: resetTo,
     onClose: () => {},
@@ -148,12 +145,26 @@
   }}
 />
 
+<!--
+  Recovery set up for the user at sign-in: the panel opens straight onto the
+  key, shown once, with no clicking through first.
+-->
+<Story
+  name="New key after sign-in"
+  args={{
+    state: "enabled",
+    initialKey: KEY,
+    onRecover: settle,
+    onReset: resetTo,
+    onClose: () => {},
+  }}
+/>
+
 <!-- A wrong key. The panel stays open, because the user needs another go. -->
 <Story
   name="Wrong key"
   args={{
     state: "incomplete",
-    onEnable: key,
     onRecover: refuse,
     onReset: resetTo,
     onClose: () => {},
