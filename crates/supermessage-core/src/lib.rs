@@ -71,6 +71,7 @@ pub mod spaces;
 pub mod storage;
 pub mod sync;
 pub mod timeline;
+pub mod timeline_grouping;
 pub mod tls;
 pub mod turn_error;
 pub mod turn_label;

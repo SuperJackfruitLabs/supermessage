@@ -940,6 +940,31 @@ pub struct TimelineRow {
     #[uniffi(default = false)]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub is_long_read: bool,
+    /// Whether this row continues the sender run above it, so a host drops
+    /// its header (`crate::timeline_grouping`). Set by the settle pass over the
+    /// whole list, never by the row itself; defaulted and left off the wire
+    /// when false, like [`Self::voice_reply`].
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub continues_run: bool,
+    /// Whether the next drawn row does not continue this one, so a host draws
+    /// the bubble's tail. Mirrors the next row's [`Self::continues_run`].
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub ends_run: bool,
+    /// Whether this reply's quote only repeats the drawn row above it.
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hides_quote: bool,
+    /// Whether this row shows the bridge's `(harness on host)` suffix: the
+    /// room has two or more peer senders and this row has a suffix.
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub shows_runtime: bool,
+    /// For a drawn membership row: the run and stretch it belongs to.
+    #[uniffi(default = None)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership: Option<crate::timeline_grouping::MembershipPlacement>,
 }
 
 impl TimelineRow {
@@ -1018,6 +1043,11 @@ impl TimelineRow {
             voice_transcript: None,
             is_agent,
             is_long_read,
+            continues_run: false,
+            ends_run: false,
+            hides_quote: false,
+            shows_runtime: false,
+            membership: None,
         }
     }
 }
