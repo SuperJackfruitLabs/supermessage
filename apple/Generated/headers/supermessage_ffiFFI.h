@@ -344,7 +344,7 @@ void uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(void*_Nonnull 
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_SEND
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_SEND
-void uniffi_supermessage_ffi_fn_method_core_attachment_send(void*_Nonnull ptr, RustBuffer room_id, RustBuffer token, RustBuffer caption, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_supermessage_ffi_fn_method_core_attachment_send(void*_Nonnull ptr, RustBuffer room_id, RustBuffer token, RustBuffer caption, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ATTACHMENT_STAGE_PATH

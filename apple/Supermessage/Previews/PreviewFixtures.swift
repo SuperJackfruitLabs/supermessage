@@ -123,7 +123,7 @@ struct PreviewClient: SessionClient {
     func attachmentStagePath(roomId: String, path: String) async throws -> StagedFile {
         PreviewFixtures.stagedFile
     }
-    func attachmentSend(roomId: String, token: String, caption: String?) async throws {}
+    func attachmentSend(roomId: String, token: String, caption: String?) async throws -> AttachmentSendOutcome { .sent }
     func attachmentDiscard(token: String) async {}
 
     // MARK: TimelineSubscribing

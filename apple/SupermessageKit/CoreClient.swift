@@ -340,7 +340,7 @@ public actor CoreClient {
         try await run { try $0.attachmentStagePath(roomId: roomId, path: path) }
     }
 
-    public func attachmentSend(roomId: String, token: String, caption: String?) async throws {
+    public func attachmentSend(roomId: String, token: String, caption: String?) async throws -> AttachmentSendOutcome {
         try await run { try $0.attachmentSend(roomId: roomId, token: token, caption: caption) }
     }
 
