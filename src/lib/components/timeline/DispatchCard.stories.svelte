@@ -52,6 +52,9 @@
     field.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
+  const sentFromCancelStory: (string | null)[] = [];
+  const sentFromTrimStory: (string | null)[] = [];
+
   const { Story } = defineMeta({
     title: "Timeline/DispatchCard",
     component: DispatchCard,
@@ -300,6 +303,90 @@
           {item}
           onDecide={() => Promise.resolve(true)}
           {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Escape closes the dialog wherever focus is, nothing is sent, and focus returns to the button. -->
+<Story
+  name="Request changes cancelled"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await clickButton(root, "Request changes");
+    await settled(() => document.querySelector("[role='dialog']"));
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settled(() => (document.querySelector("[role='dialog']") ? null : root));
+    if (root.querySelector("[data-testid='decision-receipt']")) throw new Error("a receipt showed after cancelling");
+    if (sentFromCancelStory.length > 0) throw new Error("cancelling sent something");
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={(_e, _d, _o, comment) => {
+            sentFromCancelStory.push(comment);
+            return Promise.resolve(true);
+          }}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- The reason is trimmed, and a blank one goes as null. -->
+<Story
+  name="Request changes trims the reason"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    sentFromTrimStory.length = 0;
+    await clickButton(root, "Request changes");
+    await typeReason(root, "   ");
+    await clickButton(document.body, "Send");
+    await settled(() => document.querySelector("[role='dialog'] [role='alert']"));
+    await typeReason(root, "  tests fail \n");
+    await clickButton(document.body, "Send");
+    await settled(() => (sentFromTrimStory.length === 2 ? root : null));
+    if (sentFromTrimStory[0] !== null) throw new Error("a blank reason was not sent as null");
+    if (sentFromTrimStory[1] !== "tests fail") throw new Error("the reason was not trimmed");
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={(_e, _d, _o, comment) => {
+            sentFromTrimStory.push(comment);
+            return Promise.resolve(false);
+          }}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- A row that remounts after the answer landed (the container held it): still the receipt, no live buttons. -->
+<Story
+  name="Answered, row remounted"
+  play={async ({ canvasElement }) => {
+    await settled(() => canvasElement.querySelector("[data-testid='decision-receipt']"));
+    if (canvasElement.querySelector("button")) throw new Error("live buttons after a remount");
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+          answeredHere={{ option: dispatchCardGateDecision.options[1], atMs: Date.now() }}
         />
       </DispatchCardFrame>
   {/snippet}

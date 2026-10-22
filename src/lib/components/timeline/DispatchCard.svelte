@@ -1,6 +1,11 @@
 <script lang="ts">
-  import type { CustomEventDecision, ItemView, TimelineItem } from "$lib/ipc";
-  import type { CustomEventDecisionOption } from "$lib/ipc";
+  import type {
+    CustomEventDecision,
+    CustomEventDecisionOption,
+    ItemView,
+    TimelineItem,
+  } from "$lib/ipc";
+  import type { AnsweredDecision } from "$lib/stores/answeredDecisions.svelte";
   import { answeredWhen, arrangeOptions, optionRole, receiptOutcome } from "./decisionView";
   import InlineFailure from "./InlineFailure.svelte";
   import RequestChangesDialog from "./RequestChangesDialog.svelte";
@@ -57,16 +62,25 @@
     ) => Promise<boolean>;
     /** How the container renders a timestamp, so both agree. */
     formatTime: (ms: number | null) => string;
+    /**
+     * What this device already answered, held by the container because a
+     * virtualised row remounts and this component's own state does not
+     * survive it. Omit it and the card remembers for as long as it is mounted.
+     */
+    answeredHere?: AnsweredDecision | null;
+    /** Tells the container an answer landed, so it can hold it across a remount. */
+    onAnswered?: (answer: AnsweredDecision) => void;
   }
 
-  let { view, decision, item, onDecide, formatTime }: Props = $props();
+  let { view, decision, item, onDecide, formatTime, answeredHere = null, onAnswered }: Props = $props();
 
   let sending = $state(false);
   let failed = $state(false);
   /** The option whose "what needs changing?" dialog is open. */
   let asking = $state<CustomEventDecisionOption | null>(null);
   /** Set only after the send landed, never while it is in flight or failed. */
-  let answered = $state<{ option: CustomEventDecisionOption; atMs: number } | null>(null);
+  let answeredLocal = $state<AnsweredDecision | null>(null);
+  const answered = $derived(answeredHere ?? answeredLocal);
 
   /**
    * One answer at a time; a failed send leaves the card answerable. The
@@ -89,7 +103,8 @@
       sending = false;
     }
     if (ok) {
-      answered = { option, atMs: Date.now() };
+      answeredLocal = { option, atMs: Date.now() };
+      onAnswered?.(answeredLocal);
       asking = null;
     } else if (asking === null) {
       failed = true;
@@ -99,7 +114,10 @@
 
   /** "Request changes" asks for a reason first; every other answer goes straight out. */
   function choose(d: CustomEventDecision, option: CustomEventDecisionOption): void {
-    if (optionRole(option) === "requestChanges") asking = option;
+    if (optionRole(option) === "requestChanges") {
+      failed = false; // an earlier plain failure must not sit behind the dialog
+      asking = option;
+    }
     else void decide(d, option, null);
   }
 

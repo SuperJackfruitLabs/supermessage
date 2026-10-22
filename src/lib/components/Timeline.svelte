@@ -285,6 +285,7 @@
   import { errorMessage } from "$lib/errorMessage";
   import { deleteMessage, mediaDownload, type CustomEventDecision } from "$lib/ipc";
   import { answerDecision } from "./decisionReply";
+  import { createAnsweredDecisions } from "$lib/stores/answeredDecisions.svelte";
   import { peerColorVar } from "$lib/peerColor";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
@@ -1014,6 +1015,9 @@
     deleting = null;
   }
 
+  /** Answers given on this device, held here because a virtualised row remounts. */
+  const answeredDecisions = createAnsweredDecisions();
+
   /** Gate answers carry the core's subject and the Matrix event address. */
   function onDecide(
     eventId: string | null,
@@ -1731,6 +1735,8 @@
                         {item}
                         {onDecide}
                         {formatTime}
+                        answeredHere={answeredDecisions.get(item.eventId)}
+                        onAnswered={(answer) => answeredDecisions.record(item.eventId, answer)}
                       />
                       <!--
                         Outside the bordered object, not inside it: the card
