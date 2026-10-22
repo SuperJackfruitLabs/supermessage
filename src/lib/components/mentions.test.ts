@@ -82,3 +82,9 @@ describe("completing a mention", () => {
   });
 });
 
+describe("agents among the matches", () => {
+  it("matchMentions keeps isAgent on the match", () => {
+    const members: Mentionable[] = [{ userId: "@agent_x:h", displayName: "Hermes", isAgent: true }];
+    expect(matchMentions("her", members)[0].isAgent).toBe(true);
+  });
+});

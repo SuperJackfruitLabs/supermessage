@@ -3,6 +3,8 @@
 
   import {
     dispatchCardAnswered,
+    dispatchCardGate,
+    dispatchCardGateDecision,
     dispatchCardLongValue,
     dispatchCardNewerVersion,
     dispatchCardPending,
@@ -34,6 +36,27 @@
     );
     approve.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   };
+
+  const clickButton = async (canvasElement: HTMLElement, label: string) => {
+    const button = await settled(() =>
+      [...canvasElement.querySelectorAll("button")].find((b) => b.textContent?.trim() === label),
+    );
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  };
+  // The dialog lifts itself to <body>, so it is found on `document`, not in the canvas.
+  const typeReason = async (canvasElement: HTMLElement, text: string) => {
+    const field = (await settled(() =>
+      document.querySelector("[role='dialog'] textarea"),
+    )) as HTMLTextAreaElement;
+    field.value = text;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  const getAnimations = (el: HTMLElement) => el.getAnimations().length > 0;
+  const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const sentFromCancelStory: (string | null)[] = [];
+  const sentFromTrimStory: (string | null)[] = [];
 
   const { Story } = defineMeta({
     title: "Timeline/DispatchCard",
@@ -199,6 +222,205 @@
           {item}
           onDecide={() => Promise.resolve(false)}
           {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Three answers: Approve leads, Request changes is bordered, Reject is last as danger text. -->
+<Story name="Gate, three answers">
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Request changes asks for the reason before anything is sent. -->
+<Story
+  name="Request changes dialog"
+  play={async ({ canvasElement }) => {
+    await clickButton(canvasElement as HTMLElement, "Request changes");
+    await settled(() => document.querySelector("[role='dialog']"));
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Offline: the dialog keeps the reason, says it was not sent, and the card shows no receipt. -->
+<Story
+  name="Request changes fails"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await clickButton(root, "Request changes");
+    await typeReason(root, "tests fail");
+    await clickButton(document.body, "Send");
+    await settled(() => document.querySelector("[role='dialog'] [role='alert']"));
+    const field = document.querySelector("[role='dialog'] textarea") as HTMLTextAreaElement;
+    if (field.value !== "tests fail") throw new Error("the typed reason was lost");
+    if (root.querySelector("[data-testid='decision-receipt']")) throw new Error("a receipt showed for a failed send");
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(false)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- The send landed: the receipt replaces the buttons, and the amber goes. -->
+<Story
+  name="Answered on this device"
+  play={async ({ canvasElement }) => {
+    await clickApprove(canvasElement as HTMLElement);
+    const receipt = (await settled(() =>
+      canvasElement.querySelector("[data-testid='decision-receipt']"),
+    )) as HTMLElement;
+    // The receipt settles in (opacity + scale, 250ms) unless the reader asked
+    // for reduced motion, in which case it just appears.
+    const running = receipt.getAnimations().length > 0;
+    if (running === reducedMotion()) throw new Error(`receipt animation running=${running} with reduced motion=${reducedMotion()}`);
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Opening the reasoning fades its text in (opacity only; the snapshot gate renders without motion). -->
+<Story
+  name="Reasoning opened"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const details = (await settled(() => root.querySelector("details"))) as HTMLDetailsElement;
+    details.open = true;
+    const body = (await settled(() => root.querySelector("details .reasoning-body"))) as HTMLElement;
+    const fading = getAnimations(body);
+    if (fading === reducedMotion()) throw new Error(`reasoning fade running=${fading} with reduced motion=${reducedMotion()}`);
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardWithReasoning}
+          decision={null}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- Escape closes the dialog wherever focus is, nothing is sent, and focus returns to the button. -->
+<Story
+  name="Request changes cancelled"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await clickButton(root, "Request changes");
+    await settled(() => document.querySelector("[role='dialog']"));
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settled(() => (document.querySelector("[role='dialog']") ? null : root));
+    if (root.querySelector("[data-testid='decision-receipt']")) throw new Error("a receipt showed after cancelling");
+    if (sentFromCancelStory.length > 0) throw new Error("cancelling sent something");
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={(_e, _d, _o, comment) => {
+            sentFromCancelStory.push(comment);
+            return Promise.resolve(true);
+          }}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- The reason is trimmed, and a blank one goes as null. -->
+<Story
+  name="Request changes trims the reason"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    sentFromTrimStory.length = 0;
+    await clickButton(root, "Request changes");
+    await typeReason(root, "   ");
+    await clickButton(document.body, "Send");
+    await settled(() => document.querySelector("[role='dialog'] [role='alert']"));
+    await typeReason(root, "  tests fail \n");
+    await clickButton(document.body, "Send");
+    await settled(() => (sentFromTrimStory.length === 2 ? root : null));
+    if (sentFromTrimStory[0] !== null) throw new Error("a blank reason was not sent as null");
+    if (sentFromTrimStory[1] !== "tests fail") throw new Error("the reason was not trimmed");
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={(_e, _d, _o, comment) => {
+            sentFromTrimStory.push(comment);
+            return Promise.resolve(false);
+          }}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- A row that remounts after the answer landed (the container held it): still the receipt, no live buttons. -->
+<Story
+  name="Answered, row remounted"
+  play={async ({ canvasElement }) => {
+    await settled(() => canvasElement.querySelector("[data-testid='decision-receipt']"));
+    if (canvasElement.querySelector("button")) throw new Error("live buttons after a remount");
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardGate}
+          decision={dispatchCardGateDecision}
+          {item}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+          answeredHere={{ option: dispatchCardGateDecision.options[1], atMs: Date.now() }}
         />
       </DispatchCardFrame>
   {/snippet}

@@ -121,7 +121,13 @@ def _peer_block(tokens: Tokens, appearance: str, indent: str) -> str:
 
 
 def _accent_vars(tokens: Tokens, accent: str, appearance: str, indent: str) -> str:
-    roles = tokens.accents[accent][appearance]
+    # The whole palette, not only the roles the accent names. The accent block
+    # has one more attribute than the appearance block, so on the same element
+    # (`<html data-appearance="black" data-accent="teal">`) it also beats the
+    # appearance on the roles it does not set: black's accent block names only
+    # three, and the bare `:root[data-accent]` light block would otherwise
+    # win the surfaces and leave a light page in "Black".
+    roles = tokens.accent_palette(accent, appearance)
     return "".join(f"{indent}--color-{role}: {roles[role]};\n" for role in roles)
 
 

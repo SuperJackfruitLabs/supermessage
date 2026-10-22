@@ -39,6 +39,7 @@
         type="button"
         role="option"
         aria-selected={index === activeIndex}
+        aria-label={member.isAgent ? `${mentionLabel(member)}, agent` : undefined}
         onclick={() => onPick(member)}
         class="flex w-full items-baseline gap-2 px-3 py-1.5 text-left transition-colors {index ===
         activeIndex
@@ -50,6 +51,9 @@
           <span class="truncate font-mono text-meta text-content-faint">
             {member.userId}
           </span>
+        {/if}
+        {#if member.isAgent}
+          <span class="ml-auto shrink-0 rounded-pill bg-accent-soft px-1.5 text-label text-accent">Agent</span>
         {/if}
       </button>
     </li>

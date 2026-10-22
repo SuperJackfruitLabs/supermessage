@@ -4,7 +4,26 @@
   import SpaceInvitePanel from "./SpaceInvitePanel.svelte";
 
   const settle = () => new Promise<void>((r) => setTimeout(r, 700));
-  const refuse = () => Promise.reject(new Error("M_FORBIDDEN: no longer invited"));
+  const refuse = () => Promise.reject({ kind: "refused", message: "M_FORBIDDEN: no longer invited" });
+
+  // Plain DOM, as RecoveryPanel.stories.svelte does (docs/story-snapshots.md):
+  // click Accept, then wait for the failure line to be drawn.
+  const settled = async (find: () => Element | null | undefined, ms = 2000) => {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const found = find();
+      if (found) return found;
+      if (Date.now() > deadline) throw new Error("timed out waiting for the panel to settle");
+      await new Promise((r) => setTimeout(r, 16));
+    }
+  };
+  const pressAccept = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const accept = await settled(() =>
+      [...canvasElement.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Accept"),
+    );
+    accept.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await settled(() => canvasElement.querySelector("[role='alert']"));
+  };
 
   const { Story } = defineMeta({
     title: "Rooms/SpaceInvitePanel",
@@ -22,6 +41,8 @@
 
 <!--
   Accepting fails. The dialog closes only once the call comes back, so a
-  failure has somewhere to be shown — press Accept.
+  failure has somewhere to be shown.
 -->
-<Story name="Accept fails" args={{ label: "Guild", onAccept: refuse }} />
+<Story name="Accept fails" args={{ label: "Guild", onAccept: refuse }}
+  play={pressAccept}
+/>

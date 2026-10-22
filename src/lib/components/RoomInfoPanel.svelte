@@ -42,6 +42,7 @@
 
   import { onMount } from "svelte";
   import { roomInfo, type RoomInfo } from "$lib/ipc";
+  import { roomsStore } from "$lib/stores/rooms.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
   // `memberDisplayName` is still used here for sorting, and `splitSigil` for
@@ -50,6 +51,8 @@
   import { memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
   import MemberRow from "./roster/MemberRow.svelte";
   import RoomIdentityHeader from "./roster/RoomIdentityHeader.svelte";
+  import RuntimeRows from "./roster/RuntimeRows.svelte";
+  import LeaveRoomConfirm from "./LeaveRoomConfirm.svelte";
 
   /**
    * `modal` is set only in the overlay geometry (`+page.svelte`'s
@@ -85,6 +88,7 @@
   let loadError = $state<string | null>(null);
   let loading = $state(true);
   let copied = $state(false);
+  let confirmsLeave = $state(false);
 
   onMount(() => {
     if (modal) panelRoot?.focus();
@@ -203,6 +207,10 @@
       onAvatarFailed={() => avatarCache.markFailed(currentRoomId)}
     />
 
+    {#if info.runtime}
+      <RuntimeRows runtime={info.runtime} />
+    {/if}
+
     {#if info.topic}
       <div class="border-b border-border px-4 py-3">
         <h3 class="mb-1 text-label text-content-muted">Topic</h3>
@@ -295,5 +303,22 @@
         {/each}
       </ul>
     </div>
+
+    <div class="shrink-0 border-t border-border px-4 py-3">
+      <button
+        type="button"
+        onclick={() => (confirmsLeave = true)}
+        class="rounded-control py-1 text-ui text-danger transition-colors hover:underline"
+      >
+        Leave room
+      </button>
+    </div>
+    {#if confirmsLeave}
+      <LeaveRoomConfirm
+        roomName={info.name}
+        onLeave={() => roomsStore.leave(currentRoomId).then(onClose)}
+        onCancel={() => (confirmsLeave = false)}
+      />
+    {/if}
   {/if}
 </aside>

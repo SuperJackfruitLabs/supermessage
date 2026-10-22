@@ -74,11 +74,92 @@
 -->
 <Story
   name="Search fails"
-  args={{ onSearch: async () => { throw new Error("M_LIMIT_EXCEEDED: too many requests"); } }}
+  args={{ onSearch: async () => { throw { kind: "network", message: "" }; } }}
   play={async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.type(canvas.getByPlaceholderText(/Search messages/), "anything");
     await userEvent.keyboard("{Enter}");
-    await expect(await canvas.findByText(/M_LIMIT_EXCEEDED|too many/i)).toBeInTheDocument();
+    await expect(await canvas.findByText("Can't reach the homeserver.")).toBeInTheDocument();
+  }}
+/>
+
+<!-- Opened from a room: narrowed to it, with the hint and no search yet. -->
+<Story
+  name="Scoped to this room"
+  args={{
+    scope: { roomId: "!ashram:id.agentpod.dev", name: "Ashram" },
+    onSearch: async () => searchNoHits,
+  }}
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Find a message in Ashram.")).toBeInTheDocument();
+    await expect(canvas.getByRole("radio", { name: "Ashram" })).toHaveAttribute("aria-checked", "true");
+  }}
+/>
+
+<!--
+  Hits come back only when a room id was passed, so seeing them proves the
+  search was narrowed. Widening re-runs it (nothing, with no room id), and
+  narrowing again brings the hits back.
+-->
+<Story
+  name="Scoped, with hits"
+  args={{
+    scope: { roomId: "!ashram:id.agentpod.dev", name: "Ashram" },
+    onSearch: async (_term: string, roomId?: string) => (roomId ? searchHits.slice(0, 2) : searchNoHits),
+  }}
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(canvas.getByPlaceholderText(/Search messages/), "build");
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByText(/Ready to promote build 214/)).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("radio", { name: "All rooms" }));
+    await expect(await canvas.findByText(/Nothing matched/)).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("radio", { name: "Ashram" }));
+    await expect(await canvas.findByText(/Ready to promote build 214/)).toBeInTheDocument();
+    // No baked-in focus ring in the recorded frame.
+    (document.activeElement as HTMLElement | null)?.blur();
+  }}
+/>
+
+<!-- Escape is consumed by the panel, so the page's window handler can see
+     it was handled and leave the room-info panel underneath open. -->
+<Story
+  name="Escape is consumed"
+  args={{
+    scope: { roomId: "!ashram:id.agentpod.dev", name: "Ashram" },
+    onSearch: async () => searchNoHits,
+  }}
+  play={async ({ canvasElement }) => {
+    let prevented: boolean | null = null;
+    const probe = (e: KeyboardEvent) => {
+      if (e.key === "Escape") prevented = e.defaultPrevented;
+    };
+    window.addEventListener("keydown", probe);
+    try {
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByPlaceholderText(/Search messages/));
+      await userEvent.keyboard("{Escape}");
+      await expect(prevented).toBe(true);
+    } finally {
+      window.removeEventListener("keydown", probe);
+    }
+  }}
+/>
+
+<!-- Arrow keys move between the two scope choices (roving tabindex). -->
+<Story
+  name="Scope moves with arrow keys"
+  args={{
+    scope: { roomId: "!ashram:id.agentpod.dev", name: "Ashram" },
+    onSearch: async () => searchNoHits,
+  }}
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    canvas.getByRole("radio", { name: "Ashram" }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(canvas.getByRole("radio", { name: "All rooms" })).toHaveAttribute("aria-checked", "true");
+    await expect(canvas.getByText("Find a message across your rooms.")).toBeInTheDocument();
+    (document.activeElement as HTMLElement | null)?.blur();
   }}
 />

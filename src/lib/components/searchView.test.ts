@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { projectSearchResults, roomLabel, snippet, SNIPPET_MAX } from "./searchView";
+import {
+  createLatestOnly,
+  projectSearchResults,
+  rerunsOnScopeChange,
+  roomLabel,
+  scopedRoomId,
+  searchHint,
+  snippet,
+  SNIPPET_MAX,
+} from "./searchView";
 import type { RoomRow, RoomSummary, SearchResult } from "$lib/ipc";
 
 /** A row, since the roster carries rows. Only the name is read here. */
@@ -82,5 +91,52 @@ describe("projectSearchResults", () => {
       snippet: "the migration finished",
       timestampMs: 1_700_000_000_000,
     });
+  });
+});
+
+describe("searchHint", () => {
+  const scope = { roomId: "!echo:example.org", name: "Echo" };
+  it("names the room when narrowed", () => {
+    expect(searchHint(scope, true)).toBe("Find a message in Echo.");
+  });
+  it("reads across rooms when widened", () => {
+    expect(searchHint(scope, false)).toBe("Find a message across your rooms.");
+  });
+  it("reads across rooms with no scope, even if narrowed is true", () => {
+    expect(searchHint(null, true)).toBe("Find a message across your rooms.");
+  });
+});
+
+describe("scopedRoomId", () => {
+  const scope = { roomId: "!echo:example.org", name: "Echo" };
+  it("gives the room id when narrowed", () => {
+    expect(scopedRoomId(scope, true)).toBe("!echo:example.org");
+  });
+  it("gives undefined when widened or unscoped", () => {
+    expect(scopedRoomId(scope, false)).toBeUndefined();
+    expect(scopedRoomId(null, true)).toBeUndefined();
+  });
+});
+
+describe("createLatestOnly", () => {
+  it("only the most recently begun request is current", () => {
+    const latest = createLatestOnly();
+    const first = latest.begin();
+    expect(latest.isCurrent(first)).toBe(true);
+    const second = latest.begin();
+    expect(latest.isCurrent(first)).toBe(false);
+    expect(latest.isCurrent(second)).toBe(true);
+  });
+});
+
+describe("rerunsOnScopeChange", () => {
+  const base = { changed: true, searched: true, term: "build" };
+  it("re-runs a search that was made", () => {
+    expect(rerunsOnScopeChange(base)).toBe(true);
+  });
+  it("does not run before a search, without a change, or without a term", () => {
+    expect(rerunsOnScopeChange({ ...base, searched: false })).toBe(false);
+    expect(rerunsOnScopeChange({ ...base, changed: false })).toBe(false);
+    expect(rerunsOnScopeChange({ ...base, term: "  " })).toBe(false);
   });
 });

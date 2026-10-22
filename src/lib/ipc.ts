@@ -12,6 +12,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { DiffEnvelope } from "./stores/diff";
 
 /** Mirrors the `CoreStatus` struct returned by the `core_status` command. */
@@ -166,6 +168,10 @@ export interface RoomMember {
    * `data:` URI lazily through {@link memberAvatar} — never fetched bytes
    * on this object itself. */
   avatarUrl: string | null;
+  /** The core's decision that this member is an agent (`RoomMemberDto.is_agent`). */
+  isAgent: boolean;
+  /** Whether the user has ignored this member (`RoomMemberDto.is_ignored`). */
+  isIgnored: boolean;
 }
 
 /**
@@ -349,9 +355,9 @@ export interface TimelineItem {
    * of view, just from every other member's.
    *
    * Deliberately raw ids, never resolved display names — see that struct's
-   * doc comment for why. `Timeline.svelte`'s `seenMarker` is the only
-   * consumer: a plain "Seen"/"Seen by N" count on the reader's own latest
-   * message, never a per-message avatar stack or a name list.
+   * doc comment for why. The timeline turns them into faces under the
+   * reader's own messages (`rowMeta.readersFor`, drawn by `ReaderFaces`,
+   * at most three and then a count); a peer's message never shows readers.
    */
   readBy: string[];
   /**
@@ -1192,6 +1198,8 @@ export interface RoomRow {
 export interface Mentionable {
   userId: string;
   displayName: string | null;
+  /** Marks the agent in the `@` menu. Sent as-is; the core ignores unknown fields. */
+  isAgent?: boolean;
 }
 
 /** What a parsed matrix.to or `matrix:` link addresses. */
@@ -1285,22 +1293,13 @@ export async function recoveryState(): Promise<
 }
 
 /**
- * Turn recovery on and return the key.
- *
- * **Shown once and never stored.** There is deliberately no way to ask for it
- * again: an app that can re-display a recovery key is an app that kept one.
- * Do not log it, do not put it in analytics, do not persist it.
- */
-export async function enableRecovery(): Promise<string> {
-  return invoke<string>("enable_recovery");
-}
-
-/**
  * Turn recovery on if the account has none, returning the new key, or `null`
  * when it was already on.
  *
- * What a fresh sign-in calls. The same rule as `enableRecovery` applies to a
- * returned key: **shown once and never stored, logged or sent anywhere.**
+ * What a fresh sign-in calls. A returned key is **shown once and never
+ * stored, logged or sent anywhere**: there is deliberately no way to ask for
+ * it again, since an app that can re-display a recovery key is an app that
+ * kept one.
  */
 export async function ensureRecovery(): Promise<string | null> {
   return invoke<string | null>("ensure_recovery");
@@ -2433,4 +2432,18 @@ export async function foldTurn(roomId: string, inputs: TurnInput[]): Promise<Tur
 /** Subscribes to typing-state updates on {@link TYPING_EVENT}. */
 export function onTyping(handler: (payload: TypingPayload) => void): Promise<UnlistenFn> {
   return listen<TypingPayload>(TYPING_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * Scale the whole webview (text size, owner decision O3). A host call, not a
+ * command: zoom scales the rem-wide columns and the px breakpoints together,
+ * which a root font size would not. Needs `core:webview:allow-set-webview-zoom`.
+ */
+export async function setTextZoom(factor: number): Promise<void> {
+  await getCurrentWebview().setZoom(factor);
+}
+
+/** The app's version (`core:default` allows `app:allow-version`). */
+export async function appVersion(): Promise<string> {
+  return getVersion();
 }
