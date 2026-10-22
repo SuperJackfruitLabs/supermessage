@@ -1,4 +1,4 @@
-import { sendGateDecision, sendMessage, type CustomEventDecision } from "$lib/ipc";
+import { sendGateDecision, sendPermissionAnswer, type CustomEventDecision } from "$lib/ipc";
 
 /** Send the answer selected on a dispatch card. */
 export async function sendDecisionReply(
@@ -13,9 +13,12 @@ export async function sendDecisionReply(
     await sendGateDecision(roomId, decision.subject, optionId, comment, eventId, decision.prompt);
   } else {
     // A permission request has no place for a comment, so `comment` is dropped.
-    // Permission option ids are the human-readable answer accepted by the
-    // AgentPod bridge. They intentionally remain ordinary room messages.
-    await sendMessage(roomId, optionId);
+    // The content is still the option's name as a plain room message, which
+    // is what the AgentPod bridge accepts (`core::timeline::permission_answer_content`).
+    // What changed is the sender: it is addressed by room and awaited, so it
+    // resolves only once the homeserver has the event, and a failure rejects
+    // here and leaves the card answerable.
+    await sendPermissionAnswer(roomId, optionId);
   }
 }
 

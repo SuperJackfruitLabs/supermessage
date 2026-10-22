@@ -5,6 +5,12 @@ import { errorMessage } from "./errorMessage";
 const core = (kind: string, message = "") => ({ kind, message });
 
 describe("errorMessage", () => {
+  it("reasonTooLong shows the core's words, capitalised", () => {
+    expect(
+      errorMessage(core("reasonTooLong", "that reason is 2105 characters; reports allow at most 2000")),
+    ).toBe("That reason is 2105 characters; reports allow at most 2000");
+  });
+
   it("networkShowsTheHomeserversWordsOrTheDefault", () => {
     expect(errorMessage(core("network", "connection refused"))).toBe("connection refused");
     expect(errorMessage(core("network"))).toBe("Can't reach the homeserver.");

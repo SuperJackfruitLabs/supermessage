@@ -32,6 +32,11 @@
     onCopy: (row: ItemRow) => void;
     onEdit: (row: ItemRow) => void;
     onDelete: (row: ItemRow) => void;
+    /**
+     * Report is handed the More button as well: the menu has closed by the time the report sheet
+     * opens, so the sheet could not otherwise know where to return focus.
+     */
+    onReport: (row: ItemRow, opener: HTMLElement | null) => void;
   }
 
   let {
@@ -43,6 +48,7 @@
     onCopy,
     onEdit,
     onDelete,
+    onReport,
   }: Props = $props();
 
   const item = $derived(row.item);
@@ -81,9 +87,9 @@
     void tick().then(() => el.querySelector<HTMLElement>("[role=menuitem]")?.focus());
   });
 
-  function choose(fn: (row: ItemRow) => void) {
+  function choose(fn: (row: ItemRow, opener: HTMLElement | null) => void) {
     closeMenu();
-    fn(row);
+    fn(row, moreButton);
   }
 
   function onWindowKeydown(e: KeyboardEvent) {
@@ -210,6 +216,19 @@
                 class="rounded px-2 py-1 text-left text-ui text-danger transition-colors hover:bg-surface-sunken"
               >
                 Delete
+              </button>
+            {/if}
+            {#if actions.report}
+              {#if actions.copy || actions.edit || actions.del}
+                <div role="separator" class="my-1 border-t border-border"></div>
+              {/if}
+              <button
+                type="button"
+                role="menuitem"
+                onclick={() => choose(onReport)}
+                class="rounded px-2 py-1 text-left text-ui text-danger transition-colors hover:bg-surface-sunken"
+              >
+                Report…
               </button>
             {/if}
           </div>

@@ -2447,3 +2447,103 @@ export async function setTextZoom(factor: number): Promise<void> {
 export async function appVersion(): Promise<string> {
   return getVersion();
 }
+
+/** Mirrors `core::dto::AccountDto`: who is signed in, and where. */
+export interface AccountDto {
+  userId: string;
+  homeserver: string;
+}
+
+/** `Session::ignore_user`: blocks a person or an agent, on every device. */
+export async function ignoreUser(userId: string): Promise<void> {
+  await invoke<void>("ignore_user", { userId });
+}
+
+/** `Session::unignore_user`: unblocks them. A no-op when they were not blocked. */
+export async function unignoreUser(userId: string): Promise<void> {
+  await invoke<void>("unignore_user", { userId });
+}
+
+/** `Session::blocked_users`: everyone this account has blocked, named. */
+export async function blockedUsers(): Promise<RoomMember[]> {
+  return invoke<RoomMember[]>("blocked_users");
+}
+
+/** `Session::report_event`: reports one message to the homeserver's administrator. */
+export async function reportEvent(roomId: string, eventId: string, reason: string): Promise<void> {
+  await invoke<void>("report_event", { roomId, eventId, reason });
+}
+
+/** `Session::report_room`: reports a room, joined or only invited to. */
+export async function reportRoom(roomId: string, reason: string): Promise<void> {
+  await invoke<void>("report_room", { roomId, reason });
+}
+
+/** `Session::report_user`: reports a person or an agent. */
+export async function reportUser(userId: string, reason: string): Promise<void> {
+  await invoke<void>("report_user", { userId, reason });
+}
+
+/** `safety::report_reason_remaining`: how many characters a reason may still grow by. */
+export async function reportReasonRemaining(reason: string): Promise<number> {
+  return invoke<number>("report_reason_remaining", { reason });
+}
+
+/** `Session::set_room_notification_mode`: `"default"` unsets the room's own rule. */
+export async function setRoomNotificationMode(roomId: string, mode: NotificationMode): Promise<void> {
+  await invoke<void>("set_room_notification_mode", { roomId, mode });
+}
+
+/** `Session::set_room_pinned`. */
+export async function setRoomPinned(roomId: string, pinned: boolean): Promise<void> {
+  await invoke<void>("set_room_pinned", { roomId, pinned });
+}
+
+/**
+ * `Session::known_people`, narrowed by `people::matching` when `query` is
+ * given. The filter runs in Rust: `PersonDto` is serialize-only, and a
+ * TypeScript filter would be a second copy of the rule.
+ */
+export async function knownPeople(query: string | null = null): Promise<PersonDto[]> {
+  return invoke<PersonDto[]>("known_people", { query });
+}
+
+/** `Session::direct_room_with`: the direct room shared with `userId`, if any. */
+export async function directRoomWith(userId: string): Promise<string | null> {
+  return invoke<string | null>("direct_room_with", { userId });
+}
+
+/** `Session::room_inviter`: who invited this account to `roomId`, named. */
+export async function roomInviter(roomId: string): Promise<string | null> {
+  return invoke<string | null>("room_inviter", { roomId });
+}
+
+/** `Session::account`: the signed-in identity. */
+export async function account(): Promise<AccountDto> {
+  return invoke<AccountDto>("account");
+}
+
+/** `display_name::people_label`: the name the core gives a list of people. */
+export async function peopleLabel(userIds: string[]): Promise<string> {
+  return invoke<string>("people_label", { userIds });
+}
+
+/**
+ * `Session::send_permission_answer`: answers a permission request in `roomId`
+ * (open or not) and resolves once the homeserver has the event.
+ */
+export async function sendPermissionAnswer(roomId: string, optionId: string): Promise<void> {
+  await invoke<void>("send_permission_answer", { roomId, optionId });
+}
+
+/** `core::safety::IGNORED_USERS_EVENT`: the blocked list, emitted by the core. */
+const IGNORED_USERS_EVENT = "sm://ignored-users";
+
+/**
+ * Subscribes to the blocked list. The core emits the whole list whenever the
+ * homeserver reports it, and once when the session starts, which can be
+ * before this listener exists — see `safetyStore.seed`.
+ */
+export function onIgnoredUsers(handler: (userIds: string[]) => void): Promise<UnlistenFn> {
+  return listen<string[]>(IGNORED_USERS_EVENT, (event) => handler(event.payload));
+}
