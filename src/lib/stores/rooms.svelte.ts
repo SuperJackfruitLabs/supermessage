@@ -254,6 +254,20 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     });
   }
 
+  /**
+   * Leaves the room `id` for good. When it is the open room the selection is
+   * cleared, so the pane falls back to its empty state; a failure rethrows
+   * with the selection untouched, so the caller can say so and offer a retry.
+   * The roster drops the row on its own, through the diff.
+   */
+  async function leave(id: string): Promise<void> {
+    await deps.leaveRoom(id);
+    if (selectedId === id) {
+      selectedId = null;
+      selectedName = null;
+    }
+  }
+
   return {
     get rooms(): RoomRow[] {
       return rooms;
@@ -303,6 +317,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     select,
     acceptInvitation,
     declineInvitation,
+    leave,
     login,
     restoreSession,
     logout,

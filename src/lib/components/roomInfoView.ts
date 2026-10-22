@@ -86,3 +86,11 @@ export function initial(label: string): string {
   const first = [...trimmed][0];
   return first === undefined ? "?" : first.toUpperCase();
 }
+
+/**
+ * The title of the "Leave room" confirmation, in iOS's words
+ * (`RoomInfoPanel.swift:187`): the room by name when it has one.
+ */
+export function leaveTitle(name: string | null): string {
+  return `Leave ${name ?? "this room"}?`;
+}

@@ -448,3 +448,41 @@ describe("seeding the roster after a restore", () => {
     await expect(store.restoreSession()).resolves.toBe(true);
   });
 });
+
+describe("leaving the selected room", () => {
+  it("leave deselects the room it left", async () => {
+    const channel = makeChannel();
+    const leaveRoom = vi.fn().mockResolvedValue(undefined);
+    const store = makeStore(channel, vi.fn(), { leaveRoom });
+    channel.emit(env(1, [{ op: "reset", values: [room("!a:x")] }]));
+    store.select("!a:x");
+
+    await store.leave("!a:x");
+
+    expect(leaveRoom).toHaveBeenCalledWith("!a:x");
+    expect(store.selectedId).toBeNull();
+    expect(store.selectedRoomName).toBeNull();
+  });
+
+  it("leave keeps another selection", async () => {
+    const channel = makeChannel();
+    const store = makeStore(channel);
+    channel.emit(env(1, [{ op: "reset", values: [room("!a:x"), room("!b:x")] }]));
+    store.select("!b:x");
+
+    await store.leave("!a:x");
+
+    expect(store.selectedId).toBe("!b:x");
+  });
+
+  it("leave rethrows and keeps the selection on failure", async () => {
+    const channel = makeChannel();
+    const leaveRoom = vi.fn().mockRejectedValue({ kind: "network", message: "" });
+    const store = makeStore(channel, vi.fn(), { leaveRoom });
+    channel.emit(env(1, [{ op: "reset", values: [room("!a:x")] }]));
+    store.select("!a:x");
+
+    await expect(store.leave("!a:x")).rejects.toEqual({ kind: "network", message: "" });
+    expect(store.selectedId).toBe("!a:x");
+  });
+});

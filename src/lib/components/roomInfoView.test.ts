@@ -1,7 +1,7 @@
 // Covers `roomInfoView.ts`'s pure display helpers.
 
 import { describe, expect, it } from "vitest";
-import { initial, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
+import { initial, leaveTitle, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
 
 describe("roomDisplayName", () => {
   it("prefers the room's own name", () => {
@@ -98,5 +98,15 @@ describe("splitSigil", () => {
 
   it("returns an empty rest for a string that is only a sigil", () => {
     expect(splitSigil("#")).toEqual({ sigil: "#", rest: "" });
+  });
+});
+
+describe("leaveTitle", () => {
+  it("names the room", () => {
+    expect(leaveTitle("Ops")).toBe("Leave Ops?");
+  });
+
+  it("falls back", () => {
+    expect(leaveTitle(null)).toBe("Leave this room?");
   });
 });
