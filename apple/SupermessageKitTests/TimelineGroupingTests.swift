@@ -421,46 +421,6 @@ struct QuoteRepetitionTests {
     }
 }
 
-/// Agents and long reads.
-@MainActor
-struct AgentAndLongReadTests {
-    @Test("the agent namespace marks an agent, and nothing else does")
-    func agentNamespace() {
-        #expect(TimelineGrouping.isAgent(TimelineGroupingTests.row(id: "1", sender: "@agent_ashram_openclaw-atlas:x", at: 1)))
-        #expect(!TimelineGrouping.isAgent(TimelineGroupingTests.row(id: "2", sender: "@atlas:x", at: 1)))
-        // Contains the word, not the prefix.
-        #expect(!TimelineGrouping.isAgent(TimelineGroupingTests.row(id: "3", sender: "@my_agent_x:x", at: 1)))
-        #expect(!TimelineGrouping.isAgent(TimelineGroupingTests.row(id: "4", sender: "@agent_x:x", at: 1, isOwn: true)))
-    }
-
-    static func body(_ text: String, isOwn: Bool = false) -> TimelineRow {
-        var row = TimelineGroupingTests.row(id: "b", sender: "@a:x", at: 1, isOwn: isOwn)
-        row.item.body = text
-        return row
-    }
-
-    @Test("past six hundred characters a message is a long read")
-    func threshold() {
-        let limit = TimelineGrouping.longReadCharacters
-        #expect(!TimelineGrouping.isLongRead(Self.body(String(repeating: "a", count: limit))))
-        #expect(TimelineGrouping.isLongRead(Self.body(String(repeating: "a", count: limit + 1))))
-    }
-
-    @Test("characters are counted as a reader sees them, not as UTF-16")
-    func countsCharacters() {
-        // Each is one Character and four UTF-16 units: counted by encoding,
-        // this is 2400 long and would be cut short at a quarter of the limit.
-        let text = String(repeating: "👍🏽", count: TimelineGrouping.longReadCharacters)
-        #expect(!TimelineGrouping.isLongRead(Self.body(text)))
-    }
-
-    @Test("your own long message is not offered back to you as a long read")
-    func ownIsNot() {
-        let text = String(repeating: "a", count: TimelineGrouping.longReadCharacters + 1)
-        #expect(!TimelineGrouping.isLongRead(Self.body(text, isOwn: true)))
-    }
-}
-
 /// What a day divider says.
 struct TimelineDayTests {
     static func calendar(_ zone: String) -> Calendar {

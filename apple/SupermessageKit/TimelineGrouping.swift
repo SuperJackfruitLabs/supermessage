@@ -249,36 +249,6 @@ public enum TimelineGrouping {
         return parent == above
     }
 
-    // MARK: - Agents
-
-    /// Whether this row was sent by an agent.
-    ///
-    /// **A stopgap, stated as one.** The core does not yet mark agents on a
-    /// timeline row; AgentPod's bridge gives every agent a Matrix id under
-    /// the `@agent_` namespace (see `RoomInfoPanel`), and that namespace is
-    /// the only signal a row carries today. When the core grows a field this
-    /// should read it and nothing else.
-    public static func isAgent(_ row: TimelineRow) -> Bool {
-        guard !row.item.isOwn, let sender = row.item.sender else { return false }
-        return sender.hasPrefix("@agent_")
-    }
-
-    // MARK: - Long reads
-
-    /// Past this many characters a message is a report rather than a line,
-    /// and gets a "Read" affordance onto the long-read view.
-    public static let longReadCharacters = 600
-
-    /// Whether `row` is long enough to be offered as a long read.
-    ///
-    /// Counted in `Character`s — what a reader sees — rather than UTF-16
-    /// units, so a report in Devanagari or emoji is not cut short by its
-    /// encoding. Your own messages never are: you know what you wrote.
-    public static func isLongRead(_ row: TimelineRow) -> Bool {
-        guard !row.item.isOwn, let body = row.item.body else { return false }
-        return body.count > longReadCharacters
-    }
-
     private static func joined(_ names: [String]) -> String {
         switch names.count {
         case 0: return "Someone"

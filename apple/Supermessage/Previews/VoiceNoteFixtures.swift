@@ -127,7 +127,7 @@ extension PreviewFixtures {
             ])
     }
 
-    /// Over `TimelineGrouping.longReadCharacters`: the text clamps and offers
+    /// Over `longReadGraphemes()`: the text clamps and offers
     /// Read, and the player above it stays whole.
     static var voiceReplyLong: TimelineRow {
         let paragraphs = [

@@ -1003,7 +1003,7 @@ struct TimelineList: UIViewRepresentable {
             else { return nil }
             return .message(
                 roomId: roomId, eventId: eventId, senderId: sender,
-                senderName: row.senderShort, isAgent: TimelineGrouping.isAgent(row))
+                senderName: row.senderShort, isAgent: row.isAgent)
         }
 
         fileprivate func react(_ row: TimelineRow, _ key: String) {
