@@ -30,4 +30,22 @@ describe("account store", () => {
     expect(store.account).toBeNull();
     expect(store.name).toBeNull();
   });
+
+  it("a load in flight when clear runs does not repopulate the store", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const store = createAccountStore({
+      account: async () => {
+        await gate;
+        return acct;
+      },
+      peopleLabel: async () => "Rakesh",
+    });
+    const loading = store.load();
+    store.clear();
+    release();
+    await loading;
+    expect(store.account).toBeNull();
+    expect(store.name).toBeNull();
+  });
 });

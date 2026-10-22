@@ -11,6 +11,8 @@ export function createAccountStore(
 ) {
   let account = $state<AccountDto | null>(null);
   let name = $state<string | null>(null);
+  /** Bumped by `clear`, so a load that was in flight when it ran cannot repopulate the store. */
+  let generation = 0;
 
   return {
     get account(): AccountDto | null {
@@ -22,17 +24,21 @@ export function createAccountStore(
     },
     /** Asks the core who is signed in. A failure leaves both `null`. */
     async load(): Promise<void> {
+      const started = generation;
       try {
         const loaded = await deps.account();
         const label = await deps.peopleLabel([loaded.userId]);
+        if (generation !== started) return;
         account = loaded;
         name = label;
       } catch {
+        if (generation !== started) return;
         account = null;
         name = null;
       }
     },
     clear(): void {
+      generation += 1;
       account = null;
       name = null;
     },

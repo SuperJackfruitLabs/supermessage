@@ -62,7 +62,7 @@
   import AccountPanel from "$lib/components/AccountPanel.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { appearanceStore } from "$lib/stores/appearance.svelte";
-  import { resetComposeState } from "$lib/stores/sessionReset";
+  import { resetSessionState } from "$lib/stores/sessionReset";
   import { safetyStore } from "$lib/stores/safety.svelte";
   import { accountStore } from "$lib/stores/account.svelte";
   import { escapeClosesPanel } from "$lib/components/roomInfoView";
@@ -636,6 +636,9 @@
       checking = false;
     }
     if (!restored) {
+      // Also a way back to /login (no session, or a revoked one): whatever the last
+      // account left in these stores must not be there for the next sign-in.
+      resetSessionState();
       await goto("/login");
       return;
     }
@@ -724,12 +727,9 @@
       // account's mount would render the previous one's rail for the frames
       // between restoring and its own `spaces_list` landing.
       spacesStore.clear();
-      // The next account must not inherit this one's pending edits and replies.
-      resetComposeState();
-      // Blocked and hidden belong to the account that is leaving (iOS clears
-      // them at sign-out too).
-      safetyStore.clear();
-      accountStore.clear();
+      // The next account must not inherit this one's pending edits and replies,
+      // blocked list, hidden messages or name.
+      resetSessionState();
       signingOut = false;
     }
     await goto("/login");
