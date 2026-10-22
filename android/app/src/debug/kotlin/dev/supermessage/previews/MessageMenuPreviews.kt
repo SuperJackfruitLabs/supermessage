@@ -7,8 +7,8 @@ import dev.supermessage.MessageMenuContent
 import dev.supermessage.ReactionWhoCard
 import uniffi.supermessage_core.ReactionDto
 
-/** Someone else's message: the strip, Reply and Copy. */
-@Preview(name = "Message menu, others", showBackground = true, heightDp = 330)
+/** Someone else's message: the strip, Reply, Copy and a destructive Report… after a divider. */
+@Preview(name = "Message menu, others", showBackground = true, heightDp = 250)
 @Composable
 internal fun MessageMenuOthers() {
     PreviewGround(width = 411.dp) {

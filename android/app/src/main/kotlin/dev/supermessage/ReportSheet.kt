@@ -352,7 +352,7 @@ internal fun ReportSheetBody(
             }
             failure?.let { text ->
                 Text(
-                    if (landed) text.removePrefix("Reported, but ").replaceFirstChar { it.uppercase() } else text,
+                    if (landed) text.removePrefix(Session.REPORTED_BUT_LEAD).replaceFirstChar { it.uppercase() } else text,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier

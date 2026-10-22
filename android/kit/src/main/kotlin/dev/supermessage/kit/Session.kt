@@ -17,6 +17,7 @@ import dev.supermessage.kit.stores.TimelineStore
 import dev.supermessage.kit.stores.TypingStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -261,8 +262,9 @@ class Session(
         } catch (e: Exception) {
             // A failure to *restore* is not a failure to sign in: there may
             // simply be nothing stored. Either way the answer is the login
-            // screen, and saying more than that would be guessing.
-            safety.clear()
+            // screen, and saying more than that would be guessing. What was
+            // hidden stays: an error says nothing about the stored account, and
+            // only a sign-out or a definite "nothing stored" forgets it.
             _phase.value = Phase.SIGNED_OUT
             false
         }
@@ -588,7 +590,13 @@ class Session(
      * asked and not already blocked, its sender blocked. A block that fails
      * after a landed report says which half failed.
      */
-    suspend fun report(subject: ReportSubject, reason: String, alsoBlock: Boolean): String? {
+    suspend fun report(subject: ReportSubject, reason: String, alsoBlock: Boolean): String? =
+        // In the session's scope, not the caller's: leaving the room closes the
+        // sheet and cancels its coroutine, but a report that landed must still
+        // hide the message and carry out its block.
+        scope.async { doReport(subject, reason, alsoBlock) }.await()
+
+    private suspend fun doReport(subject: ReportSubject, reason: String, alsoBlock: Boolean): String? {
         val generation = safety.generation
         val refused = safetyRefusal {
             when (subject) {
@@ -918,7 +926,8 @@ class Session(
          * A screen tells that apart from a refused report by this prefix: the
          * first must never be offered again, the second can be retried.
          */
-        const val REPORTED_BUT_PREFIX = "Reported, but blocking didn't work:"
+        const val REPORTED_BUT_LEAD = "Reported, but "
+        const val REPORTED_BUT_PREFIX = REPORTED_BUT_LEAD + "blocking didn't work:"
     }
 
     /** The single collector. See this class's KDoc on ordering. */

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -578,6 +579,22 @@ class SessionTest {
         assertEquals(listOf("reportEvent(!r,\$e,spam)"), fake.safetyCalls)
     }
 
+    /** Leaving the room while a report is on its way cancels the caller, not the report's consequences. */
+    @Test
+    fun aReportHidesTheMessageEvenIfItsCallerIsCancelled() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        val caller = launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            session.report(message(), "spam", alsoBlock = false)
+        }
+        fake.reportEventBody = { _, _, _ -> caller.cancel() }
+        caller.start()
+        advanceUntilIdle()
+
+        assertTrue(caller.isCancelled)
+        assertEquals(setOf("\$e"), session.safety.hidden.value)
+    }
+
     @Test
     fun aFailedReportHidesNothingAndBlocksNoOne() = runTest {
         val fake = FakeCore()
@@ -682,13 +699,15 @@ class SessionTest {
     }
 
     @Test
-    fun aRestoreThatThrowsForgetsBlockedAndHidden() = runTest {
+    fun aRestoreThatThrowsKeepsWhatWasHidden() = runTest {
         val storage = InMemoryHiddenEvents().apply { save(setOf("\$old")) }
         val fake = FakeCore(restoreFails = true)
         val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
         assertFalse(session.start())
-        assertTrue(session.safety.hidden.value.isEmpty())
-        assertTrue(storage.load().isEmpty())
+        // A transient error says nothing about the stored account: its
+        // reported messages must still be hidden when it signs in again.
+        assertEquals(setOf("\$old"), session.safety.hidden.value)
+        assertEquals(setOf("\$old"), storage.load())
     }
 
     @Test
