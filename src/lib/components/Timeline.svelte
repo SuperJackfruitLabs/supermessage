@@ -282,7 +282,7 @@
   import { tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import Shimmer from "./ai/Shimmer.svelte";
-  import { mediaDownload, type CustomEventDecision } from "$lib/ipc";
+  import { deleteMessage, mediaDownload, type CustomEventDecision } from "$lib/ipc";
   import { answerDecision } from "./decisionReply";
   import { peerColorVar } from "$lib/peerColor";
   import { timelineStore } from "$lib/stores/timeline.svelte";
@@ -312,6 +312,7 @@
   import UndecryptableGroup from "./timeline/UndecryptableGroup.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
+  import DeleteConfirm from "./timeline/DeleteConfirm.svelte";
   import UnreadMarker from "./timeline/UnreadMarker.svelte";
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
   import ReplyQuote from "./timeline/ReplyQuote.svelte";
@@ -974,6 +975,33 @@
     replyTargetStore.set(roomId, replyTargetStore.fromItem(row));
   }
 
+  /** The own message awaiting delete confirmation, if the dialog is open. */
+  let deleting = $state<ItemRow | null>(null);
+
+  /**
+   * Copies the message's text. A clipboard the webview refuses is not worth
+   * a failure notice: the text is on screen and selectable either way.
+   */
+  async function copyMessage(row: ItemRow): Promise<void> {
+    if (row.item.body === null || row.item.body === "") return;
+    try {
+      await navigator.clipboard.writeText(row.item.body);
+    } catch (err) {
+      console.error("failed to copy message", err);
+    }
+  }
+
+  /** Redacts the confirmed message; throws on failure so the dialog can say so. */
+  async function confirmDelete(): Promise<void> {
+    const eventId = deleting?.item.eventId ?? null;
+    if (eventId === null) {
+      deleting = null;
+      return;
+    }
+    await deleteMessage(roomId, eventId);
+    deleting = null;
+  }
+
   /** Gate answers carry the core's subject and the Matrix event address. */
   function onDecide(eventId: string | null, decision: CustomEventDecision, optionId: string): Promise<boolean> {
     return answerDecision(roomId, eventId, decision, optionId);
@@ -1179,11 +1207,14 @@
       </div>
     </div>
     <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} onToggle={handleToggleReaction} />
-    <MessageActions row={row} alignEnd={row.item.isOwn} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} />
+    <MessageActions row={row} alignEnd={row.item.isOwn} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onDelete={(r) => (deleting = r)} />
   </div>
 {/snippet}
 
 <div class="relative min-h-0 flex-1">
+  {#if deleting !== null}
+    <DeleteConfirm onConfirm={confirmDelete} onCancel={() => (deleting = null)} />
+  {/if}
   {#if unreadAbove}
     <!--
       Only while the line is off the top. It exists for one situation — you
@@ -1701,7 +1732,7 @@
                         hang off the right edge of a left-anchored card.
                       -->
                       <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={false} onToggle={handleToggleReaction} />
-                      <MessageActions row={row} alignEnd={false} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} />
+                      <MessageActions row={row} alignEnd={false} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onDelete={(r) => (deleting = r)} />
                       <SeenMarker item={item} {lastOwnMessageId} alignEnd={false} />
                     </div>
                   </div>

@@ -1471,6 +1471,24 @@ export async function toggleReaction(roomId: string, eventId: string, key: strin
 }
 
 /**
+ * Rewrites a message this account sent. `roomId` and `eventId` follow the
+ * same rules as {@link toggleReaction}'s; the edit arrives back through the
+ * diff stream like any other timeline change.
+ */
+export async function editMessage(roomId: string, eventId: string, body: string): Promise<void> {
+  await invoke<void>("edit_message", { roomId, eventId, body });
+}
+
+/**
+ * Deletes a message this account sent — a Matrix redaction, permanent and
+ * visible to the room. The row turns into the redacted placeholder through
+ * the diff stream. Rejects when the homeserver refuses.
+ */
+export async function deleteMessage(roomId: string, eventId: string): Promise<void> {
+  await invoke<void>("delete_message", { roomId, eventId });
+}
+
+/**
  * Sets (or clears) this device's typing notice in `roomId`.
  *
  * `roomId` must be the room the caller actually means, same as

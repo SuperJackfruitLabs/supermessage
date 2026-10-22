@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TimelineDisplayRow } from "../timelineGrouping";
   import { QUICK_REACTIONS } from "../emojiPicker";
+  import { menuActions } from "./messageMenu";
 
   type ItemRow = Extract<TimelineDisplayRow, { type: "item" }>;
 
@@ -29,6 +30,8 @@
     onStartReply: (row: ItemRow) => void;
     onToggleReaction: (eventId: string | null, key: string) => void;
     onPickReaction: (itemId: string | null) => void;
+    onCopy: (row: ItemRow) => void;
+    onDelete: (row: ItemRow) => void;
   }
 
   let {
@@ -38,10 +41,13 @@
     onStartReply,
     onToggleReaction,
     onPickReaction,
+    onCopy,
+    onDelete,
   }: Props = $props();
 
   const item = $derived(row.item);
   const interactive = $derived(row.canReplyOrReact);
+  const actions = $derived(menuActions(row));
 </script>
 
 <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter. -->
@@ -124,5 +130,23 @@
     >
       +
     </button>
+    {#if actions.copy}
+      <button
+        type="button"
+        onclick={() => onCopy(row)}
+        class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+      >
+        Copy
+      </button>
+    {/if}
+    {#if actions.del}
+      <button
+        type="button"
+        onclick={() => onDelete(row)}
+        class="rounded px-1.5 py-0.5 text-ui font-medium text-danger transition-colors hover:bg-surface-sunken"
+      >
+        Delete
+      </button>
+    {/if}
   </div>
 {/if}
