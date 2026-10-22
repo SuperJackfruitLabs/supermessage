@@ -334,6 +334,37 @@ class RosterReachabilityTest {
         assertEquals(emptyList<String>(), fake.roomInfoCalls)
     }
 
+    /** iOS displays `describesAgent ? nil : memberCount` (`RoomScreen.swift`), so a flip while open hides it. */
+    @Test
+    fun aRoomThatBecomesAnAgentsWhileOpenDropsItsCount() {
+        var agent = false
+        val fake = FakeCore(
+            roomsSnapshotResult = {
+                val row = if (agent) runtimeRow("!a:example.org", "Alpha") else joinedRow("!a:example.org", "Alpha")
+                RoomsSnapshot(seq = 0uL, rooms = listOf(row))
+            },
+            roomInfoResult = { infoOf(it, 4uL) },
+        )
+        val session = sessionOf(fake)
+        val prefs = preferences()
+        compose.setContent {
+            Box(Modifier.requiredWidth(800.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Alpha").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("4 members").assertIsDisplayed()
+
+        agent = true
+        runBlocking { session.scenePhaseChanged(true) }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("members", substring = true).fetchSemanticsNodes().isEmpty()
+        }
+        compose.onAllNodesWithText("members", substring = true).assertCountEquals(0)
+    }
+
     /** iOS resets the count on `roomId` (`RoomScreen.swift:35-39`). */
     @Test
     fun memberCountResetsWhenTheRoomChanges() {

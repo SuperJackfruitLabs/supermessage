@@ -175,7 +175,7 @@ internal fun RoomPane(
 
         Column(modifier = modifier.fillMaxSize().testTag("pane-timeline")) {
             currentRow?.let {
-                RoomHeader(it, memberCount = memberCount, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
+                RoomHeader(it, memberCount = if (describesAgent || isInvitation) null else memberCount, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
             }
             // The note that is playing belongs to this room and
             // this pane: leaving either stops it (the key is the
