@@ -1014,6 +1014,9 @@ mod tests {
         assert_eq!(titles, ["All", "Unread", "Agents", "Needs you"]);
     }
 
+    /// Mutation seen failing: narrowing `_ if turn_in_progress` to
+    /// `AgentState::Active if turn_in_progress` (left: Some(Idle), right:
+    /// Some(Working)).
     #[test]
     fn the_header_status_vocabulary() {
         use AgentState::*;
@@ -1022,6 +1025,8 @@ mod tests {
             room_status(NeedsYou, true, true),
             Some(RoomStatus::NeedsYou)
         );
+        assert_eq!(room_status(Idle, true, true), Some(RoomStatus::Working));
+        assert_eq!(room_status(Quiet, true, true), Some(RoomStatus::Working));
         assert_eq!(room_status(Active, true, false), Some(RoomStatus::Active));
         assert_eq!(room_status(Idle, true, false), Some(RoomStatus::Idle));
         assert_eq!(room_status(Quiet, true, false), Some(RoomStatus::Quiet));
@@ -1029,6 +1034,8 @@ mod tests {
         assert_eq!(room_status(Active, false, true), None);
     }
 
+    /// Mutation seen failing: the NeedsYou word as "Needs You" (left:
+    /// [.., "Needs You", ..], right: [.., "Needs you", ..]).
     #[test]
     fn the_status_words() {
         let words: Vec<&str> = [

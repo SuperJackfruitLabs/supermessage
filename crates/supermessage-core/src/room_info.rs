@@ -542,6 +542,8 @@ mod tests {
         assert!(!should_fetch_full_member_list(0, 0));
     }
 
+    /// Mutation seen failing: unmuting returning `MentionsOnly` instead of
+    /// `Default`.
     #[test]
     fn unmuting_restores_the_default_rather_than_inventing_a_rule() {
         assert_eq!(
