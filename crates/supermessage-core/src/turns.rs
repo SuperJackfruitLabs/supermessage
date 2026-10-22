@@ -145,6 +145,22 @@ pub struct TurnSummary {
     /// The collapsed record's label, once the turn has ended and has a thought
     /// or a step.
     pub record_label: Option<String>,
+    /// Who is writing the turn: the Matrix user id that sent the first live
+    /// event (answer, thought or tool report) of this turn. `None` when no
+    /// event of the turn named its sender (a fixture or preview).
+    ///
+    /// AgentPod sends every delta as the agent's own user, so in a room with
+    /// several agents this names the one actually working, which the cast
+    /// cannot. The turn belongs to the agent whose events started it. The
+    /// book keeps one turn per room, so an event from a *different* agent
+    /// while that turn is in progress joins it and does not rename it: two
+    /// agents streaming into one room at once is an existing limitation (the
+    /// per-room de-duplication in `live` has the same shape), and a flipping
+    /// name would be worse than a stable, slightly stale one. The next turn,
+    /// after this one ends, takes its own writer. A `Reply` never sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub agent_id: Option<String>,
 }
 
 /// One step that changed. `index == len` of the steps before it means append.
@@ -203,6 +219,7 @@ struct TurnState {
     thought: Option<String>,
     thought_seq: u64,
     steps: Vec<TurnStep>,
+    agent_id: Option<String>,
 }
 
 impl TurnState {
@@ -263,6 +280,7 @@ impl TurnState {
             current_step_title,
             step_is_tool,
             record_label,
+            agent_id: self.agent_id.clone(),
         }
     }
 }
@@ -316,8 +334,18 @@ impl Inner {
                 thought: None,
                 thought_seq: 0,
                 steps: Vec::new(),
+                agent_id: None,
             },
         );
+    }
+
+    /// Names the writer of the room's turn, once: the first sender wins.
+    fn note_writer(&mut self, room_id: &str, sender: Option<&str>) {
+        if let (Some(state), Some(sender)) = (self.rooms.get_mut(room_id), sender) {
+            if state.in_progress() && state.agent_id.is_none() {
+                state.agent_id = Some(sender.to_string());
+            }
+        }
     }
 
     /// Ends the room's turn, the first time only, and applies retention.
@@ -360,7 +388,7 @@ impl Inner {
         })
     }
 
-    fn apply(&mut self, room_id: &str, input: TurnInput) -> TurnOutcome {
+    fn apply(&mut self, room_id: &str, sender: Option<&str>, input: TurnInput) -> TurnOutcome {
         let before = self.shape(room_id);
         let mut step_change = None;
         match input {
@@ -393,6 +421,7 @@ impl Inner {
             }
             TurnInput::Answer { at_ms, .. } => {
                 self.begin_if_needed(room_id, at_ms);
+                self.note_writer(room_id, sender);
                 if let Some(state) = self.rooms.get_mut(room_id) {
                     state.last_activity_ms = at_ms;
                     state.answering = true;
@@ -402,6 +431,7 @@ impl Inner {
                 seq, text, at_ms, ..
             } => {
                 self.begin_if_needed(room_id, at_ms);
+                self.note_writer(room_id, sender);
                 if let Some(state) = self.rooms.get_mut(room_id) {
                     state.last_activity_ms = at_ms;
                     if seq >= state.thought_seq {
@@ -426,6 +456,7 @@ impl Inner {
                     };
                 }
                 self.begin_if_needed(room_id, at_ms);
+                self.note_writer(room_id, sender);
                 if let Some(state) = self.rooms.get_mut(room_id) {
                     state.last_activity_ms = at_ms;
                     let index = match state.steps.iter().position(|x| x.id == step.id) {
@@ -462,7 +493,13 @@ impl TurnBook {
     }
 
     pub fn apply(&self, room_id: &str, input: TurnInput) -> TurnOutcome {
-        self.lock().apply(room_id, input)
+        self.lock().apply(room_id, None, input)
+    }
+
+    /// [`Self::apply`] with the Matrix user who sent the event, which names
+    /// the turn's writer (see [`TurnSummary::agent_id`]).
+    pub fn apply_from(&self, room_id: &str, sender: &str, input: TurnInput) -> TurnOutcome {
+        self.lock().apply(room_id, Some(sender), input)
     }
 
     /// Which sign-in the book is serving now. A feed (a live handler, a
@@ -481,6 +518,17 @@ impl TurnBook {
     /// the lock with the write, so a late event cannot land between the clear
     /// and the new sign-in.
     pub fn apply_in(&self, generation: u64, room_id: &str, input: TurnInput) -> TurnOutcome {
+        self.apply_in_from(generation, room_id, None, input)
+    }
+
+    /// [`Self::apply_in`] with the event's sender (see [`Self::apply_from`]).
+    pub fn apply_in_from(
+        &self,
+        generation: u64,
+        room_id: &str,
+        sender: Option<&str>,
+        input: TurnInput,
+    ) -> TurnOutcome {
         let mut inner = self.lock();
         if inner.generation != generation {
             return TurnOutcome {
@@ -488,7 +536,7 @@ impl TurnBook {
                 update: None,
             };
         }
-        inner.apply(room_id, input)
+        inner.apply(room_id, sender, input)
     }
 
     /// Ends every in-progress turn that has been silent for
@@ -1191,5 +1239,93 @@ mod tests {
         assert_ne!(new, old);
         assert!(book.apply_in(new, ROOM, answer(T + 2)).accepted);
         assert!(book.snapshot(ROOM).is_some());
+    }
+
+    fn writer(book: &TurnBook) -> Option<String> {
+        book.snapshot(ROOM).and_then(|s| s.summary.agent_id)
+    }
+
+    /// Mutation seen failing: `note_writer` doing nothing fails this with
+    /// `None`.
+    #[test]
+    fn a_turn_remembers_who_is_writing_it() {
+        let book = TurnBook::default();
+        book.apply_from(ROOM, "@atlas:x", answer(T));
+        assert_eq!(writer(&book).as_deref(), Some("@atlas:x"));
+    }
+
+    /// Mutation seen failing: `begin_if_needed` carrying the old turn's
+    /// `agent_id` into the new one fails this (still `@atlas:x`).
+    #[test]
+    fn a_new_turn_takes_its_own_writer() {
+        let book = TurnBook::default();
+        book.apply_from(ROOM, "@atlas:x", answer(T));
+        book.apply_from(ROOM, "@atlas:x", answer_done(T + 1));
+        let first = book.snapshot(ROOM).unwrap().summary.turn_id;
+        book.apply_from(
+            ROOM,
+            "@quill:x",
+            tool("t1", "Read", ToolPhase::Running, 1, T + 2),
+        );
+        let now = book.snapshot(ROOM).unwrap().summary;
+        assert_ne!(now.turn_id, first);
+        assert_eq!(now.agent_id.as_deref(), Some("@quill:x"));
+    }
+
+    /// The documented rule for a mid-turn event from another agent: it joins
+    /// the turn and does not rename it.
+    ///
+    /// Mutation seen failing: `note_writer` overwriting an existing writer
+    /// fails this (`@quill:x`).
+    #[test]
+    fn a_turn_keeps_its_first_writer() {
+        let book = TurnBook::default();
+        book.apply_from(ROOM, "@atlas:x", answer(T));
+        let id = book.snapshot(ROOM).unwrap().summary.turn_id;
+        book.apply_from(
+            ROOM,
+            "@quill:x",
+            tool("t1", "Read", ToolPhase::Running, 1, T + 1),
+        );
+        let s = book.snapshot(ROOM).unwrap().summary;
+        assert_eq!(s.turn_id, id, "a second agent started another turn");
+        assert_eq!(s.agent_id.as_deref(), Some("@atlas:x"));
+    }
+
+    /// A turn begun by an event with no sender is named by the first later
+    /// event that has one.
+    ///
+    /// Mutation seen failing: `note_writer` only setting it in
+    /// `begin_if_needed` fails this.
+    #[test]
+    fn a_writer_unknown_at_the_start_is_learned_later() {
+        let book = TurnBook::default();
+        book.apply(ROOM, answer(T));
+        assert_eq!(writer(&book), None);
+        book.apply_from(ROOM, "@atlas:x", answer(T + 1));
+        assert_eq!(writer(&book).as_deref(), Some("@atlas:x"));
+    }
+
+    /// Mutation seen failing: `Reply` calling `note_writer` fails this
+    /// (`@human:x`).
+    #[test]
+    fn a_reply_names_no_writer() {
+        let book = TurnBook::default();
+        book.apply(ROOM, answer(T));
+        book.apply_from(ROOM, "@human:x", reply(Some(T + 1), T + 2));
+        assert_eq!(writer(&book), None);
+    }
+
+    /// The writer is news: a host holding the summary without it must be told.
+    ///
+    /// Mutation seen failing: leaving `agent_id` out of `summary()` fails
+    /// this.
+    #[test]
+    fn learning_the_writer_is_an_update() {
+        let book = TurnBook::default();
+        book.apply(ROOM, answer(T));
+        let out = book.apply_from(ROOM, "@atlas:x", answer(T + 1));
+        let update = out.update.expect("the writer is news");
+        assert_eq!(update.summary.agent_id.as_deref(), Some("@atlas:x"));
     }
 }

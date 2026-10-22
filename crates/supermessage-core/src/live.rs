@@ -337,10 +337,11 @@ fn deliver(
     turns: &TurnBook,
     generation: u64,
     room_id: &str,
+    sender: &str,
     input: TurnInput,
     raw: CoreEvent,
 ) {
-    let outcome = turns.apply_in(generation, room_id, input);
+    let outcome = turns.apply_in_from(generation, room_id, Some(sender), input);
     if !outcome.accepted {
         return;
     }
@@ -402,6 +403,7 @@ pub fn listen(
                 &feed.book,
                 feed.generation,
                 &room_id,
+                ev.sender.as_str(),
                 input,
                 CoreEvent::Live(payload),
             );
@@ -441,6 +443,7 @@ pub fn listen(
                 &feed.book,
                 feed.generation,
                 &room_id,
+                ev.sender.as_str(),
                 input,
                 CoreEvent::Thought(payload),
             );
@@ -486,6 +489,7 @@ pub fn listen(
                 &feed.book,
                 feed.generation,
                 &room_id,
+                ev.sender.as_str(),
                 input,
                 CoreEvent::Tool(payload),
             );
@@ -755,6 +759,7 @@ mod deliver_tests {
             &book,
             book.generation(),
             "!r:x",
+            "@atlas:x",
             TurnInput::Answer {
                 seq: 1,
                 done: false,
@@ -769,6 +774,7 @@ mod deliver_tests {
             &book,
             book.generation(),
             "!r:x",
+            "@atlas:x",
             TurnInput::Answer {
                 seq: 2,
                 done: false,
@@ -792,6 +798,7 @@ mod deliver_tests {
             &book,
             generation,
             "!r:x",
+            "@atlas:x",
             tool_input(&done),
             CoreEvent::Tool(done),
         );
@@ -802,6 +809,7 @@ mod deliver_tests {
             &book,
             generation,
             "!r:x",
+            "@atlas:x",
             tool_input(&late),
             CoreEvent::Tool(late),
         );
@@ -825,6 +833,7 @@ mod deliver_tests {
             &book,
             old,
             "!r:x",
+            "@atlas:x",
             TurnInput::Answer {
                 seq: 1,
                 done: false,
@@ -834,5 +843,30 @@ mod deliver_tests {
         );
         assert!(rec.0.lock().unwrap().is_empty(), "the old session spoke");
         assert_eq!(book.snapshot("!r:x"), None, "the old session fed the book");
+    }
+
+    /// The sender of the delta reaches the turn's summary through `deliver`.
+    ///
+    /// Mutation seen failing: `deliver` passing `None` as the sender fails
+    /// the assertion (the summary then has no `agent_id`).
+    #[test]
+    fn deliver_names_the_sender_as_the_turns_writer() {
+        let (_rec, sink) = recorder();
+        let book = TurnBook::default();
+        deliver(
+            &sink,
+            &book,
+            book.generation(),
+            "!r:x",
+            "@quill:x",
+            TurnInput::Answer {
+                seq: 1,
+                done: false,
+                at_ms: 1,
+            },
+            CoreEvent::Live(payload(1)),
+        );
+        let summary = book.snapshot("!r:x").unwrap().summary;
+        assert_eq!(summary.agent_id.as_deref(), Some("@quill:x"));
     }
 }
