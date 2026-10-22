@@ -20,20 +20,37 @@ export function emptyTurn(roomId: string | null): LiveTurnState {
   return { roomId, summary: null, steps: [], thought: null, answer: null };
 }
 
-/** Another room's update, or one older than what is held, changes nothing. */
+function accepts(s: LiveTurnState, u: TurnUpdate): boolean {
+  if (s.roomId === null || u.summary.roomId !== s.roomId) return false;
+  return !(s.summary !== null && u.summary.revision < s.summary.revision);
+}
+
+/** A new turn starts clean: the last one's steps, reasoning and answer are not its. */
+function baseFor(s: LiveTurnState, u: TurnUpdate): LiveTurnState {
+  return s.summary !== null && s.summary.turnId !== u.summary.turnId ? emptyTurn(s.roomId) : s;
+}
+
+/**
+ * Whether the update names a step past the end of what is held: applying it
+ * would leave a hole, so the caller must ask the core for the record instead.
+ */
+export function turnHasGap(s: LiveTurnState, u: TurnUpdate): boolean {
+  return accepts(s, u) && u.step !== null && u.step.index > baseFor(s, u).steps.length;
+}
+
+/**
+ * Another room's update, or one older than what is held, changes nothing. Nor
+ * does one that would leave a gap in the steps: the revision stays where it was,
+ * so the snapshot that repairs it is not mistaken for an older view.
+ */
 export function applyTurnUpdate(s: LiveTurnState, u: TurnUpdate): LiveTurnState {
-  if (s.roomId === null || u.summary.roomId !== s.roomId) return s;
-  if (s.summary !== null && u.summary.revision < s.summary.revision) return s;
-  // A new turn starts clean: the last one's steps, reasoning and answer are not its.
-  const base =
-    s.summary !== null && s.summary.turnId !== u.summary.turnId ? emptyTurn(s.roomId) : s;
+  if (!accepts(s, u) || turnHasGap(s, u)) return s;
+  const base = baseFor(s, u);
   let steps = base.steps;
   if (u.step !== null) {
     // The core gives the index: an existing one is replaced, index == length appends.
     const { index, step } = u.step;
-    if (index <= steps.length) {
-      steps = [...steps.slice(0, index), step, ...steps.slice(index + 1)];
-    }
+    steps = [...steps.slice(0, index), step, ...steps.slice(index + 1)];
   }
   return { ...base, summary: u.summary, steps };
 }

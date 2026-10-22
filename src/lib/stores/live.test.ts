@@ -44,6 +44,22 @@ function summary(over: Partial<TurnSummary> = {}): TurnSummary {
   };
 }
 
+function stepOf(id: string): TurnSnapshot["steps"][number] {
+  return {
+    id,
+    title: id,
+    kind: null,
+    status: "completed",
+    phase: "done",
+    statusLabel: "Done",
+    locations: [],
+    input: null,
+    output: null,
+    seq: 1,
+    hasDetail: false,
+  };
+}
+
 function setup(turn: (roomId: string) => Promise<TurnSnapshot | null> = async () => null) {
   const live = channel<LivePayload>();
   const thought = channel<LivePayload>();
@@ -140,20 +156,35 @@ describe("liveStore", () => {
     expect(store.agentName(ROOM)).toBeNull();
   });
 
-  it("it never subscribes to tool updates", () => {
-    // The deps type has no onTool: steps arrive on sm://turn. A runtime check
-    // that the store asks for exactly the three text/turn channels.
-    const asked: string[] = [];
-    const sub = (name: string) => () => {
-      asked.push(name);
-      return Promise.resolve(() => {});
+  it("a step past the end asks the core for the record instead of leaving a hole", async () => {
+    const full: TurnSnapshot = {
+      summary: summary({ revision: 6, totalSteps: 3 }),
+      steps: [0, 1, 2].map((i) => ({ ...stepOf(`s${i}`) })),
+      thought: null,
     };
-    createLiveStore({
-      onLive: sub("live"),
-      onThought: sub("thought"),
-      onTurn: sub("turn"),
-      turn: async () => null,
-    });
-    expect(asked.sort()).toEqual(["live", "thought", "turn"]);
+    let calls = 0;
+    const { store, turns } = setup(async () => (calls++ === 0 ? null : full));
+    await store.focus(ROOM);
+    turns.emit({ summary: summary({ revision: 5, totalSteps: 3 }), step: { index: 2, step: stepOf("s2") } });
+    expect(store.steps).toHaveLength(0);
+    expect(store.summary).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toBe(2);
+    expect(store.steps.map((x) => x.id)).toEqual(["s0", "s1", "s2"]);
+  });
+
+  it("a summary that counts more steps than are held also refreshes", async () => {
+    const full: TurnSnapshot = {
+      summary: summary({ revision: 4, totalSteps: 2 }),
+      steps: [stepOf("s0"), stepOf("s1")],
+      thought: null,
+    };
+    let calls = 0;
+    const { store, turns } = setup(async () => (calls++ === 0 ? null : full));
+    await store.focus(ROOM);
+    turns.emit({ summary: summary({ revision: 3, totalSteps: 2 }), step: null });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.steps).toHaveLength(2);
+    expect(store.summary?.revision).toBe(4);
   });
 });

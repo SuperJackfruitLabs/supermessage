@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RoomCast, TurnSnapshot, TurnStep, TurnSummary, TurnUpdate } from "$lib/ipc";
-import { applyTurnUpdate, emptyTurn, restoreTurn, turnAgentName } from "./liveTurn";
+import { applyTurnUpdate, emptyTurn, restoreTurn, turnAgentName, turnHasGap } from "./liveTurn";
 
 const ROOM = "!a:x.org";
 
@@ -78,6 +78,28 @@ describe("applyTurnUpdate", () => {
       ["a", "done"],
       ["b", "running"],
     ]);
+  });
+});
+
+describe("a step past the end", () => {
+  it("is not applied, and the revision does not advance", () => {
+    const held = applyTurnUpdate(emptyTurn(ROOM), update({ revision: 1 }));
+    const next = applyTurnUpdate(held, update({ revision: 5, totalSteps: 3 }, { index: 2, step: step("c") }));
+    expect(next).toBe(held);
+    expect(next.summary?.revision).toBe(1);
+    expect(turnHasGap(held, update({ revision: 5 }, { index: 2, step: step("c") }))).toBe(true);
+    expect(turnHasGap(held, update({ revision: 5 }, { index: 0, step: step("a") }))).toBe(false);
+  });
+
+  it("leaves the snapshot that repairs it acceptable", () => {
+    const held = applyTurnUpdate(emptyTurn(ROOM), update({ revision: 1 }));
+    const gapped = applyTurnUpdate(held, update({ revision: 5 }, { index: 2, step: step("c") }));
+    const snap: TurnSnapshot = {
+      summary: summary({ revision: 4, totalSteps: 3 }),
+      steps: [step("a"), step("b"), step("c")],
+      thought: null,
+    };
+    expect(restoreTurn(gapped, snap).steps).toHaveLength(3);
   });
 });
 

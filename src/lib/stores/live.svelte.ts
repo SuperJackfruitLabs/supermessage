@@ -25,7 +25,8 @@ import {
   type ToolPhase,
   type TurnUpdate,
 } from "$lib/ipc";
-import { applyTurnUpdate, emptyTurn, restoreTurn, type LiveTurnState } from "./liveTurn";
+import { untrack } from "svelte";
+import { applyTurnUpdate, emptyTurn, restoreTurn, turnHasGap, type LiveTurnState } from "./liveTurn";
 
 /** One tool call, in the shape the retiring `LiveActivity` strip reads. */
 export interface LiveTool {
@@ -65,9 +66,27 @@ export function createLiveStore(deps: LiveStoreDeps = defaultDeps) {
     console.error(`liveStore: failed to subscribe to ${what}`, err);
   };
 
+  // Asks the core for the whole record again: an update arrived that cannot be
+  // applied without leaving a hole, or the record is still short of its count.
+  // Steps are never appended past a gap; the core's snapshot is the only repair.
+  const refetch = async () => {
+    const roomId = state.roomId;
+    if (roomId === null) return;
+    const mine = generation;
+    try {
+      const snap = await deps.turn(roomId);
+      if (mine !== generation) return;
+      state = restoreTurn(state, snap);
+    } catch (err) {
+      console.error("liveStore: could not refresh the turn", err);
+    }
+  };
+
   deps
     .onTurn((u: TurnUpdate) => {
+      const gap = turnHasGap(state, u);
       state = applyTurnUpdate(state, u);
+      if (gap || (state.summary !== null && state.steps.length < state.summary.totalSteps)) void refetch();
     })
     .catch(guard("turn updates"));
 
@@ -128,12 +147,18 @@ export function createLiveStore(deps: LiveStoreDeps = defaultDeps) {
       }
     },
 
+    // Reads the map untracked: a caller inside an `$effect` (the page's name
+    // effect) would otherwise depend on the state it writes and loop until
+    // `effect_update_depth_exceeded`. Unchanged names write nothing.
     setAgentName(name: string | null, roomId: string): void {
+      const current = untrack(() => agentNames);
       if (name === null) {
-        const { [roomId]: _gone, ...rest } = agentNames;
+        if (!(roomId in current)) return;
+        const { [roomId]: _gone, ...rest } = current;
         agentNames = rest;
       } else {
-        agentNames = { ...agentNames, [roomId]: name };
+        if (current[roomId] === name) return;
+        agentNames = { ...current, [roomId]: name };
       }
     },
     agentName(roomId: string | null): string | null {

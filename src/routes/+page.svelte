@@ -82,10 +82,10 @@
   // bounds each name's length first. `null` until the core answers, and
   // whenever nobody is typing.
   let typingLine = $state<string | null>(null);
-  // The agents typing now, for the dock above the composer (a later task reads it).
   // The steps in the shape the retiring activity strip reads (Task 2 deletes it).
+  // Only while the turn is going: a finished turn's steps are its record, not "now".
   const liveTools = $derived<LiveTool[]>(
-    liveStore.steps.map((s) => ({
+    (liveStore.inProgress ? liveStore.steps : []).map((s) => ({
       toolCallId: s.id,
       title: s.title,
       kind: s.kind,
@@ -95,6 +95,7 @@
       locations: s.locations,
     })),
   );
+  // The agents typing now, for the dock above the composer (a later task reads it).
   let typingAgents = $state<string[]>([]);
 
   // The focused room's turn and cast follow the selection. The cast loads first
@@ -1158,7 +1159,7 @@
             the agent produced them in, and the order a reader reconstructs
             them in. Collapsed unless asked for; see `AgentReasoning.svelte`.
           -->
-          <AgentReasoning streaming={liveStore.thought} />
+          <AgentReasoning streaming={liveStore.inProgress ? liveStore.thought : null} />
           <!--
             The answer as it is written, between the timeline and the typing
             line: closest to where it will land, and outside the virtual list
@@ -1176,7 +1177,7 @@
           -->
           <LiveActivity
             tools={liveTools}
-            thinking={liveStore.thought}
+            thinking={liveStore.inProgress ? liveStore.thought : null}
           />
           <TypingIndicator text={typingLine} />
           <!--
