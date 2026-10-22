@@ -17,6 +17,7 @@ import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
+import uniffi.supermessage_ffi.AttachmentSendOutcome
 import uniffi.supermessage_ffi.ConnectionState
 import uniffi.supermessage_ffi.CoreInterface
 import uniffi.supermessage_ffi.EventSink
@@ -127,6 +128,28 @@ class StagedAttachmentTest {
         assertEquals("tok-1", staged.file.value?.token)
     }
 
+    /**
+     * A send that fails after the token was taken comes back as an outcome,
+     * not a throw. The message is returned and the fresh token the core
+     * staged is released, since this chip does not use it yet.
+     */
+    @Test
+    fun `failedOutcomeReturnsTheMessageAndReleasesTheFreshToken`() = runTest {
+        val fake = FakeCore(
+            stageResult = { stagedFile("tok-1") },
+            sendResult = {
+                AttachmentSendOutcome.Failed(FfiException.Network("upload failed"), stagedFile("tok-2"))
+            },
+        )
+        val staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!a:x")
+
+        val message = staged.send(roomId = "!a:x")
+
+        assertTrue(message != null && message.isNotEmpty())
+        assertTrue(fake.discardedTokens.contains("tok-2"))
+    }
+
     /** discarding tells the core and clears the staged file */
     @Test
     fun `discarding tells the core and clears the staged file`() = runTest {
@@ -167,7 +190,7 @@ class StagedAttachmentTest {
 
     private class FakeCore(
         private val stageResult: () -> StagedFile = { throw NotImplementedError() },
-        private val sendResult: (() -> Unit)? = null,
+        private val sendResult: (() -> AttachmentSendOutcome)? = null,
     ) : StubCore() {
         val discardedTokens = mutableListOf<String>()
         val sentTokens = mutableListOf<Pair<String, String>>()
@@ -176,9 +199,10 @@ class StagedAttachmentTest {
             discardedTokens.add(token)
         }
 
-        override fun attachmentSend(roomId: String, token: String, caption: String?) {
-            sendResult?.invoke()
+        override fun attachmentSend(roomId: String, token: String, caption: String?): AttachmentSendOutcome {
+            val outcome = sendResult?.invoke() ?: AttachmentSendOutcome.Sent
             sentTokens.add(roomId to token)
+            return outcome
         }
 
         override fun attachmentStagePath(roomId: String, path: String): StagedFile = stageResult()

@@ -5,6 +5,7 @@ import dev.supermessage.kit.ErrorPresenter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import uniffi.supermessage_ffi.AttachmentSendOutcome
 import uniffi.supermessage_ffi.FfiException
 import uniffi.supermessage_ffi.StagedFile
 
@@ -60,9 +61,19 @@ class StagedAttachment(private val client: CoreClient) {
     suspend fun send(roomId: String, caption: String? = null): String? {
         val staged = _file.value ?: return null
         return try {
-            client.attachmentSend(roomId = roomId, token = staged.token, caption = caption)
-            _file.value = null
-            null
+            when (val outcome =
+                client.attachmentSend(roomId = roomId, token = staged.token, caption = caption)) {
+                is AttachmentSendOutcome.Sent -> {
+                    _file.value = null
+                    null
+                }
+                is AttachmentSendOutcome.Failed -> {
+                    // The core staged the file again; this chip does not use the
+                    // fresh token yet, so release it rather than orphan it.
+                    outcome.restaged?.let { client.attachmentDiscard(token = it.token) }
+                    ErrorPresenter.message(outcome.error)
+                }
+            }
         } catch (error: FfiException) {
             ErrorPresenter.message(error)
         } catch (error: Throwable) {

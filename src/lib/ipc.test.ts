@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
+const { attachmentSend, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -161,5 +161,25 @@ describe("agent avatar", () => {
     invokeMock.mockResolvedValue([]);
     await agentAvatarVariants();
     expect(invokeMock).toHaveBeenCalledWith("agent_avatar_variants");
+  });
+});
+
+describe("attachmentSend", () => {
+  it("returns the core's outcome", async () => {
+    const outcome = {
+      outcome: "failed",
+      error: { kind: "network", message: "x" },
+      restaged: null,
+    };
+    invokeMock.mockResolvedValueOnce(outcome);
+
+    const result = await attachmentSend("!r:x.org", "tok", null);
+
+    expect(result).toEqual(outcome);
+    expect(invokeMock).toHaveBeenCalledWith("attachment_send", {
+      roomId: "!r:x.org",
+      token: "tok",
+      caption: null,
+    });
   });
 });

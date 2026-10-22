@@ -679,6 +679,11 @@ pub async fn attachment_stage(
 /// the homeserver's limit — re-checked here, immediately before the read,
 /// because the file on disk can grow between staging and sending.
 ///
+/// Any failure **after** the token was taken is not an `Err` but
+/// `{ outcome: "failed", error, restaged }`: the core has already staged the
+/// same file again (re-applying a voice mark) and `restaged` carries the
+/// fresh token, or `null` when the file could not be staged again.
+///
 /// Sends through the **send queue** (§6), the same path [`send_message`]
 /// uses, so the attachment gets a local echo, retries across a reconnect,
 /// and orders against other sends. Emits nothing itself: the echo arrives
@@ -691,7 +696,7 @@ pub async fn attachment_send(
     session: State<'_, Session>,
     timeline: State<'_, Arc<FocusedTimeline>>,
     staged: State<'_, Arc<StagedAttachments>>,
-) -> Result<(), CoreError> {
+) -> Result<attachments::AttachmentSendOutcome, CoreError> {
     attachments::send_staged(&session, &timeline, &staged, &room_id, &token, caption).await
 }
 
