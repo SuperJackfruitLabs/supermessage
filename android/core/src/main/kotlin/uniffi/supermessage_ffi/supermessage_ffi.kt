@@ -33,10 +33,12 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.AgentAvatar
+import uniffi.supermessage_core.AgentAvatarStyle
 import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeAccountDto
 import uniffi.supermessage_core.FfiConverterTypeAgentAvatar
+import uniffi.supermessage_core.FfiConverterTypeAgentAvatarStyle
 import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
@@ -93,6 +95,7 @@ import uniffi.supermessage_core.WidgetLiveTurn
 import uniffi.supermessage_core.WidgetWrite
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatar
+import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatarStyle
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
@@ -1044,6 +1047,10 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1207,6 +1214,10 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
     ): Unit
+    fun uniffi_supermessage_ffi_fn_func_agent_avatar_style(`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferAgentAvatarStyle.ByValue
+    fun uniffi_supermessage_ffi_fn_func_agent_avatar_variants(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_audio_clock_label(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1369,6 +1380,10 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_supermessage_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_checksum_func_agent_avatar_style(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_agent_avatar_variants(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_audio_clock_label(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_collect_mentions(
@@ -1578,6 +1593,12 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_supermessage_ffi_checksum_func_agent_avatar_style() != 40859.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_agent_avatar_variants() != 3545.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -6161,6 +6182,34 @@ public object FfiConverterSequenceTypeTimelineDiffOp: FfiConverterRustBuffer<Lis
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeAgentAvatarStyle: FfiConverterRustBuffer<List<AgentAvatarStyle>> {
+    override fun read(buf: ByteBuffer): List<AgentAvatarStyle> {
+        val len = buf.getInt()
+        return List<AgentAvatarStyle>(len) {
+            FfiConverterTypeAgentAvatarStyle.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<AgentAvatarStyle>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeAgentAvatarStyle.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<AgentAvatarStyle>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeAgentAvatarStyle.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer<List<Mentionable>> {
     override fun read(buf: ByteBuffer): List<Mentionable> {
         val len = buf.getInt()
@@ -6581,6 +6630,37 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
 
 
 
+
+
+
+
+
+        /**
+         * The generated tile for the room `room_id` — see `core::agent_avatar`. A
+         * free function for the same reason as `peer_color_index`: it touches no
+         * session state, and every host must draw the same tile for the same room.
+         */ fun `agentAvatarStyle`(`roomId`: kotlin.String): AgentAvatarStyle {
+            return FfiConverterTypeAgentAvatarStyle.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_agent_avatar_style(
+        FfiConverterString.lower(`roomId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Every avatar tile, in `variant` order. A free function for the same
+         * reason as `peer_color_index`.
+         */ fun `agentAvatarVariants`(): List<AgentAvatarStyle> {
+            return FfiConverterSequenceTypeAgentAvatarStyle.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_agent_avatar_variants(
+        _status)
+}
+    )
+    }
+    
 
         /**
          * A playing note's position as the clock under it reads — `"0:06"`,
