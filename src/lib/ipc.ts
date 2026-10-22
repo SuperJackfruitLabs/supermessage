@@ -12,6 +12,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { DiffEnvelope } from "./stores/diff";
 
 /** Mirrors the `CoreStatus` struct returned by the `core_status` command. */
@@ -2103,4 +2104,13 @@ export function onTool(handler: (payload: ToolPayload) => void): Promise<Unliste
 /** Subscribes to typing-state updates on {@link TYPING_EVENT}. */
 export function onTyping(handler: (payload: TypingPayload) => void): Promise<UnlistenFn> {
   return listen<TypingPayload>(TYPING_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * Scale the whole webview (text size, owner decision O3). A host call, not a
+ * command: zoom scales the rem-wide columns and the px breakpoints together,
+ * which a root font size would not. Needs `core:webview:allow-set-webview-zoom`.
+ */
+export async function setTextZoom(factor: number): Promise<void> {
+  await getCurrentWebview().setZoom(factor);
 }
