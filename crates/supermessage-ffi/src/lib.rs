@@ -1180,6 +1180,17 @@ pub fn long_read_graphemes() -> u32 {
     supermessage_core::item_view::LONG_READ_GRAPHEMES as u32
 }
 
+/// Runs the timeline grouping pass over `rows` — see
+/// `core::timeline_grouping::group_rows`. For previews, fixtures and Kit tests
+/// that build rows by hand; the live timeline is grouped by the core before it
+/// reaches a host. UniFFI only: the desktop has no caller, so no Tauri command.
+#[uniffi::export]
+pub fn group_timeline_rows(
+    rows: Vec<supermessage_core::dto::TimelineRow>,
+) -> Vec<supermessage_core::dto::TimelineRow> {
+    supermessage_core::timeline_grouping::group_rows(rows)
+}
+
 /// Folds `inputs` through a fresh turn book, for previews and fixtures — see
 /// `core::turns::fold_turn`.
 #[uniffi::export]

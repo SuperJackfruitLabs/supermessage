@@ -3639,6 +3639,27 @@ fn emit_ops(
         settled.extend(crate::voice_reply::reconcile(&mut guard.1));
         settled.extend(crate::voice_transcript::reconcile(&mut guard.1));
         settled.extend(settle_unread_marker(&mut guard.1));
+        // Grouping last: it reads what every pass above decided is drawn (a
+        // voice reply's row is `None`, the unread marker flips to and from
+        // it). Its fields travel in the ops this batch already carries,
+        // stamped on below, so a row that arrives in the batch is not sent a
+        // second time to say how it groups; only a row the batch did not carry
+        // and whose grouping moved (the one a new message now follows) gets a
+        // `Set`. A page of back-paginated history is therefore one `Append`
+        // and nothing more.
+        let regrouped = crate::timeline_grouping::settle(&mut guard.1);
+        let carried: std::collections::HashSet<&str> = wire_ops
+            .iter()
+            .flat_map(op_values)
+            .map(|row| row.item.id.as_str())
+            .collect();
+        let uncarried: Vec<usize> = regrouped
+            .into_iter()
+            .filter(|&index| !carried.contains(guard.1[index].item.id.as_str()))
+            .collect();
+        drop(carried);
+        crate::timeline_grouping::stamp(&mut wire_ops, &guard.1);
+        settled.extend(uncarried);
         settled.sort_unstable();
         settled.dedup();
         for index in settled {
@@ -7257,5 +7278,176 @@ mod gate_decision_tests {
         // No divider at all: nothing to do.
         let mut plain = vec![row("message")];
         assert!(settle_unread_marker(&mut plain).is_empty());
+    }
+}
+
+/// The grouping pass as `emit_ops` puts it on the wire.
+#[cfg(test)]
+mod grouping_on_the_wire {
+    use super::*;
+    use crate::event::CoreEvent;
+    use std::sync::Mutex as StdMutex;
+
+    struct Recorded(StdMutex<Vec<DiffEnvelope<TimelineRow>>>);
+    impl EventSink for Recorded {
+        fn emit(&self, event: CoreEvent) {
+            if let CoreEvent::TimelineDiff(envelope) = event {
+                self.0.lock().unwrap().push(envelope);
+            }
+        }
+    }
+
+    fn message(id: &str, sender: &str, at_ms: u64) -> TimelineRow {
+        let mut row = TimelineRow::new(project_item_parts(
+            id,
+            Some(id),
+            "message",
+            Some("m.text"),
+            None,
+            Some(sender),
+            None,
+            None,
+            false,
+            Some("hi"),
+            None,
+            None,
+            None,
+            Some(at_ms),
+            false,
+            None,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        ));
+        row.sender_name = sender.into();
+        row.sender_short = sender.into();
+        row
+    }
+
+    /// Runs `ops` through `emit_ops` against a timeline already holding
+    /// `before` (settled, as the live state always is). Returns the one
+    /// envelope's ops and the state afterwards.
+    fn emit(
+        before: Vec<TimelineRow>,
+        ops: Vec<DiffOp<TimelineRow>>,
+    ) -> (Vec<DiffOp<TimelineRow>>, Vec<TimelineRow>) {
+        let sink = Arc::new(Recorded(StdMutex::new(Vec::new())));
+        let as_sink: Arc<dyn EventSink> = sink.clone();
+        let state = Arc::new(Mutex::new((
+            0u64,
+            crate::timeline_grouping::group_rows(before),
+        )));
+        let mut seq = SeqCounter::default();
+        emit_ops(&as_sink, &state, &mut seq, "!room:x", ops);
+        let mut sent = sink.0.lock().unwrap();
+        assert_eq!(sent.len(), 1, "one batch, one envelope");
+        let envelope = sent.remove(0);
+        let rows = state.lock().unwrap().1.clone();
+        (envelope.ops, rows)
+    }
+
+    /// Mutation seen failing: removing the `settle` call from `emit_ops`
+    /// fails the `continues_run` assertion (the second value is sent
+    /// ungrouped).
+    #[test]
+    fn the_wire_carries_grouping_fields() {
+        let (ops, _) = emit(
+            Vec::new(),
+            vec![
+                DiffOp::PushBack {
+                    value: message("$1", "@a:x", 1_000),
+                },
+                DiffOp::PushBack {
+                    value: message("$2", "@a:x", 2_000),
+                },
+            ],
+        );
+        let values: Vec<&TimelineRow> = ops.iter().flat_map(op_values).collect();
+        assert_eq!(values.len(), 2, "ops: {ops:?}");
+        assert!(!values[0].continues_run && !values[0].ends_run);
+        assert!(values[1].continues_run, "the second continues the first");
+        assert!(values[1].ends_run);
+    }
+
+    /// A page of back-paginated history is one `Append`: its rows carry
+    /// their own grouping, so no `Set` repeats them (Review Focus 5).
+    ///
+    /// Mutation seen failing: removing the `stamp` call fails the equality
+    /// with the snapshot; additionally sending a `Set` for every changed
+    /// index (no `carried` filter) fails the "no Set for an appended id"
+    /// assertion.
+    #[test]
+    fn a_back_paginated_batch_carries_its_grouping_in_its_own_ops() {
+        let before: Vec<TimelineRow> = (0..3)
+            .map(|n| message(&format!("$old{n}"), "@a:x", 1_000 * (n + 1)))
+            .collect();
+        let page: Vec<TimelineRow> = (0..200)
+            .map(|n| {
+                let sender = if n % 2 == 0 { "@b:x" } else { "@a:x" };
+                message(&format!("$new{n}"), sender, 10_000 + n)
+            })
+            .collect();
+        let appended: std::collections::HashSet<String> =
+            page.iter().map(|row| row.item.id.clone()).collect();
+
+        let (ops, snapshot) = emit(before, vec![DiffOp::Append { values: page }]);
+
+        for op in &ops {
+            if let DiffOp::Set { value, .. } = op {
+                assert!(
+                    !appended.contains(&value.item.id),
+                    "{} was sent twice: in the Append and in a Set",
+                    value.item.id
+                );
+            }
+        }
+        let DiffOp::Append { values } = &ops[0] else {
+            panic!("the page travels as its own Append: {ops:?}");
+        };
+        assert_eq!(values.len(), 200);
+        for value in values {
+            let settled = snapshot
+                .iter()
+                .find(|row| row.item.id == value.item.id)
+                .unwrap();
+            assert_eq!(
+                value.continues_run, settled.continues_run,
+                "{}",
+                value.item.id
+            );
+            assert_eq!(value.ends_run, settled.ends_run, "{}", value.item.id);
+        }
+        // Alternating senders, the first not the old tail's: nothing in
+        // the page continues anything, and the old tail is unchanged, so
+        // the page is all that is sent.
+        assert!(values.iter().all(|row| !row.continues_run));
+        assert_eq!(ops.len(), 1, "{ops:?}");
+    }
+
+    /// Mutation seen failing: a `Set` for every row (`settled.extend(0..len)`)
+    /// fails the op-count assertion; no `settle` call fails the `Set`
+    /// (none is sent), and no `stamp` fails the `PushBack` value.
+    #[test]
+    fn appending_a_message_sets_only_the_row_whose_run_it_ends() {
+        let before: Vec<TimelineRow> = (0..3)
+            .map(|n| message(&format!("$old{n}"), "@a:x", 1_000 * (n + 1)))
+            .collect();
+        let (ops, _) = emit(
+            before,
+            vec![DiffOp::PushBack {
+                value: message("$new", "@a:x", 5_000),
+            }],
+        );
+        assert_eq!(ops.len(), 2, "{ops:?}");
+        let DiffOp::PushBack { value } = &ops[0] else {
+            panic!("{ops:?}");
+        };
+        assert!(value.continues_run && value.ends_run);
+        let DiffOp::Set { index, value } = &ops[1] else {
+            panic!("{ops:?}");
+        };
+        assert_eq!(*index, 2, "the row the new one follows");
+        assert!(!value.ends_run, "it no longer ends its run");
     }
 }

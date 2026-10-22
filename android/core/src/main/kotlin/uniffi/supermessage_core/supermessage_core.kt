@@ -1961,6 +1961,68 @@ public object FfiConverterTypeMediaMetaDto: FfiConverterRustBuffer<MediaMetaDto>
 
 
 /**
+ * Where a drawn membership row sits: in a run of one sentence, inside a
+ * stretch that may collapse.
+ *
+ * Expansion is not here. The placement carries both the run lines and the
+ * stretch line, and the host picks between them by which stretches the reader
+ * has opened.
+ */
+data class MembershipPlacement (
+    /**
+     * `group:<id of the run's first row>`, the same on every row of the run.
+     */
+    var `runId`: kotlin.String, 
+    /**
+     * The run's sentence. `Some` only on the run's first row.
+     */
+    var `runText`: kotlin.String? = null, 
+    /**
+     * `stretch:<id of the stretch's first row>`, on every row of a stretch
+     * that has [`STRETCH_COLLAPSE_THRESHOLD`] or more runs; otherwise `None`.
+     */
+    var `stretchId`: kotlin.String? = null, 
+    /**
+     * The stretch's summary line. `Some` only on its first row, with
+     * [`Self::stretch_id`].
+     */
+    var `stretchText`: kotlin.String? = null
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMembershipPlacement: FfiConverterRustBuffer<MembershipPlacement> {
+    override fun read(buf: ByteBuffer): MembershipPlacement {
+        return MembershipPlacement(
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MembershipPlacement) = (
+            FfiConverterString.allocationSize(value.`runId`) +
+            FfiConverterOptionalString.allocationSize(value.`runText`) +
+            FfiConverterOptionalString.allocationSize(value.`stretchId`) +
+            FfiConverterOptionalString.allocationSize(value.`stretchText`)
+    )
+
+    override fun write(value: MembershipPlacement, buf: ByteBuffer) {
+            FfiConverterString.write(value.`runId`, buf)
+            FfiConverterOptionalString.write(value.`runText`, buf)
+            FfiConverterOptionalString.write(value.`stretchId`, buf)
+            FfiConverterOptionalString.write(value.`stretchText`, buf)
+    }
+}
+
+
+
+/**
  * A member a message can address.
  */
 data class Mentionable (
@@ -4076,7 +4138,32 @@ data class TimelineRow (
      * (`crate::item_view::is_long_read`, past `LONG_READ_GRAPHEMES`).
      * Defaulted and left off the wire when false.
      */
-    var `isLongRead`: kotlin.Boolean = false
+    var `isLongRead`: kotlin.Boolean = false, 
+    /**
+     * Whether this row continues the sender run above it, so a host drops
+     * its header (`crate::timeline_grouping`). Set by the settle pass over the
+     * whole list, never by the row itself; defaulted and left off the wire
+     * when false, like [`Self::voice_reply`].
+     */
+    var `continuesRun`: kotlin.Boolean = false, 
+    /**
+     * Whether the next drawn row does not continue this one, so a host draws
+     * the bubble's tail. Mirrors the next row's [`Self::continues_run`].
+     */
+    var `endsRun`: kotlin.Boolean = false, 
+    /**
+     * Whether this reply's quote only repeats the drawn row above it.
+     */
+    var `hidesQuote`: kotlin.Boolean = false, 
+    /**
+     * Whether this row shows the bridge's `(harness on host)` suffix: the
+     * room has two or more peer senders and this row has a suffix.
+     */
+    var `showsRuntime`: kotlin.Boolean = false, 
+    /**
+     * For a drawn membership row: the run and stretch it belongs to.
+     */
+    var `membership`: MembershipPlacement? = null
 ) {
     
     companion object
@@ -4101,6 +4188,11 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalTypeTranscriptNotice.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeMembershipPlacement.read(buf),
         )
     }
 
@@ -4117,7 +4209,12 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalTypeVoiceReplyLink.allocationSize(value.`voiceReply`) +
             FfiConverterOptionalTypeTranscriptNotice.allocationSize(value.`voiceTranscript`) +
             FfiConverterBoolean.allocationSize(value.`isAgent`) +
-            FfiConverterBoolean.allocationSize(value.`isLongRead`)
+            FfiConverterBoolean.allocationSize(value.`isLongRead`) +
+            FfiConverterBoolean.allocationSize(value.`continuesRun`) +
+            FfiConverterBoolean.allocationSize(value.`endsRun`) +
+            FfiConverterBoolean.allocationSize(value.`hidesQuote`) +
+            FfiConverterBoolean.allocationSize(value.`showsRuntime`) +
+            FfiConverterOptionalTypeMembershipPlacement.allocationSize(value.`membership`)
     )
 
     override fun write(value: TimelineRow, buf: ByteBuffer) {
@@ -4134,6 +4231,11 @@ public object FfiConverterTypeTimelineRow: FfiConverterRustBuffer<TimelineRow> {
             FfiConverterOptionalTypeTranscriptNotice.write(value.`voiceTranscript`, buf)
             FfiConverterBoolean.write(value.`isAgent`, buf)
             FfiConverterBoolean.write(value.`isLongRead`, buf)
+            FfiConverterBoolean.write(value.`continuesRun`, buf)
+            FfiConverterBoolean.write(value.`endsRun`, buf)
+            FfiConverterBoolean.write(value.`hidesQuote`, buf)
+            FfiConverterBoolean.write(value.`showsRuntime`, buf)
+            FfiConverterOptionalTypeMembershipPlacement.write(value.`membership`, buf)
     }
 }
 
@@ -8046,6 +8148,38 @@ public object FfiConverterOptionalTypeMediaMetaDto: FfiConverterRustBuffer<Media
         } else {
             buf.put(1)
             FfiConverterTypeMediaMetaDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeMembershipPlacement: FfiConverterRustBuffer<MembershipPlacement?> {
+    override fun read(buf: ByteBuffer): MembershipPlacement? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeMembershipPlacement.read(buf)
+    }
+
+    override fun allocationSize(value: MembershipPlacement?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeMembershipPlacement.allocationSize(value)
+        }
+    }
+
+    override fun write(value: MembershipPlacement?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeMembershipPlacement.write(value, buf)
         }
     }
 }

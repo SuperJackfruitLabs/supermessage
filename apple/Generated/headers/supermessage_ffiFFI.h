@@ -724,6 +724,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_first_run_script(RustCallStatus *_Non
 RustBuffer uniffi_supermessage_ffi_fn_func_fold_turn(RustBuffer room_id, RustBuffer inputs, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GROUP_TIMELINE_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GROUP_TIMELINE_ROWS
+RustBuffer uniffi_supermessage_ffi_fn_func_group_timeline_rows(RustBuffer rows, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_LONG_READ_GRAPHEMES
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_LONG_READ_GRAPHEMES
 uint32_t uniffi_supermessage_ffi_fn_func_long_read_graphemes(RustCallStatus *_Nonnull out_status
@@ -1263,6 +1268,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_first_run_script(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FOLD_TURN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FOLD_TURN
 uint16_t uniffi_supermessage_ffi_checksum_func_fold_turn(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GROUP_TIMELINE_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GROUP_TIMELINE_ROWS
+uint16_t uniffi_supermessage_ffi_checksum_func_group_timeline_rows(void
     
 );
 #endif

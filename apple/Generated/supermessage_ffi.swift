@@ -4961,6 +4961,19 @@ public func foldTurn(roomId: String, inputs: [TurnInput]) -> TurnSnapshot? {
 })
 }
 /**
+ * Runs the timeline grouping pass over `rows` — see
+ * `core::timeline_grouping::group_rows`. For previews, fixtures and Kit tests
+ * that build rows by hand; the live timeline is grouped by the core before it
+ * reaches a host. UniFFI only: the desktop has no caller, so no Tauri command.
+ */
+public func groupTimelineRows(rows: [TimelineRow]) -> [TimelineRow] {
+    return try!  FfiConverterSequenceTypeTimelineRow.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_group_timeline_rows(
+        FfiConverterSequenceTypeTimelineRow.lower(rows),$0
+    )
+})
+}
+/**
  * How many graphemes a message may have before a row says `is_long_read`
  * (`core::item_view::LONG_READ_GRAPHEMES`). For hosts that need the figure
  * itself, such as fixtures and previews. UniFFI only: no Tauri command.
@@ -5488,6 +5501,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_group_timeline_rows() != 27483) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_long_read_graphemes() != 62272) {

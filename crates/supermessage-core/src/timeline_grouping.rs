@@ -20,9 +20,11 @@
 //! and applies no rule of its own; the one thing it keeps is which stretches
 //! the reader has opened.
 
+use std::collections::HashMap;
+
 use serde::Serialize;
 
-use crate::dto::TimelineRow;
+use crate::dto::{op_values, DiffOp, TimelineRow};
 use crate::item_view::ItemView;
 
 /// How close two messages from one sender must be to read as one turn.
@@ -163,6 +165,60 @@ fn set_flags(
     row.hides_quote = hides_quote;
     row.shows_runtime = shows_runtime;
     dirty
+}
+
+/// Copy the settled grouping fields onto every row the ops carry, by item id.
+///
+/// The ops a batch sends are the SDK's own, and their values were built before
+/// the pass ran. Stamping the final fields onto them means a row that arrives
+/// in a batch (a `PushBack`, an `Append` of a back-paginated page, a `Reset`)
+/// carries its grouping with it, so the pass needs no `Set` for it afterwards.
+/// A value whose id is no longer in `rows` was removed later in the batch and
+/// is left alone.
+///
+/// One pass over `rows`, looking each id up in the batch's own ids; nothing
+/// is cloned but the five fields.
+pub(crate) fn stamp(ops: &mut [DiffOp<TimelineRow>], rows: &[TimelineRow]) {
+    let mut carried: HashMap<String, Option<&TimelineRow>> = HashMap::new();
+    for op in ops.iter() {
+        for value in op_values(op) {
+            carried.insert(value.item.id.clone(), None);
+        }
+    }
+    if carried.is_empty() {
+        return;
+    }
+    for row in rows {
+        if let Some(slot) = carried.get_mut(&row.item.id) {
+            *slot = Some(row);
+        }
+    }
+    for op in ops.iter_mut() {
+        for value in op_values_mut(op) {
+            if let Some(Some(settled)) = carried.get(&value.item.id) {
+                value.continues_run = settled.continues_run;
+                value.ends_run = settled.ends_run;
+                value.hides_quote = settled.hides_quote;
+                value.shows_runtime = settled.shows_runtime;
+                value.membership = settled.membership.clone();
+            }
+        }
+    }
+}
+
+fn op_values_mut(op: &mut DiffOp<TimelineRow>) -> Vec<&mut TimelineRow> {
+    match op {
+        DiffOp::Append { values } | DiffOp::Reset { values } => values.iter_mut().collect(),
+        DiffOp::PushFront { value }
+        | DiffOp::PushBack { value }
+        | DiffOp::Insert { value, .. }
+        | DiffOp::Set { value, .. } => vec![value],
+        DiffOp::Clear
+        | DiffOp::PopFront
+        | DiffOp::PopBack
+        | DiffOp::Remove { .. }
+        | DiffOp::Truncate { .. } => Vec::new(),
+    }
 }
 
 /// Whether two or more distinct peers have spoken. Own messages say nothing:

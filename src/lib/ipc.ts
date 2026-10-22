@@ -1078,6 +1078,18 @@ export type ItemView =
   | { render: "none" };
 
 /**
+ * Where a membership row sits (the core's grouping pass). The host draws the
+ * stretch line when `stretchId` is set and not opened, otherwise the run line;
+ * a text is present only on the first row of its run or stretch.
+ */
+export interface MembershipPlacement {
+  runId: string;
+  runText?: string;
+  stretchId?: string;
+  stretchText?: string;
+}
+
+/**
  * A timeline item together with every decision the core made about it.
  *
  * The set of fields beyond `item` is not decoration. Each was a synchronous
@@ -1140,6 +1152,16 @@ export interface TimelineRow {
   isAgent?: boolean;
   /** Long enough to be offered as a long read. Absent when false. */
   isLongRead?: boolean;
+  /** This bubble continues the sender run above it: drop its header. Absent when false. */
+  continuesRun?: boolean;
+  /** The next drawn row does not continue this one: draw the tail. Absent when false. */
+  endsRun?: boolean;
+  /** This reply's quote only repeats the drawn row above it. Absent when false. */
+  hidesQuote?: boolean;
+  /** Show the bridge's runtime suffix on this row (several peers speak). Absent when false. */
+  showsRuntime?: boolean;
+  /** For a drawn membership row: its run and stretch. Absent on every other row. */
+  membership?: MembershipPlacement;
   /**
    * For a voice note's transcript notice: the note it transcribes. Absent on
    * every other row, and read by nothing here either — the core draws the
