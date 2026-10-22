@@ -25,10 +25,23 @@ describe("arrivedKeys", () => {
   it("a date divider never animates", () => {
     expect(arrivedKeys(["a", "b"], ["a", "b", "d", "c"], true, (k) => k !== "d")).toEqual(new Set(["c"]));
   });
-  it("a divider does not count toward the limit", () => {
-    expect(arrivedKeys(["a"], ["a", "d", "b", "c", "e"], true, (k) => k !== "d")).toEqual(
-      new Set(["b", "c", "e"]),
-    );
+  it("a divider counts toward the limit, as on iOS", () => {
+    expect(arrivedKeys(["a"], ["a", "d", "b", "c", "e"], true, (k) => k !== "d").size).toBe(0);
+    expect(arrivedKeys(["a"], ["a", "d", "b", "c"], true, (k) => k !== "d")).toEqual(new Set(["b", "c"]));
+  });
+  it("a prepend of a few messages animates nothing while following", () => {
+    expect(arrivedKeys(["c", "d"], ["a", "b", "c", "d"], true, all).size).toBe(0);
+  });
+  it("a prepend of mixed events animates nothing while following", () => {
+    const msg = (k: string) => k.startsWith("m");
+    expect(arrivedKeys(["m3"], ["s1", "m1", "s2", "m2", "s3", "m3"], true, msg).size).toBe(0);
+  });
+  it("a prepend alongside a real tail arrival animates only the tail", () => {
+    expect(arrivedKeys(["c"], ["a", "b", "c", "d"], true, all)).toEqual(new Set(["d"]));
+  });
+  it("a mixed tail append over the limit animates nothing", () => {
+    const msg = (k: string) => k.startsWith("m");
+    expect(arrivedKeys(["m0"], ["m0", "s1", "s2", "m1", "m2"], true, msg).size).toBe(0);
   });
   it("pagination prepends do not animate", () => {
     expect(arrivedKeys(["b", "c"], ["a", "b", "c"], false, all).size).toBe(0);
