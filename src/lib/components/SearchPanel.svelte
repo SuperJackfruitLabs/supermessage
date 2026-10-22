@@ -14,7 +14,13 @@
 
   import { errorMessage } from "$lib/errorMessage";
   import type { RoomRow, SearchResult } from "$lib/ipc";
-  import { projectSearchResults } from "./searchView";
+  import {
+    createLatestOnly,
+    projectSearchResults,
+    scopedRoomId,
+    searchHint,
+    type SearchScope,
+  } from "./searchView";
   import { relativeTime } from "./roomIdentity";
 
   /**
@@ -27,12 +33,14 @@
    */
   export interface Props {
     rooms: RoomRow[];
-    onSearch: (term: string) => Promise<SearchResult[]>;
+    /** The room the search was opened from; null when there is none. */
+    scope?: SearchScope | null;
+    onSearch: (term: string, roomId?: string) => Promise<SearchResult[]>;
     onOpenRoom: (roomId: string) => void;
     onClose: () => void;
   }
 
-  let { rooms, onSearch, onOpenRoom, onClose }: Props = $props();
+  let { rooms, scope = null, onSearch, onOpenRoom, onClose }: Props = $props();
 
   let term = $state("");
   let results = $state<SearchResult[]>([]);
@@ -41,6 +49,10 @@
   let failure = $state<string | null>(null);
   /** Whether a search has run at all, which is what "no results" depends on. */
   let searched = $state(false);
+
+  /** Starts narrowed to the room, as on iOS. */
+  let narrowed = $state(true);
+  const latest = createLatestOnly();
 
   const views = $derived(projectSearchResults(results, rooms));
   const now = Date.now();
@@ -57,18 +69,28 @@
    * useless to the reader, whose query is not finished yet.
    */
   async function run(): Promise<void> {
-    if (searching) return;
+    const ticket = latest.begin();
     searching = true;
     failure = null;
     try {
-      results = await onSearch(term);
+      const found = await onSearch(term, scopedRoomId(scope, narrowed));
+      if (!latest.isCurrent(ticket)) return;
+      results = found;
       searched = true;
     } catch (err) {
+      if (!latest.isCurrent(ticket)) return;
       results = [];
       failure = errorMessage(err);
     } finally {
-      searching = false;
+      if (latest.isCurrent(ticket)) searching = false;
     }
+  }
+
+  /** Changing the scope re-runs a search already made. */
+  function setNarrowed(value: boolean): void {
+    if (narrowed === value) return;
+    narrowed = value;
+    if (searched && term.trim() !== "") void run();
   }
 
   function open(roomId: string): void {
@@ -118,6 +140,25 @@
       </button>
     </form>
 
+    {#if scope}
+      <div role="radiogroup" aria-label="Search in" class="flex gap-1">
+        {#each [{ value: true, label: scope.name }, { value: false, label: "All rooms" }] as option (option.label)}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={narrowed === option.value}
+            onclick={() => setNarrowed(option.value)}
+            class="max-w-[50%] truncate rounded-control border px-3 py-1 text-ui transition-colors {narrowed ===
+            option.value
+              ? 'border-accent bg-surface-sunken text-content'
+              : 'border-border text-content-muted hover:bg-surface-sunken'}"
+          >
+            {option.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
     {#if failure !== null}
       <p role="alert" class="text-ui text-danger">{failure}</p>
     {:else if searched && views.length === 0}
@@ -129,6 +170,8 @@
       <p class="py-6 text-center text-ui text-content-muted">
         Nothing matched. Encrypted rooms are not searchable.
       </p>
+    {:else if !searched}
+      <p class="py-6 text-center text-ui text-content-muted">{searchHint(scope, narrowed)}</p>
     {:else if views.length > 0}
       <ul class="flex flex-col gap-1 overflow-y-auto">
         {#each views as view (view.eventId)}

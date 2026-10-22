@@ -82,3 +82,40 @@
     await expect(await canvas.findByText("Can't reach the homeserver.")).toBeInTheDocument();
   }}
 />
+
+<!-- Opened from a room: narrowed to it, with the hint and no search yet. -->
+<Story
+  name="Scoped to this room"
+  args={{
+    scope: { roomId: "!ashram:id.agentpod.dev", name: "Ashram" },
+    onSearch: async () => searchNoHits,
+  }}
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Find a message in Ashram.")).toBeInTheDocument();
+    await expect(canvas.getByRole("radio", { name: "Ashram" })).toHaveAttribute("aria-checked", "true");
+  }}
+/>
+
+<!--
+  Hits come back only when a room id was passed, so seeing them proves the
+  search was narrowed. Widening re-runs it (nothing, with no room id), and
+  narrowing again brings the hits back.
+-->
+<Story
+  name="Scoped, with hits"
+  args={{
+    scope: { roomId: "!ashram:id.agentpod.dev", name: "Ashram" },
+    onSearch: async (_term: string, roomId?: string) => (roomId ? searchHits : searchNoHits),
+  }}
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(canvas.getByPlaceholderText(/Search messages/), "build");
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByText(/Ready to promote build 214/)).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("radio", { name: "All rooms" }));
+    await expect(await canvas.findByText(/Nothing matched/)).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("radio", { name: "Ashram" }));
+    await expect(await canvas.findByText(/Ready to promote build 214/)).toBeInTheDocument();
+  }}
+/>

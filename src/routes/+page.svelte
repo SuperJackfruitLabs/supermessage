@@ -426,7 +426,8 @@
       !escapeClosesPanel({
         key: event.key,
         panelIsModal,
-        modalDialogOpen: document.querySelector("dialog:modal") !== null,
+        // The search panel is a modal overlay too, and handles its own Escape.
+        modalDialogOpen: searchOpen || document.querySelector("dialog:modal") !== null,
       })
     )
       return;
@@ -1161,6 +1162,9 @@
 {#if searchOpen}
   <SearchPanel
     rooms={roomsStore.rooms}
+    scope={roomsStore.selectedId
+      ? { roomId: roomsStore.selectedId, name: selectedIdentity.name }
+      : null}
     onSearch={searchMessages}
     onOpenRoom={(roomId) => roomsStore.select(roomId)}
     onClose={() => (searchOpen = false)}
