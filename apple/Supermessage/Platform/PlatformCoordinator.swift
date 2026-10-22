@@ -312,11 +312,11 @@ final class PlatformCoordinator {
 
     /// Keep each agent room's agent's picture in the App Group, where the
     /// fleet Live Activity can read it (spec 2026-09-30, B4). Which rooms are
-    /// agents' is the core's (`AgentDirectory`); who the agent is, and the
+    /// agents' is the core's (`RosterArrangement.agentDirectory`); who the agent is, and the
     /// file it goes in, are too (`AgentAvatarCache`).
     private func cacheAgentAvatars(_ rooms: [RoomRow]) {
         guard session.phase == .signedIn, let agentAvatars else { return }
-        let agents = AgentDirectory.rows(rooms, now: Date()).map {
+        let agents = RosterArrangement.agentDirectory(rooms, now: Date()).map {
             (roomId: $0.row.room.id, avatar: $0.row.room.avatarUrl)
         }
         guard !agents.isEmpty else { return }

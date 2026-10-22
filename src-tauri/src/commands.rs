@@ -506,6 +506,107 @@ pub fn roster_hidden_invitations(
     supermessage_core::roster::hidden_invitations(&rows, shows_invitations)
 }
 
+/// Keep the rows a filter admits; it keeps or drops, never orders.
+#[tauri::command]
+pub fn roster_filter_sections(
+    sections: Vec<supermessage_core::roster::RosterSection>,
+    filter: supermessage_core::roster::RosterFilter,
+) -> Vec<supermessage_core::roster::RosterSection> {
+    supermessage_core::roster::filter_sections(&sections, filter)
+}
+
+/// The offered filter chips over `sections`, each with its count.
+#[tauri::command]
+pub fn roster_filter_chips(
+    sections: Vec<supermessage_core::roster::RosterSection>,
+) -> Vec<supermessage_core::roster::RosterFilterChip> {
+    supermessage_core::roster::filter_chips(&sections)
+}
+
+/// A stored chip key read back; one that is not offered reads as All.
+#[tauri::command]
+pub fn roster_filter_from_key(key: String) -> supermessage_core::roster::RosterFilter {
+    supermessage_core::roster::filter_from_key(&key)
+}
+
+/// The key a filter is stored under.
+#[tauri::command]
+pub fn roster_filter_key(filter: supermessage_core::roster::RosterFilter) -> String {
+    filter.key().to_string()
+}
+
+/// What to say when a filter leaves nothing.
+#[tauri::command]
+pub fn roster_filter_empty_state(
+    filter: supermessage_core::roster::RosterFilter,
+) -> supermessage_core::roster::RosterEmptyState {
+    supermessage_core::roster::filter_empty_state(filter)
+}
+
+/// The Needs you inbox: pending decisions plus invitations.
+#[tauri::command]
+pub fn roster_needs_you_inbox(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    now_ms: u64,
+) -> supermessage_core::roster::NeedsYouInbox {
+    supermessage_core::roster::needs_you_inbox(&rows, now_ms)
+}
+
+/// Agent rooms, newest first, without invitations.
+#[tauri::command]
+pub fn roster_agent_directory(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    now_ms: u64,
+) -> Vec<supermessage_core::roster::RosterRow> {
+    supermessage_core::roster::agent_directory(&rows, now_ms)
+}
+
+/// The roster row the core arranged for one room, if it is there.
+#[tauri::command]
+pub fn roster_row(
+    rows: Vec<supermessage_core::dto::RoomRow>,
+    room_id: String,
+    now_ms: u64,
+) -> Option<supermessage_core::roster::RosterRow> {
+    supermessage_core::roster::roster_row(&rows, &room_id, now_ms)
+}
+
+/// The header status of a room, or `None` when it has none to say. See `core::roster::room_status`.
+#[tauri::command]
+pub fn room_status(
+    state: supermessage_core::roster::AgentState,
+    describes_agent: bool,
+    turn_in_progress: bool,
+) -> Option<supermessage_core::roster::RoomStatus> {
+    supermessage_core::roster::room_status(state, describes_agent, turn_in_progress)
+}
+
+/// The word the header shows for a status.
+#[tauri::command]
+pub fn room_status_word(status: supermessage_core::roster::RoomStatus) -> String {
+    supermessage_core::roster::room_status_word(status).to_string()
+}
+
+/// What the mute toggle sets next.
+#[tauri::command]
+pub fn next_notification_mode(
+    current: supermessage_core::room_info::NotificationMode,
+) -> supermessage_core::room_info::NotificationMode {
+    supermessage_core::room_info::next_notification_mode(current)
+}
+
+/// The generated tile for a room — see `core::agent_avatar`.
+#[tauri::command]
+pub fn agent_avatar_style(room_id: String) -> supermessage_core::agent_avatar::AgentAvatarStyle {
+    supermessage_core::agent_avatar::style_for_room(&room_id)
+}
+
+/// Every avatar tile, in `variant` order.
+#[tauri::command]
+pub fn agent_avatar_variants() -> Vec<supermessage_core::agent_avatar::AgentAvatarStyle> {
+    supermessage_core::agent_avatar::variants()
+}
+
 #[tauri::command]
 pub async fn search_messages(
     term: String,
@@ -667,6 +768,11 @@ pub async fn attachment_stage(
 /// the homeserver's limit — re-checked here, immediately before the read,
 /// because the file on disk can grow between staging and sending.
 ///
+/// Any failure **after** the token was taken is not an `Err` but
+/// `{ outcome: "failed", error, restaged }`: the core has already staged the
+/// same file again (re-applying a voice mark) and `restaged` carries the
+/// fresh token, or `null` when the file could not be staged again.
+///
 /// Sends through the **send queue** (§6), the same path [`send_message`]
 /// uses, so the attachment gets a local echo, retries across a reconnect,
 /// and orders against other sends. Emits nothing itself: the echo arrives
@@ -679,7 +785,7 @@ pub async fn attachment_send(
     session: State<'_, Session>,
     timeline: State<'_, Arc<FocusedTimeline>>,
     staged: State<'_, Arc<StagedAttachments>>,
-) -> Result<(), CoreError> {
+) -> Result<attachments::AttachmentSendOutcome, CoreError> {
     attachments::send_staged(&session, &timeline, &staged, &room_id, &token, caption).await
 }
 

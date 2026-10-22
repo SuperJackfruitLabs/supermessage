@@ -14,7 +14,7 @@ struct AgentsView: View {
 
     @State private var now = Date()
 
-    private var agents: [RosterRow] { AgentDirectory.rows(session.rooms.rooms, now: now) }
+    private var agents: [RosterRow] { RosterArrangement.agentDirectory(session.rooms.rooms, now: now) }
 
     var body: some View {
         List(selection: $selection) {
@@ -22,7 +22,7 @@ struct AgentsView: View {
                 AgentRow(
                     entry: entry,
                     avatarURI: session.avatars.uri(for: entry.row.room.id),
-                    status: RoomStatus.of(
+                    status: roomStatus(
                         state: entry.state, describesAgent: true,
                         turnInProgress: turnInProgress(entry.row.room.id)),
                     when: RelativeTime.label(for: entry.row.room.lastActivityMs, now: now))

@@ -38,12 +38,17 @@ extension FfiEvent: @retroactive @unchecked Sendable {}
 extension ItemView: @retroactive @unchecked Sendable {}
 extension MatrixLinkTarget: @retroactive @unchecked Sendable {}
 extension MediaFileLabel: @retroactive @unchecked Sendable {}
+extension NeedsYouInbox: @retroactive @unchecked Sendable {}
 extension NotificationMode: @retroactive @unchecked Sendable {}
 extension PersonDto: @retroactive @unchecked Sendable {}
 extension AgentState: @retroactive @unchecked Sendable {}
+extension AttachmentSendOutcome: @retroactive @unchecked Sendable {}
 extension AudioMetaDto: @retroactive @unchecked Sendable {}
 extension AudioView: @retroactive @unchecked Sendable {}
 extension PlayableAudio: @retroactive @unchecked Sendable {}
+extension RosterEmptyState: @retroactive @unchecked Sendable {}
+extension RosterFilter: @retroactive @unchecked Sendable {}
+extension RosterFilterChip: @retroactive @unchecked Sendable {}
 extension RosterRow: @retroactive @unchecked Sendable {}
 extension RosterSection: @retroactive @unchecked Sendable {}
 extension MediaMetaDto: @retroactive @unchecked Sendable {}
@@ -52,6 +57,7 @@ extension Mentionable: @retroactive @unchecked Sendable {}
 extension ReactionDto: @retroactive @unchecked Sendable {}
 extension ReplyQuoteView: @retroactive @unchecked Sendable {}
 extension ReplyToDto: @retroactive @unchecked Sendable {}
+extension RoomStatus: @retroactive @unchecked Sendable {}
 extension RichBlock: @retroactive @unchecked Sendable {}
 extension RichInline: @retroactive @unchecked Sendable {}
 extension RichListItem: @retroactive @unchecked Sendable {}

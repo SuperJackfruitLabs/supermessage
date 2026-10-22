@@ -4,11 +4,9 @@ import Testing
 @testable import SupermessageKit
 import SupermessageFFI
 
-/// The four destinations' views over the roster: filter chips, the Needs you
-/// inbox, the Agents directory, the header status, and the generated avatar
-/// tile. Each is checked against the real core — `rosterSections` crosses
-/// the boundary in every one of these — so a test here cannot pass against an
-/// order the core would never produce.
+/// The roster fixtures, one boundary check for the roster views the core now
+/// owns (filters, inbox, agents, status — tested in `core::roster`), the
+/// generated avatar tile, and the first-run demo.
 @MainActor
 struct RosterViewsTests {
     static let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -53,153 +51,28 @@ struct RosterViewsTests {
         RosterArrangement.sections(roster, view: .waiting, showsInvitations: false, now: now)
     }
 
-    // --- filters -----------------------------------------------------------
+    // --- the core's views ----------------------------------------------------
 
-    @Test("All is the core's arrangement, unchanged")
-    func allIsIdentity() {
-        #expect(RosterFilter.all.apply(Self.waiting()) == Self.waiting())
-    }
-
-    @Test("Unread keeps only rooms with unread messages, in the core's order")
-    func unreadFilters() {
-        // Waiting view: [b, e] waiting, then [a, c] — only a and c are unread.
-        #expect(Self.ids(RosterFilter.unread.apply(Self.waiting())) == [["a", "c"]])
-    }
-
-    @Test("Agents keeps rooms that read as an agent's, across sections")
-    func agentsFilters() {
-        #expect(Self.ids(RosterFilter.agents.apply(Self.waiting())) == [["b"], ["a"]])
-    }
-
-    @Test("Needs you keeps rooms owing an answer")
-    func needsYouFilters() {
-        #expect(Self.ids(RosterFilter.needsYou.apply(Self.waiting())) == [["b", "e"]])
-    }
-
-    @Test("filtering never reorders: the core's order survives in every chip")
-    func filteringPreservesOrder() {
-        let recent = RosterArrangement.sections(
-            Self.roster, view: .recent, showsInvitations: true, now: Self.now)
-        for filter in RosterFilter.allCases {
-            let kept = RosterFilter.filterIDs(filter.apply(recent))
-            let expected = recent.flatMap(\.rows).filter(filter.admits).map(\.row.room.id)
-            #expect(kept == expected, "\(filter) reordered the roster")
-        }
-    }
-
-    @Test("a section that lost rows drops its count; an untouched one keeps it")
-    func detailFollowsTheRows() {
-        let sections = Self.waiting()
-        #expect(sections.first?.detail == "2", "fixture: the waiting section counts two")
-
-        // Agents keeps only b of [b, e]: "2" would be a number not on screen.
-        let agents = RosterFilter.agents.apply(sections)
-        #expect(agents.first?.detail == nil)
-
-        // Needs you keeps both waiting rows, so the count is still true.
-        let needsYou = RosterFilter.needsYou.apply(sections)
-        #expect(needsYou.first?.detail == "2")
-        #expect(needsYou.first?.title == sections.first?.title)
-    }
-
-    // --- inbox -------------------------------------------------------------
-
-    @Test("the inbox is pending decisions plus invitations, and the badge counts both")
-    func inboxComposition() {
-        let inbox = NeedsYouInbox.from(Self.roster, now: Self.now)
-        #expect(inbox.decisions.map(\.row.room.id) == ["b", "e"])
-        #expect(inbox.invitations.map(\.row.room.id) == ["d"])
-        #expect(inbox.count == 3)
-        #expect(!inbox.isEmpty)
-        // The badge is for decisions; invitations have their own row.
-        #expect(inbox.badgeCount == 2)
-    }
-
-    @Test("an answered decision leaves the inbox, and an empty inbox says so")
-    func inboxIsFinishable() {
-        let answered = [Self.row("b", pending: false, agent: true), Self.row("c", unread: 4)]
-        let inbox = NeedsYouInbox.from(answered, now: Self.now)
-        #expect(inbox.isEmpty)
-        #expect(inbox.count == 0)
-    }
-
-    @Test("an invitation is not also counted as a decision")
-    func invitationCountedOnce() {
-        let invite = Self.row("x", pending: true, invited: true)
-        let inbox = NeedsYouInbox.from([invite], now: Self.now)
-        #expect(inbox.decisions.isEmpty)
-        #expect(inbox.count == 1)
-        #expect(inbox.badgeCount == 0, "an invitation alone must not light the badge")
-    }
-
-    // --- agents ------------------------------------------------------------
-
-    @Test("the agents tab lists agent rooms newest first and leaves out invitations")
-    func agentDirectory() {
-        let invitedAgent = Self.row("z", minutesAgo: 0.5, agent: true, invited: true)
-        let rows = AgentDirectory.rows(Self.roster + [invitedAgent], now: Self.now)
-        #expect(rows.map(\.row.room.id) == ["a", "b"])
-    }
-
-    // --- header status -----------------------------------------------------
-
-    @Test("the header status vocabulary")
-    func headerStatus() {
-        #expect(RoomStatus.of(state: .active, describesAgent: true, turnInProgress: true) == .working)
-        #expect(RoomStatus.of(state: .needsYou, describesAgent: true, turnInProgress: true) == .needsYou)
-        // The roster's green dot and the header must agree: spoke recently
-        // is "Active", not "Idle".
-        #expect(RoomStatus.of(state: .active, describesAgent: true, turnInProgress: false) == .active)
-        #expect(RoomStatus.of(state: .idle, describesAgent: true, turnInProgress: false) == .idle)
-        #expect(RoomStatus.of(state: .quiet, describesAgent: true, turnInProgress: false) == .quiet)
-        #expect(RoomStatus.of(state: .needsYou, describesAgent: false, turnInProgress: false) == nil)
-        #expect(RoomStatus.of(state: .active, describesAgent: false, turnInProgress: true) == nil)
-    }
-
-    @Test("a single room's roster row is the one the core arranged")
-    func rosterRowLookup() {
-        let row = RosterArrangement.rosterRow(for: "b", in: Self.roster, now: Self.now)
-        #expect(row?.state == .needsYou)
-        #expect(row?.describesAgent == true)
-        #expect(RosterArrangement.rosterRow(for: "c", in: Self.roster, now: Self.now)?.describesAgent == false)
-        #expect(RosterArrangement.rosterRow(for: "nope", in: Self.roster, now: Self.now) == nil)
-    }
-
-    @Test("unmuting restores the default rather than inventing a rule")
-    func muteToggle() {
-        #expect(RoomToggles.nextNotificationMode(from: .muted) == .default)
-        #expect(RoomToggles.nextNotificationMode(from: .default) == .muted)
-        #expect(RoomToggles.nextNotificationMode(from: .allMessages) == .muted)
-        #expect(RoomToggles.nextNotificationMode(from: .mentionsOnly) == .muted)
+    @Test("the roster views are the core's")
+    func rosterViewsAreTheCores() {
+        // The rules and their falsification live in the core's tests; this is
+        // the boundary check, and what catches a checksum mismatch at run time.
+        #expect(RosterArrangement.needsYouInbox(Self.roster, now: Self.now).badgeCount == 2)
+        #expect(
+            Self.ids(rosterFilterSections(sections: Self.waiting(), filter: .unread))
+                == [["a", "c"]])
     }
 
     // --- avatar tile -------------------------------------------------------
 
-    @Test("a room's tile is the same every time it is asked for")
-    func avatarIsDeterministic() {
-        // Pinned values, not just "equal to itself": `Hasher` would pass a
-        // same-process equality check and still repaint every room on the
-        // next launch.
-        #expect(AgentAvatarStyle.fnv1a("") == 0xcbf2_9ce4_8422_2325)
-        #expect(AgentAvatarStyle.fnv1a("a") == 0xaf63_dc4c_8601_ec8c)
-        #expect(AgentAvatarStyle.forRoom("!atlas:example.org") == AgentAvatarStyle.forRoom("!atlas:example.org"))
-    }
-
-    @Test("tiles spread across the palette rather than collapsing onto one")
-    func avatarSpreads() {
-        let ids = (0..<60).map { "!room\($0):example.org" }
-        let used = Set(ids.map { AgentAvatarStyle.variants.firstIndex(of: AgentAvatarStyle.forRoom($0))! })
-        #expect(used.count == AgentAvatarStyle.variants.count)
-    }
-
-    @Test("no tile draws amber or red, and no tile is ink on its own ground")
-    func avatarPalette() {
-        for style in AgentAvatarStyle.variants {
-            #expect(style.ground != style.ink)
-        }
-        let roles = Set(AgentAvatarStyle.Role.allCases.map(\.rawValue))
-        #expect(!roles.contains("signal"))
-        #expect(!roles.contains("danger"))
+    @Test("the tile is the core's")
+    func avatarIsTheCores() {
+        // The rules and their falsification live in the core's tests; this
+        // is the boundary check, and what catches a checksum mismatch at run time.
+        let style = agentAvatarStyle(roomId: "!atlas:example.org")
+        #expect(style.variant == 3)
+        #expect(style.ground == .surfaceRaised)
+        #expect(style.ink == .accent)
     }
 
     // --- first-run demo ----------------------------------------------------
@@ -218,11 +91,5 @@ struct RosterViewsTests {
         #expect(demo.answer == "approve")
         #expect(!demo.answer("reject"), "a second answer replaced the first")
         #expect(demo.answer == "approve")
-    }
-}
-
-extension RosterFilter {
-    fileprivate static func filterIDs(_ sections: [RosterSection]) -> [String] {
-        sections.flatMap(\.rows).map(\.row.room.id)
     }
 }

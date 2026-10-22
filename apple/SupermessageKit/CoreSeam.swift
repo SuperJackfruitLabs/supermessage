@@ -80,7 +80,11 @@ public protocol SpaceSelecting: Sendable {
 public protocol AttachmentStaging: Sendable {
     func attachmentStagePath(roomId: String, path: String) async throws -> StagedFile
     /// `caption` travels in the same event as the file (MSC2530).
-    func attachmentSend(roomId: String, token: String, caption: String?) async throws
+    ///
+    /// Returns the core's outcome: a failure after the token was taken carries
+    /// a fresh `restaged` file the chip can retry with. Throws only for a
+    /// refusal before the token was taken.
+    func attachmentSend(roomId: String, token: String, caption: String?) async throws -> AttachmentSendOutcome
     func attachmentDiscard(token: String) async
     /// Mark a staged recording as a voice message: its length and waveform.
     func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64, waveform: [Float]) async throws

@@ -606,7 +606,7 @@ public protocol CoreProtocol : AnyObject {
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-    func attachmentSend(roomId: String, token: String, caption: String?) throws 
+    func attachmentSend(roomId: String, token: String, caption: String?) throws  -> AttachmentSendOutcome
     
     /**
      * Stage a file the host has already chosen.
@@ -1193,13 +1193,14 @@ open func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64,
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-open func attachmentSend(roomId: String, token: String, caption: String?)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+open func attachmentSend(roomId: String, token: String, caption: String?)throws  -> AttachmentSendOutcome {
+    return try  FfiConverterTypeAttachmentSendOutcome.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_attachment_send(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),
         FfiConverterString.lower(token),
         FfiConverterOptionString.lower(caption),$0
     )
-}
+})
 }
     
     /**
@@ -2700,6 +2701,82 @@ public func FfiConverterTypeTimelineSnapshot_lower(_ value: TimelineSnapshot) ->
     return FfiConverterTypeTimelineSnapshot.lower(value)
 }
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What `attachment_send` came to once the token was taken.
+ *
+ * An `Err` from `attachment_send` means the send was refused before the
+ * token was consumed, which leaves it live. A `Failed` means it was
+ * consumed: `restaged` is the same file behind a fresh token (a voice mark
+ * re-applied), or `None` when the file could not be staged again.
+ */
+
+public enum AttachmentSendOutcome {
+    
+    case sent
+    case failed(error: FfiError, restaged: StagedFile?
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAttachmentSendOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = AttachmentSendOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AttachmentSendOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .sent
+        
+        case 2: return .failed(error: try FfiConverterTypeFfiError.read(from: &buf), restaged: try FfiConverterOptionTypeStagedFile.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AttachmentSendOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .sent:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .failed(error,restaged):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeFfiError.write(error, into: &buf)
+            FfiConverterOptionTypeStagedFile.write(restaged, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAttachmentSendOutcome_lift(_ buf: RustBuffer) throws -> AttachmentSendOutcome {
+    return try FfiConverterTypeAttachmentSendOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAttachmentSendOutcome_lower(_ value: AttachmentSendOutcome) -> RustBuffer {
+    return FfiConverterTypeAttachmentSendOutcome.lower(value)
+}
+
+
+
+extension AttachmentSendOutcome: Equatable, Hashable {}
+
+
+
 
 /**
  * A failure the host can act on.
@@ -3751,6 +3828,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeStagedFile: FfiConverterRustBuffer {
+    typealias SwiftType = StagedFile?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeStagedFile.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeStagedFile.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeAgentAvatar: FfiConverterRustBuffer {
     typealias SwiftType = AgentAvatar?
 
@@ -3895,6 +3996,54 @@ fileprivate struct FfiConverterOptionTypePlayableAudio: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeRoomStatus: FfiConverterRustBuffer {
+    typealias SwiftType = RoomStatus?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRoomStatus.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRoomStatus.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeRosterRow: FfiConverterRustBuffer {
+    typealias SwiftType = RosterRow?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRosterRow.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRosterRow.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeWidgetAnswer: FfiConverterRustBuffer {
     typealias SwiftType = WidgetAnswer?
 
@@ -4011,6 +4160,31 @@ fileprivate struct FfiConverterSequenceTypeTimelineDiffOp: FfiConverterRustBuffe
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeTimelineDiffOp.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeAgentAvatarStyle: FfiConverterRustBuffer {
+    typealias SwiftType = [AgentAvatarStyle]
+
+    public static func write(_ value: [AgentAvatarStyle], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAgentAvatarStyle.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AgentAvatarStyle] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AgentAvatarStyle]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAgentAvatarStyle.read(from: &buf))
         }
         return seq
     }
@@ -4136,6 +4310,56 @@ fileprivate struct FfiConverterSequenceTypeRoomRow: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRoomRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRosterFilterChip: FfiConverterRustBuffer {
+    typealias SwiftType = [RosterFilterChip]
+
+    public static func write(_ value: [RosterFilterChip], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRosterFilterChip.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RosterFilterChip] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RosterFilterChip]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRosterFilterChip.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRosterRow: FfiConverterRustBuffer {
+    typealias SwiftType = [RosterRow]
+
+    public static func write(_ value: [RosterRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRosterRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RosterRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RosterRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRosterRow.read(from: &buf))
         }
         return seq
     }
@@ -4350,6 +4574,42 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * The generated tile for the room `room_id` — see `core::agent_avatar`. A
+ * free function for the same reason as `peer_color_index`: it touches no
+ * session state, and every host must draw the same tile for the same room.
+ */
+public func agentAvatarStyle(roomId: String) -> AgentAvatarStyle {
+    return try!  FfiConverterTypeAgentAvatarStyle_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_agent_avatar_style(
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+/**
+ * Every avatar tile, in `variant` order. A free function for the same
+ * reason as `peer_color_index`.
+ */
+public func agentAvatarVariants() -> [AgentAvatarStyle] {
+    return try!  FfiConverterSequenceTypeAgentAvatarStyle.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_agent_avatar_variants($0
+    )
+})
+}
 /**
  * A playing note's position as the clock under it reads — `"0:06"`,
  * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -4387,6 +4647,16 @@ public func displayInitial(name: String) -> String {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_supermessage_ffi_fn_func_display_initial(
         FfiConverterString.lower(name),$0
+    )
+})
+}
+/**
+ * What the mute toggle sets next.
+ */
+public func nextNotificationMode(current: NotificationMode) -> NotificationMode {
+    return try!  FfiConverterTypeNotificationMode_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_next_notification_mode(
+        FfiConverterTypeNotificationMode_lower(current),$0
     )
 })
 }
@@ -4525,6 +4795,90 @@ public func richBlocksFromMarkdown(source: String) -> [RichBlock] {
 })
 }
 /**
+ * The header status of a room, or `None` when it has none to say. See `core::roster::room_status`.
+ */
+public func roomStatus(state: AgentState, describesAgent: Bool, turnInProgress: Bool) -> RoomStatus? {
+    return try!  FfiConverterOptionTypeRoomStatus.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_room_status(
+        FfiConverterTypeAgentState_lower(state),
+        FfiConverterBool.lower(describesAgent),
+        FfiConverterBool.lower(turnInProgress),$0
+    )
+})
+}
+/**
+ * The word the header shows for a status.
+ */
+public func roomStatusWord(status: RoomStatus) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_room_status_word(
+        FfiConverterTypeRoomStatus_lower(status),$0
+    )
+})
+}
+/**
+ * Agent rooms, newest first, without invitations.
+ */
+public func rosterAgentDirectory(rows: [RoomRow], nowMs: UInt64) -> [RosterRow] {
+    return try!  FfiConverterSequenceTypeRosterRow.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_agent_directory(
+        FfiConverterSequenceTypeRoomRow.lower(rows),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * The offered filter chips over `sections`, each with its count.
+ */
+public func rosterFilterChips(sections: [RosterSection]) -> [RosterFilterChip] {
+    return try!  FfiConverterSequenceTypeRosterFilterChip.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_filter_chips(
+        FfiConverterSequenceTypeRosterSection.lower(sections),$0
+    )
+})
+}
+/**
+ * What to say when a filter leaves nothing.
+ */
+public func rosterFilterEmptyState(filter: RosterFilter) -> RosterEmptyState {
+    return try!  FfiConverterTypeRosterEmptyState_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_filter_empty_state(
+        FfiConverterTypeRosterFilter_lower(filter),$0
+    )
+})
+}
+/**
+ * A stored chip key read back; one that is not offered reads as All.
+ */
+public func rosterFilterFromKey(key: String) -> RosterFilter {
+    return try!  FfiConverterTypeRosterFilter_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_filter_from_key(
+        FfiConverterString.lower(key),$0
+    )
+})
+}
+/**
+ * The key a filter is stored under.
+ */
+public func rosterFilterKey(filter: RosterFilter) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_filter_key(
+        FfiConverterTypeRosterFilter_lower(filter),$0
+    )
+})
+}
+/**
+ * Keep the rows a filter admits; it keeps or drops, never orders.
+ */
+public func rosterFilterSections(sections: [RosterSection], filter: RosterFilter) -> [RosterSection] {
+    return try!  FfiConverterSequenceTypeRosterSection.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_filter_sections(
+        FfiConverterSequenceTypeRosterSection.lower(sections),
+        FfiConverterTypeRosterFilter_lower(filter),$0
+    )
+})
+}
+/**
  * How many invitations are being withheld, for a filter to admit to.
  */
 public func rosterHiddenInvitations(rows: [RoomRow], showsInvitations: Bool) -> UInt32 {
@@ -4532,6 +4886,29 @@ public func rosterHiddenInvitations(rows: [RoomRow], showsInvitations: Bool) -> 
     uniffi_supermessage_ffi_fn_func_roster_hidden_invitations(
         FfiConverterSequenceTypeRoomRow.lower(rows),
         FfiConverterBool.lower(showsInvitations),$0
+    )
+})
+}
+/**
+ * The Needs you inbox: pending decisions plus invitations.
+ */
+public func rosterNeedsYouInbox(rows: [RoomRow], nowMs: UInt64) -> NeedsYouInbox {
+    return try!  FfiConverterTypeNeedsYouInbox_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_needs_you_inbox(
+        FfiConverterSequenceTypeRoomRow.lower(rows),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * The roster row the core arranged for one room, if it is there.
+ */
+public func rosterRow(rows: [RoomRow], roomId: String, nowMs: UInt64) -> RosterRow? {
+    return try!  FfiConverterOptionTypeRosterRow.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_roster_row(
+        FfiConverterSequenceTypeRoomRow.lower(rows),
+        FfiConverterString.lower(roomId),
+        FfiConverterUInt64.lower(nowMs),$0
     )
 })
 }
@@ -4693,6 +5070,12 @@ private var initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_agent_avatar_style() != 40859) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_agent_avatar_variants() != 3545) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4700,6 +5083,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_display_initial() != 43302) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_notification_category_identifier() != 36525) {
@@ -4732,7 +5118,37 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_room_status() != 37123) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_room_status_word() != 513) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_agent_directory() != 32148) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_filter_chips() != 47576) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_filter_empty_state() != 63735) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_filter_from_key() != 8356) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_filter_key() != 53765) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_filter_sections() != 57380) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_roster_hidden_invitations() != 61544) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_needs_you_inbox() != 17215) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_roster_row() != 43917) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_roster_sections() != 28434) {
@@ -4780,7 +5196,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice() != 59336) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541) {
+    if (uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 1487) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403) {

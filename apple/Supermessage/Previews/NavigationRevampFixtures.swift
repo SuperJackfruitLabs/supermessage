@@ -16,9 +16,9 @@ enum NavigationRevampFixtures {
         var picked: [String] = []
         var seen: Set<Int> = []
         var n = 0
-        while picked.count < AgentAvatarStyle.variants.count, n < 500 {
+        while picked.count < agentAvatarVariants().count, n < 500 {
             let id = "!agent\(n):example.org"
-            let index = AgentAvatarStyle.variants.firstIndex(of: AgentAvatarStyle.forRoom(id)) ?? 0
+            let index = Int(agentAvatarStyle(roomId: id).variant)
             if seen.insert(index).inserted { picked.append(id) }
             n += 1
         }

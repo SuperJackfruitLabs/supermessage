@@ -744,6 +744,17 @@ export interface StagedAttachment {
 }
 
 /**
+ * What {@link attachmentSend} came to once the token was taken. A refusal
+ * before that point rejects instead and leaves the token live.
+ *
+ * `restaged` is the same file behind a fresh token (a voice mark
+ * re-applied), or `null` when it could not be staged again.
+ */
+export type AttachmentSendOutcome =
+  | { outcome: "sent" }
+  | { outcome: "failed"; error: CoreError; restaged: StagedAttachment | null };
+
+/**
  * One inline-level element of a message body, as `core::rich` parsed it.
  *
  * Mirrors `RichInline` tag-for-tag. The webview never parses markdown or HTML
@@ -1675,6 +1686,24 @@ export type RosterView = "recent" | "waiting" | "machine";
  */
 export type AgentState = "needsYou" | "active" | "idle" | "quiet";
 
+/** A palette role an agent tile is drawn in. Never amber, never red. */
+export type AvatarRole =
+  | "accent"
+  | "accentSoft"
+  | "accentContent"
+  | "ok"
+  | "contentMuted"
+  | "surface"
+  | "surfaceRaised";
+
+/** The generated tile of an agent's room — see `core::agent_avatar`. */
+export interface AgentAvatarStyle {
+  ground: AvatarRole;
+  ink: AvatarRole;
+  /** Index into the six variants. */
+  variant: number;
+}
+
 /** One roster row, with the state the roster may say about it. */
 export interface RosterRow {
   row: RoomRow;
@@ -1686,6 +1715,11 @@ export interface RosterRow {
    * regardless. Mirrors `core::roster::RosterRow::describes_agent`.
    */
   describesAgent: boolean;
+  /**
+   * The generated tile for an agent's room; present exactly when
+   * `describesAgent`. Mirrors `core::roster::RosterRow::avatar`.
+   */
+  avatar?: AgentAvatarStyle;
 }
 
 /** One section of the roster. */
@@ -1729,6 +1763,111 @@ export async function rosterHiddenInvitations(
   showsInvitations: boolean,
 ): Promise<number> {
   return invoke<number>("roster_hidden_invitations", { rows, showsInvitations });
+}
+
+/** Mirrors `core::roster::RosterFilter`; the values are the keys a host stores. */
+export type RosterFilter = "all" | "unread" | "agents" | "needsYou";
+
+/** Mirrors `core::roster::RosterFilterChip`. */
+export interface RosterFilterChip {
+  filter: RosterFilter;
+  title: string;
+  count: number;
+}
+
+/** Mirrors `core::roster::RosterEmptyState`. */
+export interface RosterEmptyState {
+  title: string;
+  description: string;
+}
+
+/** Mirrors `core::roster::NeedsYouInbox`. */
+export interface NeedsYouInbox {
+  decisions: RosterRow[];
+  invitations: RosterRow[];
+  /** Decisions and invitations together. */
+  count: number;
+  /** What a tab badge shows: decisions only. */
+  badgeCount: number;
+}
+
+/** Mirrors `core::roster::RoomStatus`. */
+export type RoomStatus = "working" | "needsYou" | "active" | "idle" | "quiet";
+
+/** Keep the rows a filter admits; it keeps or drops, never orders. */
+export async function rosterFilterSections(
+  sections: RosterSection[],
+  filter: RosterFilter,
+): Promise<RosterSection[]> {
+  return invoke<RosterSection[]>("roster_filter_sections", { sections, filter });
+}
+
+/** The offered filter chips, each with the count it would leave. */
+export async function rosterFilterChips(sections: RosterSection[]): Promise<RosterFilterChip[]> {
+  return invoke<RosterFilterChip[]>("roster_filter_chips", { sections });
+}
+
+/** A stored chip key read back; one that is not offered reads as `"all"`. */
+export async function rosterFilterFromKey(key: string): Promise<RosterFilter> {
+  return invoke<RosterFilter>("roster_filter_from_key", { key });
+}
+
+/** The key a filter is stored under. */
+export async function rosterFilterKey(filter: RosterFilter): Promise<string> {
+  return invoke<string>("roster_filter_key", { filter });
+}
+
+/** What to say when a filter leaves nothing. */
+export async function rosterFilterEmptyState(filter: RosterFilter): Promise<RosterEmptyState> {
+  return invoke<RosterEmptyState>("roster_filter_empty_state", { filter });
+}
+
+/** Pending decisions plus invitations. */
+export async function rosterNeedsYouInbox(rows: RoomRow[], nowMs: number): Promise<NeedsYouInbox> {
+  return invoke<NeedsYouInbox>("roster_needs_you_inbox", { rows, nowMs });
+}
+
+/** Agent rooms, newest first, without invitations. */
+export async function rosterAgentDirectory(rows: RoomRow[], nowMs: number): Promise<RosterRow[]> {
+  return invoke<RosterRow[]>("roster_agent_directory", { rows, nowMs });
+}
+
+/** The roster row the core arranged for one room, or `null` if it is not there. */
+export async function rosterRow(
+  rows: RoomRow[],
+  roomId: string,
+  nowMs: number,
+): Promise<RosterRow | null> {
+  return invoke<RosterRow | null>("roster_row", { rows, roomId, nowMs });
+}
+
+/** The header status of a room, or `null` when it has none to say. */
+export async function roomStatus(
+  state: AgentState,
+  describesAgent: boolean,
+  turnInProgress: boolean,
+): Promise<RoomStatus | null> {
+  return invoke<RoomStatus | null>("room_status", { state, describesAgent, turnInProgress });
+}
+
+/** The word the header shows for a status. */
+export async function roomStatusWord(status: RoomStatus): Promise<string> {
+  return invoke<string>("room_status_word", { status });
+}
+
+/** What the mute toggle sets next. */
+export async function nextNotificationMode(current: NotificationMode): Promise<NotificationMode> {
+  return invoke<NotificationMode>("next_notification_mode", { current });
+}
+
+/** The generated tile for a room, the same on every device. */
+export async function agentAvatarStyle(roomId: string): Promise<AgentAvatarStyle> {
+  return invoke<AgentAvatarStyle>("agent_avatar_style", { roomId });
+}
+
+/** Every avatar tile, in `variant` order. */
+export async function agentAvatarVariants(): Promise<AgentAvatarStyle[]> {
+  return invoke<AgentAvatarStyle[]>("agent_avatar_variants");
 }
 
 /**
@@ -1829,7 +1968,15 @@ export async function attachmentStage(roomId: string): Promise<StagedAttachment 
  * the diff stream {@link onTimelineDiff} subscribes to, which is the rule
  * this codebase has broken once and paid for.
  *
- * The three refusals a caller has to tell apart (see {@link CoreErrorKind}):
+ * Resolves with an {@link AttachmentSendOutcome}. A send that failed
+ * **after** the token was consumed is not a rejection but
+ * `{ outcome: "failed", error, restaged }`: the core has already staged the
+ * same file again (re-applying a voice mark), and `restaged` is the fresh
+ * token, or `null` when the file could not be staged again.
+ *
+ * The three refusals a caller has to tell apart (see {@link CoreErrorKind}),
+ * of which the first two still reject, because they happen before the token is
+ * taken:
  *
  * - `"roomChanged"` — either the room is no longer focused or the token was
  *   staged for a different one. Nothing was sent and **the token was not
@@ -1839,7 +1986,8 @@ export async function attachmentStage(roomId: string): Promise<StagedAttachment 
  *   recover; the reader has to attach the file again.
  * - `"attachmentTooLarge"` — re-checked here, immediately before the read,
  *   because a file on disk can grow between staging and sending (a download
- *   completing, a log file, a video still rendering).
+ *   completing, a log file, a video still rendering). This one arrives as a
+ *   `failed` outcome, not a rejection: the token was already taken.
  */
 /**
  * `caption` is the text typed with the file. It travels in the same event
@@ -1849,8 +1997,8 @@ export async function attachmentSend(
   roomId: string,
   token: string,
   caption: string | null = null
-): Promise<void> {
-  await invoke<void>("attachment_send", { roomId, token, caption });
+): Promise<AttachmentSendOutcome> {
+  return invoke<AttachmentSendOutcome>("attachment_send", { roomId, token, caption });
 }
 
 /**

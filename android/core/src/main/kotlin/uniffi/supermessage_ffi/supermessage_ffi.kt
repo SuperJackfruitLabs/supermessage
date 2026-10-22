@@ -33,10 +33,12 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.AgentAvatar
+import uniffi.supermessage_core.AgentAvatarStyle
 import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeAccountDto
 import uniffi.supermessage_core.FfiConverterTypeAgentAvatar
+import uniffi.supermessage_core.FfiConverterTypeAgentAvatarStyle
 import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
@@ -44,6 +46,7 @@ import uniffi.supermessage_core.FfiConverterTypeLiveActivityToken
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityTokenKind
 import uniffi.supermessage_core.FfiConverterTypeMatrixLinkTarget
 import uniffi.supermessage_core.FfiConverterTypeMentionable
+import uniffi.supermessage_core.FfiConverterTypeNeedsYouInbox
 import uniffi.supermessage_core.FfiConverterTypeNotificationCategory
 import uniffi.supermessage_core.FfiConverterTypeNotificationDto
 import uniffi.supermessage_core.FfiConverterTypeNotificationMode
@@ -55,6 +58,11 @@ import uniffi.supermessage_core.FfiConverterTypeRichBlock
 import uniffi.supermessage_core.FfiConverterTypeRoomInfoDto
 import uniffi.supermessage_core.FfiConverterTypeRoomMemberDto
 import uniffi.supermessage_core.FfiConverterTypeRoomRow
+import uniffi.supermessage_core.FfiConverterTypeRoomStatus
+import uniffi.supermessage_core.FfiConverterTypeRosterEmptyState
+import uniffi.supermessage_core.FfiConverterTypeRosterFilter
+import uniffi.supermessage_core.FfiConverterTypeRosterFilterChip
+import uniffi.supermessage_core.FfiConverterTypeRosterRow
 import uniffi.supermessage_core.FfiConverterTypeRosterSection
 import uniffi.supermessage_core.FfiConverterTypeRosterView
 import uniffi.supermessage_core.FfiConverterTypeSearchResultDto
@@ -70,6 +78,7 @@ import uniffi.supermessage_core.LiveActivityToken
 import uniffi.supermessage_core.LiveActivityTokenKind
 import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
+import uniffi.supermessage_core.NeedsYouInbox
 import uniffi.supermessage_core.NotificationCategory
 import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
@@ -81,6 +90,11 @@ import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomMemberDto
 import uniffi.supermessage_core.RoomRow
+import uniffi.supermessage_core.RoomStatus
+import uniffi.supermessage_core.RosterEmptyState
+import uniffi.supermessage_core.RosterFilter
+import uniffi.supermessage_core.RosterFilterChip
+import uniffi.supermessage_core.RosterRow
 import uniffi.supermessage_core.RosterSection
 import uniffi.supermessage_core.RosterView
 import uniffi.supermessage_core.SearchResultDto
@@ -93,6 +107,7 @@ import uniffi.supermessage_core.WidgetLiveTurn
 import uniffi.supermessage_core.WidgetWrite
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatar
+import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatarStyle
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
@@ -100,6 +115,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityToken
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityTokenKind
 import uniffi.supermessage_core.RustBuffer as RustBufferMatrixLinkTarget
 import uniffi.supermessage_core.RustBuffer as RustBufferMentionable
+import uniffi.supermessage_core.RustBuffer as RustBufferNeedsYouInbox
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationCategory
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationDto
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationMode
@@ -111,6 +127,11 @@ import uniffi.supermessage_core.RustBuffer as RustBufferRichBlock
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomInfoDto
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomMemberDto
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomRow
+import uniffi.supermessage_core.RustBuffer as RustBufferRoomStatus
+import uniffi.supermessage_core.RustBuffer as RustBufferRosterEmptyState
+import uniffi.supermessage_core.RustBuffer as RustBufferRosterFilter
+import uniffi.supermessage_core.RustBuffer as RustBufferRosterFilterChip
+import uniffi.supermessage_core.RustBuffer as RustBufferRosterRow
 import uniffi.supermessage_core.RustBuffer as RustBufferRosterSection
 import uniffi.supermessage_core.RustBuffer as RustBufferRosterView
 import uniffi.supermessage_core.RustBuffer as RustBufferSearchResultDto
@@ -1044,6 +1065,32 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1084,7 +1131,7 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`durationMs`: Long,`waveform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_attachment_send(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`caption`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_attachment_stage_path(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_connection_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1207,12 +1254,18 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
     ): Unit
+    fun uniffi_supermessage_ffi_fn_func_agent_avatar_style(`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferAgentAvatarStyle.ByValue
+    fun uniffi_supermessage_ffi_fn_func_agent_avatar_variants(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_audio_clock_label(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_display_initial(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_next_notification_mode(`current`: RustBufferNotificationMode.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferNotificationMode.ByValue
     fun uniffi_supermessage_ffi_fn_func_notification_category_identifier(`category`: RustBufferNotificationCategory.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_notification_for_row(`row`: RustBufferTimelineRow.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`roomName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1233,8 +1286,28 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_supermessage_ffi_fn_func_rich_blocks_from_markdown(`source`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_room_status(`state`: RustBufferAgentState.ByValue,`describesAgent`: Byte,`turnInProgress`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_room_status_word(`status`: RustBufferRoomStatus.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_roster_agent_directory(`rows`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_roster_filter_chips(`sections`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_roster_filter_empty_state(`filter`: RustBufferRosterFilter.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferRosterEmptyState.ByValue
+    fun uniffi_supermessage_ffi_fn_func_roster_filter_from_key(`key`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferRosterFilter.ByValue
+    fun uniffi_supermessage_ffi_fn_func_roster_filter_key(`filter`: RustBufferRosterFilter.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_roster_filter_sections(`sections`: RustBuffer.ByValue,`filter`: RustBufferRosterFilter.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_roster_hidden_invitations(`rows`: RustBuffer.ByValue,`showsInvitations`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
+    fun uniffi_supermessage_ffi_fn_func_roster_needs_you_inbox(`rows`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferNeedsYouInbox.ByValue
+    fun uniffi_supermessage_ffi_fn_func_roster_row(`rows`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_roster_sections(`rows`: RustBuffer.ByValue,`view`: RustBufferRosterView.ByValue,`showsInvitations`: Byte,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_roster_state(`row`: RustBufferRoomRow.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1369,11 +1442,17 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_supermessage_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_checksum_func_agent_avatar_style(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_agent_avatar_variants(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_audio_clock_label(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_collect_mentions(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_display_initial(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_next_notification_mode(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_notification_category_identifier(
     ): Short
@@ -1395,7 +1474,27 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_room_status(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_room_status_word(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_roster_agent_directory(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_roster_filter_chips(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_roster_filter_empty_state(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_roster_filter_from_key(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_roster_filter_key(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_roster_filter_sections(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_roster_hidden_invitations(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_roster_needs_you_inbox(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_roster_row(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_roster_sections(
     ): Short
@@ -1578,6 +1677,12 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_supermessage_ffi_checksum_func_agent_avatar_style() != 40859.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_agent_avatar_variants() != 3545.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1585,6 +1690,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_display_initial() != 43302.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_notification_category_identifier() != 36525.toShort()) {
@@ -1617,7 +1725,37 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_rich_blocks_from_markdown() != 57266.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_func_room_status() != 37123.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_room_status_word() != 513.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_roster_agent_directory() != 32148.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_roster_filter_chips() != 47576.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_roster_filter_empty_state() != 63735.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_roster_filter_from_key() != 8356.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_roster_filter_key() != 53765.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_roster_filter_sections() != 57380.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_roster_hidden_invitations() != 61544.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_roster_needs_you_inbox() != 17215.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_roster_row() != 43917.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_roster_sections() != 28434.toShort()) {
@@ -1665,7 +1803,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice() != 59336.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541.toShort()) {
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 1487.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403.toShort()) {
@@ -2339,7 +2477,7 @@ public interface CoreInterface {
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
+    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?): AttachmentSendOutcome
     
     /**
      * Stage a file the host has already chosen.
@@ -2943,15 +3081,16 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
-        = 
+    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?): AttachmentSendOutcome {
+            return FfiConverterTypeAttachmentSendOutcome.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_attachment_send(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`token`),FfiConverterOptionalString.lower(`caption`),_status)
 }
     }
-    
+    )
+    }
     
 
     
@@ -4412,6 +4551,82 @@ public object FfiConverterTypeTimelineSnapshot: FfiConverterRustBuffer<TimelineS
 
 
 
+/**
+ * What `attachment_send` came to once the token was taken.
+ *
+ * An `Err` from `attachment_send` means the send was refused before the
+ * token was consumed, which leaves it live. A `Failed` means it was
+ * consumed: `restaged` is the same file behind a fresh token (a voice mark
+ * re-applied), or `None` when the file could not be staged again.
+ */
+sealed class AttachmentSendOutcome {
+    
+    object Sent : AttachmentSendOutcome()
+    
+    
+    data class Failed(
+        val `error`: FfiException, 
+        val `restaged`: StagedFile?) : AttachmentSendOutcome() {
+        companion object
+    }
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAttachmentSendOutcome : FfiConverterRustBuffer<AttachmentSendOutcome>{
+    override fun read(buf: ByteBuffer): AttachmentSendOutcome {
+        return when(buf.getInt()) {
+            1 -> AttachmentSendOutcome.Sent
+            2 -> AttachmentSendOutcome.Failed(
+                FfiConverterTypeFfiError.read(buf),
+                FfiConverterOptionalTypeStagedFile.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: AttachmentSendOutcome) = when(value) {
+        is AttachmentSendOutcome.Sent -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is AttachmentSendOutcome.Failed -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeFfiError.allocationSize(value.`error`)
+                + FfiConverterOptionalTypeStagedFile.allocationSize(value.`restaged`)
+            )
+        }
+    }
+
+    override fun write(value: AttachmentSendOutcome, buf: ByteBuffer) {
+        when(value) {
+            is AttachmentSendOutcome.Sent -> {
+                buf.putInt(1)
+                Unit
+            }
+            is AttachmentSendOutcome.Failed -> {
+                buf.putInt(2)
+                FfiConverterTypeFfiError.write(value.`error`, buf)
+                FfiConverterOptionalTypeStagedFile.write(value.`restaged`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
 
 
 /**
@@ -5825,6 +6040,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeStagedFile: FfiConverterRustBuffer<StagedFile?> {
+    override fun read(buf: ByteBuffer): StagedFile? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeStagedFile.read(buf)
+    }
+
+    override fun allocationSize(value: StagedFile?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeStagedFile.allocationSize(value)
+        }
+    }
+
+    override fun write(value: StagedFile?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeStagedFile.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeAgentAvatar: FfiConverterRustBuffer<AgentAvatar?> {
     override fun read(buf: ByteBuffer): AgentAvatar? {
         if (buf.get().toInt() == 0) {
@@ -6017,6 +6264,70 @@ public object FfiConverterOptionalTypePlayableAudio: FfiConverterRustBuffer<Play
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeRoomStatus: FfiConverterRustBuffer<RoomStatus?> {
+    override fun read(buf: ByteBuffer): RoomStatus? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeRoomStatus.read(buf)
+    }
+
+    override fun allocationSize(value: RoomStatus?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeRoomStatus.allocationSize(value)
+        }
+    }
+
+    override fun write(value: RoomStatus?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeRoomStatus.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeRosterRow: FfiConverterRustBuffer<RosterRow?> {
+    override fun read(buf: ByteBuffer): RosterRow? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeRosterRow.read(buf)
+    }
+
+    override fun allocationSize(value: RosterRow?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeRosterRow.allocationSize(value)
+        }
+    }
+
+    override fun write(value: RosterRow?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeRosterRow.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeWidgetAnswer: FfiConverterRustBuffer<WidgetAnswer?> {
     override fun read(buf: ByteBuffer): WidgetAnswer? {
         if (buf.get().toInt() == 0) {
@@ -6161,6 +6472,34 @@ public object FfiConverterSequenceTypeTimelineDiffOp: FfiConverterRustBuffer<Lis
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeAgentAvatarStyle: FfiConverterRustBuffer<List<AgentAvatarStyle>> {
+    override fun read(buf: ByteBuffer): List<AgentAvatarStyle> {
+        val len = buf.getInt()
+        return List<AgentAvatarStyle>(len) {
+            FfiConverterTypeAgentAvatarStyle.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<AgentAvatarStyle>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeAgentAvatarStyle.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<AgentAvatarStyle>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeAgentAvatarStyle.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer<List<Mentionable>> {
     override fun read(buf: ByteBuffer): List<Mentionable> {
         val len = buf.getInt()
@@ -6291,6 +6630,62 @@ public object FfiConverterSequenceTypeRoomRow: FfiConverterRustBuffer<List<RoomR
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeRoomRow.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeRosterFilterChip: FfiConverterRustBuffer<List<RosterFilterChip>> {
+    override fun read(buf: ByteBuffer): List<RosterFilterChip> {
+        val len = buf.getInt()
+        return List<RosterFilterChip>(len) {
+            FfiConverterTypeRosterFilterChip.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<RosterFilterChip>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeRosterFilterChip.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<RosterFilterChip>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeRosterFilterChip.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeRosterRow: FfiConverterRustBuffer<List<RosterRow>> {
+    override fun read(buf: ByteBuffer): List<RosterRow> {
+        val len = buf.getInt()
+        return List<RosterRow>(len) {
+            FfiConverterTypeRosterRow.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<RosterRow>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeRosterRow.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<RosterRow>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeRosterRow.write(it, buf)
         }
     }
 }
@@ -6582,6 +6977,61 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        /**
+         * The generated tile for the room `room_id` — see `core::agent_avatar`. A
+         * free function for the same reason as `peer_color_index`: it touches no
+         * session state, and every host must draw the same tile for the same room.
+         */ fun `agentAvatarStyle`(`roomId`: kotlin.String): AgentAvatarStyle {
+            return FfiConverterTypeAgentAvatarStyle.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_agent_avatar_style(
+        FfiConverterString.lower(`roomId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Every avatar tile, in `variant` order. A free function for the same
+         * reason as `peer_color_index`.
+         */ fun `agentAvatarVariants`(): List<AgentAvatarStyle> {
+            return FfiConverterSequenceTypeAgentAvatarStyle.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_agent_avatar_variants(
+        _status)
+}
+    )
+    }
+    
+
         /**
          * A playing note's position as the clock under it reads — `"0:06"`,
          * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -6622,6 +7072,18 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_display_initial(
         FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * What the mute toggle sets next.
+         */ fun `nextNotificationMode`(`current`: NotificationMode): NotificationMode {
+            return FfiConverterTypeNotificationMode.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_next_notification_mode(
+        FfiConverterTypeNotificationMode.lower(`current`),_status)
 }
     )
     }
@@ -6777,12 +7239,132 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     
 
         /**
+         * The header status of a room, or `None` when it has none to say. See `core::roster::room_status`.
+         */ fun `roomStatus`(`state`: AgentState, `describesAgent`: kotlin.Boolean, `turnInProgress`: kotlin.Boolean): RoomStatus? {
+            return FfiConverterOptionalTypeRoomStatus.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_room_status(
+        FfiConverterTypeAgentState.lower(`state`),FfiConverterBoolean.lower(`describesAgent`),FfiConverterBoolean.lower(`turnInProgress`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The word the header shows for a status.
+         */ fun `roomStatusWord`(`status`: RoomStatus): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_room_status_word(
+        FfiConverterTypeRoomStatus.lower(`status`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Agent rooms, newest first, without invitations.
+         */ fun `rosterAgentDirectory`(`rows`: List<RoomRow>, `nowMs`: kotlin.ULong): List<RosterRow> {
+            return FfiConverterSequenceTypeRosterRow.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_agent_directory(
+        FfiConverterSequenceTypeRoomRow.lower(`rows`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The offered filter chips over `sections`, each with its count.
+         */ fun `rosterFilterChips`(`sections`: List<RosterSection>): List<RosterFilterChip> {
+            return FfiConverterSequenceTypeRosterFilterChip.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_filter_chips(
+        FfiConverterSequenceTypeRosterSection.lower(`sections`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * What to say when a filter leaves nothing.
+         */ fun `rosterFilterEmptyState`(`filter`: RosterFilter): RosterEmptyState {
+            return FfiConverterTypeRosterEmptyState.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_filter_empty_state(
+        FfiConverterTypeRosterFilter.lower(`filter`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A stored chip key read back; one that is not offered reads as All.
+         */ fun `rosterFilterFromKey`(`key`: kotlin.String): RosterFilter {
+            return FfiConverterTypeRosterFilter.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_filter_from_key(
+        FfiConverterString.lower(`key`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The key a filter is stored under.
+         */ fun `rosterFilterKey`(`filter`: RosterFilter): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_filter_key(
+        FfiConverterTypeRosterFilter.lower(`filter`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Keep the rows a filter admits; it keeps or drops, never orders.
+         */ fun `rosterFilterSections`(`sections`: List<RosterSection>, `filter`: RosterFilter): List<RosterSection> {
+            return FfiConverterSequenceTypeRosterSection.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_filter_sections(
+        FfiConverterSequenceTypeRosterSection.lower(`sections`),FfiConverterTypeRosterFilter.lower(`filter`),_status)
+}
+    )
+    }
+    
+
+        /**
          * How many invitations are being withheld, for a filter to admit to.
          */ fun `rosterHiddenInvitations`(`rows`: List<RoomRow>, `showsInvitations`: kotlin.Boolean): kotlin.UInt {
             return FfiConverterUInt.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_hidden_invitations(
         FfiConverterSequenceTypeRoomRow.lower(`rows`),FfiConverterBoolean.lower(`showsInvitations`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The Needs you inbox: pending decisions plus invitations.
+         */ fun `rosterNeedsYouInbox`(`rows`: List<RoomRow>, `nowMs`: kotlin.ULong): NeedsYouInbox {
+            return FfiConverterTypeNeedsYouInbox.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_needs_you_inbox(
+        FfiConverterSequenceTypeRoomRow.lower(`rows`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The roster row the core arranged for one room, if it is there.
+         */ fun `rosterRow`(`rows`: List<RoomRow>, `roomId`: kotlin.String, `nowMs`: kotlin.ULong): RosterRow? {
+            return FfiConverterOptionalTypeRosterRow.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_row(
+        FfiConverterSequenceTypeRoomRow.lower(`rows`),FfiConverterString.lower(`roomId`),FfiConverterULong.lower(`nowMs`),_status)
 }
     )
     }

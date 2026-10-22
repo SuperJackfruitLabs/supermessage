@@ -22,13 +22,19 @@ actor StubOutbox: AttachmentStaging, MessageSending {
     private(set) var calls: [Call] = []
     private var tokens = 0
     var failAttachmentSend = false
+    /// A refusal thrown before the core takes the token.
+    var refuseAttachmentSend: FfiError?
     var failStaging = false
     /// Fail staging only from the Nth call on (1-based), to fail a *re*-stage.
     var failStagingFrom: Int?
     var failText = false
 
-    func set(failAttachmentSend: Bool = false, failStaging: Bool = false, failStagingFrom: Int? = nil, failText: Bool = false) {
+    func set(
+        failAttachmentSend: Bool = false, refuseAttachmentSend: FfiError? = nil, failStaging: Bool = false,
+        failStagingFrom: Int? = nil, failText: Bool = false
+    ) {
         self.failAttachmentSend = failAttachmentSend
+        self.refuseAttachmentSend = refuseAttachmentSend
         self.failStaging = failStaging
         self.failStagingFrom = failStagingFrom
         self.failText = failText
@@ -46,9 +52,22 @@ actor StubOutbox: AttachmentStaging, MessageSending {
             mime: "image/png", width: nil, height: nil)
     }
 
-    func attachmentSend(roomId: String, token: String, caption: String?) async throws {
+    func attachmentSend(roomId: String, token: String, caption: String?) async throws -> AttachmentSendOutcome {
         calls.append(.sendAttachment(token, caption: caption))
-        if failAttachmentSend { throw FfiError.Network(detail: "upload failed") }
+        if let refuseAttachmentSend { throw refuseAttachmentSend }
+        guard failAttachmentSend else { return .sent }
+        // Like the core: the failed send consumed the token, and the same
+        // path is staged again behind the next one, unless that cannot work.
+        let error = FfiError.Network(detail: "upload failed")
+        let stagings = calls.filter { if case .stage = $0 { return true } else { return false } }.count + 1
+        if failStaging || (failStagingFrom.map { stagings >= $0 } ?? false) {
+            return .failed(error: error, restaged: nil)
+        }
+        tokens += 1
+        return .failed(
+            error: error,
+            restaged: StagedFile(
+                token: "tok-\(tokens)", filename: "shot.png", sizeBytes: 10, mime: "image/png", width: nil, height: nil))
     }
 
     func attachmentDiscard(token: String) async {
@@ -224,12 +243,10 @@ struct StagedAttachmentTests {
         let message = await staged.send(in: room)
 
         #expect(message != nil)
-        #expect(staged.file?.token == "tok-2", "the chip still holds the token the core may have consumed")
+        #expect(staged.file?.token == "tok-2", "the chip holds the fresh token the core re-staged")
         #expect(staged.failure?.filename == "shot.png")
         #expect(staged.isPresent(in: room))
         #expect(!staged.blocksSend(in: room), "a re-staged file can be retried")
-        let calls = await stub.calls
-        #expect(calls.contains(.discard("tok-1")), "a live token would be orphaned in the core")
     }
 
     @Test("a recording is marked as a voice message on the token it was staged with")
@@ -243,21 +260,6 @@ struct StagedAttachmentTests {
         let calls = await stub.calls
         #expect(calls.contains(.markVoice("tok-1", durationMs: 4_200, points: 3)))
         #expect(staged.voice?.durationMs == 4_200)
-    }
-
-    @Test("a failed send re-marks the fresh token, so the retry is still a voice message")
-    func restagedVoiceIsMarkedAgain() async {
-        // Mutation seen failing: re-staging without re-marking — the retry
-        // went as a plain file.
-        let staged = StagedAttachment(client: stub)
-        await staged.stage(path: "/tmp/Voice message.m4a", in: room)
-        await staged.markVoice(.init(durationMs: 1_000, waveform: []), in: room)
-        await stub.set(failAttachmentSend: true)
-
-        _ = await staged.send(in: room)
-
-        let calls = await stub.calls
-        #expect(calls.contains(.markVoice("tok-2", durationMs: 1_000, points: 0)))
     }
 
     @Test("marking in another room does nothing")
@@ -282,6 +284,34 @@ struct StagedAttachmentTests {
         #expect(staged.file == nil)
         #expect(staged.failure != nil)
         #expect(staged.blocksSend(in: room))
+    }
+
+    @Test("a refusal for a token the core no longer holds leaves a failed chip")
+    func unknownAttachmentLeavesFailedChip() async {
+        let staged = StagedAttachment(client: stub)
+        await staged.stage(path: "/tmp/shot.png", in: room)
+        await stub.set(refuseAttachmentSend: .UnknownAttachment)
+
+        let message = await staged.send(in: room)
+
+        #expect(message != nil)
+        #expect(staged.file == nil)
+        #expect(staged.failure?.filename == "shot.png")
+        #expect(staged.blocksSend(in: room))
+    }
+
+    @Test("a room-changed refusal keeps the chip sendable")
+    func roomChangedKeepsChipSendable() async {
+        let staged = StagedAttachment(client: stub)
+        await staged.stage(path: "/tmp/shot.png", in: room)
+        await stub.set(refuseAttachmentSend: .RoomChanged(requested: room, focused: "!other:x"))
+
+        let message = await staged.send(in: room)
+
+        #expect(message != nil)
+        #expect(staged.file?.token == "tok-1", "the token was never taken")
+        #expect(staged.failure != nil)
+        #expect(!staged.blocksSend(in: room))
     }
 
     @Test("a chip belongs to the room it was staged in")
