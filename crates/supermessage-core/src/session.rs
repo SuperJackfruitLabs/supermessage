@@ -52,6 +52,8 @@ use super::spaces::{self, SpaceSummary};
 use super::sync::{self, SyncHandle};
 use super::timeline::FocusedTimeline;
 use super::tls;
+use super::turn_watch::{self, TurnSink};
+use super::turns::{TurnBook, TurnSnapshot};
 
 /// What a call to the hub's Live Activity token endpoint does.
 #[derive(Clone, Copy)]
@@ -95,6 +97,13 @@ pub struct Session {
     // the task holds a `Client`, so `logout` must stop it before wiping the
     // store. `start_streams`/`stop_ignore_watch` are the only writers.
     ignore_watch: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    // One agent turn per room, for every room (`core::turns`). Session-owned:
+    // it outlives the client, so login, restore and logout clear it, and the
+    // book's generation shuts out a late event from the sign-in that ended.
+    turns: Arc<TurnBook>,
+    // The sweeper that ends turns past their time limit
+    // (`turn_watch::spawn_sweeper`). Written like `ignore_watch`.
+    turn_sweep: RwLock<Option<tokio::task::JoinHandle<()>>>,
     // Serializes whole session transitions (login, restore, logout) against
     // each other — see this module's doc comment.
     lifecycle: Mutex<()>,
@@ -138,6 +147,8 @@ impl Session {
             focused: Arc::new(FocusedTimeline::default()),
             staged: Arc::new(attachments::StagedAttachments::default()),
             ignore_watch: RwLock::new(None),
+            turns: Arc::new(TurnBook::default()),
+            turn_sweep: RwLock::new(None),
             lifecycle: Mutex::new(()),
             process: process.to_string(),
             stores_closed: std::sync::atomic::AtomicBool::new(false),
@@ -184,6 +195,8 @@ impl Session {
         // when the last account signed out could have noted its room after
         // `logout` cleared the set.
         self.focused.clear_sent();
+        // And no turn from the last one.
+        self.turns.clear();
         let client = self.build_client(homeserver).await?;
         self.auth.login(&client, username, password).await?;
         self.enable_crypto_lock(&client).await;
@@ -205,6 +218,7 @@ impl Session {
     pub async fn restore(&self) -> CoreResult<bool> {
         // As in `login`: a restored session starts with no room sent in.
         self.focused.clear_sent();
+        self.turns.clear();
         let Some(homeserver) = self.store.get(KEY_HOMESERVER_URL)? else {
             return Ok(false);
         };
@@ -281,8 +295,12 @@ impl Session {
         // Likewise "sent this session": it belongs to the account signing
         // out, and must go on every path, including a logout with no client.
         self.focused.clear_sent();
+        // Every room's turn belongs to the account signing out; the book is
+        // session-owned, so it survives the client and must be cleared here.
+        self.turns.clear();
         self.focused.clear_and_join().await;
         self.stop_ignore_watch().await;
+        self.stop_turn_sweep().await;
         self.stop_room_list().await;
         self.stop_sync().await;
         // Clone the handle (cheap — `Client` is internally reference
@@ -342,6 +360,7 @@ impl Session {
     async fn start_or_roll_back(&self, sink: Arc<dyn EventSink>) -> CoreResult<()> {
         if let Err(err) = self.start_streams(sink).await {
             self.stop_ignore_watch().await;
+            self.stop_turn_sweep().await;
             self.stop_room_list().await;
             self.stop_sync().await;
             *self.client.write().await = None;
@@ -784,7 +803,12 @@ impl Session {
         // a session without a live view is a session that works, just without
         // watching an agent think.
         if let Ok(client) = self.require_client().await {
-            live::listen(&client, Arc::clone(&sink));
+            live::listen(&client, Arc::clone(&sink), Arc::clone(&self.turns));
+            self.stop_turn_sweep().await;
+            *self.turn_sweep.write().await = Some(turn_watch::spawn_sweeper(
+                Arc::clone(&self.turns),
+                Arc::clone(&sink),
+            ));
             // The block list, once now and on every change. Infallible for the
             // same reason as the live view: a session that cannot stream it
             // still works, and the host can ask `blocked_users` directly.
@@ -801,6 +825,20 @@ impl Session {
             task.abort();
             let _ = task.await;
         }
+    }
+
+    /// Stops the turn sweeper. A safe no-op when none is running.
+    async fn stop_turn_sweep(&self) {
+        if let Some(task) = self.turn_sweep.write().await.take() {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+
+    /// The room's agent turn, whole, for a host opening the room: `None` when
+    /// the room has had none this sign-in (or it has been forgotten).
+    pub fn turn(&self, room_id: &str) -> Option<TurnSnapshot> {
+        self.turns.snapshot(room_id)
     }
 
     /// A snapshot of the room list — the sequence number of the last diff
@@ -945,6 +983,7 @@ impl Session {
     ) -> CoreResult<()> {
         let _lifecycle = self.lifecycle.lock().await;
         let client = self.require_client().await?;
+        let sink = TurnSink::wrap(sink, room_id, Arc::clone(&self.turns));
         self.focused.subscribe(&client, room_id, sink).await?;
         self.staged.retain_room(room_id);
         Ok(())
@@ -2294,6 +2333,105 @@ mod tests {
             session.room_cast("!r:x").await,
             Err(CoreError::NotReady)
         ));
+    }
+
+    /// Review Focus 3.
+    ///
+    /// Mutation seen failing: removing `self.turns.clear()` from `logout`
+    /// leaves the snapshot `Some`.
+    #[tokio::test]
+    async fn logout_forgets_every_turn() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-turns-logout"),
+            Box::new(MemoryStore::default()),
+        );
+        seed_turn(&session);
+        assert!(session.turn("!r:x").is_some());
+        let _ = session.logout().await;
+        assert_eq!(session.turn("!r:x"), None);
+    }
+
+    /// Mutation seen failing (run): removing `self.stop_turn_sweep().await` from
+    /// `logout` fails this at `session.turn_sweep.read().await.is_none()`.
+    #[tokio::test]
+    async fn logout_stops_the_turn_sweeper() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-turns-logout-sweep"),
+            Box::new(MemoryStore::default()),
+        );
+        // Stands in for the sweeper `start_streams` would have started.
+        let task = tokio::spawn(std::future::pending::<()>());
+        let watch = task.abort_handle();
+        *session.turn_sweep.write().await = Some(task);
+        assert!(!watch.is_finished());
+        let _ = session.logout().await;
+        assert!(session.turn_sweep.read().await.is_none());
+        assert!(watch.is_finished(), "logout left the sweeper running");
+    }
+
+    /// Mutation seen failing: removing `self.turns.clear()` from `login`
+    /// leaves the snapshot `Some` (the login itself fails: no server).
+    #[tokio::test]
+    async fn a_fresh_login_starts_with_no_turns() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-turns-login"),
+            Box::new(MemoryStore::default()),
+        );
+        seed_turn(&session);
+        let _ = session.login("http://127.0.0.1:1", "u", "p").await;
+        assert_eq!(session.turn("!r:x"), None);
+    }
+
+    /// Mutation seen failing: removing `self.turns.clear()` from `restore`
+    /// leaves the snapshot `Some` (nothing is stored, so it returns false).
+    #[tokio::test]
+    async fn a_restore_starts_with_no_turns() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-turns-restore"),
+            Box::new(MemoryStore::default()),
+        );
+        seed_turn(&session);
+        let _ = session.restore().await;
+        assert_eq!(session.turn("!r:x"), None);
+    }
+
+    /// The residual race: a handler of the old sign-in's client, running after
+    /// the account signed out and in again, must not feed the new book.
+    ///
+    /// Mutation seen failing: removing the generation bump in `TurnBook::clear`
+    /// lets the late input land and the snapshot is `Some`.
+    #[tokio::test]
+    async fn a_late_event_from_the_old_sign_in_cannot_feed_the_new_one() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-turns-race"),
+            Box::new(MemoryStore::default()),
+        );
+        // What `start_streams` hands `live::listen` for the first sign-in.
+        let old_generation = session.turns.generation();
+        let _ = session.logout().await;
+        let _ = session.login("http://127.0.0.1:1", "u", "p").await;
+        let late = session.turns.apply_in(
+            old_generation,
+            "!r:x",
+            crate::turns::TurnInput::Answer {
+                seq: 9,
+                done: false,
+                at_ms: 1,
+            },
+        );
+        assert!(!late.accepted);
+        assert_eq!(session.turn("!r:x"), None);
+    }
+
+    fn seed_turn(session: &Session) {
+        session.turns.apply(
+            "!r:x",
+            crate::turns::TurnInput::Answer {
+                seq: 1,
+                done: false,
+                at_ms: 1,
+            },
+        );
     }
 
     /// Mutation seen failing: removing the `clear_sent()` call in `logout`

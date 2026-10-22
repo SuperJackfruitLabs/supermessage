@@ -496,36 +496,3 @@ struct PushConfigurationTests {
             == "dev.supermessage.ios")
     }
 }
-
-/// When a turn counts as "an agent working", for the Live Activity.
-struct LiveTurnSummaryTests {
-    @Test("no activity when nothing is live, or the turn has ended")
-    func nothingLive() {
-        #expect(LiveTurnSummary.of(answering: false, thinking: false, tools: [], finished: false) == nil)
-        #expect(
-            LiveTurnSummary.of(
-                answering: false, thinking: true, tools: [("Read", .done)], finished: true) == nil,
-            "a finished turn's record stays in the room, not on the Lock Screen")
-    }
-
-    @Test("the running tool is the current step, and finished tools are counted")
-    func runningTool() {
-        let summary = LiveTurnSummary.of(
-            answering: true, thinking: true,
-            tools: [("Read file", .done), ("Run tests", .running), ("Lint", .failed)],
-            finished: false)
-        #expect(summary?.step == "Run tests")
-        #expect(summary?.completedSteps == 2)
-        #expect(summary?.totalSteps == 3)
-    }
-
-    @Test("with no tool running, the phase of the turn is the step")
-    func phaseStep() {
-        #expect(
-            LiveTurnSummary.of(answering: true, thinking: true, tools: [], finished: false)?.step
-                == "Writing the answer")
-        #expect(
-            LiveTurnSummary.of(answering: false, thinking: true, tools: [], finished: false)?.step
-                == "Thinking")
-    }
-}

@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -248,11 +248,50 @@ describe("cast, typing line and acknowledgement", () => {
     });
   });
 
+  it("turn asks for one room's record by camelCase roomId", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue(null);
+    expect(await turn("!r:x")).toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith("turn", { roomId: "!r:x" });
+  });
+
+  it("turnStatusWord passes the ending camelCase and returns the core's word", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("Stopped");
+    expect(await turnStatusWord("timedOut")).toBe("Stopped");
+    expect(invokeMock).toHaveBeenCalledWith("turn_status_word", { endedBy: "timedOut" });
+  });
+
   it("hasSent invokes has_sent with roomId", async () => {
     invokeMock.mockReset();
     invokeMock.mockResolvedValue(true);
     expect(await hasSent("!r:x")).toBe(true);
     expect(invokeMock).toHaveBeenCalledWith("has_sent", { roomId: "!r:x" });
+  });
+
+  it("spaceDisplayName invokes space_display_name with name", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("Runtime 9247e5");
+    expect(await spaceDisplayName("9247e5c1a0b34d2e")).toBe("Runtime 9247e5");
+    expect(invokeMock).toHaveBeenCalledWith("space_display_name", { name: "9247e5c1a0b34d2e" });
+  });
+
+  it("firstRunAnswer passes the step", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("approved");
+    expect(await firstRunAnswer("waiting")).toBe("approved");
+    expect(invokeMock).toHaveBeenCalledWith("first_run_answer", { step: "waiting" });
+  });
+
+  it("firstRunAdvance passes the step and firstRunScript takes none", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("asking");
+    expect(await firstRunAdvance("greeting")).toBe("asking");
+    expect(invokeMock).toHaveBeenCalledWith("first_run_advance", { step: "greeting" });
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue({ agentName: "Atlas" });
+    expect((await firstRunScript()).agentName).toBe("Atlas");
+    expect(invokeMock).toHaveBeenCalledWith("first_run_script");
   });
 });
 

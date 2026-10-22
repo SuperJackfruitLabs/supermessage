@@ -1651,6 +1651,209 @@ public func FfiConverterTypeCustomEventOutcome_lower(_ value: CustomEventOutcome
 
 
 /**
+ * Everything the demo says and shows, so no host keeps its own copy.
+ *
+ * `Serialize` only: [`CustomEventView`] has no `Deserialize`.
+ */
+public struct FirstRunScript {
+    public var agentName: String
+    public var greeting: String
+    public var request: String
+    /**
+     * Shown above the conversation so nobody mistakes it for a real room.
+     */
+    public var banner: String
+    public var typingLabel: String
+    public var agentTag: String
+    public var cardLabel: String
+    public var cardEventType: String
+    public var roomId: String
+    public var initial: String
+    public var approvedTitle: String
+    public var approvedBody: String
+    public var finishLabel: String
+    public var skipLabel: String
+    /**
+     * The permission request Atlas "sends", as the core would hand it to a host.
+     */
+    public var card: CustomEventView
+    /**
+     * Pause before each automatic [`advance`]: greeting to asking, then
+     * asking to waiting.
+     */
+    public var stepDelaysMs: [UInt64]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(agentName: String, greeting: String, request: String, 
+        /**
+         * Shown above the conversation so nobody mistakes it for a real room.
+         */banner: String, typingLabel: String, agentTag: String, cardLabel: String, cardEventType: String, roomId: String, initial: String, approvedTitle: String, approvedBody: String, finishLabel: String, skipLabel: String, 
+        /**
+         * The permission request Atlas "sends", as the core would hand it to a host.
+         */card: CustomEventView, 
+        /**
+         * Pause before each automatic [`advance`]: greeting to asking, then
+         * asking to waiting.
+         */stepDelaysMs: [UInt64]) {
+        self.agentName = agentName
+        self.greeting = greeting
+        self.request = request
+        self.banner = banner
+        self.typingLabel = typingLabel
+        self.agentTag = agentTag
+        self.cardLabel = cardLabel
+        self.cardEventType = cardEventType
+        self.roomId = roomId
+        self.initial = initial
+        self.approvedTitle = approvedTitle
+        self.approvedBody = approvedBody
+        self.finishLabel = finishLabel
+        self.skipLabel = skipLabel
+        self.card = card
+        self.stepDelaysMs = stepDelaysMs
+    }
+}
+
+
+
+extension FirstRunScript: Equatable, Hashable {
+    public static func ==(lhs: FirstRunScript, rhs: FirstRunScript) -> Bool {
+        if lhs.agentName != rhs.agentName {
+            return false
+        }
+        if lhs.greeting != rhs.greeting {
+            return false
+        }
+        if lhs.request != rhs.request {
+            return false
+        }
+        if lhs.banner != rhs.banner {
+            return false
+        }
+        if lhs.typingLabel != rhs.typingLabel {
+            return false
+        }
+        if lhs.agentTag != rhs.agentTag {
+            return false
+        }
+        if lhs.cardLabel != rhs.cardLabel {
+            return false
+        }
+        if lhs.cardEventType != rhs.cardEventType {
+            return false
+        }
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.initial != rhs.initial {
+            return false
+        }
+        if lhs.approvedTitle != rhs.approvedTitle {
+            return false
+        }
+        if lhs.approvedBody != rhs.approvedBody {
+            return false
+        }
+        if lhs.finishLabel != rhs.finishLabel {
+            return false
+        }
+        if lhs.skipLabel != rhs.skipLabel {
+            return false
+        }
+        if lhs.card != rhs.card {
+            return false
+        }
+        if lhs.stepDelaysMs != rhs.stepDelaysMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(agentName)
+        hasher.combine(greeting)
+        hasher.combine(request)
+        hasher.combine(banner)
+        hasher.combine(typingLabel)
+        hasher.combine(agentTag)
+        hasher.combine(cardLabel)
+        hasher.combine(cardEventType)
+        hasher.combine(roomId)
+        hasher.combine(initial)
+        hasher.combine(approvedTitle)
+        hasher.combine(approvedBody)
+        hasher.combine(finishLabel)
+        hasher.combine(skipLabel)
+        hasher.combine(card)
+        hasher.combine(stepDelaysMs)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFirstRunScript: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FirstRunScript {
+        return
+            try FirstRunScript(
+                agentName: FfiConverterString.read(from: &buf), 
+                greeting: FfiConverterString.read(from: &buf), 
+                request: FfiConverterString.read(from: &buf), 
+                banner: FfiConverterString.read(from: &buf), 
+                typingLabel: FfiConverterString.read(from: &buf), 
+                agentTag: FfiConverterString.read(from: &buf), 
+                cardLabel: FfiConverterString.read(from: &buf), 
+                cardEventType: FfiConverterString.read(from: &buf), 
+                roomId: FfiConverterString.read(from: &buf), 
+                initial: FfiConverterString.read(from: &buf), 
+                approvedTitle: FfiConverterString.read(from: &buf), 
+                approvedBody: FfiConverterString.read(from: &buf), 
+                finishLabel: FfiConverterString.read(from: &buf), 
+                skipLabel: FfiConverterString.read(from: &buf), 
+                card: FfiConverterTypeCustomEventView.read(from: &buf), 
+                stepDelaysMs: FfiConverterSequenceUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FirstRunScript, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.agentName, into: &buf)
+        FfiConverterString.write(value.greeting, into: &buf)
+        FfiConverterString.write(value.request, into: &buf)
+        FfiConverterString.write(value.banner, into: &buf)
+        FfiConverterString.write(value.typingLabel, into: &buf)
+        FfiConverterString.write(value.agentTag, into: &buf)
+        FfiConverterString.write(value.cardLabel, into: &buf)
+        FfiConverterString.write(value.cardEventType, into: &buf)
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterString.write(value.initial, into: &buf)
+        FfiConverterString.write(value.approvedTitle, into: &buf)
+        FfiConverterString.write(value.approvedBody, into: &buf)
+        FfiConverterString.write(value.finishLabel, into: &buf)
+        FfiConverterString.write(value.skipLabel, into: &buf)
+        FfiConverterTypeCustomEventView.write(value.card, into: &buf)
+        FfiConverterSequenceUInt64.write(value.stepDelaysMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFirstRunScript_lift(_ buf: RustBuffer) throws -> FirstRunScript {
+    return try FfiConverterTypeFirstRunScript.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFirstRunScript_lower(_ value: FirstRunScript) -> RustBuffer {
+    return FfiConverterTypeFirstRunScript.lower(value)
+}
+
+
+/**
  * What a GATE notification's actions need to answer with no room open: the
  * same three things the card sends.
  */
@@ -5320,6 +5523,14 @@ public struct SpaceSummary {
      * by a second copy that would drift.
      */
     public var identity: RoomIdentity
+    /**
+     * [`space_display_name`] of [`Self::name`]: what a person is shown.
+     *
+     * Carried on the row, like `RosterRow.state`, so a desktop renderer needs
+     * no second round trip per label. `name` stays the raw value the rail
+     * sorts and keys on.
+     */
+    public var displayName: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -5371,13 +5582,21 @@ public struct SpaceSummary {
          * label while rendering, and markup cannot await. A space is named by the
          * same convention as a room, so it is parsed by the same code rather than
          * by a second copy that would drift.
-         */identity: RoomIdentity) {
+         */identity: RoomIdentity, 
+        /**
+         * [`space_display_name`] of [`Self::name`]: what a person is shown.
+         *
+         * Carried on the row, like `RosterRow.state`, so a desktop renderer needs
+         * no second round trip per label. `name` stays the raw value the rail
+         * sorts and keys on.
+         */displayName: String) {
         self.id = id
         self.name = name
         self.avatarUrl = avatarUrl
         self.childCount = childCount
         self.membership = membership
         self.identity = identity
+        self.displayName = displayName
     }
 }
 
@@ -5403,6 +5622,9 @@ extension SpaceSummary: Equatable, Hashable {
         if lhs.identity != rhs.identity {
             return false
         }
+        if lhs.displayName != rhs.displayName {
+            return false
+        }
         return true
     }
 
@@ -5413,6 +5635,7 @@ extension SpaceSummary: Equatable, Hashable {
         hasher.combine(childCount)
         hasher.combine(membership)
         hasher.combine(identity)
+        hasher.combine(displayName)
     }
 }
 
@@ -5429,7 +5652,8 @@ public struct FfiConverterTypeSpaceSummary: FfiConverterRustBuffer {
                 avatarUrl: FfiConverterOptionString.read(from: &buf), 
                 childCount: FfiConverterUInt64.read(from: &buf), 
                 membership: FfiConverterTypeMembership.read(from: &buf), 
-                identity: FfiConverterTypeRoomIdentity.read(from: &buf)
+                identity: FfiConverterTypeRoomIdentity.read(from: &buf), 
+                displayName: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -5440,6 +5664,7 @@ public struct FfiConverterTypeSpaceSummary: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.childCount, into: &buf)
         FfiConverterTypeMembership.write(value.membership, into: &buf)
         FfiConverterTypeRoomIdentity.write(value.identity, into: &buf)
+        FfiConverterString.write(value.displayName, into: &buf)
     }
 }
 
@@ -6756,6 +6981,627 @@ public func FfiConverterTypeTurnErrorCard_lift(_ buf: RustBuffer) throws -> Turn
 #endif
 public func FfiConverterTypeTurnErrorCard_lower(_ value: TurnErrorCard) -> RustBuffer {
     return FfiConverterTypeTurnErrorCard.lower(value)
+}
+
+
+/**
+ * The whole record, for a host opening a room.
+ */
+public struct TurnSnapshot {
+    public var summary: TurnSummary
+    public var steps: [TurnStep]
+    public var thought: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(summary: TurnSummary, steps: [TurnStep], thought: String?) {
+        self.summary = summary
+        self.steps = steps
+        self.thought = thought
+    }
+}
+
+
+
+extension TurnSnapshot: Equatable, Hashable {
+    public static func ==(lhs: TurnSnapshot, rhs: TurnSnapshot) -> Bool {
+        if lhs.summary != rhs.summary {
+            return false
+        }
+        if lhs.steps != rhs.steps {
+            return false
+        }
+        if lhs.thought != rhs.thought {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(summary)
+        hasher.combine(steps)
+        hasher.combine(thought)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnSnapshot {
+        return
+            try TurnSnapshot(
+                summary: FfiConverterTypeTurnSummary.read(from: &buf), 
+                steps: FfiConverterSequenceTypeTurnStep.read(from: &buf), 
+                thought: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnSnapshot, into buf: inout [UInt8]) {
+        FfiConverterTypeTurnSummary.write(value.summary, into: &buf)
+        FfiConverterSequenceTypeTurnStep.write(value.steps, into: &buf)
+        FfiConverterOptionString.write(value.thought, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnSnapshot_lift(_ buf: RustBuffer) throws -> TurnSnapshot {
+    return try FfiConverterTypeTurnSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnSnapshot_lower(_ value: TurnSnapshot) -> RustBuffer {
+    return FfiConverterTypeTurnSnapshot.lower(value)
+}
+
+
+/**
+ * One tool call, as a turn's step.
+ */
+public struct TurnStep {
+    public var id: String
+    public var title: String
+    public var kind: String?
+    /**
+     * ACP's raw status. Not for display; see `phase` and `status_label`.
+     */
+    public var status: String
+    public var phase: ToolPhase
+    public var statusLabel: String
+    public var locations: [String]
+    public var input: String?
+    public var output: String?
+    /**
+     * The call's sequence; a report at or below the last one is dropped.
+     */
+    public var seq: UInt64
+    /**
+     * Whether there is anything to open the row onto.
+     */
+    public var hasDetail: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, title: String, kind: String?, 
+        /**
+         * ACP's raw status. Not for display; see `phase` and `status_label`.
+         */status: String, phase: ToolPhase, statusLabel: String, locations: [String], input: String?, output: String?, 
+        /**
+         * The call's sequence; a report at or below the last one is dropped.
+         */seq: UInt64, 
+        /**
+         * Whether there is anything to open the row onto.
+         */hasDetail: Bool) {
+        self.id = id
+        self.title = title
+        self.kind = kind
+        self.status = status
+        self.phase = phase
+        self.statusLabel = statusLabel
+        self.locations = locations
+        self.input = input
+        self.output = output
+        self.seq = seq
+        self.hasDetail = hasDetail
+    }
+}
+
+
+
+extension TurnStep: Equatable, Hashable {
+    public static func ==(lhs: TurnStep, rhs: TurnStep) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.phase != rhs.phase {
+            return false
+        }
+        if lhs.statusLabel != rhs.statusLabel {
+            return false
+        }
+        if lhs.locations != rhs.locations {
+            return false
+        }
+        if lhs.input != rhs.input {
+            return false
+        }
+        if lhs.output != rhs.output {
+            return false
+        }
+        if lhs.seq != rhs.seq {
+            return false
+        }
+        if lhs.hasDetail != rhs.hasDetail {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(title)
+        hasher.combine(kind)
+        hasher.combine(status)
+        hasher.combine(phase)
+        hasher.combine(statusLabel)
+        hasher.combine(locations)
+        hasher.combine(input)
+        hasher.combine(output)
+        hasher.combine(seq)
+        hasher.combine(hasDetail)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnStep: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnStep {
+        return
+            try TurnStep(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterOptionString.read(from: &buf), 
+                status: FfiConverterString.read(from: &buf), 
+                phase: FfiConverterTypeToolPhase.read(from: &buf), 
+                statusLabel: FfiConverterString.read(from: &buf), 
+                locations: FfiConverterSequenceString.read(from: &buf), 
+                input: FfiConverterOptionString.read(from: &buf), 
+                output: FfiConverterOptionString.read(from: &buf), 
+                seq: FfiConverterUInt64.read(from: &buf), 
+                hasDetail: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnStep, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.status, into: &buf)
+        FfiConverterTypeToolPhase.write(value.phase, into: &buf)
+        FfiConverterString.write(value.statusLabel, into: &buf)
+        FfiConverterSequenceString.write(value.locations, into: &buf)
+        FfiConverterOptionString.write(value.input, into: &buf)
+        FfiConverterOptionString.write(value.output, into: &buf)
+        FfiConverterUInt64.write(value.seq, into: &buf)
+        FfiConverterBool.write(value.hasDetail, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnStep_lift(_ buf: RustBuffer) throws -> TurnStep {
+    return try FfiConverterTypeTurnStep.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnStep_lower(_ value: TurnStep) -> RustBuffer {
+    return FfiConverterTypeTurnStep.lower(value)
+}
+
+
+/**
+ * One step that changed. `index == len` of the steps before it means append.
+ */
+public struct TurnStepChange {
+    public var index: UInt32
+    public var step: TurnStep
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(index: UInt32, step: TurnStep) {
+        self.index = index
+        self.step = step
+    }
+}
+
+
+
+extension TurnStepChange: Equatable, Hashable {
+    public static func ==(lhs: TurnStepChange, rhs: TurnStepChange) -> Bool {
+        if lhs.index != rhs.index {
+            return false
+        }
+        if lhs.step != rhs.step {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(index)
+        hasher.combine(step)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnStepChange: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnStepChange {
+        return
+            try TurnStepChange(
+                index: FfiConverterUInt32.read(from: &buf), 
+                step: FfiConverterTypeTurnStep.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnStepChange, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.index, into: &buf)
+        FfiConverterTypeTurnStep.write(value.step, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnStepChange_lift(_ buf: RustBuffer) throws -> TurnStepChange {
+    return try FfiConverterTypeTurnStepChange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnStepChange_lower(_ value: TurnStepChange) -> RustBuffer {
+    return FfiConverterTypeTurnStepChange.lower(value)
+}
+
+
+/**
+ * A turn in few words: everything a row or header needs, no text.
+ */
+public struct TurnSummary {
+    public var roomId: String
+    /**
+     * New for each turn in the book.
+     */
+    public var turnId: UInt64
+    /**
+     * Moves forward on every update the book emits; a host discards anything
+     * older than what it holds.
+     */
+    public var revision: UInt64
+    public var inProgress: Bool
+    public var endedBy: TurnEnding?
+    public var startedAtMs: UInt64
+    public var endedAtMs: UInt64?
+    /**
+     * Not sent on its own: a growing thought moves this and emits nothing.
+     */
+    public var lastActivityMs: UInt64
+    public var answering: Bool
+    public var hasThought: Bool
+    public var totalSteps: UInt32
+    public var completedSteps: UInt32
+    public var failedStep: String?
+    public var currentStepTitle: String
+    public var stepIsTool: Bool
+    /**
+     * The collapsed record's label, once the turn has ended and has a thought
+     * or a step.
+     */
+    public var recordLabel: String?
+    /**
+     * Who is writing the turn: the Matrix user id that sent the first live
+     * event (answer, thought or tool report) of this turn. `None` when no
+     * event of the turn named its sender (a fixture or preview).
+     *
+     * AgentPod sends every delta as the agent's own user, so in a room with
+     * several agents this names the one actually working, which the cast
+     * cannot. The turn belongs to the agent whose events started it. The
+     * book keeps one turn per room, so an event from a *different* agent
+     * while that turn is in progress joins it and does not rename it: two
+     * agents streaming into one room at once is an existing limitation (the
+     * per-room de-duplication in `live` has the same shape), and a flipping
+     * name would be worse than a stable, slightly stale one. The next turn,
+     * after this one ends, takes its own writer. A `Reply` never sets it.
+     */
+    public var agentId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(roomId: String, 
+        /**
+         * New for each turn in the book.
+         */turnId: UInt64, 
+        /**
+         * Moves forward on every update the book emits; a host discards anything
+         * older than what it holds.
+         */revision: UInt64, inProgress: Bool, endedBy: TurnEnding?, startedAtMs: UInt64, endedAtMs: UInt64?, 
+        /**
+         * Not sent on its own: a growing thought moves this and emits nothing.
+         */lastActivityMs: UInt64, answering: Bool, hasThought: Bool, totalSteps: UInt32, completedSteps: UInt32, failedStep: String?, currentStepTitle: String, stepIsTool: Bool, 
+        /**
+         * The collapsed record's label, once the turn has ended and has a thought
+         * or a step.
+         */recordLabel: String?, 
+        /**
+         * Who is writing the turn: the Matrix user id that sent the first live
+         * event (answer, thought or tool report) of this turn. `None` when no
+         * event of the turn named its sender (a fixture or preview).
+         *
+         * AgentPod sends every delta as the agent's own user, so in a room with
+         * several agents this names the one actually working, which the cast
+         * cannot. The turn belongs to the agent whose events started it. The
+         * book keeps one turn per room, so an event from a *different* agent
+         * while that turn is in progress joins it and does not rename it: two
+         * agents streaming into one room at once is an existing limitation (the
+         * per-room de-duplication in `live` has the same shape), and a flipping
+         * name would be worse than a stable, slightly stale one. The next turn,
+         * after this one ends, takes its own writer. A `Reply` never sets it.
+         */agentId: String? = nil) {
+        self.roomId = roomId
+        self.turnId = turnId
+        self.revision = revision
+        self.inProgress = inProgress
+        self.endedBy = endedBy
+        self.startedAtMs = startedAtMs
+        self.endedAtMs = endedAtMs
+        self.lastActivityMs = lastActivityMs
+        self.answering = answering
+        self.hasThought = hasThought
+        self.totalSteps = totalSteps
+        self.completedSteps = completedSteps
+        self.failedStep = failedStep
+        self.currentStepTitle = currentStepTitle
+        self.stepIsTool = stepIsTool
+        self.recordLabel = recordLabel
+        self.agentId = agentId
+    }
+}
+
+
+
+extension TurnSummary: Equatable, Hashable {
+    public static func ==(lhs: TurnSummary, rhs: TurnSummary) -> Bool {
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.turnId != rhs.turnId {
+            return false
+        }
+        if lhs.revision != rhs.revision {
+            return false
+        }
+        if lhs.inProgress != rhs.inProgress {
+            return false
+        }
+        if lhs.endedBy != rhs.endedBy {
+            return false
+        }
+        if lhs.startedAtMs != rhs.startedAtMs {
+            return false
+        }
+        if lhs.endedAtMs != rhs.endedAtMs {
+            return false
+        }
+        if lhs.lastActivityMs != rhs.lastActivityMs {
+            return false
+        }
+        if lhs.answering != rhs.answering {
+            return false
+        }
+        if lhs.hasThought != rhs.hasThought {
+            return false
+        }
+        if lhs.totalSteps != rhs.totalSteps {
+            return false
+        }
+        if lhs.completedSteps != rhs.completedSteps {
+            return false
+        }
+        if lhs.failedStep != rhs.failedStep {
+            return false
+        }
+        if lhs.currentStepTitle != rhs.currentStepTitle {
+            return false
+        }
+        if lhs.stepIsTool != rhs.stepIsTool {
+            return false
+        }
+        if lhs.recordLabel != rhs.recordLabel {
+            return false
+        }
+        if lhs.agentId != rhs.agentId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(roomId)
+        hasher.combine(turnId)
+        hasher.combine(revision)
+        hasher.combine(inProgress)
+        hasher.combine(endedBy)
+        hasher.combine(startedAtMs)
+        hasher.combine(endedAtMs)
+        hasher.combine(lastActivityMs)
+        hasher.combine(answering)
+        hasher.combine(hasThought)
+        hasher.combine(totalSteps)
+        hasher.combine(completedSteps)
+        hasher.combine(failedStep)
+        hasher.combine(currentStepTitle)
+        hasher.combine(stepIsTool)
+        hasher.combine(recordLabel)
+        hasher.combine(agentId)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnSummary {
+        return
+            try TurnSummary(
+                roomId: FfiConverterString.read(from: &buf), 
+                turnId: FfiConverterUInt64.read(from: &buf), 
+                revision: FfiConverterUInt64.read(from: &buf), 
+                inProgress: FfiConverterBool.read(from: &buf), 
+                endedBy: FfiConverterOptionTypeTurnEnding.read(from: &buf), 
+                startedAtMs: FfiConverterUInt64.read(from: &buf), 
+                endedAtMs: FfiConverterOptionUInt64.read(from: &buf), 
+                lastActivityMs: FfiConverterUInt64.read(from: &buf), 
+                answering: FfiConverterBool.read(from: &buf), 
+                hasThought: FfiConverterBool.read(from: &buf), 
+                totalSteps: FfiConverterUInt32.read(from: &buf), 
+                completedSteps: FfiConverterUInt32.read(from: &buf), 
+                failedStep: FfiConverterOptionString.read(from: &buf), 
+                currentStepTitle: FfiConverterString.read(from: &buf), 
+                stepIsTool: FfiConverterBool.read(from: &buf), 
+                recordLabel: FfiConverterOptionString.read(from: &buf), 
+                agentId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnSummary, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterUInt64.write(value.turnId, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterBool.write(value.inProgress, into: &buf)
+        FfiConverterOptionTypeTurnEnding.write(value.endedBy, into: &buf)
+        FfiConverterUInt64.write(value.startedAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.endedAtMs, into: &buf)
+        FfiConverterUInt64.write(value.lastActivityMs, into: &buf)
+        FfiConverterBool.write(value.answering, into: &buf)
+        FfiConverterBool.write(value.hasThought, into: &buf)
+        FfiConverterUInt32.write(value.totalSteps, into: &buf)
+        FfiConverterUInt32.write(value.completedSteps, into: &buf)
+        FfiConverterOptionString.write(value.failedStep, into: &buf)
+        FfiConverterString.write(value.currentStepTitle, into: &buf)
+        FfiConverterBool.write(value.stepIsTool, into: &buf)
+        FfiConverterOptionString.write(value.recordLabel, into: &buf)
+        FfiConverterOptionString.write(value.agentId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnSummary_lift(_ buf: RustBuffer) throws -> TurnSummary {
+    return try FfiConverterTypeTurnSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnSummary_lower(_ value: TurnSummary) -> RustBuffer {
+    return FfiConverterTypeTurnSummary.lower(value)
+}
+
+
+/**
+ * What a host is told when a turn moves.
+ */
+public struct TurnUpdate {
+    public var summary: TurnSummary
+    public var step: TurnStepChange?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(summary: TurnSummary, step: TurnStepChange?) {
+        self.summary = summary
+        self.step = step
+    }
+}
+
+
+
+extension TurnUpdate: Equatable, Hashable {
+    public static func ==(lhs: TurnUpdate, rhs: TurnUpdate) -> Bool {
+        if lhs.summary != rhs.summary {
+            return false
+        }
+        if lhs.step != rhs.step {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(summary)
+        hasher.combine(step)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnUpdate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnUpdate {
+        return
+            try TurnUpdate(
+                summary: FfiConverterTypeTurnSummary.read(from: &buf), 
+                step: FfiConverterOptionTypeTurnStepChange.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnUpdate, into buf: inout [UInt8]) {
+        FfiConverterTypeTurnSummary.write(value.summary, into: &buf)
+        FfiConverterOptionTypeTurnStepChange.write(value.step, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnUpdate_lift(_ buf: RustBuffer) throws -> TurnUpdate {
+    return try FfiConverterTypeTurnUpdate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnUpdate_lower(_ value: TurnUpdate) -> RustBuffer {
+    return FfiConverterTypeTurnUpdate.lower(value)
 }
 
 
@@ -8168,6 +9014,99 @@ public func FfiConverterTypeDeliveryState_lower(_ value: DeliveryState) -> RustB
 
 
 extension DeliveryState: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Where the demo conversation is. Order matters: each step follows the last.
+ */
+
+public enum FirstRunStep {
+    
+    /**
+     * Atlas is typing its first message.
+     */
+    case greeting
+    /**
+     * The message has landed; the permission request is on its way.
+     */
+    case asking
+    /**
+     * The permission card is on screen, waiting on the reader.
+     */
+    case waiting
+    /**
+     * The reader answered; the receipt is showing.
+     */
+    case approved
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFirstRunStep: FfiConverterRustBuffer {
+    typealias SwiftType = FirstRunStep
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FirstRunStep {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .greeting
+        
+        case 2: return .asking
+        
+        case 3: return .waiting
+        
+        case 4: return .approved
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FirstRunStep, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .greeting:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .asking:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .waiting:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .approved:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFirstRunStep_lift(_ buf: RustBuffer) throws -> FirstRunStep {
+    return try FfiConverterTypeFirstRunStep.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFirstRunStep_lower(_ value: FirstRunStep) -> RustBuffer {
+    return FfiConverterTypeFirstRunStep.lower(value)
+}
+
+
+
+extension FirstRunStep: Equatable, Hashable {}
 
 
 
@@ -10194,6 +11133,89 @@ extension ToolPhase: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * What ended a turn.
+ */
+
+public enum TurnEnding {
+    
+    /**
+     * The agent said it was done.
+     */
+    case done
+    /**
+     * The agent's message landed in the room.
+     */
+    case reply
+    /**
+     * Nothing was heard for [`GIVE_UP_AFTER_MS`].
+     */
+    case timedOut
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnEnding: FfiConverterRustBuffer {
+    typealias SwiftType = TurnEnding
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnEnding {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .done
+        
+        case 2: return .reply
+        
+        case 3: return .timedOut
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TurnEnding, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .done:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .reply:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .timedOut:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnEnding_lift(_ buf: RustBuffer) throws -> TurnEnding {
+    return try FfiConverterTypeTurnEnding.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnEnding_lower(_ value: TurnEnding) -> RustBuffer {
+    return FfiConverterTypeTurnEnding.lower(value)
+}
+
+
+
+extension TurnEnding: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Why the turn failed, as AgentPod classifies it.
  *
  * A wire value this build has never heard of is [`Self::Unknown`], never a
@@ -10336,6 +11358,109 @@ public func FfiConverterTypeTurnErrorKind_lower(_ value: TurnErrorKind) -> RustB
 
 
 extension TurnErrorKind: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Something that happened to a turn, and when (the reader's clock).
+ */
+
+public enum TurnInput {
+    
+    case answer(seq: UInt64, done: Bool, atMs: UInt64
+    )
+    case thought(seq: UInt64, text: String, done: Bool, atMs: UInt64
+    )
+    case tool(step: TurnStep, atMs: UInt64
+    )
+    /**
+     * An agent's message landed in the room. `event_ms` is its own timestamp.
+     */
+    case reply(eventMs: UInt64?, atMs: UInt64
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnInput: FfiConverterRustBuffer {
+    typealias SwiftType = TurnInput
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnInput {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .answer(seq: try FfiConverterUInt64.read(from: &buf), done: try FfiConverterBool.read(from: &buf), atMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 2: return .thought(seq: try FfiConverterUInt64.read(from: &buf), text: try FfiConverterString.read(from: &buf), done: try FfiConverterBool.read(from: &buf), atMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 3: return .tool(step: try FfiConverterTypeTurnStep.read(from: &buf), atMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 4: return .reply(eventMs: try FfiConverterOptionUInt64.read(from: &buf), atMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TurnInput, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .answer(seq,done,atMs):
+            writeInt(&buf, Int32(1))
+            FfiConverterUInt64.write(seq, into: &buf)
+            FfiConverterBool.write(done, into: &buf)
+            FfiConverterUInt64.write(atMs, into: &buf)
+            
+        
+        case let .thought(seq,text,done,atMs):
+            writeInt(&buf, Int32(2))
+            FfiConverterUInt64.write(seq, into: &buf)
+            FfiConverterString.write(text, into: &buf)
+            FfiConverterBool.write(done, into: &buf)
+            FfiConverterUInt64.write(atMs, into: &buf)
+            
+        
+        case let .tool(step,atMs):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeTurnStep.write(step, into: &buf)
+            FfiConverterUInt64.write(atMs, into: &buf)
+            
+        
+        case let .reply(eventMs,atMs):
+            writeInt(&buf, Int32(4))
+            FfiConverterOptionUInt64.write(eventMs, into: &buf)
+            FfiConverterUInt64.write(atMs, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnInput_lift(_ buf: RustBuffer) throws -> TurnInput {
+    return try FfiConverterTypeTurnInput.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnInput_lower(_ value: TurnInput) -> RustBuffer {
+    return FfiConverterTypeTurnInput.lower(value)
+}
+
+
+
+extension TurnInput: Equatable, Hashable {}
 
 
 
@@ -10798,6 +11923,30 @@ fileprivate struct FfiConverterOptionTypeTurnCounts: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeTurnStepChange: FfiConverterRustBuffer {
+    typealias SwiftType = TurnStepChange?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTurnStepChange.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTurnStepChange.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeVoiceNoteTranscript: FfiConverterRustBuffer {
     typealias SwiftType = VoiceNoteTranscript?
 
@@ -10942,6 +12091,30 @@ fileprivate struct FfiConverterOptionTypeReplyQuoteView: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeTurnEnding: FfiConverterRustBuffer {
+    typealias SwiftType = TurnEnding?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTurnEnding.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTurnEnding.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionSequenceFloat: FfiConverterRustBuffer {
     typealias SwiftType = [Float]?
 
@@ -10984,6 +12157,31 @@ fileprivate struct FfiConverterOptionTypeCustomPayload: FfiConverterRustBuffer {
         case 1: return try FfiConverterTypeCustomPayload.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = [UInt64]
+
+    public static func write(_ value: [UInt64], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterUInt64.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [UInt64] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [UInt64]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterUInt64.read(from: &buf))
+        }
+        return seq
     }
 }
 
@@ -11307,6 +12505,31 @@ fileprivate struct FfiConverterSequenceTypeTurnErrorAttempt: FfiConverterRustBuf
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeTurnErrorAttempt.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTurnStep: FfiConverterRustBuffer {
+    typealias SwiftType = [TurnStep]
+
+    public static func write(_ value: [TurnStep], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTurnStep.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TurnStep] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TurnStep]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTurnStep.read(from: &buf))
         }
         return seq
     }

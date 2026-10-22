@@ -63,7 +63,7 @@ struct LiveTurnView: View {
                 // under it, does not already show — so it goes once the text
                 // is visible. Thinking, a tool call and starting still need
                 // saying, because nothing else on screen shows them.
-                if !live.finished, live.currentStep != nil || stream.text.isEmpty {
+                if !live.finished, live.summary?.stepIsTool == true || stream.text.isEmpty {
                     currentStep
                 }
 
@@ -145,28 +145,39 @@ struct LiveTurnView: View {
             // What this is: a turn in progress, or the record of the one that
             // just finished. Saying "Working" over a finished turn would be
             // the app claiming something that is no longer true.
-            Text(live.finished ? "Done" : "Working")
+            // The word is the core's, so every host says the same: "Working",
+            // "Done", or "Stopped" for a turn the core gave up on, which is
+            // neither working nor a success, so it takes the neutral colour.
+            Text(SupermessageFFI.turnStatusWord(endedBy: live.summary?.endedBy))
                 .metaFace()
-                .foregroundStyle(live.finished ? Theme.ok : Theme.accent)
+                .foregroundStyle(statusColor)
             elapsed
         }
         .accessibilityElement(children: .combine)
     }
 
+    private var statusColor: Color {
+        switch live.summary?.endedBy {
+        case nil: Theme.accent
+        case .timedOut: Theme.contentMuted
+        case .done, .reply: Theme.ok
+        }
+    }
+
     @ViewBuilder private var elapsed: some View {
         if rendersStill || live.finished {
             // Still: to the turn's last event (or its end), never to `Date()`.
-            elapsedLabel(at: live.lastActivityAt ?? .distantPast)
+            elapsedText(at: live.lastActivityAt ?? .distantPast)
         } else {
             SwiftUI.TimelineView(.periodic(from: live.startedAt ?? .now, by: 1)) { context in
-                elapsedLabel(at: context.date)
+                elapsedText(at: context.date)
             }
         }
     }
 
-    @ViewBuilder private func elapsedLabel(at now: Date) -> some View {
+    @ViewBuilder private func elapsedText(at now: Date) -> some View {
         if let seconds = live.elapsed(at: now) {
-            Text("· " + ElapsedTime.label(seconds))
+            Text("· " + SupermessageFFI.elapsedLabel(elapsedMs: Int64((seconds * 1000).rounded())))
                 .metaFace()
                 .monospacedDigit()
                 .foregroundStyle(Theme.contentMuted)
@@ -192,10 +203,11 @@ struct LiveTurnView: View {
     }
 
     private var currentStepTitle: String {
-        if let step = live.currentStep { return step.title }
-        if live.answer != nil { return "Writing the answer" }
-        if live.thought != nil { return "Thinking" }
-        return "Starting"
+        // The core decides: the running step, else the queued one, else the
+        // answer, else the reasoning. Without a summary (a preview that only
+        // streams text) the text is what there is.
+        if let summary = live.summary { return summary.currentStepTitle }
+        return live.answer != nil ? "Writing the answer" : "Starting"
     }
 
     /// How far it has got, and what went wrong — the failure first in the
@@ -203,12 +215,12 @@ struct LiveTurnView: View {
     /// turn has ended.
     private var stepSummary: some View {
         VStack(alignment: .leading, spacing: 3) {
-            let done = live.completedSteps
+            let done = Int(live.summary?.completedSteps ?? 0)
             Label(done == 1 ? "1 step done" : "\(done) steps done", systemImage: "checkmark.circle")
                 .metaFace()
                 .foregroundStyle(Theme.contentMuted)
-            if let failed = live.failedStep {
-                Label("\(failed.title) failed", systemImage: "xmark.circle")
+            if let failed = live.summary?.failedStep {
+                Label("\(failed) failed", systemImage: "xmark.circle")
                     .metaFace()
                     .foregroundStyle(Theme.danger)
                     .lineLimit(2)
@@ -227,7 +239,7 @@ struct LiveTurnView: View {
 /// A row with nothing behind it stays a plain row: a disclosure triangle that
 /// opens onto an empty box says there is something to see.
 private struct ToolRow: View {
-    let tool: LiveStore.ToolCall
+    let tool: TurnStep
 
     @State private var open = false
 

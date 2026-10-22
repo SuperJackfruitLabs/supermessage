@@ -102,6 +102,60 @@ pub struct SpaceSummary {
     /// same convention as a room, so it is parsed by the same code rather than
     /// by a second copy that would drift.
     pub identity: crate::room_identity::RoomIdentity,
+    /// [`space_display_name`] of [`Self::name`]: what a person is shown.
+    ///
+    /// Carried on the row, like `RosterRow.state`, so a desktop renderer needs
+    /// no second round trip per label. `name` stays the raw value the rail
+    /// sorts and keys on.
+    pub display_name: String,
+}
+
+/// How a space's name reads to a person.
+///
+/// A provisioned runtime's space is named after its node, and that node is
+/// named with an id — sometimes already cut short, `9247e5…` — so the space
+/// filter offered a choice called that (2026-09-24). AgentPod should name it
+/// properly (agentpod#554). Until it does, an id-shaped name is shown as
+/// `Runtime 9247e5`: still the id's distinguishing part, but said to be a
+/// runtime rather than left as a string of hex.
+///
+/// A host's name is kept, minus `.local`: `Rakeshs-MacBook-Pro.local` is the
+/// mDNS spelling of a machine the reader knows as `Rakeshs-MacBook-Pro`.
+pub fn space_display_name(name: &str) -> String {
+    let trimmed = name.trim();
+    if let Some(id) = generated_id(trimmed) {
+        return format!("Runtime {}", id.chars().take(6).collect::<String>());
+    }
+    const SUFFIX: &str = ".local";
+    // `.local` is ASCII, so a match leaves the byte split on a boundary and
+    // "something before it" is simply a longer string.
+    if trimmed.len() > SUFFIX.len() {
+        let (head, tail) = trimmed
+            .split_at_checked(trimmed.len() - SUFFIX.len())
+            .unwrap_or((trimmed, ""));
+        if tail.eq_ignore_ascii_case(SUFFIX) {
+            return head.to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+/// The id, when `name` is one: ASCII hex and dashes with at least one digit,
+/// either long enough to be an id (8+) or visibly cut short (a trailing `…`
+/// or `...` after 4+). `cafe-bead` is somebody's joke, not an id.
+pub fn generated_id(name: &str) -> Option<&str> {
+    let mut core = name;
+    let mut truncated = false;
+    for ellipsis in ["…", "..."] {
+        if let Some(rest) = core.strip_suffix(ellipsis) {
+            core = rest;
+            truncated = true;
+        }
+    }
+    let hexish = !core.is_empty()
+        && core.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+        && core.chars().any(|c| c.is_ascii_digit());
+    (hexish && core.chars().count() >= if truncated { 4 } else { 8 }).then_some(core)
 }
 
 /// Whether an `m.space.child` event actually declares a child.
@@ -285,6 +339,7 @@ impl SpaceIndex {
                     _ => 0,
                 },
                 membership: space.membership,
+                display_name: space_display_name(&space.name),
             })
             .collect();
         // Invitations sort below the joined spaces rather than among them:
@@ -405,7 +460,7 @@ pub async fn build_space_index(client: &Client) -> CoreResult<SpaceIndex> {
             let children = space_children(&room).await?;
             index.spaces.push(SpaceIdentity {
                 id: room.room_id().to_owned(),
-                name: space_display_name(&item, &room),
+                name: space_raw_name(&item, &room),
                 avatar_url: room.avatar_url().map(|url| url.to_string()),
                 membership: Membership::Joined,
             });
@@ -426,7 +481,7 @@ pub async fn build_space_index(client: &Client) -> CoreResult<SpaceIndex> {
         if is_space(&item) {
             index.spaces.push(SpaceIdentity {
                 id: room.room_id().to_owned(),
-                name: space_display_name(&item, &room),
+                name: space_raw_name(&item, &room),
                 avatar_url: room.avatar_url().map(|url| url.to_string()),
                 membership: Membership::Invited,
             });
@@ -451,14 +506,14 @@ fn pending_rank(membership: Membership) -> u8 {
     }
 }
 
-/// A space's label for the rail: its computed display name, then its
+/// A space's name as the rail stores it: its computed display name, then its
 /// `m.room.name`, then its room id.
 ///
 /// The same three-step fallback `core::rooms::project_room` ends in, for the
 /// same reason: a space is a room, and the rail parses its name through the
 /// roster's own `roomIdentity` path (design §6), which needs *something* to
 /// parse.
-fn space_display_name(item: &RoomListItem, room: &Room) -> String {
+fn space_raw_name(item: &RoomListItem, room: &Room) -> String {
     // Humanised like a room's, so a space named after a provisioned runtime
     // reads as `9247e5…` in a filter pill rather than twelve hex characters,
     // and one named after a host reads as a host. A thin adapter over
@@ -838,5 +893,79 @@ mod tests {
         // Still a space; the honest answer is an empty roster.
         let idx = index(&[("space", "Space", &[])], &["elsewhere"]);
         assert!(idx.rooms_in(&id("space")).unwrap().is_empty());
+    }
+
+    /// Mutation seen failing: `generated_id` not stripping the `...` spelling
+    /// (only `…`) fails the `"9247e5..."` case.
+    #[test]
+    fn an_id_shaped_space_name_reads_as_a_runtime() {
+        for name in [
+            "9247e5c1a0b34d2e",
+            "9247e5c1-a0b3-4d2e-8f00-123456789abc",
+            "9247e5…",
+            "9247e5...",
+            "9247…",
+        ] {
+            let want = if name == "9247…" {
+                "Runtime 9247"
+            } else {
+                "Runtime 9247e5"
+            };
+            assert_eq!(space_display_name(name), want, "{name}");
+        }
+    }
+
+    /// Mutation seen failing: a case-sensitive `.local` compare fails
+    /// `HOST.LOCAL`; dropping the strip fails the first assertion.
+    #[test]
+    fn a_host_keeps_its_name_without_the_mdns_suffix() {
+        assert_eq!(
+            space_display_name("Rakeshs-MacBook-Pro.local"),
+            "Rakeshs-MacBook-Pro"
+        );
+        assert_eq!(space_display_name("HOST.LOCAL"), "HOST");
+        assert_eq!(space_display_name("molt-bot"), "molt-bot");
+        // Nothing but the suffix is not a host name; it stays as typed.
+        assert_eq!(space_display_name(".local"), ".local");
+    }
+
+    /// Mutation seen failing: dropping the "at least one digit" requirement
+    /// turns `cafe-bead` into "Runtime cafe-b"; lowering the untruncated
+    /// minimum from 8 to 6 turns `1234567` into "Runtime 123456".
+    #[test]
+    fn a_chosen_name_is_left_exactly_as_it_is() {
+        for name in [
+            "Guild",
+            "molt-bot",
+            "Rakesh's MacBook Pro",
+            "cafe-bead",
+            "924…",
+            "1234567",
+        ] {
+            assert_eq!(space_display_name(name), name, "{name}");
+        }
+        assert_eq!(space_display_name("  Ashram "), "Ashram");
+    }
+
+    /// iOS used Unicode-wide digit and hex checks; only ASCII reads as an id.
+    ///
+    /// Mutation seen failing: `char::is_alphanumeric` for the hex check
+    /// rewrites the mixed name to "Runtime 9247ｅ５".
+    #[test]
+    fn full_width_digits_and_hex_do_not_read_as_an_id() {
+        for name in ["９２４７ｅ５ｃ１", "9247ｅ５ｃ１"] {
+            assert_eq!(space_display_name(name), name, "{name}");
+        }
+    }
+
+    /// Mutation seen failing: leaving `display_name` as the raw name fails.
+    #[test]
+    fn a_space_summary_carries_its_readable_name() {
+        let idx = index(&[("space", "9247e5c1a0b34d2e", &[])], &[]);
+        let summary = &idx.summaries()[0];
+        assert_eq!(summary.name, "9247e5c1a0b34d2e");
+        assert_eq!(summary.display_name, "Runtime 9247e5");
+        let json = serde_json::to_value(summary).unwrap();
+        assert_eq!(json["displayName"], "Runtime 9247e5");
     }
 }

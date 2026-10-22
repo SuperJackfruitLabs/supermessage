@@ -45,6 +45,8 @@ import uniffi.supermessage_core.FfiConverterTypeAgentAvatarStyle
 import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeCounterpart
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
+import uniffi.supermessage_core.FfiConverterTypeFirstRunScript
+import uniffi.supermessage_core.FfiConverterTypeFirstRunStep
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityToken
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityTokenKind
@@ -74,11 +76,17 @@ import uniffi.supermessage_core.FfiConverterTypeSearchResultDto
 import uniffi.supermessage_core.FfiConverterTypeSpaceSummary
 import uniffi.supermessage_core.FfiConverterTypeTimelineRow
 import uniffi.supermessage_core.FfiConverterTypeToolPhase
+import uniffi.supermessage_core.FfiConverterTypeTurnEnding
+import uniffi.supermessage_core.FfiConverterTypeTurnInput
+import uniffi.supermessage_core.FfiConverterTypeTurnSnapshot
+import uniffi.supermessage_core.FfiConverterTypeTurnUpdate
 import uniffi.supermessage_core.FfiConverterTypeTypingUserDto
 import uniffi.supermessage_core.FfiConverterTypeTypingView
 import uniffi.supermessage_core.FfiConverterTypeWidgetAnswer
 import uniffi.supermessage_core.FfiConverterTypeWidgetLiveTurn
 import uniffi.supermessage_core.FfiConverterTypeWidgetWrite
+import uniffi.supermessage_core.FirstRunScript
+import uniffi.supermessage_core.FirstRunStep
 import uniffi.supermessage_core.GateAnswers
 import uniffi.supermessage_core.LiveActivityToken
 import uniffi.supermessage_core.LiveActivityTokenKind
@@ -108,6 +116,10 @@ import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_core.TimelineRow
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_core.TurnEnding
+import uniffi.supermessage_core.TurnInput
+import uniffi.supermessage_core.TurnSnapshot
+import uniffi.supermessage_core.TurnUpdate
 import uniffi.supermessage_core.TypingUserDto
 import uniffi.supermessage_core.TypingView
 import uniffi.supermessage_core.WidgetAnswer
@@ -120,6 +132,8 @@ import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatarStyle
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferCounterpart
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
+import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunScript
+import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunStep
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityToken
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityTokenKind
@@ -149,6 +163,10 @@ import uniffi.supermessage_core.RustBuffer as RustBufferSearchResultDto
 import uniffi.supermessage_core.RustBuffer as RustBufferSpaceSummary
 import uniffi.supermessage_core.RustBuffer as RustBufferTimelineRow
 import uniffi.supermessage_core.RustBuffer as RustBufferToolPhase
+import uniffi.supermessage_core.RustBuffer as RustBufferTurnEnding
+import uniffi.supermessage_core.RustBuffer as RustBufferTurnInput
+import uniffi.supermessage_core.RustBuffer as RustBufferTurnSnapshot
+import uniffi.supermessage_core.RustBuffer as RustBufferTurnUpdate
 import uniffi.supermessage_core.RustBuffer as RustBufferTypingUserDto
 import uniffi.supermessage_core.RustBuffer as RustBufferTypingView
 import uniffi.supermessage_core.RustBuffer as RustBufferWidgetAnswer
@@ -1113,6 +1131,26 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1270,6 +1308,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_toggle_reaction(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`key`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_supermessage_ffi_fn_method_core_turn(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_unignore_user(`ptr`: Pointer,`userId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_unregister_live_activity_token(`ptr`: Pointer,`gatewayUrl`: RustBuffer.ByValue,`kind`: RustBufferLiveActivityTokenKind.ByValue,`activityId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1291,6 +1331,16 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_display_initial(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_elapsed_label(`elapsedMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_first_run_advance(`step`: RustBufferFirstRunStep.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferFirstRunStep.ByValue
+    fun uniffi_supermessage_ffi_fn_func_first_run_answer(`step`: RustBufferFirstRunStep.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_first_run_script(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferFirstRunScript.ByValue
+    fun uniffi_supermessage_ffi_fn_func_fold_turn(`roomId`: RustBuffer.ByValue,`inputs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_next_notification_mode(`current`: RustBufferNotificationMode.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferNotificationMode.ByValue
@@ -1342,6 +1392,14 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_roster_state(`row`: RustBufferRoomRow.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferAgentState.ByValue
+    fun uniffi_supermessage_ffi_fn_func_space_display_name(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_turn_duration_label(`elapsedMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_turn_record_label(`thought`: Byte,`steps`: Int,`elapsedMs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_turn_status_word(`endedBy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_typing_view(`typers`: RustBuffer.ByValue,`agentIds`: RustBuffer.ByValue,`counterpart`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferTypingView.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_answer_for(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1486,6 +1544,16 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_display_initial(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_elapsed_label(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_first_run_advance(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_first_run_answer(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_first_run_script(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_fold_turn(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_next_notification_mode(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_notification_category_identifier(
@@ -1535,6 +1603,14 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_roster_sections(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_roster_state(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_space_display_name(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_turn_duration_label(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_turn_record_label(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_turn_status_word(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_typing_view(
     ): Short
@@ -1682,6 +1758,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_toggle_reaction(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_turn(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_unignore_user(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_unregister_live_activity_token(
@@ -1735,6 +1813,21 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_display_initial() != 43302.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_elapsed_label() != 44142.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_first_run_advance() != 10288.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_first_run_answer() != 19235.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_first_run_script() != 8160.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345.toShort()) {
@@ -1810,6 +1903,18 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_roster_state() != 4121.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_space_display_name() != 32972.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_turn_duration_label() != 63524.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_turn_record_label() != 9579.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_turn_status_word() != 45599.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_typing_view() != 62690.toShort()) {
@@ -2029,6 +2134,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_toggle_reaction() != 6594.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_turn() != 244.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_unignore_user() != 38081.toShort()) {
@@ -2949,6 +3057,13 @@ public interface CoreInterface {
      * Add or remove a reaction. Returns whether the reaction is now present.
      */
     fun `toggleReaction`(`roomId`: kotlin.String, `eventId`: kotlin.String, `key`: kotlin.String): kotlin.Boolean
+    
+    /**
+     * A room's agent turn, whole, for a host opening the room — see
+     * `core::session::Session::turn`. `None` when the room has had none this
+     * sign-in. Synchronous: it reads the session's turn book.
+     */
+    fun `turn`(`roomId`: kotlin.String): TurnSnapshot?
     
     /**
      * Unblock someone. A no-op when they were not blocked.
@@ -4183,6 +4298,23 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * A room's agent turn, whole, for a host opening the room — see
+     * `core::session::Session::turn`. `None` when the room has had none this
+     * sign-in. Synchronous: it reads the session's turn book.
+     */override fun `turn`(`roomId`: kotlin.String): TurnSnapshot? {
+            return FfiConverterOptionalTypeTurnSnapshot.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_turn(
+        it, FfiConverterString.lower(`roomId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Unblock someone. A no-op when they were not blocked.
      */
     @Throws(FfiException::class)override fun `unignoreUser`(`userId`: kotlin.String)
@@ -5144,6 +5276,17 @@ sealed class FfiEvent {
         companion object
     }
     
+    /**
+     * A room's agent turn moved: a summary, and at most one step that
+     * changed. Sent **before** the text event that caused it. Discard an
+     * update whose `summary.revision` is below the one held; see
+     * `core::turns`. M4 hosts render it.
+     */
+    data class Turn(
+        val `update`: TurnUpdate) : FfiEvent() {
+        companion object
+    }
+    
     data class AttachmentStaged(
         val `token`: kotlin.String, 
         val `filename`: kotlin.String, 
@@ -5210,13 +5353,16 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterOptionalString.read(buf),
                 FfiConverterOptionalString.read(buf),
                 )
-            8 -> FfiEvent.AttachmentStaged(
+            8 -> FfiEvent.Turn(
+                FfiConverterTypeTurnUpdate.read(buf),
+                )
+            9 -> FfiEvent.AttachmentStaged(
                 FfiConverterString.read(buf),
                 FfiConverterString.read(buf),
                 FfiConverterULong.read(buf),
                 FfiConverterString.read(buf),
                 )
-            9 -> FfiEvent.IgnoredUsers(
+            10 -> FfiEvent.IgnoredUsers(
                 FfiConverterSequenceString.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
@@ -5288,6 +5434,13 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 + FfiConverterSequenceString.allocationSize(value.`locations`)
                 + FfiConverterOptionalString.allocationSize(value.`input`)
                 + FfiConverterOptionalString.allocationSize(value.`output`)
+            )
+        }
+        is FfiEvent.Turn -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeTurnUpdate.allocationSize(value.`update`)
             )
         }
         is FfiEvent.AttachmentStaged -> {
@@ -5363,8 +5516,13 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterOptionalString.write(value.`output`, buf)
                 Unit
             }
-            is FfiEvent.AttachmentStaged -> {
+            is FfiEvent.Turn -> {
                 buf.putInt(8)
+                FfiConverterTypeTurnUpdate.write(value.`update`, buf)
+                Unit
+            }
+            is FfiEvent.AttachmentStaged -> {
+                buf.putInt(9)
                 FfiConverterString.write(value.`token`, buf)
                 FfiConverterString.write(value.`filename`, buf)
                 FfiConverterULong.write(value.`sizeBytes`, buf)
@@ -5372,7 +5530,7 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 Unit
             }
             is FfiEvent.IgnoredUsers -> {
-                buf.putInt(9)
+                buf.putInt(10)
                 FfiConverterSequenceString.write(value.`userIds`, buf)
                 Unit
             }
@@ -6302,6 +6460,38 @@ public object FfiConverterOptionalTypeCounterpart: FfiConverterRustBuffer<Counte
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeFirstRunStep: FfiConverterRustBuffer<FirstRunStep?> {
+    override fun read(buf: ByteBuffer): FirstRunStep? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFirstRunStep.read(buf)
+    }
+
+    override fun allocationSize(value: FirstRunStep?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFirstRunStep.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FirstRunStep?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFirstRunStep.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeGateAnswers: FfiConverterRustBuffer<GateAnswers?> {
     override fun read(buf: ByteBuffer): GateAnswers? {
         if (buf.get().toInt() == 0) {
@@ -6516,6 +6706,70 @@ public object FfiConverterOptionalTypeRosterRow: FfiConverterRustBuffer<RosterRo
         } else {
             buf.put(1)
             FfiConverterTypeRosterRow.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeTurnEnding: FfiConverterRustBuffer<TurnEnding?> {
+    override fun read(buf: ByteBuffer): TurnEnding? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTurnEnding.read(buf)
+    }
+
+    override fun allocationSize(value: TurnEnding?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTurnEnding.allocationSize(value)
+        }
+    }
+
+    override fun write(value: TurnEnding?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTurnEnding.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeTurnSnapshot: FfiConverterRustBuffer<TurnSnapshot?> {
+    override fun read(buf: ByteBuffer): TurnSnapshot? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTurnSnapshot.read(buf)
+    }
+
+    override fun allocationSize(value: TurnSnapshot?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTurnSnapshot.allocationSize(value)
+        }
+    }
+
+    override fun write(value: TurnSnapshot?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTurnSnapshot.write(value, buf)
         }
     }
 }
@@ -7006,6 +7260,34 @@ public object FfiConverterSequenceTypeTimelineRow: FfiConverterRustBuffer<List<T
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeTurnInput: FfiConverterRustBuffer<List<TurnInput>> {
+    override fun read(buf: ByteBuffer): List<TurnInput> {
+        val len = buf.getInt()
+        return List<TurnInput>(len) {
+            FfiConverterTypeTurnInput.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<TurnInput>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeTurnInput.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<TurnInput>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeTurnInput.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeTypingUserDto: FfiConverterRustBuffer<List<TypingUserDto>> {
     override fun read(buf: ByteBuffer): List<TypingUserDto> {
         val len = buf.getInt()
@@ -7055,6 +7337,30 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7300,6 +7606,74 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_display_initial(
         FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * How long a turn has been running: "8s", "1m 04s" — see
+         * `core::turn_label::elapsed_label`.
+         */ fun `elapsedLabel`(`elapsedMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_elapsed_label(
+        FfiConverterLong.lower(`elapsedMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The demo's next automatic step; it stops at the card.
+         */ fun `firstRunAdvance`(`step`: FirstRunStep): FirstRunStep {
+            return FfiConverterTypeFirstRunStep.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_first_run_advance(
+        FfiConverterTypeFirstRunStep.lower(`step`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The step after the reader answers the card, or `None` when there is no
+         * card to answer.
+         */ fun `firstRunAnswer`(`step`: FirstRunStep): FirstRunStep? {
+            return FfiConverterOptionalTypeFirstRunStep.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_first_run_answer(
+        FfiConverterTypeFirstRunStep.lower(`step`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The first-run demo's script — what Atlas says, the permission card, and the
+         * pauses between steps.
+         *
+         * **Local, and nothing is sent:** the script is data and the host holds the
+         * step; hand the card a local answer closure, never a session. A free
+         * function for the same reason as `rich_blocks_from_markdown`.
+         */ fun `firstRunScript`(): FirstRunScript {
+            return FfiConverterTypeFirstRunScript.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_first_run_script(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Folds `inputs` through a fresh turn book, for previews and fixtures — see
+         * `core::turns::fold_turn`.
+         */ fun `foldTurn`(`roomId`: kotlin.String, `inputs`: List<TurnInput>): TurnSnapshot? {
+            return FfiConverterOptionalTypeTurnSnapshot.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_fold_turn(
+        FfiConverterString.lower(`roomId`),FfiConverterSequenceTypeTurnInput.lower(`inputs`),_status)
 }
     )
     }
@@ -7637,6 +8011,59 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_state(
         FfiConverterTypeRoomRow.lower(`row`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * How a space's raw name reads to a person — "Runtime 9247e5" for an id,
+         * a host without its `.local`.
+         *
+         * A free function for the same reason as `rich_blocks_from_markdown`: it
+         * touches no session state. `SpaceSummary.display_name` already carries it
+         * for every listed space; this is for a name a host holds on its own.
+         */ fun `spaceDisplayName`(`name`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_space_display_name(
+        FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "12s", "2m 5s" — see `core::turn_label::turn_duration_label`.
+         */ fun `turnDurationLabel`(`elapsedMs`: kotlin.ULong): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_turn_duration_label(
+        FfiConverterULong.lower(`elapsedMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "Thought for 12s · 2 steps" — see `core::turn_label::turn_record_label`.
+         */ fun `turnRecordLabel`(`thought`: kotlin.Boolean, `steps`: kotlin.UInt, `elapsedMs`: kotlin.ULong?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_turn_record_label(
+        FfiConverterBoolean.lower(`thought`),FfiConverterUInt.lower(`steps`),FfiConverterOptionalULong.lower(`elapsedMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "Working", "Done" or "Stopped" — see `core::turn_label::turn_status_word`.
+         */ fun `turnStatusWord`(`endedBy`: TurnEnding?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_turn_status_word(
+        FfiConverterOptionalTypeTurnEnding.lower(`endedBy`),_status)
 }
     )
     }

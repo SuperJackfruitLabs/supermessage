@@ -1663,6 +1663,109 @@ public object FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer<CustomE
 
 
 /**
+ * Everything the demo says and shows, so no host keeps its own copy.
+ *
+ * `Serialize` only: [`CustomEventView`] has no `Deserialize`.
+ */
+data class FirstRunScript (
+    var `agentName`: kotlin.String, 
+    var `greeting`: kotlin.String, 
+    var `request`: kotlin.String, 
+    /**
+     * Shown above the conversation so nobody mistakes it for a real room.
+     */
+    var `banner`: kotlin.String, 
+    var `typingLabel`: kotlin.String, 
+    var `agentTag`: kotlin.String, 
+    var `cardLabel`: kotlin.String, 
+    var `cardEventType`: kotlin.String, 
+    var `roomId`: kotlin.String, 
+    var `initial`: kotlin.String, 
+    var `approvedTitle`: kotlin.String, 
+    var `approvedBody`: kotlin.String, 
+    var `finishLabel`: kotlin.String, 
+    var `skipLabel`: kotlin.String, 
+    /**
+     * The permission request Atlas "sends", as the core would hand it to a host.
+     */
+    var `card`: CustomEventView, 
+    /**
+     * Pause before each automatic [`advance`]: greeting to asking, then
+     * asking to waiting.
+     */
+    var `stepDelaysMs`: List<kotlin.ULong>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFirstRunScript: FfiConverterRustBuffer<FirstRunScript> {
+    override fun read(buf: ByteBuffer): FirstRunScript {
+        return FirstRunScript(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeCustomEventView.read(buf),
+            FfiConverterSequenceULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FirstRunScript) = (
+            FfiConverterString.allocationSize(value.`agentName`) +
+            FfiConverterString.allocationSize(value.`greeting`) +
+            FfiConverterString.allocationSize(value.`request`) +
+            FfiConverterString.allocationSize(value.`banner`) +
+            FfiConverterString.allocationSize(value.`typingLabel`) +
+            FfiConverterString.allocationSize(value.`agentTag`) +
+            FfiConverterString.allocationSize(value.`cardLabel`) +
+            FfiConverterString.allocationSize(value.`cardEventType`) +
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterString.allocationSize(value.`initial`) +
+            FfiConverterString.allocationSize(value.`approvedTitle`) +
+            FfiConverterString.allocationSize(value.`approvedBody`) +
+            FfiConverterString.allocationSize(value.`finishLabel`) +
+            FfiConverterString.allocationSize(value.`skipLabel`) +
+            FfiConverterTypeCustomEventView.allocationSize(value.`card`) +
+            FfiConverterSequenceULong.allocationSize(value.`stepDelaysMs`)
+    )
+
+    override fun write(value: FirstRunScript, buf: ByteBuffer) {
+            FfiConverterString.write(value.`agentName`, buf)
+            FfiConverterString.write(value.`greeting`, buf)
+            FfiConverterString.write(value.`request`, buf)
+            FfiConverterString.write(value.`banner`, buf)
+            FfiConverterString.write(value.`typingLabel`, buf)
+            FfiConverterString.write(value.`agentTag`, buf)
+            FfiConverterString.write(value.`cardLabel`, buf)
+            FfiConverterString.write(value.`cardEventType`, buf)
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterString.write(value.`initial`, buf)
+            FfiConverterString.write(value.`approvedTitle`, buf)
+            FfiConverterString.write(value.`approvedBody`, buf)
+            FfiConverterString.write(value.`finishLabel`, buf)
+            FfiConverterString.write(value.`skipLabel`, buf)
+            FfiConverterTypeCustomEventView.write(value.`card`, buf)
+            FfiConverterSequenceULong.write(value.`stepDelaysMs`, buf)
+    }
+}
+
+
+
+/**
  * What a GATE notification's actions need to answer with no room open: the
  * same three things the card sends.
  */
@@ -3553,7 +3656,15 @@ data class SpaceSummary (
      * same convention as a room, so it is parsed by the same code rather than
      * by a second copy that would drift.
      */
-    var `identity`: RoomIdentity
+    var `identity`: RoomIdentity, 
+    /**
+     * [`space_display_name`] of [`Self::name`]: what a person is shown.
+     *
+     * Carried on the row, like `RosterRow.state`, so a desktop renderer needs
+     * no second round trip per label. `name` stays the raw value the rail
+     * sorts and keys on.
+     */
+    var `displayName`: kotlin.String
 ) {
     
     companion object
@@ -3571,6 +3682,7 @@ public object FfiConverterTypeSpaceSummary: FfiConverterRustBuffer<SpaceSummary>
             FfiConverterULong.read(buf),
             FfiConverterTypeMembership.read(buf),
             FfiConverterTypeRoomIdentity.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -3580,7 +3692,8 @@ public object FfiConverterTypeSpaceSummary: FfiConverterRustBuffer<SpaceSummary>
             FfiConverterOptionalString.allocationSize(value.`avatarUrl`) +
             FfiConverterULong.allocationSize(value.`childCount`) +
             FfiConverterTypeMembership.allocationSize(value.`membership`) +
-            FfiConverterTypeRoomIdentity.allocationSize(value.`identity`)
+            FfiConverterTypeRoomIdentity.allocationSize(value.`identity`) +
+            FfiConverterString.allocationSize(value.`displayName`)
     )
 
     override fun write(value: SpaceSummary, buf: ByteBuffer) {
@@ -3590,6 +3703,7 @@ public object FfiConverterTypeSpaceSummary: FfiConverterRustBuffer<SpaceSummary>
             FfiConverterULong.write(value.`childCount`, buf)
             FfiConverterTypeMembership.write(value.`membership`, buf)
             FfiConverterTypeRoomIdentity.write(value.`identity`, buf)
+            FfiConverterString.write(value.`displayName`, buf)
     }
 }
 
@@ -4249,6 +4363,319 @@ public object FfiConverterTypeTurnErrorCard: FfiConverterRustBuffer<TurnErrorCar
             FfiConverterOptionalString.write(value.`model`, buf)
             FfiConverterOptionalBoolean.write(value.`retryable`, buf)
             FfiConverterSequenceTypeTurnErrorAttempt.write(value.`attempts`, buf)
+    }
+}
+
+
+
+/**
+ * The whole record, for a host opening a room.
+ */
+data class TurnSnapshot (
+    var `summary`: TurnSummary, 
+    var `steps`: List<TurnStep>, 
+    var `thought`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnSnapshot: FfiConverterRustBuffer<TurnSnapshot> {
+    override fun read(buf: ByteBuffer): TurnSnapshot {
+        return TurnSnapshot(
+            FfiConverterTypeTurnSummary.read(buf),
+            FfiConverterSequenceTypeTurnStep.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnSnapshot) = (
+            FfiConverterTypeTurnSummary.allocationSize(value.`summary`) +
+            FfiConverterSequenceTypeTurnStep.allocationSize(value.`steps`) +
+            FfiConverterOptionalString.allocationSize(value.`thought`)
+    )
+
+    override fun write(value: TurnSnapshot, buf: ByteBuffer) {
+            FfiConverterTypeTurnSummary.write(value.`summary`, buf)
+            FfiConverterSequenceTypeTurnStep.write(value.`steps`, buf)
+            FfiConverterOptionalString.write(value.`thought`, buf)
+    }
+}
+
+
+
+/**
+ * One tool call, as a turn's step.
+ */
+data class TurnStep (
+    var `id`: kotlin.String, 
+    var `title`: kotlin.String, 
+    var `kind`: kotlin.String?, 
+    /**
+     * ACP's raw status. Not for display; see `phase` and `status_label`.
+     */
+    var `status`: kotlin.String, 
+    var `phase`: ToolPhase, 
+    var `statusLabel`: kotlin.String, 
+    var `locations`: List<kotlin.String>, 
+    var `input`: kotlin.String?, 
+    var `output`: kotlin.String?, 
+    /**
+     * The call's sequence; a report at or below the last one is dropped.
+     */
+    var `seq`: kotlin.ULong, 
+    /**
+     * Whether there is anything to open the row onto.
+     */
+    var `hasDetail`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnStep: FfiConverterRustBuffer<TurnStep> {
+    override fun read(buf: ByteBuffer): TurnStep {
+        return TurnStep(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeToolPhase.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnStep) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterOptionalString.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`status`) +
+            FfiConverterTypeToolPhase.allocationSize(value.`phase`) +
+            FfiConverterString.allocationSize(value.`statusLabel`) +
+            FfiConverterSequenceString.allocationSize(value.`locations`) +
+            FfiConverterOptionalString.allocationSize(value.`input`) +
+            FfiConverterOptionalString.allocationSize(value.`output`) +
+            FfiConverterULong.allocationSize(value.`seq`) +
+            FfiConverterBoolean.allocationSize(value.`hasDetail`)
+    )
+
+    override fun write(value: TurnStep, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterOptionalString.write(value.`kind`, buf)
+            FfiConverterString.write(value.`status`, buf)
+            FfiConverterTypeToolPhase.write(value.`phase`, buf)
+            FfiConverterString.write(value.`statusLabel`, buf)
+            FfiConverterSequenceString.write(value.`locations`, buf)
+            FfiConverterOptionalString.write(value.`input`, buf)
+            FfiConverterOptionalString.write(value.`output`, buf)
+            FfiConverterULong.write(value.`seq`, buf)
+            FfiConverterBoolean.write(value.`hasDetail`, buf)
+    }
+}
+
+
+
+/**
+ * One step that changed. `index == len` of the steps before it means append.
+ */
+data class TurnStepChange (
+    var `index`: kotlin.UInt, 
+    var `step`: TurnStep
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnStepChange: FfiConverterRustBuffer<TurnStepChange> {
+    override fun read(buf: ByteBuffer): TurnStepChange {
+        return TurnStepChange(
+            FfiConverterUInt.read(buf),
+            FfiConverterTypeTurnStep.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnStepChange) = (
+            FfiConverterUInt.allocationSize(value.`index`) +
+            FfiConverterTypeTurnStep.allocationSize(value.`step`)
+    )
+
+    override fun write(value: TurnStepChange, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`index`, buf)
+            FfiConverterTypeTurnStep.write(value.`step`, buf)
+    }
+}
+
+
+
+/**
+ * A turn in few words: everything a row or header needs, no text.
+ */
+data class TurnSummary (
+    var `roomId`: kotlin.String, 
+    /**
+     * New for each turn in the book.
+     */
+    var `turnId`: kotlin.ULong, 
+    /**
+     * Moves forward on every update the book emits; a host discards anything
+     * older than what it holds.
+     */
+    var `revision`: kotlin.ULong, 
+    var `inProgress`: kotlin.Boolean, 
+    var `endedBy`: TurnEnding?, 
+    var `startedAtMs`: kotlin.ULong, 
+    var `endedAtMs`: kotlin.ULong?, 
+    /**
+     * Not sent on its own: a growing thought moves this and emits nothing.
+     */
+    var `lastActivityMs`: kotlin.ULong, 
+    var `answering`: kotlin.Boolean, 
+    var `hasThought`: kotlin.Boolean, 
+    var `totalSteps`: kotlin.UInt, 
+    var `completedSteps`: kotlin.UInt, 
+    var `failedStep`: kotlin.String?, 
+    var `currentStepTitle`: kotlin.String, 
+    var `stepIsTool`: kotlin.Boolean, 
+    /**
+     * The collapsed record's label, once the turn has ended and has a thought
+     * or a step.
+     */
+    var `recordLabel`: kotlin.String?, 
+    /**
+     * Who is writing the turn: the Matrix user id that sent the first live
+     * event (answer, thought or tool report) of this turn. `None` when no
+     * event of the turn named its sender (a fixture or preview).
+     *
+     * AgentPod sends every delta as the agent's own user, so in a room with
+     * several agents this names the one actually working, which the cast
+     * cannot. The turn belongs to the agent whose events started it. The
+     * book keeps one turn per room, so an event from a *different* agent
+     * while that turn is in progress joins it and does not rename it: two
+     * agents streaming into one room at once is an existing limitation (the
+     * per-room de-duplication in `live` has the same shape), and a flipping
+     * name would be worse than a stable, slightly stale one. The next turn,
+     * after this one ends, takes its own writer. A `Reply` never sets it.
+     */
+    var `agentId`: kotlin.String? = null
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnSummary: FfiConverterRustBuffer<TurnSummary> {
+    override fun read(buf: ByteBuffer): TurnSummary {
+        return TurnSummary(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeTurnEnding.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnSummary) = (
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterULong.allocationSize(value.`turnId`) +
+            FfiConverterULong.allocationSize(value.`revision`) +
+            FfiConverterBoolean.allocationSize(value.`inProgress`) +
+            FfiConverterOptionalTypeTurnEnding.allocationSize(value.`endedBy`) +
+            FfiConverterULong.allocationSize(value.`startedAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`endedAtMs`) +
+            FfiConverterULong.allocationSize(value.`lastActivityMs`) +
+            FfiConverterBoolean.allocationSize(value.`answering`) +
+            FfiConverterBoolean.allocationSize(value.`hasThought`) +
+            FfiConverterUInt.allocationSize(value.`totalSteps`) +
+            FfiConverterUInt.allocationSize(value.`completedSteps`) +
+            FfiConverterOptionalString.allocationSize(value.`failedStep`) +
+            FfiConverterString.allocationSize(value.`currentStepTitle`) +
+            FfiConverterBoolean.allocationSize(value.`stepIsTool`) +
+            FfiConverterOptionalString.allocationSize(value.`recordLabel`) +
+            FfiConverterOptionalString.allocationSize(value.`agentId`)
+    )
+
+    override fun write(value: TurnSummary, buf: ByteBuffer) {
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterULong.write(value.`turnId`, buf)
+            FfiConverterULong.write(value.`revision`, buf)
+            FfiConverterBoolean.write(value.`inProgress`, buf)
+            FfiConverterOptionalTypeTurnEnding.write(value.`endedBy`, buf)
+            FfiConverterULong.write(value.`startedAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`endedAtMs`, buf)
+            FfiConverterULong.write(value.`lastActivityMs`, buf)
+            FfiConverterBoolean.write(value.`answering`, buf)
+            FfiConverterBoolean.write(value.`hasThought`, buf)
+            FfiConverterUInt.write(value.`totalSteps`, buf)
+            FfiConverterUInt.write(value.`completedSteps`, buf)
+            FfiConverterOptionalString.write(value.`failedStep`, buf)
+            FfiConverterString.write(value.`currentStepTitle`, buf)
+            FfiConverterBoolean.write(value.`stepIsTool`, buf)
+            FfiConverterOptionalString.write(value.`recordLabel`, buf)
+            FfiConverterOptionalString.write(value.`agentId`, buf)
+    }
+}
+
+
+
+/**
+ * What a host is told when a turn moves.
+ */
+data class TurnUpdate (
+    var `summary`: TurnSummary, 
+    var `step`: TurnStepChange?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnUpdate: FfiConverterRustBuffer<TurnUpdate> {
+    override fun read(buf: ByteBuffer): TurnUpdate {
+        return TurnUpdate(
+            FfiConverterTypeTurnSummary.read(buf),
+            FfiConverterOptionalTypeTurnStepChange.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnUpdate) = (
+            FfiConverterTypeTurnSummary.allocationSize(value.`summary`) +
+            FfiConverterOptionalTypeTurnStepChange.allocationSize(value.`step`)
+    )
+
+    override fun write(value: TurnUpdate, buf: ByteBuffer) {
+            FfiConverterTypeTurnSummary.write(value.`summary`, buf)
+            FfiConverterOptionalTypeTurnStepChange.write(value.`step`, buf)
     }
 }
 
@@ -5064,6 +5491,53 @@ public object FfiConverterTypeDeliveryState: FfiConverterRustBuffer<DeliveryStat
     override fun allocationSize(value: DeliveryState) = 4UL
 
     override fun write(value: DeliveryState, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Where the demo conversation is. Order matters: each step follows the last.
+ */
+
+enum class FirstRunStep {
+    
+    /**
+     * Atlas is typing its first message.
+     */
+    GREETING,
+    /**
+     * The message has landed; the permission request is on its way.
+     */
+    ASKING,
+    /**
+     * The permission card is on screen, waiting on the reader.
+     */
+    WAITING,
+    /**
+     * The reader answered; the receipt is showing.
+     */
+    APPROVED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFirstRunStep: FfiConverterRustBuffer<FirstRunStep> {
+    override fun read(buf: ByteBuffer) = try {
+        FirstRunStep.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FirstRunStep) = 4UL
+
+    override fun write(value: FirstRunStep, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -6941,6 +7415,49 @@ public object FfiConverterTypeToolPhase: FfiConverterRustBuffer<ToolPhase> {
 
 
 /**
+ * What ended a turn.
+ */
+
+enum class TurnEnding {
+    
+    /**
+     * The agent said it was done.
+     */
+    DONE,
+    /**
+     * The agent's message landed in the room.
+     */
+    REPLY,
+    /**
+     * Nothing was heard for [`GIVE_UP_AFTER_MS`].
+     */
+    TIMED_OUT;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnEnding: FfiConverterRustBuffer<TurnEnding> {
+    override fun read(buf: ByteBuffer) = try {
+        TurnEnding.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: TurnEnding) = 4UL
+
+    override fun write(value: TurnEnding, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
  * Why the turn failed, as AgentPod classifies it.
  *
  * A wire value this build has never heard of is [`Self::Unknown`], never a
@@ -6981,6 +7498,150 @@ public object FfiConverterTypeTurnErrorKind: FfiConverterRustBuffer<TurnErrorKin
 
     override fun write(value: TurnErrorKind, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Something that happened to a turn, and when (the reader's clock).
+ */
+sealed class TurnInput {
+    
+    data class Answer(
+        val `seq`: kotlin.ULong, 
+        val `done`: kotlin.Boolean, 
+        val `atMs`: kotlin.ULong) : TurnInput() {
+        companion object
+    }
+    
+    data class Thought(
+        val `seq`: kotlin.ULong, 
+        val `text`: kotlin.String, 
+        val `done`: kotlin.Boolean, 
+        val `atMs`: kotlin.ULong) : TurnInput() {
+        companion object
+    }
+    
+    data class Tool(
+        val `step`: TurnStep, 
+        val `atMs`: kotlin.ULong) : TurnInput() {
+        companion object
+    }
+    
+    /**
+     * An agent's message landed in the room. `event_ms` is its own timestamp.
+     */
+    data class Reply(
+        val `eventMs`: kotlin.ULong?, 
+        val `atMs`: kotlin.ULong) : TurnInput() {
+        companion object
+    }
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnInput : FfiConverterRustBuffer<TurnInput>{
+    override fun read(buf: ByteBuffer): TurnInput {
+        return when(buf.getInt()) {
+            1 -> TurnInput.Answer(
+                FfiConverterULong.read(buf),
+                FfiConverterBoolean.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            2 -> TurnInput.Thought(
+                FfiConverterULong.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterBoolean.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            3 -> TurnInput.Tool(
+                FfiConverterTypeTurnStep.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            4 -> TurnInput.Reply(
+                FfiConverterOptionalULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: TurnInput) = when(value) {
+        is TurnInput.Answer -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`seq`)
+                + FfiConverterBoolean.allocationSize(value.`done`)
+                + FfiConverterULong.allocationSize(value.`atMs`)
+            )
+        }
+        is TurnInput.Thought -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterULong.allocationSize(value.`seq`)
+                + FfiConverterString.allocationSize(value.`text`)
+                + FfiConverterBoolean.allocationSize(value.`done`)
+                + FfiConverterULong.allocationSize(value.`atMs`)
+            )
+        }
+        is TurnInput.Tool -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeTurnStep.allocationSize(value.`step`)
+                + FfiConverterULong.allocationSize(value.`atMs`)
+            )
+        }
+        is TurnInput.Reply -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterOptionalULong.allocationSize(value.`eventMs`)
+                + FfiConverterULong.allocationSize(value.`atMs`)
+            )
+        }
+    }
+
+    override fun write(value: TurnInput, buf: ByteBuffer) {
+        when(value) {
+            is TurnInput.Answer -> {
+                buf.putInt(1)
+                FfiConverterULong.write(value.`seq`, buf)
+                FfiConverterBoolean.write(value.`done`, buf)
+                FfiConverterULong.write(value.`atMs`, buf)
+                Unit
+            }
+            is TurnInput.Thought -> {
+                buf.putInt(2)
+                FfiConverterULong.write(value.`seq`, buf)
+                FfiConverterString.write(value.`text`, buf)
+                FfiConverterBoolean.write(value.`done`, buf)
+                FfiConverterULong.write(value.`atMs`, buf)
+                Unit
+            }
+            is TurnInput.Tool -> {
+                buf.putInt(3)
+                FfiConverterTypeTurnStep.write(value.`step`, buf)
+                FfiConverterULong.write(value.`atMs`, buf)
+                Unit
+            }
+            is TurnInput.Reply -> {
+                buf.putInt(4)
+                FfiConverterOptionalULong.write(value.`eventMs`, buf)
+                FfiConverterULong.write(value.`atMs`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 }
 
@@ -7600,6 +8261,38 @@ public object FfiConverterOptionalTypeTurnCounts: FfiConverterRustBuffer<TurnCou
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeTurnStepChange: FfiConverterRustBuffer<TurnStepChange?> {
+    override fun read(buf: ByteBuffer): TurnStepChange? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTurnStepChange.read(buf)
+    }
+
+    override fun allocationSize(value: TurnStepChange?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTurnStepChange.allocationSize(value)
+        }
+    }
+
+    override fun write(value: TurnStepChange?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTurnStepChange.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeVoiceNoteTranscript: FfiConverterRustBuffer<VoiceNoteTranscript?> {
     override fun read(buf: ByteBuffer): VoiceNoteTranscript? {
         if (buf.get().toInt() == 0) {
@@ -7792,6 +8485,38 @@ public object FfiConverterOptionalTypeReplyQuoteView: FfiConverterRustBuffer<Rep
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeTurnEnding: FfiConverterRustBuffer<TurnEnding?> {
+    override fun read(buf: ByteBuffer): TurnEnding? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTurnEnding.read(buf)
+    }
+
+    override fun allocationSize(value: TurnEnding?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTurnEnding.allocationSize(value)
+        }
+    }
+
+    override fun write(value: TurnEnding?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTurnEnding.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalSequenceFloat: FfiConverterRustBuffer<List<kotlin.Float>?> {
     override fun read(buf: ByteBuffer): List<kotlin.Float>? {
         if (buf.get().toInt() == 0) {
@@ -7846,6 +8571,34 @@ public object FfiConverterOptionalTypeCustomPayload: FfiConverterRustBuffer<Cust
         } else {
             buf.put(1)
             FfiConverterTypeCustomPayload.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceULong: FfiConverterRustBuffer<List<kotlin.ULong>> {
+    override fun read(buf: ByteBuffer): List<kotlin.ULong> {
+        val len = buf.getInt()
+        return List<kotlin.ULong>(len) {
+            FfiConverterULong.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.ULong>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterULong.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.ULong>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterULong.write(it, buf)
         }
     }
 }
@@ -8210,6 +8963,34 @@ public object FfiConverterSequenceTypeTurnErrorAttempt: FfiConverterRustBuffer<L
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeTurnErrorAttempt.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeTurnStep: FfiConverterRustBuffer<List<TurnStep>> {
+    override fun read(buf: ByteBuffer): List<TurnStep> {
+        val len = buf.getInt()
+        return List<TurnStep>(len) {
+            FfiConverterTypeTurnStep.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<TurnStep>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeTurnStep.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<TurnStep>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeTurnStep.write(it, buf)
         }
     }
 }

@@ -92,4 +92,12 @@ extension TypingView: @retroactive @unchecked Sendable {}
 extension TurnErrorAttempt: @retroactive @unchecked Sendable {}
 extension TurnErrorCard: @retroactive @unchecked Sendable {}
 extension TurnErrorKind: @retroactive @unchecked Sendable {}
+extension ToolPhase: @retroactive @unchecked Sendable {}
+extension TurnEnding: @retroactive @unchecked Sendable {}
+extension TurnInput: @retroactive @unchecked Sendable {}
+extension TurnSnapshot: @retroactive @unchecked Sendable {}
+extension TurnStep: @retroactive @unchecked Sendable {}
+extension TurnStepChange: @retroactive @unchecked Sendable {}
+extension TurnSummary: @retroactive @unchecked Sendable {}
+extension TurnUpdate: @retroactive @unchecked Sendable {}
 extension VoiceNoteTranscript: @retroactive @unchecked Sendable {}

@@ -24,6 +24,7 @@ export function spaceSummary(overrides: Partial<SpaceSummary> = {}): SpaceSummar
   return {
     id: overrides.id ?? "!ashram:id.agentpod.dev",
     name,
+    displayName: name,
     identity: identity(name),
     avatarUrl: null,
     childCount: 10,

@@ -154,8 +154,13 @@ struct TimelineView: View {
             }
             // Success when a turn finishes in the room on screen (M2) — only
             // on the change to finished, never when a room opens onto a turn
-            // that had already ended.
-            .sensoryFeedback(.success, trigger: session.live.finished) { was, now in !was && now }
+            // that had already ended. Opening restores the record in two
+            // steps (cleared, then the core's), so the trigger carries the
+            // turn's id: a different turn is not a change within one. A turn
+            // the core gave up on (the time limit) is not a success either.
+            .sensoryFeedback(.success, trigger: session.live.outcome) { was, now in
+                LiveStore.turnFinishedWell(from: was, to: now)
+            }
             // "Report…" from the message menu. The menu is UIKit's and cannot
             // present SwiftUI, so it writes the subject to the safety store
             // and this presents it.

@@ -24,6 +24,7 @@ import uniffi.supermessage_ffi.FfiException
 import uniffi.supermessage_ffi.RoomsSnapshot
 import uniffi.supermessage_ffi.StagedFile
 import uniffi.supermessage_ffi.TimelineSnapshot
+import uniffi.supermessage_ffi.spaceDisplayName
 
 /**
  * `SpacesStore.swift` has no Swift test — confirmed by grepping the whole
@@ -42,6 +43,7 @@ class SpacesStoreTest {
     ): SpaceSummary = SpaceSummary(
         id = id, name = name, avatarUrl = null, childCount = 0uL, membership = membership,
         identity = RoomIdentity(glyph = null, name = name, role = null, initial = "X"),
+        displayName = spaceDisplayName(name),
     )
 
     /** `spacesList` populates `spaces`, refreshed rather than diff-driven. */
