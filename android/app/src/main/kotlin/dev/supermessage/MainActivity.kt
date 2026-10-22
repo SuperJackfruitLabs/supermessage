@@ -282,9 +282,15 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             roomName = { roomId -> rooms.firstOrNull { it.room.id == roomId }?.room?.name },
                         )
 
-                    ExtraPanel.Account ->
+                    ExtraPanel.Account -> {
+                        val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
+                        val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
                         AccountPanel(
                             loadAccount = session::account,
+                            rosterView = RosterChoice.offeredOrDefault(storedView),
+                            onRosterView = prefs::setView,
+                            showsState = showsState,
+                            onShowsState = prefs::setShowsState,
                             onSignOut = session::signOut,
                             onClose = {
                                 extraPanel = null
@@ -295,6 +301,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             onRecoverWithKey = session::recoverWithKey,
                             onResetRecovery = session::resetRecovery,
                         )
+                    }
 
                     null -> {}
                 }

@@ -37,6 +37,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_core.AccountDto
+import dev.supermessage.kit.RosterChoice
 import uniffi.supermessage_core.Membership
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
@@ -764,6 +765,43 @@ class RosterReachabilityTest {
         compose.waitForIdle()
         compose.onNodeWithTag("invitations-row").assertIsDisplayed()
         compose.onNodeWithText("Ops Room").assertDoesNotExist()
+    }
+
+    /**
+     * A Machine arrangement left by an older build is no longer offered: the
+     * roster reads it as Waiting (no host sections) and the panel marks Waiting.
+     */
+    @Test
+    fun aStoredMachineArrangementReadsAsWaiting() {
+        val hosted = RoomRow(
+            room = RoomSummary(
+                id = "!atlas:example.org", name = "Atlas", avatarUrl = null, unread = 0uL, lastMessage = null,
+                lastMessageIsOwn = false, lastMessageNamesSender = false, lastEventType = null,
+                lastActivityMs = null, runtime = uniffi.supermessage_core.RuntimeDto("claude-code", "Ashram"),
+                membership = Membership.JOINED,
+            ),
+            identity = RoomIdentity(glyph = null, name = "Atlas", role = null, initial = "A"),
+            preview = null,
+            affordance = RoomAffordance.COMPOSE,
+        )
+        val session = sessionOf(FakeCore(roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(hosted)) }))
+        val prefs = preferences()
+        kotlinx.coroutines.runBlocking { prefs.setView(RosterChoice.MACHINE) }
+
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Atlas").assertIsDisplayed()
+        // Machine would have headed the room with its host.
+        compose.onAllNodesWithTag("section-header").assertCountEquals(0)
+
+        compose.onNodeWithTag("roster-open-account").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("account-order-waiting").performScrollTo().assertIsSelected()
     }
 
     /**

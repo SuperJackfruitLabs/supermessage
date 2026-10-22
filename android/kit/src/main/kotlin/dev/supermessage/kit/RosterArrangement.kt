@@ -31,6 +31,23 @@ enum class RosterChoice(val title: String) {
             WAITING -> RosterView.WAITING
             MACHINE -> RosterView.MACHINE
         }
+
+    companion object {
+        /**
+         * The arrangements the Account panel offers (`RosterChoice.offered`,
+         * iOS). Machine stays in the core and the enum, but nobody can pick it
+         * here.
+         */
+        val offered: List<RosterChoice> = listOf(RECENT, WAITING)
+
+        /**
+         * A stored arrangement that is no longer offered (Machine) reads as
+         * Waiting (`RoomListView.swift:46-52`), so the roster and the panel
+         * agree about what is in force.
+         */
+        fun offeredOrDefault(stored: RosterChoice): RosterChoice =
+            if (stored in offered) stored else WAITING
+    }
 }
 
 /**

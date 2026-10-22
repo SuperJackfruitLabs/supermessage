@@ -3,6 +3,7 @@ package dev.supermessage.previews
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import dev.supermessage.AccountPanel
+import dev.supermessage.kit.RosterChoice
 import dev.supermessage.ChipState
 import dev.supermessage.Composer
 import dev.supermessage.InvitationEmptyTimeline
@@ -154,7 +155,7 @@ internal fun LoginRefusedDark() {
 }
 
 /** The account, which is two facts and a way out. */
-@Preview(name = "Account", showBackground = true, heightDp = 420)
+@Preview(name = "Account", showBackground = true, heightDp = 760)
 @Composable
 internal fun Account() {
     PreviewGround {
@@ -167,6 +168,10 @@ internal fun Account() {
             },
             onSignOut = {},
             onClose = {},
+            rosterView = RosterChoice.WAITING,
+            onRosterView = {},
+            showsState = true,
+            onShowsState = {},
         )
     }
 }

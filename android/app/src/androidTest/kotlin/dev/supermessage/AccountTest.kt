@@ -1,5 +1,20 @@
 package dev.supermessage
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.dp
+import dev.supermessage.kit.RosterChoice
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
@@ -31,14 +46,123 @@ class AccountTest {
         account: () -> AccountDto? = { AccountDto(userId = "@rakesh:id.agentpod.dev", homeserver = "https://id.agentpod.dev") },
         onSignOut: () -> Unit = {},
         onClose: () -> Unit = {},
+        rosterView: RosterChoice = RosterChoice.WAITING,
+        onRosterView: (RosterChoice) -> Unit = {},
+        showsState: Boolean = true,
+        onShowsState: (Boolean) -> Unit = {},
+        uriHandler: UriHandler? = null,
+        appearance: @Composable () -> Unit = {},
     ) {
         compose.setContent {
-            AccountPanel(
-                loadAccount = { account() },
-                onSignOut = { onSignOut() },
-                onClose = onClose,
-            )
+            val handler = uriHandler ?: LocalUriHandler.current
+            CompositionLocalProvider(LocalUriHandler provides handler) {
+                // The width a phone has, never a height: the panel must scroll
+                // inside whatever height the device gives it.
+                Box(Modifier.requiredWidth(411.dp).fillMaxHeight()) {
+                    SupermessageTheme {
+                        AccountPanel(
+                            loadAccount = { account() },
+                            onSignOut = { onSignOut() },
+                            onClose = onClose,
+                            rosterView = rosterView,
+                            onRosterView = { onRosterView(it) },
+                            showsState = showsState,
+                            onShowsState = { onShowsState(it) },
+                            appearance = appearance,
+                        )
+                    }
+                }
+            }
         }
+    }
+
+    /** The Chats settings call back with the choice made. */
+    @Test
+    fun chatsSettingsChangeTheRoster() {
+        var view: RosterChoice? = null
+        var state: Boolean? = null
+        panel(
+            rosterView = RosterChoice.WAITING,
+            onRosterView = { view = it },
+            showsState = true,
+            onShowsState = { state = it },
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-order-recent").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(RosterChoice.RECENT, view)
+
+        compose.onNodeWithTag("account-agent-state").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(false, state)
+    }
+
+    /** The stored arrangement is the one marked selected. */
+    @Test
+    fun theStoredArrangementIsMarkedSelected() {
+        panel(rosterView = RosterChoice.RECENT)
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-order-recent").performScrollTo().assertIsSelected()
+        compose.onNodeWithTag("account-order-waiting").assertIsNotSelected()
+    }
+
+    /** Each help row opens its page on the site, through the system's own handler. */
+    @Test
+    fun helpLinksOpenTheSite() {
+        val opened = mutableListOf<String>()
+        panel(uriHandler = object : UriHandler {
+            override fun openUri(uri: String) { opened += uri }
+        })
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-link-support").performScrollTo().performClick()
+        compose.onNodeWithTag("account-link-terms").performScrollTo().performClick()
+        compose.onNodeWithTag("account-link-privacy").performScrollTo().performClick()
+
+        assertEquals(
+            listOf(
+                "https://supermessage.dev/support/",
+                "https://supermessage.dev/terms/",
+                "https://supermessage.dev/privacy/",
+            ),
+            opened,
+        )
+    }
+
+    /** Sign out is the last row; on a short screen it is reached by scrolling, and still asks first. */
+    @Test
+    fun signOutIsReachableAtTheShortHeight() {
+        panel()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-sign-out").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-sign-out-confirm").assertIsDisplayed()
+    }
+
+    /** iOS's footers, word for word. */
+    @Test
+    fun theFootersAreIosWords() {
+        panel()
+        compose.waitForIdle()
+
+        compose.onNodeWithText(
+            "Waiting first puts what needs an answer at the top. Agent state is the dot and word beside an agent's name.",
+        ).performScrollTo().assertExists()
+        compose.onNodeWithText("Signing out removes this account and its messages from this device.")
+            .performScrollTo().assertExists()
+    }
+
+    /** The Appearance slot is where Task 14's section appears, between the account and Chats. */
+    @Test
+    fun theAppearanceSlotIsRendered() {
+        panel(appearance = { Text("slot-content") })
+        compose.waitForIdle()
+
+        compose.onNodeWithText("slot-content").performScrollTo().assertExists()
     }
 
     /**
@@ -85,7 +209,7 @@ class AccountTest {
         panel(onSignOut = { signedOut = true })
         compose.waitForIdle()
 
-        compose.onNodeWithTag("account-sign-out").performClick()
+        compose.onNodeWithTag("account-sign-out").performScrollTo().performClick()
         compose.waitForIdle()
 
         compose.onNodeWithTag("account-sign-out-confirm").assertIsDisplayed()
@@ -100,7 +224,7 @@ class AccountTest {
         panel(onSignOut = { signedOut = true }, onClose = { closed = true })
         compose.waitForIdle()
 
-        compose.onNodeWithTag("account-sign-out").performClick()
+        compose.onNodeWithTag("account-sign-out").performScrollTo().performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("account-sign-out-confirm-button").performClick()
         compose.waitForIdle()
@@ -116,7 +240,7 @@ class AccountTest {
         panel(onSignOut = { signedOut = true })
         compose.waitForIdle()
 
-        compose.onNodeWithTag("account-sign-out").performClick()
+        compose.onNodeWithTag("account-sign-out").performScrollTo().performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("account-sign-out-cancel").performClick()
         compose.waitForIdle()

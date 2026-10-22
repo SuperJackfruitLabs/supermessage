@@ -51,7 +51,9 @@ internal fun RosterPane(
     openPanel: (ExtraPanel) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val rosterView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
+    val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
+    // A stored arrangement that is no longer offered (Machine) reads as Waiting.
+    val rosterView = RosterChoice.offeredOrDefault(storedView)
     val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
     val spaces by session.spaces.spaces.collectAsStateWithLifecycle()
     val selectedSpace by session.spaces.selectedId.collectAsStateWithLifecycle()
@@ -126,7 +128,6 @@ internal fun RosterPane(
             now = now,
             avatarUri = { roomId -> avatarCache[roomId] },
             showsState = showsState,
-            hidesHost = rosterView == RosterChoice.MACHINE,
             onOpenRoom = { roomId ->
                 session.rooms.select(roomId)
                 scope.launch { session.open(roomId) }

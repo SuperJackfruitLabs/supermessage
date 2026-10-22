@@ -70,7 +70,6 @@ fun Roster(
     now: Instant,
     avatarUri: (roomId: String) -> String?,
     showsState: Boolean = true,
-    hidesHost: Boolean = false,
     onOpenRoom: (roomId: String) -> Unit = {},
     onOpenInfo: (roomId: String) -> Unit = {},
     onLoadAvatar: suspend (roomId: String) -> Unit = {},
@@ -98,7 +97,6 @@ fun Roster(
                     state = entry.state,
                     `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
                     showsState = showsState,
-                    hidesHost = hidesHost,
                     describesAgent = entry.describesAgent,
                     onOpenInfo = { onOpenInfo(roomId) },
                 )
