@@ -59,7 +59,18 @@ describe("hover action bars are anchored to their row", () => {
   test("the action bar is positioned, so its host must be too", () => {
     // If the bar stops being absolutely positioned, the invariant below is no
     // longer the thing keeping it in place, and this test should be revisited.
-    expect(readFileSync(BAR, "utf8")).toContain("absolute top-full");
+    // The pill's own class attribute: the More menu inside it legitimately
+    // uses `top-full`, so the whole file is not the thing to search.
+    const source = readFileSync(BAR, "utf8");
+    const at = source.indexOf('class="pointer-events-none absolute');
+    expect(at).toBeGreaterThan(-1);
+    const bar = source.slice(at, source.indexOf('"', at + 7));
+    // The pill straddles its block's top edge, so it never needs the gap below.
+    expect(bar).toContain("top-0");
+    expect(bar).toContain("-translate-y-1/2");
+    expect(bar).toContain("flex-nowrap");
+    expect(bar).not.toContain("top-full");
+    expect(bar).not.toContain("flex-wrap");
   });
 
   test("every group wrapper declares relative, in every host", () => {

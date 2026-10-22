@@ -313,6 +313,7 @@
   import UndecryptableGroup from "./timeline/UndecryptableGroup.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
+  import { rowEdgeClass } from "./timeline/rowMeta";
   import DeleteConfirm from "./timeline/DeleteConfirm.svelte";
   import UnreadMarker from "./timeline/UnreadMarker.svelte";
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
@@ -1208,7 +1209,7 @@
       </div>
     </div>
     <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} onToggle={handleToggleReaction} />
-    <MessageActions row={row} alignEnd={row.item.isOwn} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onDelete={(r) => (deleting = r)} />
+    <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={() => {}} onDelete={(r) => (deleting = r)} />
   </div>
 {/snippet}
 
@@ -1361,12 +1362,13 @@
           rendered check that this reads as a sheet and not a stripe.
         -->
         <!--
-          The newest row carries `pb-8`: every message's hover actions sit in
-          the gap *below* it (`MessageActions`, `absolute top-full`), and the
-          last row has no row below it to supply that gap. Without the padding
-          the newest message's Reply and reactions were clipped by the
-          scroller — measured on 2026-10-03, the bar started at y=906, exactly
-          the scroller's bottom edge.
+          The first and last rows reserve 16px (`rowEdgeClass`): the action pill
+          straddles its block's top edge, so half of it (about 14px) overhangs
+          upward. On the first loaded row that overhang would be clipped by the
+          scroller; on the last, the block can be shorter than the pill. This
+          replaces the old `pb-8` on the newest row, which reserved the gap the
+          bar used to sit in and was overrun when the bar wrapped to two lines
+          (47px against 32px, measured 2026-10-22 at 150% text size).
         -->
         <!--
           `data-testid` is the handle the driven UI test selects rows by
@@ -1377,10 +1379,10 @@
         -->
         <div
           data-testid="timeline-row"
-          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-sans text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {index ===
-          displayRows.length - 1
-            ? 'pb-8'
-            : ''}"
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-sans text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
+            index,
+            displayRows.length,
+          )}"
         >
           {#if row.type === "membershipGroup"}
             <!--
@@ -1733,7 +1735,7 @@
                         hang off the right edge of a left-anchored card.
                       -->
                       <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={false} onToggle={handleToggleReaction} />
-                      <MessageActions row={row} alignEnd={false} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onDelete={(r) => (deleting = r)} />
+                      <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={() => {}} onDelete={(r) => (deleting = r)} />
                       <SeenMarker item={item} {lastOwnMessageId} alignEnd={false} />
                     </div>
                   </div>
