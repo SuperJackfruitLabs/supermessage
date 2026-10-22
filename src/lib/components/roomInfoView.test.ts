@@ -1,7 +1,7 @@
 // Covers `roomInfoView.ts`'s pure display helpers.
 
 import { describe, expect, it } from "vitest";
-import { initial, leaveTitle, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
+import { escapeClosesPanel, initial, leaveTitle, memberDisplayName, roomDisplayName, splitSigil } from "./roomInfoView";
 
 describe("roomDisplayName", () => {
   it("prefers the room's own name", () => {
@@ -108,5 +108,22 @@ describe("leaveTitle", () => {
 
   it("falls back", () => {
     expect(leaveTitle(null)).toBe("Leave this room?");
+  });
+});
+
+describe("escapeClosesPanel", () => {
+  const base = { key: "Escape", panelIsModal: true, modalDialogOpen: false };
+
+  it("closes the modal panel on Escape", () => {
+    expect(escapeClosesPanel(base)).toBe(true);
+  });
+
+  it("leaves Escape to a dialog open over the panel", () => {
+    expect(escapeClosesPanel({ ...base, modalDialogOpen: true })).toBe(false);
+  });
+
+  it("does nothing in the column layout or on other keys", () => {
+    expect(escapeClosesPanel({ ...base, panelIsModal: false })).toBe(false);
+    expect(escapeClosesPanel({ ...base, key: "Enter" })).toBe(false);
   });
 });

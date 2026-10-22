@@ -77,3 +77,31 @@
     }
   }}
 />
+
+<!--
+  Escape is the dialog's `cancel` event. Idle, it asks to cancel; while Leave
+  is in flight it does nothing, so the panel cannot close mid-call.
+-->
+<Story
+  name="Escape while leaving"
+  args={{
+    roomName: "Research",
+    onLeave: () => new Promise<void>(() => {}),
+    onCancel: () => {
+      (window as unknown as { __cancels?: number }).__cancels =
+        ((window as unknown as { __cancels?: number }).__cancels ?? 0) + 1;
+    },
+  }}
+  play={async ({ canvasElement }) => {
+    const w = window as unknown as { __cancels?: number };
+    w.__cancels = 0;
+    const root = canvasElement as HTMLElement;
+    const dialog = (await settled(() => root.querySelector("dialog[open]"))) as HTMLDialogElement;
+    dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+    if (w.__cancels !== 1) throw new Error("Escape did not cancel an idle confirm");
+    button(root, "Leave")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await settled(() => ((button(root, "Leave") as HTMLButtonElement | undefined)?.disabled ? root : null));
+    dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+    if (w.__cancels !== 1) throw new Error("Escape cancelled while Leave was in flight");
+  }}
+/>

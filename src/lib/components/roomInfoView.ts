@@ -94,3 +94,20 @@ export function initial(label: string): string {
 export function leaveTitle(name: string | null): string {
   return `Leave ${name ?? "this room"}?`;
 }
+
+/**
+ * Whether a window-level Escape should close the modal room-info panel.
+ *
+ * Not while a modal `<dialog>` is open over it: Escape then belongs to that
+ * dialog (its `cancel` event), and closing the panel underneath would also
+ * suppress the cancel and could drop the panel mid-call. Checked here rather
+ * than by each dialog stopping propagation, so a modal added later is covered
+ * without having to remember to.
+ */
+export function escapeClosesPanel(args: {
+  key: string;
+  panelIsModal: boolean;
+  modalDialogOpen: boolean;
+}): boolean {
+  return args.panelIsModal && args.key === "Escape" && !args.modalDialogOpen;
+}

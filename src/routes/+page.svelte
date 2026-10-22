@@ -53,6 +53,7 @@
   import ConnectionLine from "$lib/components/ConnectionLine.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
   import RecoveryPanel from "$lib/components/RecoveryPanel.svelte";
+  import { escapeClosesPanel } from "$lib/components/roomInfoView";
 
   let checking = $state(true);
   let restored = $state(false);
@@ -421,7 +422,14 @@
    * covered.
    */
   function onWindowKeydown(event: KeyboardEvent): void {
-    if (!panelIsModal || event.key !== "Escape") return;
+    if (
+      !escapeClosesPanel({
+        key: event.key,
+        panelIsModal,
+        modalDialogOpen: document.querySelector("dialog:modal") !== null,
+      })
+    )
+      return;
     event.preventDefault();
     void closeRoomInfo();
   }
