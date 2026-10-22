@@ -124,21 +124,25 @@ struct TimelineView: View {
                 // Above the composer: the acknowledgement for an agent, the
                 // typing line for people. Both are pills that float, like the
                 // capsule under them, rather than a grey bar across the page.
+                // Each is asked of the core once per evaluation: the
+                // acknowledgement hands it the whole timeline.
+                let ack = self.acknowledgement
+                let typingLine = session.typing.line
                 VStack(alignment: .leading, spacing: 4) {
-                    if let acknowledgement {
-                        AcknowledgementDock(acknowledgement: acknowledgement)
+                    if let ack {
+                        AcknowledgementDock(acknowledgement: ack)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
-                    if let line = session.typing.line {
-                        TypingPill(line: line)
+                    if let typingLine {
+                        TypingPill(line: typingLine)
                             .transition(.opacity)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
-                .padding(.bottom, acknowledgement == nil && session.typing.line == nil ? 0 : 4)
-                .animation(.snappy(duration: 0.22), value: acknowledgement)
-                .animation(.snappy(duration: 0.22), value: session.typing.line)
+                .padding(.bottom, ack == nil && typingLine == nil ? 0 : 4)
+                .animation(.snappy(duration: 0.22), value: ack)
+                .animation(.snappy(duration: 0.22), value: typingLine)
             }
             .task(id: timeline.roomId) { await loadCast() }
             // A delivered send's echo bumps the revision, so this is asked
