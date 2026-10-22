@@ -469,7 +469,7 @@
         panelIsModal,
         defaultPrevented: event.defaultPrevented,
         // The search panel is a modal overlay too, and handles its own Escape.
-        modalDialogOpen: searchOpen || accountOpen || document.querySelector("dialog:modal") !== null,
+        modalDialogOpen: searchOpen || accountOpen || newRoomOpen || document.querySelector("dialog:modal") !== null,
       })
     )
       return;
@@ -711,6 +711,7 @@
 
   /** Who this account has blocked, read each time the panel opens; `null` when it could not be. */
   let blockedList = $state<RoomMember[] | null>(null);
+  let accountOpening = 0;
 
   async function unblockFromAccount(userId: string): Promise<string | null> {
     const refused = await unblock(userId);
@@ -723,10 +724,17 @@
   async function openAccount(): Promise<void> {
     accountOpen = true;
     blockedList = null;
+    // Only the newest opening's answer may land; a failed first load is tried again here.
+    const mine = ++accountOpening;
     blockedUsers().then(
-      (list) => (blockedList = list),
-      () => (blockedList = null),
+      (list) => {
+        if (mine === accountOpening) blockedList = list;
+      },
+      () => {
+        if (mine === accountOpening) blockedList = null;
+      },
     );
+    if (accountStore.account === null) void accountStore.load();
     try {
       version = await appVersion();
     } catch (err) {

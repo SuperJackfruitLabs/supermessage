@@ -1,7 +1,7 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
 
-  import type { ReportSubject } from "$lib/safety";
+  import type { ReportResult, ReportSubject } from "$lib/safety";
 
   import ReportSheet from "./ReportSheet.svelte";
   import ReportSheetFocusHarness from "./ReportSheetFocusHarness.svelte";
@@ -40,7 +40,7 @@
   const room: ReportSubject = { kind: "room", roomId: "!r:example.org", name: "Cloudchamber" };
 
   const left = (n: number) => () => Promise.resolve(n);
-  const landed = () => Promise.resolve(null);
+  const landed = () => Promise.resolve<ReportResult>({ status: "sent" });
   const never = () => false;
 
   const base = { isBlocked: never, remaining: left(2000), onSend: landed, onClose: () => {} };
@@ -68,7 +68,11 @@
   args={{
     ...base,
     subject: person,
-    onSend: () => Promise.resolve("This homeserver doesn't accept person reports. Nothing was sent."),
+    onSend: () =>
+      Promise.resolve<ReportResult>({
+        status: "refused",
+        message: "This homeserver doesn't accept person reports. Nothing was sent.",
+      }),
   }}
   play={async ({ canvasElement }) => {
     const root = canvasElement as HTMLElement;
@@ -131,3 +135,27 @@
 >
   {#snippet template()}<ReportSheetFocusHarness />{/snippet}
 </Story>
+
+<!-- The report landed, the block did not: no way to send the report again, only Done. -->
+<Story
+  name="Reported, block failed"
+  args={{
+    ...base,
+    subject: agentMessage,
+    onSend: () =>
+      Promise.resolve<ReportResult>({
+        status: "reportedNotBlocked",
+        message: "Reported, but blocking didn't work: You can't block yourself.",
+      }),
+  }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    click((await settled(() => button(root, "Send"))) as Element);
+    click((await settled(() => button(root, "Report and block"))) as Element);
+    await settled(() => (root.textContent?.includes("Reported, but blocking didn't work") ? root : null));
+    if (button(root, "Send") || button(root, "Report and block") || button(root, "Report")) {
+      throw new Error("offered to send a report that had already landed");
+    }
+    await settled(() => button(root, "Done"));
+  }}
+/>

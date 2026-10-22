@@ -31,33 +31,34 @@ describe("report", () => {
     await Promise.resolve();
     expect(d.store.hide).not.toHaveBeenCalled();
     finish();
-    expect(await pending).toBeNull();
+    expect(await pending).toEqual({ status: "sent" });
     expect(d.store.hide).toHaveBeenCalledWith("$e");
   });
 
   it("aFailedReportHidesNothingAndBlocksNoOne", async () => {
     const d = deps({ reportEvent: vi.fn(async () => { throw { kind: "network", message: "" }; }) });
-    expect(await report(message, "spam", true, d)).toBe("Can't reach the homeserver.");
+    expect(await report(message, "spam", true, d)).toEqual({ status: "refused", message: "Can't reach the homeserver." });
     expect(d.store.hide).not.toHaveBeenCalled();
     expect(d.ignoreUser).not.toHaveBeenCalled();
   });
 
   it("a non-core failure reads That didn't work.", async () => {
     const d = deps({ reportEvent: vi.fn(async () => { throw new Error("boom"); }) });
-    expect(await report(message, "", false, d)).toBe("That didn't work.");
+    expect(await report(message, "", false, d)).toEqual({ status: "refused", message: "That didn't work." });
   });
 
   it("aBlockThatFailsAfterAReportSaysWhichHalf", async () => {
     const d = deps({ ignoreUser: vi.fn(async () => { throw { kind: "refused", message: "You can't block yourself." }; }) });
-    expect(await report(message, "spam", true, d)).toBe(
-      "Reported, but blocking didn't work: You can't block yourself.",
-    );
+    expect(await report(message, "spam", true, d)).toEqual({
+      status: "reportedNotBlocked",
+      message: "Reported, but blocking didn't work: You can't block yourself.",
+    });
     expect(d.store.hide).toHaveBeenCalledWith("$e");
   });
 
   it("a report that blocks notes the block", async () => {
     const d = deps();
-    expect(await report(message, "", true, d)).toBeNull();
+    expect(await report(message, "", true, d)).toEqual({ status: "sent" });
     expect(d.ignoreUser).toHaveBeenCalledWith("@s:x");
     expect(d.store.noteBlocked).toHaveBeenCalledWith("@s:x");
   });
@@ -65,13 +66,13 @@ describe("report", () => {
   it("anAlreadyBlockedSenderIsNotBlockedAgain", async () => {
     const d = deps();
     d.store.isBlocked.mockReturnValue(true);
-    expect(await report(message, "", true, d)).toBeNull();
+    expect(await report(message, "", true, d)).toEqual({ status: "sent" });
     expect(d.ignoreUser).not.toHaveBeenCalled();
   });
 
   it("aRoomReportNeverBlocks", async () => {
     const d = deps();
-    expect(await report(room, "", true, d)).toBeNull();
+    expect(await report(room, "", true, d)).toEqual({ status: "sent" });
     expect(d.ignoreUser).not.toHaveBeenCalled();
     expect(d.store.hide).not.toHaveBeenCalled();
   });

@@ -70,6 +70,8 @@
   const invitees = $derived(parseInvitees(inviteText));
   const problem = $derived(creationProblem(name, invitees));
   const loadedPeople = $derived(peopleState.kind === "loaded" ? peopleState.people : []);
+  // The heading and the empty state describe the query the list answers, not the live input.
+  const answeredQuery = $derived(peopleState.kind === "loaded" ? peopleState.query : "");
   const shown = $derived(loadedPeople.slice(0, PEOPLE_RENDER_CAP));
 
   const search = createPeopleSearch(
@@ -77,8 +79,16 @@
     (state) => (peopleState = state),
   );
 
+  // Taken at construction: the search box grabs focus as it mounts, before `onMount` runs.
+  const opener = typeof document === "undefined" ? null : document.activeElement;
+  // A room was opened: the page decides where focus goes, not this panel.
+  let opened = false;
+
   onMount(() => search.search("", true));
-  onDestroy(() => search.dispose());
+  onDestroy(() => {
+    search.dispose();
+    if (!opened && opener instanceof HTMLElement && opener.isConnected) opener.focus();
+  });
 
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
@@ -97,6 +107,7 @@
    */
   async function finish(roomId: string): Promise<void> {
     await onOpened(roomId);
+    opened = true;
     onClose();
   }
 
@@ -160,7 +171,12 @@
     aria-label={TITLES[view]}
     class="relative z-10 flex max-h-[calc(100vh-6rem)] w-full max-w-md flex-col gap-3 overflow-y-auto rounded-card border border-border bg-surface p-4 shadow-overlay"
     onkeydown={(e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        // Consumed: the page's Escape must not also close the room info underneath.
+        e.preventDefault();
+        // Not mid-create: the room would still be opened afterwards, behind a closed panel.
+        if (!busy) onClose();
+      }
     }}
   >
     <h2 class="text-ui font-medium text-content">{TITLES[view]}</h2>
@@ -181,7 +197,7 @@
       {:else if peopleState.kind === "failed"}
         <p role="alert" class="text-ui text-danger">{errorMessage(peopleState.error)}</p>
       {:else if loadedPeople.length === 0}
-        {@const empty = emptyState(query)}
+        {@const empty = emptyState(answeredQuery)}
         <div class="flex flex-col gap-1 px-1 py-2">
           <p class="text-ui font-medium text-content">{empty.title}</p>
           <p class="text-meta text-content-muted">{empty.description}</p>
@@ -189,7 +205,7 @@
       {:else}
         <section class="flex flex-col gap-1" aria-labelledby="people-heading">
           <h3 id="people-heading" class="px-1 text-meta font-medium text-content-muted">
-            {peopleHeading(query)}
+            {peopleHeading(answeredQuery)}
           </h3>
           <ul class="flex max-h-72 flex-col overflow-y-auto">
             {#each shown as person (person.userId)}

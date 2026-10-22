@@ -164,6 +164,16 @@
     await settled(() => ((window as any).__reportOpener === more ? more : null), 1000).catch(() => {
       throw new Error("onReport did not receive the More button");
     });
+    // The click sets `__reportOpener` synchronously; the menu closes and focus moves afterwards.
+    // End on the settled state, not on the click, so the frame is the same every run.
+    await settled(() => (root.querySelector("[role=menu]") === null ? root : null), 1000).catch(() => {
+      throw new Error("the menu did not close after Report…");
+    });
+    // No sheet exists in this story to take focus, so give it back to More as the sheet does, and
+    // assert it: the frame is then the same state on every run, not whatever focus had reached.
+    more.focus();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (document.activeElement !== more) throw new Error("focus is not on the More button");
   }}
 >
   {#snippet template()}

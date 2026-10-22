@@ -21,7 +21,7 @@
 
   import { onMount } from "svelte";
   import { errorMessage } from "$lib/errorMessage";
-  import { report } from "$lib/safety";
+  import { report, type ReportResult } from "$lib/safety";
   import { safetyStore } from "$lib/stores/safety.svelte";
   import { invitationPrompt, inviterLine } from "./invitationView";
   import ReportSheet from "./safety/ReportSheet.svelte";
@@ -43,7 +43,7 @@
     /** Who invited, when the core knows. A failure shows no line. */
     loadInviter: () => Promise<string | null>;
     /** Sends the report of this invitation's room; defaults to the core's. */
-    onReport?: (reason: string, alsoBlock: boolean) => Promise<string | null>;
+    onReport?: (reason: string, alsoBlock: boolean) => Promise<ReportResult>;
   }
 
   let { roomId, roomName, onAccept, onDecline, loadInviter, onReport }: Props = $props();

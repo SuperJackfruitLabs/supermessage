@@ -1,9 +1,10 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
-  import { expect, userEvent, within } from "storybook/test";
+  import { expect, userEvent, waitFor, within } from "storybook/test";
 
   import type { PersonDto } from "$lib/ipc";
   import NewRoomPanel from "./NewRoomPanel.svelte";
+  import NewRoomPanelFocusHarness from "./NewRoomPanelFocusHarness.svelte";
 
   const created = async () => "!new:id.agentpod.dev";
   const opened = async () => {};
@@ -120,3 +121,47 @@
     await expect(await canvas.findByText(/M_ROOM_IN_USE|alias is taken/)).toBeInTheDocument();
   }}
 />
+
+<!-- Refining the query keeps the list on screen: no "Looking for who you know" after the first load. -->
+<Story
+  name="Refining keeps the list"
+  args={{
+    loadPeople: async (q: string | null) => {
+      if (q !== null) await new Promise((r) => setTimeout(r, 600));
+      return everyone(q);
+    },
+  }}
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("Priya");
+    await userEvent.type(canvas.getByRole("searchbox"), "pri");
+    // The debounce has passed and the slow answer has not come: the old list is still there.
+    await new Promise((r) => setTimeout(r, 350));
+    await expect(canvas.getByText("Atlas")).toBeInTheDocument();
+    await expect(canvas.queryByText("Looking for who you know")).toBeNull();
+    await waitFor(() => expect(canvas.queryByText("Atlas")).toBeNull(), { timeout: 2000 });
+    await expect(canvas.getByText("Priya")).toBeInTheDocument();
+  }}
+/>
+
+<!-- Cancel, Escape and the scrim give focus back to the button that opened the panel; Escape is consumed. -->
+<Story
+  name="Closing returns focus to the opener"
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const opener = canvas.getByTestId("opener");
+    for (const close of ["cancel", "escape", "scrim"] as const) {
+      opener.focus();
+      await userEvent.click(opener);
+      await canvas.findByRole("dialog");
+      if (close === "cancel") await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));
+      else if (close === "escape") await userEvent.keyboard("{Escape}");
+      else await userEvent.click(canvas.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+      await expect(opener).toHaveFocus();
+    }
+    await expect(canvas.getByTestId("leaked")).toHaveTextContent("consumed");
+  }}
+>
+  {#snippet template()}<NewRoomPanelFocusHarness />{/snippet}
+</Story>

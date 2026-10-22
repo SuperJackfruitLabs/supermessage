@@ -51,6 +51,7 @@
   } from "$lib/ipc";
   import { accountStore } from "$lib/stores/account.svelte";
   import { safetyStore } from "$lib/stores/safety.svelte";
+  import { roomSettingsWrites } from "$lib/stores/roomSettingsWrites.svelte";
   import { block, report, unblock, type ReportSubject } from "$lib/safety";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
@@ -145,34 +146,51 @@
     }
   }
 
-  /** A mute or pin write is in flight: the controls are disabled so it cannot be sent twice. */
-  let writing = $state(false);
+  /**
+   * A mute or pin write for this room is in flight, from here or from the row menu: the controls
+   * are disabled so two cannot overlap.
+   */
+  const writing = $derived(roomSettingsWrites.busy(roomId));
   /** Said under the notification controls when a write was refused. */
   let settingFailure = $state<string | null>(null);
 
   /**
    * Optimistic: show the new value, write it, then take the room's word for it (iOS `:363-397`).
-   * A refused write puts the previous value back at once (the reload may fail too) and says so.
+   * A refused write puts the previous value back at once (the reload that follows may fail too) and says so.
    */
   async function writeSetting(
     optimistic: Partial<RoomInfo>,
     write: () => Promise<void>,
   ): Promise<void> {
-    if (writing || !info) return;
-    writing = true;
-    settingFailure = null;
-    const before = info;
-    info = { ...info, ...optimistic };
-    try {
-      await write();
-    } catch (err) {
-      console.error("failed to change a room setting", roomId, err);
-      info = before;
-      settingFailure = SETTING_FAILURE;
-    }
-    await reload();
-    writing = false;
+    if (!info) return;
+    const target = roomId;
+    await roomSettingsWrites.run(target, async () => {
+      settingFailure = null;
+      const before = info;
+      if (before) info = { ...before, ...optimistic };
+      try {
+        await write();
+      } catch (err) {
+        console.error("failed to change a room setting", target, err);
+        if (before) info = before;
+        settingFailure = SETTING_FAILURE;
+      }
+    });
   }
+
+  // A write finished for this room, here or in the row menu: take the core's word for it. The
+  // first run is the mount, which loads on its own.
+  let seenRevision: number | null = null;
+  $effect(() => {
+    const now = roomSettingsWrites.revision(roomId);
+    if (seenRevision === null) {
+      seenRevision = now;
+      return;
+    }
+    if (now === seenRevision) return;
+    seenRevision = now;
+    void reload();
+  });
 
   const changeMode = (mode: NotificationMode) =>
     writeSetting({ notifications: mode }, () => setRoomNotificationMode(roomId, mode));

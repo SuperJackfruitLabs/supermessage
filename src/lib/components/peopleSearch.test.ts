@@ -26,7 +26,7 @@ describe("createPeopleSearch", () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(load).toHaveBeenCalledTimes(1);
     expect(load).toHaveBeenCalledWith("at");
-    expect(states.at(-1)).toEqual({ kind: "loaded", people: [person("atlas")] });
+    expect(states.at(-1)).toEqual({ kind: "loaded", people: [person("atlas")], query: "at" });
   });
 
   it("loads the empty query as null, at once", async () => {
@@ -49,7 +49,7 @@ describe("createPeopleSearch", () => {
     await vi.advanceTimersByTimeAsync(0);
     answers.get("a")!([person("stale")]);
     await vi.advanceTimersByTimeAsync(0);
-    expect(states.at(-1)).toEqual({ kind: "loaded", people: [person("ab")] });
+    expect(states.at(-1)).toEqual({ kind: "loaded", people: [person("ab")], query: "ab" });
   });
 
   it("says nothing after dispose", async () => {
@@ -73,5 +73,29 @@ describe("createPeopleSearch", () => {
     s.search("", true);
     await vi.advanceTimersByTimeAsync(0);
     expect(states.at(-1)?.kind).toBe("failed");
+  });
+
+  it("shows loading for the first load only, never again while refining", async () => {
+    const load = vi.fn(async () => [person("atlas")]);
+    const states: PeopleState[] = [];
+    const s = createPeopleSearch(load, (st) => states.push(st), 200);
+    s.search("", true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(states.map((x) => x.kind)).toEqual(["loading", "loaded"]);
+    s.search("a");
+    s.search("at");
+    s.search("atl");
+    expect(states.map((x) => x.kind)).toEqual(["loading", "loaded"]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(states.map((x) => x.kind)).toEqual(["loading", "loaded", "loaded"]);
+    expect(states.at(-1)).toMatchObject({ query: "atl" });
+  });
+
+  it("shows loading again if the first load never answered", async () => {
+    const states: PeopleState[] = [];
+    const s = createPeopleSearch(() => new Promise(() => {}), (st) => states.push(st), 200);
+    s.search("", true);
+    s.search("a");
+    expect(states.map((x) => x.kind)).toEqual(["loading", "loading"]);
   });
 });

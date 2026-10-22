@@ -83,6 +83,15 @@ export async function unblock(userId: string, deps: SafetyDeps = defaultDeps): P
 }
 
 /**
+ * How a report ended. `reportedNotBlocked` means the report landed and the block did not, so the
+ * report must never be offered again.
+ */
+export type ReportResult =
+  | { status: "sent" }
+  | { status: "refused"; message: string }
+  | { status: "reportedNotBlocked"; message: string };
+
+/**
  * Sends a report, then hides the message and blocks the sender if asked.
  *
  * The report goes first and alone decides success: a message is hidden only
@@ -94,7 +103,7 @@ export async function report(
   reason: string,
   alsoBlock: boolean,
   deps: SafetyDeps = defaultDeps,
-): Promise<string | null> {
+): Promise<ReportResult> {
   try {
     switch (subject.kind) {
       case "message":
@@ -108,15 +117,17 @@ export async function report(
         break;
     }
   } catch (err) {
-    return refusal(err);
+    return { status: "refused", message: refusal(err) };
   }
   if (subject.kind === "message") deps.store.hide(subject.eventId);
   const target = blockable(subject);
   if (alsoBlock && target !== null && !deps.store.isBlocked(target.userId)) {
     const blockRefused = await block(target.userId, deps);
-    if (blockRefused !== null) return `Reported, but blocking didn't work: ${blockRefused}`;
+    if (blockRefused !== null) {
+      return { status: "reportedNotBlocked", message: `Reported, but blocking didn't work: ${blockRefused}` };
+    }
   }
-  return null;
+  return { status: "sent" };
 }
 
 /**

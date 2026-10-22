@@ -41,6 +41,11 @@
   args={{ accountName: "Rakesh", onConfirm: () => Promise.resolve(), onCancel: () => {} }}
   play={async ({ canvasElement }) => {
     const root = canvasElement as HTMLElement;
-    await settled(() => root.querySelector("dialog[aria-label='Sign out of Rakesh?']"));
+    const dialog = (await settled(() =>
+      root.querySelector("dialog[aria-label='Sign out of Rakesh?']"),
+    )) as HTMLDialogElement;
+    // The element exists before `showModal()` runs; end on the opened, focused state.
+    await settled(() => (dialog.open && dialog.contains(document.activeElement) ? dialog : null));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   }}
 />

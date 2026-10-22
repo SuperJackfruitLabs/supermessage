@@ -136,6 +136,10 @@ for (const story of stories) {
   await page.addStyleTag({ content: `*, *::before, *::after {
     animation: none !important; transition: none !important;
     caret-color: transparent !important; }` })
+  // Two frames after the style lands: a transition that was already running (an opacity reveal on
+  // a focus ring) is cut short by the rule above only at the next style recalculation, and a
+  // shutter that beats it paints antialiasing 4–7 px different from run to run.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
   // `.count()` is the wrong question: Storybook ships `#error-message` in
   // every preview document and keeps it hidden, so counting it reported all
   // 83 stories as broken while every frame on disk was correct. Visibility
@@ -157,7 +161,7 @@ for (const story of stories) {
   //
   // A component that positions itself against the viewport has to be
   // photographed against the viewport.
-  await page.screenshot({ path: path.join(out, `${story.id}.png`) })
+  await page.screenshot({ path: path.join(out, `${story.id}.png`), animations: 'disabled', caret: 'hide' })
 }
 
 await writeFile(path.join(out, 'PLATFORM'), `${process.platform}\n`)

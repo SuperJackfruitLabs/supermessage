@@ -47,9 +47,9 @@
   import RoomRow from "./roster/RoomRow.svelte";
   import RowMenu from "./roster/RowMenu.svelte";
   import { rowMenuItems, type RowMenuItem } from "./roster/rowMenu";
-  import { SETTING_FAILURE, exclusively, toggleMute, togglePin } from "./roomSettings";
+  import { SETTING_FAILURE, toggleMute, togglePin } from "./roomSettings";
+  import { roomSettingsWrites } from "$lib/stores/roomSettingsWrites.svelte";
   import InlineFailure from "./timeline/InlineFailure.svelte";
-  import { SvelteSet } from "svelte/reactivity";
   import RosterSectionHeading from "./roster/RosterSectionHeading.svelte";
   import {
     roomInfo,
@@ -72,8 +72,6 @@
 
   /** The open row menu, if any: which room, where, and what it offers. */
   let menu = $state<{ roomId: string; at: { x: number; y: number }; items: RowMenuItem[] } | null>(null);
-  /** Rooms with a mute or pin write in flight: their Mute and Pin are unavailable meanwhile. */
-  const writing = new SvelteSet<string>();
   /** Said above the list when a mute or pin was refused; cleared by the next menu. */
   let settingFailure = $state<string | null>(null);
   /** Only the newest request may open the menu. */
@@ -110,11 +108,16 @@
     closeMenu();
     if (!roomId) return;
     if (id === "mute" || id === "pin") {
-      const outcome = await exclusively<unknown>(writing, roomId, () =>
+      const outcome = await roomSettingsWrites.run<unknown>(roomId, () =>
         id === "mute" ? toggleMute(roomId) : togglePin(roomId),
       );
       if (outcome.ran && outcome.value === null) settingFailure = SETTING_FAILURE;
-    } else await roomsStore.declineInvitation(roomId).catch((err: unknown) => console.error("decline failed", err));
+    } else {
+      await roomsStore.declineInvitation(roomId).catch((err: unknown) => {
+        console.error("decline failed", err);
+        settingFailure = "Couldn't decline that invitation. Try again.";
+      });
+    }
   }
 
   /**
@@ -245,5 +248,5 @@
 </nav>
 
 {#if menu !== null}
-  <RowMenu items={menu.items} at={menu.at} busy={writing.has(menu.roomId)} onChoose={(id) => void chooseMenuItem(id)} onClose={closeMenu} />
+  <RowMenu items={menu.items} at={menu.at} busy={roomSettingsWrites.busy(menu.roomId)} onChoose={(id) => void chooseMenuItem(id)} onClose={closeMenu} />
 {/if}

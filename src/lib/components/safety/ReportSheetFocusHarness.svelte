@@ -15,7 +15,7 @@
     subject={{ kind: "user", userId: "@priya:example.org", name: "Priya", isAgent: false }}
     isBlocked={() => false}
     remaining={async () => 2000}
-    onSend={async () => null}
+    onSend={async () => ({ status: "sent" })}
     onClose={() => (open = false)}
     opener={more}
   />

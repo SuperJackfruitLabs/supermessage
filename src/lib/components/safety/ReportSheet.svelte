@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { reportReasonRemaining } from "$lib/ipc";
-  import { blockable, type ReportSubject } from "$lib/safety";
+  import { blockable, type ReportResult, type ReportSubject } from "$lib/safety";
   import {
     blockConsequence,
     canSend,
@@ -18,8 +18,9 @@
    *
    * One native modal `<dialog>` with two stages: the form, and the
    * confirmation iOS shows as a confirmation dialog. The parent owns whether
-   * it is open; `onSend` resolves `null` when the report landed (the sheet
-   * closes) or the refusal text (the sheet stays, the reason kept).
+   * it is open; `onSend` resolves `sent` (the sheet closes), `refused`
+   * (the sheet stays, the reason kept) or `reportedNotBlocked` (the report landed and the block did
+   * not: the sheet says so and offers only Done, never Send again).
    *
    * While a report is in flight nothing dismisses the sheet: Escape and the
    * backdrop do nothing, as iOS's `interactiveDismissDisabled`.
@@ -28,7 +29,7 @@
     subject: ReportSubject;
     isBlocked: (userId: string) => boolean;
     remaining?: (reason: string) => Promise<number>;
-    onSend: (reason: string, alsoBlock: boolean) => Promise<string | null>;
+    onSend: (reason: string, alsoBlock: boolean) => Promise<ReportResult>;
     onClose: () => void;
     /**
      * Where focus returns when the sheet closes, when the caller knows better than whatever has
@@ -52,13 +53,14 @@
   let reason = $state("");
   // On by default wherever there is someone to block (iOS `:39-45`).
   let alsoBlock = $state(true);
-  let stage = $state<"form" | "confirm">("form");
+  let stage = $state<"form" | "confirm" | "reported">("form");
   let sending = $state(false);
   let failure = $state<string | null>(null);
   let left = $state(2000);
   let dialog = $state<HTMLDialogElement | null>(null);
   let reasonField = $state<HTMLTextAreaElement | null>(null);
   let cancelButton = $state<HTMLButtonElement | null>(null);
+  let doneButton = $state<HTMLButtonElement | null>(null);
 
   /** Only the newest question's answer may land. */
   let asked = 0;
@@ -93,7 +95,8 @@
 
   function dismiss(): void {
     if (sending) return;
-    if (stage === "confirm") void toStage("form");
+    if (stage === "reported") onClose();
+    else if (stage === "confirm") void toStage("form");
     else onClose();
   }
 
@@ -101,16 +104,22 @@
     if (sending) return;
     sending = true;
     failure = null;
-    let refused: string | null;
+    let result: ReportResult;
     try {
-      refused = await onSend(reason, effectiveBlock);
+      result = await onSend(reason, effectiveBlock);
     } catch {
-      refused = "That didn't work.";
+      result = { status: "refused", message: "That didn't work." };
     }
     sending = false;
-    if (refused === null) onClose();
-    else {
-      failure = refused;
+    if (result.status === "sent") onClose();
+    else if (result.status === "reportedNotBlocked") {
+      // The report is with the homeserver. Offering Send again would file it twice.
+      failure = result.message;
+      stage = "reported";
+      await tick();
+      doneButton?.focus();
+    } else {
+      failure = result.message;
       await toStage("form");
     }
   }
@@ -190,6 +199,21 @@
           class="rounded-control bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors disabled:opacity-50"
         >
           Send
+        </button>
+      </div>
+    </div>
+  {:else if stage === "reported"}
+    <div class="flex flex-col gap-3 p-4">
+      <h2 class="text-ui font-medium break-words text-content">Report sent</h2>
+      <p role="alert" class="text-ui text-danger">{failure}</p>
+      <div class="flex justify-end gap-2">
+        <button
+          bind:this={doneButton}
+          type="button"
+          onclick={onClose}
+          class="rounded-control bg-accent px-3 py-2 text-ui font-medium text-accent-content transition-colors"
+        >
+          Done
         </button>
       </div>
     </div>
