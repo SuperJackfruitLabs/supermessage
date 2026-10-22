@@ -166,6 +166,10 @@ export interface RoomMember {
    * `data:` URI lazily through {@link memberAvatar} — never fetched bytes
    * on this object itself. */
   avatarUrl: string | null;
+  /** The core's decision that this member is an agent (`RoomMemberDto.is_agent`). */
+  isAgent: boolean;
+  /** Whether the user has ignored this member (`RoomMemberDto.is_ignored`). */
+  isIgnored: boolean;
 }
 
 /**
@@ -1175,6 +1179,8 @@ export interface RoomRow {
 export interface Mentionable {
   userId: string;
   displayName: string | null;
+  /** Marks the agent in the `@` menu. Sent as-is; the core ignores unknown fields. */
+  isAgent?: boolean;
 }
 
 /** What a parsed matrix.to or `matrix:` link addresses. */
