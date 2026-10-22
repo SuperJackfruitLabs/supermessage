@@ -2369,8 +2369,9 @@ mod tests {
     }
 
     /// Mutation seen failing: dropping the `!item.is_own` guard in
-    /// `is_agent_row` fails the own-`@agent_x` case; matching `contains`
-    /// instead of the `agent_name_from_id` namespace fails `@my_agent_x`.
+    /// `is_agent_row` fails the own-`@agent_x` case; matching the sender with
+    /// `contains("agent_")` instead of the `agent_name_from_id` namespace fails
+    /// `@my_agent_x` (and `@agent_:x`).
     #[test]
     fn the_agent_namespace_marks_an_agent_and_nothing_else_does() {
         let agent = |sender: &str, own: bool| is_agent_row(&row_from(sender, None, own));
@@ -2387,13 +2388,28 @@ mod tests {
         assert!(!is_agent_row(&anonymous));
     }
 
-    /// Mutation seen failing: `>` to `>=` in `is_long_read` fails the 600 case.
+    /// Mutation seen failing: `>` to `>=` on the grapheme count fails the
+    /// 601-byte, 600-grapheme case (and the emoji test below); it does NOT
+    /// fail the plain 600 case, because 600 ASCII bytes are answered by the
+    /// byte shortcut before any grapheme is counted. A flip of the byte
+    /// shortcut itself cannot change an answer (bytes are never fewer than
+    /// graphemes), so there is nothing to pin there.
     #[test]
     fn past_six_hundred_characters_a_message_is_a_long_read() {
         let body = |n: usize| row_from("@a:x", Some(&"a".repeat(n)), false);
         assert_eq!(LONG_READ_GRAPHEMES, 600);
         assert!(!is_long_read(&body(600)));
         assert!(is_long_read(&body(601)));
+        // 601 bytes but 600 graphemes: past the byte shortcut, so the
+        // grapheme comparison is what answers.
+        let multibyte = format!("{}é", "a".repeat(599));
+        assert_eq!(multibyte.len(), 601);
+        assert!(!is_long_read(&row_from("@a:x", Some(&multibyte), false)));
+        assert!(is_long_read(&row_from(
+            "@a:x",
+            Some(&format!("{multibyte}a")),
+            false
+        )));
         assert!(!is_long_read(&row_from("@a:x", None, false)));
     }
 
@@ -2406,7 +2422,7 @@ mod tests {
         assert!(is_long_read(&emoji(601)));
     }
 
-    /// Mutation seen failing: dropping the `!item.is_own` guard in
+    /// Mutation seen failing: dropping the `is_own` early return in
     /// `is_long_read`.
     #[test]
     fn your_own_long_message_is_not_offered_back_to_you_as_a_long_read() {
