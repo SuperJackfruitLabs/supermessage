@@ -15,8 +15,10 @@ import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.stores.ConnectionStore.Connection
 
 /**
- * A slim line when the core is not live, and nothing when it is — iOS's
- * `ConnectionBar` (`apple/Supermessage/RootView.swift`).
+ * A slim line when the core is not live, and nothing when it is, in the
+ * words iOS ships as `ConnectionStore.subtitle`
+ * (`apple/Supermessage/RootView.swift`). iOS shows that line under the Chats
+ * title; Android has no such title yet, so it sits above the roster.
  *
  * Never amber. Amber means the operator owes someone an answer, and a flaky
  * connection is not that: the row sits on the sunken surface and the message,
@@ -30,6 +32,8 @@ fun ConnectionBar(
     modifier: Modifier = Modifier,
 ) {
     if (!worthShowing) return
+    // Live has no word: the bar never says "live", whatever the caller passed.
+    val label = connectionLabel(state) ?: return
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -40,7 +44,7 @@ fun ConnectionBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            connectionLabel(state),
+            label,
             style = MaterialTheme.typography.labelSmall,
             color = SupermessageTheme.colors.content,
         )
@@ -54,11 +58,14 @@ fun ConnectionBar(
     }
 }
 
-/** The words iOS uses; a state this build has not been taught shows as the core said it. */
-internal fun connectionLabel(state: Connection): String = when (state) {
-    Connection.Live -> "live"
-    Connection.Connecting -> "connecting"
-    Connection.Offline -> "offline"
-    Connection.Error -> "reconnecting…"
+/**
+ * The words iOS's `ConnectionStore.subtitle` uses; a state this build has not
+ * been taught shows as the core said it. Live has no word.
+ */
+internal fun connectionLabel(state: Connection): String? = when (state) {
+    Connection.Live -> null
+    Connection.Connecting -> "Connecting…"
+    Connection.Offline -> "Offline"
+    Connection.Error -> "Reconnecting…"
     is Connection.Unknown -> state.raw
 }

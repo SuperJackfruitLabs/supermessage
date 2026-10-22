@@ -2,6 +2,7 @@ package dev.supermessage
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -230,7 +231,9 @@ class DecisionCardTest {
                 onDecide = { answer -> recorded = answer; true },
             )
         }
-        compose.onNodeWithText("Approve").assertIsEnabled()
+        // A plain Text has no click action, so this fails for an option
+        // the card is not offering.
+        compose.onNodeWithText("Approve").assertHasClickAction().assertIsEnabled()
         compose.onNodeWithText("Approve").performClick()
         compose.waitForIdle()
         assertNull(recorded!!.subject)

@@ -9,8 +9,9 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * The slim status row `apple/Supermessage/RootView.swift` calls `ConnectionBar`:
- * a label, an optional muted message, and nothing at all when live.
+ * The slim status row: the words iOS ships in `ConnectionStore.subtitle`
+ * (`apple/Supermessage/RootView.swift`), an optional muted message, and
+ * nothing at all when live.
  */
 class ConnectionBarTest {
     @get:Rule val compose = createComposeRule()
@@ -23,7 +24,7 @@ class ConnectionBarTest {
             }
         }
         compose.onNodeWithTag("connection-bar").assertIsDisplayed()
-        compose.onNodeWithText("offline").assertIsDisplayed()
+        compose.onNodeWithText("Offline").assertIsDisplayed()
         compose.onNodeWithText("connection refused").assertIsDisplayed()
     }
 
@@ -44,7 +45,7 @@ class ConnectionBarTest {
                 ConnectionBar(Connection.Error, message = null, worthShowing = true)
             }
         }
-        compose.onNodeWithText("reconnecting…").assertIsDisplayed()
+        compose.onNodeWithText("Reconnecting…").assertIsDisplayed()
     }
 
     @Test
@@ -55,5 +56,15 @@ class ConnectionBarTest {
             }
         }
         compose.onNodeWithText("catching-up").assertIsDisplayed()
+    }
+
+    @Test
+    fun connectingReadsConnectingWithAnEllipsis() {
+        compose.setContent {
+            SupermessageTheme {
+                ConnectionBar(Connection.Connecting, message = null, worthShowing = true)
+            }
+        }
+        compose.onNodeWithText("Connecting…").assertIsDisplayed()
     }
 }

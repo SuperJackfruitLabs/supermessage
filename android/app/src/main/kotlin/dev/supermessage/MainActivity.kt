@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
+import dev.supermessage.kit.stores.ConnectionStore.Connection
 import dev.supermessage.kit.Session
 import dev.supermessage.kit.VoicePlayback
 import java.io.File
@@ -188,7 +189,8 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
     val rooms by session.rooms.rooms.collectAsStateWithLifecycle()
     val avatarCache by session.avatars.cache.collectAsStateWithLifecycle()
 
-    // Collected so the bar redraws; `isWorthShowing` itself reads the store.
+    // Collected so the bar redraws; whether to show it is derived from the
+    // collected state below, never read off the store.
     val connectionState by session.connection.state.collectAsStateWithLifecycle()
     val connectionMessage by session.connection.message.collectAsStateWithLifecycle()
 
@@ -219,7 +221,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                 ConnectionBar(
                     state = connectionState,
                     message = connectionMessage,
-                    worthShowing = session.connection.isWorthShowing,
+                    worthShowing = connectionState != Connection.Live,
                 )
                 // Search and the account panel share the
                 // Extra pane with room info, so both are
@@ -428,7 +430,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                                     // A permission request has no gate; route it
                                     // to the permission sender (iOS
                                     // `TimelineCollectionView.swift:1022-1031`).
-                                    session.answerPermission(answer.optionId, currentRoomId)
+                                    session.answerPermission(optionId = answer.optionId, roomId = currentRoomId)
                                 } else session.answerGate(
                                     eventId = row.item.eventId,
                                     gateId = gateId,
