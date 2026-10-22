@@ -47,6 +47,8 @@ impl EventSink for TauriSink {
             CoreEvent::Live(p) => self.0.emit(LIVE_EVENT, &p),
             CoreEvent::Thought(p) => self.0.emit(THOUGHT_EVENT, &p),
             CoreEvent::Tool(p) => self.0.emit(TOOL_EVENT, &p),
+            // The `sm://turn` channel is wired with the Tauri commands (C4).
+            CoreEvent::Turn(_) => Ok(()),
             CoreEvent::AttachmentStaged(m) => self.0.emit(STAGED_ATTACHMENT_EVENT, &m),
             CoreEvent::IgnoredUsers(ids) => self.0.emit(IGNORED_USERS_EVENT, &ids),
         };

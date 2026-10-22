@@ -274,6 +274,9 @@ struct Inner {
     finished_order: VecDeque<String>,
     next_turn_id: u64,
     revision: u64,
+    /// Which sign-in this book is serving. Bumped by `clear`; see
+    /// [`TurnBook::apply_in`].
+    generation: u64,
 }
 
 impl Inner {
@@ -463,6 +466,32 @@ impl TurnBook {
         self.lock().apply(room_id, input)
     }
 
+    /// Which sign-in the book is serving now. A feed (a live handler, a
+    /// timeline sink) reads this when it is created and passes it back to
+    /// [`Self::apply_in`].
+    pub fn generation(&self) -> u64 {
+        self.lock().generation
+    }
+
+    /// [`Self::apply`] for a feed created in `generation`: refused (nothing
+    /// recorded, `accepted: false`) once [`Self::clear`] has started a newer
+    /// one.
+    ///
+    /// The book outlives the client, and a handler of the old client can still
+    /// be running when the account signs out and in again. The check shares
+    /// the lock with the write, so a late event cannot land between the clear
+    /// and the new sign-in.
+    pub fn apply_in(&self, generation: u64, room_id: &str, input: TurnInput) -> TurnOutcome {
+        let mut inner = self.lock();
+        if inner.generation != generation {
+            return TurnOutcome {
+                accepted: false,
+                update: None,
+            };
+        }
+        inner.apply(room_id, input)
+    }
+
     /// Ends every in-progress turn that has been silent for
     /// [`GIVE_UP_AFTER_MS`], at its last activity.
     pub fn expire(&self, now_ms: u64) -> Vec<TurnUpdate> {
@@ -500,12 +529,14 @@ impl TurnBook {
         self.lock().is_in_progress(room_id)
     }
 
-    /// Forgets every room. Counters keep counting, so a host holding a
-    /// pre-clear snapshot can still tell it is older.
+    /// Forgets every room and starts a new generation, so feeds created
+    /// before it can no longer write. Counters keep counting, so a host
+    /// holding a pre-clear snapshot can still tell it is older.
     pub fn clear(&self) {
         let mut inner = self.lock();
         inner.rooms.clear();
         inner.finished_order.clear();
+        inner.generation += 1;
     }
 }
 
@@ -1107,5 +1138,32 @@ mod tests {
             .summary
             .revision;
         assert!(after > seen[3]);
+    }
+
+    /// New (Review Focus 3, and the race the sent-this-session state had).
+    /// A handler of the old client can outlive the sign-out; its late event
+    /// must not write into the next sign-in's book.
+    ///
+    /// Mutation seen failing: dropping the `generation` comparison in
+    /// `apply_in` fails the first assertion; dropping the bump in `clear`
+    /// fails the first assertion too (the old feed is still current).
+    #[test]
+    fn a_late_event_from_the_old_sign_in_writes_nothing_after_the_clear() {
+        let book = TurnBook::default();
+        let old = book.generation();
+        assert!(book.apply_in(old, ROOM, answer(T)).accepted);
+        book.clear();
+        let late = book.apply_in(old, ROOM, tool("a", "Read", ToolPhase::Running, 1, T + 1));
+        assert!(!late.accepted && late.update.is_none());
+        assert_eq!(
+            book.snapshot(ROOM),
+            None,
+            "the old sign-in fed the new book"
+        );
+        // A feed made after the clear writes normally.
+        let new = book.generation();
+        assert_ne!(new, old);
+        assert!(book.apply_in(new, ROOM, answer(T + 2)).accepted);
+        assert!(book.snapshot(ROOM).is_some());
     }
 }

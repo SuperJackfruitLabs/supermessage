@@ -137,6 +137,9 @@ impl CoreSink for HostSink {
                 input: p.input,
                 output: p.output,
             },
+            // Not yet carried to hosts: `FfiEvent::Turn` arrives with the
+            // bindings (C4). Until then a host sees what it always saw.
+            CoreEvent::Turn(_) => return,
             CoreEvent::AttachmentStaged(m) => FfiEvent::AttachmentStaged {
                 token: m.token,
                 filename: m.filename,
