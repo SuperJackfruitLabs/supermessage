@@ -151,6 +151,7 @@ fun TimelineRow(
     loadFace: suspend (mxcUri: String) -> Unit = {},
     onReact: ((String) -> Unit)? = null,
     onDecide: (suspend (GateAnswer) -> Boolean)? = null,
+    decisionAnswers: DecisionAnswers? = null,
     modifier: Modifier = Modifier,
 ) {
     // "Who to name, already chosen ... Chosen by the list, which can see
@@ -267,6 +268,9 @@ fun TimelineRow(
                 view = view.view,
                 label = view.label,
                 eventType = view.eventType,
+                senderName = named,
+                answers = decisionAnswers,
+                answerKey = row.item.eventId ?: row.item.id,
                 modifier = modifier,
                 onDecide = onDecide,
             )

@@ -182,6 +182,9 @@ fun Timeline(
     loadFace: suspend (mxcUri: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    // Per list, so per room (the pane keys the list by room), and above the
+    // lazy items so a recycled row cannot forget what this device answered.
+    val decisionAnswers = rememberDecisionAnswers()
     val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
 
     // Keyed on `revision`, not `rows` itself. `TimelineStore.revision` is
@@ -417,6 +420,7 @@ fun Timeline(
                         loadFace = loadFace,
                         onReact = { key -> onReact(row, key) },
                         onDecide = { answer -> onDecide(row, answer) },
+                        decisionAnswers = decisionAnswers,
                         modifier = (
                             if (hasMenu) {
                                 rowModifier.combinedClickable(
