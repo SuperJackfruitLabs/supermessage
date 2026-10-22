@@ -13,6 +13,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onChildren
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -79,6 +80,7 @@ class TimelineRowTest {
         sendState: DeliveryState? = null,
         reactions: List<ReactionDto> = emptyList(),
         readBy: List<String> = emptyList(),
+        senderAvatar: String? = null,
     ): TimelineRowDto {
         val item = TimelineItemDto(
             id = "\$1",
@@ -88,7 +90,7 @@ class TimelineRowTest {
             detail = null,
             sender = sender,
             senderDisplayName = null,
-            senderAvatar = null,
+            senderAvatar = senderAvatar,
             body = body,
             formattedBody = null,
             media = null,
@@ -253,6 +255,50 @@ class TimelineRowTest {
             )
         }
         compose.onNodeWithText("Cleaner Cody").assertIsDisplayed()
+    }
+
+    /** A 1x1 PNG, as the core hands pictures over: a `data:` URI. */
+    private val pngUri =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+    /** The cache has the picture: it is drawn, not described. */
+    @Test
+    fun imageRowDrawsThePictureWhenTheCacheHasIt() {
+        compose.setContent {
+            TimelineRow(
+                row = row(view = ItemView.Image(alt = "a sunset", width = 100uL, height = 50uL, caption = null)),
+                now = now,
+                imageUri = { pngUri },
+            )
+        }
+        compose.onNodeWithTag("timeline-image").assertExists()
+    }
+
+    /** The fetch failed or has not landed: the alt box stays, and nothing spins. */
+    @Test
+    fun imageRowFallsBackToAltWhenNoPicture() {
+        compose.setContent {
+            TimelineRow(
+                row = row(view = ItemView.Image(alt = "a sunset", width = 100uL, height = 50uL, caption = null)),
+                now = now,
+                imageUri = { null },
+            )
+        }
+        compose.onNodeWithText("a sunset").assertIsDisplayed()
+        compose.onAllNodesWithTag("timeline-image").assertCountEquals(0)
+    }
+
+    /** Faces are keyed by the `mxc:` avatar, as on iOS, not by user id. */
+    @Test
+    fun senderFaceUsesTheMxcAvatar() {
+        compose.setContent {
+            TimelineRow(
+                row = row(senderAvatar = "mxc://x/y"),
+                now = now,
+                faceUri = { mxc -> if (mxc == "mxc://x/y") pngUri else null },
+            )
+        }
+        compose.onNodeWithTag("sender-face-image").assertExists()
     }
 
     /** An image with no loaded bytes shows its alt text rather than a blank box. */

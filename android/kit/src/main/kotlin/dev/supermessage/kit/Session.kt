@@ -422,6 +422,26 @@ class Session(
         }
     }
 
+    /**
+     * Answer an agent's permission request (a decision with no gate subject)
+     * with [optionId]. Mirrors iOS `Session.swift:633` (`answerPermission`).
+     *
+     * Returns whether it landed, so the card stays answerable when the send
+     * fails or the session is not signed in, rather than showing a receipt
+     * for an answer nobody received.
+     */
+    suspend fun answerPermission(optionId: String, roomId: String): Boolean {
+        if (_phase.value != Phase.SIGNED_IN) return false
+        return try {
+            client.sendPermissionAnswer(roomId = roomId, optionId = optionId)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun toggleReaction(eventId: String?, key: String, roomId: String) {
         if (eventId == null) return
         try {
