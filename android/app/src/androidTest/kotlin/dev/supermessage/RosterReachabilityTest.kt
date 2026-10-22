@@ -34,6 +34,7 @@ import dev.supermessage.kit.StubCore
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -835,6 +836,38 @@ class RosterReachabilityTest {
         compose.onNodeWithTag("roster-open-account").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("account-order-waiting").performScrollTo().assertIsSelected()
+    }
+
+    /**
+     * The Account panel reached through [AppRoot] writes to the real stores:
+     * an accent tap lands in [AppearancePreferences] and an order tap in
+     * [RosterPreferences]. Every other AppRoot test passes no appearance, so
+     * nothing else drives the wiring between the panel and the stores.
+     */
+    @Test
+    fun theAccountPanelWritesTheStoresThroughAppRoot() {
+        val session = sessionOf(FakeCore(roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = emptyList()) }))
+        val prefs = preferences()
+        val file = File.createTempFile("appearance-reachability", ".preferences_pb")
+        val appearance = AppearancePreferences(
+            PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.Unconfined)) { file },
+        )
+
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs, appearance = appearance)
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("roster-open-account").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("accent-pink").performScrollTo().performClick()
+        compose.onNodeWithTag("account-order-recent").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        assertEquals("pink", runBlocking { appearance.choice.first() }.accent)
+        assertEquals(RosterChoice.RECENT, runBlocking { prefs.view.first() })
     }
 
     /**

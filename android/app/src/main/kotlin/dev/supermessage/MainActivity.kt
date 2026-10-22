@@ -83,6 +83,11 @@ class MainActivity : ComponentActivity() {
         val systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
         applySystemBars(stored.resolvesDark(systemDark))
+        // The window behind the first frame already agrees with the stored
+        // choice, so a Dark choice on a light phone does not flash light.
+        window.setBackgroundDrawable(
+            ColorDrawable(stored.palette(stored.resolvesDark(systemDark)).surface.toArgb()),
+        )
         setContent {
             val choice by appearance.choice.collectAsStateWithLifecycle(initialValue = stored)
             val dark = choice.resolvesDark(isSystemInDarkTheme())
