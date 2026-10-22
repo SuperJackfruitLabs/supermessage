@@ -32,6 +32,8 @@
    * above it. These rooms are written by hand, so each continuation says so.
    */
   const continued = (r: TimelineRow): TimelineRow => ({ ...r, continuesRun: true });
+  /** ...and the last row of a run says so (the wire omits `false`). */
+  const ends = (r: TimelineRow): TimelineRow => ({ ...r, endsRun: true });
 
   /**
    * One room that shows every row the task 8 rules touch: a peer run (the
@@ -43,7 +45,7 @@
   const rows: TimelineRow[] = [
     atlas("p1", 0, "Staging is green across all four ABIs."),
     continued(atlas("p2", 60_000, "Ready to promote.")),
-    continued(atlas("p3", 90_000, "Corrected the build number.", { edited: true })),
+    ends(continued(atlas("p3", 90_000, "Corrected the build number.", { edited: true }))),
     mine("o1", 600_000, "Hold on, check the 16KB device first.", { edited: true }),
     continued(
       mine("o2", 630_000, "Then promote.", {
@@ -55,7 +57,7 @@
       }),
     ),
     continued(mine("o3", 640_000, "Sending this one.", { sendState: "notSentYet", eventId: null })),
-    continued(mine("o4", 650_000, "This one failed.", { sendState: "sendingFailed", eventId: null })),
+    ends(continued(mine("o4", 650_000, "This one failed.", { sendState: "sendingFailed", eventId: null }))),
   ];
 
   /** A store the story fills through the real diff path: a gap forces a resync. */
@@ -114,11 +116,14 @@
   const quoted = atlas("q0", 0, "Parent: the plan for the release.");
   const jumpRows: TimelineRow[] = [
     quoted,
-    ...Array.from({ length: 30 }, (_, i) => continued(atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`))),
+    ...Array.from({ length: 30 }, (_, i) => i === 29
+        ? ends(continued(atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`)))
+        : continued(atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`))),
     {
       ...mine("r1", 400_000, "Replying to the plan.", {
         replyTo: { eventId: "$q0", available: true, sender: "@atlas:example.org", senderDisplayName: "Atlas", body: null } as never,
       }),
+      endsRun: true,
       replyQuote: { state: "available", sender: "Atlas", excerpt: "Parent: the plan for the release.", label: null },
     },
   ];
@@ -257,7 +262,7 @@
     const rowEls = () => [...root.querySelectorAll("[data-testid='timeline-row']")] as HTMLElement[];
     await settled(() => (rowEls().length >= rows.length ? root : null), 3000, "the first fill");
     if (rowEls().some((r) => r.classList.contains("row-arrive"))) throw new Error("the first fill animated");
-    arrivePush(atlas("n1", 700_000, "Promoted. Build 412 is live."));
+    arrivePush(ends(atlas("n1", 700_000, "Promoted. Build 412 is live.")));
     const arrived = await settled(
       () => rowEls().find((r) => r.textContent?.includes("Promoted. Build 412 is live.")),
       3000,
@@ -296,7 +301,7 @@
       3000,
       "the jump-to-newest button",
     )) as HTMLButtonElement;
-    awayPush(atlas("n2", 800_000, "Landed while you were away."));
+    awayPush(ends(atlas("n2", 800_000, "Landed while you were away.")));
     await new Promise((r) => setTimeout(r, 200));
     jump.click();
     const landed = await settled(

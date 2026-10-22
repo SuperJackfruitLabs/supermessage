@@ -325,7 +325,7 @@
   import ReplyQuote from "./timeline/ReplyQuote.svelte";
   import ReaderFaces from "./timeline/ReaderFaces.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
-  import { endsRun, ownMeta, readerFaces, readersFor, revealsTime, type ItemRow } from "./timeline/rowMeta";
+  import { ownMeta, readerFaces, readersFor, revealsTime, type ItemRow } from "./timeline/rowMeta";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -577,7 +577,7 @@
   /** Keys of the rows that end a run: their time (and their readers) show. */
   let runEnds = $derived(
     new Set(
-      displayRows.flatMap((row, i) => (row.type === "item" && endsRun(displayRows, i) ? [row.key] : [])),
+      displayRows.flatMap((row) => (row.type === "item" && row.endsRun ? [row.key] : [])),
     ),
   );
 

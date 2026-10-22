@@ -210,6 +210,7 @@ export const senderRun: TimelineRow[] = [
     ...message({ id: "run-2", sender: "@atlas:example.org", senderDisplayName: "Atlas", timestampMs: 1_700_000_060_000, body: "Ready to promote." }),
     view: bubble("Ready to promote."),
     continuesRun: true,
+    endsRun: true,
   },
 ];
 

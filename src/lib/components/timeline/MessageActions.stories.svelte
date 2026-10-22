@@ -16,7 +16,7 @@
     }
   };
 
-  const base = { type: "item", key: "m1", continuesRun: false } as const;
+  const base = { type: "item", key: "m1", continuesRun: false, endsRun: false } as const;
   const own = {
     ...base,
     ...message({ id: "m1", eventId: "$e1", isOwn: true, editable: true, body: "Ship it." }),

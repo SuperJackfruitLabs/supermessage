@@ -19,9 +19,26 @@
   });
 </script>
 
+<!--
+  The button's accessible name is the summary, with "Shows each change" as its
+  description (iOS: label and hint). An aria-label would replace the summary,
+  so a screen reader would never say it. Plain DOM, as the other plays here.
+-->
 <Story
   name="Collapsed"
   args={{ text: "5 membership changes · Strategy Sam, Rakesh and 1 other" }}
+  play={async ({ canvasElement }) => {
+    const button = (canvasElement as HTMLElement).querySelector("button");
+    if (!button) throw new Error("the stretch should be a button");
+    if (button.hasAttribute("aria-label")) throw new Error("aria-label would replace the summary as the name");
+    if (!button.textContent?.includes("5 membership changes · Strategy Sam, Rakesh and 1 other")) {
+      throw new Error("the accessible name should contain the summary");
+    }
+    const hint = document.getElementById(button.getAttribute("aria-describedby") ?? "");
+    if (hint?.textContent !== "Shows each change") {
+      throw new Error("the instruction should be the description");
+    }
+  }}
 />
 
 <!--

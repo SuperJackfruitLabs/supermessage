@@ -187,6 +187,17 @@ describe("groupTimelineItems", () => {
     expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false, true, false]);
   });
 
+  it("endsRun is read from the row, not worked out from the row after it", () => {
+    // The next row continues by the old rule, but the core said this one ends;
+    // and the reverse. An absent field is false (the wire omits it).
+    const rows = groupTimelineItems([
+      { ...message({ id: "$1", sender: "@a:x", timestampMs: 1_000 }), endsRun: true },
+      { ...message({ id: "$2", sender: "@a:x", timestampMs: 2_000 }), continuesRun: true },
+      { ...message({ id: "$3", sender: "@a:x", timestampMs: 3_000 }), continuesRun: true, endsRun: true },
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.endsRun)).toEqual([true, false, true]);
+  });
+
   it("carries the core's attribution fields through unchanged", () => {
     // 2026-10-03: the desktop headed Super Chotu's messages with its raw
     // `@agent_super-chotu:…` id because it read `senderDisplayName` instead
@@ -208,9 +219,9 @@ describe("groupTimelineItems", () => {
     const items = [message("msg1"), dateDivider("d1"), message("msg2")];
     const rows = groupTimelineItems(items);
     expect(rows).toEqual([
-      { type: "item", key: "msg1:0", item: items[0]!.item, view: items[0]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false },
-      { type: "item", key: "d1:0", item: items[1]!.item, view: items[1]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false },
-      { type: "item", key: "msg2:0", item: items[2]!.item, view: items[2]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false },
+      { type: "item", key: "msg1:0", item: items[0]!.item, view: items[0]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false },
+      { type: "item", key: "d1:0", item: items[1]!.item, view: items[1]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false },
+      { type: "item", key: "msg2:0", item: items[2]!.item, view: items[2]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false },
     ]);
   });
 });

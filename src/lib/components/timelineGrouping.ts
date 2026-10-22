@@ -37,7 +37,7 @@
 //  - Consecutive messages this device has no keys for become one
 //    `undecryptableGroup` with a count, never a column of identical lines.
 //    That one is presentation, not a grouping rule, so it stays here.
-//  - Every other row is one `item` row; `continuesRun` is the core's.
+//  - Every other row is one `item` row; `continuesRun` and `endsRun` are the core's.
 
 import type { ItemView, TimelineItem, TimelineRow } from "$lib/ipc";
 
@@ -62,6 +62,8 @@ export type TimelineDisplayRow =
       /** What the composer shows when someone replies to this item. */
       replyPreview: string | null;
       continuesRun: boolean;
+      /** Whether this row is the last of its run (the core's; absent on the wire means false). */
+      endsRun: boolean;
     }
   | { type: "membershipGroup"; key: string; items: TimelineItem[]; text: string }
   /**
@@ -235,6 +237,7 @@ export function groupTimelineItems(
       senderInitial: row.senderInitial,
       replyPreview: row.replyPreview,
       continuesRun: row.continuesRun ?? false,
+      endsRun: row.endsRun ?? false,
     });
   }
   flushUndecryptable();
