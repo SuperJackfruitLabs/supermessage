@@ -28,8 +28,10 @@ struct TimelineView: View {
     @State private var isAwayFromNewest = false
     /// Who is in the room: its agents, and who the header names (D11).
     @State private var cast: RoomCast?
-    /// Whether the reader has sent here since signing in; the core owns it.
-    @State private var sentHere = false
+    /// The room the core last said the reader has sent into since signing in
+    /// (the core owns it), or `nil`. Keyed by room so an answer about one room
+    /// is never read as an answer about another while the next one loads.
+    @State private var sentInRoom: String?
 
     /// What re-marks the room read: a change to the history, or the reader
     /// coming back to the newest end after being away.
@@ -142,7 +144,9 @@ struct TimelineView: View {
             // A delivered send's echo bumps the revision, so this is asked
             // again exactly when the answer may have changed.
             .task(id: "\(timeline.roomId ?? "")-\(timeline.revision)") {
-                if let roomId = timeline.roomId { sentHere = await session.hasSent(in: roomId) }
+                if let roomId = timeline.roomId {
+                    sentInRoom = await session.hasSent(in: roomId) ? roomId : nil
+                }
             }
             // Success when a turn finishes in the room on screen (M2) — only
             // on the change to finished, never when a room opens onto a turn
@@ -172,7 +176,7 @@ struct TimelineView: View {
         return SupermessageFFI.acknowledgement(
             rows: timeline.items, addressee: known ? cast?.addressee : nil,
             agentIds: known ? cast?.agentIds ?? [] : [],
-            sentThisSession: sentHere,
+            sentThisSession: sentInRoom == roomId,
             typingAgents: session.typing.typingAgents,
             turnInProgress: session.live.inProgress)
     }
