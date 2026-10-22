@@ -43,7 +43,6 @@ const HOSTS = [
   "./timeline/ReactionsRow.svelte",
   "./timeline/MessageActions.svelte",
   "./timeline/LogLine.svelte",
-  "./timeline/SeenMarker.svelte",
   "./timeline/ReplyQuote.svelte",
 ].map((rel) => fileURLToPath(new URL(rel, import.meta.url)));
 

@@ -97,6 +97,8 @@ export type TimelineDisplayRow =
       senderName: string;
       /** The same without the bridge's runtime suffix — the sender line. */
       senderShort: string;
+      /** The glyph for the sender's face, resolved by the core. */
+      senderInitial: string;
       /** What the composer shows when someone replies to this item. */
       replyPreview: string | null;
       continuesRun: boolean;
@@ -381,6 +383,7 @@ export function groupTimelineItems(source: readonly TimelineRow[]): TimelineDisp
         replyQuote: row.replyQuote,
         senderName: row.senderName,
         senderShort: row.senderShort,
+        senderInitial: row.senderInitial,
         replyPreview: row.replyPreview,
         continuesRun: continuesSenderRun(rows.at(-1), item),
       });

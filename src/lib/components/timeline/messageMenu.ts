@@ -1,6 +1,4 @@
-import type { TimelineDisplayRow } from "../timelineGrouping";
-
-type ItemRow = Extract<TimelineDisplayRow, { type: "item" }>;
+import type { ItemRow } from "./rowMeta";
 
 /**
  * Which of the message menu's text actions apply to `row`, as on iOS.

@@ -1,9 +1,8 @@
 <script lang="ts">
-  import type { TimelineDisplayRow } from "../timelineGrouping";
   import { QUICK_REACTIONS } from "../emojiPicker";
   import { menuActions, menuOpensUp } from "./messageMenu";
 
-  type ItemRow = Extract<TimelineDisplayRow, { type: "item" }>;
+  import type { ItemRow } from "./rowMeta";
 
   /**
    * The message action pill: Reply, the quick reactions, "+", and "More".

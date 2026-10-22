@@ -320,14 +320,13 @@
   import UnreadMarker from "./timeline/UnreadMarker.svelte";
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
   import ReplyQuote from "./timeline/ReplyQuote.svelte";
-  import SeenMarker from "./timeline/SeenMarker.svelte";
+  import ReaderFaces from "./timeline/ReaderFaces.svelte";
+  import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
+  import { endsRun, ownMeta, readerFaces, readersFor, revealsTime, type ItemRow } from "./timeline/rowMeta";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
   import type { ReplyQuoteView, TimelineItem } from "$lib/ipc";
-
-  /** The `item` arm of a display row — everything but a membership group. */
-  type ItemRow = Extract<TimelineDisplayRow, { type: "item" }>;
 
   /**
    * The room this pane shows — needed only to scope `replyTargetStore`'s
@@ -473,29 +472,16 @@
     }),
   );
 
-  /**
-   * The id of the last own item in `timelineStore.items` whose `kind` this
-   * pass renders as a bubble-shaped row (a plain message, or a rendered
-   * custom event) — the one item `seenMarker` below is allowed to annotate
-   * with a "Seen"/"Seen by N" line. See [`TimelineItemDto::read_by`]'s doc
-   * comment (`core::dto`) for why this is scoped to the reader's *own*
-   * latest message and never shown per-message: a reader doesn't need a
-   * read receipt on every bubble, only confirmation that the most recent
-   * thing they sent has actually been seen.
-   */
-  let lastOwnMessageId = $derived.by(() => {
-    const items = timelineStore.items;
-    for (let i = items.length - 1; i >= 0; i -= 1) {
-      const candidate = items[i]!;
-      if (
-        candidate.item.isOwn &&
-        (candidate.item.kind === "message" || candidate.item.kind === "customMessage")
-      ) {
-        return candidate.item.id;
-      }
-    }
-    return null;
-  });
+  /** Keys of the rows that end a run: their time (and their readers) show. */
+  let runEnds = $derived(
+    new Set(
+      displayRows.flatMap((row, i) => (row.type === "item" && endsRun(displayRows, i) ? [row.key] : [])),
+    ),
+  );
+
+  /** One face per sender, for the readers under an own message. */
+  let faces = $derived(readerFaces(displayRows));
+  const memberAvatars = createMemberAvatarCache();
 
   // Tracked outside `$state` on purpose: bookkeeping for the effect below,
   // not a value the template reads.
@@ -1063,6 +1049,7 @@
 {#snippet messageBlock(row: ItemRow, content: Snippet)}
   {@const item = row.item}
   {@const continuesRun = row.continuesRun}
+  {@const ends = runEnds.has(row.key)}
   <!--
     The single wrapper every message-shaped render kind
     (`bubble`/`image`/`mediaFile`) shares — see this file's top-of-script
@@ -1085,23 +1072,10 @@
     Every piece of chrome nested inside names its face explicitly.
   -->
   <!--
-    Vertical rhythm, and why these two values and not the spec's literal
-    "2px": the gap above a row must not depend on whether the row above it
-    happened to render an actions row. `messageActions` is hidden with
-    `opacity`, never `display: none` (it has to stay in the tab order), so
-    it occupies ~26px of layout whenever `core::item_view::can_reply_or_react` is true and 0px
-    when it is not — a local echo, a failed send, anything without a server
-    event id yet. At `pt-0.5` that made the gap between two run
-    continuations 28px in the common case but **2px** in the other, which
-    is tighter than the 13.5px between two paragraphs of a *single*
-    message: two separate messages ended up closer together than two
-    paragraphs of one, inverting the hierarchy.
-
-    So the padding carries the rhythm on its own: 20px above a run
-    continuation (comfortably looser than the 13.5px intra-message
-    paragraph gap) and 32px above a new sender block (clearly looser again,
-    so a boundary still reads as a boundary). Both hold with or without an
-    actions row; the row only ever adds to them.
+    Vertical rhythm (iOS `TimelineRowView.swift:373-375`): 2px inside a run,
+    12px between turns. The action pill no longer sits in this gap (it
+    straddles the block's own top edge, and the first and last rows reserve
+    room for it — `rowEdgeClass`), so the padding can be the real rhythm.
   -->
   <!--
     Three nested elements, each earning its place — this is not one wrapper
@@ -1134,26 +1108,33 @@
     contributes exactly its own height and the rhythm above is untouched.
   -->
   <!--
-    `relative` anchors the hover-actions overlay (`messageActions`), which no
-    longer takes height of its own.
-
-    `pt-6` where a run starts, down from `pt-8`, and `pt-4` inside one. 32px
-    between speakers is generous for a two-person room, and measured against the
-    rest of the block it was the largest single piece of chrome around a
-    one-line message.
-
-    The exact numbers are load-bearing rather than taste: this gap is what the
-    hover-actions overlay sits in, so it must stay at least as tall as that row
-    (22px) or hovering a message covers the next one's first line.
+    `relative` anchors the action pill and the hover time. They share the
+    top edge, so the time is offset below the pill's half (see `revealsTime`'s
+    element) rather than competing with it.
   -->
-  <div class="group relative flex flex-col {continuesRun ? 'pt-4' : 'pt-6'}">
+  <div class="group relative flex flex-col {continuesRun ? 'pt-0.5' : 'pt-3'}">
+    {#if revealsTime(row, ends)}
+      <!-- The row's own label carries the time; this is the quiet reveal
+           (iOS `TimelineCollectionView.swift:664-669`). Peer rows hang it in
+           the right gutter, below the pill's lower half. -->
+      <time
+        datetime={item.timestampMs === null ? undefined : new Date(item.timestampMs).toISOString()}
+        title={formatTime(item.timestampMs)}
+        aria-hidden="true"
+        class="pointer-events-none absolute font-sans text-meta tabular-nums text-content-faint opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 {item.isOwn
+          ? 'top-0 left-0'
+          : 'top-4 right-0'}"
+      >
+        {formatTime(item.timestampMs)}
+      </time>
+    {/if}
     <div class="flex {item.isOwn ? 'justify-end' : 'justify-start'}">
       <div
         class="flex min-w-0 flex-col text-content {item.isOwn
           ? 'max-w-[52ch] rounded-control bg-accent-soft px-3 py-2 font-sans text-body-own'
           : 'max-w-[68ch] font-sans text-body'}"
       >
-        {#if !item.isOwn && (!continuesRun || item.edited)}
+        {#if !item.isOwn && !continuesRun}
           <!--
             The peer sender line: name and timestamp on one baseline, both
             sans (timestamp `tabular-nums`), design-language §1. The timestamp sits immediately after the
@@ -1165,9 +1146,8 @@
             which is what keeps a long display name from pushing the
             timestamp out of view.
 
-            A collapsed continuation drops this line entirely — except when
-            the message was edited, which is real information and not "the
-            timestamp": that case renders the marker alone.
+            A collapsed continuation drops this line entirely; its "edited"
+            marker goes under the text instead.
           -->
           <p class="mb-1 flex items-baseline gap-2 font-sans text-meta tabular-nums text-content-muted">
             {#if !continuesRun}
@@ -1190,44 +1170,37 @@
         {/if}
         <ReplyQuote quote={row.replyQuote} isOwn={item.isOwn} />
         {@render content()}
-        <SeenMarker item={item} {lastOwnMessageId} alignEnd={item.isOwn} />
-        {#if item.isOwn}
-          {@const failed = item.sendState === "sendingFailed"}
-          {@const sending = item.sendState === "notSentYet"}
-          <!--
-            The own message's trailing meta line. A collapsed continuation
-            drops the timestamp, but a send that failed or is still in
-            flight is *not* a timestamp — suppressing it would silently hide
-            a failed send in the middle of a run, so those two states always
-            render. `--color-danger` is the token the palette assigns to a
-            failed send (spec §3).
-          -->
-          {#if failed || sending || item.edited || !continuesRun}
-            <p
-              class="mt-1 flex items-baseline justify-end gap-2 font-sans text-meta tabular-nums {failed
-                ? 'text-danger'
-                : 'text-content-muted'}"
-            >
-              {#if failed}
-                Not sent
-              {:else if sending}
-                Sending…
-              {:else}
-                <!-- `muted`, not the `faint` its peer-side counterpart
-                     carries: this line sits on the own bubble's
-                     `--color-accent-soft`, where faint measures 4.26:1 light
-                     / 3.52:1 dark. See `replyQuote` for the measurement and
-                     the rule. It costs the marker its rank below the
-                     timestamp; the word is doing that work anyway. -->
-                {#if item.edited}<span class="text-content-muted">edited</span>{/if}
-                {#if !continuesRun}<span>{formatTime(item.timestampMs)}</span>{/if}
-              {/if}
-            </p>
-          {/if}
+        {#if !item.isOwn && continuesRun && item.edited}
+          <p class="mt-1 font-sans text-meta text-content-faint">edited</p>
         {/if}
       </div>
     </div>
-    <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} onToggle={handleToggleReaction} />
+    <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} overlap={item.isOwn} onToggle={handleToggleReaction} />
+    {#if item.isOwn}
+      {@const meta = ownMeta(row, ends)}
+      {@const readers = readersFor(item, faces)}
+      {#if meta.state !== null || meta.edited || meta.showTime || readers.length > 0}
+        <!--
+          The own message's quiet line, under the bubble: send state, "edited",
+          the time, then who has read it (iOS `TimelineRowView.swift:334-371`).
+          A failed or in-flight send always speaks, mid-run included — hiding
+          it would hide a failed send. `--color-danger` is the palette's token
+          for that (spec §3). Faint, because it sits on the sheet ground now,
+          not on the bubble's tinted one.
+        -->
+        <p
+          class="mt-1 flex items-center justify-end gap-2 font-sans text-meta tabular-nums {meta.state === 'Not sent'
+            ? 'text-danger'
+            : 'text-content-faint'}"
+        >
+          {#if meta.state === "Not sent"}<span aria-hidden="true">!</span>{/if}
+          {#if meta.state}<span>{meta.state}</span>{/if}
+          {#if meta.edited}<span>edited</span>{/if}
+          {#if meta.showTime}<span>{formatTime(item.timestampMs)}</span>{/if}
+          <ReaderFaces {readers} faceFor={(mxc) => memberAvatars.get(mxc)} />
+        </p>
+      {/if}
+    {/if}
     <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} />
   </div>
 {/snippet}
@@ -1750,14 +1723,11 @@
                         decoration: `isOwn` is `event.sender() == own_user` in
                         the core, i.e. *account*-scoped, not client-scoped, so
                         another session signed in as this account can produce
-                        an own custom event — and `lastOwnMessageId`
-                        (top-of-script) already handles exactly that case for
-                        `seenMarker`. Left the default and these rows would
+                        an own custom event. Left the default and these rows would
                         hang off the right edge of a left-anchored card.
                       -->
                       <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={false} onToggle={handleToggleReaction} />
                       <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} />
-                      <SeenMarker item={item} {lastOwnMessageId} alignEnd={false} />
                     </div>
                   </div>
                 {/if}
