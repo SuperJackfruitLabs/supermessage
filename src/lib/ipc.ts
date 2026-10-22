@@ -744,6 +744,17 @@ export interface StagedAttachment {
 }
 
 /**
+ * What {@link attachmentSend} came to once the token was taken. A refusal
+ * before that point rejects instead and leaves the token live.
+ *
+ * `restaged` is the same file behind a fresh token (a voice mark
+ * re-applied), or `null` when it could not be staged again.
+ */
+export type AttachmentSendOutcome =
+  | { outcome: "sent" }
+  | { outcome: "failed"; error: CoreError; restaged: StagedAttachment | null };
+
+/**
  * One inline-level element of a message body, as `core::rich` parsed it.
  *
  * Mirrors `RichInline` tag-for-tag. The webview never parses markdown or HTML
@@ -1862,7 +1873,15 @@ export async function attachmentStage(roomId: string): Promise<StagedAttachment 
  * the diff stream {@link onTimelineDiff} subscribes to, which is the rule
  * this codebase has broken once and paid for.
  *
- * The three refusals a caller has to tell apart (see {@link CoreErrorKind}):
+ * Resolves with an {@link AttachmentSendOutcome}. A send that failed
+ * **after** the token was consumed is not a rejection but
+ * `{ outcome: "failed", error, restaged }`: the core has already staged the
+ * same file again (re-applying a voice mark), and `restaged` is the fresh
+ * token, or `null` when the file could not be staged again.
+ *
+ * The three refusals a caller has to tell apart (see {@link CoreErrorKind}),
+ * of which the first two still reject, because they happen before the token is
+ * taken:
  *
  * - `"roomChanged"` — either the room is no longer focused or the token was
  *   staged for a different one. Nothing was sent and **the token was not
@@ -1872,7 +1891,8 @@ export async function attachmentStage(roomId: string): Promise<StagedAttachment 
  *   recover; the reader has to attach the file again.
  * - `"attachmentTooLarge"` — re-checked here, immediately before the read,
  *   because a file on disk can grow between staging and sending (a download
- *   completing, a log file, a video still rendering).
+ *   completing, a log file, a video still rendering). This one arrives as a
+ *   `failed` outcome, not a rejection: the token was already taken.
  */
 /**
  * `caption` is the text typed with the file. It travels in the same event
@@ -1882,8 +1902,8 @@ export async function attachmentSend(
   roomId: string,
   token: string,
   caption: string | null = null
-): Promise<void> {
-  await invoke<void>("attachment_send", { roomId, token, caption });
+): Promise<AttachmentSendOutcome> {
+  return invoke<AttachmentSendOutcome>("attachment_send", { roomId, token, caption });
 }
 
 /**

@@ -10,6 +10,7 @@ import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
+import uniffi.supermessage_ffi.AttachmentSendOutcome
 import uniffi.supermessage_ffi.ConnectionState
 import uniffi.supermessage_ffi.CoreInterface
 import uniffi.supermessage_ffi.EventSink
@@ -261,9 +262,8 @@ class CoreClient(
     suspend fun attachmentStagePath(roomId: String, path: String): StagedFile =
         run { it.attachmentStagePath(roomId, path) }
 
-    suspend fun attachmentSend(roomId: String, token: String, caption: String?) {
+    suspend fun attachmentSend(roomId: String, token: String, caption: String?): AttachmentSendOutcome =
         run { it.attachmentSend(roomId, token, caption) }
-    }
 
     suspend fun attachmentDiscard(token: String) {
         run { it.attachmentDiscard(token) }

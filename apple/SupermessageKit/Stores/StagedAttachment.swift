@@ -17,20 +17,17 @@ import SupermessageFFI
 ///
 /// ## The token after a failed send
 ///
-/// The core's `send_staged` **consumes the token before it reads the file**
-/// (`take_for_send`, then `stat`, then `read`, then upload). So a send that
-/// failed may have left a live token (it failed at the room guard, before the
-/// take) or a dead one (it failed at the read or the upload, after it). The
-/// host cannot tell which from the error.
+/// The core owns this: a send that fails after it took the token comes back as
+/// `.failed(error:restaged:)`, with the same path already staged again behind a
+/// fresh token (and a voice mark re-applied), or `restaged == nil` when the file
+/// is gone. The chip simply holds whatever the core hands back — a sendable
+/// chip carrying the error, or a *failed* chip with nothing behind it that the
+/// reader removes or replaces, never silently dropped.
 ///
-/// Pretending the chip is still sendable would be dishonest: the retry would
-/// fail with "no longer staged" and look like a second, different fault. So on
-/// a failed send the old token is discarded — a no-op on the core's side if
-/// it was already taken — and the same path is staged again for a fresh one.
-/// If that works, the chip is still there, still sendable, and carries the
-/// error. If it does not (the file has gone), the chip stays as a *failed*
-/// chip with nothing behind it: visible, explained, and something the reader
-/// removes or replaces — never silently dropped.
+/// A send refused *before* the take throws instead: `UnknownAttachment` means
+/// the core no longer holds the token (swept, or the room changed), so the chip
+/// becomes a failed one; any other refusal (`RoomChanged`, ...) leaves the
+/// token live and the chip sendable.
 @MainActor
 @Observable
 public final class StagedAttachment {
@@ -48,8 +45,8 @@ public final class StagedAttachment {
     /// The staged file, with a live token. `nil` when there is nothing that
     /// could be sent.
     public private(set) var file: StagedFile?
-    /// Where ``file`` was staged from, so a failed send can stage it again,
-    /// and so the chip can draw a thumbnail of an image.
+    /// Where ``file`` was staged from, so the chip can draw a thumbnail of an
+    /// image.
     public private(set) var path: String?
     /// The room it was staged for. The core binds a token to one room, and a
     /// chip that followed the reader into another room would be a chip that
@@ -58,7 +55,7 @@ public final class StagedAttachment {
     /// Why the last stage or send did not work, drawn on the chip.
     public private(set) var failure: Failure?
     /// The staged file is a recording, sent as a voice message: its length
-    /// and waveform. Kept so a re-stage after a failed send marks it again.
+    /// and waveform.
     public private(set) var voice: VoiceMark?
 
     public struct VoiceMark: Equatable, Sendable {
@@ -143,37 +140,30 @@ public final class StagedAttachment {
     public func send(in roomId: String, caption: String? = nil) async -> String? {
         guard let file else { return failure?.message }
         do {
-            try await client.attachmentSend(roomId: roomId, token: file.token, caption: caption)
-            self.file = nil
-            path = nil
-            failure = nil
-            voice = nil
-            self.roomId = nil
-            return nil
+            switch try await client.attachmentSend(roomId: roomId, token: file.token, caption: caption) {
+            case .sent:
+                self.file = nil
+                path = nil
+                failure = nil
+                voice = nil
+                self.roomId = nil
+                return nil
+            case let .failed(error, restaged):
+                let message = ErrorPresenter.message(for: error)
+                self.file = restaged
+                failure = Failure(filename: file.filename, message: message)
+                return message
+            }
         } catch {
+            // Refused before the core took the token.
             let message = Self.message(for: error, otherwise: "Couldn't send that file.")
-            await restage(after: file, in: roomId)
+            if case .UnknownAttachment? = error as? FfiError {
+                // The core no longer holds the token and has no path to stage
+                // again: nothing can be sent from this chip.
+                self.file = nil
+            }
             failure = Failure(filename: file.filename, message: message)
             return message
-        }
-    }
-
-    /// Put a fresh token behind the chip after a send that may have consumed
-    /// the old one. See this type's note on the token after a failed send.
-    private func restage(after old: StagedFile, in roomId: String) async {
-        // A no-op in the core when the token was already taken; a release
-        // when it was not, so a live token is never orphaned.
-        await client.attachmentDiscard(token: old.token)
-        file = nil
-        guard let path else { return }
-        if let fresh = try? await client.attachmentStagePath(roomId: roomId, path: path) {
-            file = fresh
-            // The mark lived on the old token; the retry must still be a
-            // voice message.
-            if let voice {
-                try? await client.attachmentMarkVoice(
-                    roomId: roomId, token: fresh.token, durationMs: voice.durationMs, waveform: voice.waveform)
-            }
         }
     }
 

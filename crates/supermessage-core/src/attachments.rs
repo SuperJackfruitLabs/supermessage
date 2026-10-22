@@ -31,7 +31,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL;
@@ -41,7 +41,7 @@ use matrix_sdk::attachment::{
 };
 use matrix_sdk::ruma::UInt;
 use matrix_sdk::Client;
-use matrix_sdk_ui::timeline::{AttachmentConfig, AttachmentSource};
+use matrix_sdk_ui::timeline::{AttachmentConfig, AttachmentSource, Timeline};
 use mime::Mime;
 use rand::rngs::OsRng;
 use rand::TryRngCore as _;
@@ -669,6 +669,30 @@ pub async fn stage_path(
     Ok(meta)
 }
 
+/// What a send that got as far as taking the token came to.
+///
+/// `Err` from [`send_staged`] is reserved for the refusals that happen
+/// *before* the token is taken, which leave it live. Everything after that
+/// point is reported here, so the host never has to guess whether the old
+/// token is still good.
+///
+/// `Serialize` only: [`CoreError`] is neither `Clone` nor `Deserialize`.
+#[derive(Debug, Serialize)]
+#[serde(tag = "outcome", rename_all = "camelCase")]
+pub enum AttachmentSendOutcome {
+    /// Handed to the send queue.
+    Sent,
+    /// The send failed after the token was consumed. `restaged` is the same
+    /// file behind a fresh token (a voice mark re-applied), or `None` when
+    /// the file could not be staged again — it vanished, or grew past the
+    /// limit — in which case the failure is all there is to show.
+    #[serde(rename_all = "camelCase")]
+    Failed {
+        error: CoreError,
+        restaged: Option<StagedAttachment>,
+    },
+}
+
 /// Reads, uploads and sends the file `token` stands for, consuming the token.
 ///
 /// Guard order is deliberate:
@@ -690,6 +714,19 @@ pub async fn stage_path(
 /// The bytes are handed over as `AttachmentSource::Data`, never as a path.
 /// Passing the path would let the SDK read the file itself, after our size
 /// check and outside it.
+///
+/// ## The token after a failed send
+///
+/// `take_for_send` consumes the token **before** the file is read, `stat`ed
+/// or uploaded. So the refusals in steps 1 and 2 return `Err` and leave the
+/// token live, but a failure after them has used it up and a retry with the
+/// same token could only say "no longer staged" — a second, different fault.
+/// A host cannot tell the two apart from the error alone, and (the desktop
+/// never holds a file path) cannot put the file back itself either. So the
+/// core does: after any failure that consumed the token the same path is
+/// staged again for the same room, a voice mark is re-applied, and the
+/// result is returned as [`AttachmentSendOutcome::Failed`] with the fresh
+/// token. The chip stays sendable and a voice note stays a voice note.
 pub async fn send_staged(
     session: &Session,
     focused: &FocusedTimeline,
@@ -697,16 +734,64 @@ pub async fn send_staged(
     room_id: &str,
     token: &str,
     caption: Option<String>,
-) -> CoreResult<()> {
+) -> CoreResult<AttachmentSendOutcome> {
     let timeline = focused.active_timeline_for(room_id)?;
     let client = session.require_client().await?;
 
     let (path, meta, voice) = staged.take_for_send(token, room_id)?;
+    // `voice_upload` consumes the note; the retry needs it again.
+    let original_voice = voice.clone();
 
+    match send_taken(&client, &timeline, path.clone(), meta, voice, caption).await {
+        Ok(()) => Ok(AttachmentSendOutcome::Sent),
+        Err(error) => {
+            Ok(failure_outcome(&client, staged, room_id, path, original_voice, error).await)
+        }
+    }
+}
+
+/// Puts the file behind a fresh token after a send that consumed the old
+/// one, and carries the error along. See [`send_staged`].
+pub(crate) async fn failure_outcome(
+    client: &Client,
+    staged: &StagedAttachments,
+    room_id: &str,
+    path: PathBuf,
+    voice: Option<VoiceNote>,
+    error: CoreError,
+) -> AttachmentSendOutcome {
+    let restaged = match stage_path(client, staged, room_id, path).await {
+        Ok(fresh) => {
+            if let Some(voice) = voice {
+                // The mark lived on the old token. A failed re-mark is not
+                // fatal: the file still sends, as a plain audio file.
+                if let Err(e) = staged.mark_voice(&fresh.token, room_id, voice) {
+                    tracing::warn!(room_id, error = %e, "could not re-mark a re-staged voice note");
+                }
+            }
+            Some(fresh)
+        }
+        Err(e) => {
+            tracing::debug!(room_id, error = %e, "could not stage a failed send again");
+            None
+        }
+    };
+    AttachmentSendOutcome::Failed { error, restaged }
+}
+
+/// Everything after the token is taken.
+async fn send_taken(
+    client: &Client,
+    timeline: &Arc<Timeline>,
+    path: PathBuf,
+    meta: StagedAttachment,
+    voice: Option<VoiceNote>,
+    caption: Option<String>,
+) -> CoreResult<()> {
     let metadata = tokio::fs::metadata(&path)
         .await
         .map_err(|e| CoreError::Store(format!("cannot read that file: {e}")))?;
-    check_upload_size(metadata.len(), upload_limit(&client).await)?;
+    check_upload_size(metadata.len(), upload_limit(client).await)?;
 
     let bytes = tokio::fs::read(&path)
         .await
@@ -745,7 +830,6 @@ pub async fn send_staged(
     };
 
     tracing::debug!(
-        room_id,
         filename,
         msgtype = msgtype_for_mime(&mime),
         "sending an attachment through the send queue"
@@ -899,6 +983,160 @@ mod tests {
             staged_at: at,
             voice: None,
         }
+    }
+
+    // ---- failed send: the file goes back behind a fresh token (M1.7) ------
+
+    /// A client with a media config mounted, a PNG on disk under a unique
+    /// name, staged and then consumed — the state `send_staged` is in when
+    /// an upload fails.
+    async fn consumed_png(
+        name: &str,
+        voice: Option<VoiceNote>,
+    ) -> (
+        matrix_sdk::Client,
+        StagedAttachments,
+        PathBuf,
+        String,
+        StagedAttachment,
+    ) {
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        server
+            .mock_authenticated_media_config()
+            .ok_default()
+            .mount()
+            .await;
+        // A 1x1 PNG.
+        let png: &[u8] = &[
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0xf8, 0xff, 0xff, 0x3f, 0x00, 0x05, 0xfe, 0x02, 0xfe, 0xa7, 0x35, 0x81,
+            0x84, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        let dir = std::env::temp_dir().join(format!("sm-restage-{name}-{}", mint_token()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("shot.png");
+        std::fs::write(&path, png).unwrap();
+
+        let staged = StagedAttachments::default();
+        let room = "!room:example.org".to_string();
+        let old = stage_path(&client, &staged, &room, path.clone())
+            .await
+            .unwrap();
+        if let Some(v) = voice {
+            staged.mark_voice(&old.token, &room, v).unwrap();
+        }
+        let (taken_path, _, _) = staged.take_for_send(&old.token, &room).unwrap();
+        assert_eq!(staged.len(), 0);
+        // Keep `server` alive for the client's lifetime.
+        std::mem::forget(server);
+        (client, staged, taken_path, room, old)
+    }
+
+    /// Mutation seen failing: `failure_outcome` returning `restaged: None`
+    /// always.
+    #[tokio::test]
+    async fn a_failed_send_puts_a_fresh_token_behind_the_file_and_keeps_the_error() {
+        let (client, staged, path, room, old) = consumed_png("fresh", None).await;
+
+        let outcome = failure_outcome(
+            &client,
+            &staged,
+            &room,
+            path.clone(),
+            None,
+            CoreError::Network("upload failed".into()),
+        )
+        .await;
+
+        let AttachmentSendOutcome::Failed { error, restaged } = outcome else {
+            panic!("a failure is a Failed outcome");
+        };
+        assert!(matches!(error, CoreError::Network(_)));
+        let fresh = restaged.expect("the file is still there to stage again");
+        assert_ne!(fresh.token, old.token);
+        assert_eq!(fresh.filename, "shot.png");
+        assert_eq!(staged.len(), 1);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// Mutation seen failing: dropping the `mark_voice` call in
+    /// `failure_outcome`.
+    #[tokio::test]
+    async fn a_failed_send_re_marks_the_fresh_token_so_the_retry_is_still_a_voice_message() {
+        let voice = VoiceNote {
+            duration_ms: 1_000,
+            waveform: vec![0.0, 0.5, 1.0],
+        };
+        let (client, staged, path, room, _old) = consumed_png("voice", Some(voice.clone())).await;
+
+        let outcome = failure_outcome(
+            &client,
+            &staged,
+            &room,
+            path.clone(),
+            Some(voice),
+            CoreError::Network("upload failed".into()),
+        )
+        .await;
+
+        let AttachmentSendOutcome::Failed { restaged, .. } = outcome else {
+            panic!("a failure is a Failed outcome");
+        };
+        let fresh = restaged.unwrap();
+        let (_, _, marked) = staged.take_for_send(&fresh.token, &room).unwrap();
+        let marked = marked.expect("the voice mark moved to the fresh token");
+        assert_eq!(marked.duration_ms, 1_000);
+        assert_eq!(marked.waveform, vec![0.0, 0.5, 1.0]);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// Mutation seen failing: unwrapping the `stage_path` result instead of
+    /// mapping an `Err` to `None`.
+    #[tokio::test]
+    async fn when_the_file_cannot_be_staged_again_the_failure_has_nothing_behind_it() {
+        let (client, staged, path, room, _old) = consumed_png("gone", None).await;
+        std::fs::remove_file(&path).unwrap();
+
+        let outcome = failure_outcome(
+            &client,
+            &staged,
+            &room,
+            path.clone(),
+            None,
+            CoreError::Store("cannot read that file: gone".into()),
+        )
+        .await;
+
+        let AttachmentSendOutcome::Failed { error, restaged } = outcome else {
+            panic!("a failure is a Failed outcome");
+        };
+        assert_eq!(error.kind(), "store");
+        assert!(restaged.is_none());
+        assert_eq!(staged.len(), 0);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn the_outcome_serialises_the_way_the_webview_reads_it() {
+        let sent = serde_json::to_value(AttachmentSendOutcome::Sent).unwrap();
+        assert_eq!(sent, serde_json::json!({ "outcome": "sent" }));
+        let failed = serde_json::to_value(AttachmentSendOutcome::Failed {
+            error: CoreError::Network("x".into()),
+            restaged: None,
+        })
+        .unwrap();
+        assert_eq!(
+            failed,
+            serde_json::json!({
+                "outcome": "failed",
+                "error": { "kind": "network", "message": "x" },
+                "restaged": null,
+            })
+        );
     }
 
     // ---- token rules (§3) -------------------------------------------------

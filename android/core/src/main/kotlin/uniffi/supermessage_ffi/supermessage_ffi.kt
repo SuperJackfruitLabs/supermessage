@@ -1091,7 +1091,7 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_attachment_mark_voice(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`durationMs`: Long,`waveform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_attachment_send(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,`caption`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_attachment_stage_path(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_connection_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1686,7 +1686,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_mark_voice() != 59336.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 39541.toShort()) {
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_send() != 1487.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_attachment_stage_path() != 17403.toShort()) {
@@ -2360,7 +2360,7 @@ public interface CoreInterface {
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
+    fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?): AttachmentSendOutcome
     
     /**
      * Stage a file the host has already chosen.
@@ -2964,15 +2964,16 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
      * `caption` is what the reader typed with the file. It travels in the
      * same event (MSC2530) rather than as a message of its own.
      */
-    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?)
-        = 
+    @Throws(FfiException::class)override fun `attachmentSend`(`roomId`: kotlin.String, `token`: kotlin.String, `caption`: kotlin.String?): AttachmentSendOutcome {
+            return FfiConverterTypeAttachmentSendOutcome.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_attachment_send(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`token`),FfiConverterOptionalString.lower(`caption`),_status)
 }
     }
-    
+    )
+    }
     
 
     
@@ -4433,6 +4434,82 @@ public object FfiConverterTypeTimelineSnapshot: FfiConverterRustBuffer<TimelineS
 
 
 
+/**
+ * What `attachment_send` came to once the token was taken.
+ *
+ * An `Err` from `attachment_send` means the send was refused before the
+ * token was consumed, which leaves it live. A `Failed` means it was
+ * consumed: `restaged` is the same file behind a fresh token (a voice mark
+ * re-applied), or `None` when the file could not be staged again.
+ */
+sealed class AttachmentSendOutcome {
+    
+    object Sent : AttachmentSendOutcome()
+    
+    
+    data class Failed(
+        val `error`: FfiException, 
+        val `restaged`: StagedFile?) : AttachmentSendOutcome() {
+        companion object
+    }
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAttachmentSendOutcome : FfiConverterRustBuffer<AttachmentSendOutcome>{
+    override fun read(buf: ByteBuffer): AttachmentSendOutcome {
+        return when(buf.getInt()) {
+            1 -> AttachmentSendOutcome.Sent
+            2 -> AttachmentSendOutcome.Failed(
+                FfiConverterTypeFfiError.read(buf),
+                FfiConverterOptionalTypeStagedFile.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: AttachmentSendOutcome) = when(value) {
+        is AttachmentSendOutcome.Sent -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is AttachmentSendOutcome.Failed -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeFfiError.allocationSize(value.`error`)
+                + FfiConverterOptionalTypeStagedFile.allocationSize(value.`restaged`)
+            )
+        }
+    }
+
+    override fun write(value: AttachmentSendOutcome, buf: ByteBuffer) {
+        when(value) {
+            is AttachmentSendOutcome.Sent -> {
+                buf.putInt(1)
+                Unit
+            }
+            is AttachmentSendOutcome.Failed -> {
+                buf.putInt(2)
+                FfiConverterTypeFfiError.write(value.`error`, buf)
+                FfiConverterOptionalTypeStagedFile.write(value.`restaged`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
 
 
 /**
@@ -5836,6 +5913,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
         } else {
             buf.put(1)
             FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeStagedFile: FfiConverterRustBuffer<StagedFile?> {
+    override fun read(buf: ByteBuffer): StagedFile? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeStagedFile.read(buf)
+    }
+
+    override fun allocationSize(value: StagedFile?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeStagedFile.allocationSize(value)
+        }
+    }
+
+    override fun write(value: StagedFile?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeStagedFile.write(value, buf)
         }
     }
 }
