@@ -41,7 +41,17 @@
   // this exact class of bug has shipped twice already).
 
   import { onMount } from "svelte";
-  import { roomInfo, type RoomInfo } from "$lib/ipc";
+  import {
+    roomInfo,
+    setRoomNotificationMode,
+    setRoomPinned,
+    type NotificationMode,
+    type RoomInfo,
+    type RoomMember,
+  } from "$lib/ipc";
+  import { accountStore } from "$lib/stores/account.svelte";
+  import { safetyStore } from "$lib/stores/safety.svelte";
+  import { block, report, unblock, type ReportSubject } from "$lib/safety";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
@@ -53,6 +63,10 @@
   import RoomIdentityHeader from "./roster/RoomIdentityHeader.svelte";
   import RuntimeRows from "./roster/RuntimeRows.svelte";
   import LeaveRoomConfirm from "./LeaveRoomConfirm.svelte";
+  import RoomNotificationsSection from "./RoomNotificationsSection.svelte";
+  import MemberActions from "./safety/MemberActions.svelte";
+  import ReportSheet from "./safety/ReportSheet.svelte";
+  import { memberIsBlocked, memberName } from "./safety/memberActions";
 
   /**
    * `modal` is set only in the overlay geometry (`+page.svelte`'s
@@ -89,6 +103,14 @@
   let loading = $state(true);
   let copied = $state(false);
   let confirmsLeave = $state(false);
+  /** The member whose actions are open. */
+  let actingOn = $state<RoomMember | null>(null);
+  /** What the report sheet is about, when it is open. */
+  let reporting = $state<ReportSubject | null>(null);
+  /** Said under the member list when a block or unblock was refused. */
+  let safetyFailure = $state<string | null>(null);
+  /** Members unblocked from here, whose own `isIgnored` flag has not caught up yet. */
+  let unblockedHere = $state<ReadonlySet<string>>(new Set());
 
   onMount(() => {
     if (modal) panelRoot?.focus();
@@ -112,6 +134,63 @@
         )
       : [],
   );
+
+  /** Reloads the room's info after a write, whatever its outcome, so a refused write snaps back. */
+  async function reload(): Promise<void> {
+    try {
+      info = await roomInfo(roomId);
+    } catch (err) {
+      console.error("failed to reload room info", roomId, err);
+    }
+  }
+
+  /** Optimistic: show the new value, write it, then take the room's word for it (iOS `:363-397`). */
+  async function changeMode(mode: NotificationMode): Promise<void> {
+    if (info) info = { ...info, notifications: mode };
+    try {
+      await setRoomNotificationMode(roomId, mode);
+    } catch (err) {
+      console.error("failed to set notification mode", roomId, err);
+    }
+    await reload();
+  }
+
+  async function changePinned(pinned: boolean): Promise<void> {
+    if (info) info = { ...info, pinned };
+    try {
+      await setRoomPinned(roomId, pinned);
+    } catch (err) {
+      console.error("failed to pin or unpin", roomId, err);
+    }
+    await reload();
+  }
+
+  async function blockMember(member: RoomMember): Promise<void> {
+    safetyFailure = null;
+    const refused = await block(member.userId);
+    if (refused !== null) {
+      // The actions close so the refusal, said under the list, is seen (iOS `:310-318`).
+      safetyFailure = refused;
+      actingOn = null;
+      return;
+    }
+    const next = new Set(unblockedHere);
+    next.delete(member.userId);
+    unblockedHere = next;
+    actingOn = null;
+  }
+
+  async function unblockMember(member: RoomMember): Promise<void> {
+    safetyFailure = null;
+    const refused = await unblock(member.userId);
+    if (refused !== null) {
+      safetyFailure = refused;
+      actingOn = null;
+      return;
+    }
+    unblockedHere = new Set(unblockedHere).add(member.userId);
+    actingOn = null;
+  }
 
   /**
    * Copies the room id to the clipboard, via the standard `navigator.clipboard`
@@ -218,6 +297,13 @@
       </div>
     {/if}
 
+    <RoomNotificationsSection
+      mode={info.notifications}
+      pinned={info.pinned}
+      onMode={(mode) => void changeMode(mode)}
+      onPinned={(pinned) => void changePinned(pinned)}
+    />
+
     {#if info.canonicalAlias || info.altAliases.length > 0}
       <!--
         No "Address"/"Alternative addresses" heading (spec §5.2): the
@@ -299,12 +385,22 @@
             {member}
             avatarUrl={member.avatarUrl ? memberAvatarCache.get(member.avatarUrl) : null}
             onAvatarFailed={() => member.avatarUrl && memberAvatarCache.markFailed(member.avatarUrl)}
+            blocked={memberIsBlocked(member, safetyStore.blocked, unblockedHere)}
+            onActions={accountStore.account !== null && member.userId !== accountStore.account.userId
+              ? () => {
+                  safetyFailure = null;
+                  actingOn = member;
+                }
+              : undefined}
           />
         {/each}
       </ul>
+      {#if safetyFailure !== null}
+        <p role="alert" class="mt-2 text-ui text-danger">{safetyFailure}</p>
+      {/if}
     </div>
 
-    <div class="shrink-0 border-t border-border px-4 py-3">
+    <div class="flex shrink-0 items-center gap-4 border-t border-border px-4 py-3">
       <button
         type="button"
         onclick={() => (confirmsLeave = true)}
@@ -312,7 +408,38 @@
       >
         Leave room
       </button>
+      <button
+        type="button"
+        onclick={() => (reporting = { kind: "room", roomId: currentRoomId, name: info?.identity.name ?? currentRoomId })}
+        title="Reports this room to your homeserver's administrators"
+        class="rounded-control py-1 text-ui text-danger transition-colors hover:underline"
+      >
+        Report room…
+      </button>
     </div>
+    {#if actingOn !== null}
+      {@const member = actingOn}
+      <MemberActions
+        {member}
+        blocked={memberIsBlocked(member, safetyStore.blocked, unblockedHere)}
+        onBlock={() => blockMember(member)}
+        onUnblock={() => unblockMember(member)}
+        onReport={() => {
+          reporting = { kind: "user", userId: member.userId, name: memberName(member), isAgent: member.isAgent };
+          actingOn = null;
+        }}
+        onCancel={() => (actingOn = null)}
+      />
+    {/if}
+    {#if reporting !== null}
+      {@const subject = reporting}
+      <ReportSheet
+        {subject}
+        isBlocked={(userId) => safetyStore.isBlocked(userId)}
+        onSend={(reason, alsoBlock) => report(subject, reason, alsoBlock)}
+        onClose={() => (reporting = null)}
+      />
+    {/if}
     {#if confirmsLeave}
       <LeaveRoomConfirm
         roomName={info.name}

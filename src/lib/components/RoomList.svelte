@@ -45,8 +45,12 @@
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import ArrangementMenu from "./roster/ArrangementMenu.svelte";
   import RoomRow from "./roster/RoomRow.svelte";
+  import RowMenu from "./roster/RowMenu.svelte";
+  import { rowMenuItems, type RowMenuItem } from "./roster/rowMenu";
+  import { toggleMute, togglePin } from "./roomSettings";
   import RosterSectionHeading from "./roster/RosterSectionHeading.svelte";
   import {
+    roomInfo,
     rosterSections,
     type AgentState,
     type RosterSection,
@@ -63,6 +67,45 @@
   let { onSelect }: { onSelect?: () => void } = $props();
 
   const avatarCache = createAvatarCache();
+
+  /** The open row menu, if any: which room, where, and what it offers. */
+  let menu = $state<{ roomId: string; at: { x: number; y: number }; items: RowMenuItem[] } | null>(null);
+  /** Only the newest request may open the menu. */
+  let menuRequest = 0;
+
+  /**
+   * Opens a row's menu. A joined room is asked what it is set to first (`room_info`), so the
+   * menu says "Unmute" or "Unpin" truthfully; when that fails it says "Mute" and "Pin", and the
+   * toggle then does nothing, as on iOS. A room with nothing to offer opens no menu.
+   */
+  async function openMenu(roomId: string, at: { x: number; y: number }): Promise<void> {
+    const entry = sections.flatMap((s) => s.rows).find((e) => e.row.room.id === roomId);
+    if (!entry) return;
+    const mine = ++menuRequest;
+    const info =
+      entry.row.affordance === "compose"
+        ? await roomInfo(roomId)
+            .then((i) => ({ notifications: i.notifications, pinned: i.pinned }))
+            .catch(() => null)
+        : null;
+    if (mine !== menuRequest) return;
+    const items = rowMenuItems(entry.row.affordance, info);
+    menu = items.length === 0 ? null : { roomId, at, items };
+  }
+
+  function closeMenu(): void {
+    menuRequest += 1;
+    menu = null;
+  }
+
+  async function chooseMenuItem(id: RowMenuItem["id"]): Promise<void> {
+    const roomId = menu?.roomId;
+    closeMenu();
+    if (!roomId) return;
+    if (id === "mute") await toggleMute(roomId);
+    else if (id === "pin") await togglePin(roomId);
+    else await roomsStore.declineInvitation(roomId).catch((err: unknown) => console.error("decline failed", err));
+  }
 
   /**
    * Handles a row click: select the room if it isn't already the selected
@@ -180,9 +223,14 @@
           {now}
           onSelect={chooseRoom}
           onAvatarFailed={(roomId) => avatarCache.markFailed(roomId)}
+          onMenu={(id, at) => void openMenu(id, at)}
         />
       {/each}
     {/each}
   {/if}
   </div>
 </nav>
+
+{#if menu !== null}
+  <RowMenu items={menu.items} at={menu.at} onChoose={(id) => void chooseMenuItem(id)} onClose={closeMenu} />
+{/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Mentionable } from "$lib/ipc";
   import { mentionLabel } from "../mentions";
+  import AgentTag from "../AgentTag.svelte";
 
   /**
    * The mention autocomplete.
@@ -53,7 +54,7 @@
           </span>
         {/if}
         {#if member.isAgent}
-          <span class="ml-auto shrink-0 rounded-pill bg-accent-soft px-1.5 text-label text-accent">Agent</span>
+          <AgentTag />
         {/if}
       </button>
     </li>
