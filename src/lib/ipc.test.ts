@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const { deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
+const { agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceSelect, spacesList } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -142,5 +142,24 @@ describe("message edit and delete", () => {
     invokeMock.mockResolvedValue(undefined);
     await editMessage("!r:x", "$e", "fixed");
     expect(invokeMock).toHaveBeenCalledWith("edit_message", { roomId: "!r:x", eventId: "$e", body: "fixed" });
+  });
+});
+
+describe("agent avatar", () => {
+  it("agentAvatarStyle invokes agent_avatar_style with roomId", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue({ ground: "accent", ink: "accentContent", variant: 0 });
+    await expect(agentAvatarStyle("!a:x")).resolves.toEqual({
+      ground: "accent",
+      ink: "accentContent",
+      variant: 0,
+    });
+    expect(invokeMock).toHaveBeenCalledWith("agent_avatar_style", { roomId: "!a:x" });
+  });
+  it("agentAvatarVariants invokes agent_avatar_variants", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    await agentAvatarVariants();
+    expect(invokeMock).toHaveBeenCalledWith("agent_avatar_variants");
   });
 });

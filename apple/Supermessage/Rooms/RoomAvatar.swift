@@ -43,7 +43,7 @@ struct RoomAvatar: View {
         if let avatarURI, let image = RoomRowView.image(from: avatarURI) {
             image.resizable().scaledToFill().clipShape(shape)
         } else if describesAgent {
-            let style = AgentAvatarStyle.forRoom(roomId)
+            let style = agentAvatarStyle(roomId: roomId)
             ZStack {
                 shape.fill(Self.colour(style.ground))
                 shape.stroke(Theme.border, lineWidth: style.ground == .surfaceRaised ? 1 : 0)
@@ -89,7 +89,7 @@ struct RoomAvatar: View {
         }
     }
 
-    static func colour(_ role: AgentAvatarStyle.Role) -> Color {
+    static func colour(_ role: AvatarRole) -> Color {
         switch role {
         case .accent: return Theme.accent
         case .accentSoft: return Theme.accentSoft

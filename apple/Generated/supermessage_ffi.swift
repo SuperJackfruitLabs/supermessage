@@ -4019,6 +4019,31 @@ fileprivate struct FfiConverterSequenceTypeTimelineDiffOp: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeAgentAvatarStyle: FfiConverterRustBuffer {
+    typealias SwiftType = [AgentAvatarStyle]
+
+    public static func write(_ value: [AgentAvatarStyle], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAgentAvatarStyle.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AgentAvatarStyle] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AgentAvatarStyle]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAgentAvatarStyle.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer {
     typealias SwiftType = [Mentionable]
 
@@ -4350,6 +4375,30 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
 
 
 
+
+
+/**
+ * The generated tile for the room `room_id` — see `core::agent_avatar`. A
+ * free function for the same reason as `peer_color_index`: it touches no
+ * session state, and every host must draw the same tile for the same room.
+ */
+public func agentAvatarStyle(roomId: String) -> AgentAvatarStyle {
+    return try!  FfiConverterTypeAgentAvatarStyle_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_agent_avatar_style(
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+/**
+ * Every avatar tile, in `variant` order. A free function for the same
+ * reason as `peer_color_index`.
+ */
+public func agentAvatarVariants() -> [AgentAvatarStyle] {
+    return try!  FfiConverterSequenceTypeAgentAvatarStyle.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_agent_avatar_variants($0
+    )
+})
+}
 /**
  * A playing note's position as the clock under it reads — `"0:06"`,
  * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
@@ -4692,6 +4741,12 @@ private var initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_supermessage_ffi_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_agent_avatar_style() != 40859) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_agent_avatar_variants() != 3545) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901) {
         return InitializationResult.apiChecksumMismatch

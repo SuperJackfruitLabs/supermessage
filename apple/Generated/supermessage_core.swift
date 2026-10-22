@@ -725,6 +725,102 @@ public func FfiConverterTypeAgentAvatar_lower(_ value: AgentAvatar) -> RustBuffe
 
 
 /**
+ * One tile: what it is filled with, the ink drawn on it, and which of the
+ * [`VARIANTS`] it is.
+ */
+public struct AgentAvatarStyle {
+    /**
+     * What the tile is filled with.
+     */
+    public var ground: AvatarRole
+    /**
+     * The glyph or initial drawn on it.
+     */
+    public var ink: AvatarRole
+    /**
+     * Index into [`VARIANTS`].
+     */
+    public var variant: UInt8
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What the tile is filled with.
+         */ground: AvatarRole, 
+        /**
+         * The glyph or initial drawn on it.
+         */ink: AvatarRole, 
+        /**
+         * Index into [`VARIANTS`].
+         */variant: UInt8) {
+        self.ground = ground
+        self.ink = ink
+        self.variant = variant
+    }
+}
+
+
+
+extension AgentAvatarStyle: Equatable, Hashable {
+    public static func ==(lhs: AgentAvatarStyle, rhs: AgentAvatarStyle) -> Bool {
+        if lhs.ground != rhs.ground {
+            return false
+        }
+        if lhs.ink != rhs.ink {
+            return false
+        }
+        if lhs.variant != rhs.variant {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(ground)
+        hasher.combine(ink)
+        hasher.combine(variant)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAgentAvatarStyle: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AgentAvatarStyle {
+        return
+            try AgentAvatarStyle(
+                ground: FfiConverterTypeAvatarRole.read(from: &buf), 
+                ink: FfiConverterTypeAvatarRole.read(from: &buf), 
+                variant: FfiConverterUInt8.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AgentAvatarStyle, into buf: inout [UInt8]) {
+        FfiConverterTypeAvatarRole.write(value.ground, into: &buf)
+        FfiConverterTypeAvatarRole.write(value.ink, into: &buf)
+        FfiConverterUInt8.write(value.variant, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentAvatarStyle_lift(_ buf: RustBuffer) throws -> AgentAvatarStyle {
+    return try FfiConverterTypeAgentAvatarStyle.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentAvatarStyle_lower(_ value: AgentAvatarStyle) -> RustBuffer {
+    return FfiConverterTypeAgentAvatarStyle.lower(value)
+}
+
+
+/**
  * What an `m.audio` event says about itself beyond being a file: the
  * MSC3245 voice flag, the length, and the MSC3246 waveform — already
  * normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
@@ -4246,6 +4342,12 @@ public struct RosterRow {
      * `NeedsYou` is shown regardless: owing an answer is not about agents.
      */
     public var describesAgent: Bool
+    /**
+     * The generated tile for an agent's room: `Some` exactly when
+     * `describes_agent`. It rides on the row for the same reason `state`
+     * does — a renderer cannot ask the core per row.
+     */
+    public var avatar: AgentAvatarStyle?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4256,10 +4358,16 @@ public struct RosterRow {
          * says nothing a reader wants to know. See [`describes_agent`].
          *
          * `NeedsYou` is shown regardless: owing an answer is not about agents.
-         */describesAgent: Bool) {
+         */describesAgent: Bool, 
+        /**
+         * The generated tile for an agent's room: `Some` exactly when
+         * `describes_agent`. It rides on the row for the same reason `state`
+         * does — a renderer cannot ask the core per row.
+         */avatar: AgentAvatarStyle? = nil) {
         self.row = row
         self.state = state
         self.describesAgent = describesAgent
+        self.avatar = avatar
     }
 }
 
@@ -4276,6 +4384,9 @@ extension RosterRow: Equatable, Hashable {
         if lhs.describesAgent != rhs.describesAgent {
             return false
         }
+        if lhs.avatar != rhs.avatar {
+            return false
+        }
         return true
     }
 
@@ -4283,6 +4394,7 @@ extension RosterRow: Equatable, Hashable {
         hasher.combine(row)
         hasher.combine(state)
         hasher.combine(describesAgent)
+        hasher.combine(avatar)
     }
 }
 
@@ -4296,7 +4408,8 @@ public struct FfiConverterTypeRosterRow: FfiConverterRustBuffer {
             try RosterRow(
                 row: FfiConverterTypeRoomRow.read(from: &buf), 
                 state: FfiConverterTypeAgentState.read(from: &buf), 
-                describesAgent: FfiConverterBool.read(from: &buf)
+                describesAgent: FfiConverterBool.read(from: &buf), 
+                avatar: FfiConverterOptionTypeAgentAvatarStyle.read(from: &buf)
         )
     }
 
@@ -4304,6 +4417,7 @@ public struct FfiConverterTypeRosterRow: FfiConverterRustBuffer {
         FfiConverterTypeRoomRow.write(value.row, into: &buf)
         FfiConverterTypeAgentState.write(value.state, into: &buf)
         FfiConverterBool.write(value.describesAgent, into: &buf)
+        FfiConverterOptionTypeAgentAvatarStyle.write(value.avatar, into: &buf)
     }
 }
 
@@ -7029,6 +7143,108 @@ extension AgentState: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * A palette role a tile is drawn in.
+ */
+
+public enum AvatarRole {
+    
+    case accent
+    case accentSoft
+    case accentContent
+    case ok
+    case contentMuted
+    case surface
+    case surfaceRaised
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAvatarRole: FfiConverterRustBuffer {
+    typealias SwiftType = AvatarRole
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AvatarRole {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .accent
+        
+        case 2: return .accentSoft
+        
+        case 3: return .accentContent
+        
+        case 4: return .ok
+        
+        case 5: return .contentMuted
+        
+        case 6: return .surface
+        
+        case 7: return .surfaceRaised
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AvatarRole, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .accent:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .accentSoft:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .accentContent:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .ok:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .contentMuted:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .surface:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .surfaceRaised:
+            writeInt(&buf, Int32(7))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAvatarRole_lift(_ buf: RustBuffer) throws -> AvatarRole {
+    return try FfiConverterTypeAvatarRole.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAvatarRole_lower(_ value: AvatarRole) -> RustBuffer {
+    return FfiConverterTypeAvatarRole.lower(value)
+}
+
+
+
+extension AvatarRole: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * The outcome of the whole fallback chain — what a host switches on.
  *
  * `Rendered` is much larger than the two fallbacks, and stays unboxed on
@@ -9369,6 +9585,30 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterData.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeAgentAvatarStyle: FfiConverterRustBuffer {
+    typealias SwiftType = AgentAvatarStyle?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAgentAvatarStyle.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAgentAvatarStyle.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

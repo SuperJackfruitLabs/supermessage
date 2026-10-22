@@ -1187,6 +1187,55 @@ public object FfiConverterTypeAgentAvatar: FfiConverterRustBuffer<AgentAvatar> {
 
 
 /**
+ * One tile: what it is filled with, the ink drawn on it, and which of the
+ * [`VARIANTS`] it is.
+ */
+data class AgentAvatarStyle (
+    /**
+     * What the tile is filled with.
+     */
+    var `ground`: AvatarRole, 
+    /**
+     * The glyph or initial drawn on it.
+     */
+    var `ink`: AvatarRole, 
+    /**
+     * Index into [`VARIANTS`].
+     */
+    var `variant`: kotlin.UByte
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAgentAvatarStyle: FfiConverterRustBuffer<AgentAvatarStyle> {
+    override fun read(buf: ByteBuffer): AgentAvatarStyle {
+        return AgentAvatarStyle(
+            FfiConverterTypeAvatarRole.read(buf),
+            FfiConverterTypeAvatarRole.read(buf),
+            FfiConverterUByte.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AgentAvatarStyle) = (
+            FfiConverterTypeAvatarRole.allocationSize(value.`ground`) +
+            FfiConverterTypeAvatarRole.allocationSize(value.`ink`) +
+            FfiConverterUByte.allocationSize(value.`variant`)
+    )
+
+    override fun write(value: AgentAvatarStyle, buf: ByteBuffer) {
+            FfiConverterTypeAvatarRole.write(value.`ground`, buf)
+            FfiConverterTypeAvatarRole.write(value.`ink`, buf)
+            FfiConverterUByte.write(value.`variant`, buf)
+    }
+}
+
+
+
+/**
  * What an `m.audio` event says about itself beyond being a file: the
  * MSC3245 voice flag, the length, and the MSC3246 waveform — already
  * normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
@@ -2984,7 +3033,13 @@ data class RosterRow (
      *
      * `NeedsYou` is shown regardless: owing an answer is not about agents.
      */
-    var `describesAgent`: kotlin.Boolean
+    var `describesAgent`: kotlin.Boolean, 
+    /**
+     * The generated tile for an agent's room: `Some` exactly when
+     * `describes_agent`. It rides on the row for the same reason `state`
+     * does — a renderer cannot ask the core per row.
+     */
+    var `avatar`: AgentAvatarStyle? = null
 ) {
     
     companion object
@@ -2999,19 +3054,22 @@ public object FfiConverterTypeRosterRow: FfiConverterRustBuffer<RosterRow> {
             FfiConverterTypeRoomRow.read(buf),
             FfiConverterTypeAgentState.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeAgentAvatarStyle.read(buf),
         )
     }
 
     override fun allocationSize(value: RosterRow) = (
             FfiConverterTypeRoomRow.allocationSize(value.`row`) +
             FfiConverterTypeAgentState.allocationSize(value.`state`) +
-            FfiConverterBoolean.allocationSize(value.`describesAgent`)
+            FfiConverterBoolean.allocationSize(value.`describesAgent`) +
+            FfiConverterOptionalTypeAgentAvatarStyle.allocationSize(value.`avatar`)
     )
 
     override fun write(value: RosterRow, buf: ByteBuffer) {
             FfiConverterTypeRoomRow.write(value.`row`, buf)
             FfiConverterTypeAgentState.write(value.`state`, buf)
             FfiConverterBoolean.write(value.`describesAgent`, buf)
+            FfiConverterOptionalTypeAgentAvatarStyle.write(value.`avatar`, buf)
     }
 }
 
@@ -4388,6 +4446,44 @@ public object FfiConverterTypeAgentState: FfiConverterRustBuffer<AgentState> {
     override fun allocationSize(value: AgentState) = 4UL
 
     override fun write(value: AgentState, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * A palette role a tile is drawn in.
+ */
+
+enum class AvatarRole {
+    
+    ACCENT,
+    ACCENT_SOFT,
+    ACCENT_CONTENT,
+    OK,
+    CONTENT_MUTED,
+    SURFACE,
+    SURFACE_RAISED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAvatarRole: FfiConverterRustBuffer<AvatarRole> {
+    override fun read(buf: ByteBuffer) = try {
+        AvatarRole.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: AvatarRole) = 4UL
+
+    override fun write(value: AvatarRole, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -6609,6 +6705,38 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
         } else {
             buf.put(1)
             FfiConverterByteArray.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeAgentAvatarStyle: FfiConverterRustBuffer<AgentAvatarStyle?> {
+    override fun read(buf: ByteBuffer): AgentAvatarStyle? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeAgentAvatarStyle.read(buf)
+    }
+
+    override fun allocationSize(value: AgentAvatarStyle?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeAgentAvatarStyle.allocationSize(value)
+        }
+    }
+
+    override fun write(value: AgentAvatarStyle?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeAgentAvatarStyle.write(value, buf)
         }
     }
 }

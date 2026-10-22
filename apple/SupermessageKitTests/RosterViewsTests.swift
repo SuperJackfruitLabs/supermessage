@@ -175,31 +175,14 @@ struct RosterViewsTests {
 
     // --- avatar tile -------------------------------------------------------
 
-    @Test("a room's tile is the same every time it is asked for")
-    func avatarIsDeterministic() {
-        // Pinned values, not just "equal to itself": `Hasher` would pass a
-        // same-process equality check and still repaint every room on the
-        // next launch.
-        #expect(AgentAvatarStyle.fnv1a("") == 0xcbf2_9ce4_8422_2325)
-        #expect(AgentAvatarStyle.fnv1a("a") == 0xaf63_dc4c_8601_ec8c)
-        #expect(AgentAvatarStyle.forRoom("!atlas:example.org") == AgentAvatarStyle.forRoom("!atlas:example.org"))
-    }
-
-    @Test("tiles spread across the palette rather than collapsing onto one")
-    func avatarSpreads() {
-        let ids = (0..<60).map { "!room\($0):example.org" }
-        let used = Set(ids.map { AgentAvatarStyle.variants.firstIndex(of: AgentAvatarStyle.forRoom($0))! })
-        #expect(used.count == AgentAvatarStyle.variants.count)
-    }
-
-    @Test("no tile draws amber or red, and no tile is ink on its own ground")
-    func avatarPalette() {
-        for style in AgentAvatarStyle.variants {
-            #expect(style.ground != style.ink)
-        }
-        let roles = Set(AgentAvatarStyle.Role.allCases.map(\.rawValue))
-        #expect(!roles.contains("signal"))
-        #expect(!roles.contains("danger"))
+    @Test("the tile is the core's")
+    func avatarIsTheCores() {
+        // The rules and their falsification live in the core's tests; this
+        // is the boundary check, and what catches a checksum mismatch at run time.
+        let style = agentAvatarStyle(roomId: "!atlas:example.org")
+        #expect(style.variant == 3)
+        #expect(style.ground == .surfaceRaised)
+        #expect(style.ink == .accent)
     }
 
     // --- first-run demo ----------------------------------------------------

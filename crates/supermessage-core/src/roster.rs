@@ -82,6 +82,12 @@ pub struct RosterRow {
     ///
     /// `NeedsYou` is shown regardless: owing an answer is not about agents.
     pub describes_agent: bool,
+    /// The generated tile for an agent's room: `Some` exactly when
+    /// `describes_agent`. It rides on the row for the same reason `state`
+    /// does — a renderer cannot ask the core per row.
+    #[uniffi(default = None)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<crate::agent_avatar::AgentAvatarStyle>,
 }
 
 /// Whether a room reads as an agent's, as far as the roster can tell.
@@ -171,10 +177,14 @@ pub fn sections(
     let mut by_recency: Vec<RosterRow> = rows
         .iter()
         .filter(|row| shows_invitations || !is_invitation(row))
-        .map(|row| RosterRow {
-            state: state_for(row, now_ms),
-            describes_agent: describes_agent(row),
-            row: row.clone(),
+        .map(|row| {
+            let describes = describes_agent(row);
+            RosterRow {
+                state: state_for(row, now_ms),
+                describes_agent: describes,
+                avatar: describes.then(|| crate::agent_avatar::style_for_room(&row.room.id)),
+                row: row.clone(),
+            }
         })
         .collect();
     by_recency.sort_by(|a, b| {
@@ -326,6 +336,28 @@ mod tests {
         row.room.membership = Membership::Invited;
         row.affordance = crate::invitation::room_affordance(Membership::Invited);
         row
+    }
+
+    /// Mutation seen failing: setting `avatar` unconditionally.
+    #[test]
+    fn an_agents_row_carries_its_tile_and_a_peoples_row_none() {
+        let agent = sections(
+            &[on_host("!h:x", "foundry", Some(NOW))],
+            RosterView::Recent,
+            false,
+            NOW,
+        );
+        assert_eq!(
+            agent[0].rows[0].avatar,
+            Some(crate::agent_avatar::style_for_room("!h:x"))
+        );
+        let people = sections(
+            &[row("research", Some(NOW))],
+            RosterView::Recent,
+            false,
+            NOW,
+        );
+        assert_eq!(people[0].rows[0].avatar, None);
     }
 
     #[test]

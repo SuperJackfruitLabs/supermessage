@@ -1675,6 +1675,24 @@ export type RosterView = "recent" | "waiting" | "machine";
  */
 export type AgentState = "needsYou" | "active" | "idle" | "quiet";
 
+/** A palette role an agent tile is drawn in. Never amber, never red. */
+export type AvatarRole =
+  | "accent"
+  | "accentSoft"
+  | "accentContent"
+  | "ok"
+  | "contentMuted"
+  | "surface"
+  | "surfaceRaised";
+
+/** The generated tile of an agent's room — see `core::agent_avatar`. */
+export interface AgentAvatarStyle {
+  ground: AvatarRole;
+  ink: AvatarRole;
+  /** Index into the six variants. */
+  variant: number;
+}
+
 /** One roster row, with the state the roster may say about it. */
 export interface RosterRow {
   row: RoomRow;
@@ -1686,6 +1704,11 @@ export interface RosterRow {
    * regardless. Mirrors `core::roster::RosterRow::describes_agent`.
    */
   describesAgent: boolean;
+  /**
+   * The generated tile for an agent's room; present exactly when
+   * `describesAgent`. Mirrors `core::roster::RosterRow::avatar`.
+   */
+  avatar?: AgentAvatarStyle;
 }
 
 /** One section of the roster. */
@@ -1729,6 +1752,16 @@ export async function rosterHiddenInvitations(
   showsInvitations: boolean,
 ): Promise<number> {
   return invoke<number>("roster_hidden_invitations", { rows, showsInvitations });
+}
+
+/** The generated tile for a room, the same on every device. */
+export async function agentAvatarStyle(roomId: string): Promise<AgentAvatarStyle> {
+  return invoke<AgentAvatarStyle>("agent_avatar_style", { roomId });
+}
+
+/** Every avatar tile, in `variant` order. */
+export async function agentAvatarVariants(): Promise<AgentAvatarStyle[]> {
+  return invoke<AgentAvatarStyle[]>("agent_avatar_variants");
 }
 
 /**
