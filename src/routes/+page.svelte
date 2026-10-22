@@ -690,7 +690,7 @@
         of the room pane — so when the roster is showing, the rail is beside
         it, and when the room pane is showing, both are gone. The reader
         reaches the rail exactly the way they already reach the roster: the
-        header's "‹ Rooms" button.
+        header's "‹ Chats" button.
 
         The alternative — hiding the rail below 640px while keeping the
         filter — is the one thing §7 rules out by name: a space selected at
@@ -883,7 +883,7 @@
 
                   A word, not just the `‹`: the glyph is `aria-hidden`
                   decoration in the same mono register as the composer's
-                  `›` prompt, and "Rooms" is what actually names the
+                  `›` prompt, and "Chats" is what actually names the
                   destination. `-ml-1` pulls its padding back so the label
                   optically aligns with the header's own left edge.
 
@@ -899,7 +899,7 @@
                   class="-ml-1 flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
                 >
                   <span aria-hidden="true">‹</span>
-                  Rooms
+                  Chats
                 </button>
               {/if}
               {#if headerAvatar}

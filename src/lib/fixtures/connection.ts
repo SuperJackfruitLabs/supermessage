@@ -4,9 +4,9 @@ import type { ConnectionState } from "$lib/ipc";
  * What the connection line can be asked to show.
  *
  * `ConnectionState` is a four-member union — `offline`, `syncing`, `live`,
- * `error` — and the banner renders three of them and deliberately renders
+ * `error` — and the line shows three of them and deliberately shows
  * *nothing* for the fourth. All four are here, including `live`, because a
- * banner that appears when the connection is fine is the failure mode worth
+ * line that appears when the connection is fine is the failure mode worth
  * being able to look at.
  */
 export interface ConnectionScenario {
@@ -35,17 +35,4 @@ export const connectionSyncing = connection({ state: "syncing" });
 export const connectionError = connection({
   state: "error",
   message: "the homeserver closed the connection",
-});
-
-/**
- * A core message long enough to test the strip's single-line geometry.
- *
- * The banner is `h-6` — 24px, one line — and the message comes from the
- * core, so its length is not something this app controls.
- */
-export const connectionErrorLongMessage = connection({
-  state: "error",
-  message:
-    "the homeserver closed the connection while a sliding-sync request was " +
-    "in flight and the retry budget for this session is exhausted",
 });

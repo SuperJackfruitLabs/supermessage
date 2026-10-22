@@ -19,12 +19,18 @@
   const words = $derived(connectionSubtitle(state));
 </script>
 
-{#if words}
-  <p
-    class="text-meta text-content-muted"
-    role="status"
-    title={message ?? undefined}
-  >
+<!--
+  The status element stays mounted in every state and only its text changes,
+  so a change is announced (an element inserted together with its text often
+  is not). Live renders it empty, which shows nothing.
+
+  The core's detail is in `title` for sighted hover and in a visually hidden
+  span for assistive tech. A span rather than `aria-description`, which
+  WebKitGTK's accessibility bridge does not reliably expose.
+-->
+<p class="text-meta text-content-muted" role="status" title={words ? (message ?? undefined) : undefined}>
+  {#if words}
     {words}
-  </p>
-{/if}
+    {#if message}<span class="sr-only">. {message}</span>{/if}
+  {/if}
+</p>
