@@ -103,3 +103,15 @@ internal fun Undecryptable() {
         }
     }
 }
+
+/** A tapped quote's parent, lit: the reply above it, the message it quotes below, washed in accentSoft. */
+@Preview(name = "Quote highlighted", showBackground = true, heightDp = 260)
+@Composable
+internal fun QuoteHighlighted() {
+    PreviewGround(width = 411.dp) {
+        Column {
+            TimelineRow(row = PreviewFixtures.reply, now = NOW, onQuoteTap = {})
+            TimelineRow(row = PreviewFixtures.message, now = NOW, highlighted = true)
+        }
+    }
+}

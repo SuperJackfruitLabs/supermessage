@@ -1,5 +1,19 @@
 package dev.supermessage
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.composed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.onClick
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -123,6 +137,8 @@ fun TimelineRow(
     continuesRun: Boolean = false,
     endsRun: Boolean = true,
     readers: List<ReaderFace> = emptyList(),
+    highlighted: Boolean = false,
+    onQuoteTap: (() -> Unit)? = null,
     attribution: String = "",
     imageUri: (eventId: String) -> String? = { null },
     faceUri: (mxcUri: String) -> String? = { null },
@@ -149,6 +165,8 @@ fun TimelineRow(
                 continuesRun = continuesRun,
                 endsRun = endsRun,
                 readers = readers,
+                highlighted = highlighted,
+                onQuoteTap = onQuoteTap,
                 faceUri = faceUri,
                 loadFace = loadFace,
                 onReact = onReact,
@@ -339,6 +357,8 @@ private fun MessageBlock(
     continuesRun: Boolean,
     endsRun: Boolean,
     readers: List<ReaderFace>,
+    highlighted: Boolean,
+    onQuoteTap: (() -> Unit)?,
     faceUri: (mxcUri: String) -> String?,
     loadFace: suspend (mxcUri: String) -> Unit,
     onReact: ((String) -> Unit)? = null,
@@ -348,10 +368,10 @@ private fun MessageBlock(
     val sendState = SendState(row.item.sendState)
     val edited = row.item.edited
 
+    Box(modifier = modifier.fillMaxWidth().padding(top = if (continuesRun) RunGap else TurnGap)) {
+    RowHighlight(highlighted)
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = if (continuesRun) RunGap else TurnGap),
+        modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
     ) {
         if (!isOwn && !continuesRun) {
@@ -381,7 +401,7 @@ private fun MessageBlock(
             EditedMarker()
         }
 
-        row.replyQuote?.let { ReplyQuoteBlock(it) }
+        row.replyQuote?.let { ReplyQuoteBlock(it, onTap = onQuoteTap) }
 
         // Listen first, then read: the spoken answer above the words it says.
         spoken?.let { SpokenReply(spoken = it, isOwn = isOwn, modifier = Modifier.padding(bottom = 6.dp)) }
@@ -471,6 +491,40 @@ private fun MessageBlock(
             }
         }
     }
+    }
+}
+
+/** How long a jumped-to message stays lit, `TimelineCollectionView.swift:921-935`. */
+const val QuoteHighlightMs = 1_400L
+
+/**
+ * The jumped-to message's wash: a radius-12 rounded rectangle in `accentSoft`,
+ * inset -8 horizontally, in over 0.15 s and out over 0.8 s
+ * (`TimelineRowView.swift:79-88`). Not in the tree once it has faded.
+ */
+@Composable
+private fun BoxScope.RowHighlight(highlighted: Boolean) {
+    val alpha by animateFloatAsState(
+        targetValue = if (highlighted) 1f else 0f,
+        animationSpec = motion(reducesMotion(), tween(if (highlighted) 150 else 800)),
+        label = "row-highlight",
+    )
+    if (alpha > 0f) {
+        val inset = with(LocalDensity.current) { 8.dp.roundToPx() }
+        Box(
+            Modifier
+                .matchParentSize()
+                .layout { measurable, constraints ->
+                    val wider = measurable.measure(
+                        Constraints.fixed(constraints.maxWidth + 2 * inset, constraints.maxHeight),
+                    )
+                    layout(constraints.maxWidth, constraints.maxHeight) { wider.place(-inset, 0) }
+                }
+                .graphicsLayer { this.alpha = alpha }
+                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp))
+                .testTag("row-highlight"),
+        )
+    }
 }
 
 /**
@@ -496,9 +550,17 @@ private fun quoteRuleColor(quote: ReplyQuoteView): Color {
 }
 
 @Composable
-private fun ReplyQuoteBlock(quote: ReplyQuoteView, modifier: Modifier = Modifier) {
+private fun ReplyQuoteBlock(quote: ReplyQuoteView, onTap: (() -> Unit)?, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.padding(vertical = 2.dp).height(IntrinsicSize.Min),
+        modifier = modifier
+            .testTag("reply-quote")
+            .let {
+                // Tappable only when its parent is loaded; the hint says what a
+                // tap does (`TimelineRowView.swift:538`).
+                if (onTap == null) it else it.quoteTap(onTap)
+            }
+            .padding(vertical = 2.dp)
+            .height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
@@ -974,4 +1036,28 @@ private fun formatBytes(size: ULong): String {
         unitIndex++
     }
     return if (unitIndex == 0) "${value.toInt()} ${units[unitIndex]}" else "%.1f %s".format(value, units[unitIndex])
+}
+
+/**
+ * A tap that leaves the touch alone. A `clickable` here would take the whole
+ * gesture and the row's long press (the menu) and swipes would die on the
+ * quote; this watches the down and up without consuming either, and gives up
+ * once the touch is held as long as a long press or another handler takes it.
+ */
+private fun Modifier.quoteTap(onTap: () -> Unit): Modifier = composed {
+    val latest by rememberUpdatedState(onTap)
+    this
+        .pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() }
+                if (up != null) latest()
+            }
+        }
+        .semantics(mergeDescendants = false) {
+            onClick(label = "Shows the original message") {
+                latest()
+                true
+            }
+        }
 }

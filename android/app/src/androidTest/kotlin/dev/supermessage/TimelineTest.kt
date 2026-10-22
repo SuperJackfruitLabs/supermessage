@@ -5,7 +5,16 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasNoClickAction
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -25,6 +34,8 @@ import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.ReactionDto
+import uniffi.supermessage_core.ReplyQuoteView
+import uniffi.supermessage_core.ReplyToDto
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RichInline
 import uniffi.supermessage_core.TimelineItemDto
@@ -51,13 +62,18 @@ class TimelineTest {
         editable: Boolean = false,
         isOwn: Boolean = false,
         reactions: List<ReactionDto> = emptyList(),
+        quotes: String? = null,
+        readBy: List<String> = emptyList(),
     ): TimelineRowDto {
         val item = TimelineItemDto(
             id = id, eventId = id, kind = "message", msgtype = "m.text", detail = null,
             sender = "@a:x", senderDisplayName = null, senderAvatar = null, body = body,
             formattedBody = null, media = null, customPayload = null, timestampMs = timestampMs,
-            isOwn = isOwn, sendState = null, replyTo = null, edited = false,
-            reactions = reactions, readBy = emptyList(), editable = editable, membershipSubject = null,
+            isOwn = isOwn, sendState = null, edited = false,
+            replyTo = quotes?.let {
+                ReplyToDto(eventId = it, available = true, sender = "@a:x", senderDisplayName = "Sender", excerpt = "quoted", label = null)
+            },
+            reactions = reactions, readBy = readBy, editable = editable, membershipSubject = null,
         )
         return TimelineRowDto(
             item = item,
@@ -70,7 +86,9 @@ class TimelineTest {
             senderShort = "Sender",
             senderInitial = "?",
             membershipVerb = null,
-            replyQuote = null,
+            replyQuote = quotes?.let {
+                ReplyQuoteView.Available(sender = "Sender", excerpt = "quoted", label = null, senderId = "@a:x")
+            },
             canReplyOrReact = canReplyOrReact,
             replyPreview = null,
         )
@@ -577,5 +595,93 @@ class TimelineTest {
 
         assertEquals("1", reactedRow?.item?.id)
         assertEquals("👍", reactedKey)
+    }
+
+    // --- T5: tap a quote ---------------------------------------------------
+
+    /** 40 rows, oldest `r0`; the newest, `r39`, quotes `quotedEventId`. */
+    private fun quoting(quotedEventId: String): List<TimelineRowDto> =
+        (0..39).map {
+            row(
+                id = "r$it", body = "row $it", timestampMs = (it + 1).toULong() * 1_000uL,
+                quotes = if (it == 39) quotedEventId else null,
+            )
+        }
+
+    private fun showQuoting(
+        rows: List<TimelineRowDto>,
+        onReply: (TimelineRowDto) -> Unit = {},
+        onSwipeReply: (TimelineRowDto) -> Unit = {},
+    ) {
+        compose.setContent {
+            CompositionLocalProvider(LocalReduceMotion provides true) {
+                Timeline(
+                    rows = rows, revision = 0uL, typingLine = null, isPaginating = false,
+                    canPaginate = false, onPaginate = {}, onMarkRead = {},
+                    onReply = onReply, onSwipeReply = onSwipeReply,
+                )
+            }
+        }
+    }
+
+    private fun quoteIn(rowTag: String) =
+        compose.onNode(hasTestTag("reply-quote") and hasAnyAncestor(hasTestTag(rowTag)), useUnmergedTree = true)
+
+    @Test
+    fun tappingAQuoteBringsItsParentIntoView() {
+        showQuoting(quoting("r2"))
+        compose.onNodeWithTag("row-r2").assertDoesNotExist()
+        quoteIn("row-r39").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("row-r2").assertIsDisplayed()
+        compose.onNode(hasTestTag("row-highlight") and hasAnyAncestor(hasTestTag("row-r2")), useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun theHighlightFades() {
+        showQuoting(quoting("r2"))
+        compose.mainClock.autoAdvance = false
+        quoteIn("row-r39").performClick()
+        compose.mainClock.advanceTimeBy(300)
+        compose.onNode(hasTestTag("row-highlight") and hasAnyAncestor(hasTestTag("row-r2")), useUnmergedTree = true).assertExists()
+        compose.mainClock.advanceTimeBy(1_500)
+        compose.onNodeWithTag("row-highlight", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun aQuoteWhoseParentIsNotLoadedOffersNoTap() {
+        showQuoting(quoting("\$missing"))
+        quoteIn("row-r39").assertHasNoClickAction()
+    }
+
+    @Test
+    fun aLongPressOnAQuoteStillOpensTheMenu() {
+        showQuoting(quoting("r2"))
+        quoteIn("row-r39").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-menu").assertIsDisplayed()
+        compose.onNodeWithTag("row-r2").assertDoesNotExist()
+    }
+
+    @Test
+    fun aSwipeStartingOnAQuoteStillReplies() {
+        val swiped = mutableListOf<String>()
+        showQuoting(quoting("r2"), onSwipeReply = { swiped += it.item.id })
+        quoteIn("row-r39").performTouchInput { swipeRight(startX = left + 20f, endX = left + 220f) }
+        compose.waitForIdle()
+        assertEquals(listOf("r39"), swiped)
+        compose.onNodeWithTag("row-r2").assertDoesNotExist()
+    }
+
+    /** Timeline hands each row its readers, by id, with the face a sender has shown. */
+    @Test
+    fun timelineGivesEachRowItsReaders() {
+        val ids = listOf("@a:example.org", "@b:example.org", "@c:example.org", "@d:example.org")
+        showQuoting(
+            listOf(row(id = "1", body = "mine", timestampMs = 1_000uL, isOwn = true, readBy = ids)),
+        )
+        compose.onNodeWithTag("reader-stack", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Read by " + uniffi.supermessage_ffi.peopleLabel(ids))
+        compose.onAllNodesWithTag("reader-face", useUnmergedTree = true).assertCountEquals(3)
+        compose.onNodeWithText("+1", useUnmergedTree = true).assertIsDisplayed()
     }
 }

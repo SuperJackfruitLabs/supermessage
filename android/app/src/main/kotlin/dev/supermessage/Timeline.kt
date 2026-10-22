@@ -32,6 +32,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -239,6 +241,18 @@ fun Timeline(
             failedDelete = null
         }
     }
+    // Quote jump: a quote is tappable only when its parent is in the loaded
+    // list (`TimelineCollectionView.swift:590-592`). Keyed by display id, so a
+    // parent folded into a membership run is not a target.
+    var highlightedId by remember { mutableStateOf<String?>(null) }
+    var jumpSerial by remember { mutableStateOf(0) }
+    val reduceMotion = reducesMotion()
+    LaunchedEffect(highlightedId, jumpSerial) {
+        if (highlightedId != null) {
+            delay(QuoteHighlightMs)
+            highlightedId = null
+        }
+    }
     val reveal = remember { TimeReveal() }
     val revealWidthPx = with(LocalDensity.current) { RevealWidthDp.dp.toPx() }
     val clipboard = LocalClipboardManager.current
@@ -249,6 +263,29 @@ fun Timeline(
     // class doc's "Feed order" and "Membership runs" sections.
     val displayRows = remember(revision) { TimelineGrouping.collapseMembershipRuns(rows) }
     val newestFirst = displayRows.asReversed()
+    val idByEventId = remember(revision) {
+        buildMap {
+            for (d in displayRows) if (d is DisplayRow.Row) d.row.item.eventId?.let { put(it, d.id) }
+        }
+    }
+    val liveAtZero = isLive && !liveFinished
+    val liveAtOne = isLive && liveFinished && newestFirst.isNotEmpty()
+    fun jumpTo(id: String) {
+        val position = newestFirst.indexOfFirst { it.id == id }
+        if (position < 0) return
+        val index = position + if (liveAtZero || (liveAtOne && position >= 1)) 1 else 0
+        highlightedId = id
+        jumpSerial++
+        scope.launch {
+            // Bring it in, then nudge it to the middle of the viewport.
+            if (reduceMotion) listState.scrollToItem(index) else listState.animateScrollToItem(index)
+            val info = listState.layoutInfo
+            val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return@launch
+            val delta = (item.offset + item.size / 2f) -
+                (info.viewportStartOffset + info.viewportEndOffset) / 2f
+            if (reduceMotion) listState.scrollBy(delta) else listState.animateScrollBy(delta)
+        }
+    }
 
     // Exact, not a tuned threshold — `derivedStateOf` so scrolling a single
     // pixel does not recompose anything that reads this; it only changes
@@ -367,6 +404,10 @@ fun Timeline(
                         continuesRun = continuesRun[row.item.id] ?: false,
                         endsRun = endsRun[row.item.id] ?: true,
                         readers = row.item.readBy.map { facesBySender[it] ?: ReaderFace(it, null, null) },
+                        highlighted = highlightedId == row.item.id,
+                        onQuoteTap = row.item.replyTo?.eventId?.let { parent ->
+                            idByEventId[parent]?.let { target -> { jumpTo(target) } }
+                        },
                         attribution = if (singleSpeaker) row.senderShort else row.senderName,
                         imageUri = imageUri,
                         faceUri = faceUri,
