@@ -1,11 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { PersonDto } from "$lib/ipc";
 import {
   creationProblem,
+  emptyState,
   isRoomTarget,
   isUserId,
+  openConversation,
   parseInvitees,
+  peopleHeading,
+  personSubtitle,
   shouldBeDirect,
 } from "./roomCreation";
+
+const atlas: PersonDto = {
+  userId: "@atlas:x",
+  name: "Atlas",
+  initial: "A",
+  runtime: null,
+  avatarUrl: null,
+};
 
 describe("isUserId", () => {
   it("accepts the shape every Matrix id has", () => {
@@ -85,5 +98,69 @@ describe("shouldBeDirect", () => {
     // filled, which is not a DM either.
     expect(shouldBeDirect(["@ana:x.org", "@bo:x.org"])).toBe(false);
     expect(shouldBeDirect([])).toBe(false);
+  });
+});
+
+describe("openConversation", () => {
+  it("openConversation reuses an existing DM", async () => {
+    const directRoomWith = vi.fn(async () => "!dm");
+    const createRoom = vi.fn(async () => "!new");
+    expect(await openConversation(atlas, { directRoomWith, createRoom })).toBe("!dm");
+    expect(directRoomWith).toHaveBeenCalledWith("@atlas:x");
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it("openConversation creates a DM named for the person", async () => {
+    const createRoom = vi.fn(async () => "!new");
+    const id = await openConversation(atlas, { directRoomWith: async () => null, createRoom });
+    expect(id).toBe("!new");
+    expect(createRoom).toHaveBeenCalledWith("Atlas", ["@atlas:x"], true);
+  });
+
+  it("openConversation creates when the lookup fails", async () => {
+    const createRoom = vi.fn(async () => "!new");
+    const directRoomWith = vi.fn(async () => {
+      throw { kind: "network", message: "offline" };
+    });
+    expect(await openConversation(atlas, { directRoomWith, createRoom })).toBe("!new");
+    expect(createRoom).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects with the core's error when the create fails", async () => {
+    const refused = { kind: "refused", message: "no" };
+    await expect(
+      openConversation(atlas, {
+        directRoomWith: async () => null,
+        createRoom: async () => {
+          throw refused;
+        },
+      }),
+    ).rejects.toBe(refused);
+  });
+});
+
+describe("personSubtitle", () => {
+  it("names an agent's harness and host", () => {
+    expect(personSubtitle({ ...atlas, runtime: { harness: "Claude", host: "Ci" } })).toBe("Claude on Ci");
+  });
+  it("is the user id for anyone else", () => {
+    expect(personSubtitle(atlas)).toBe("@atlas:x");
+  });
+});
+
+describe("peopleHeading and emptyState", () => {
+  it("headings", () => {
+    expect(peopleHeading("")).toBe("Who you know");
+    expect(peopleHeading("at")).toBe("Matches");
+  });
+  it("empty states", () => {
+    expect(emptyState("")).toEqual({
+      title: "Nobody yet",
+      description: "Agents and people you share a room with appear here.",
+    });
+    expect(emptyState("zz")).toEqual({
+      title: "No one matching zz",
+      description: "Try a name, a machine, or a full address.",
+    });
   });
 });

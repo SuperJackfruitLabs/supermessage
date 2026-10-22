@@ -25,6 +25,7 @@
     appVersion,
     blockedUsers,
     createRoom,
+    knownPeople,
     onIgnoredUsers,
     ensureRecovery,
     joinRoomByAlias,
@@ -54,6 +55,7 @@
   import EmptyRoomState from "$lib/components/layout/EmptyRoomState.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
+  import { openConversation } from "$lib/components/roomCreation";
   import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
   import ConnectionLine from "$lib/components/ConnectionLine.svelte";
@@ -1280,5 +1282,7 @@
     onJoin={joinRoomByAlias}
     onOpened={openNewlyReachableRoom}
     onClose={() => (newRoomOpen = false)}
+    loadPeople={(q) => knownPeople(q)}
+    onOpenPerson={(p) => openConversation(p)}
   />
 {/if}
