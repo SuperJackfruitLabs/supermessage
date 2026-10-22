@@ -22,7 +22,7 @@
   });
 </script>
 
-<!-- What a reader sees after choosing "Sign out". Focus is on Cancel; no name until M3. -->
+<!-- What a reader sees after choosing "Sign out". Focus is on Cancel; the name is not known yet. -->
 <Story
   name="Sign out confirmation"
   args={{ accountName: null, onConfirm: () => Promise.resolve(), onCancel: () => {} }}
@@ -32,5 +32,15 @@
     await settled(() => (document.activeElement === cancel ? cancel : null));
     const dialog = root.querySelector("dialog") as HTMLDialogElement;
     if (!dialog.matches(":modal")) throw new Error("the dialog is not modal");
+  }}
+/>
+
+<!-- Once the account's name is known the title says whose account is leaving. -->
+<Story
+  name="Sign out of a named account"
+  args={{ accountName: "Rakesh", onConfirm: () => Promise.resolve(), onCancel: () => {} }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => root.querySelector("dialog[aria-label='Sign out of Rakesh?']"));
   }}
 />

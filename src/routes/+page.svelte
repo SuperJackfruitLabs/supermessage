@@ -23,6 +23,7 @@
   import { consumeFreshSignIn } from "$lib/stores/freshSignIn";
   import {
     appVersion,
+    type RoomMember,
     blockedUsers,
     createRoom,
     knownPeople,
@@ -66,6 +67,7 @@
   import { appearanceStore } from "$lib/stores/appearance.svelte";
   import { resetSessionState } from "$lib/stores/sessionReset";
   import { safetyStore } from "$lib/stores/safety.svelte";
+  import { unblock } from "$lib/safety";
   import { accountStore } from "$lib/stores/account.svelte";
   import { escapeClosesPanel } from "$lib/components/roomInfoView";
 
@@ -705,8 +707,24 @@
   let accountOpen = $state(false);
   let version = $state<string | null>(null);
 
+  /** Who this account has blocked, read each time the panel opens; `null` when it could not be. */
+  let blockedList = $state<RoomMember[] | null>(null);
+
+  async function unblockFromAccount(userId: string): Promise<string | null> {
+    const refused = await unblock(userId);
+    if (refused === null && blockedList !== null) {
+      blockedList = blockedList.filter((m) => m.userId !== userId);
+    }
+    return refused;
+  }
+
   async function openAccount(): Promise<void> {
     accountOpen = true;
+    blockedList = null;
+    blockedUsers().then(
+      (list) => (blockedList = list),
+      () => (blockedList = null),
+    );
     try {
       version = await appVersion();
     } catch (err) {
@@ -1237,6 +1255,10 @@
       void openRecovery();
     }}
     onSignOut={signOut}
+    account={accountStore.account}
+    accountName={accountStore.name}
+    blocked={blockedList}
+    onUnblock={unblockFromAccount}
     onOpenLink={(u) => void openUrl(u)}
     onClose={() => (accountOpen = false)}
   />

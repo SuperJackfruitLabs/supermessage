@@ -22,7 +22,7 @@ describe("resetSessionState", () => {
     }
   });
 
-  it("resetSessionState forgets the blocked list, the hidden ids and the account", async () => {
+  it("resetSessionState forgets the account and its safety state", async () => {
     const storage = new Map<string, string>();
     const safetyStore = createSafetyStore({
       getItem: (k) => storage.get(k) ?? null,

@@ -29,6 +29,7 @@
     <input
       type="checkbox"
       role="switch"
+      class="native"
       checked={mode === "muted"}
       {disabled}
       onchange={(e) => onMode(muteTarget(e.currentTarget.checked))}
@@ -40,7 +41,7 @@
       value={mode}
       {disabled}
       onchange={(e) => onMode(e.currentTarget.value as NotificationMode)}
-      class="rounded-control border border-border bg-surface px-2 py-1 text-ui text-content"
+      class="native rounded-control border border-border bg-surface px-2 py-1 text-ui text-content"
     >
       {#each NOTIFY_OPTIONS as option (option.mode)}
         <option value={option.mode} selected={option.mode === mode}>{option.label}</option>
@@ -49,9 +50,27 @@
   </label>
   <label class="flex items-center justify-between gap-2 text-ui text-content">
     Pin to top
-    <input type="checkbox" role="switch" checked={pinned} {disabled} onchange={(e) => onPinned(e.currentTarget.checked)} />
+    <input type="checkbox" role="switch" class="native" checked={pinned} {disabled} onchange={(e) => onPinned(e.currentTarget.checked)} />
   </label>
   {#if failure !== null}
     <InlineFailure message={failure} />
   {/if}
 </div>
+
+<style>
+  /*
+   * Native controls draw themselves from `color-scheme`. Left alone they are light in a dark app
+   * (the select showed white text on white), so they follow the appearance the app resolved.
+   */
+  .native {
+    color-scheme: light dark;
+  }
+  :global([data-appearance="dark"]) .native,
+  :global([data-appearance="black"]) .native {
+    color-scheme: dark;
+  }
+  :global([data-appearance="light"]) .native,
+  :global([data-appearance="paper"]) .native {
+    color-scheme: light;
+  }
+</style>

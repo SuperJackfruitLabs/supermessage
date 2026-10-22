@@ -2,7 +2,7 @@
   import type { RoomMember } from "$lib/ipc";
   import { initial, memberDisplayName, splitSigil } from "../roomInfoView";
   import AgentTag from "../AgentTag.svelte";
-  import { memberName } from "../safety/memberActions";
+  import { memberName, unblockLabel } from "../safety/memberActions";
 
   /**
    * One member of a room.
@@ -24,9 +24,21 @@
      * name and id stay selectable text, so the affordance is a trailing button, not the row.
      */
     onActions?: () => void;
+    /** Set where the row is a blocked person (the Account panel's list): a plain Unblock button. */
+    onUnblock?: () => void;
+    /** An unblock for this member is in flight. */
+    unblocking?: boolean;
   }
 
-  let { member, avatarUrl, onAvatarFailed, blocked = false, onActions }: Props = $props();
+  let {
+    member,
+    avatarUrl,
+    onAvatarFailed,
+    blocked = false,
+    onActions,
+    onUnblock,
+    unblocking = false,
+  }: Props = $props();
 </script>
 
 <li class="flex items-center gap-2">
@@ -71,6 +83,17 @@
   </span>
   {#if member.isAgent}<AgentTag />{/if}
   {#if blocked}<span class="shrink-0 text-label text-danger">Blocked</span>{/if}
+  {#if onUnblock}
+    <button
+      type="button"
+      onclick={onUnblock}
+      disabled={unblocking}
+      aria-label={unblockLabel(memberName(member))}
+      class="shrink-0 rounded-control border border-border px-2 py-0.5 text-ui text-content transition-colors hover:bg-surface disabled:opacity-50"
+    >
+      {unblocking ? "Working…" : "Unblock"}
+    </button>
+  {/if}
   {#if onActions}
     <button
       type="button"
