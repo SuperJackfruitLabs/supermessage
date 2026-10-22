@@ -22,6 +22,7 @@
   import { spacesStore } from "$lib/stores/spaces.svelte";
   import { consumeFreshSignIn } from "$lib/stores/freshSignIn";
   import {
+    appVersion,
     createRoom,
     ensureRecovery,
     joinRoomByAlias,
@@ -53,6 +54,10 @@
   import ConnectionLine from "$lib/components/ConnectionLine.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
   import RecoveryPanel from "$lib/components/RecoveryPanel.svelte";
+  import AccountPanel from "$lib/components/AccountPanel.svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { appearanceStore } from "$lib/stores/appearance.svelte";
+  import { resetComposeState } from "$lib/stores/sessionReset";
   import { escapeClosesPanel } from "$lib/components/roomInfoView";
 
   let checking = $state(true);
@@ -428,7 +433,7 @@
         panelIsModal,
         defaultPrevented: event.defaultPrevented,
         // The search panel is a modal overlay too, and handles its own Escape.
-        modalDialogOpen: searchOpen || document.querySelector("dialog:modal") !== null,
+        modalDialogOpen: searchOpen || accountOpen || document.querySelector("dialog:modal") !== null,
       })
     )
       return;
@@ -641,6 +646,19 @@
     }
   }
 
+  let accountOpen = $state(false);
+  let version = $state<string | null>(null);
+
+  async function openAccount(): Promise<void> {
+    accountOpen = true;
+    try {
+      version = await appVersion();
+    } catch (err) {
+      // No version line is better than a wrong one (outside Tauri, say).
+      console.error("could not read the app version", err);
+    }
+  }
+
   async function signOut(): Promise<void> {
     if (signingOut) return;
     signingOut = true;
@@ -655,6 +673,8 @@
       // account's mount would render the previous one's rail for the frames
       // between restoring and its own `spaces_list` landing.
       spacesStore.clear();
+      // The next account must not inherit this one's pending edits and replies.
+      resetComposeState();
       signingOut = false;
     }
     await goto("/login");
@@ -774,32 +794,17 @@
             <RoomList onSelect={() => (roomPaneOpen = true)} />
           </div>
           <!--
-            The only user-reachable way out of a session: switch accounts,
-            clear a corrupted local store, or wipe local history and crypto
-            keys off this device. Parked at the foot of the sidebar rather
-            than given chrome of its own — it's a rarely-used escape hatch,
-            not a primary action, and M0 has no account menu to hang it off.
+            One "Account" button: appearance, links, encryption recovery and
+            sign out live in the panel it opens (`AccountPanel`).
           -->
           <div class="shrink-0 border-t border-border p-2">
-            <!--
-              Beside `Sign out` because it is the same rarely-visited class of account
-              action — and because the day a user needs it is the day they are setting
-              up a new device and looking for exactly this.
-            -->
             <button
               type="button"
-              onclick={() => void openRecovery()}
-              class="w-full rounded-control px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface-sunken"
-            >
-              Encryption recovery
-            </button>
-            <button
-              type="button"
-              onclick={signOut}
+              onclick={() => void openAccount()}
               disabled={signingOut}
-              class="w-full rounded-control px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
+              class="w-full rounded-control px-3 py-2 text-left text-ui text-content-muted transition-colors hover:bg-surface-sunken hover:text-content disabled:opacity-60"
             >
-              {signingOut ? "Signing out…" : "Sign out"}
+              {signingOut ? "Signing out…" : "Account"}
             </button>
           </div>
         </aside>
@@ -1158,6 +1163,21 @@
       {/if}
     </div>
   </div>
+{/if}
+
+{#if accountOpen}
+  <AccountPanel
+    {version}
+    prefs={appearanceStore.prefs}
+    onChange={(patch) => appearanceStore.update(patch)}
+    onOpenRecovery={() => {
+      accountOpen = false;
+      void openRecovery();
+    }}
+    onSignOut={signOut}
+    onOpenLink={(u) => void openUrl(u)}
+    onClose={() => (accountOpen = false)}
+  />
 {/if}
 
 {#if searchOpen}

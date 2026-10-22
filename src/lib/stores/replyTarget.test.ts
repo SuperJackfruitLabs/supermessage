@@ -74,6 +74,15 @@ describe("replyTargetStore: per-room scoping", () => {
     expect(store.get(ROOM_B)).toEqual(pendingReply("$b1:example.org"));
   });
 
+  it("clearAll empties every room", () => {
+    const store = createReplyTargetStore();
+    store.set(ROOM_A, pendingReply("$a1:example.org"));
+    store.set(ROOM_B, pendingReply("$b1:example.org"));
+    store.clearAll();
+    expect(store.get(ROOM_A)).toBeNull();
+    expect(store.get(ROOM_B)).toBeNull();
+  });
+
   it("clearing a room with no pending target is a safe no-op", () => {
     const store = createReplyTargetStore();
     expect(() => store.clear(ROOM_A)).not.toThrow();

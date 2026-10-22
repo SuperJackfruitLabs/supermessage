@@ -12,6 +12,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { DiffEnvelope } from "./stores/diff";
 
@@ -1284,22 +1285,13 @@ export async function recoveryState(): Promise<
 }
 
 /**
- * Turn recovery on and return the key.
- *
- * **Shown once and never stored.** There is deliberately no way to ask for it
- * again: an app that can re-display a recovery key is an app that kept one.
- * Do not log it, do not put it in analytics, do not persist it.
- */
-export async function enableRecovery(): Promise<string> {
-  return invoke<string>("enable_recovery");
-}
-
-/**
  * Turn recovery on if the account has none, returning the new key, or `null`
  * when it was already on.
  *
- * What a fresh sign-in calls. The same rule as `enableRecovery` applies to a
- * returned key: **shown once and never stored, logged or sent anywhere.**
+ * What a fresh sign-in calls. A returned key is **shown once and never
+ * stored, logged or sent anywhere**: there is deliberately no way to ask for
+ * it again, since an app that can re-display a recovery key is an app that
+ * kept one.
  */
 export async function ensureRecovery(): Promise<string | null> {
   return invoke<string | null>("ensure_recovery");
@@ -2113,4 +2105,9 @@ export function onTyping(handler: (payload: TypingPayload) => void): Promise<Unl
  */
 export async function setTextZoom(factor: number): Promise<void> {
   await getCurrentWebview().setZoom(factor);
+}
+
+/** The app's version (`core:default` allows `app:allow-version`). */
+export async function appVersion(): Promise<string> {
+  return getVersion();
 }
