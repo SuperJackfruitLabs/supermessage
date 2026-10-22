@@ -18,6 +18,23 @@
   const item = message({ id: "card-1", timestampMs: 1_700_000_000_000 }).item;
   const formatTime = () => "14:02";
 
+  // Plain DOM, as RecoveryPanel.stories does: no `storybook/test` in the bundle.
+  const settled = async (find: () => Element | null | undefined, ms = 2000) => {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const found = find();
+      if (found) return found;
+      if (Date.now() > deadline) throw new Error("timed out waiting for the card to settle");
+      await new Promise((r) => setTimeout(r, 16));
+    }
+  };
+  const clickApprove = async (canvasElement: HTMLElement) => {
+    const approve = await settled(() =>
+      [...canvasElement.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Approve"),
+    );
+    approve.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  };
+
   const { Story } = defineMeta({
     title: "Timeline/DispatchCard",
     component: DispatchCard,
@@ -50,7 +67,7 @@
           view={dispatchCardPending}
           decision={dispatchCardPendingDecision}
           {item}
-          onDecide={() => {}}
+          onDecide={() => Promise.resolve(true)}
           {formatTime}
         />
       </DispatchCardFrame>
@@ -65,7 +82,7 @@
           view={dispatchCardAnswered}
           decision={null}
           {item}
-          onDecide={() => {}}
+          onDecide={() => Promise.resolve(true)}
           {formatTime}
         />
       </DispatchCardFrame>
@@ -84,7 +101,7 @@
           view={dispatchCardResolved}
           decision={null}
           {item}
-          onDecide={() => {}}
+          onDecide={() => Promise.resolve(true)}
           {formatTime}
         />
       </DispatchCardFrame>
@@ -98,7 +115,7 @@
           view={dispatchCardWithReasoning}
           decision={null}
           {item}
-          onDecide={() => {}}
+          onDecide={() => Promise.resolve(true)}
           {formatTime}
         />
       </DispatchCardFrame>
@@ -116,7 +133,7 @@
           view={dispatchCardNewerVersion}
           decision={null}
           {item}
-          onDecide={() => {}}
+          onDecide={() => Promise.resolve(true)}
           {formatTime}
         />
       </DispatchCardFrame>
@@ -138,7 +155,49 @@
           view={dispatchCardLongValue}
           decision={null}
           {item}
-          onDecide={() => {}}
+          onDecide={() => Promise.resolve(true)}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- The answer is in flight: every button is disabled until the send settles. -->
+<Story
+  name="Sending"
+  play={async ({ canvasElement }) => {
+    await clickApprove(canvasElement as HTMLElement);
+    await settled(() => canvasElement.querySelector("button:disabled"));
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardPending}
+          decision={dispatchCardPendingDecision}
+          {item}
+          onDecide={() => new Promise<boolean>(() => {})}
+          {formatTime}
+        />
+      </DispatchCardFrame>
+  {/snippet}
+</Story>
+
+<!-- The send failed: a danger-coloured line, and the buttons are live again. -->
+<Story
+  name="Send failed"
+  play={async ({ canvasElement }) => {
+    await clickApprove(canvasElement as HTMLElement);
+    await settled(() => canvasElement.querySelector("[role='alert']"));
+  }}
+>
+  {#snippet template()}
+      <DispatchCardFrame>
+        <DispatchCard
+          view={dispatchCardPending}
+          decision={dispatchCardPendingDecision}
+          {item}
+          onDecide={() => Promise.resolve(false)}
           {formatTime}
         />
       </DispatchCardFrame>

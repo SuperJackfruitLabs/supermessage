@@ -68,6 +68,16 @@ pub async fn enable_recovery(session: State<'_, Session>) -> Result<String, Core
     session.enable_recovery().await
 }
 
+/// Turn recovery on if this account has none, returning the new key, or
+/// `None` when recovery was already on (or the state could not be read).
+///
+/// What a fresh sign-in calls: the UI shows a returned key once and forgets
+/// it. Never logged, for the same reason as `enable_recovery`.
+#[tauri::command]
+pub async fn ensure_recovery(session: State<'_, Session>) -> Result<Option<String>, CoreError> {
+    session.ensure_recovery().await
+}
+
 /// Throw the old identity away and start again, returning the new key.
 ///
 /// Destructive: the old backup is deleted and the cross-signing identity

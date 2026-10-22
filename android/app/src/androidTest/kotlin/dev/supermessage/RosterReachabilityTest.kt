@@ -256,6 +256,7 @@ class RosterReachabilityTest {
         private val roomInviterResult: (String) -> String? = { throw NotImplementedError() },
     ) : StubCore() {
         val roomInviterCalls = mutableListOf<String>()
+        private var subscribedRoomId: String? = null
 
         override fun restoreSession(sink: EventSink): Boolean = true
         override fun roomsSnapshot(): RoomsSnapshot = roomsSnapshotResult()
@@ -267,7 +268,19 @@ class RosterReachabilityTest {
         // `TimelineStore.subscribeTo`) — every roster row this file hands
         // back is one, since selecting either the new-room result or an
         // invitation row opens it.
-        override fun timelineSubscribe(roomId: String, sink: EventSink): Unit = Unit
+        override fun timelineSubscribe(roomId: String, sink: EventSink) {
+            subscribedRoomId = roomId
+        }
+
+        // Reached on every foreground (`Session.scenePhaseChanged` ->
+        // `TimelineStore.seed`), which the app now reports from MainActivity.
+        // An empty timeline for the room last opened is all these tests need.
+        override fun timelineResync(): TimelineSnapshot =
+            TimelineSnapshot(roomId = subscribedRoomId.orEmpty(), seq = 0uL, items = emptyList())
+
+        // Reached when the app goes to the background with a room open
+        // (`Session.scenePhaseChanged(false)` clears the typing notice).
+        override fun setTyping(roomId: String, typing: Boolean): Unit = Unit
 
         // Reached by `Roster`'s own `LaunchedEffect(roomId) { onLoadAvatar
         // (roomId) }` for every row on screen — including the invitation

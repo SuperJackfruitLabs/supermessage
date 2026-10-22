@@ -85,17 +85,18 @@ fn every_page_has_a_title_and_description() {
 fn every_suite_event_type_named_is_one_the_core_renders() {
     // The renderers are the authority: an event type this client cannot render is one the docs
     // must not promise. Read out of the source rather than restated, so the two cannot drift.
-    let src = read("crates/supermessage-core/src/custom_events.rs");
-    let known: Vec<String> = src
-        .match_indices("EVENT_TYPE: &str = \"")
-        .map(|(i, m)| {
+    // The renderers live in `custom_events.rs` and `gate_outcome.rs`.
+    let mut known: Vec<String> = Vec::new();
+    for module in ["custom_events.rs", "gate_outcome.rs"] {
+        let src = read(&format!("crates/supermessage-core/src/{module}"));
+        known.extend(src.match_indices("EVENT_TYPE: &str = \"").map(|(i, m)| {
             let rest = &src[i + m.len()..];
             rest[..rest.find('"').expect("closing quote")].to_string()
-        })
-        .collect();
+        }));
+    }
     assert!(
         known.len() >= 3,
-        "found only {} event types in custom_events.rs",
+        "found only {} event types in custom_events.rs and gate_outcome.rs",
         known.len()
     );
 
@@ -115,7 +116,7 @@ fn every_suite_event_type_named_is_one_the_core_renders() {
             {
                 assert!(
                     known.iter().any(|k| k == name),
-                    "{file} names suite event `{name}`, which no renderer in custom_events.rs handles"
+                    "{file} names suite event `{name}`, which no renderer in custom_events.rs or gate_outcome.rs handles"
                 );
             }
             from = end.max(start + 1);
@@ -148,6 +149,13 @@ fn every_internal_link_resolves_to_a_page() {
         })
         .collect();
 
+    // `starlight-llms-txt` generates these routes at build time, so no page file backs them.
+    // They resolve only while the plugin is actually registered in the Astro config.
+    let astro_config = read("docs-site/astro.config.mjs");
+    let llms_registered = astro_config.contains("from 'starlight-llms-txt'")
+        && astro_config.contains("starlightLlmsTxt(");
+    let generated = ["llms.txt", "llms-full.txt", "llms-small.txt"];
+
     for (file, text) in pages() {
         let mut from = 0;
         while let Some(i) = text[from..].find("](/") {
@@ -157,7 +165,7 @@ fn every_internal_link_resolves_to_a_page() {
             let slug = href.trim_matches('/');
             let slug = if slug.is_empty() { "index" } else { slug };
             assert!(
-                slugs.iter().any(|s| s == slug),
+                slugs.iter().any(|s| s == slug) || (llms_registered && generated.contains(&slug)),
                 "{file} links to {href}, which is not a page"
             );
             from = end;

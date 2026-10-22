@@ -20,9 +20,10 @@
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
+  import { consumeFreshSignIn } from "$lib/stores/freshSignIn";
   import {
     createRoom,
-    enableRecovery,
+    ensureRecovery,
     joinRoomByAlias,
     recoverWithKey,
     resetRecovery,
@@ -604,6 +605,17 @@
     // roster and timeline, which are already streaming by now, and `load`
     // reports its own failures rather than throwing.
     void spacesStore.load();
+    // Recovery is set up after a fresh sign-in only, never after a restore —
+    // `consumeFreshSignIn` is set by /login alone. Not awaited, and a failure
+    // is silent: the user is not interrupted, and a device that cannot read its
+    // history is still offered the recovery-key screen from "Encryption recovery".
+    if (consumeFreshSignIn()) {
+      void ensureRecovery()
+        .then((key) => {
+          if (key) void openRecovery(key);
+        })
+        .catch(() => {});
+    }
   });
 
   /**
@@ -625,8 +637,11 @@
    */
   let recoveryOpen = $state(false);
   let recoveryState = $state<"enabled" | "disabled" | "incomplete" | "unknown">("unknown");
+  /** The key just created at sign-in, shown once by the panel. */
+  let recoveryNewKey = $state<string | null>(null);
 
-  async function openRecovery(): Promise<void> {
+  async function openRecovery(newKey: string | null = null): Promise<void> {
+    recoveryNewKey = newKey;
     recoveryOpen = true;
     try {
       recoveryState = await ipcRecoveryState();
@@ -1194,10 +1209,13 @@
   {#if recoveryOpen}
     <RecoveryPanel
       state={recoveryState}
-      onEnable={enableRecovery}
+      initialKey={recoveryNewKey}
       onRecover={recoverWithKey}
       onReset={resetRecovery}
-      onClose={() => (recoveryOpen = false)}
+      onClose={() => {
+        recoveryOpen = false;
+        recoveryNewKey = null;
+      }}
     />
   {/if}
 

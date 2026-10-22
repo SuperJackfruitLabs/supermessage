@@ -34,10 +34,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
+import dev.supermessage.kit.stores.ConnectionStore.Connection
 import dev.supermessage.kit.Session
 import dev.supermessage.kit.VoicePlayback
 import java.io.File
@@ -128,6 +130,17 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
     // Backgrounded: stop, and let go of the decoder.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { voice.stop() }
 
+    // Foreground and background reach the session, as iOS's scenePhase does:
+    // coming back re-seeds the stores, going away clears a typing notice.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(session, lifecycleOwner) {
+        val observer = ScenePhaseObserver { active ->
+            scope.launch { session.scenePhaseChanged(active) }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // What the extra pane (see RootScaffold's own KDoc on
     // `extraPaneContent`) is currently showing — at most one
     // of room info, search or the account panel at a time,
@@ -176,6 +189,11 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
     val rooms by session.rooms.rooms.collectAsStateWithLifecycle()
     val avatarCache by session.avatars.cache.collectAsStateWithLifecycle()
 
+    // Collected so the bar redraws; whether to show it is derived from the
+    // collected state below, never read off the store.
+    val connectionState by session.connection.state.collectAsStateWithLifecycle()
+    val connectionMessage by session.connection.message.collectAsStateWithLifecycle()
+
     // Re-read every 30 seconds so a roster that said "3m" says
     // "4m" without anything else having changed — the clock
     // ticks and is injected, never read fresh inside Roster.
@@ -200,6 +218,11 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
         phase = phase,
         listPaneContent = { _, openDetail, openInfo ->
             Column(Modifier.fillMaxSize()) {
+                ConnectionBar(
+                    state = connectionState,
+                    message = connectionMessage,
+                    worthShowing = connectionState != Connection.Live,
+                )
                 // Search and the account panel share the
                 // Extra pane with room info, so both are
                 // reached the same way room info already is:
@@ -325,6 +348,10 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                 val revision by session.timeline.revision.collectAsStateWithLifecycle()
                 val isPaginating by session.timeline.isPaginating.collectAsStateWithLifecycle()
                 val canPaginate by session.timeline.canPaginate.collectAsStateWithLifecycle()
+                // Collected so a fetch that lands recomposes the rows that
+                // asked for it; the lambdas below read from these.
+                val mediaCache by session.media.cache.collectAsStateWithLifecycle()
+                val faceCache by session.faces.cache.collectAsStateWithLifecycle()
 
                 // `TypingStore.line` is a computed property,
                 // not a StateFlow — `typers` is what is
@@ -378,6 +405,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             isPaginating = isPaginating,
                             canPaginate = canPaginate,
                             onPaginate = { scope.launch { session.timeline.paginateBack() } },
+                            imageUri = { id -> mediaCache[id] ?: session.media.image(id) },
+                            faceUri = { mxc -> faceCache[mxc] },
+                            loadFace = session.faces::load,
                             onMarkRead = { scope.launch { session.timeline.markRead() } },
                             liveAnswer = liveAnswer,
                             liveThought = liveThought,
@@ -395,9 +425,15 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             // stop offering the choice — and keep offering it when
                             // the send failed.
                             onDecide = { row, answer ->
-                                session.answerGate(
+                                val gateId = answer.subject
+                                if (gateId == null) {
+                                    // A permission request has no gate; route it
+                                    // to the permission sender (iOS
+                                    // `TimelineCollectionView.swift:1022-1031`).
+                                    session.answerPermission(optionId = answer.optionId, roomId = currentRoomId)
+                                } else session.answerGate(
                                     eventId = row.item.eventId,
-                                    gateId = answer.subject,
+                                    gateId = gateId,
                                     optionId = answer.optionId,
                                     comment = answer.comment,
                                     prompt = answer.prompt,

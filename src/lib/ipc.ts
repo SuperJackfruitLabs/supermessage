@@ -613,7 +613,9 @@ export type CoreErrorKind =
   | "roomChanged"
   | "attachmentTooLarge"
   | "unknownAttachment"
-  | "unknownSpace";
+  | "unknownSpace"
+  | "reasonTooLong"
+  | "refused";
 
 /**
  * Mirrors the serialized shape of `CoreError`. Every command in this file
@@ -1274,6 +1276,17 @@ export async function enableRecovery(): Promise<string> {
   return invoke<string>("enable_recovery");
 }
 
+/**
+ * Turn recovery on if the account has none, returning the new key, or `null`
+ * when it was already on.
+ *
+ * What a fresh sign-in calls. The same rule as `enableRecovery` applies to a
+ * returned key: **shown once and never stored, logged or sent anywhere.**
+ */
+export async function ensureRecovery(): Promise<string | null> {
+  return invoke<string | null>("ensure_recovery");
+}
+
 /** Use a recovery key on this device, to read what other devices already hold. */
 export async function recoverWithKey(recoveryKey: string): Promise<void> {
   await invoke<void>("recover_with_key", { recoveryKey });
@@ -1457,6 +1470,24 @@ export async function sendReply(roomId: string, body: string, inReplyTo: string)
  */
 export async function toggleReaction(roomId: string, eventId: string, key: string): Promise<boolean> {
   return invoke<boolean>("toggle_reaction", { roomId, eventId, key });
+}
+
+/**
+ * Rewrites a message this account sent. `roomId` and `eventId` follow the
+ * same rules as {@link toggleReaction}'s; the edit arrives back through the
+ * diff stream like any other timeline change.
+ */
+export async function editMessage(roomId: string, eventId: string, body: string): Promise<void> {
+  await invoke<void>("edit_message", { roomId, eventId, body });
+}
+
+/**
+ * Deletes a message this account sent — a Matrix redaction, permanent and
+ * visible to the room. The row turns into the redacted placeholder through
+ * the diff stream. Rejects when the homeserver refuses.
+ */
+export async function deleteMessage(roomId: string, eventId: string): Promise<void> {
+  await invoke<void>("delete_message", { roomId, eventId });
 }
 
 /**

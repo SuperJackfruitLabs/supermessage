@@ -157,6 +157,9 @@ fun Timeline(
     onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
     onDecide: suspend (row: TimelineRowDto, answer: GateAnswer) -> Boolean = { _, _ -> false },
     onRowLongPress: (row: TimelineRowDto) -> Unit = {},
+    imageUri: (eventId: String) -> String? = { null },
+    faceUri: (mxcUri: String) -> String? = { null },
+    loadFace: suspend (mxcUri: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
@@ -321,6 +324,9 @@ fun Timeline(
                     continuesRun = continuesRun[row.item.id] ?: false,
                     endsRun = endsRun[row.item.id] ?: true,
                     attribution = if (singleSpeaker) row.senderShort else row.senderName,
+                    imageUri = imageUri,
+                    faceUri = faceUri,
+                    loadFace = loadFace,
                     onReact = { key -> onReact(row, key) },
                     onDecide = { answer -> onDecide(row, answer) },
                     modifier = if (longPressable) {
