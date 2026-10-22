@@ -174,6 +174,7 @@ fun Timeline(
     liveThought: String? = null,
     liveTools: List<LiveStore.ToolCall> = emptyList(),
     liveFinished: Boolean = false,
+    hiddenEvents: Set<String> = emptySet(),
     onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
     onDecide: suspend (row: TimelineRowDto, answer: GateAnswer) -> Boolean = { _, _ -> false },
     onReply: (row: TimelineRowDto) -> Unit = {},
@@ -190,6 +191,12 @@ fun Timeline(
     val decisionAnswers = rememberDecisionAnswers()
     val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
 
+    // [hiddenEvents] is a cache key and nothing else: the caller has already
+    // dropped the reported rows from [rows] (`SafetyStore.visible`). Reporting
+    // a message changes what is drawn without a new `revision`, so the
+    // grouping below has to be rebuilt when the set changes too. It stays out
+    // of `animatesThisUpdate`: a row that leaves is not an arrival.
+    //
     // Keyed on `revision`, not `rows` itself. `TimelineStore.revision` is
     // bumped exactly once per wholesale replacement of `items` and nowhere
     // else, so it answers "did the history actually change" in the
@@ -203,7 +210,7 @@ fun Timeline(
     // Walked in the order `rows` already arrives in — oldest first —
     // because "the row above it" means the row before it in time, not
     // before it in the inverted list this container displays.
-    val continuesRun = remember(revision) {
+    val continuesRun = remember(revision, hiddenEvents) {
         val out = HashMap<String, Boolean>(rows.size)
         var previous: TimelineRowDto? = null
         for (row in rows) {
@@ -215,7 +222,7 @@ fun Timeline(
     // The mirror of `continuesRun`: a row ends its run when the row after
     // it (in time) does not continue it. Derived from the same rule rather
     // than a second one, so the two can never disagree about where a run is.
-    val endsRun = remember(revision) {
+    val endsRun = remember(revision, hiddenEvents) {
         val out = HashMap<String, Boolean>(rows.size)
         for (i in rows.indices) {
             val next = rows.getOrNull(i + 1)
@@ -226,8 +233,8 @@ fun Timeline(
     // Faces for readers, from the messages they have sent here. A receipt
     // carries only a user id; the room has usually already shown that
     // person's face beside something they said.
-    val facesBySender = remember(revision) { readerFaces(rows) }
-    val singleSpeaker = remember(revision) { TimelineGrouping.hasSingleSpeaker(rows) }
+    val facesBySender = remember(revision, hiddenEvents) { readerFaces(rows) }
+    val singleSpeaker = remember(revision, hiddenEvents) { TimelineGrouping.hasSingleSpeaker(rows) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -269,9 +276,9 @@ fun Timeline(
     // Collapse membership runs first — they are consecutive in the
     // chronological order `rows` already arrives in — then reverse. See the
     // class doc's "Feed order" and "Membership runs" sections.
-    val displayRows = remember(revision) { TimelineGrouping.collapseMembershipRuns(rows) }
+    val displayRows = remember(revision, hiddenEvents) { TimelineGrouping.collapseMembershipRuns(rows) }
     val newestFirst = displayRows.asReversed()
-    val idByEventId = remember(revision) {
+    val idByEventId = remember(revision, hiddenEvents) {
         buildMap {
             for (d in displayRows) if (d is DisplayRow.Row) d.row.item.eventId?.let { put(it, d.id) }
         }

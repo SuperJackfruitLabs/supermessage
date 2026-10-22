@@ -9,6 +9,7 @@ import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
+import uniffi.supermessage_core.RoomMemberDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_ffi.AttachmentSendOutcome
@@ -202,6 +203,30 @@ class CoreClient(
 
     suspend fun setRoomPinned(roomId: String, pinned: Boolean) {
         run { it.setRoomPinned(roomId, pinned) }
+    }
+
+    // MARK: - Block and report
+
+    suspend fun ignoreUser(userId: String) {
+        run { it.ignoreUser(userId) }
+    }
+
+    suspend fun unignoreUser(userId: String) {
+        run { it.unignoreUser(userId) }
+    }
+
+    suspend fun ignoredUsers(): List<RoomMemberDto> = run { it.ignoredUsers() }
+
+    suspend fun reportEvent(roomId: String, eventId: String, reason: String) {
+        run { it.reportEvent(roomId, eventId, reason) }
+    }
+
+    suspend fun reportRoom(roomId: String, reason: String) {
+        run { it.reportRoom(roomId, reason) }
+    }
+
+    suspend fun reportUser(userId: String, reason: String) {
+        run { it.reportUser(userId, reason) }
     }
 
     suspend fun editMessage(roomId: String, eventId: String, body: String) {

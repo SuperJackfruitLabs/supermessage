@@ -255,6 +255,42 @@ class TimelineTest {
         )
     }
 
+    /**
+     * Reporting a message drops its row from `rows` without a new revision
+     * (`SafetyStore.visible` is the caller's), so the grouping cache has to
+     * be keyed on the hidden set too, or the row stays on screen.
+     */
+    @Test
+    fun aReportedMessageLeavesWithoutANewRevision() {
+        val a = row(id = "\$a", body = "alpha text", timestampMs = 1_000uL)
+        val b = row(id = "\$b", body = "bravo text", timestampMs = 2_000uL)
+        val c = row(id = "\$c", body = "charlie text", timestampMs = 3_000uL)
+        var rows by mutableStateOf(listOf(a, b, c))
+        var hidden by mutableStateOf(emptySet<String>())
+
+        compose.setContent {
+            Timeline(
+                rows = rows,
+                revision = 1uL,
+                hiddenEvents = hidden,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+            )
+        }
+        compose.onNodeWithText("bravo text").assertIsDisplayed()
+
+        rows = listOf(a, c)
+        hidden = setOf(b.item.eventId!!)
+        compose.waitForIdle()
+
+        compose.onNodeWithText("bravo text").assertDoesNotExist()
+        compose.onNodeWithText("alpha text").assertIsDisplayed()
+        compose.onNodeWithText("charlie text").assertIsDisplayed()
+    }
+
     /** Reads `Timeline`'s own Rule 2 decision off its test-only marker node. */
     private fun animationDecision(): String? =
         compose.onNodeWithTag("timeline-animation-decision")

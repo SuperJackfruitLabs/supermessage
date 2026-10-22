@@ -64,6 +64,14 @@ class CoreClientTest {
         assertEquals(true, dispatched)
     }
 
+    /** a report reaches the core with its room, event and reason */
+    @Test
+    fun reportEventReachesTheCoreWithItsThreeArguments() = runTest {
+        val core = FakeCore()
+        CoreClient(core = core, dispatcher = Dispatchers.Unconfined).reportEvent("!r:x", "\$e", "spam")
+        assertEquals(listOf(Triple("!r:x", "\$e", "spam")), core.reports)
+    }
+
     /** many blocking calls at once do not starve anything */
     @Test
     fun manyBlockingCallsAtOnceDoNotStarveAnything() = runBlocking {
@@ -143,6 +151,12 @@ class CoreClientTest {
 
         private fun block() {
             if (blockMillis > 0) Thread.sleep(blockMillis)
+        }
+
+        val reports = mutableListOf<Triple<String, String, String>>()
+
+        override fun reportEvent(roomId: String, eventId: String, reason: String) {
+            reports += Triple(roomId, eventId, reason)
         }
 
         override fun connectionState(): ConnectionState {
