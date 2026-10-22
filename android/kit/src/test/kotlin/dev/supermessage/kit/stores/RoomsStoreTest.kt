@@ -215,6 +215,21 @@ class RoomsStoreTest {
         )
     }
 
+    /** A swipe plays its success haptic only for a change that landed. */
+    @Test
+    fun `markRead reports whether it landed`() = runTest {
+        val ok = RoomsStore(client = CoreClient(core = MarkReadCore(fail = false)), scope = this)
+        assertEquals(true, ok.markRead("!a:x"))
+        val refused = RoomsStore(client = CoreClient(core = MarkReadCore(fail = true)), scope = this)
+        assertEquals(false, refused.markRead("!a:x"))
+    }
+
+    private class MarkReadCore(private val fail: Boolean) : StubCore() {
+        override fun markRoomRead(roomId: String) {
+            if (fail) throw IllegalStateException("not the open room")
+        }
+    }
+
     private class FakeCore : StubCore() {
     }
 }

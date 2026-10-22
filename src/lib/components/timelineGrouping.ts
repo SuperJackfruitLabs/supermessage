@@ -26,6 +26,9 @@
 //    no-op membership change, a suite event whose prose already draws the
 //    card, and a voice reply folded into its text this way. The core's own
 //    pass ignores such rows too, so skipping them splits no run.
+//  - A row marked `hidden` (an event the reader reported on this device; the
+//    safety store pushes the set to the core) is skipped the same way. The
+//    core already grouped as if it were absent.
 //  - A membership row with a `membership` placement joins an entry: the run
 //    (`group:<first row>`, the sentence on its first row), or, while its
 //    stretch is collapsed and not in `expanded`, the whole stretch
@@ -209,7 +212,7 @@ export function groupTimelineItems(
   }
 
   for (const row of source) {
-    if (row.view.render === "none") continue;
+    if (row.view.render === "none" || row.hidden) continue;
     if (row.view.render === "placeholder" && row.view.kind.about === "unableToDecrypt") {
       undecryptable.push(row);
       continue;

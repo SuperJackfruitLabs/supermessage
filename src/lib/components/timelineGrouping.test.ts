@@ -174,6 +174,23 @@ describe("groupTimelineItems", () => {
     expect(rows.map((r) => r.type === "item" && r.item.id)).toEqual(["$text"]);
   });
 
+  it("skips a row the core marked hidden (reported on this device)", () => {
+    // The core groups as if the row were absent and sends it with
+    // `hidden: true`; the walk draws nothing for it and filters nothing else.
+    const reported = { ...message({ id: "$reported", sender: "@b:x", timestampMs: 2_000 }), hidden: true };
+    const rows = groupTimelineItems([
+      message({ id: "$1", sender: "@a:x", timestampMs: 1_000 }),
+      reported,
+      message({ id: "$3", sender: "@a:x", timestampMs: 3_000 }),
+    ]);
+    expect(rows.map((r) => r.type === "item" && r.item.id)).toEqual(["$1", "$3"]);
+  });
+
+  it("a row whose hidden flag is false is drawn", () => {
+    const rows = groupTimelineItems([{ ...message({ id: "$1", sender: "@a:x", timestampMs: 1_000 }), hidden: false }]);
+    expect(rows.map((r) => r.type === "item" && r.item.id)).toEqual(["$1"]);
+  });
+
   it("continuesRun is read from the row, not worked out from its neighbours", () => {
     // Two messages that the old rule would have joined (same sender, a minute
     // apart): the core said the second does not continue, so it does not.

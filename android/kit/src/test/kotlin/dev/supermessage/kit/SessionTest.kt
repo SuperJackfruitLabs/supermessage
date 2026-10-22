@@ -19,6 +19,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.ItemView
+import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.RoomInfoDto
@@ -27,6 +28,7 @@ import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.TimelineRow
 import uniffi.supermessage_core.TypingUserDto
+import uniffi.supermessage_ffi.AttachmentSendOutcome
 import uniffi.supermessage_ffi.ConnectionState
 import uniffi.supermessage_ffi.CoreInterface
 import uniffi.supermessage_ffi.EventSink
@@ -472,6 +474,54 @@ class SessionTest {
         assertTrue(fake.permissionAnswers.isEmpty())
     }
 
+    /** The text carries the core's mentions, built from who the composer says could be addressed. */
+    @Test
+    fun sendReturnsSentAndCollectsMentions() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, backgroundScope)
+
+        val result = session.send("hi @Atlas", "!r", mentioning = listOf(Mentionable("@atlas:x", "Atlas")))
+
+        assertEquals(SendResult.Sent, result)
+        assertEquals(listOf(Triple("!r", "hi @Atlas", listOf("@atlas:x"))), fake.sentMessages)
+    }
+
+    /** A failed attachment holds the text back: the reader asked for both. */
+    @Test
+    fun aFailedAttachmentHoldsTheTextBack() = runTest {
+        val fake = FakeCore()
+        fake.attachmentOutcome = AttachmentSendOutcome.Failed(FfiException.Network("down"), null)
+        val session = sessionOf(fake, backgroundScope)
+        session.staged.stage("/tmp/photo.jpg", "!r")
+
+        val result = session.send("look at this", "!r")
+
+        assertTrue(result is SendResult.AttachmentFailed)
+        assertTrue(fake.sentMessages.isEmpty())
+        assertEquals(listOf<String?>("look at this"), fake.sentCaptions)
+    }
+
+    /** With a file, the text rides as its caption and is not sent a second time. */
+    @Test
+    fun theTextRidesWithTheFileAsItsCaption() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, backgroundScope)
+        session.staged.stage("/tmp/photo.jpg", "!r")
+
+        assertEquals(SendResult.Sent, session.send("look", "!r"))
+        assertTrue(fake.sentMessages.isEmpty())
+        assertEquals(listOf<String?>("look"), fake.sentCaptions)
+    }
+
+    @Test
+    fun blankWithNothingStagedIsNothingToSend() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, backgroundScope)
+
+        assertEquals(SendResult.NothingToSend, session.send("   ", "!r"))
+        assertTrue(fake.sentMessages.isEmpty())
+    }
+
     private fun sessionOf(fake: FakeCore, scope: CoroutineScope): Session =
         Session(client = CoreClient(core = fake, dispatcher = Dispatchers.Unconfined), scope = scope)
 
@@ -495,6 +545,9 @@ class SessionTest {
         private val sendPermissionAnswerResult: (String, String) -> Unit = { _, _ -> },
     ) : StubCore() {
         val permissionAnswers = mutableListOf<Pair<String, String>>()
+        val sentMessages = mutableListOf<Triple<String, String, List<String>>>()
+        var attachmentOutcome: AttachmentSendOutcome = AttachmentSendOutcome.Sent
+        val sentCaptions = mutableListOf<String?>()
 
         var logoutCallCount = 0
             private set
@@ -524,6 +577,20 @@ class SessionTest {
         }
 
         override fun joinRoom(roomId: String): Unit = joinRoomResult(roomId)
+
+        override fun sendMessage(roomId: String, body: String, mentions: List<String>) {
+            sentMessages += Triple(roomId, body, mentions)
+        }
+
+        override fun setTyping(roomId: String, typing: Boolean) {}
+
+        override fun attachmentStagePath(roomId: String, path: String): StagedFile =
+            StagedFile(token = "tok-1", filename = "photo.jpg", sizeBytes = 10u, mime = "image/jpeg", width = null, height = null)
+
+        override fun attachmentSend(roomId: String, token: String, caption: String?): AttachmentSendOutcome {
+            sentCaptions += caption
+            return attachmentOutcome
+        }
 
         override fun searchMessages(term: String, roomId: String?): List<SearchResultDto> =
             searchMessagesResult(term, roomId)

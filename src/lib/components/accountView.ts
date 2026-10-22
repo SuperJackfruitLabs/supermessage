@@ -1,6 +1,8 @@
 // Copy and constants for the Account panel (iOS `AccountPanel.swift`).
 
-/** The sign-out confirm's title (`:178-187`); plain until M3 brings `account`. */
+import type { RoomMember } from "$lib/ipc";
+
+/** The sign-out confirm's title (`:178-187`); plain only while the account's name is unknown. */
 export function signOutTitle(name: string | null): string {
   return name ? `Sign out of ${name}?` : "Sign out?";
 }
@@ -23,3 +25,16 @@ export const APPEARANCE_FOOTER =
 
 /** The Sign out section's footer (`:148-157`). */
 export const SIGN_OUT_FOOTER = "Signing out removes this account and its messages from this device.";
+
+/** The Blocked section's footer (`:112-130`), the iOS sentence verbatim. */
+export const BLOCKED_FOOTER =
+  "Their messages are hidden in every room, on all your devices. A blocked agent keeps running. Block someone from a room's member list.";
+
+/** Under the links (`:142-144`). iOS says "long-press a message"; that is not a desktop gesture. */
+export const REPORT_FOOTER =
+  "To report abuse, open a message's More menu or a room's info. Reports go to your homeserver's administrators.";
+
+/** The Blocked section appears only when someone is in it; an unknown list shows nothing. */
+export function blockedSectionShown(blocked: RoomMember[] | null): boolean {
+  return blocked !== null && blocked.length > 0;
+}

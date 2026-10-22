@@ -16,6 +16,10 @@ import uniffi.supermessage_core.TimelineRow
  *   cell with no content does not reliably collapse to no height (one turned
  *   up as roughly three hundred points of blank in two rooms), so deliberately
  *   silent has to mean absent, not empty.
+ * - A row marked `hidden` (an event the reader reported on this device) gets
+ *   no entry either. The core already grouped as if it were absent; until the
+ *   Android safety store pushes its set (`CoreClient.setHiddenEvents`), no row
+ *   arrives marked.
  * - A membership row with a placement joins a run entry (`group:<first row>`,
  *   the sentence on the run's first row). While its stretch is collapsed (not
  *   in [expanded]) the whole stretch is one entry (`stretch:<first row>`).
@@ -40,7 +44,7 @@ fun displayRows(rows: List<TimelineRow>, expanded: Set<String>): List<DisplayRow
     }
 
     for (row in rows) {
-        if (row.view is ItemView.None) continue
+        if (row.view is ItemView.None || row.hidden) continue
         val placement = row.membership
         if (row.item.kind != "membership" || placement == null) {
             out.add(DisplayRow.Row(row))

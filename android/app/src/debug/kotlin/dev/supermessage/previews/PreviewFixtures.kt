@@ -749,13 +749,16 @@ object PreviewFixtures {
                 id = "everything", title = "Everything else", detail = null,
                 rows = listOf(
                     RosterRow(roomActive, AgentState.ACTIVE, describesAgent = true),
-                    RosterRow(roomInvitation, AgentState.IDLE, describesAgent = false),
                     RosterRow(roomQuiet, AgentState.QUIET, describesAgent = true),
                     RosterRow(roomBare, AgentState.IDLE, describesAgent = false),
                 ),
                 attention = false,
             ),
         )
+
+    /** The invitations the roster offers behind its one row (the core's sections never hold them). */
+    val rosterInvitations: List<RosterRow>
+        get() = listOf(RosterRow(roomInvitation, AgentState.IDLE, describesAgent = false))
 
     // ── People, search, rooms ────────────────────────────────────────────
 

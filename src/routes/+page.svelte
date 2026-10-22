@@ -23,12 +23,17 @@
   import { consumeFreshSignIn } from "$lib/stores/freshSignIn";
   import {
     appVersion,
+    type RoomMember,
+    blockedUsers,
     createRoom,
+    knownPeople,
+    onIgnoredUsers,
     ensureRecovery,
     joinRoomByAlias,
     recoverWithKey,
     resetRecovery,
     recoveryState as ipcRecoveryState,
+    roomInviter,
     searchMessages,
     typingView,
   } from "$lib/ipc";
@@ -51,6 +56,7 @@
   import EmptyRoomState from "$lib/components/layout/EmptyRoomState.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
+  import { openConversation } from "$lib/components/roomCreation";
   import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
   import InvitationPanel from "$lib/components/InvitationPanel.svelte";
   import ConnectionLine from "$lib/components/ConnectionLine.svelte";
@@ -59,7 +65,10 @@
   import AccountPanel from "$lib/components/AccountPanel.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { appearanceStore } from "$lib/stores/appearance.svelte";
-  import { resetComposeState } from "$lib/stores/sessionReset";
+  import { resetSessionState } from "$lib/stores/sessionReset";
+  import { safetyStore } from "$lib/stores/safety.svelte";
+  import { unblock } from "$lib/safety";
+  import { accountStore } from "$lib/stores/account.svelte";
   import { escapeClosesPanel } from "$lib/components/roomInfoView";
 
   let checking = $state(true);
@@ -460,7 +469,7 @@
         panelIsModal,
         defaultPrevented: event.defaultPrevented,
         // The search panel is a modal overlay too, and handles its own Escape.
-        modalDialogOpen: searchOpen || accountOpen || document.querySelector("dialog:modal") !== null,
+        modalDialogOpen: searchOpen || accountOpen || newRoomOpen || document.querySelector("dialog:modal") !== null,
       })
     )
       return;
@@ -603,7 +612,24 @@
     };
   });
 
+  // The core's blocked list. Installed before the session restores, because the
+  // core emits it as sync starts. `unlistenIgnored` is a plain variable and not
+  // an `onMount` return value: that callback is `async`, and Svelte only calls a
+  // synchronous one.
+  let unlistenIgnored: (() => void) | null = null;
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+    unlistenIgnored?.();
+  });
+
   onMount(async () => {
+    onIgnoredUsers((ids) => safetyStore.apply(ids))
+      .then((unlisten) => {
+        if (destroyed) unlisten();
+        else unlistenIgnored = unlisten;
+      })
+      .catch((err: unknown) => console.error("could not listen for the blocked list", err));
     try {
       restored = await roomsStore.restoreSession();
     } catch (err) {
@@ -616,6 +642,9 @@
       checking = false;
     }
     if (!restored) {
+      // Also a way back to /login (no session, or a revoked one): whatever the last
+      // account left in these stores must not be there for the next sign-in.
+      resetSessionState();
       await goto("/login");
       return;
     }
@@ -626,6 +655,15 @@
     // roster and timeline, which are already streaming by now, and `load`
     // reports its own failures rather than throwing.
     void spacesStore.load();
+    // The core emits the blocked list once when the session starts, which can be
+    // before the listener above exists; ask for it, and let a later event win.
+    void safetyStore.seed(async () => (await blockedUsers()).map((m) => m.userId));
+    // The core forgets the reader's hidden events whenever an account starts
+    // (login and restore both land here); hand it this device's set, so the
+    // rows reported here come back marked `hidden`. Later reports push from
+    // `safetyStore.hide`.
+    void safetyStore.pushHidden();
+    void accountStore.load();
     // Recovery is set up after a fresh sign-in only, never after a restore —
     // `consumeFreshSignIn` is set by /login alone. Not awaited, and a failure
     // is silent: the user is not interrupted, and a device that cannot read its
@@ -676,8 +714,32 @@
   let accountOpen = $state(false);
   let version = $state<string | null>(null);
 
+  /** Who this account has blocked, read each time the panel opens; `null` when it could not be. */
+  let blockedList = $state<RoomMember[] | null>(null);
+  let accountOpening = 0;
+
+  async function unblockFromAccount(userId: string): Promise<string | null> {
+    const refused = await unblock(userId);
+    if (refused === null && blockedList !== null) {
+      blockedList = blockedList.filter((m) => m.userId !== userId);
+    }
+    return refused;
+  }
+
   async function openAccount(): Promise<void> {
     accountOpen = true;
+    blockedList = null;
+    // Only the newest opening's answer may land; a failed first load is tried again here.
+    const mine = ++accountOpening;
+    blockedUsers().then(
+      (list) => {
+        if (mine === accountOpening) blockedList = list;
+      },
+      () => {
+        if (mine === accountOpening) blockedList = null;
+      },
+    );
+    if (accountStore.account === null) void accountStore.load();
     try {
       version = await appVersion();
     } catch (err) {
@@ -702,8 +764,9 @@
       // account's mount would render the previous one's rail for the frames
       // between restoring and its own `spaces_list` landing.
       spacesStore.clear();
-      // The next account must not inherit this one's pending edits and replies.
-      resetComposeState();
+      // The next account must not inherit this one's pending edits and replies,
+      // blocked list, hidden messages or name.
+      resetSessionState();
       signingOut = false;
     }
     await goto("/login");
@@ -1090,11 +1153,16 @@
             homeserver takes a message and loses it.
           -->
           {#if (roomsStore.selectedAffordance ?? "compose") === "respondToInvitation"}
+            <!-- Keyed: the inviter is loaded once per invitation shown. -->
+            {#key roomsStore.selectedId}
             <InvitationPanel
+              roomId={roomsStore.selectedId}
+              loadInviter={() => roomInviter(roomsStore.selectedId!)}
               roomName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
               onAccept={acceptSelectedInvitation}
               onDecline={declineSelectedInvitation}
             />
+            {/key}
           {:else if (roomsStore.selectedAffordance ?? "compose") === "compose"}
             <Composer roomId={roomsStore.selectedId} />
           {/if}
@@ -1204,6 +1272,10 @@
       void openRecovery();
     }}
     onSignOut={signOut}
+    account={accountStore.account}
+    accountName={accountStore.name}
+    blocked={blockedList}
+    onUnblock={unblockFromAccount}
     onOpenLink={(u) => void openUrl(u)}
     onClose={() => (accountOpen = false)}
   />
@@ -1249,5 +1321,7 @@
     onJoin={joinRoomByAlias}
     onOpened={openNewlyReachableRoom}
     onClose={() => (newRoomOpen = false)}
+    loadPeople={(q) => knownPeople(q)}
+    onOpenPerson={(p) => openConversation(p)}
   />
 {/if}

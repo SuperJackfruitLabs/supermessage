@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * The four settings a reader's device remembers between launches.
+ * The three settings a reader's device remembers between launches.
  *
  * Takes a `DataStore<Preferences>` rather than a `Context`: the store is
  * this class's only dependency, so a test can hand it one backed by a
@@ -22,7 +22,6 @@ class RosterPreferences(private val store: DataStore<Preferences>) {
     private object Keys {
         val HOMESERVER = stringPreferencesKey("login.homeserver")
         val VIEW = stringPreferencesKey("roster.view")
-        val SHOWS_INVITATIONS = booleanPreferencesKey("roster.showsInvitations")
         val SHOWS_STATE = booleanPreferencesKey("roster.showsState")
     }
 
@@ -60,9 +59,6 @@ class RosterPreferences(private val store: DataStore<Preferences>) {
             }
         }
 
-    val showsInvitations: Flow<Boolean> =
-        store.data.map { it[Keys.SHOWS_INVITATIONS] ?: false }
-
     val showsState: Flow<Boolean> =
         store.data.map { it[Keys.SHOWS_STATE] ?: true }
 
@@ -72,10 +68,6 @@ class RosterPreferences(private val store: DataStore<Preferences>) {
 
     suspend fun setView(value: RosterChoice) {
         store.edit { it[Keys.VIEW] = value.name }
-    }
-
-    suspend fun setShowsInvitations(value: Boolean) {
-        store.edit { it[Keys.SHOWS_INVITATIONS] = value }
     }
 
     suspend fun setShowsState(value: Boolean) {

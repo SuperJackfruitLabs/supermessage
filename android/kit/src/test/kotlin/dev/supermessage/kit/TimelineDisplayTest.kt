@@ -153,4 +153,12 @@ class TimelineDisplayTest {
         assertEquals(2, (out[0] as DisplayRow.MembershipRun).rows.size)
         assertFalse(out.any { it.id == "2" })
     }
+
+    @Test
+    fun hiddenRowsAreDropped() {
+        // The core sends a reported row marked `hidden`; the walk draws nothing
+        // for it and leaves its neighbours alone.
+        val out = displayRows(listOf(message("1"), message("2").copy(hidden = true), message("3")), expanded = emptySet())
+        assertEquals(listOf("1", "3"), out.map { it.id })
+    }
 }

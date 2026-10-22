@@ -13,11 +13,12 @@ clients share `crates/supermessage-core` through Tauri commands and UniFFI.
 The [README capability table](README.md#status-early-with-active-desktop-and-native-clients)
 covers messaging, attachments, edits/deletes, rooms, search, recovery and suite
 cards. Gate choices use `FocusedTimeline::send_gate_decision` on all three
-frontends; ordinary AgentPod permission replies remain plain text on desktop.
-iOS notification actions (and iOS in-room permission replies) instead use
-`Session::send_gate_decision_to` / `send_permission_answer`, which take a room
-id, need no focused timeline or sync, and await the homeserver; both share
-their content builders with the focused-timeline path. Gates are answerable
+frontends. AgentPod permission answers use `Session::send_permission_answer` on
+iOS and desktop (the desktop `send_permission_answer` command): it takes a room
+id, needs no focused timeline or sync, and awaits the homeserver; the content is
+still ordinary chat text. iOS notification actions likewise use
+`Session::send_gate_decision_to`; both share their content builders with the
+focused-timeline path. Gates are answerable
 from the notification by operator decision of 2026-09-27.
 
 **Before planning work, inspect both the UI caller and its core implementation.**

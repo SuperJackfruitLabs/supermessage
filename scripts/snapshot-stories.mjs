@@ -20,6 +20,19 @@
 //     days on three pixels in a single column, the blue channel moved by 19,
 //     on the left edge of a "T". A per-channel tolerance of 2 cannot absorb
 //     that, and raising it to 19 would absorb real regressions too.
+//   - `--disable-partial-raster`. Partial raster repaints only the damaged
+//     rectangle of a tile and blends it over the pixels already there, so an
+//     antialiased corner drawn twice (once per paint of the same button)
+//     comes out a few levels different from one that was drawn once, and
+//     which of the two a launch gets depends on paint timing. Measured on
+//     2026-10-23 with the page held still for 1.5 s: the Sign out button in
+//     `SignOutConfirm` came out in one of two states on a 50/50 split across
+//     launches, differing by up to 45 on four corner pixels, and the Account
+//     panel's accent swatch on the same terms. The only launch switch that
+//     made both frames identical 12 times in 12 was this one; threads, GPU
+//     and Skia switches did not, and no layout or transition change was
+//     needed. It is a speed optimisation, not a rendering rule, so a gate
+//     loses nothing by switching it off.
 //   - UTC and `en-US`: the timeline renders relative timestamps, and the
 //     native gates both learned this the expensive way — six Android frames
 //     to a timezone, two iOS frames to a locale.
@@ -68,7 +81,7 @@ await mkdir(out, { recursive: true })
 
 const MOTION_ALLOWED = process.env.SNAPSHOT_MOTION === 'allow'
 
-const browser = await chromium.launch({ args: ['--disable-lcd-text'] })
+const browser = await chromium.launch({ args: ['--disable-lcd-text', '--disable-partial-raster'] })
 const context = await browser.newContext({
   viewport: { width: 900, height: 720 },
   deviceScaleFactor: 1,
@@ -136,6 +149,10 @@ for (const story of stories) {
   await page.addStyleTag({ content: `*, *::before, *::after {
     animation: none !important; transition: none !important;
     caret-color: transparent !important; }` })
+  // Two frames after the style lands: a transition that was already running (an opacity reveal on
+  // a focus ring) is cut short by the rule above only at the next style recalculation, and a
+  // shutter that beats it paints antialiasing 4–7 px different from run to run.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
   // `.count()` is the wrong question: Storybook ships `#error-message` in
   // every preview document and keeps it hidden, so counting it reported all
   // 83 stories as broken while every frame on disk was correct. Visibility
@@ -157,7 +174,7 @@ for (const story of stories) {
   //
   // A component that positions itself against the viewport has to be
   // photographed against the viewport.
-  await page.screenshot({ path: path.join(out, `${story.id}.png`) })
+  await page.screenshot({ path: path.join(out, `${story.id}.png`), animations: 'disabled', caret: 'hide' })
 }
 
 await writeFile(path.join(out, 'PLATFORM'), `${process.platform}\n`)

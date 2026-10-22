@@ -26,8 +26,17 @@ adb -s "$S" shell "su 0 setprop persist.sys.timezone UTC" 2>/dev/null \
 # pixel_6 geometry, which is what ci.yml pins.
 adb -s "$S" shell wm size 1080x2400 >/dev/null
 adb -s "$S" shell wm density 420 >/dev/null
+# CI's emulator runs with `disable-animations: true` (ci.yml), which is all
+# three scales at 0, i.e. Reduce Motion on. A test that needs a particular
+# motion setting must provide it (`LocalReduceMotion`), not read this one.
+adb -s "$S" shell settings put global window_animation_scale 0
+adb -s "$S" shell settings put global transition_animation_scale 0
+adb -s "$S" shell settings put global animator_duration_scale 0
 
 echo "==> now: $(adb -s "$S" shell wm size | tr -d '\r'), $(adb -s "$S" shell wm density | tr -d '\r')"
+echo "==> animations: window=$(adb -s "$S" shell settings get global window_animation_scale | tr -d '\r')," \
+     "transition=$(adb -s "$S" shell settings get global transition_animation_scale | tr -d '\r')," \
+     "animator=$(adb -s "$S" shell settings get global animator_duration_scale | tr -d '\r')"
 echo "==> tz:  $(adb -s "$S" shell getprop persist.sys.timezone | tr -d '\r')"
 cat <<'NOTE'
 

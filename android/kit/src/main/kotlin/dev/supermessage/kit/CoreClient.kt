@@ -7,6 +7,7 @@ import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
+import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
@@ -155,6 +156,8 @@ class CoreClient(
     suspend fun roomAvatarFull(roomId: String): String? = run { it.roomAvatarFull(roomId) }
 
     suspend fun knownPeople(): List<PersonDto> = run { it.knownPeople() }
+
+    suspend fun roomCast(roomId: String): RoomCast = run { it.roomCast(roomId) }
 
     suspend fun directRoomWith(userId: String): String? = run { it.directRoomWith(userId) }
 

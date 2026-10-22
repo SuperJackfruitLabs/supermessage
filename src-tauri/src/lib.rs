@@ -17,6 +17,7 @@ use serde::Serialize;
 use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
 mod commands;
+mod commands_session;
 mod host;
 
 use crate::commands::{
@@ -34,6 +35,11 @@ use crate::commands::{
     send_reply, set_hidden_events, set_typing, space_display_name, space_select, spaces_list,
     timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction, turn,
     turn_duration_label, turn_record_label, turn_status_word, typing_view,
+};
+use crate::commands_session::{
+    account, blocked_users, direct_room_with, ignore_user, known_people, people_label,
+    report_event, report_reason_remaining, report_room, report_user, room_inviter,
+    send_permission_answer, set_room_notification_mode, set_room_pinned, unignore_user,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -220,6 +226,21 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             core_status,
+            ignore_user,
+            unignore_user,
+            blocked_users,
+            report_event,
+            report_room,
+            report_user,
+            report_reason_remaining,
+            set_room_notification_mode,
+            set_room_pinned,
+            known_people,
+            direct_room_with,
+            room_inviter,
+            account,
+            people_label,
+            send_permission_answer,
             connection_state,
             login,
             restore_session,

@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -351,15 +353,16 @@ class TimelineRowTest {
         assertTrue("bubble should stay within its bounded width, was $width", width <= 320.dp)
     }
 
-    /** Existing reactions and read receipts are drawn, read-only, in this phase. */
+    /** Existing reactions are drawn on the bubble's corner; the receipt is a stack of faces. */
     @Test
-    fun reactionsAndReadReceiptsRenderReadOnly() {
+    fun reactionsAndReadReceiptsRenderOnTheCorner() {
+        val readers = listOf("@a:example.org", "@b:example.org").map { ReaderFace(it, null, null) }
         compose.setContent {
             TimelineRow(
                 row = row(
                     view = ItemView.Bubble(muted = false, blocks = paragraph("done"), voice = null),
                     isOwn = true,
-                    readBy = listOf("@a:example.org", "@b:example.org"),
+                    readBy = readers.map { it.userId },
                     reactions = listOf(
                         ReactionDto(
                             key = "✅",
@@ -371,47 +374,123 @@ class TimelineRowTest {
                     ),
                 ),
                 now = now,
+                readers = readers,
             )
         }
         compose.onNodeWithText("✅", substring = true).assertIsDisplayed()
-        // Scoped to the reaction chip itself (not a bare substring match
-        // against the whole tree) — a single "2" elsewhere, such as this
-        // row's own timestamp text, must not satisfy this assertion. See
-        // this test's own history: `substring = true` on a lone digit
-        // matched CI's formatted "12:00" timestamp too.
-        compose.onNodeWithTag("reaction-✅").onChildren().filterToOne(hasText("2")).assertIsDisplayed()
-        compose.onNodeWithText("Read by", substring = true).assertIsDisplayed()
+        // The chip is one accessible node (it carries the who-reacted long press), so
+        // its count is part of its merged text rather than a child node.
+        compose.onNodeWithTag("reaction-✅").assert(hasText("2")).assertIsDisplayed()
+        compose.onNodeWithTag("reader-stack").assertIsDisplayed()
+        // The chip hangs off the bubble: its top is above the bubble's bottom.
+        val bubble = compose.onNodeWithTag("bubble").getUnclippedBoundsInRoot()
+        val chip = compose.onNodeWithTag("reaction-✅").getUnclippedBoundsInRoot()
+        assertTrue("chip ${chip.top} should overlap the bubble bottom ${bubble.bottom}", chip.top < bubble.bottom)
     }
 
-    /**
-     * Read receipts name people, not Matrix ids.
-     *
-     * The first implementation of this row reimplemented the core's
-     * `people_label` locally, because it looked for free functions in
-     * `supermessage_core.kt` and found none — they live in
-     * `supermessage_ffi.kt`. The grouping it wrote was right; the fallback was
-     * not, and a reader saw `@_agentpod_ganesha:id.agentpod.dev` under their
-     * own message instead of `Ganesha`.
-     *
-     * The binding's own doc says why it exists: "naming is a core decision
-     * rather than something each host re-invents in its own idiom." This test
-     * is what stops the next host re-inventing it.
-     */
+    /** Read receipts name people, not Matrix ids: the stack's label comes from the core's `peopleLabel`. */
     @Test
     fun readReceiptsNamePeopleRatherThanIds() {
+        val ids = listOf("@_agentpod_ganesha:id.agentpod.dev")
         compose.setContent {
             TimelineRow(
                 row = row(
                     view = ItemView.Bubble(muted = false, blocks = paragraph("hello"), voice = null),
                     isOwn = true,
-                    readBy = listOf("@_agentpod_ganesha:id.agentpod.dev"),
+                    readBy = ids,
+                ),
+                now = now,
+                readers = ids.map { ReaderFace(it, null, null) },
+            )
+        }
+        compose.onNodeWithTag("reader-stack").assertContentDescriptionEquals("Read by Ganesha")
+        compose.onAllNodesWithText("@_agentpod_ganesha:id.agentpod.dev", substring = true)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun fourReadersShowThreeFacesAndACount() {
+        val ids = listOf("@a:example.org", "@b:example.org", "@c:example.org", "@d:example.org")
+        compose.setContent {
+            TimelineRow(
+                row = row(isOwn = true, readBy = ids),
+                now = now,
+                readers = ids.map { ReaderFace(it, null, "A") },
+            )
+        }
+        compose.onNodeWithText("+1", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("reader-stack")
+            .assertContentDescriptionEquals("Read by " + uniffi.supermessage_ffi.peopleLabel(ids))
+        compose.onAllNodesWithTag("reader-face", useUnmergedTree = true).assertCountEquals(3)
+    }
+
+    @Test
+    fun aReaderWithNoMessageGetsNoInitial() {
+        val talked = row(sender = "@talker:example.org", senderInitial = "T")
+        val faces = readerFaces(listOf(talked))
+        assertEquals("T", faces["@talker:example.org"]?.initial)
+        assertEquals(null, faces["@silent:example.org"])
+        // A sender whose only row is not a message gets no face either.
+        val joined = row(sender = "@joiner:example.org", senderInitial = "J").let {
+            it.copy(item = it.item.copy(kind = "membership"))
+        }
+        assertEquals(null, readerFaces(listOf(joined))["@joiner:example.org"])
+    }
+
+    @Test
+    fun theUnreadLineSaysNew() {
+        compose.setContent { TimelineRow(row = row(view = ItemView.UnreadMarker), now = now) }
+        compose.onNodeWithText("New", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("unread-marker").assertContentDescriptionEquals("New messages")
+    }
+
+    @Test
+    fun anUndecryptableMessageOffersRecovery() {
+        compose.setContent {
+            TimelineRow(
+                row = row(
+                    view = ItemView.Placeholder(PlaceholderKind.UnableToDecrypt, "Unable to decrypt"),
+                    senderName = "Ganesha",
                 ),
                 now = now,
             )
         }
-        compose.onNodeWithText("Read by Ganesha").assertExists()
-        compose.onAllNodesWithText("@_agentpod_ganesha:id.agentpod.dev", substring = true)
-            .assertCountEquals(0)
+        compose.onNodeWithText("Ganesha").assertIsDisplayed()
+        compose.onNodeWithText("Unable to decrypt").assertIsDisplayed()
+        compose.onNodeWithText("Encryption recovery in your account can restore older messages.").assertIsDisplayed()
+    }
+
+    @Test
+    fun otherPlaceholdersStayQuietLines() {
+        compose.setContent {
+            TimelineRow(
+                row = row(view = ItemView.Placeholder(PlaceholderKind.Redacted, "Message deleted")),
+                now = now,
+            )
+        }
+        compose.onNodeWithText("Message deleted").assertIsDisplayed()
+        compose.onAllNodesWithText("Encryption recovery", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun continuedRowsSitTwoApartAndNewTurnsTwelve() {
+        compose.setContent {
+            Column(Modifier.width(360.dp)) {
+                TimelineRow(row = row(), now = now, continuesRun = false)
+                TimelineRow(row = row(), now = now, continuesRun = true)
+                // Own and without a meta line, so no header or time sits in the gap.
+                TimelineRow(row = row(isOwn = true), now = now, continuesRun = false, endsRun = false)
+            }
+        }
+        val bubbles = compose.onAllNodesWithTag("bubble")
+        val first = bubbles[0].getUnclippedBoundsInRoot()
+        val second = bubbles[1].getUnclippedBoundsInRoot()
+        val third = bubbles[2].getUnclippedBoundsInRoot()
+        val run = second.top - first.bottom
+        val turn = third.top - second.bottom
+        // 0.2dp of slack: the 2dp gap is rounded to whole pixels at this density.
+        assertTrue("a continued row sits 2-4dp below, was $run", run >= 1.8.dp && run <= 4.dp)
+        assertTrue("a new turn sits 12dp below, was $turn", turn >= 11.8.dp)
     }
 
     /**
@@ -508,13 +587,13 @@ class TimelineRowTest {
 
     /**
      * The gap Phase B left: existing reaction chips toggle, but nothing adds
-     * a reaction that is not already on the message. A long press on the
+     * a reaction that is not already on the message. A tap on the
      * "add reaction" affordance opens exactly the quick set iOS and desktop
      * already agree on — `quickReactions`, verbatim from
      * `TimelineRowView.swift:22` — not a set invented here.
      */
     @Test
-    fun longPressingAddReactionOffersExactlyTheQuickSet() {
+    fun tappingAddReactionOffersExactlyTheQuickSet() {
         compose.setContent {
             TimelineRow(
                 row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("hi"), voice = null)),
@@ -522,10 +601,46 @@ class TimelineRowTest {
                 onReact = {},
             )
         }
-        compose.onNodeWithTag("add-reaction").performTouchInput { longClick() }
+        compose.onNodeWithTag("add-reaction").performClick()
         quickReactions.forEach { emoji ->
             compose.onNodeWithTag("quick-reaction-$emoji").assertIsDisplayed()
         }
+        compose.onAllNodes(hasTestTagPrefix("quick-reaction-")).assertCountEquals(quickReactions.size)
+    }
+
+    /** The chip's long press says who reacted, by `peopleLabel` (`TimelineRowView.swift:575-593`). */
+    @Test
+    fun longPressingAChipSaysWhoReacted() {
+        val senders = listOf("@ganesha:x", "@priya:x")
+        compose.setContent {
+            TimelineRow(
+                row = row(reactions = listOf(ReactionDto("👍", "👍", 2u, false, senders))),
+                now = now,
+                onReact = {},
+            )
+        }
+        compose.onNodeWithTag("reaction-who").assertDoesNotExist()
+        compose.onNodeWithTag("reaction-👍").performTouchInput { longClick() }
+        compose.onNodeWithTag("reaction-who").assertIsDisplayed()
+        compose.onNodeWithText(uniffi.supermessage_ffi.peopleLabel(senders)).assertIsDisplayed()
+    }
+
+    @Test
+    fun aChipNamesItsCountAndWhetherItIsYours() {
+        compose.setContent {
+            TimelineRow(
+                row = row(
+                    reactions = listOf(
+                        ReactionDto("👍", "👍", 2u, true, listOf("@me:x", "@a:x")),
+                        ReactionDto("👀", "👀", 1u, false, listOf("@a:x")),
+                    ),
+                ),
+                now = now,
+                onReact = {},
+            )
+        }
+        compose.onNodeWithTag("reaction-👍").assertContentDescriptionEquals("👍, 2, including yours")
+        compose.onNodeWithTag("reaction-👀").assertContentDescriptionEquals("👀, 1")
     }
 
     /** Tapping one of the offered quick reactions asks `onReact` to add it. */
@@ -539,7 +654,7 @@ class TimelineRowTest {
                 onReact = { reacted += it },
             )
         }
-        compose.onNodeWithTag("add-reaction").performTouchInput { longClick() }
+        compose.onNodeWithTag("add-reaction").performClick()
         compose.onNodeWithTag("quick-reaction-👀").performClick()
         assertEquals(listOf("👀"), reacted)
     }
