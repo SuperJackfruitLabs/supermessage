@@ -423,6 +423,37 @@ internal fun RecoveryChecking() {
     }
 }
 
+private val BLOCKED_PEOPLE = listOf(
+    RoomMemberDto("@priya:example.org", "Priya", null, isIgnored = true),
+    RoomMemberDto("@agent_atlas:example.org", "Atlas", null, isIgnored = true, isAgent = true),
+)
+
+private fun blockedAccount(failure: String? = null): @Composable () -> Unit = {
+    PreviewGround {
+        AccountPanel(
+            loadAccount = { AccountDto(userId = "@rakesh:example.org", homeserver = "https://matrix.example.org") },
+            onSignOut = {},
+            onClose = {},
+            rosterView = RosterChoice.WAITING,
+            onRosterView = {},
+            showsState = true,
+            onShowsState = {},
+            loadBlocked = { BLOCKED_PEOPLE },
+            initialUnblockFailure = failure,
+        )
+    }
+}
+
+/** Two blocked, one of them an agent; the footer says what blocking does. */
+@Preview(name = "Account, blocked users", showBackground = true, heightDp = 1160)
+@Composable
+internal fun AccountBlockedUsers() = blockedAccount()()
+
+/** An unblock the homeserver refused: the reason replaces the footer, the row stays. */
+@Preview(name = "Account, unblock failed", showBackground = true, heightDp = 1160)
+@Composable
+internal fun AccountUnblockFailed() = blockedAccount("Can't reach the homeserver.")()
+
 /** Room info with an agent, a blocked person and a person. */
 @Preview(name = "Room info, blocked member", showBackground = true, heightDp = 1100)
 @Composable

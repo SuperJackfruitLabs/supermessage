@@ -332,6 +332,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                         )
 
                     ExtraPanel.Account -> {
+                        val blockedNow by session.safety.blocked.collectAsStateWithLifecycle()
                         val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
                         val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
                         AccountPanel(
@@ -360,6 +361,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                             onEnableRecovery = session::enableRecovery,
                             onRecoverWithKey = session::recoverWithKey,
                             onResetRecovery = session::resetRecovery,
+                            blockedNow = blockedNow,
+                            loadBlocked = session::blockedUsers,
+                            onUnblock = session::unblock,
                         )
                     }
 

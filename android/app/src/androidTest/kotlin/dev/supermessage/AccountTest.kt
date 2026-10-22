@@ -7,11 +7,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
+import uniffi.supermessage_core.RoomMemberDto
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.RosterChoice
@@ -42,6 +50,21 @@ import uniffi.supermessage_core.AccountDto
 class AccountTest {
     @get:Rule val compose = createComposeRule()
 
+    private class RecordingHaptics : HapticFeedback {
+        val played = mutableListOf<HapticFeedbackType>()
+        override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+            played += hapticFeedbackType
+        }
+    }
+
+    private val haptics = RecordingHaptics()
+
+    private fun person(id: String, name: String?, agent: Boolean = false) =
+        RoomMemberDto(userId = id, displayName = name, avatarUrl = null, isIgnored = true, isAgent = agent)
+
+    private val priya = person("@priya:example.org", "Priya")
+    private val atlas = person("@agent_atlas:example.org", "Atlas", agent = true)
+
     private fun panel(
         account: () -> AccountDto? = { AccountDto(userId = "@rakesh:id.agentpod.dev", homeserver = "https://id.agentpod.dev") },
         onSignOut: () -> Unit = {},
@@ -52,10 +75,12 @@ class AccountTest {
         onShowsState: (Boolean) -> Unit = {},
         uriHandler: UriHandler? = null,
         appearance: @Composable () -> Unit = {},
+        loadBlocked: suspend () -> List<RoomMemberDto> = { emptyList() },
+        onUnblock: suspend (String) -> String? = { null },
     ) {
         compose.setContent {
             val handler = uriHandler ?: LocalUriHandler.current
-            CompositionLocalProvider(LocalUriHandler provides handler) {
+            CompositionLocalProvider(LocalUriHandler provides handler, LocalHapticFeedback provides haptics) {
                 // The width a phone has, never a height: the panel must scroll
                 // inside whatever height the device gives it.
                 Box(Modifier.requiredWidth(411.dp).fillMaxHeight()) {
@@ -69,6 +94,8 @@ class AccountTest {
                             showsState = showsState,
                             onShowsState = { onShowsState(it) },
                             appearance = appearance,
+                            loadBlocked = loadBlocked,
+                            onUnblock = onUnblock,
                         )
                     }
                 }
@@ -373,4 +400,102 @@ class AccountTest {
         assertEquals("\uD83E\uDDE0", initial)
     }
 
+    // ── The blocked list and the report footer (parity M3, Task 4) ───────
+
+    @Test
+    fun noBlockedSectionWhenNobodyIsBlocked() {
+        panel()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-blocked").assertDoesNotExist()
+        compose.onNodeWithTag("account-blocked-footer").assertDoesNotExist()
+        compose.onNodeWithText("Blocked").assertDoesNotExist()
+    }
+
+    @Test
+    fun theBlockedListShowsAgentsAndPeople() {
+        panel(loadBlocked = { listOf(priya, atlas) })
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-blocked").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("member-@priya:example.org").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("member-@agent_atlas:example.org").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("member-@agent_atlas:example.org").assertTextContains("Agent")
+        compose.onNodeWithTag("account-blocked-footer").performScrollTo().assertTextEquals(
+            "Their messages are hidden in every room, on all your devices. A blocked agent keeps running. " +
+                "Block someone from a room's member list.",
+        )
+    }
+
+    @Test
+    fun unblockingRemovesTheRowWithSuccess() {
+        panel(loadBlocked = { listOf(priya, atlas) })
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-unblock-@priya:example.org").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("member-@priya:example.org").fetchSemanticsNodes().isEmpty()
+        }
+
+        compose.onNodeWithTag("member-@agent_atlas:example.org").assertExists()
+        assertEquals(listOf(HapticFeedbackType.Confirm), haptics.played)
+    }
+
+    @Test
+    fun aRefusedUnblockReplacesTheFooter() {
+        panel(loadBlocked = { listOf(priya) }, onUnblock = { "Can't reach the homeserver." })
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-unblock-@priya:example.org").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("account-blocked-failure").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithTag("account-blocked-failure").performScrollTo().assertTextEquals("Can't reach the homeserver.")
+        compose.onNodeWithTag("member-@priya:example.org").assertExists()
+        compose.onNodeWithTag("account-blocked-footer").assertDoesNotExist()
+        assertEquals(emptyList<HapticFeedbackType>(), haptics.played)
+    }
+
+    @Test
+    fun anUnblockInFlightCannotBeTappedAgain() {
+        val gate = kotlinx.coroutines.CompletableDeferred<String?>()
+        var calls = 0
+        panel(loadBlocked = { listOf(priya) }, onUnblock = { calls++; gate.await() })
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-unblock-@priya:example.org").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("account-unblock-@priya:example.org").assertIsNotEnabled()
+        gate.complete("Nope.")
+        compose.waitForIdle()
+
+        assertEquals(1, calls)
+        compose.onNodeWithTag("account-unblock-@priya:example.org").assertIsEnabled()
+    }
+
+    @Test
+    fun theReportFooterIsIosWords() {
+        panel()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-report-footer").performScrollTo().assertTextEquals(
+            "To report abuse, long-press a message or open a room's info. " +
+                "Reports go to your homeserver's administrators.",
+        )
+    }
+
+    /** Run at 1080x1280 as well: the last unblock is only reachable by scrolling. */
+    @Test
+    fun unblockIsReachableAtTheShortHeight() {
+        val three = listOf(priya, atlas, person("@zed:example.org", "Zed"))
+        var unblocked: String? = null
+        panel(loadBlocked = { three }, onUnblock = { unblocked = it; null })
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-unblock-@zed:example.org").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        assertEquals("@zed:example.org", unblocked)
+    }
 }

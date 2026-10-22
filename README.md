@@ -34,10 +34,10 @@ release, or that every operation has been exercised against a live homeserver.
 | File/image sending and editing/deleting own messages | Sending, editing and deleting implemented | Implemented | Sending, editing and deleting implemented |
 | New conversations, room joining and accepting invitations | Implemented | Implemented | Implemented |
 | Message search | Homeserver search, this room or all rooms | Homeserver search | Homeserver search |
-| Appearance settings | Account panel: mode, dark style, accent and text size (no identity block or blocked-users list yet) | Account panel: mode, dark style, accent and roster options | Account panel: mode, dark style, accent and roster order |
+| Appearance settings | Account panel: mode, dark style, accent and text size (no identity block or blocked-users list yet) | Account panel: mode, dark style, accent and roster options | Account panel: identity, mode, dark style, accent, roster order, blocked list and help links |
 | Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
 | AgentPod turn/permission cards and SuperPipeline gates | Implemented; gate sender uses shared core; permission answers sent as plain messages | Implemented | Implemented |
-| Block users and agents; report messages, rooms and users | Core only (no UI yet) | Implemented | Core only (no UI yet) |
+| Block users and agents; report messages, rooms and users | Core only (no UI yet) | Implemented | Implemented (writes not yet exercised against a live account) |
 | Background push notifications when closed | Not implemented | Implemented (hub gateway + Notification Service Extension; device verification pending) | Not implemented |
 
 iOS push goes through the AgentPod hub's own push gateway

@@ -42,6 +42,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.RoomMemberDto
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import uniffi.supermessage_ffi.displayInitial
 import uniffi.supermessage_ffi.peopleLabel
 
@@ -99,15 +105,32 @@ fun AccountPanel(
     onEnableRecovery: suspend () -> String = { "" },
     onRecoverWithKey: suspend (String) -> Unit = {},
     onResetRecovery: suspend (String) -> String = { throw NotImplementedError() },
+    /** Who this account has blocked; read once when the panel opens and again whenever [blockedNow] changes. */
+    loadBlocked: suspend () -> List<RoomMemberDto> = { emptyList() },
+    /** Unblocks one user: `null` when it landed, otherwise the refusal in words. */
+    onUnblock: suspend (String) -> String? = { null },
+    /** The session's blocked ids, so the list follows the homeserver's echo (from another device too). */
+    blockedNow: Set<String> = emptySet(),
+    /** Only for a preview of the refused state. */
+    initialUnblockFailure: String? = null,
 ) {
     var account by remember { mutableStateOf<AccountDto?>(null) }
     var confirmingSignOut by remember { mutableStateOf(false) }
     var showingRecovery by remember { mutableStateOf(false) }
     var recovery by remember { mutableStateOf("unknown") }
     val scope = rememberCoroutineScope()
+    var blocked by remember { mutableStateOf<List<RoomMemberDto>>(emptyList()) }
+    var unblockFailure by remember { mutableStateOf(initialUnblockFailure) }
+    var unblocking by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
 
     LaunchedEffect(Unit) {
         account = loadAccount()
+    }
+    // The list loads when the panel opens, and again when the core's list
+    // changes (the `IgnoredUsers` echo). A failure shows no section.
+    LaunchedEffect(blockedNow) {
+        blocked = runCatching { loadBlocked() }.getOrDefault(emptyList())
     }
 
     val name = accountName(account)
@@ -231,11 +254,84 @@ fun AccountPanel(
                 "Waiting first puts what needs an answer at the top. Agent state is the dot and word beside an agent's name.",
             )
 
+            // Only when someone is in it (`AccountPanel.swift:112-130`).
+            if (blocked.isNotEmpty()) {
+                Column(Modifier.testTag("account-blocked")) {
+                    AccountSectionHeader("Blocked")
+                    blocked.forEach { member ->
+                        val name = member.displayName ?: member.userId
+                        Row(
+                            Modifier.fillMaxWidth().padding(end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            MemberRow(member, blocked = false, onClick = null, modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = {
+                                    unblockFailure = null
+                                    unblocking = true
+                                    scope.launch {
+                                        try {
+                                            val refused = onUnblock(member.userId)
+                                            if (refused != null) {
+                                                unblockFailure = refused
+                                            } else {
+                                                blocked = blocked.filter { it.userId != member.userId }
+                                                haptics.play(Haptic.Success)
+                                            }
+                                        } finally {
+                                            unblocking = false
+                                        }
+                                    }
+                                },
+                                enabled = !unblocking,
+                                modifier = Modifier
+                                    .semantics { contentDescription = "Unblock $name" }
+                                    .testTag("account-unblock-${member.userId}"),
+                            ) { Text("Unblock") }
+                        }
+                    }
+                    val failure = unblockFailure
+                    if (failure != null) {
+                        Text(
+                            failure,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .semantics { liveRegion = LiveRegionMode.Polite }
+                                .testTag("account-blocked-failure"),
+                        )
+                    } else {
+                        Text(
+                            "Their messages are hidden in every room, on all your devices. A blocked agent keeps running. " +
+                                "Block someone from a room's member list.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SupermessageTheme.colors.contentFaint,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .testTag("account-blocked-footer"),
+                        )
+                    }
+                }
+            }
+
             // No heading, as on iOS: the three links name themselves.
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             HelpLink("Help & support", SupportUrl, "account-link-support")
             HelpLink("Terms of use", TermsUrl, "account-link-terms")
             HelpLink("Privacy", PrivacyUrl, "account-link-privacy")
+            Text(
+                "To report abuse, long-press a message or open a room's info. " +
+                    "Reports go to your homeserver's administrators.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SupermessageTheme.colors.contentFaint,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .testTag("account-report-footer"),
+            )
 
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
 
