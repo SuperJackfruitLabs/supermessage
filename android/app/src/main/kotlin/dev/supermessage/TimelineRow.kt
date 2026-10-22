@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,7 +22,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
@@ -235,7 +240,7 @@ fun TimelineRow(
 
         // Deliberately nothing. A row for this would still occupy layout
         // space — "deliberately silent should mean absent, not empty" is
-        // `TimelineGrouping`'s reason for filtering `None` out upstream, and
+        // `displayRows`'s reason for filtering `None` out upstream, and
         // this composable honours the same rule for whatever the filter
         // still hands it.
         ItemView.None -> Unit
@@ -258,6 +263,40 @@ internal fun SystemLine(text: String, modifier: Modifier = Modifier) {
         textAlign = TextAlign.Center,
         modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
     )
+}
+
+/**
+ * A stretch of membership changes folded into one line the reader can open:
+ * the same quiet look as [SystemLine], with a chevron saying it opens.
+ *
+ * The text wraps rather than clips, so it holds at large font scales on a
+ * narrow screen; the row is at least a touch target tall.
+ */
+@Composable
+internal fun StretchLine(text: String, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClick = onOpen)
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = "Shows each change",
+            tint = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.size(16.dp),
+        )
+    }
 }
 
 /** A hairline with the day on it, formatted relative to [now]. */

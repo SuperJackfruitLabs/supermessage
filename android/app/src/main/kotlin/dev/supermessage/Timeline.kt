@@ -28,6 +28,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -36,7 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.DisplayRow
 import dev.supermessage.kit.TimelineAnimation
-import dev.supermessage.kit.TimelineGrouping
+import dev.supermessage.kit.displayRows
 import dev.supermessage.kit.stores.LiveStore
 import java.time.Instant
 import kotlinx.coroutines.launch
@@ -75,19 +78,16 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * `TimelineCollectionView.swift`'s explicit `display.reversed()` before it
  * applies its own snapshot.
  *
- * ## Grouping — [TimelineRow]'s stated gap, closed here
+ * ## Grouping — the core's, drawn here
  *
- * [TimelineRow] takes `continuesRun`/`attribution` as parameters precisely
- * because, in its own words, that decision is "chosen by the list that can
- * see every row; a single row cannot." This container is where the whole
- * list is in hand, so it is where [TimelineGrouping.continuesRun] and
- * [TimelineGrouping.hasSingleSpeaker] actually run — mirroring
- * `TimelineCollectionView.swift`'s `rowsById`/`singleSpeaker`. A row's
- * attribution is its short name when one agent does all the talking in the
- * room, and its full name otherwise; a row continues the run above it when
- * [TimelineGrouping.continuesRun] says so, computed walking [rows] in the
- * chronological order it already arrives in (not [newestFirst]'s reversed
- * order — "the row above it" means the row before it in time).
+ * Whether a row continues the run above it, ends its run or shows the
+ * bridge's runtime suffix is decided once, in the core (`timeline_grouping.rs`),
+ * and arrives on every row as `continuesRun`, `endsRun` and `showsRuntime`.
+ * [TimelineRow] takes them as parameters; this container only reads them off
+ * the row. (The core also sends `hidesQuote`; Android does not draw reply
+ * quotes under their parent yet, so nothing reads it.) A row's attribution
+ * is its full name where two or more peers speak (`showsRuntime`), and its
+ * short name otherwise.
  *
  * ## The live turn's place in the list
  *
@@ -101,17 +101,15 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * show ([LiveStore.isLive]); nothing here duplicates that check to decide
  * *whether* to render it, only *where*.
  *
- * ## Membership runs — collapsed after grouping, before reversing
+ * ## Membership runs and stretches — the core groups, the reader opens
  *
- * [rows] is fed through [TimelineGrouping.collapseMembershipRuns] before
- * anything else touches it, so a run of consecutive "updated their
- * membership" rows becomes one [DisplayRow.MembershipRun] rather than one
- * line per row — the failure [TimelineGrouping.collapseMembershipRuns]'s own
- * doc names, found on a device that drew eight of them in a row. Collapsing
- * happens **before** [newestFirst]'s `asReversed()`: runs are consecutive in
- * the chronological order [rows] already arrives in, so collapsing first and
- * reversing the (shorter) result keeps the newest-first contract with one
- * less thing to reason about than reversing first would.
+ * [rows] is walked by [displayRows] before anything else touches it. A run of
+ * consecutive membership rows becomes one [DisplayRow.MembershipRun]; a
+ * stretch of three or more runs becomes one summary line the reader taps to
+ * open ([expanded], by stretch id, saved per [roomId]). This happens
+ * **before** [newestFirst]'s `asReversed()`: runs are consecutive in the
+ * chronological order [rows] already arrives in, so collapsing first and
+ * reversing the (shorter) result keeps the newest-first contract.
  *
  * ## Starting a reply or an edit — this list's job, the way iOS's is
  *
@@ -160,52 +158,25 @@ fun Timeline(
     imageUri: (eventId: String) -> String? = { null },
     faceUri: (mxcUri: String) -> String? = { null },
     loadFace: suspend (mxcUri: String) -> Unit = {},
+    roomId: String = "",
     modifier: Modifier = Modifier,
 ) {
     val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
 
-    // Keyed on `revision`, not `rows` itself. `TimelineStore.revision` is
-    // bumped exactly once per wholesale replacement of `items` and nowhere
-    // else, so it answers "did the history actually change" in the
-    // constant time a `ULong` comparison costs — the whole reason it exists
-    // (see `TimelineStore.kt`'s own doc on it). Keying these three off
-    // `rows` instead pays a structural, element-by-element comparison of
-    // the entire list on every recomposition this container has, including
-    // the many-times-a-second ones a live turn's own answer/thought/tools
-    // cause while `rows` itself has not moved.
-    //
-    // Walked in the order `rows` already arrives in — oldest first —
-    // because "the row above it" means the row before it in time, not
-    // before it in the inverted list this container displays.
-    val continuesRun = remember(revision) {
-        val out = HashMap<String, Boolean>(rows.size)
-        var previous: TimelineRowDto? = null
-        for (row in rows) {
-            out[row.item.id] = TimelineGrouping.continuesRun(row, previous)
-            previous = row
-        }
-        out
-    }
-    // The mirror of `continuesRun`: a row ends its run when the row after
-    // it (in time) does not continue it. Derived from the same rule rather
-    // than a second one, so the two can never disagree about where a run is.
-    val endsRun = remember(revision) {
-        val out = HashMap<String, Boolean>(rows.size)
-        for (i in rows.indices) {
-            val next = rows.getOrNull(i + 1)
-            out[rows[i].item.id] = next == null || !TimelineGrouping.continuesRun(next, rows[i])
-        }
-        out
-    }
-    val singleSpeaker = remember(revision) { TimelineGrouping.hasSingleSpeaker(rows) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    // Collapse membership runs first — they are consecutive in the
-    // chronological order `rows` already arrives in — then reverse. See the
-    // class doc's "Feed order" and "Membership runs" sections.
-    val displayRows = remember(revision) { TimelineGrouping.collapseMembershipRuns(rows) }
-    val newestFirst = displayRows.asReversed()
+    // The stretches the reader has opened. Per room: another room's stretch
+    // ids are not this room's, and the same stretch should survive rotation.
+    var expanded by rememberSaveable(roomId, stateSaver = ExpandedStretches) {
+        mutableStateOf(emptySet<String>())
+    }
+
+    // The core's grouping, walked in the chronological order `rows` already
+    // arrives in, then reversed. Keyed on `revision` (a constant-time
+    // comparison; see `TimelineStore.revision`) and on what the reader opened.
+    val entries = remember(revision, expanded) { displayRows(rows, expanded) }
+    val newestFirst = entries.asReversed()
 
     // Exact, not a tuned threshold — `derivedStateOf` so scrolling a single
     // pixel does not recompose anything that reads this; it only changes
@@ -321,9 +292,9 @@ fun Timeline(
                 TimelineRow(
                     row = row,
                     now = Instant.now(),
-                    continuesRun = continuesRun[row.item.id] ?: false,
-                    endsRun = endsRun[row.item.id] ?: true,
-                    attribution = if (singleSpeaker) row.senderShort else row.senderName,
+                    continuesRun = row.continuesRun,
+                    endsRun = row.endsRun,
+                    attribution = if (row.showsRuntime) row.senderName else row.senderShort,
                     imageUri = imageUri,
                     faceUri = faceUri,
                     loadFace = loadFace,
@@ -341,7 +312,15 @@ fun Timeline(
             }
 
             is DisplayRow.MembershipRun ->
-                SystemLine(text = display.text, modifier = rowModifier)
+                if (display.isStretch) {
+                    StretchLine(
+                        text = display.text,
+                        onOpen = { expanded = expanded + display.id },
+                        modifier = rowModifier,
+                    )
+                } else {
+                    SystemLine(text = display.text, modifier = rowModifier)
+                }
         }
     }
 
@@ -503,3 +482,9 @@ internal fun JumpToNewestButton(onClick: () -> Unit, modifier: Modifier = Modifi
  * pagination fire before the reader hits a visible dead stop.
  */
 private const val PaginationLookahead = 3
+
+/** The opened stretch ids as a saveable list, so rotation keeps them open. */
+private val ExpandedStretches = listSaver<Set<String>, String>(
+    save = { it.toList() },
+    restore = { it.toSet() },
+)
