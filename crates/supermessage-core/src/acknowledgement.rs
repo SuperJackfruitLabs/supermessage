@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::display_name::names_label;
 use crate::dto::TimelineRow;
+use crate::error::{CoreError, CoreResult};
+use crate::timeline::FocusedTimeline;
 
 /// Which of the dock's two sentences.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
@@ -148,6 +150,37 @@ pub fn state(
     } else {
         sent(addressee)
     })
+}
+
+/// [`state`] over the focused timeline's own rows, so a host that already has
+/// them in the core (the desktop) sends none over IPC. `sent_this_session`
+/// is the session's own record for `room_id` (ruling 12e).
+///
+/// Fails with [`CoreError::NotReady`] when no room is focused and
+/// [`CoreError::RoomChanged`] when the focused room is not `room_id`.
+pub async fn for_focused(
+    focused: &FocusedTimeline,
+    room_id: &str,
+    addressee: Option<&str>,
+    agent_ids: &[String],
+    typing_agents: &[String],
+    turn_in_progress: bool,
+) -> CoreResult<Option<Acknowledgement>> {
+    let (subject, _seq, rows) = focused.snapshot().await?;
+    if subject != room_id {
+        return Err(CoreError::RoomChanged {
+            requested: room_id.to_string(),
+            focused: subject,
+        });
+    }
+    Ok(state(
+        &rows,
+        addressee,
+        agent_ids,
+        focused.has_sent(room_id),
+        typing_agents,
+        turn_in_progress,
+    ))
 }
 
 #[cfg(test)]
@@ -411,5 +444,16 @@ mod tests {
         // The progress message lands and is edited in place: done.
         let rows = [own_with("$1", vec![react("👀", 1, false)]), progress];
         assert_eq!(dock(&rows), None);
+    }
+
+    /// Mutation seen failing: swallowing the snapshot's error (returning
+    /// `Ok(None)`) fails the `NotReady` match.
+    #[tokio::test]
+    async fn for_focused_without_a_focused_room_is_not_ready() {
+        let focused = FocusedTimeline::default();
+        assert!(matches!(
+            for_focused(&focused, "!r:x", Some("Atlas"), &[], &[], false).await,
+            Err(CoreError::NotReady)
+        ));
     }
 }

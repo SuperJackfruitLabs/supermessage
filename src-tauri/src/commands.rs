@@ -827,6 +827,54 @@ pub fn parse_matrix_link(
     supermessage_core::matrix_links::parse_matrix_link(&href)
 }
 
+/// Who is in `room_id` — see `core::room_cast`.
+#[tauri::command]
+pub async fn room_cast(
+    room_id: String,
+    session: State<'_, Session>,
+) -> Result<supermessage_core::room_cast::RoomCast, CoreError> {
+    session.room_cast(&room_id).await
+}
+
+/// The typing line and the agents the acknowledgement names — see
+/// `core::typing_line`.
+#[tauri::command]
+pub fn typing_view(
+    typers: Vec<supermessage_core::dto::TypingUserDto>,
+    agent_ids: Vec<String>,
+    counterpart: Option<supermessage_core::room_cast::Counterpart>,
+) -> supermessage_core::typing_line::TypingView {
+    supermessage_core::typing_line::typing_view(&typers, &agent_ids, counterpart.as_ref())
+}
+
+/// Whether this account has sent in `room_id` since signing in.
+#[tauri::command]
+pub fn has_sent(room_id: String, timeline: State<'_, Arc<FocusedTimeline>>) -> bool {
+    timeline.has_sent(&room_id)
+}
+
+/// What the dock above the composer says — see `core::acknowledgement`. Reads
+/// the core's own timeline rows, so the webview sends none.
+#[tauri::command]
+pub async fn acknowledgement(
+    room_id: String,
+    addressee: Option<String>,
+    agent_ids: Vec<String>,
+    typing_agents: Vec<String>,
+    turn_in_progress: bool,
+    timeline: State<'_, Arc<FocusedTimeline>>,
+) -> Result<Option<supermessage_core::acknowledgement::Acknowledgement>, CoreError> {
+    supermessage_core::acknowledgement::for_focused(
+        &timeline,
+        &room_id,
+        addressee.as_deref(),
+        &agent_ids,
+        &typing_agents,
+        turn_in_progress,
+    )
+    .await
+}
+
 /// The user ids a finished message mentions, for `m.mentions`.
 #[tauri::command]
 pub fn collect_mentions(

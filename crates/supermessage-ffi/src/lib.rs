@@ -759,6 +759,21 @@ impl Core {
         Ok(self.block(self.session.known_people())?)
     }
 
+    /// Who is in `room_id` — the composer's mention list, the typing line's
+    /// counterpart and the acknowledgement's addressee. See `core::room_cast`.
+    pub fn room_cast(
+        &self,
+        room_id: String,
+    ) -> Result<supermessage_core::room_cast::RoomCast, FfiError> {
+        Ok(self.block(self.session.room_cast(&room_id))?)
+    }
+
+    /// Whether this account has sent in `room_id` since signing in — the
+    /// session owns it (ruling 12e).
+    pub fn has_sent(&self, room_id: String) -> bool {
+        self.session.has_sent(&room_id)
+    }
+
     /// The room this account already shares with `user_id` alone, if any.
     pub fn direct_room_with(&self, user_id: String) -> Result<Option<String>, FfiError> {
         Ok(self.block(self.session.direct_room_with(&user_id))?)
@@ -1129,6 +1144,59 @@ pub fn agent_avatar_variants() -> Vec<supermessage_core::agent_avatar::AgentAvat
 #[uniffi::export]
 pub fn audio_clock_label(ms: u64) -> String {
     supermessage_core::audio::audio_clock_label(ms)
+}
+
+/// The cast of a room from facts already in hand — for previews and tests.
+/// A free function because it touches no session state; hosts with a session
+/// ask `Core::room_cast`, which gathers the same facts itself.
+#[uniffi::export]
+pub fn room_cast_from(
+    room_id: String,
+    everyone: Vec<supermessage_core::people::PersonDto>,
+    member_ids: Option<Vec<String>>,
+    header_name: Option<String>,
+    is_agent_room: bool,
+) -> supermessage_core::room_cast::RoomCast {
+    supermessage_core::room_cast::cast_from(
+        &room_id,
+        &everyone,
+        member_ids.as_deref(),
+        header_name.as_deref(),
+        is_agent_room,
+    )
+}
+
+/// The typing line and the agents the acknowledgement names — see
+/// `core::typing_line`. A free function for the same reason as `peer_color_index`.
+#[uniffi::export]
+pub fn typing_view(
+    typers: Vec<supermessage_core::dto::TypingUserDto>,
+    agent_ids: Vec<String>,
+    counterpart: Option<supermessage_core::room_cast::Counterpart>,
+) -> supermessage_core::typing_line::TypingView {
+    supermessage_core::typing_line::typing_view(&typers, &agent_ids, counterpart.as_ref())
+}
+
+/// What the dock above the composer says after the reader wrote to an agent —
+/// see `core::acknowledgement`. A free function for the same reason as
+/// `peer_color_index`.
+#[uniffi::export]
+pub fn acknowledgement(
+    rows: Vec<supermessage_core::dto::TimelineRow>,
+    addressee: Option<String>,
+    agent_ids: Vec<String>,
+    sent_this_session: bool,
+    typing_agents: Vec<String>,
+    turn_in_progress: bool,
+) -> Option<supermessage_core::acknowledgement::Acknowledgement> {
+    supermessage_core::acknowledgement::state(
+        &rows,
+        addressee.as_deref(),
+        &agent_ids,
+        sent_this_session,
+        &typing_agents,
+        turn_in_progress,
+    )
 }
 
 /// The user ids a finished message mentions, for `m.mentions`.

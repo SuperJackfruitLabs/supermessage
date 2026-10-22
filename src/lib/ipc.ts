@@ -2079,6 +2079,92 @@ export async function collectMentions(
   return invoke<string[]>("collect_mentions", { text, members });
 }
 
+/** Mirrors `core::dto::RuntimeDto`. */
+export interface PersonRuntime {
+  harness: string;
+  host: string;
+}
+
+/** Mirrors `core::people::PersonDto` (serialize-only in Rust). */
+export interface PersonDto {
+  userId: string;
+  name: string;
+  initial: string;
+  runtime: PersonRuntime | null;
+  avatarUrl: string | null;
+}
+
+/** Mirrors `core::room_cast::Counterpart`: who the room header names. */
+export interface Counterpart {
+  userId: string;
+  name: string;
+}
+
+/** Mirrors `core::room_cast::RoomCast` (serialize-only in Rust). */
+export interface RoomCast {
+  roomId: string;
+  people: PersonDto[];
+  counterpart: Counterpart | null;
+  agentIds: string[];
+  addressee: string | null;
+  mentionables: Mentionable[];
+}
+
+/** Mirrors `core::typing_line::TypingView`. */
+export interface TypingView {
+  line: string | null;
+  agents: string[];
+}
+
+/** Mirrors `core::acknowledgement::AcknowledgementKind`. */
+export type AcknowledgementKind = "sent" | "onIt";
+
+/** Mirrors `core::acknowledgement::Acknowledgement`. */
+export interface Acknowledgement {
+  kind: AcknowledgementKind;
+  names: string[];
+  text: string;
+}
+
+/** Who is in `roomId`: the composer's mentions, the counterpart, the addressee. */
+export async function roomCast(roomId: string): Promise<RoomCast> {
+  return invoke<RoomCast>("room_cast", { roomId });
+}
+
+/** The typing line, and the agents the acknowledgement names. */
+export async function typingView(
+  typers: readonly TypingUser[],
+  agentIds: readonly string[],
+  counterpart: Counterpart | null,
+): Promise<TypingView> {
+  return invoke<TypingView>("typing_view", { typers, agentIds, counterpart });
+}
+
+/** Whether this account has sent in `roomId` since signing in. */
+export async function hasSent(roomId: string): Promise<boolean> {
+  return invoke<boolean>("has_sent", { roomId });
+}
+
+/**
+ * What the dock above the composer says, or `null` for nothing. The core reads
+ * the timeline rows itself, so none are sent.
+ */
+export async function acknowledgement(
+  roomId: string,
+  addressee: string | null,
+  agentIds: readonly string[],
+  typingAgents: readonly string[],
+  turnInProgress: boolean,
+): Promise<Acknowledgement | null> {
+  return invoke<Acknowledgement | null>("acknowledgement", {
+    roomId,
+    addressee,
+    agentIds,
+    typingAgents,
+    turnInProgress,
+  });
+}
+
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */
 export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void): Promise<UnlistenFn> {
   return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));

@@ -20,18 +20,18 @@ mod commands;
 mod host;
 
 use crate::commands::{
-    agent_avatar_style, agent_avatar_variants, attachment_discard, attachment_send,
-    attachment_stage, collect_mentions, connection_state, create_room, delete_message,
-    edit_message, enable_recovery, ensure_recovery, invite_user, join_room, join_room_by_alias,
-    leave_room, log_from_webview, login, logout, mark_room_read, media_audio, media_download,
-    media_fetch, member_avatar, next_notification_mode, parse_matrix_link, recover_with_key,
-    recovery_state, reset_recovery, restore_session, rich_blocks_from_markdown, room_avatar,
-    room_info, room_status, room_status_word, rooms_resync, roster_agent_directory,
-    roster_filter_chips, roster_filter_empty_state, roster_filter_from_key, roster_filter_key,
-    roster_filter_sections, roster_hidden_invitations, roster_needs_you_inbox, roster_row,
-    roster_sections, roster_state, search_messages, send_gate_decision, send_message, send_reply,
-    set_typing, space_select, spaces_list, timeline_paginate_back, timeline_resync,
-    timeline_subscribe, toggle_reaction,
+    acknowledgement, agent_avatar_style, agent_avatar_variants, attachment_discard,
+    attachment_send, attachment_stage, collect_mentions, connection_state, create_room,
+    delete_message, edit_message, enable_recovery, ensure_recovery, has_sent, invite_user,
+    join_room, join_room_by_alias, leave_room, log_from_webview, login, logout, mark_room_read,
+    media_audio, media_download, media_fetch, member_avatar, next_notification_mode,
+    parse_matrix_link, recover_with_key, recovery_state, reset_recovery, restore_session,
+    rich_blocks_from_markdown, room_avatar, room_cast, room_info, room_status, room_status_word,
+    rooms_resync, roster_agent_directory, roster_filter_chips, roster_filter_empty_state,
+    roster_filter_from_key, roster_filter_key, roster_filter_sections, roster_hidden_invitations,
+    roster_needs_you_inbox, roster_row, roster_sections, roster_state, search_messages,
+    send_gate_decision, send_message, send_reply, set_typing, space_select, spaces_list,
+    timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction, typing_view,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -272,6 +272,10 @@ pub fn run() {
             search_messages,
             log_from_webview,
             room_info,
+            room_cast,
+            typing_view,
+            has_sent,
+            acknowledgement,
             member_avatar,
             attachment_stage,
             attachment_send,
