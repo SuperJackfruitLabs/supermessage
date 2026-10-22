@@ -290,7 +290,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                             joinByAlias = session::joinByAlias,
                         )
 
-                    is ExtraPanel.RoomInfo ->
+                    is ExtraPanel.RoomInfo -> {
+                        // Read here so the panel recomposes on the homeserver's echo.
+                        val blocked by session.safety.blocked.collectAsStateWithLifecycle()
                         RoomInfoPanel(
                             roomId = panel.roomId,
                             accountUserId = accountUserId,
@@ -307,7 +309,12 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                                 session.setPinned(pinned, panel.roomId)
                             },
                             onLeaveRoom = { session.leaveRoom(panel.roomId) },
+                            isBlocked = { it in blocked },
+                            onBlock = session::block,
+                            onUnblock = session::unblock,
+                            onReport = session::report,
                         )
+                    }
 
                     is ExtraPanel.Search ->
                         SearchPanel(

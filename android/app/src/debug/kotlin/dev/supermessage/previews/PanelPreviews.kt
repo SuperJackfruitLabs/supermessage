@@ -20,6 +20,8 @@ import dev.supermessage.kit.stores.EditTarget
 import dev.supermessage.kit.stores.ReplyTarget
 import java.time.Instant
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.RoomMemberDto
+import dev.supermessage.MemberActionsBody
 import uniffi.supermessage_ffi.StagedFile
 
 /** Fixed, for the reason `RosterPreviews.kt` gives. */
@@ -184,7 +186,7 @@ internal fun Account() {
  * null, so the identity's initial on a tinted disc is what renders, which is
  * what most rooms in this product actually show.
  */
-@Preview(name = "Room info", showBackground = true, heightDp = 900)
+@Preview(name = "Room info", showBackground = true, heightDp = 980)
 @Composable
 internal fun RoomInfo() {
     PreviewGround {
@@ -418,5 +420,49 @@ internal fun RecoveryChecking() {
             onReset = { "" },
             onClose = {},
         )
+    }
+}
+
+/** Room info with an agent, a blocked person and a person. */
+@Preview(name = "Room info, blocked member", showBackground = true, heightDp = 1100)
+@Composable
+internal fun RoomInfoWithBlockedMember() {
+    PreviewGround {
+        RoomInfoPanel(
+            roomId = PreviewFixtures.ROOM_ID,
+            accountUserId = "@rakesh:example.org",
+            avatarUri = null,
+            onClose = {},
+            loadInfo = {
+                PreviewFixtures.roomInfo.copy(
+                    members = listOf(
+                        RoomMemberDto("@atlas:example.org", "Atlas", null, isAgent = true),
+                        RoomMemberDto("@priya:example.org", "Priya", null, isIgnored = true),
+                        RoomMemberDto("@krishna:example.org", null, null),
+                    ),
+                )
+            },
+            onSetNotifications = { true },
+            onSetPinned = { true },
+            onLeaveRoom = {},
+        )
+    }
+}
+
+/** The actions on an agent: the block consequence says it keeps running. */
+@Preview(name = "Member actions, agent", showBackground = true, heightDp = 290)
+@Composable
+internal fun MemberActionsAgent() {
+    PreviewGround {
+        MemberActionsBody("Atlas", isAgent = true, blocked = false, onBlockOrUnblock = {}, onReport = {}, onCancel = {})
+    }
+}
+
+/** The actions on someone already blocked. */
+@Preview(name = "Member actions, unblock", showBackground = true, heightDp = 290)
+@Composable
+internal fun MemberActionsUnblock() {
+    PreviewGround {
+        MemberActionsBody("Priya", isAgent = false, blocked = true, onBlockOrUnblock = {}, onReport = {}, onCancel = {})
     }
 }
