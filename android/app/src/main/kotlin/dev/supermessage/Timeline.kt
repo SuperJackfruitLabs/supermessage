@@ -250,7 +250,7 @@ fun Timeline(
     // comparison; see `TimelineStore.revision`) and on what the reader opened.
     val entries = remember(revision, expanded) { displayRows(rows, expanded) }
     val newestFirst = entries.asReversed()
-    val idByEventId = remember(entries) {
+    val idByEventId = remember(revision, expanded) {
         buildMap {
             for (d in entries) if (d is DisplayRow.Row) d.row.item.eventId?.let { put(it, d.id) }
         }
