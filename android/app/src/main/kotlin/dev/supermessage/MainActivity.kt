@@ -39,8 +39,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
-import dev.supermessage.kit.stores.ConnectionStore.Connection
 import dev.supermessage.kit.Session
+import dev.supermessage.kit.stores.ConnectionStore.Connection
 import dev.supermessage.kit.VoicePlayback
 import java.io.File
 import java.time.Instant
@@ -289,248 +289,17 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                 )
             }
         },
-        detailPaneContent = { _ ->
-            // The room this pane is showing, reactively:
-            // `TimelineStore.roomId` is set the moment
-            // `Session.open` subscribes, before the first
-            // diff for it has even arrived.
-            val roomId by session.timeline.roomId.collectAsStateWithLifecycle()
-
-            // What the core already decided about this room — never
-            // re-derived here. An invited room shows InvitationView in
-            // place of the composer (and InvitationEmptyTimeline in place
-            // of history) purely because its own row already carries
-            // `RoomAffordance.RESPOND_TO_INVITATION`; this file adds no
-            // second opinion about which rooms are invitations.
-            val currentRow = roomId?.let { id -> rooms.firstOrNull { it.room.id == id } }
-            val isInvitation = currentRow?.affordance == RoomAffordance.RESPOND_TO_INVITATION
-
-            // Trigger 1 of spec §6's two: on room change,
-            // mark it read. Trigger 2 — on any history
-            // change while at the newest end — is Timeline's
-            // own job (see its class doc): it can see `rows`
-            // and `isAtNewest` together, neither of which
-            // this call site has reason to duplicate.
-            //
-            // Not for an invitation: membership is `invite`, so there is no
-            // history here for "read" to mean anything about yet (see
-            // InvitationEmptyTimeline's own KDoc).
-            LaunchedEffect(roomId, isInvitation) {
-                if (roomId != null && !isInvitation) session.timeline.markRead()
-            }
-
-            val currentRoomId = roomId
-            if (currentRoomId == null) {
-                Box(
-                    Modifier.fillMaxSize().testTag("pane-timeline"),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Select a room")
-                }
-            } else if (isInvitation) {
-                Column(modifier = Modifier.fillMaxSize().testTag("pane-timeline")) {
-                    InvitationEmptyTimeline(modifier = Modifier.weight(1f).fillMaxWidth())
-                    InvitationView(
-                        roomId = currentRoomId,
-                        roomName = currentRow?.identity?.name ?: currentRoomId,
-                        inviter = session::inviter,
-                        joinRoom = session::joinRoom,
-                        leaveRoom = session::leaveRoom,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            } else {
-                val items by session.timeline.items.collectAsStateWithLifecycle()
-                // `Timeline` keys its grouping and its mark-read effect off
-                // this rather than off `items` itself — see `Timeline.kt`'s
-                // own note on why a revision bump, not a structural diff of
-                // the whole list, is what "the history changed" means.
-                val revision by session.timeline.revision.collectAsStateWithLifecycle()
-                val isPaginating by session.timeline.isPaginating.collectAsStateWithLifecycle()
-                val canPaginate by session.timeline.canPaginate.collectAsStateWithLifecycle()
-                // Collected so a fetch that lands recomposes the rows that
-                // asked for it; the lambdas below read from these.
-                val mediaCache by session.media.cache.collectAsStateWithLifecycle()
-                val faceCache by session.faces.cache.collectAsStateWithLifecycle()
-
-                // `TypingStore.line` is a computed property,
-                // not a StateFlow — `typers` is what is
-                // actually observable, so that is what is
-                // collected; `line` is re-read from it every
-                // time `typers` changes.
-                val typers by session.typing.typers.collectAsStateWithLifecycle()
-                val typingLine = remember(typers) { session.typing.line }
-
-                val liveAnswer by session.live.answer.collectAsStateWithLifecycle()
-                val liveThought by session.live.thought.collectAsStateWithLifecycle()
-                val liveTools by session.live.tools.collectAsStateWithLifecycle()
-                val liveFinished by session.live.finished.collectAsStateWithLifecycle()
-
-                // Reply/edit/attachment: reactive so a long
-                // press elsewhere (Timeline's onRowLongPress,
-                // below) or a picked photo shows up here the
-                // moment the store records it.
-                val replyTargets by session.replies.targets.collectAsStateWithLifecycle()
-                val editTargets by session.edits.targets.collectAsStateWithLifecycle()
-                val attachment by session.staged.file.collectAsStateWithLifecycle()
-                val editing = editTargets[currentRoomId]
-
-                // The composer's own text, held here rather
-                // than mirrored live off `DraftStore` — the
-                // same shape `ComposerView.swift`'s `@State
-                // private var text` takes, seeded once per
-                // room (`remember(currentRoomId)` standing in
-                // for that file's `.task(id: roomId)`) rather
-                // than re-derived from the store on every
-                // recomposition. That distinction is what
-                // makes editing work at all: see
-                // `onTextChange` below for why a live mirror
-                // would fight it.
-                var text by remember(currentRoomId) {
-                    mutableStateOf(session.drafts.draft(currentRoomId))
-                }
-                var sending by remember(currentRoomId) { mutableStateOf(false) }
-                var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }
-
-                Column(modifier = Modifier.fillMaxSize().testTag("pane-timeline")) {
-                    // The note that is playing belongs to this room and
-                    // this pane: leaving either stops it (the key is the
-                    // room; disposal is the pane going away).
-                    DisposableEffect(currentRoomId) { onDispose { voice.stop() } }
-                    CompositionLocalProvider(LocalVoicePlayback provides voice) {
-                        Timeline(
-                            rows = items,
-                            revision = revision,
-                            typingLine = typingLine,
-                            isPaginating = isPaginating,
-                            canPaginate = canPaginate,
-                            onPaginate = { scope.launch { session.timeline.paginateBack() } },
-                            imageUri = { id -> mediaCache[id] ?: session.media.image(id) },
-                            faceUri = { mxc -> faceCache[mxc] },
-                            loadFace = session.faces::load,
-                            onMarkRead = { scope.launch { session.timeline.markRead() } },
-                            liveAnswer = liveAnswer,
-                            liveThought = liveThought,
-                            liveTools = liveTools,
-                            liveFinished = liveFinished,
-                            onReact = { row, key ->
-                                scope.launch {
-                                    session.toggleReaction(row.item.eventId, key, currentRoomId)
-                                }
-                            },
-                            // The event id is the gate's own, which the decision
-                            // references; the card supplies what it resolves.
-                            // Both are needed and neither side has both.
-                            // Returns whether the answer landed, so the card can
-                            // stop offering the choice — and keep offering it when
-                            // the send failed.
-                            onDecide = { row, answer ->
-                                val gateId = answer.subject
-                                if (gateId == null) {
-                                    // A permission request has no gate; route it
-                                    // to the permission sender (iOS
-                                    // `TimelineCollectionView.swift:1022-1031`).
-                                    session.answerPermission(optionId = answer.optionId, roomId = currentRoomId)
-                                } else session.answerGate(
-                                    eventId = row.item.eventId,
-                                    gateId = gateId,
-                                    optionId = answer.optionId,
-                                    comment = answer.comment,
-                                    prompt = answer.prompt,
-                                    roomId = currentRoomId,
-                                )
-                            },
-                            onRowLongPress = { row ->
-                                // Own + editable rewrites the
-                                // message; anything else a long
-                                // press has something to offer
-                                // for is a reply — see Timeline's
-                                // own class doc for why the
-                                // gesture only exists at all when
-                                // one of the two is true.
-                                if (row.item.isOwn && row.item.editable) {
-                                    session.edits.start(row, currentRoomId)
-                                } else if (row.canReplyOrReact) {
-                                    session.replies.start(row, currentRoomId)
-                                }
-                            },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
-                    }
-
-                    Composer(
-                        text = text,
-                        onTextChange = { next ->
-                            text = next
-                            // Not while editing: the composer
-                            // is holding an existing message,
-                            // and writing that over the draft
-                            // would destroy whatever was
-                            // being written before the edit
-                            // began — the exact guard
-                            // `ComposerView.swift`'s own
-                            // `onChange(of: text)` carries.
-                            if (editing == null) {
-                                session.drafts.set(next, currentRoomId)
-                            }
-                            scope.launch { session.setTyping(next.isNotBlank(), currentRoomId) }
-                        },
-                        onSend = {
-                            scope.launch {
-                                sending = true
-                                try {
-                                    val currentEdit = editing
-                                    if (currentEdit != null) {
-                                        // The reader's text stays in the
-                                        // composer when this fails — an
-                                        // edit that vanished into an error
-                                        // would have silently discarded
-                                        // what they wrote.
-                                        val ok = session.edit(
-                                            eventId = currentEdit.eventId,
-                                            body = text,
-                                            roomId = currentRoomId,
-                                        )
-                                        if (ok) {
-                                            composerFailure = null
-                                            session.edits.cancel(currentRoomId)
-                                            text = session.drafts.draft(currentRoomId)
-                                        } else {
-                                            composerFailure = "Couldn't save that edit."
-                                        }
-                                    } else {
-                                        val refusal = session.send(text, currentRoomId)
-                                        if (refusal == null) {
-                                            composerFailure = null
-                                            text = ""
-                                            session.drafts.clear(currentRoomId)
-                                        } else {
-                                            composerFailure = refusal
-                                        }
-                                    }
-                                } finally {
-                                    sending = false
-                                }
-                            }
-                        },
-                        sending = sending,
-                        failure = composerFailure,
-                        replyTo = replyTargets[currentRoomId],
-                        onCancelReply = { session.replies.cancel(currentRoomId) },
-                        editing = editing,
-                        onCancelEdit = { session.edits.cancel(currentRoomId) },
-                        attachment = attachment,
-                        onAttach = { path ->
-                            scope.launch {
-                                val refusal = session.staged.stage(path, currentRoomId)
-                                if (refusal != null) composerFailure = refusal
-                            }
-                        },
-                        onDiscardAttachment = { scope.launch { session.staged.discard() } },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+        detailPaneContent = { _, openInfo ->
+            RoomPane(
+                session = session,
+                rooms = rooms,
+                voice = voice,
+                now = now,
+                onOpenRoomInfo = { id ->
+                    extraPanel = ExtraPanel.RoomInfo(id)
+                    openInfo()
+                },
+            )
         },
         extraPaneContent = { _, closeInfo ->
             Box(Modifier.fillMaxSize().testTag("pane-info")) {

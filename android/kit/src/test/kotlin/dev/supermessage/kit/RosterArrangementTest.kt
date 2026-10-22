@@ -160,6 +160,15 @@ class RosterArrangementTest {
         assertEquals(AgentState.QUIET, RosterArrangement.state(silent, now))
     }
 
+    /** the header asks one room whether it describes an agent, as Swift's `row(for:)` does */
+    @Test
+    fun rosterRowFindsTheRoomAndSaysWhetherItIsAnAgents() {
+        val rows = listOf(row("a"), row("b", host = "foundry"))
+        assertEquals(true, RosterArrangement.rosterRow("b", rows, now)?.describesAgent)
+        assertEquals(false, RosterArrangement.rosterRow("a", rows, now)?.describesAgent)
+        assertNull(RosterArrangement.rosterRow("nope", rows, now))
+    }
+
     // --- arrangement --------------------------------------------------------
 
     /** invitations are withheld but counted */

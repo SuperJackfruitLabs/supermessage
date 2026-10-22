@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -66,8 +68,8 @@ import uniffi.supermessage_ffi.TimelineSnapshot
 class RosterReachabilityTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun sessionOf(core: CoreInterface): Session =
-        Session(client = CoreClient(core = core, dispatcher = Dispatchers.Unconfined), scope = CoroutineScope(Dispatchers.Unconfined))
+    private fun sessionOf(core: CoreInterface, dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Unconfined): Session =
+        Session(client = CoreClient(core = core, dispatcher = dispatcher), scope = CoroutineScope(Dispatchers.Unconfined))
 
     /** A `RosterPreferences` over a real, throwaway `DataStore` — no `Context` needed. */
     private fun preferences(showsInvitations: Boolean = false): RosterPreferences {
@@ -240,6 +242,98 @@ class RosterReachabilityTest {
         compose.onNodeWithTag("invitation-message").assertTextEquals("You have been invited to Workspace.")
     }
 
+    private fun joinedRow(roomId: String, name: String) = RoomRow(
+        room = RoomSummary(
+            id = roomId, name = name, avatarUrl = null, unread = 0uL, lastMessage = null,
+            lastMessageIsOwn = false, lastMessageNamesSender = false, lastEventType = null,
+            lastActivityMs = null, runtime = null, membership = Membership.JOINED,
+        ),
+        identity = RoomIdentity(glyph = null, name = name, role = null, initial = name.take(1)),
+        preview = null,
+        affordance = RoomAffordance.COMPOSE,
+    )
+
+    private fun infoOf(roomId: String, members: ULong) = RoomInfoDto(
+        roomId = roomId, name = "Room", identity = RoomIdentity(null, "Room", null, "R"),
+        topic = null, runtime = null, canonicalAlias = null, altAliases = emptyList(),
+        activeMemberCount = members, members = emptyList(),
+        notifications = NotificationMode.DEFAULT, pinned = false,
+    )
+
+    /** The header is the way into room info (iOS `RoomScreen.swift:102-115`). */
+    @Test
+    fun theRoomHeaderOpensRoomInfo() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+        )
+        val session = sessionOf(fake)
+        val prefs = preferences()
+
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Alpha").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("room-header").assertIsDisplayed().performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("pane-info").assertIsDisplayed()
+        compose.onNodeWithTag("room-info-done").assertIsDisplayed()
+    }
+
+    /** iOS resets the count on `roomId` (`RoomScreen.swift:35-39`). */
+    @Test
+    fun memberCountResetsWhenTheRoomChanges() {
+        val stalled = java.util.concurrent.CountDownLatch(1)
+        val fake = FakeCore(
+            roomsSnapshotResult = {
+                RoomsSnapshot(
+                    seq = 0uL,
+                    rooms = listOf(joinedRow("!a:example.org", "Alpha"), joinedRow("!b:example.org", "Bravo")),
+                )
+            },
+            // The second room never answers (the core call blocks on a worker
+            // thread, as a stalled network would): a stale count must not
+            // outlive the switch while it waits.
+            roomInfoResult = { id ->
+                if (id == "!a:example.org") infoOf(id, 4uL) else { stalled.await(); throw IllegalStateException("offline") }
+            },
+        )
+        val session = sessionOf(fake, Dispatchers.IO)
+        val prefs = preferences()
+
+        compose.setContent {
+            // Two panes: the roster stays beside the room, so the pane is
+            // reused across the switch and only the room id changes. On a
+            // phone the pane leaves composition and forgets anything.
+            Box(Modifier.requiredWidth(800.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Alpha").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("4 members").fetchSemanticsNodes().isNotEmpty() }
+
+        // The roster is still on screen: switch rooms in place.
+        compose.onNodeWithText("Bravo").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Bravo, about this room"))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitForIdle()
+        compose.onAllNodesWithText("4 members").assertCountEquals(0)
+        stalled.countDown()
+    }
+
     /**
      * A [CoreInterface] tailored to what this file drives, in the house
      * pattern [NewRoomTest] and [InvitationTest] already set: every method
@@ -254,6 +348,7 @@ class RosterReachabilityTest {
         },
         private val knownPeopleResult: () -> List<PersonDto> = { emptyList() },
         private val roomInviterResult: (String) -> String? = { throw NotImplementedError() },
+        private val roomInfoResult: (String) -> RoomInfoDto = { throw NotImplementedError() },
     ) : StubCore() {
         val roomInviterCalls = mutableListOf<String>()
         private var subscribedRoomId: String? = null
@@ -286,6 +381,11 @@ class RosterReachabilityTest {
         // (roomId) }` for every row on screen — including the invitation
         // row above.
         override fun roomAvatar(roomId: String): String? = null
+
+        override fun roomInfo(roomId: String): RoomInfoDto = roomInfoResult(roomId)
+
+        // Reached on opening any joined room (the pane marks it read).
+        override fun markRoomRead(roomId: String): Unit = Unit
 
         override fun roomInviter(roomId: String): String? {
             roomInviterCalls += roomId
