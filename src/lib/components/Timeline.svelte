@@ -307,6 +307,7 @@
   } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
+  import MembershipStretch from "./timeline/MembershipStretch.svelte";
   import DispatchCard from "./timeline/DispatchCard.svelte";
   import TurnErrorCard from "./timeline/TurnErrorCard.svelte";
   import VoiceTranscript from "./timeline/VoiceTranscript.svelte";
@@ -464,6 +465,20 @@
   const arrivedDone = new SvelteSet<string>();
 
   /**
+   * The membership stretches the reader has opened, by stretch id. The core
+   * folds three or more runs into one summary line; which of those lines are
+   * open is the reader's, so it lives here and not in the core. Reset when the
+   * room changes: another room's stretch ids are not this room's.
+   */
+  let expanded: ReadonlySet<string> = $state(new Set());
+  $effect(() => {
+    void roomId;
+    return () => {
+      expanded = new Set();
+    };
+  });
+
+  /**
    * The rows `VList` renders, **and** the `shift` value that describes how
    * they changed — derived together, in one pass, on purpose.
    *
@@ -480,7 +495,7 @@
    * automatic and why it never disturbs the raw array itself.
    */
   let view = $derived.by(() => {
-    const rows = groupTimelineItems(timelineStore.items);
+    const rows = groupTimelineItems(timelineStore.items, expanded);
     const keys = rows.map((row) => row.key);
     const dividers = new Set(
       rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
@@ -1480,6 +1495,13 @@
               snippet rather than a copy of its markup.
             -->
             <LogLine text={row.text} />
+          {:else if row.type === "membershipStretch"}
+            <!--
+              Three or more membership runs the core folded into one summary
+              line. Opening adds its id to `expanded`, and the walk then draws
+              each run's own sentence in its place.
+            -->
+            <MembershipStretch text={row.text} onOpen={() => (expanded = new Set(expanded).add(row.key))} />
           {:else if row.type === "undecryptableGroup"}
             <UndecryptableGroup count={row.count} {onOpenRecovery} />
           {:else}

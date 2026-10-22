@@ -1,9 +1,11 @@
-// Covers `groupTimelineItems`'s collapsing of consecutive membership items.
-// See that module's doc comment for the design (run boundaries, the
-// group-by-verb choice, and why keys are anchored on the first item in a
-// run).
+// Covers `groupTimelineItems`'s walk over the core's grouping fields. The
+// rules themselves (which membership changes share a sentence, what a stretch
+// says, when a sender run continues) are pinned in Rust, in
+// `timeline_grouping.rs`; the fixtures here carry the core's fields set by
+// hand, and these tests check only that the host draws what it is given.
 
 import { describe, expect, it } from "vitest";
+import type { MembershipPlacement, TimelineRow } from "$lib/ipc";
 import { groupTimelineItems, shouldShift } from "./timelineGrouping";
 import {
   custom,
@@ -12,6 +14,39 @@ import {
   membership,
   message,
 } from "$lib/fixtures/timeline";
+
+/** A membership fixture the core has placed: `runText` on a run's first row only. */
+function placed(row: TimelineRow, placement: MembershipPlacement): TimelineRow {
+  return { ...row, membership: placement };
+}
+
+/**
+ * Five changes, three sentences, one collapsed stretch, as the core sends
+ * them: the stretch line on the first row, each run's sentence on its first.
+ */
+function fiveChanges(): TimelineRow[] {
+  const stretch = { stretchId: "stretch:m1" };
+  return [
+    placed(membership("m1", "was invited", "Strategy Sam"), {
+      runId: "group:m1",
+      runText: "Strategy Sam was invited, then joined the room",
+      ...stretch,
+      stretchText: "5 membership changes · Strategy Sam, Rakesh and 1 other",
+    }),
+    placed(membership("m2", "joined the room", "Strategy Sam"), { runId: "group:m1", ...stretch }),
+    placed(membership("m3", "updated their membership", "Rakesh"), {
+      runId: "group:m3",
+      runText: "Rakesh updated their membership",
+      ...stretch,
+    }),
+    placed(membership("m4", "left the room", "Annapurna"), {
+      runId: "group:m4",
+      runText: "Annapurna left the room",
+      ...stretch,
+    }),
+    placed(membership("m5", "left the room", "Annapurna"), { runId: "group:m4", ...stretch }),
+  ];
+}
 
 
 describe("groupTimelineItems", () => {
@@ -33,126 +68,85 @@ describe("groupTimelineItems", () => {
     expect(rows[0]!.type === "item" && rows[0]!.item).toBe(msg.item);
   });
 
-  it("wraps a single membership item as a group that reads naturally (not 'and 0 others')", () => {
+
+  it("draws a placed membership row as its run's sentence, keyed on the run", () => {
+    const rows = groupTimelineItems([
+      placed(membership("m1", "joined", "Alice"), { runId: "group:m1", runText: "Alice and Bob joined the room" }),
+      placed(membership("m2", "joined", "Bob"), { runId: "group:m1" }),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ type: "membershipGroup", key: "group:m1", text: "Alice and Bob joined the room" });
+    if (rows[0]!.type === "membershipGroup") expect(rows[0]!.items.map((i) => i.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("a collapsed stretch shows one line until opened", () => {
+    const rows = groupTimelineItems(fiveChanges());
+    expect(rows).toEqual([
+      {
+        type: "membershipStretch",
+        key: "stretch:m1",
+        text: "5 membership changes · Strategy Sam, Rakesh and 1 other",
+      },
+    ]);
+  });
+
+  it("an opened stretch shows each run's line", () => {
+    const rows = groupTimelineItems(fiveChanges(), new Set(["stretch:m1"]));
+    expect(rows.map((r) => [r.type, r.key, r.type === "membershipGroup" ? r.text : null])).toEqual([
+      ["membershipGroup", "group:m1", "Strategy Sam was invited, then joined the room"],
+      ["membershipGroup", "group:m3", "Rakesh updated their membership"],
+      ["membershipGroup", "group:m4", "Annapurna left the room"],
+    ]);
+    const first = rows[0]!;
+    expect(first.type === "membershipGroup" && first.items.map((i) => i.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("opening one stretch leaves another collapsed", () => {
+    const other = fiveChanges().map((row) =>
+      placed(
+        { ...row, item: { ...row.item, id: `x${row.item.id}` } },
+        {
+          ...row.membership!,
+          runId: row.membership!.runId.replace("m", "xm"),
+          stretchId: "stretch:xm1",
+        },
+      ),
+    );
+    const rows = groupTimelineItems([...fiveChanges(), message("between"), ...other], new Set(["stretch:m1"]));
+    expect(rows.map((r) => r.type)).toEqual([
+      "membershipGroup",
+      "membershipGroup",
+      "membershipGroup",
+      "item",
+      "membershipStretch",
+    ]);
+  });
+
+  it("keeps the run's key as it grows (stable for virtua)", () => {
+    const first = placed(membership("m1", "joined", "Alice"), { runId: "group:m1", runText: "Alice joined the room" });
+    const grown = [
+      placed(membership("m1", "joined", "Alice"), { runId: "group:m1", runText: "Alice and Bob joined the room" }),
+      placed(membership("m2", "joined", "Bob"), { runId: "group:m1" }),
+    ];
+    expect(groupTimelineItems([first])[0]!.key).toBe("group:m1");
+    expect(groupTimelineItems(grown)[0]!.key).toBe("group:m1");
+  });
+
+  it("gives a new run (started after a break) its own key", () => {
+    const rows = groupTimelineItems([
+      placed(membership("m1", "joined", "Alice"), { runId: "group:m1", runText: "Alice joined the room" }),
+      message("msg1"),
+      placed(membership("m2", "joined", "Bob"), { runId: "group:m2", runText: "Bob joined the room" }),
+    ]);
+    expect(rows.filter((r) => r.type === "membershipGroup").map((r) => r.key)).toEqual(["group:m1", "group:m2"]);
+  });
+
+  it("draws a membership row the core did not place as the ordinary row it is", () => {
     const rows = groupTimelineItems([membership("m1", "joined", "Alice")]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice joined the room" });
+    expect(rows[0]).toMatchObject({ type: "item", key: "m1:0" });
   });
 
-  it("collapses a run of several same-verb membership items into one line", () => {
-    const items = [
-      membership("m1", "joined", "Alice"),
-      membership("m2", "joined", "Bob"),
-      membership("m3", "joined", "Carol"),
-      membership("m4", "joined", "Dave"),
-      membership("m5", "joined", "Eve"),
-    ];
-    const rows = groupTimelineItems(items);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      type: "membershipGroup",
-      text: "Alice, Bob and 3 others joined the room",
-    });
-    if (rows[0]!.type === "membershipGroup") {
-      expect(rows[0]!.items).toEqual(items.map((row) => row.item));
-    }
-  });
-
-  it("names exactly two people with singular 'other' for a run of three", () => {
-    const rows = groupTimelineItems([
-      membership("m1", "joined", "Alice"),
-      membership("m2", "joined", "Bob"),
-      membership("m3", "joined", "Carol"),
-    ]);
-    expect(rows[0]).toMatchObject({ text: "Alice, Bob and 1 other joined the room" });
-  });
-
-  it("joins exactly two names with 'and', no 'others'", () => {
-    const rows = groupTimelineItems([
-      membership("m1", "joined", "Alice"),
-      membership("m2", "joined", "Bob"),
-    ]);
-    expect(rows[0]).toMatchObject({ text: "Alice and Bob joined the room" });
-  });
-
-  it("a run split by a real message stays two separate groups", () => {
-    const msg = message("msg1", "hello");
-    const rows = groupTimelineItems([
-      membership("m1", "joined", "Alice"),
-      membership("m2", "joined", "Bob"),
-      msg,
-      membership("m3", "joined", "Carol"),
-    ]);
-    expect(rows).toHaveLength(3);
-    expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice and Bob joined the room" });
-    expect(rows[1]).toMatchObject({ type: "item", key: "msg1:0", continuesRun: false });
-    expect(rows[1]!.type === "item" && rows[1]!.item).toBe(msg.item);
-    expect(rows[2]).toMatchObject({ type: "membershipGroup", text: "Carol joined the room" });
-  });
-
-  it("a run split by a date divider stays two separate groups, and the divider survives untouched", () => {
-    const divider = dateDivider("d1");
-    const rows = groupTimelineItems([
-      membership("m1", "joined", "Alice"),
-      divider,
-      membership("m2", "joined", "Bob"),
-    ]);
-    expect(rows).toHaveLength(3);
-    expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice joined the room" });
-    expect(rows[1]).toMatchObject({ type: "item", key: "d1:0", continuesRun: false });
-    expect(rows[1]!.type === "item" && rows[1]!.item).toBe(divider.item);
-    expect(rows[2]).toMatchObject({ type: "membershipGroup", text: "Bob joined the room" });
-  });
-
-  it("does not merge adjacent membership items with different verbs into one misleading sentence", () => {
-    const rows = groupTimelineItems([
-      membership("m1", "joined", "Alice"),
-      membership("m2", "joined", "Bob"),
-      membership("m3", "left", "Carol"),
-      membership("m4", "joined", "Dave"),
-    ]);
-    expect(rows).toHaveLength(3);
-    expect(rows[0]).toMatchObject({ text: "Alice and Bob joined the room" });
-    expect(rows[1]).toMatchObject({ text: "Carol left the room" });
-    expect(rows[2]).toMatchObject({ text: "Dave joined the room" });
-    // No row's text ever mentions both verbs at once.
-    for (const row of rows) {
-      if (row.type === "membershipGroup") {
-        const mentionsJoined = row.text.includes("joined");
-        const mentionsLeft = row.text.includes("left");
-        expect(mentionsJoined && mentionsLeft).toBe(false);
-      }
-    }
-  });
-
-  it("keeps the group key anchored to the first item as the run grows (stable for virtua)", () => {
-    const base = [membership("m1", "joined", "Alice"), membership("m2", "joined", "Bob")];
-    const grown = [...base, membership("m3", "joined", "Carol")];
-
-    const rowsBefore = groupTimelineItems(base);
-    const rowsAfter = groupTimelineItems(grown);
-
-    expect(rowsBefore).toHaveLength(1);
-    expect(rowsAfter).toHaveLength(1);
-    expect(rowsBefore[0]!.key).toBe(rowsAfter[0]!.key);
-    expect(rowsBefore[0]!.key).toBe("group:m1");
-  });
-
-  it("gives a new run (started after a break) a fresh key, not the interrupted run's key", () => {
-    const rows = groupTimelineItems([
-      membership("m1", "joined", "Alice"),
-      message("msg1"),
-      membership("m2", "joined", "Bob"),
-    ]);
-    const groupKeys = rows.filter((r) => r.type === "membershipGroup").map((r) => r.key);
-    expect(groupKeys).toEqual(["group:m1", "group:m2"]);
-  });
-
-  it("falls back to a generic verb phrase when detail is missing, and still groups matching nulls together", () => {
-    const rows = groupTimelineItems([membership("m1", null, "Alice"), membership("m2", null, "Bob")]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ text: "Alice and Bob updated their membership" });
-  });
 
   it("drops a membership row the core marked as drawing nothing", () => {
     // A join -> join with no profile change (`MembershipChange::None`). The
@@ -165,22 +159,35 @@ describe("groupTimelineItems", () => {
   it("does not let a hidden membership row split the run around it", () => {
     const noop = { ...membership("m2", "none", "Krishna"), view: { render: "none" } as const };
     const rows = groupTimelineItems([
-      membership("m1", "joined", "Alice"),
+      placed(membership("m1", "joined", "Alice"), { runId: "group:m1", runText: "Alice and Bob joined the room" }),
       noop,
-      membership("m3", "joined", "Bob"),
+      placed(membership("m3", "joined", "Bob"), { runId: "group:m1" }),
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ type: "membershipGroup", text: "Alice and Bob joined the room" });
+    if (rows[0]!.type === "membershipGroup") expect(rows[0]!.items.map((i) => i.id)).toEqual(["m1", "m3"]);
   });
 
-  it("falls back to the raw sender id when a member has no display name", () => {
+  it("drops any other row the core marked as drawing nothing", () => {
+    const hidden = { ...message({ id: "$voice", sender: "@a:x", timestampMs: 2_000 }), view: { render: "none" } as const };
+    const rows = groupTimelineItems([message({ id: "$text", sender: "@a:x", timestampMs: 1_000 }), hidden]);
+    expect(rows.map((r) => r.type === "item" && r.item.id)).toEqual(["$text"]);
+  });
+
+  it("continuesRun is read from the row, not worked out from its neighbours", () => {
+    // Two messages that the old rule would have joined (same sender, a minute
+    // apart): the core said the second does not continue, so it does not.
+    // And the reverse: a different sender the core said continues.
     const rows = groupTimelineItems([
-      item({ id: "m1", kind: "membership", detail: "left", sender: "@bob:example.org" }),
+      message({ id: "$1", sender: "@a:x", timestampMs: 1_000 }),
+      { ...message({ id: "$2", sender: "@a:x", timestampMs: 61_000 }), continuesRun: false },
+      { ...message({ id: "$3", sender: "@b:x", timestampMs: 62_000 }), continuesRun: true },
+      message({ id: "$4", sender: "@b:x", timestampMs: 63_000 }),
     ]);
-    expect(rows[0]).toMatchObject({ text: "@bob:example.org left the room" });
+    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false, true, false]);
   });
 
-  it("carries the core's short sender name, which is what the sender line shows", () => {
+  it("carries the core's attribution fields through unchanged", () => {
     // 2026-10-03: the desktop headed Super Chotu's messages with its raw
     // `@agent_super-chotu:…` id because it read `senderDisplayName` instead
     // of the name the core resolves for every row.
@@ -191,6 +198,7 @@ describe("groupTimelineItems", () => {
       senderShort: "Super Chotu",
     });
   });
+
 
   it("handles an empty item list", () => {
     expect(groupTimelineItems([])).toEqual([]);
@@ -207,113 +215,6 @@ describe("groupTimelineItems", () => {
   });
 });
 
-describe("sender runs", () => {
-  it("marks a second message from the same sender within the window", () => {
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: "@a:x", timestampMs: 1_000 }),
-      message({ id: "$2", sender: "@a:x", timestampMs: 61_000 }),
-    ]);
-    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, true]);
-  });
-
-  it("draws nothing for a voice reply the core folded into its text, and keeps the run across it", () => {
-    // `core::voice_reply`: the agent's text carries the player, its voice
-    // message's own row is `none`. It must not be an empty row, and must not
-    // end the agent's run before their next message.
-    const hidden = {
-      ...message({ id: "$voice", sender: "@a:x", timestampMs: 2_000 }),
-      view: { render: "none" } as const,
-    };
-    const rows = groupTimelineItems([
-      message({ id: "$text", sender: "@a:x", timestampMs: 1_000 }),
-      hidden,
-      message({ id: "$next", sender: "@a:x", timestampMs: 61_000 }),
-    ]);
-    expect(rows.map((r) => r.type === "item" && r.item.id)).toEqual(["$text", "$next"]);
-    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, true]);
-  });
-
-  it("breaks a run past the five-minute window", () => {
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
-      message({ id: "$2", sender: "@a:x", timestampMs: 5 * 60_000 + 1 }),
-    ]);
-    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
-  });
-
-  it("breaks a run on a different sender", () => {
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
-      message({ id: "$2", sender: "@b:x", timestampMs: 1_000 }),
-    ]);
-    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
-  });
-
-  it("breaks a run across a date divider", () => {
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
-      // `sender` set to match the surrounding messages — unrealistic for a
-      // real dateDivider item (which always carries `sender: null`) but
-      // deliberate here: this isolates the "message-shaped" kind check from
-      // the sender check. If the divider defaulted to its own sender, the
-      // run would break on the sender mismatch alone and this test would
-      // stay green even if the kind check were deleted entirely.
-      dateDivider({ id: "d1", sender: "@a:x", timestampMs: 500 }),
-      message({ id: "$2", sender: "@a:x", timestampMs: 1_000 }),
-    ]);
-    const flags = rows.filter((r) => r.type === "item").map((r) => r.type === "item" && r.continuesRun);
-    expect(flags).toEqual([false, false, false]);
-  });
-
-  it("breaks a run across a membership group", () => {
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
-      membership({ id: "$m", sender: "@c:x", timestampMs: 500 }),
-      message({ id: "$2", sender: "@a:x", timestampMs: 1_000 }),
-    ]);
-    const last = rows.at(-1)!;
-    expect(last.type === "item" && last.continuesRun).toBe(false);
-  });
-
-  it("never continues a run from an item with a null sender", () => {
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: null, timestampMs: 0 }),
-      message({ id: "$2", sender: null, timestampMs: 1_000 }),
-    ]);
-    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
-  });
-
-  it("does not continue a run into a dispatch card", () => {
-    // A custom event is a bordered object of its own (spec §7); it always
-    // carries its own header, so it neither continues nor extends a run.
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: "@a:x", timestampMs: 0 }),
-      custom({ id: "$2", sender: "@a:x", timestampMs: 1_000 }),
-      message({ id: "$3", sender: "@a:x", timestampMs: 2_000 }),
-    ]);
-    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false, false]);
-  });
-
-  it("continues a run when the current message arrives a second earlier than its predecessor", () => {
-    // Real Matrix timelines can produce out-of-order timestamps (local echo
-    // vs. server time, federation lag) — a few seconds out of order from
-    // the same sender should still read as one continuous run.
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: "@a:x", timestampMs: 10_000 }),
-      message({ id: "$2", sender: "@a:x", timestampMs: 9_000 }),
-    ]);
-    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, true]);
-  });
-
-  it("breaks a run when the current message arrives a full day earlier than its predecessor", () => {
-    const oneDayMs = 24 * 60 * 60_000;
-    const rows = groupTimelineItems([
-      message({ id: "$1", sender: "@a:x", timestampMs: 10_000 }),
-      message({ id: "$2", sender: "@a:x", timestampMs: 10_000 - oneDayMs }),
-    ]);
-    expect(rows.map((r) => r.type === "item" && r.continuesRun)).toEqual([false, false]);
-  });
-});
 
 describe("a row's key encodes its shape, not just its identity", () => {
   // virtua stores item sizes PER KEY (its README's FAQ: "Why my items are
@@ -434,31 +335,6 @@ describe("shouldShift", () => {
     // the tail has to be held in place.
     expect(shouldShift(["$a:0", "$b:0", "$c:0"], ["$b:0", "$c:0", "$d:0"])).toBe(true);
   });
-
-  it("names one person once, however many times they changed membership", () => {
-    // Found on a real device: four membership events from one member rendered
-    // "Annapurna, Annapurna and 1 other updated their membership" — the same
-    // person named twice and counted toward "others".
-    const rows = groupTimelineItems([
-      membership("1", "updated their membership", "Annapurna"),
-      membership("2", "updated their membership", "Annapurna"),
-      membership("3", "updated their membership", "Annapurna"),
-      membership("4", "updated their membership", "Annapurna"),
-    ]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ text: "Annapurna updated their membership" });
-  });
-
-  it("still counts distinct people when a name repeats mid-run", () => {
-    const rows = groupTimelineItems([
-      membership("1", "joined", "Annapurna"),
-      membership("2", "joined", "Ganesha"),
-      membership("3", "joined", "Krishna"),
-      membership("4", "joined", "Annapurna"),
-    ]);
-    expect(rows[0]).toMatchObject({ text: "Annapurna, Ganesha and 1 other joined the room" });
-  });
-
 });
 
 describe("undecryptable runs", () => {

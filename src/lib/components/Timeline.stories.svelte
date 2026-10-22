@@ -28,6 +28,12 @@
     row({ id, isOwn: true, sender: "@me:example.org", timestampMs: T0 + at, body, ...extra }, "M");
 
   /**
+   * The grouping is the core's: a row arrives knowing it continues the run
+   * above it. These rooms are written by hand, so each continuation says so.
+   */
+  const continued = (r: TimelineRow): TimelineRow => ({ ...r, continuesRun: true });
+
+  /**
    * One room that shows every row the task 8 rules touch: a peer run (the
    * second message continues it, the third was edited), then an own run
    * (the first is edited, the second has reactions and readers, with and
@@ -36,18 +42,20 @@
    */
   const rows: TimelineRow[] = [
     atlas("p1", 0, "Staging is green across all four ABIs."),
-    atlas("p2", 60_000, "Ready to promote."),
-    atlas("p3", 90_000, "Corrected the build number.", { edited: true }),
+    continued(atlas("p2", 60_000, "Ready to promote.")),
+    continued(atlas("p3", 90_000, "Corrected the build number.", { edited: true })),
     mine("o1", 600_000, "Hold on, check the 16KB device first.", { edited: true }),
-    mine("o2", 630_000, "Then promote.", {
-      reactions: [
-        { key: "👍", displayKey: "👍", count: 1, byMe: false, senders: [] },
-        { key: "🎉", displayKey: "🎉", count: 3, byMe: true, senders: [] },
-      ],
-      readBy: ["@atlas:example.org", "@ghost:example.org"],
-    }),
-    mine("o3", 640_000, "Sending this one.", { sendState: "notSentYet", eventId: null }),
-    mine("o4", 650_000, "This one failed.", { sendState: "sendingFailed", eventId: null }),
+    continued(
+      mine("o2", 630_000, "Then promote.", {
+        reactions: [
+          { key: "👍", displayKey: "👍", count: 1, byMe: false, senders: [] },
+          { key: "🎉", displayKey: "🎉", count: 3, byMe: true, senders: [] },
+        ],
+        readBy: ["@atlas:example.org", "@ghost:example.org"],
+      }),
+    ),
+    continued(mine("o3", 640_000, "Sending this one.", { sendState: "notSentYet", eventId: null })),
+    continued(mine("o4", 650_000, "This one failed.", { sendState: "sendingFailed", eventId: null })),
   ];
 
   /** A store the story fills through the real diff path: a gap forces a resync. */
@@ -106,7 +114,7 @@
   const quoted = atlas("q0", 0, "Parent: the plan for the release.");
   const jumpRows: TimelineRow[] = [
     quoted,
-    ...Array.from({ length: 30 }, (_, i) => atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`)),
+    ...Array.from({ length: 30 }, (_, i) => continued(atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`))),
     {
       ...mine("r1", 400_000, "Replying to the plan.", {
         replyTo: { eventId: "$q0", available: true, sender: "@atlas:example.org", senderDisplayName: "Atlas", body: null } as never,
