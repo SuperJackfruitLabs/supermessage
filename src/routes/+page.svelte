@@ -47,7 +47,7 @@
   import { castStore } from "$lib/stores/cast.svelte";
   import { turnAgentName } from "$lib/stores/liveTurn";
   import RoomHeaderLine from "$lib/components/RoomHeaderLine.svelte";
-  import { createHeaderStatus } from "$lib/components/roomHeaderView";
+  import { createHeaderStatus, headerRows, headerTurnFlag } from "$lib/components/roomHeaderView";
   import type { RoomStatus } from "$lib/ipc";
   import { railEntries } from "$lib/components/spacesRailView";
   import RoomList from "$lib/components/RoomList.svelte";
@@ -111,6 +111,18 @@
     headerMembers = header.members;
   });
   let headerNow = $state(Date.now());
+  // Only the selected room's row crosses IPC, and the turn flag is a boolean `$derived`, so a
+  // turn step that changes nothing here does not re-run the effect.
+  const headerRowsNow = $derived(
+    roomsStore.selectedId === null ? [] : headerRows(roomsStore.rooms, roomsStore.selectedId),
+  );
+  const headerTurn = $derived(
+    headerTurnFlag(roomsStore.selectedId, {
+      roomId: liveStore.roomId,
+      isLive: liveStore.isLive,
+      finished: liveStore.finished,
+    }),
+  );
   $effect(() => {
     const id = roomsStore.selectedId;
     headerNow = Date.now();
@@ -124,9 +136,7 @@
       header.clear();
       return;
     }
-    // A live turn counts only if it is this room's.
-    const turn = liveStore.roomId === id && liveStore.inProgress;
-    void header.refresh(id, roomsStore.rooms, headerNow, turn);
+    void header.refresh(id, headerRowsNow, headerNow, headerTurn);
   });
   $effect(() => {
     const id = roomsStore.selectedId;

@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentState, RoomRow, RoomStatus, RosterRow } from "$lib/ipc";
 import {
   createHeaderStatus,
+  headerRows,
+  headerTurnFlag,
   memberCountLabel,
   statusDotClass,
   statusPillClass, type HeaderStatusDeps,
@@ -163,5 +165,52 @@ describe("createHeaderStatus", () => {
     slow.resolve({ activeMemberCount: 9 });
     await first;
     expect(h.members).toBe(2);
+  });
+});
+
+describe("the header's cost", () => {
+  const room = (id: string) => ({ room: { id } }) as unknown as RoomRow;
+
+  it("only the selected room is sent", () => {
+    const rooms = Array.from({ length: 200 }, (_, i) => room(`!r${i}:x`));
+    expect(headerRows(rooms, "!r7:x")).toEqual([rooms[7]]);
+    expect(headerRows(rooms, "!gone:x")).toEqual([]);
+  });
+
+  it("a turn step with an unchanged flag makes no IPC call", async () => {
+    const deps = fakeDeps({ "!a:x": row("active", true) });
+    const h = createHeaderStatus(deps);
+    const rows = [room("!a:x")];
+    await h.refresh("!a:x", rows, 1, true);
+    const calls = () =>
+      (deps.rosterRow as ReturnType<typeof vi.fn>).mock.calls.length + deps.roomStatus.mock.calls.length;
+    const before = calls();
+    // Ten more steps of the same turn: the flag is the same, the room's row is the same.
+    for (let i = 0; i < 10; i++) await h.refresh("!a:x", [room("!a:x")], 1, true);
+    expect(calls()).toBe(before);
+    // A real change in the flag does ask.
+    await h.refresh("!a:x", rows, 1, false);
+    expect(calls()).toBeGreaterThan(before);
+  });
+
+  it("a failed ask is asked again", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const deps = fakeDeps({ "!a:x": row("active", true) });
+    const ok = deps.rosterRow;
+    deps.rosterRow = vi.fn().mockRejectedValueOnce(new Error("no")).mockImplementation(ok);
+    const h = createHeaderStatus(deps);
+    await h.refresh("!a:x", [], 1, false);
+    await h.refresh("!a:x", [], 1, false);
+    expect(h.status).toBe("active");
+    spy.mockRestore();
+  });
+
+  it("the turn flag is iOS's: live and not finished, in this room", () => {
+    const live = { roomId: "!a:x", isLive: true, finished: false };
+    expect(headerTurnFlag("!a:x", live)).toBe(true);
+    expect(headerTurnFlag("!b:x", live)).toBe(false);
+    expect(headerTurnFlag("!a:x", { ...live, finished: true })).toBe(false);
+    expect(headerTurnFlag("!a:x", { ...live, isLive: false })).toBe(false);
+    expect(headerTurnFlag(null, live)).toBe(false);
   });
 });

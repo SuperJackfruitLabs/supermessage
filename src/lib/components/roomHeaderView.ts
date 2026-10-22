@@ -54,6 +54,26 @@ export function statusPillClass(status: RoomStatus): { ground: string; word: str
     : { ground: "bg-surface-raised", word: "text-content-muted" };
 }
 
+/**
+ * The rows the header sends to `rosterRow`: the one room it is asking about. The core arranges
+ * only that room, so sending the roster would cost O(rooms) IPC on every change for nothing.
+ */
+export function headerRows(rooms: readonly RoomRow[], roomId: string): RoomRow[] {
+  const row = rooms.find((r) => r.room.id === roomId);
+  return row === undefined ? [] : [row];
+}
+
+/**
+ * Whether the header counts an agent as working in `roomId` (iOS `RoomScreen.swift:80-83`:
+ * `isLive && !finished`). A live turn counts only if it is this room's.
+ */
+export function headerTurnFlag(
+  roomId: string | null,
+  live: { roomId: string | null; isLive: boolean; finished: boolean },
+): boolean {
+  return roomId !== null && live.roomId === roomId && live.isLive && !live.finished;
+}
+
 export function createHeaderStatus(deps: HeaderStatusDeps = DEFAULT_DEPS, onChange?: () => void) {
   let status: RoomStatus | null = null;
   let word: string | null = null;
@@ -62,6 +82,8 @@ export function createHeaderStatus(deps: HeaderStatusDeps = DEFAULT_DEPS, onChan
   let membersRoom: string | null = null;
   // Bumped by every ask: an answer that finds it moved is stale.
   let statusAsk = 0;
+  // The inputs of the last ask: an identical ask is not sent again.
+  let lastKey: string | null = null;
   let membersAsk = 0;
 
   return {
@@ -86,6 +108,9 @@ export function createHeaderStatus(deps: HeaderStatusDeps = DEFAULT_DEPS, onChan
       nowMs: number,
       inProgress: boolean,
     ): Promise<void> {
+      const key = `${roomId}|${nowMs}|${inProgress}|${JSON.stringify(rows)}`;
+      if (key === lastKey) return;
+      lastKey = key;
       const mine = ++statusAsk;
       if (statusRoom !== roomId) {
         statusRoom = roomId;
@@ -110,6 +135,8 @@ export function createHeaderStatus(deps: HeaderStatusDeps = DEFAULT_DEPS, onChan
         }
       } catch (err) {
         if (mine !== statusAsk) return;
+        // A failed ask may be tried again with the same inputs.
+        if (key === lastKey) lastKey = null;
         console.error("headerStatus: could not read the room's status", err);
         next = null;
         nextWord = null;
@@ -142,6 +169,7 @@ export function createHeaderStatus(deps: HeaderStatusDeps = DEFAULT_DEPS, onChan
     },
     /** Forget everything (no room selected, or the session ended). */
     clear(): void {
+      lastKey = null;
       statusAsk++;
       membersAsk++;
       statusRoom = null;
