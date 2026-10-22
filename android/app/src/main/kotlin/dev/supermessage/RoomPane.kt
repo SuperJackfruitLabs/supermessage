@@ -83,9 +83,10 @@ internal fun RoomPane(
     val describesAgent = remember(roomId, rooms, now) {
         roomId?.let { RosterArrangement.rosterRow(it, rooms, now)?.describesAgent } ?: false
     }
-    var memberCount by remember { mutableStateOf<ULong?>(null) }
+    // Keyed by the room, so a new room starts with no count on its very first
+    // frame instead of borrowing the last room's until an effect runs.
+    var memberCount by remember(roomId) { mutableStateOf<ULong?>(null) }
     LaunchedEffect(roomId, describesAgent, isInvitation) {
-        memberCount = null
         val id = roomId
         if (id != null && !describesAgent && !isInvitation) {
             memberCount = try {
@@ -174,7 +175,7 @@ internal fun RoomPane(
 
         Column(modifier = modifier.fillMaxSize().testTag("pane-timeline")) {
             currentRow?.let {
-                RoomHeader(it, memberCount = if (describesAgent) null else memberCount, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
+                RoomHeader(it, memberCount = memberCount, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
             }
             // The note that is playing belongs to this room and
             // this pane: leaving either stops it (the key is the

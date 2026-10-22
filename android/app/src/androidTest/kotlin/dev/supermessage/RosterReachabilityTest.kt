@@ -286,6 +286,54 @@ class RosterReachabilityTest {
         compose.onNodeWithTag("room-info-done").assertIsDisplayed()
     }
 
+    private fun runtimeRow(roomId: String, name: String) = joinedRow(roomId, name).let {
+        it.copy(room = it.room.copy(runtime = uniffi.supermessage_core.RuntimeDto("claude-code", "foundry")))
+    }
+
+    /** iOS asks for a count only of a room of people (`RoomScreen.swift:116-123`). */
+    @Test
+    fun anAgentsRoomNeverAsksForOrShowsAMemberCount() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(runtimeRow("!g:example.org", "Gamma"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+        )
+        val session = sessionOf(fake)
+        val prefs = preferences()
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Gamma").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("room-header").assertIsDisplayed()
+        compose.onAllNodesWithText("members", substring = true).assertCountEquals(0)
+        assertEquals(emptyList<String>(), fake.roomInfoCalls)
+    }
+
+    @Test
+    fun anInvitationNeverAsksForOrShowsAMemberCount() {
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(invitationRow())) },
+            roomInviterResult = { null },
+            roomInfoResult = { infoOf(it, 4uL) },
+        )
+        val session = sessionOf(fake)
+        val prefs = preferences(showsInvitations = true)
+        compose.setContent {
+            Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                AppRoot(session = session, prefs = prefs)
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Ops Room").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("room-header").assertIsDisplayed()
+        compose.onAllNodesWithText("members", substring = true).assertCountEquals(0)
+        assertEquals(emptyList<String>(), fake.roomInfoCalls)
+    }
+
     /** iOS resets the count on `roomId` (`RoomScreen.swift:35-39`). */
     @Test
     fun memberCountResetsWhenTheRoomChanges() {
@@ -382,7 +430,12 @@ class RosterReachabilityTest {
         // row above.
         override fun roomAvatar(roomId: String): String? = null
 
-        override fun roomInfo(roomId: String): RoomInfoDto = roomInfoResult(roomId)
+        val roomInfoCalls = mutableListOf<String>()
+
+        override fun roomInfo(roomId: String): RoomInfoDto {
+            roomInfoCalls += roomId
+            return roomInfoResult(roomId)
+        }
 
         // Reached on opening any joined room (the pane marks it read).
         override fun markRoomRead(roomId: String): Unit = Unit
