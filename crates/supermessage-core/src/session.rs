@@ -180,6 +180,10 @@ impl Session {
     /// Logs in fresh with a username and password, building a new client
     /// backed by an encrypted store and persisting the resulting session.
     pub async fn login(&self, homeserver: &str, username: &str, password: &str) -> CoreResult<()> {
+        // A new sign-in starts with no room sent in: a send still in flight
+        // when the last account signed out could have noted its room after
+        // `logout` cleared the set.
+        self.focused.clear_sent();
         let client = self.build_client(homeserver).await?;
         self.auth.login(&client, username, password).await?;
         self.enable_crypto_lock(&client).await;
@@ -199,6 +203,8 @@ impl Session {
     /// Returns `Ok(false)` when there is nothing to restore — the normal
     /// first-run path, not an error.
     pub async fn restore(&self) -> CoreResult<bool> {
+        // As in `login`: a restored session starts with no room sent in.
+        self.focused.clear_sent();
         let Some(homeserver) = self.store.get(KEY_HOMESERVER_URL)? else {
             return Ok(false);
         };
@@ -2301,6 +2307,19 @@ mod tests {
         session.focused_timeline().note_sent("!r:x");
         assert!(session.has_sent("!r:x"));
         let _ = session.logout().await;
+        assert!(!session.has_sent("!r:x"));
+    }
+
+    /// Mutation seen failing: removing the `clear_sent()` call at the top of
+    /// `login` leaves `has_sent` true (the login itself fails: no server).
+    #[tokio::test]
+    async fn a_fresh_login_starts_with_no_room_sent_in() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-sent-login"),
+            Box::new(MemoryStore::default()),
+        );
+        session.focused_timeline().note_sent("!r:x");
+        let _ = session.login("http://127.0.0.1:1", "u", "p").await;
         assert!(!session.has_sent("!r:x"));
     }
 

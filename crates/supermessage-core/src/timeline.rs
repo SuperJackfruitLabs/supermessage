@@ -3167,20 +3167,6 @@ impl FocusedTimeline {
         verify_room_focus(room_id, &handle.room_id)
     }
 
-    /// The room the timeline is currently focused on, or `None` when nothing
-    /// is focused.
-    ///
-    /// For the one caller that has no room id to check *against*: the Rust
-    /// drag-drop handler (`core::attachments::on_files_dropped`). A file
-    /// dropped on the window names no room — it lands on whatever the reader
-    /// is looking at — so unlike every other room-scoped path here, this one
-    /// has to *read* the focused room rather than verify one. Everything
-    /// that does have a room id in hand goes through
-    /// [`Self::verify_focus`]/[`Self::active_timeline_for`] instead, which
-    /// are race-free in a way this cannot be: the answer is stale the moment
-    /// it is returned. That is acceptable here only because the staged token
-    /// it produces is *bound* to whatever room this returned, and the send
-    /// that eventually redeems it takes the full guard.
     /// This account has sent in `room_id` (ruling 12e). Called only after the
     /// send queue accepted the event.
     pub fn note_sent(&self, room_id: &str) {
@@ -3200,6 +3186,20 @@ impl FocusedTimeline {
         self.1.clear();
     }
 
+    /// The room the timeline is currently focused on, or `None` when nothing
+    /// is focused.
+    ///
+    /// For the one caller that has no room id to check *against*: the Rust
+    /// drag-drop handler (`core::attachments::on_files_dropped`). A file
+    /// dropped on the window names no room — it lands on whatever the reader
+    /// is looking at — so unlike every other room-scoped path here, this one
+    /// has to *read* the focused room rather than verify one. Everything
+    /// that does have a room id in hand goes through
+    /// [`Self::verify_focus`]/[`Self::active_timeline_for`] instead, which
+    /// are race-free in a way this cannot be: the answer is stale the moment
+    /// it is returned. That is acceptable here only because the staged token
+    /// it produces is *bound* to whatever room this returned, and the send
+    /// that eventually redeems it takes the full guard.
     pub fn focused_room_id(&self) -> Option<String> {
         self.0
             .lock()
@@ -6743,6 +6743,83 @@ mod gate_decision_tests {
             "the focused room went blank after an ignore and stayed blank"
         );
 
+        focused.clear_and_join().await;
+    }
+
+    /// A send the room accepted marks the room as sent in, for `send_text`
+    /// and `send_reply`, through a real `Timeline` and a mock homeserver.
+    ///
+    /// Mutation seen failing: deleting the `note_sent` call in `send_text`
+    /// fails "send_text was accepted but the room is not remembered";
+    /// deleting it in `send_reply` fails "send_reply was accepted but the
+    /// room is not remembered".
+    #[tokio::test]
+    async fn an_accepted_send_marks_the_room_as_sent_in() {
+        use matrix_sdk::ruma::{event_id, room_id, user_id};
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+        use matrix_sdk_test::{event_factory::EventFactory, JoinedRoomBuilder};
+
+        struct Quiet;
+        impl EventSink for Quiet {
+            fn emit(&self, _: crate::event::CoreEvent) {}
+        }
+
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        server
+            .mock_room_messages()
+            .ok(Default::default())
+            .mount()
+            .await;
+        server.mock_room_state_encryption().plain().mount().await;
+        server.mock_room_send().ok(event_id!("$sent")).mount().await;
+
+        let text_room = room_id!("!text:example.org");
+        let reply_room = room_id!("!reply:example.org");
+        let f = EventFactory::new().room(reply_room);
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(JoinedRoomBuilder::new(text_room));
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(reply_room).add_timeline_event(
+                        f.text_msg("Question")
+                            .sender(user_id!("@agent:example.org"))
+                            .event_id(event_id!("$parent")),
+                    ),
+                );
+            })
+            .await;
+
+        let focused = FocusedTimeline::default();
+        focused
+            .subscribe(&client, text_room.as_str(), Arc::new(Quiet))
+            .await
+            .unwrap();
+        assert!(!focused.has_sent(text_room.as_str()));
+        focused
+            .send_text(text_room.as_str(), "hello", &[])
+            .await
+            .unwrap();
+        assert!(
+            focused.has_sent(text_room.as_str()),
+            "send_text was accepted but the room is not remembered"
+        );
+
+        focused
+            .subscribe(&client, reply_room.as_str(), Arc::new(Quiet))
+            .await
+            .unwrap();
+        assert!(!focused.has_sent(reply_room.as_str()));
+        focused
+            .send_reply(reply_room.as_str(), "answer", "$parent")
+            .await
+            .unwrap();
+        assert!(
+            focused.has_sent(reply_room.as_str()),
+            "send_reply was accepted but the room is not remembered"
+        );
         focused.clear_and_join().await;
     }
 
