@@ -787,6 +787,13 @@ impl Core {
         Ok(self.block(self.session.room_info(&room_id))?)
     }
 
+    /// A room's agent turn, whole, for a host opening the room — see
+    /// `core::session::Session::turn`. `None` when the room has had none this
+    /// sign-in. Synchronous: it reads the session's turn book.
+    pub fn turn(&self, room_id: String) -> Option<supermessage_core::turns::TurnSnapshot> {
+        self.session.turn(&room_id)
+    }
+
     /// Who invited this account to a room, or `None`.
     pub fn room_inviter(&self, room_id: String) -> Result<Option<String>, FfiError> {
         Ok(self.block(self.session.room_inviter(&room_id))?)
@@ -1146,6 +1153,41 @@ pub fn audio_clock_label(ms: u64) -> String {
     supermessage_core::audio::audio_clock_label(ms)
 }
 
+/// "Thought for 12s · 2 steps" — see `core::turn_label::turn_record_label`.
+#[uniffi::export]
+pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> String {
+    supermessage_core::turn_label::turn_record_label(thought, steps, elapsed_ms)
+}
+
+/// "Working", "Done" or "Stopped" — see `core::turn_label::turn_status_word`.
+#[uniffi::export]
+pub fn turn_status_word(ended_by: Option<supermessage_core::turns::TurnEnding>) -> String {
+    supermessage_core::turn_label::turn_status_word(ended_by)
+}
+
+/// "12s", "2m 5s" — see `core::turn_label::turn_duration_label`.
+#[uniffi::export]
+pub fn turn_duration_label(elapsed_ms: u64) -> String {
+    supermessage_core::turn_label::turn_duration_label(elapsed_ms)
+}
+
+/// How long a turn has been running: "8s", "1m 04s" — see
+/// `core::turn_label::elapsed_label`.
+#[uniffi::export]
+pub fn elapsed_label(elapsed_ms: i64) -> String {
+    supermessage_core::turn_label::elapsed_label(elapsed_ms)
+}
+
+/// Folds `inputs` through a fresh turn book, for previews and fixtures — see
+/// `core::turns::fold_turn`.
+#[uniffi::export]
+pub fn fold_turn(
+    room_id: String,
+    inputs: Vec<supermessage_core::turns::TurnInput>,
+) -> Option<supermessage_core::turns::TurnSnapshot> {
+    supermessage_core::turns::fold_turn(&room_id, inputs)
+}
+
 /// The cast of a room from facts already in hand — for previews and tests.
 /// A free function because it touches no session state; hosts with a session
 /// ask `Core::room_cast`, which gathers the same facts itself.
@@ -1217,6 +1259,45 @@ pub fn collect_mentions(
 #[uniffi::export]
 pub fn people_label(user_ids: Vec<String>) -> String {
     supermessage_core::display_name::people_label(&user_ids)
+}
+
+/// How a space's raw name reads to a person — "Runtime 9247e5" for an id,
+/// a host without its `.local`.
+///
+/// A free function for the same reason as `rich_blocks_from_markdown`: it
+/// touches no session state. `SpaceSummary.display_name` already carries it
+/// for every listed space; this is for a name a host holds on its own.
+#[uniffi::export]
+pub fn space_display_name(name: String) -> String {
+    supermessage_core::spaces::space_display_name(&name)
+}
+
+/// The first-run demo's script — what Atlas says, the permission card, and the
+/// pauses between steps.
+///
+/// **Local, and nothing is sent:** the script is data and the host holds the
+/// step; hand the card a local answer closure, never a session. A free
+/// function for the same reason as `rich_blocks_from_markdown`.
+#[uniffi::export]
+pub fn first_run_script() -> supermessage_core::first_run::FirstRunScript {
+    supermessage_core::first_run::script()
+}
+
+/// The demo's next automatic step; it stops at the card.
+#[uniffi::export]
+pub fn first_run_advance(
+    step: supermessage_core::first_run::FirstRunStep,
+) -> supermessage_core::first_run::FirstRunStep {
+    supermessage_core::first_run::advance(step)
+}
+
+/// The step after the reader answers the card, or `None` when there is no
+/// card to answer.
+#[uniffi::export]
+pub fn first_run_answer(
+    step: supermessage_core::first_run::FirstRunStep,
+) -> Option<supermessage_core::first_run::FirstRunStep> {
+    supermessage_core::first_run::answer(step)
 }
 
 /// Filter a directory by what the reader has typed — name, machine, or id.

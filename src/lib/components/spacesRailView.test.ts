@@ -48,6 +48,7 @@ function space(overrides: Partial<SpaceSummary> = {}): SpaceSummary {
   return {
     id: "!space:x.org",
     name,
+    displayName: name,
     identity: identityOf(name),
     avatarUrl: null,
     childCount: 3,

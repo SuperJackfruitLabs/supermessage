@@ -511,6 +511,12 @@ export interface SpaceSummary {
    * roster row cannot disagree about what something is called.
    */
   identity: RoomIdentity;
+  /**
+   * {@link name} as a person should read it — an id-shaped name becomes
+   * "Runtime 9247e5", a host loses its `.local`. Show this, never `name`;
+   * `name` stays the raw value for keying and sorting.
+   */
+  displayName: string;
   id: string;
   /**
    * The space's display name, **never empty**: the core falls back to the
@@ -1220,6 +1226,8 @@ const TYPING_EVENT = "sm://typing";
 const LIVE_EVENT = "sm://live";
 const THOUGHT_EVENT = "sm://thought";
 const TOOL_EVENT = "sm://tool";
+/** A room's agent turn moved — see `core::turns`. */
+const TURN_EVENT = "sm://turn";
 /**
  * A file dropped on the window and staged by the **Rust** drag-drop handler
  * (`core::attachments::on_files_dropped`). See {@link onStagedAttachment} —
@@ -2169,6 +2177,57 @@ export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void
   return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
 }
 
+/** Where the first-run demo conversation is; see `core::first_run`. */
+export type FirstRunStep = "greeting" | "asking" | "waiting" | "approved";
+
+/**
+ * Everything the first-run demo says and shows — `core::first_run::script`.
+ * Local content: nothing in the demo is sent to a homeserver, so the card
+ * must be answered with a local closure, never a session command.
+ */
+export interface FirstRunScript {
+  agentName: string;
+  greeting: string;
+  request: string;
+  banner: string;
+  typingLabel: string;
+  agentTag: string;
+  cardLabel: string;
+  cardEventType: string;
+  roomId: string;
+  initial: string;
+  approvedTitle: string;
+  approvedBody: string;
+  finishLabel: string;
+  skipLabel: string;
+  card: CustomEventView;
+  /** Pause before each automatic advance: greeting to asking, asking to waiting. */
+  stepDelaysMs: number[];
+}
+
+export async function firstRunScript(): Promise<FirstRunScript> {
+  return invoke<FirstRunScript>("first_run_script");
+}
+
+/** The demo's next automatic step; it stops at the card. */
+export async function firstRunAdvance(step: FirstRunStep): Promise<FirstRunStep> {
+  return invoke<FirstRunStep>("first_run_advance", { step });
+}
+
+/** The step after the reader answers the card, or null when there is no card to answer. */
+export async function firstRunAnswer(step: FirstRunStep): Promise<FirstRunStep | null> {
+  return invoke<FirstRunStep | null>("first_run_answer", { step });
+}
+
+/**
+ * How a space's raw name reads to a person — the core's rule, for a name
+ * that is not (yet) on a {@link SpaceSummary}, which already carries it as
+ * {@link SpaceSummary.displayName}.
+ */
+export async function spaceDisplayName(name: string): Promise<string> {
+  return invoke<string>("space_display_name", { name });
+}
+
 /**
  * Parses a live turn's partial markdown into blocks.
  *
@@ -2237,9 +2296,9 @@ export type ToolPhase = "queued" | "running" | "done" | "failed" | "unknown";
 /**
  * One tool call's state, mirroring `core::live::ToolPayload`.
  *
- * Unlike the two text channels this one is **not** de-duplicated in the core —
- * see `live.rs`'s handler for why — so `seq` is here to be compared, per
- * `toolCallId`, by whatever consumes it.
+ * Unlike the two text channels this one is not de-duplicated by `LiveState`;
+ * the turn book (`core::turns`) drops a stale report per tool call and
+ * forwards nothing for it.
  */
 export interface ToolPayload {
   roomId: string;
@@ -2272,6 +2331,102 @@ export interface ToolPayload {
 /** Subscribes to tool-call state on {@link TOOL_EVENT}. */
 export function onTool(handler: (payload: ToolPayload) => void): Promise<UnlistenFn> {
   return listen<ToolPayload>(TOOL_EVENT, (event) => handler(event.payload));
+}
+
+/** One tool call as a turn's step, mirroring `core::turns::TurnStep`. */
+export interface TurnStep {
+  id: string;
+  title: string;
+  kind: string | null;
+  status: string;
+  phase: ToolPhase;
+  statusLabel: string;
+  locations: string[];
+  input: string | null;
+  output: string | null;
+  seq: number;
+  hasDetail: boolean;
+}
+
+/** What ended a turn, mirroring `core::turns::TurnEnding`. */
+export type TurnEnding = "done" | "reply" | "timedOut";
+
+/** A turn in few words, mirroring `core::turns::TurnSummary`. */
+export interface TurnSummary {
+  roomId: string;
+  turnId: number;
+  /** Discard an update whose revision is below the one held. */
+  revision: number;
+  inProgress: boolean;
+  endedBy: TurnEnding | null;
+  startedAtMs: number;
+  endedAtMs: number | null;
+  lastActivityMs: number;
+  answering: boolean;
+  hasThought: boolean;
+  totalSteps: number;
+  completedSteps: number;
+  failedStep: string | null;
+  currentStepTitle: string;
+  stepIsTool: boolean;
+  recordLabel: string | null;
+  /** The Matrix user writing the turn (the sender of its first event), when known. */
+  agentId?: string;
+}
+
+/** `core::turns::TurnUpdate`: a summary and at most one step that changed. */
+export interface TurnUpdate {
+  summary: TurnSummary;
+  step: { index: number; step: TurnStep } | null;
+}
+
+/** `core::turns::TurnSnapshot`: the whole record. */
+export interface TurnSnapshot {
+  summary: TurnSummary;
+  steps: TurnStep[];
+  thought: string | null;
+}
+
+/** `core::turns::TurnInput`, for {@link foldTurn}. */
+export type TurnInput =
+  | { kind: "answer"; seq: number; done: boolean; atMs: number }
+  | { kind: "thought"; seq: number; text: string; done: boolean; atMs: number }
+  | { kind: "tool"; step: TurnStep; atMs: number }
+  | { kind: "reply"; eventMs: number | null; atMs: number };
+
+/** Subscribes to turn updates on {@link TURN_EVENT}. */
+export function onTurn(handler: (update: TurnUpdate) => void): Promise<UnlistenFn> {
+  return listen<TurnUpdate>(TURN_EVENT, (event) => handler(event.payload));
+}
+
+/** A room's turn record (`core::session::Session::turn`), or null. */
+export async function turn(roomId: string): Promise<TurnSnapshot | null> {
+  return invoke<TurnSnapshot | null>("turn", { roomId });
+}
+
+/** `core::turn_label::turn_record_label`. */
+export async function turnRecordLabel(thought: boolean, steps: number, elapsedMs: number | null): Promise<string> {
+  return invoke<string>("turn_record_label", { thought, steps, elapsedMs });
+}
+
+/** `core::turn_label::turn_status_word`: "Working", "Done", or "Stopped" for a turn that timed out. */
+export async function turnStatusWord(endedBy: TurnEnding | null): Promise<string> {
+  return invoke<string>("turn_status_word", { endedBy });
+}
+
+/** `core::turn_label::turn_duration_label`. */
+export async function turnDurationLabel(elapsedMs: number): Promise<string> {
+  return invoke<string>("turn_duration_label", { elapsedMs });
+}
+
+/** `core::turn_label::elapsed_label`. */
+export async function elapsedLabel(elapsedMs: number): Promise<string> {
+  return invoke<string>("elapsed_label", { elapsedMs });
+}
+
+/** `core::turns::fold_turn`, for fixtures. */
+export async function foldTurn(roomId: string, inputs: TurnInput[]): Promise<TurnSnapshot | null> {
+  return invoke<TurnSnapshot | null>("fold_turn", { roomId, inputs });
 }
 
 /** Subscribes to typing-state updates on {@link TYPING_EVENT}. */

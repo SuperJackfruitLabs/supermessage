@@ -808,6 +808,36 @@ pub fn rich_blocks_from_markdown(source: String) -> Vec<supermessage_core::rich:
     supermessage_core::rich::blocks_from_markdown(&source)
 }
 
+/// The first-run demo's script; see `supermessage_core::first_run`. Local
+/// content: nothing in the demo is sent to a homeserver.
+#[tauri::command]
+pub fn first_run_script() -> supermessage_core::first_run::FirstRunScript {
+    supermessage_core::first_run::script()
+}
+
+/// The demo's next automatic step; it stops at the card.
+#[tauri::command]
+pub fn first_run_advance(
+    step: supermessage_core::first_run::FirstRunStep,
+) -> supermessage_core::first_run::FirstRunStep {
+    supermessage_core::first_run::advance(step)
+}
+
+/// The step after the reader answers the card, or `None`.
+#[tauri::command]
+pub fn first_run_answer(
+    step: supermessage_core::first_run::FirstRunStep,
+) -> Option<supermessage_core::first_run::FirstRunStep> {
+    supermessage_core::first_run::answer(step)
+}
+
+/// How a space's raw name reads to a person; see
+/// `supermessage_core::spaces::space_display_name`.
+#[tauri::command]
+pub fn space_display_name(name: String) -> String {
+    supermessage_core::spaces::space_display_name(&name)
+}
+
 /// Parse a matrix.to URL or a `matrix:` URI into what it addresses.
 ///
 /// `None` when the href is not a matrix link at all — the signal
@@ -874,4 +904,47 @@ pub fn collect_mentions(
     members: Vec<supermessage_core::mentions::Mentionable>,
 ) -> Vec<String> {
     supermessage_core::mentions::collect_mentions(&text, &members)
+}
+
+/// A room's agent turn, whole — `Session::turn`. `null` when the room has had
+/// none this sign-in.
+#[tauri::command]
+pub fn turn(
+    room_id: String,
+    session: State<'_, Session>,
+) -> Option<supermessage_core::turns::TurnSnapshot> {
+    session.turn(&room_id)
+}
+
+/// `core::turn_label::turn_record_label`.
+#[tauri::command]
+pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> String {
+    supermessage_core::turn_label::turn_record_label(thought, steps, elapsed_ms)
+}
+
+/// `core::turn_label::turn_status_word`.
+#[tauri::command]
+pub fn turn_status_word(ended_by: Option<supermessage_core::turns::TurnEnding>) -> String {
+    supermessage_core::turn_label::turn_status_word(ended_by)
+}
+
+/// `core::turn_label::turn_duration_label`.
+#[tauri::command]
+pub fn turn_duration_label(elapsed_ms: u64) -> String {
+    supermessage_core::turn_label::turn_duration_label(elapsed_ms)
+}
+
+/// `core::turn_label::elapsed_label`.
+#[tauri::command]
+pub fn elapsed_label(elapsed_ms: i64) -> String {
+    supermessage_core::turn_label::elapsed_label(elapsed_ms)
+}
+
+/// `core::turns::fold_turn`.
+#[tauri::command]
+pub fn fold_turn(
+    room_id: String,
+    inputs: Vec<supermessage_core::turns::TurnInput>,
+) -> Option<supermessage_core::turns::TurnSnapshot> {
+    supermessage_core::turns::fold_turn(&room_id, inputs)
 }

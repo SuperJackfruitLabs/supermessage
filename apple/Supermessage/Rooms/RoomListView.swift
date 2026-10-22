@@ -135,7 +135,7 @@ struct RoomListView: View {
                 } header: {
                     if let title = section.title {
                         SectionHeader(
-                            title: SpaceNames.display(title), detail: section.detail,
+                            title: spaceDisplayName(name: title), detail: section.detail,
                             attention: section.attention)
                     }
                 }
@@ -161,7 +161,7 @@ struct RoomListView: View {
         .paletteListGround()
         .sensoryFeedback(.success, trigger: swipeLanded)
         // Still set: it is the back button's title in a room.
-        .navigationTitle(session.spaces.selectedName.map(SpaceNames.display) ?? "Chats")
+        .navigationTitle(session.spaces.selectedName.map { spaceDisplayName(name: $0) } ?? "Chats")
         .toolbar {
             ToolbarItem(placement: .principal) {
                 SpaceMenu(

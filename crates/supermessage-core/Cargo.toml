@@ -139,7 +139,7 @@ percent-encoding = "2"
 [dev-dependencies]
 matrix-sdk = { version = "0.18", features = ["testing"] }
 wiremock = "0.6"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
 matrix-sdk-test = "0.18"
 
 # Belongs here, not in a host: `secrets.rs` is what calls keyring, and every

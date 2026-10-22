@@ -22,6 +22,7 @@
 use std::sync::Arc;
 
 use crate::event::{CoreEvent, EventSink};
+use crate::turns::{now_ms, TurnBook, TurnInput, TurnStep};
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -135,7 +136,7 @@ pub struct ToolUpdateToDeviceEventContent {
 /// print it as it arrived or rewrite it by hand: iOS showed `in_progress`,
 /// Android the same, and the desktop `IN PROGRESS`. The phase is decided
 /// here, once, and a host picks a glyph and a colour from it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, uniffi::Enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum ToolPhase {
     /// `pending`: announced, not started.
@@ -311,18 +312,69 @@ impl ThoughtState {
     }
 }
 
+/// The turn book as one `listen` call sees it: the book, and the sign-in it
+/// was created for.
+///
+/// The book is session-owned and outlives the client, so a handler of an old
+/// client can still be running when the account signs out and in again. It
+/// carries the generation it was registered under, and the book refuses it
+/// once `clear` has moved on (see [`TurnBook::apply_in`]).
+#[derive(Clone)]
+struct TurnFeed {
+    book: Arc<TurnBook>,
+    generation: u64,
+}
+
+/// Records `input` in the turn book and, when the book accepts it, tells the
+/// host: the turn update first, then `raw`.
+///
+/// The update goes **first** so a host that starts afresh on a new `turn_id`
+/// does so before the text that began the turn arrives, rather than wiping it.
+/// An input the book refuses (a tool report the network delivered late, or
+/// anything from a sign-in that has ended) reaches no host at all.
+fn deliver(
+    sink: &Arc<dyn EventSink>,
+    turns: &TurnBook,
+    generation: u64,
+    room_id: &str,
+    sender: &str,
+    input: TurnInput,
+    raw: CoreEvent,
+) {
+    let outcome = turns.apply_in_from(generation, room_id, Some(sender), input);
+    if !outcome.accepted {
+        return;
+    }
+    if let Some(update) = outcome.update {
+        sink.emit(CoreEvent::Turn(update));
+    }
+    sink.emit(raw);
+}
+
 /// Listen for live turn text and forward it to the webview.
 ///
 /// Registered against the client, so it dies with the session — a logout
-/// rebuilds the client and takes this with it.
-pub fn listen(client: &Client, sink: Arc<dyn EventSink>) -> EventHandlerHandle {
+/// rebuilds the client and takes this with it. Every delta also goes into
+/// `turns`, which does not die with the client: its handlers are bound to the
+/// book's generation at this call and stop writing when it is cleared.
+pub fn listen(
+    client: &Client,
+    sink: Arc<dyn EventSink>,
+    turns: Arc<TurnBook>,
+) -> EventHandlerHandle {
+    let generation = turns.generation();
     client.add_event_handler_context(sink);
+    client.add_event_handler_context(TurnFeed {
+        book: turns,
+        generation,
+    });
     client.add_event_handler_context(std::sync::Arc::new(LiveState::default()));
     client.add_event_handler_context(std::sync::Arc::new(ThoughtState::default()));
 
     client.add_event_handler(
         |ev: StreamDeltaToDeviceEvent,
          sink: Ctx<Arc<dyn EventSink>>,
+         feed: Ctx<TurnFeed>,
          state: Ctx<std::sync::Arc<LiveState>>| async move {
             let content = ev.content;
             if !state.accept(
@@ -334,19 +386,34 @@ pub fn listen(client: &Client, sink: Arc<dyn EventSink>) -> EventHandlerHandle {
                 return;
             }
 
+            let input = TurnInput::Answer {
+                seq: content.seq,
+                done: content.done,
+                at_ms: now_ms(),
+            };
             let payload = LivePayload {
                 room_id: content.room_id,
                 seq: content.seq,
                 text: content.text,
                 done: content.done,
             };
-            sink.emit(CoreEvent::Live(payload));
+            let room_id = payload.room_id.clone();
+            deliver(
+                &sink,
+                &feed.book,
+                feed.generation,
+                &room_id,
+                ev.sender.as_str(),
+                input,
+                CoreEvent::Live(payload),
+            );
         },
     );
 
     client.add_event_handler(
         |ev: ThoughtDeltaToDeviceEvent,
          sink: Ctx<Arc<dyn EventSink>>,
+         feed: Ctx<TurnFeed>,
          state: Ctx<std::sync::Arc<ThoughtState>>| async move {
             let content = ev.content;
             if !state.accept(
@@ -358,29 +425,46 @@ pub fn listen(client: &Client, sink: Arc<dyn EventSink>) -> EventHandlerHandle {
                 return;
             }
 
+            let input = TurnInput::Thought {
+                seq: content.seq,
+                text: content.text.clone(),
+                done: content.done,
+                at_ms: now_ms(),
+            };
             let payload = LivePayload {
                 room_id: content.room_id,
                 seq: content.seq,
                 text: content.text,
                 done: content.done,
             };
-            sink.emit(CoreEvent::Thought(payload));
+            let room_id = payload.room_id.clone();
+            deliver(
+                &sink,
+                &feed.book,
+                feed.generation,
+                &room_id,
+                ev.sender.as_str(),
+                input,
+                CoreEvent::Thought(payload),
+            );
         },
     );
 
-    // Deliberately **not** de-duplicated here, unlike the two text channels.
+    // Not de-duplicated by `LiveState`, unlike the two text channels.
     //
     // `LiveState` forgets a room when a turn ends, and it learns that from a
     // delta's `done`. A tool update has no `done`: the turn ends elsewhere. So a
     // room's last tool sequence would outlive its turn, and the next turn —
     // whose counter restarts at 1 — would have every update dropped as stale.
     //
-    // Ordering still matters (a `completed` overtaken by an `in_progress` would
-    // stick), so the rule lives in the webview store instead, per tool call id,
-    // next to the turn-end clear that bounds it. Volume makes that affordable:
-    // tens of updates a turn, against hundreds of text deltas.
+    // The turn book decides instead (`core::turns`): it knows where a turn ends
+    // (a `done`, the agent's reply landing, or the time limit), so a report is
+    // judged per tool call id against the turn it belongs to, and one it
+    // refuses as stale is not forwarded at all.
     client.add_event_handler(
-        |ev: ToolUpdateToDeviceEvent, sink: Ctx<Arc<dyn EventSink>>| async move {
+        |ev: ToolUpdateToDeviceEvent,
+         sink: Ctx<Arc<dyn EventSink>>,
+         feed: Ctx<TurnFeed>| async move {
             let content = ev.content;
             let payload = ToolPayload {
                 room_id: content.room_id,
@@ -395,7 +479,20 @@ pub fn listen(client: &Client, sink: Arc<dyn EventSink>) -> EventHandlerHandle {
                 input: bound_tool_text(content.input),
                 output: bound_tool_text(content.output),
             };
-            sink.emit(CoreEvent::Tool(payload));
+            let input = TurnInput::Tool {
+                step: TurnStep::from_payload(&payload),
+                at_ms: now_ms(),
+            };
+            let room_id = payload.room_id.clone();
+            deliver(
+                &sink,
+                &feed.book,
+                feed.generation,
+                &room_id,
+                ev.sender.as_str(),
+                input,
+                CoreEvent::Tool(payload),
+            );
         },
     )
 }
@@ -587,5 +684,189 @@ mod tool_text_tests {
     fn text_exactly_at_the_bound_is_left_alone() {
         let exact = "y".repeat(TOOL_TEXT_MAX_CHARS);
         assert_eq!(bound_tool_text(Some(exact.clone())), Some(exact));
+    }
+}
+
+#[cfg(test)]
+mod deliver_tests {
+    use std::sync::Mutex as StdMutex;
+
+    use super::*;
+    use crate::live::ToolPhase;
+
+    #[derive(Default)]
+    struct Recorder(StdMutex<Vec<&'static str>>);
+
+    impl EventSink for Recorder {
+        fn emit(&self, event: CoreEvent) {
+            let name = match event {
+                CoreEvent::Turn(_) => "turn",
+                CoreEvent::Live(_) => "live",
+                CoreEvent::Thought(_) => "thought",
+                CoreEvent::Tool(_) => "tool",
+                _ => "other",
+            };
+            self.0.lock().unwrap().push(name);
+        }
+    }
+
+    fn recorder() -> (Arc<Recorder>, Arc<dyn EventSink>) {
+        let rec = Arc::new(Recorder::default());
+        let sink: Arc<dyn EventSink> = rec.clone();
+        (rec, sink)
+    }
+
+    fn payload(seq: u64) -> LivePayload {
+        LivePayload {
+            room_id: "!r:x".into(),
+            seq,
+            text: "hi".into(),
+            done: false,
+        }
+    }
+
+    fn tool_payload(seq: u64, phase: ToolPhase) -> ToolPayload {
+        ToolPayload {
+            room_id: "!r:x".into(),
+            seq,
+            tool_call_id: "t1".into(),
+            title: "Read".into(),
+            kind: None,
+            status: String::new(),
+            phase,
+            status_label: String::new(),
+            locations: Vec::new(),
+            input: None,
+            output: None,
+        }
+    }
+
+    fn tool_input(p: &ToolPayload) -> TurnInput {
+        TurnInput::Tool {
+            step: TurnStep::from_payload(p),
+            at_ms: 1,
+        }
+    }
+
+    /// Mutation seen failing: emitting `raw` before the update fails the
+    /// order assertion (`["live", "turn"]`).
+    #[test]
+    fn the_turn_update_goes_out_before_the_delta_that_caused_it() {
+        let (rec, sink) = recorder();
+        let book = TurnBook::default();
+        deliver(
+            &sink,
+            &book,
+            book.generation(),
+            "!r:x",
+            "@atlas:x",
+            TurnInput::Answer {
+                seq: 1,
+                done: false,
+                at_ms: 1,
+            },
+            CoreEvent::Live(payload(1)),
+        );
+        assert_eq!(*rec.0.lock().unwrap(), ["turn", "live"]);
+        // A second delta changes nothing in the summary: the text only.
+        deliver(
+            &sink,
+            &book,
+            book.generation(),
+            "!r:x",
+            "@atlas:x",
+            TurnInput::Answer {
+                seq: 2,
+                done: false,
+                at_ms: 2,
+            },
+            CoreEvent::Live(payload(2)),
+        );
+        assert_eq!(*rec.0.lock().unwrap(), ["turn", "live", "live"]);
+    }
+
+    /// Mutation seen failing: emitting `raw` whatever the book said fails the
+    /// assertion that nothing more was emitted.
+    #[test]
+    fn a_late_tool_report_reaches_no_host() {
+        let (rec, sink) = recorder();
+        let book = TurnBook::default();
+        let generation = book.generation();
+        let done = tool_payload(5, ToolPhase::Done);
+        deliver(
+            &sink,
+            &book,
+            generation,
+            "!r:x",
+            "@atlas:x",
+            tool_input(&done),
+            CoreEvent::Tool(done),
+        );
+        let seen = rec.0.lock().unwrap().len();
+        let late = tool_payload(4, ToolPhase::Running);
+        deliver(
+            &sink,
+            &book,
+            generation,
+            "!r:x",
+            "@atlas:x",
+            tool_input(&late),
+            CoreEvent::Tool(late),
+        );
+        assert_eq!(rec.0.lock().unwrap().len(), seen, "a stale report went out");
+    }
+
+    /// New: the race the sent-this-session state had. A handler of the old
+    /// client still running after sign-out and sign-in must reach neither the
+    /// new book nor the host.
+    ///
+    /// Mutation seen failing: `deliver` calling `apply` (ignoring the
+    /// generation) fails both assertions.
+    #[test]
+    fn a_late_event_from_the_old_sign_in_reaches_neither_book_nor_host() {
+        let (rec, sink) = recorder();
+        let book = TurnBook::default();
+        let old = book.generation();
+        book.clear();
+        deliver(
+            &sink,
+            &book,
+            old,
+            "!r:x",
+            "@atlas:x",
+            TurnInput::Answer {
+                seq: 1,
+                done: false,
+                at_ms: 1,
+            },
+            CoreEvent::Live(payload(1)),
+        );
+        assert!(rec.0.lock().unwrap().is_empty(), "the old session spoke");
+        assert_eq!(book.snapshot("!r:x"), None, "the old session fed the book");
+    }
+
+    /// The sender of the delta reaches the turn's summary through `deliver`.
+    ///
+    /// Mutation seen failing: `deliver` passing `None` as the sender fails
+    /// the assertion (the summary then has no `agent_id`).
+    #[test]
+    fn deliver_names_the_sender_as_the_turns_writer() {
+        let (_rec, sink) = recorder();
+        let book = TurnBook::default();
+        deliver(
+            &sink,
+            &book,
+            book.generation(),
+            "!r:x",
+            "@quill:x",
+            TurnInput::Answer {
+                seq: 1,
+                done: false,
+                at_ms: 1,
+            },
+            CoreEvent::Live(payload(1)),
+        );
+        let summary = book.snapshot("!r:x").unwrap().summary;
+        assert_eq!(summary.agent_id.as_deref(), Some("@quill:x"));
     }
 }

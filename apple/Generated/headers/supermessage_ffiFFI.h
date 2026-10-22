@@ -637,6 +637,11 @@ void uniffi_supermessage_ffi_fn_method_core_timeline_subscribe(void*_Nonnull ptr
 int8_t uniffi_supermessage_ffi_fn_method_core_toggle_reaction(void*_Nonnull ptr, RustBuffer room_id, RustBuffer event_id, RustBuffer key, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TURN
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_TURN
+RustBuffer uniffi_supermessage_ffi_fn_method_core_turn(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_UNIGNORE_USER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_UNIGNORE_USER
 void uniffi_supermessage_ffi_fn_method_core_unignore_user(void*_Nonnull ptr, RustBuffer user_id, RustCallStatus *_Nonnull out_status
@@ -691,6 +696,32 @@ RustBuffer uniffi_supermessage_ffi_fn_func_collect_mentions(RustBuffer text, Rus
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DISPLAY_INITIAL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DISPLAY_INITIAL
 RustBuffer uniffi_supermessage_ffi_fn_func_display_initial(RustBuffer name, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ELAPSED_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ELAPSED_LABEL
+RustBuffer uniffi_supermessage_ffi_fn_func_elapsed_label(int64_t elapsed_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_ADVANCE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_ADVANCE
+RustBuffer uniffi_supermessage_ffi_fn_func_first_run_advance(RustBuffer step, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_ANSWER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_ANSWER
+RustBuffer uniffi_supermessage_ffi_fn_func_first_run_answer(RustBuffer step, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_SCRIPT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_SCRIPT
+RustBuffer uniffi_supermessage_ffi_fn_func_first_run_script(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FOLD_TURN
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FOLD_TURN
+RustBuffer uniffi_supermessage_ffi_fn_func_fold_turn(RustBuffer room_id, RustBuffer inputs, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NEXT_NOTIFICATION_MODE
@@ -816,6 +847,26 @@ RustBuffer uniffi_supermessage_ffi_fn_func_roster_sections(RustBuffer rows, Rust
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_STATE
 RustBuffer uniffi_supermessage_ffi_fn_func_roster_state(RustBuffer row, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_SPACE_DISPLAY_NAME
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_SPACE_DISPLAY_NAME
+RustBuffer uniffi_supermessage_ffi_fn_func_space_display_name(RustBuffer name, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_DURATION_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_DURATION_LABEL
+RustBuffer uniffi_supermessage_ffi_fn_func_turn_duration_label(uint64_t elapsed_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_RECORD_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_RECORD_LABEL
+RustBuffer uniffi_supermessage_ffi_fn_func_turn_record_label(int8_t thought, uint32_t steps, RustBuffer elapsed_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_STATUS_WORD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_STATUS_WORD
+RustBuffer uniffi_supermessage_ffi_fn_func_turn_status_word(RustBuffer ended_by, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TYPING_VIEW
@@ -1184,6 +1235,36 @@ uint16_t uniffi_supermessage_ffi_checksum_func_display_initial(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ELAPSED_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ELAPSED_LABEL
+uint16_t uniffi_supermessage_ffi_checksum_func_elapsed_label(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_ADVANCE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_ADVANCE
+uint16_t uniffi_supermessage_ffi_checksum_func_first_run_advance(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_ANSWER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_ANSWER
+uint16_t uniffi_supermessage_ffi_checksum_func_first_run_answer(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_SCRIPT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_SCRIPT
+uint16_t uniffi_supermessage_ffi_checksum_func_first_run_script(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FOLD_TURN
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FOLD_TURN
+uint16_t uniffi_supermessage_ffi_checksum_func_fold_turn(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NEXT_NOTIFICATION_MODE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NEXT_NOTIFICATION_MODE
 uint16_t uniffi_supermessage_ffi_checksum_func_next_notification_mode(void
@@ -1331,6 +1412,30 @@ uint16_t uniffi_supermessage_ffi_checksum_func_roster_sections(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
 uint16_t uniffi_supermessage_ffi_checksum_func_roster_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_SPACE_DISPLAY_NAME
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_SPACE_DISPLAY_NAME
+uint16_t uniffi_supermessage_ffi_checksum_func_space_display_name(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_DURATION_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_DURATION_LABEL
+uint16_t uniffi_supermessage_ffi_checksum_func_turn_duration_label(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_RECORD_LABEL
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_RECORD_LABEL
+uint16_t uniffi_supermessage_ffi_checksum_func_turn_record_label(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_STATUS_WORD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_STATUS_WORD
+uint16_t uniffi_supermessage_ffi_checksum_func_turn_status_word(void
     
 );
 #endif
@@ -1769,6 +1874,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_timeline_subscribe(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TOGGLE_REACTION
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TOGGLE_REACTION
 uint16_t uniffi_supermessage_ffi_checksum_method_core_toggle_reaction(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TURN
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_TURN
+uint16_t uniffi_supermessage_ffi_checksum_method_core_turn(void
     
 );
 #endif

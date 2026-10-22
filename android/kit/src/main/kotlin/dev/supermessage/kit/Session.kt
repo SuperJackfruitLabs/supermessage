@@ -855,6 +855,12 @@ class Session(
                 locations = event.locations, input = event.input,
                 output = event.output,
             )
+        is FfiEvent.Turn -> {
+            // The core's turn record (`core::turns`). M4 consumes this; until
+            // then Android keeps rendering from Live, Thought and Tool above.
+            // Listed rather than swept into an `else` so a new variant on the
+            // boundary still breaks this build.
+        }
         is FfiEvent.AttachmentStaged -> {
             // Handled by the composer, which owns the staged strip. Listed
             // rather than swept into an `else` so a new variant on the

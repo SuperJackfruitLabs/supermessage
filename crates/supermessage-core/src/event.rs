@@ -57,6 +57,16 @@ pub enum CoreEvent {
     Thought(LivePayload),
     /// A tool call an agent made this turn. `sm://tool`.
     Tool(ToolPayload),
+    /// A room's agent turn moved: a summary and at most one step, no text
+    /// (text keeps travelling on `Live` and `Thought`). `sm://turn`. See
+    /// `core::turns`.
+    ///
+    /// Sent only when something a host shows changed, so a growing thought or
+    /// answer sends nothing here and `last_activity_ms` is as of the last
+    /// update. A host draws elapsed time with its own timer from
+    /// `started_at_ms` (or `ended_at_ms` once ended), and asks
+    /// `Session::turn` for the fresh figure when it opens a room.
+    Turn(crate::turns::TurnUpdate),
     /// A file was staged for sending. `sm://attachment/staged`.
     AttachmentStaged(StagedAttachment),
     /// The account's ignore (block) list, whole and sorted: once when the

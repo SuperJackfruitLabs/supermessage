@@ -495,7 +495,7 @@ private struct RecordingPill: View {
     }
 
     private func elapsed(at now: Date) -> some View {
-        Text(ElapsedTime.label(now.timeIntervalSince(startedAt)))
+        Text(elapsedLabel(elapsedMs: Int64((max(0, now.timeIntervalSince(startedAt)) * 1000).rounded())))
             .font(.body.monospacedDigit())
             .foregroundStyle(Theme.content)
     }

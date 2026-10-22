@@ -44,6 +44,8 @@ What the client does with it:
 | `dev.agentpod.thought.delta` — `text`, `done` | The reasoning, in a collapsed disclosure. **Kept after `done`** until the next turn starts, because a record that vanishes when the answer appears is one nobody has had time to read. |
 | `dev.agentpod.tool.update` | One row per `tool_call_id`, merged on later reports. |
 
+Turn state itself (start, steps, end, the record kept after) is `core::turns`, fed from these events, from the agent's reply landing on the timeline, and from a 30-minute time limit. Hosts read it from `CoreEvent::Turn` and `Session::turn`; they do not rebuild it.
+
 ### Tool calls: two fields AgentPod does not send yet
 
 `ToolUpdateToDeviceEventContent` accepts `input` and `output`, both optional
