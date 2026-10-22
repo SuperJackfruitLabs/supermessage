@@ -10,6 +10,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -70,6 +72,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -156,8 +159,12 @@ fun Composer(
     mentionCandidates: (query: String) -> List<PersonDto> = { emptyList() },
     modifier: Modifier = Modifier,
 ) {
+    // Focus anywhere in the composer, picker included: a keyboard user who
+    // moves from the field into the list has taken focus off the field, and the
+    // list must stay open for the Enter that picks.
     var focused by remember { mutableStateOf(false) }
-    // Only while the field has focus (iOS `mentionQuery`; Android has no
+    val fieldFocus = remember { FocusRequester() }
+    // Only while the composer has focus (iOS `mentionQuery`; Android has no
     // recorder in the composer). `activeQuery` is the Kit's, so an email
     // address opens nothing.
     val mentionQuery = if (focused) MentionComposing.activeQuery(text) else null
@@ -191,6 +198,7 @@ fun Composer(
                     1f to colors.surface,
                 ),
             )
+            .onFocusChanged { focused = it.hasFocus }
             .imePadding()
             .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -209,6 +217,8 @@ fun Composer(
                 people = lastPeople,
                 onPick = { person ->
                     if (mentionQuery != null) onTextChange(MentionComposing.insert(person, mentionQuery, text))
+                    // The row that was focused is about to leave; carry on typing in the field.
+                    runCatching { fieldFocus.requestFocus() }
                 },
             )
         }
@@ -251,7 +261,7 @@ fun Composer(
                 onSend = onSend,
                 onAttach = onAttach,
                 onRefuse = onRefuse,
-                onFocusChange = { focused = it },
+                focusRequester = fieldFocus,
             )
         }
 
@@ -282,7 +292,7 @@ private fun FieldRow(
     onSend: () -> Unit,
     onAttach: (path: String) -> Unit,
     onRefuse: (filename: String, message: String) -> Unit,
-    onFocusChange: (Boolean) -> Unit,
+    focusRequester: FocusRequester,
 ) {
     val colors = SupermessageTheme.colors
     Row(
@@ -323,7 +333,7 @@ private fun FieldRow(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 4.dp)
-                .onFocusChanged { onFocusChange(it.isFocused) }
+                .focusRequester(focusRequester)
                 .testTag("composer-text"),
         )
 
@@ -390,6 +400,9 @@ internal fun MentionPicker(people: List<PersonDto>, onPick: (PersonDto) -> Unit,
             .background(colors.surfaceRaised, shape)
             .border(1.dp, colors.border, shape)
             .padding(vertical = 4.dp)
+            // Announced when the list opens (a pane appearing), as the failure
+            // lines are: a reader who cannot see it is told it is there.
+            .semantics { paneTitle = if (people.size == 1) "1 suggestion to mention" else "${people.size} suggestions to mention" }
             .testTag("mention-picker"),
     ) {
         people.forEach { person ->

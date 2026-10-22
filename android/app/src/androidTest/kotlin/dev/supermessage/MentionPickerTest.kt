@@ -8,7 +8,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
@@ -18,7 +21,10 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -64,8 +70,21 @@ class MentionPickerTest {
     )
 
     /** A composer holding its own text, offering [people] to any query. */
-    private fun setComposer(people: List<PersonDto>, initial: String = "", onText: (String) -> Unit = {}) {
+    private fun setComposer(
+        people: List<PersonDto>,
+        initial: String = "",
+        keyboard: Boolean = false,
+        onText: (String) -> Unit = {},
+    ) {
         compose.setContent {
+            // A hardware keyboard puts the window in keyboard input mode, where
+            // buttons and rows can take focus; the emulator starts in touch mode.
+            if (keyboard) {
+                val modes = androidx.compose.ui.platform.LocalInputModeManager.current
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    modes.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard)
+                }
+            }
             CompositionLocalProvider(LocalReduceMotion provides true) {
                 var text by androidx.compose.runtime.remember { mutableStateOf(initial) }
                 Box(Modifier.requiredWidth(411.dp).testTag("shell")) {
@@ -102,6 +121,50 @@ class MentionPickerTest {
         // The caret is after the inserted space, so the reader carries on typing there.
         compose.onNodeWithTag("composer-text").performTextInput("hi")
         compose.onNodeWithTag("composer-text").assertTextEquals("@Atlas hi")
+    }
+
+    /** Focus moving from the field into the list must not close it before Enter picks. */
+    @Test
+    fun enterOnAFocusedRowPicks() {
+        setComposer(listOf(atlas, priya), keyboard = true)
+        compose.onNodeWithTag("composer-text").performTextInput("@a")
+        compose.onNodeWithTag("mention-@atlas:x").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitForIdle()
+        compose.onNodeWithTag("mention-picker").assertIsDisplayed()
+        compose.onNodeWithTag("mention-@atlas:x").performKeyInput { pressKey(Key.Enter) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("composer-text").assertTextEquals("@Atlas ")
+        compose.onAllNodesWithTag("mention-picker").assertCountEquals(0)
+    }
+
+    /** The real hardware path: Shift+Tab from the field lands on the list, and Enter picks. */
+    @Test
+    fun shiftTabFromTheFieldReachesTheListAndEnterPicks() {
+        setComposer(listOf(atlas, priya), keyboard = true)
+        compose.onNodeWithTag("composer-text").performTextInput("@a")
+        // Back past the Attach button (it precedes the field), then onto the last row.
+        repeat(2) {
+            compose.onNodeWithTag("composer-text").performKeyInput {
+                keyDown(Key.ShiftLeft); pressKey(Key.Tab); keyUp(Key.ShiftLeft)
+            }
+            compose.waitForIdle()
+        }
+        compose.onNodeWithTag("mention-picker").assertIsDisplayed()
+        compose.onNodeWithTag("mention-@priya:x").performKeyInput { pressKey(Key.Enter) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("composer-text").assertTextEquals("@Priya ")
+    }
+
+    /** The list is announced when it opens, with how many it holds. */
+    @Test
+    fun theListIsAnnouncedWhenItOpens() {
+        setComposer(listOf(atlas, priya))
+        compose.onNodeWithTag("composer-text").performTextInput("@")
+        compose.onNode(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                SemanticsProperties.PaneTitle, "2 suggestions to mention",
+            ),
+        ).assertExists()
     }
 
     @Test
