@@ -1651,6 +1651,209 @@ public func FfiConverterTypeCustomEventOutcome_lower(_ value: CustomEventOutcome
 
 
 /**
+ * Everything the demo says and shows, so no host keeps its own copy.
+ *
+ * `Serialize` only: [`CustomEventView`] has no `Deserialize`.
+ */
+public struct FirstRunScript {
+    public var agentName: String
+    public var greeting: String
+    public var request: String
+    /**
+     * Shown above the conversation so nobody mistakes it for a real room.
+     */
+    public var banner: String
+    public var typingLabel: String
+    public var agentTag: String
+    public var cardLabel: String
+    public var cardEventType: String
+    public var roomId: String
+    public var initial: String
+    public var approvedTitle: String
+    public var approvedBody: String
+    public var finishLabel: String
+    public var skipLabel: String
+    /**
+     * The permission request Atlas "sends", as the core would hand it to a host.
+     */
+    public var card: CustomEventView
+    /**
+     * Pause before each automatic [`advance`]: greeting to asking, then
+     * asking to waiting.
+     */
+    public var stepDelaysMs: [UInt64]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(agentName: String, greeting: String, request: String, 
+        /**
+         * Shown above the conversation so nobody mistakes it for a real room.
+         */banner: String, typingLabel: String, agentTag: String, cardLabel: String, cardEventType: String, roomId: String, initial: String, approvedTitle: String, approvedBody: String, finishLabel: String, skipLabel: String, 
+        /**
+         * The permission request Atlas "sends", as the core would hand it to a host.
+         */card: CustomEventView, 
+        /**
+         * Pause before each automatic [`advance`]: greeting to asking, then
+         * asking to waiting.
+         */stepDelaysMs: [UInt64]) {
+        self.agentName = agentName
+        self.greeting = greeting
+        self.request = request
+        self.banner = banner
+        self.typingLabel = typingLabel
+        self.agentTag = agentTag
+        self.cardLabel = cardLabel
+        self.cardEventType = cardEventType
+        self.roomId = roomId
+        self.initial = initial
+        self.approvedTitle = approvedTitle
+        self.approvedBody = approvedBody
+        self.finishLabel = finishLabel
+        self.skipLabel = skipLabel
+        self.card = card
+        self.stepDelaysMs = stepDelaysMs
+    }
+}
+
+
+
+extension FirstRunScript: Equatable, Hashable {
+    public static func ==(lhs: FirstRunScript, rhs: FirstRunScript) -> Bool {
+        if lhs.agentName != rhs.agentName {
+            return false
+        }
+        if lhs.greeting != rhs.greeting {
+            return false
+        }
+        if lhs.request != rhs.request {
+            return false
+        }
+        if lhs.banner != rhs.banner {
+            return false
+        }
+        if lhs.typingLabel != rhs.typingLabel {
+            return false
+        }
+        if lhs.agentTag != rhs.agentTag {
+            return false
+        }
+        if lhs.cardLabel != rhs.cardLabel {
+            return false
+        }
+        if lhs.cardEventType != rhs.cardEventType {
+            return false
+        }
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.initial != rhs.initial {
+            return false
+        }
+        if lhs.approvedTitle != rhs.approvedTitle {
+            return false
+        }
+        if lhs.approvedBody != rhs.approvedBody {
+            return false
+        }
+        if lhs.finishLabel != rhs.finishLabel {
+            return false
+        }
+        if lhs.skipLabel != rhs.skipLabel {
+            return false
+        }
+        if lhs.card != rhs.card {
+            return false
+        }
+        if lhs.stepDelaysMs != rhs.stepDelaysMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(agentName)
+        hasher.combine(greeting)
+        hasher.combine(request)
+        hasher.combine(banner)
+        hasher.combine(typingLabel)
+        hasher.combine(agentTag)
+        hasher.combine(cardLabel)
+        hasher.combine(cardEventType)
+        hasher.combine(roomId)
+        hasher.combine(initial)
+        hasher.combine(approvedTitle)
+        hasher.combine(approvedBody)
+        hasher.combine(finishLabel)
+        hasher.combine(skipLabel)
+        hasher.combine(card)
+        hasher.combine(stepDelaysMs)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFirstRunScript: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FirstRunScript {
+        return
+            try FirstRunScript(
+                agentName: FfiConverterString.read(from: &buf), 
+                greeting: FfiConverterString.read(from: &buf), 
+                request: FfiConverterString.read(from: &buf), 
+                banner: FfiConverterString.read(from: &buf), 
+                typingLabel: FfiConverterString.read(from: &buf), 
+                agentTag: FfiConverterString.read(from: &buf), 
+                cardLabel: FfiConverterString.read(from: &buf), 
+                cardEventType: FfiConverterString.read(from: &buf), 
+                roomId: FfiConverterString.read(from: &buf), 
+                initial: FfiConverterString.read(from: &buf), 
+                approvedTitle: FfiConverterString.read(from: &buf), 
+                approvedBody: FfiConverterString.read(from: &buf), 
+                finishLabel: FfiConverterString.read(from: &buf), 
+                skipLabel: FfiConverterString.read(from: &buf), 
+                card: FfiConverterTypeCustomEventView.read(from: &buf), 
+                stepDelaysMs: FfiConverterSequenceUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FirstRunScript, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.agentName, into: &buf)
+        FfiConverterString.write(value.greeting, into: &buf)
+        FfiConverterString.write(value.request, into: &buf)
+        FfiConverterString.write(value.banner, into: &buf)
+        FfiConverterString.write(value.typingLabel, into: &buf)
+        FfiConverterString.write(value.agentTag, into: &buf)
+        FfiConverterString.write(value.cardLabel, into: &buf)
+        FfiConverterString.write(value.cardEventType, into: &buf)
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterString.write(value.initial, into: &buf)
+        FfiConverterString.write(value.approvedTitle, into: &buf)
+        FfiConverterString.write(value.approvedBody, into: &buf)
+        FfiConverterString.write(value.finishLabel, into: &buf)
+        FfiConverterString.write(value.skipLabel, into: &buf)
+        FfiConverterTypeCustomEventView.write(value.card, into: &buf)
+        FfiConverterSequenceUInt64.write(value.stepDelaysMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFirstRunScript_lift(_ buf: RustBuffer) throws -> FirstRunScript {
+    return try FfiConverterTypeFirstRunScript.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFirstRunScript_lower(_ value: FirstRunScript) -> RustBuffer {
+    return FfiConverterTypeFirstRunScript.lower(value)
+}
+
+
+/**
  * What a GATE notification's actions need to answer with no room open: the
  * same three things the card sends.
  */
@@ -5320,6 +5523,14 @@ public struct SpaceSummary {
      * by a second copy that would drift.
      */
     public var identity: RoomIdentity
+    /**
+     * [`space_display_name`] of [`Self::name`]: what a person is shown.
+     *
+     * Carried on the row, like `RosterRow.state`, so a desktop renderer needs
+     * no second round trip per label. `name` stays the raw value the rail
+     * sorts and keys on.
+     */
+    public var displayName: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -5371,13 +5582,21 @@ public struct SpaceSummary {
          * label while rendering, and markup cannot await. A space is named by the
          * same convention as a room, so it is parsed by the same code rather than
          * by a second copy that would drift.
-         */identity: RoomIdentity) {
+         */identity: RoomIdentity, 
+        /**
+         * [`space_display_name`] of [`Self::name`]: what a person is shown.
+         *
+         * Carried on the row, like `RosterRow.state`, so a desktop renderer needs
+         * no second round trip per label. `name` stays the raw value the rail
+         * sorts and keys on.
+         */displayName: String) {
         self.id = id
         self.name = name
         self.avatarUrl = avatarUrl
         self.childCount = childCount
         self.membership = membership
         self.identity = identity
+        self.displayName = displayName
     }
 }
 
@@ -5403,6 +5622,9 @@ extension SpaceSummary: Equatable, Hashable {
         if lhs.identity != rhs.identity {
             return false
         }
+        if lhs.displayName != rhs.displayName {
+            return false
+        }
         return true
     }
 
@@ -5413,6 +5635,7 @@ extension SpaceSummary: Equatable, Hashable {
         hasher.combine(childCount)
         hasher.combine(membership)
         hasher.combine(identity)
+        hasher.combine(displayName)
     }
 }
 
@@ -5429,7 +5652,8 @@ public struct FfiConverterTypeSpaceSummary: FfiConverterRustBuffer {
                 avatarUrl: FfiConverterOptionString.read(from: &buf), 
                 childCount: FfiConverterUInt64.read(from: &buf), 
                 membership: FfiConverterTypeMembership.read(from: &buf), 
-                identity: FfiConverterTypeRoomIdentity.read(from: &buf)
+                identity: FfiConverterTypeRoomIdentity.read(from: &buf), 
+                displayName: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -5440,6 +5664,7 @@ public struct FfiConverterTypeSpaceSummary: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.childCount, into: &buf)
         FfiConverterTypeMembership.write(value.membership, into: &buf)
         FfiConverterTypeRoomIdentity.write(value.identity, into: &buf)
+        FfiConverterString.write(value.displayName, into: &buf)
     }
 }
 
@@ -8168,6 +8393,99 @@ public func FfiConverterTypeDeliveryState_lower(_ value: DeliveryState) -> RustB
 
 
 extension DeliveryState: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Where the demo conversation is. Order matters: each step follows the last.
+ */
+
+public enum FirstRunStep {
+    
+    /**
+     * Atlas is typing its first message.
+     */
+    case greeting
+    /**
+     * The message has landed; the permission request is on its way.
+     */
+    case asking
+    /**
+     * The permission card is on screen, waiting on the reader.
+     */
+    case waiting
+    /**
+     * The reader answered; the receipt is showing.
+     */
+    case approved
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFirstRunStep: FfiConverterRustBuffer {
+    typealias SwiftType = FirstRunStep
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FirstRunStep {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .greeting
+        
+        case 2: return .asking
+        
+        case 3: return .waiting
+        
+        case 4: return .approved
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FirstRunStep, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .greeting:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .asking:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .waiting:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .approved:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFirstRunStep_lift(_ buf: RustBuffer) throws -> FirstRunStep {
+    return try FfiConverterTypeFirstRunStep.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFirstRunStep_lower(_ value: FirstRunStep) -> RustBuffer {
+    return FfiConverterTypeFirstRunStep.lower(value)
+}
+
+
+
+extension FirstRunStep: Equatable, Hashable {}
 
 
 
@@ -10984,6 +11302,31 @@ fileprivate struct FfiConverterOptionTypeCustomPayload: FfiConverterRustBuffer {
         case 1: return try FfiConverterTypeCustomPayload.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = [UInt64]
+
+    public static func write(_ value: [UInt64], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterUInt64.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [UInt64] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [UInt64]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterUInt64.read(from: &buf))
+        }
+        return seq
     }
 }
 

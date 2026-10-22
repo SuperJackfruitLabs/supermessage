@@ -693,6 +693,22 @@ RustBuffer uniffi_supermessage_ffi_fn_func_collect_mentions(RustBuffer text, Rus
 RustBuffer uniffi_supermessage_ffi_fn_func_display_initial(RustBuffer name, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_ADVANCE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_ADVANCE
+RustBuffer uniffi_supermessage_ffi_fn_func_first_run_advance(RustBuffer step, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_ANSWER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_ANSWER
+RustBuffer uniffi_supermessage_ffi_fn_func_first_run_answer(RustBuffer step, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_SCRIPT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FIRST_RUN_SCRIPT
+RustBuffer uniffi_supermessage_ffi_fn_func_first_run_script(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NEXT_NOTIFICATION_MODE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NEXT_NOTIFICATION_MODE
 RustBuffer uniffi_supermessage_ffi_fn_func_next_notification_mode(RustBuffer current, RustCallStatus *_Nonnull out_status
@@ -816,6 +832,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_roster_sections(RustBuffer rows, Rust
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ROSTER_STATE
 RustBuffer uniffi_supermessage_ffi_fn_func_roster_state(RustBuffer row, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_SPACE_DISPLAY_NAME
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_SPACE_DISPLAY_NAME
+RustBuffer uniffi_supermessage_ffi_fn_func_space_display_name(RustBuffer name, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TYPING_VIEW
@@ -1184,6 +1205,24 @@ uint16_t uniffi_supermessage_ffi_checksum_func_display_initial(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_ADVANCE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_ADVANCE
+uint16_t uniffi_supermessage_ffi_checksum_func_first_run_advance(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_ANSWER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_ANSWER
+uint16_t uniffi_supermessage_ffi_checksum_func_first_run_answer(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_SCRIPT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FIRST_RUN_SCRIPT
+uint16_t uniffi_supermessage_ffi_checksum_func_first_run_script(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NEXT_NOTIFICATION_MODE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NEXT_NOTIFICATION_MODE
 uint16_t uniffi_supermessage_ffi_checksum_func_next_notification_mode(void
@@ -1331,6 +1370,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_roster_sections(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ROSTER_STATE
 uint16_t uniffi_supermessage_ffi_checksum_func_roster_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_SPACE_DISPLAY_NAME
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_SPACE_DISPLAY_NAME
+uint16_t uniffi_supermessage_ffi_checksum_func_space_display_name(void
     
 );
 #endif

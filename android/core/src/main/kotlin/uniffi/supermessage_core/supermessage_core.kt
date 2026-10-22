@@ -1663,6 +1663,109 @@ public object FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer<CustomE
 
 
 /**
+ * Everything the demo says and shows, so no host keeps its own copy.
+ *
+ * `Serialize` only: [`CustomEventView`] has no `Deserialize`.
+ */
+data class FirstRunScript (
+    var `agentName`: kotlin.String, 
+    var `greeting`: kotlin.String, 
+    var `request`: kotlin.String, 
+    /**
+     * Shown above the conversation so nobody mistakes it for a real room.
+     */
+    var `banner`: kotlin.String, 
+    var `typingLabel`: kotlin.String, 
+    var `agentTag`: kotlin.String, 
+    var `cardLabel`: kotlin.String, 
+    var `cardEventType`: kotlin.String, 
+    var `roomId`: kotlin.String, 
+    var `initial`: kotlin.String, 
+    var `approvedTitle`: kotlin.String, 
+    var `approvedBody`: kotlin.String, 
+    var `finishLabel`: kotlin.String, 
+    var `skipLabel`: kotlin.String, 
+    /**
+     * The permission request Atlas "sends", as the core would hand it to a host.
+     */
+    var `card`: CustomEventView, 
+    /**
+     * Pause before each automatic [`advance`]: greeting to asking, then
+     * asking to waiting.
+     */
+    var `stepDelaysMs`: List<kotlin.ULong>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFirstRunScript: FfiConverterRustBuffer<FirstRunScript> {
+    override fun read(buf: ByteBuffer): FirstRunScript {
+        return FirstRunScript(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeCustomEventView.read(buf),
+            FfiConverterSequenceULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FirstRunScript) = (
+            FfiConverterString.allocationSize(value.`agentName`) +
+            FfiConverterString.allocationSize(value.`greeting`) +
+            FfiConverterString.allocationSize(value.`request`) +
+            FfiConverterString.allocationSize(value.`banner`) +
+            FfiConverterString.allocationSize(value.`typingLabel`) +
+            FfiConverterString.allocationSize(value.`agentTag`) +
+            FfiConverterString.allocationSize(value.`cardLabel`) +
+            FfiConverterString.allocationSize(value.`cardEventType`) +
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterString.allocationSize(value.`initial`) +
+            FfiConverterString.allocationSize(value.`approvedTitle`) +
+            FfiConverterString.allocationSize(value.`approvedBody`) +
+            FfiConverterString.allocationSize(value.`finishLabel`) +
+            FfiConverterString.allocationSize(value.`skipLabel`) +
+            FfiConverterTypeCustomEventView.allocationSize(value.`card`) +
+            FfiConverterSequenceULong.allocationSize(value.`stepDelaysMs`)
+    )
+
+    override fun write(value: FirstRunScript, buf: ByteBuffer) {
+            FfiConverterString.write(value.`agentName`, buf)
+            FfiConverterString.write(value.`greeting`, buf)
+            FfiConverterString.write(value.`request`, buf)
+            FfiConverterString.write(value.`banner`, buf)
+            FfiConverterString.write(value.`typingLabel`, buf)
+            FfiConverterString.write(value.`agentTag`, buf)
+            FfiConverterString.write(value.`cardLabel`, buf)
+            FfiConverterString.write(value.`cardEventType`, buf)
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterString.write(value.`initial`, buf)
+            FfiConverterString.write(value.`approvedTitle`, buf)
+            FfiConverterString.write(value.`approvedBody`, buf)
+            FfiConverterString.write(value.`finishLabel`, buf)
+            FfiConverterString.write(value.`skipLabel`, buf)
+            FfiConverterTypeCustomEventView.write(value.`card`, buf)
+            FfiConverterSequenceULong.write(value.`stepDelaysMs`, buf)
+    }
+}
+
+
+
+/**
  * What a GATE notification's actions need to answer with no room open: the
  * same three things the card sends.
  */
@@ -3553,7 +3656,15 @@ data class SpaceSummary (
      * same convention as a room, so it is parsed by the same code rather than
      * by a second copy that would drift.
      */
-    var `identity`: RoomIdentity
+    var `identity`: RoomIdentity, 
+    /**
+     * [`space_display_name`] of [`Self::name`]: what a person is shown.
+     *
+     * Carried on the row, like `RosterRow.state`, so a desktop renderer needs
+     * no second round trip per label. `name` stays the raw value the rail
+     * sorts and keys on.
+     */
+    var `displayName`: kotlin.String
 ) {
     
     companion object
@@ -3571,6 +3682,7 @@ public object FfiConverterTypeSpaceSummary: FfiConverterRustBuffer<SpaceSummary>
             FfiConverterULong.read(buf),
             FfiConverterTypeMembership.read(buf),
             FfiConverterTypeRoomIdentity.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -3580,7 +3692,8 @@ public object FfiConverterTypeSpaceSummary: FfiConverterRustBuffer<SpaceSummary>
             FfiConverterOptionalString.allocationSize(value.`avatarUrl`) +
             FfiConverterULong.allocationSize(value.`childCount`) +
             FfiConverterTypeMembership.allocationSize(value.`membership`) +
-            FfiConverterTypeRoomIdentity.allocationSize(value.`identity`)
+            FfiConverterTypeRoomIdentity.allocationSize(value.`identity`) +
+            FfiConverterString.allocationSize(value.`displayName`)
     )
 
     override fun write(value: SpaceSummary, buf: ByteBuffer) {
@@ -3590,6 +3703,7 @@ public object FfiConverterTypeSpaceSummary: FfiConverterRustBuffer<SpaceSummary>
             FfiConverterULong.write(value.`childCount`, buf)
             FfiConverterTypeMembership.write(value.`membership`, buf)
             FfiConverterTypeRoomIdentity.write(value.`identity`, buf)
+            FfiConverterString.write(value.`displayName`, buf)
     }
 }
 
@@ -5064,6 +5178,53 @@ public object FfiConverterTypeDeliveryState: FfiConverterRustBuffer<DeliveryStat
     override fun allocationSize(value: DeliveryState) = 4UL
 
     override fun write(value: DeliveryState, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Where the demo conversation is. Order matters: each step follows the last.
+ */
+
+enum class FirstRunStep {
+    
+    /**
+     * Atlas is typing its first message.
+     */
+    GREETING,
+    /**
+     * The message has landed; the permission request is on its way.
+     */
+    ASKING,
+    /**
+     * The permission card is on screen, waiting on the reader.
+     */
+    WAITING,
+    /**
+     * The reader answered; the receipt is showing.
+     */
+    APPROVED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFirstRunStep: FfiConverterRustBuffer<FirstRunStep> {
+    override fun read(buf: ByteBuffer) = try {
+        FirstRunStep.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FirstRunStep) = 4UL
+
+    override fun write(value: FirstRunStep, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -7846,6 +8007,34 @@ public object FfiConverterOptionalTypeCustomPayload: FfiConverterRustBuffer<Cust
         } else {
             buf.put(1)
             FfiConverterTypeCustomPayload.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceULong: FfiConverterRustBuffer<List<kotlin.ULong>> {
+    override fun read(buf: ByteBuffer): List<kotlin.ULong> {
+        val len = buf.getInt()
+        return List<kotlin.ULong>(len) {
+            FfiConverterULong.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.ULong>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterULong.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.ULong>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterULong.write(it, buf)
         }
     }
 }

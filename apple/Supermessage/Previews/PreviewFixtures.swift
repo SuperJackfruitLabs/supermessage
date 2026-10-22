@@ -628,17 +628,20 @@ enum PreviewFixtures {
             SpaceSummary(
                 id: "!work:example.org", name: "Work", avatarUrl: nil, childCount: 12,
                 membership: .joined,
-                identity: RoomIdentity(glyph: nil, name: "Work", role: nil, initial: "W")),
+                identity: RoomIdentity(glyph: nil, name: "Work", role: nil, initial: "W"),
+                displayName: spaceDisplayName(name: "Work")),
             SpaceSummary(
                 id: "!suite:example.org", name: "Suite", avatarUrl: nil, childCount: 5,
                 membership: .joined,
-                identity: RoomIdentity(glyph: nil, name: "Suite", role: nil, initial: "S")),
+                identity: RoomIdentity(glyph: nil, name: "Suite", role: nil, initial: "S"),
+                displayName: spaceDisplayName(name: "Suite")),
             // An invitation to a space, which the strip marks rather than
             // treating as somewhere the reader already is.
             SpaceSummary(
                 id: "!estate:example.org", name: "Estate", avatarUrl: nil, childCount: 0,
                 membership: .invited,
-                identity: RoomIdentity(glyph: nil, name: "Estate", role: nil, initial: "E")),
+                identity: RoomIdentity(glyph: nil, name: "Estate", role: nil, initial: "E"),
+                displayName: spaceDisplayName(name: "Estate")),
         ]
     }
 

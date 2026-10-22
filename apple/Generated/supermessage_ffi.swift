@@ -3984,6 +3984,30 @@ fileprivate struct FfiConverterOptionTypeCounterpart: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeFirstRunStep: FfiConverterRustBuffer {
+    typealias SwiftType = FirstRunStep?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFirstRunStep.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFirstRunStep.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeGateAnswers: FfiConverterRustBuffer {
     typealias SwiftType = GateAnswers?
 
@@ -4704,6 +4728,10 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
 
 
 
+
+
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -4780,6 +4808,41 @@ public func displayInitial(name: String) -> String {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_supermessage_ffi_fn_func_display_initial(
         FfiConverterString.lower(name),$0
+    )
+})
+}
+/**
+ * The demo's next automatic step; it stops at the card.
+ */
+public func firstRunAdvance(step: FirstRunStep) -> FirstRunStep {
+    return try!  FfiConverterTypeFirstRunStep_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_first_run_advance(
+        FfiConverterTypeFirstRunStep_lower(step),$0
+    )
+})
+}
+/**
+ * The step after the reader answers the card, or `None` when there is no
+ * card to answer.
+ */
+public func firstRunAnswer(step: FirstRunStep) -> FirstRunStep? {
+    return try!  FfiConverterOptionTypeFirstRunStep.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_first_run_answer(
+        FfiConverterTypeFirstRunStep_lower(step),$0
+    )
+})
+}
+/**
+ * The first-run demo's script — what Atlas says, the permission card, and the
+ * pauses between steps.
+ *
+ * **Local, and nothing is sent:** the script is data and the host holds the
+ * step; hand the card a local answer closure, never a session. A free
+ * function for the same reason as `rich_blocks_from_markdown`.
+ */
+public func firstRunScript() -> FirstRunScript {
+    return try!  FfiConverterTypeFirstRunScript_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_first_run_script($0
     )
 })
 }
@@ -5092,6 +5155,21 @@ public func rosterState(row: RoomRow, nowMs: UInt64) -> AgentState {
 })
 }
 /**
+ * How a space's raw name reads to a person — "Runtime 9247e5" for an id,
+ * a host without its `.local`.
+ *
+ * A free function for the same reason as `rich_blocks_from_markdown`: it
+ * touches no session state. `SpaceSummary.display_name` already carries it
+ * for every listed space; this is for a name a host holds on its own.
+ */
+public func spaceDisplayName(name: String) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_space_display_name(
+        FfiConverterString.lower(name),$0
+    )
+})
+}
+/**
  * The typing line and the agents the acknowledgement names — see
  * `core::typing_line`. A free function for the same reason as `peer_color_index`.
  */
@@ -5250,6 +5328,15 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_display_initial() != 43302) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_first_run_advance() != 10288) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_first_run_answer() != 19235) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_first_run_script() != 8160) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5323,6 +5410,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_roster_state() != 4121) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_space_display_name() != 32972) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_typing_view() != 62690) {

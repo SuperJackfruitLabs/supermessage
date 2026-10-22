@@ -45,6 +45,8 @@ import uniffi.supermessage_core.FfiConverterTypeAgentAvatarStyle
 import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeCounterpart
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
+import uniffi.supermessage_core.FfiConverterTypeFirstRunScript
+import uniffi.supermessage_core.FfiConverterTypeFirstRunStep
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityToken
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityTokenKind
@@ -79,6 +81,8 @@ import uniffi.supermessage_core.FfiConverterTypeTypingView
 import uniffi.supermessage_core.FfiConverterTypeWidgetAnswer
 import uniffi.supermessage_core.FfiConverterTypeWidgetLiveTurn
 import uniffi.supermessage_core.FfiConverterTypeWidgetWrite
+import uniffi.supermessage_core.FirstRunScript
+import uniffi.supermessage_core.FirstRunStep
 import uniffi.supermessage_core.GateAnswers
 import uniffi.supermessage_core.LiveActivityToken
 import uniffi.supermessage_core.LiveActivityTokenKind
@@ -120,6 +124,8 @@ import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatarStyle
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferCounterpart
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
+import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunScript
+import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunStep
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityToken
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityTokenKind
@@ -1113,6 +1119,14 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1292,6 +1306,12 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_display_initial(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_first_run_advance(`step`: RustBufferFirstRunStep.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferFirstRunStep.ByValue
+    fun uniffi_supermessage_ffi_fn_func_first_run_answer(`step`: RustBufferFirstRunStep.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_first_run_script(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferFirstRunScript.ByValue
     fun uniffi_supermessage_ffi_fn_func_next_notification_mode(`current`: RustBufferNotificationMode.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferNotificationMode.ByValue
     fun uniffi_supermessage_ffi_fn_func_notification_category_identifier(`category`: RustBufferNotificationCategory.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1342,6 +1362,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_roster_state(`row`: RustBufferRoomRow.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferAgentState.ByValue
+    fun uniffi_supermessage_ffi_fn_func_space_display_name(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_typing_view(`typers`: RustBuffer.ByValue,`agentIds`: RustBuffer.ByValue,`counterpart`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferTypingView.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_answer_for(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1486,6 +1508,12 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_display_initial(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_first_run_advance(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_first_run_answer(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_first_run_script(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_next_notification_mode(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_notification_category_identifier(
@@ -1535,6 +1563,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_roster_sections(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_roster_state(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_space_display_name(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_typing_view(
     ): Short
@@ -1737,6 +1767,15 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_display_initial() != 43302.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_func_first_run_advance() != 10288.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_first_run_answer() != 19235.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_first_run_script() != 8160.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1810,6 +1849,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_roster_state() != 4121.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_space_display_name() != 32972.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_typing_view() != 62690.toShort()) {
@@ -6302,6 +6344,38 @@ public object FfiConverterOptionalTypeCounterpart: FfiConverterRustBuffer<Counte
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeFirstRunStep: FfiConverterRustBuffer<FirstRunStep?> {
+    override fun read(buf: ByteBuffer): FirstRunStep? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFirstRunStep.read(buf)
+    }
+
+    override fun allocationSize(value: FirstRunStep?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFirstRunStep.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FirstRunStep?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFirstRunStep.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeGateAnswers: FfiConverterRustBuffer<GateAnswers?> {
     override fun read(buf: ByteBuffer): GateAnswers? {
         if (buf.get().toInt() == 0) {
@@ -7219,6 +7293,14 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
 
 
 
+
+
+
+
+
+
+
+
         /**
          * What the dock above the composer says after the reader wrote to an agent —
          * see `core::acknowledgement`. A free function for the same reason as
@@ -7300,6 +7382,48 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_display_initial(
         FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The demo's next automatic step; it stops at the card.
+         */ fun `firstRunAdvance`(`step`: FirstRunStep): FirstRunStep {
+            return FfiConverterTypeFirstRunStep.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_first_run_advance(
+        FfiConverterTypeFirstRunStep.lower(`step`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The step after the reader answers the card, or `None` when there is no
+         * card to answer.
+         */ fun `firstRunAnswer`(`step`: FirstRunStep): FirstRunStep? {
+            return FfiConverterOptionalTypeFirstRunStep.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_first_run_answer(
+        FfiConverterTypeFirstRunStep.lower(`step`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The first-run demo's script — what Atlas says, the permission card, and the
+         * pauses between steps.
+         *
+         * **Local, and nothing is sent:** the script is data and the host holds the
+         * step; hand the card a local answer closure, never a session. A free
+         * function for the same reason as `rich_blocks_from_markdown`.
+         */ fun `firstRunScript`(): FirstRunScript {
+            return FfiConverterTypeFirstRunScript.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_first_run_script(
+        _status)
 }
     )
     }
@@ -7637,6 +7761,23 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_roster_state(
         FfiConverterTypeRoomRow.lower(`row`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * How a space's raw name reads to a person — "Runtime 9247e5" for an id,
+         * a host without its `.local`.
+         *
+         * A free function for the same reason as `rich_blocks_from_markdown`: it
+         * touches no session state. `SpaceSummary.display_name` already carries it
+         * for every listed space; this is for a name a host holds on its own.
+         */ fun `spaceDisplayName`(`name`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_space_display_name(
+        FfiConverterString.lower(`name`),_status)
 }
     )
     }
