@@ -279,15 +279,19 @@
   //      gone" unreachable — layer 1 only covers the click paths this file
   //      knows about today.
 
-  import { tick, type Snippet } from "svelte";
+  import { onDestroy, tick, untrack, type Snippet } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import { VList, type VListHandle } from "virtua/svelte";
   import Shimmer from "./ai/Shimmer.svelte";
+  import { errorMessage } from "$lib/errorMessage";
   import { deleteMessage, mediaDownload, type CustomEventDecision } from "$lib/ipc";
   import { answerDecision } from "./decisionReply";
+  import { createAnsweredDecisions } from "$lib/stores/answeredDecisions.svelte";
   import { peerColorVar } from "$lib/peerColor";
-  import { timelineStore } from "$lib/stores/timeline.svelte";
+  import { timelineStore as appTimelineStore, type TimelineStore } from "$lib/stores/timeline.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
   import { QUICK_REACTIONS } from "./emojiPicker";
+  import { editTargetStore } from "$lib/stores/editTarget.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { roomsStore } from "$lib/stores/rooms.svelte";
 
@@ -312,18 +316,19 @@
   import UndecryptableGroup from "./timeline/UndecryptableGroup.svelte";
   import JumpToNewest from "./timeline/JumpToNewest.svelte";
   import MessageActions from "./timeline/MessageActions.svelte";
+  import { arrivedKeys, isArrivingRender } from "./timeline/arrivals";
+  import { HIGHLIGHT_MS, parentIndex, rowEdgeClass } from "./timeline/rowMeta";
   import DeleteConfirm from "./timeline/DeleteConfirm.svelte";
   import UnreadMarker from "./timeline/UnreadMarker.svelte";
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
   import ReplyQuote from "./timeline/ReplyQuote.svelte";
-  import SeenMarker from "./timeline/SeenMarker.svelte";
+  import ReaderFaces from "./timeline/ReaderFaces.svelte";
+  import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
+  import { endsRun, ownMeta, readerFaces, readersFor, revealsTime, type ItemRow } from "./timeline/rowMeta";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
   import type { ReplyQuoteView, TimelineItem } from "$lib/ipc";
-
-  /** The `item` arm of a display row — everything but a membership group. */
-  type ItemRow = Extract<TimelineDisplayRow, { type: "item" }>;
 
   /**
    * The room this pane shows — needed only to scope `replyTargetStore`'s
@@ -333,7 +338,17 @@
    * actually on screen — never stale the way a value read off a
    * non-remounted component (`Composer`) would have to guard against.
    */
-  let { roomId, onOpenRecovery }: { roomId: string; onOpenRecovery?: () => void } = $props();
+  let {
+    roomId,
+    onOpenRecovery,
+    store,
+  }: {
+    roomId: string;
+    onOpenRecovery?: () => void;
+    /** The store to read. Only stories pass one; the app uses its own. */
+    store?: TimelineStore;
+  } = $props();
+  const timelineStore = $derived(store ?? appTimelineStore);
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
   const PAGE_SIZE = 20;
@@ -373,6 +388,52 @@
 
   let vlist: VListHandle | undefined = $state();
 
+  // The row washed after a jump to a quoted message, for `HIGHLIGHT_MS`.
+  let highlightedKey: string | null = $state(null);
+  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Rows that may animate their ground: the washed row and a row still fading
+   * back. `transition-colors` lives only on these, so a theme or accent change
+   * snaps every row with the rest of the window instead of fading over 800ms.
+   */
+  let washKeys: ReadonlySet<string> = $state(new Set());
+  const washTimers = new Set<ReturnType<typeof setTimeout>>();
+  onDestroy(() => {
+    clearTimeout(highlightTimer);
+    for (const t of washTimers) clearTimeout(t);
+  });
+  /** Wash fade-out length; matches `duration-[800ms]` on the row. */
+  const WASH_FADE_OUT_MS = 800;
+
+  /**
+   * Scrolls the quoted message to the centre and washes it (iOS
+   * `TimelineCollectionView.swift:921-950`). Animated unless the reader asked
+   * for reduced motion. A second jump cancels the first one's fade timer.
+   */
+  function jumpToParent(eventId: string | null) {
+    const i = parentIndex(displayRows, eventId);
+    if (i < 0) return;
+    // The reader chose to leave the tail; without this the next resize
+    // re-pins them straight back to it (as `jumpToUnread` does).
+    noteReaderInput();
+    followBottom = false;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    vlist?.scrollToIndex(i, { align: "center", smooth: !reducedMotion });
+    highlightedKey = displayRows[i]!.key;
+    clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => (highlightedKey = null), HIGHLIGHT_MS);
+    const key = highlightedKey;
+    washKeys = new Set(washKeys).add(key);
+    const done = setTimeout(() => {
+      washTimers.delete(done);
+      if (highlightedKey === key) return;
+      const next = new Set(washKeys);
+      next.delete(key);
+      washKeys = next;
+    }, HIGHLIGHT_MS + WASH_FADE_OUT_MS + 100);
+    washTimers.add(done);
+  }
+
   let paginating = $state(false);
   let reachedStart = $state(false);
   // `$state`, not a plain variable: the read-tracking effect further down
@@ -390,6 +451,17 @@
    * the derivation that just wrote it.
    */
   let previousRowKeys: string[] = [];
+  /** The item ids behind the last rows; arrivals are decided on identity, not row keys. */
+  let previousItemIds: string[] = [];
+
+  /**
+   * Message rows that are rising in (`arrivals.ts`). A plain set, grown by
+   * the derivation below and shrunk when a row's animation ends, so a later
+   * derivation does not cut a still-running animation short.
+   */
+  const risingKeys = new Set<string>();
+  /** Rows whose rise has finished; keeps a virtua remount from replaying it. */
+  const arrivedDone = new SvelteSet<string>();
 
   /**
    * The rows `VList` renders, **and** the `shift` value that describes how
@@ -414,11 +486,29 @@
       rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
     );
     const shift = shouldShiftNow(shouldShift(previousRowKeys, keys, dividers), isScrollable());
+    const itemRows = rows.filter((row) => row.type === "item");
+    const itemIds = itemRows.map((row) => row.item.id);
+    const messageIds = new Set(
+      itemRows.filter((row) => isArrivingRender(row.view.render)).map((row) => row.item.id),
+    );
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // `untrack`: the reader scrolling to or from the newest end must not
+    // re-run this derivation, only a change of rows should.
+    const following = untrack(() => followBottom);
+    for (const id of arrivedKeys(previousItemIds, itemIds, following, (i) => messageIds.has(i), reducedMotion)) {
+      risingKeys.add(id);
+    }
+    previousItemIds = itemIds;
     previousRowKeys = keys;
-    return { rows, shift };
+    return { rows, shift, rising: new Set(risingKeys) };
   });
 
   let displayRows = $derived(view.rows);
+
+  function riseEnded(id: string) {
+    risingKeys.delete(id);
+    arrivedDone.add(id);
+  }
 
   /**
    * Whether the wait for this room has outlasted a flinch.
@@ -469,29 +559,16 @@
     }),
   );
 
-  /**
-   * The id of the last own item in `timelineStore.items` whose `kind` this
-   * pass renders as a bubble-shaped row (a plain message, or a rendered
-   * custom event) — the one item `seenMarker` below is allowed to annotate
-   * with a "Seen"/"Seen by N" line. See [`TimelineItemDto::read_by`]'s doc
-   * comment (`core::dto`) for why this is scoped to the reader's *own*
-   * latest message and never shown per-message: a reader doesn't need a
-   * read receipt on every bubble, only confirmation that the most recent
-   * thing they sent has actually been seen.
-   */
-  let lastOwnMessageId = $derived.by(() => {
-    const items = timelineStore.items;
-    for (let i = items.length - 1; i >= 0; i -= 1) {
-      const candidate = items[i]!;
-      if (
-        candidate.item.isOwn &&
-        (candidate.item.kind === "message" || candidate.item.kind === "customMessage")
-      ) {
-        return candidate.item.id;
-      }
-    }
-    return null;
-  });
+  /** Keys of the rows that end a run: their time (and their readers) show. */
+  let runEnds = $derived(
+    new Set(
+      displayRows.flatMap((row, i) => (row.type === "item" && endsRun(displayRows, i) ? [row.key] : [])),
+    ),
+  );
+
+  /** One face per sender, for the readers under an own message. */
+  let faces = $derived(readerFaces(displayRows));
+  const memberAvatars = createMemberAvatarCache();
 
   // Tracked outside `$state` on purpose: bookkeeping for the effect below,
   // not a value the template reads.
@@ -882,7 +959,7 @@
       const path = await mediaDownload(eventId);
       if (path !== null) saveNote = { eventId, text: `Saved to ${path}`, failed: false };
     } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = errorMessage(err);
       saveNote = { eventId, text: `Could not save ${filename}: ${reason}`, failed: true };
     } finally {
       savingMedia = null;
@@ -975,6 +1052,15 @@
     replyTargetStore.set(roomId, replyTargetStore.fromItem(row));
   }
 
+  /**
+   * Starts an edit of one of your own messages. The composer picks it up from
+   * `editTargetStore`; a row that is not editable starts nothing.
+   */
+  function startEdit(row: ItemRow): void {
+    const edit = editTargetStore.fromRow(row);
+    if (edit) editTargetStore.set(roomId, edit);
+  }
+
   /** The own message awaiting delete confirmation, if the dialog is open. */
   let deleting = $state<ItemRow | null>(null);
 
@@ -1002,9 +1088,17 @@
     deleting = null;
   }
 
+  /** Answers given on this device, held here because a virtualised row remounts. */
+  const answeredDecisions = createAnsweredDecisions();
+
   /** Gate answers carry the core's subject and the Matrix event address. */
-  function onDecide(eventId: string | null, decision: CustomEventDecision, optionId: string): Promise<boolean> {
-    return answerDecision(roomId, eventId, decision, optionId);
+  function onDecide(
+    eventId: string | null,
+    decision: CustomEventDecision,
+    optionId: string,
+    comment: string | null,
+  ): Promise<boolean> {
+    return answerDecision(roomId, eventId, decision, optionId, comment);
   }
 
   /**
@@ -1042,6 +1136,7 @@
 {#snippet messageBlock(row: ItemRow, content: Snippet)}
   {@const item = row.item}
   {@const continuesRun = row.continuesRun}
+  {@const ends = runEnds.has(row.key)}
   <!--
     The single wrapper every message-shaped render kind
     (`bubble`/`image`/`mediaFile`) shares — see this file's top-of-script
@@ -1064,23 +1159,12 @@
     Every piece of chrome nested inside names its face explicitly.
   -->
   <!--
-    Vertical rhythm, and why these two values and not the spec's literal
-    "2px": the gap above a row must not depend on whether the row above it
-    happened to render an actions row. `messageActions` is hidden with
-    `opacity`, never `display: none` (it has to stay in the tab order), so
-    it occupies ~26px of layout whenever `core::item_view::can_reply_or_react` is true and 0px
-    when it is not — a local echo, a failed send, anything without a server
-    event id yet. At `pt-0.5` that made the gap between two run
-    continuations 28px in the common case but **2px** in the other, which
-    is tighter than the 13.5px between two paragraphs of a *single*
-    message: two separate messages ended up closer together than two
-    paragraphs of one, inverting the hierarchy.
-
-    So the padding carries the rhythm on its own: 20px above a run
-    continuation (comfortably looser than the 13.5px intra-message
-    paragraph gap) and 32px above a new sender block (clearly looser again,
-    so a boundary still reads as a boundary). Both hold with or without an
-    actions row; the row only ever adds to them.
+    Vertical rhythm (iOS `TimelineRowView.swift:373-375`): 2px inside a run,
+    12px between turns. The action pill no longer sits in this gap: it
+    straddles the block's own top edge, so on hover its upper half overlaps
+    the previous row's bottom 12–14px (including that row's reaction chips
+    and meta line). The first and last rows reserve room for it
+    (`rowEdgeClass`), so the padding can be the real rhythm.
   -->
   <!--
     Three nested elements, each earning its place — this is not one wrapper
@@ -1113,26 +1197,33 @@
     contributes exactly its own height and the rhythm above is untouched.
   -->
   <!--
-    `relative` anchors the hover-actions overlay (`messageActions`), which no
-    longer takes height of its own.
-
-    `pt-6` where a run starts, down from `pt-8`, and `pt-4` inside one. 32px
-    between speakers is generous for a two-person room, and measured against the
-    rest of the block it was the largest single piece of chrome around a
-    one-line message.
-
-    The exact numbers are load-bearing rather than taste: this gap is what the
-    hover-actions overlay sits in, so it must stay at least as tall as that row
-    (22px) or hovering a message covers the next one's first line.
+    `relative` anchors the action pill and the hover time. They share the
+    top edge, so the time is offset below the pill's half (see `revealsTime`'s
+    element) rather than competing with it.
   -->
-  <div class="group relative flex flex-col {continuesRun ? 'pt-4' : 'pt-6'}">
+  <div class="group relative flex flex-col {continuesRun ? 'pt-0.5' : 'pt-3'}">
+    {#if revealsTime(row, ends)}
+      <!-- The row's own label carries the time; this is the quiet reveal
+           (iOS `TimelineCollectionView.swift:664-669`). Peer rows hang it in
+           the right gutter, below the pill's lower half. -->
+      <time
+        datetime={item.timestampMs === null ? undefined : new Date(item.timestampMs).toISOString()}
+        title={formatTime(item.timestampMs)}
+        aria-hidden="true"
+        class="pointer-events-none absolute font-sans text-meta tabular-nums text-content-faint opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 {item.isOwn
+          ? 'top-0 left-0'
+          : 'top-4 right-0'}"
+      >
+        {formatTime(item.timestampMs)}
+      </time>
+    {/if}
     <div class="flex {item.isOwn ? 'justify-end' : 'justify-start'}">
       <div
         class="flex min-w-0 flex-col text-content {item.isOwn
           ? 'max-w-[52ch] rounded-control bg-accent-soft px-3 py-2 font-sans text-body-own'
           : 'max-w-[68ch] font-sans text-body'}"
       >
-        {#if !item.isOwn && (!continuesRun || item.edited)}
+        {#if !item.isOwn && !continuesRun}
           <!--
             The peer sender line: name and timestamp on one baseline, both
             sans (timestamp `tabular-nums`), design-language §1. The timestamp sits immediately after the
@@ -1144,70 +1235,66 @@
             which is what keeps a long display name from pushing the
             timestamp out of view.
 
-            A collapsed continuation drops this line entirely — except when
-            the message was edited, which is real information and not "the
-            timestamp": that case renders the marker alone.
+            A collapsed continuation drops this line entirely; its "edited"
+            marker goes under the text instead.
           -->
           <p class="mb-1 flex items-baseline gap-2 font-sans text-meta tabular-nums text-content-muted">
-            {#if !continuesRun}
-              <!-- The sender's own colour (`--color-peer-*`, chosen by
-                   user id), so two agents with one name read as two. -->
-              <span
-                class="min-w-0 truncate text-label"
-                style:color={item.sender ? peerColorVar(item.sender) : undefined}
-                title={row.senderName}
-              >
-                <!-- The core's name for the sender, as iOS shows it; the
-                     runtime suffix stays in the tooltip (`senderName`). -->
-                {row.senderShort}
-              </span>
-              <span class="shrink-0">{formatTime(item.timestampMs)}</span>
-            {/if}
+            <!-- The sender's own colour (`--color-peer-*`, chosen by
+                 user id), so two agents with one name read as two. -->
+            <span
+              class="min-w-0 truncate text-label"
+              style:color={item.sender ? peerColorVar(item.sender) : undefined}
+              title={row.senderName}
+            >
+              <!-- The core's name for the sender, as iOS shows it; the
+                   runtime suffix stays in the tooltip (`senderName`). -->
+              {row.senderShort}
+            </span>
+            <span class="shrink-0">{formatTime(item.timestampMs)}</span>
             <!-- A meta rank, so no italic. -->
             {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
           </p>
         {/if}
-        <ReplyQuote quote={row.replyQuote} isOwn={item.isOwn} />
+        <ReplyQuote
+          quote={row.replyQuote}
+          isOwn={item.isOwn}
+          onJump={parentIndex(displayRows, item.replyTo?.eventId ?? null) >= 0
+            ? () => jumpToParent(item.replyTo?.eventId ?? null)
+            : null}
+        />
         {@render content()}
-        <SeenMarker item={item} {lastOwnMessageId} alignEnd={item.isOwn} />
-        {#if item.isOwn}
-          {@const failed = item.sendState === "sendingFailed"}
-          {@const sending = item.sendState === "notSentYet"}
-          <!--
-            The own message's trailing meta line. A collapsed continuation
-            drops the timestamp, but a send that failed or is still in
-            flight is *not* a timestamp — suppressing it would silently hide
-            a failed send in the middle of a run, so those two states always
-            render. `--color-danger` is the token the palette assigns to a
-            failed send (spec §3).
-          -->
-          {#if failed || sending || item.edited || !continuesRun}
-            <p
-              class="mt-1 flex items-baseline justify-end gap-2 font-sans text-meta tabular-nums {failed
-                ? 'text-danger'
-                : 'text-content-muted'}"
-            >
-              {#if failed}
-                Not sent
-              {:else if sending}
-                Sending…
-              {:else}
-                <!-- `muted`, not the `faint` its peer-side counterpart
-                     carries: this line sits on the own bubble's
-                     `--color-accent-soft`, where faint measures 4.26:1 light
-                     / 3.52:1 dark. See `replyQuote` for the measurement and
-                     the rule. It costs the marker its rank below the
-                     timestamp; the word is doing that work anyway. -->
-                {#if item.edited}<span class="text-content-muted">edited</span>{/if}
-                {#if !continuesRun}<span>{formatTime(item.timestampMs)}</span>{/if}
-              {/if}
-            </p>
-          {/if}
+        {#if !item.isOwn && continuesRun && item.edited}
+          <p class="mt-1 font-sans text-meta text-content-faint">edited</p>
         {/if}
       </div>
     </div>
-    <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} onToggle={handleToggleReaction} />
-    <MessageActions row={row} alignEnd={row.item.isOwn} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onDelete={(r) => (deleting = r)} />
+    <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={item.isOwn} overlap={item.isOwn} onToggle={handleToggleReaction} />
+    {#if item.isOwn}
+      {@const meta = ownMeta(row, ends)}
+      {@const readers = readersFor(item, faces)}
+      {#if meta.state !== null || meta.edited || meta.showTime || readers.length > 0}
+        <!--
+          The own message's quiet line, under the bubble: send state, "edited",
+          the time, then who has read it (iOS `TimelineRowView.swift:334-371`).
+          A failed or in-flight send always speaks, mid-run included — hiding
+          it would hide a failed send. `--color-danger` is the palette's token
+          for that (spec §3). Faint, because it sits on the sheet ground now,
+          not on the bubble's tinted one.
+        -->
+        <p
+          class="mt-1 flex items-center justify-end gap-2 font-sans text-meta tabular-nums {meta.state === 'Not sent'
+            ? 'text-danger'
+            : 'text-content-faint'}"
+        >
+          {#if meta.state === "Not sent"}<span aria-hidden="true">!</span>{/if}
+          {#if meta.state}<span>{meta.state}</span>{/if}
+          {#if meta.edited}<span>edited</span>{/if}
+          {#if meta.showTime}<span>{formatTime(item.timestampMs)}</span>{/if}
+          <ReaderFaces {readers} faceFor={(mxc) => memberAvatars.get(mxc)} />
+        </p>
+      {/if}
+    {/if}
+    <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} />
   </div>
 {/snippet}
 
@@ -1360,12 +1447,13 @@
           rendered check that this reads as a sheet and not a stripe.
         -->
         <!--
-          The newest row carries `pb-8`: every message's hover actions sit in
-          the gap *below* it (`MessageActions`, `absolute top-full`), and the
-          last row has no row below it to supply that gap. Without the padding
-          the newest message's Reply and reactions were clipped by the
-          scroller — measured on 2026-10-03, the bar started at y=906, exactly
-          the scroller's bottom edge.
+          The first and last rows reserve 16px (`rowEdgeClass`): the action pill
+          straddles its block's top edge, so half of it (about 14px) overhangs
+          upward. On the first loaded row that overhang would be clipped by the
+          scroller; on the last, the block can be shorter than the pill. This
+          replaces the old `pb-8` on the newest row, which reserved the gap the
+          bar used to sit in and was overrun when the bar wrapped to two lines
+          (47px against 32px, measured 2026-10-22 at 150% text size).
         -->
         <!--
           `data-testid` is the handle the driven UI test selects rows by
@@ -1376,10 +1464,13 @@
         -->
         <div
           data-testid="timeline-row"
-          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 bg-surface px-4 font-sans text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {index ===
-          displayRows.length - 1
-            ? 'pb-8'
-            : ''}"
+          onanimationend={(e) => {
+            if (e.target === e.currentTarget && row.type === "item") riseEnded(row.item.id);
+          }}
+          class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans {washKeys.has(row.key) ? 'transition-colors motion-reduce:transition-none ' + (row.key === highlightedKey ? 'duration-150' : 'duration-[800ms]') : ''} {row.key === highlightedKey ? 'bg-accent-soft' : 'bg-surface'} {row.type === "item" && view.rising.has(row.item.id) && !arrivedDone.has(row.item.id) ? 'row-arrive' : ''} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
+            index,
+            displayRows.length,
+          )}"
         >
           {#if row.type === "membershipGroup"}
             <!--
@@ -1615,7 +1706,7 @@
                   {#if saveNote?.eventId === item.eventId}
                     <p
                       class="mt-1 font-sans text-meta {saveNote.failed
-                        ? 'text-destructive'
+                        ? 'text-danger'
                         : 'text-content-muted'}"
                     >
                       {saveNote.text}
@@ -1713,6 +1804,8 @@
                         {item}
                         {onDecide}
                         {formatTime}
+                        answeredHere={answeredDecisions.get(item.eventId)}
+                        onAnswered={(answer) => answeredDecisions.record(item.eventId, answer)}
                       />
                       <!--
                         Outside the bordered object, not inside it: the card
@@ -1726,14 +1819,11 @@
                         decoration: `isOwn` is `event.sender() == own_user` in
                         the core, i.e. *account*-scoped, not client-scoped, so
                         another session signed in as this account can produce
-                        an own custom event — and `lastOwnMessageId`
-                        (top-of-script) already handles exactly that case for
-                        `seenMarker`. Left the default and these rows would
+                        an own custom event. Left the default and these rows would
                         hang off the right edge of a left-anchored card.
                       -->
                       <ReactionsRow item={item} interactive={row.canReplyOrReact} alignEnd={false} onToggle={handleToggleReaction} />
-                      <MessageActions row={row} alignEnd={false} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onDelete={(r) => (deleting = r)} />
-                      <SeenMarker item={item} {lastOwnMessageId} alignEnd={false} />
+                      <MessageActions row={row} {pickingReactionFor} onStartReply={startReply} onToggleReaction={handleToggleReaction} onPickReaction={(id) => (pickingReactionFor = id)} onCopy={copyMessage} onEdit={startEdit} onDelete={(r) => (deleting = r)} />
                     </div>
                   </div>
                 {/if}
@@ -1794,6 +1884,25 @@
 </div>
 
 <style>
+  /*
+   * A new message rises in (iOS `TimelineCollectionView` `:1180-1201`):
+   * opacity and transform only, never height — a height change inside
+   * `VList` would break virtua's measurements. Gated on the media query as
+   * well as the global reduced-motion rule in `app.css`.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    .row-arrive {
+      animation: row-arrive 380ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+    }
+  }
+
+  @keyframes row-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+  }
+
   /*
    * A short room sits at the bottom, against the composer, the way a
    * conversation does — not at the top of the pane with the field between

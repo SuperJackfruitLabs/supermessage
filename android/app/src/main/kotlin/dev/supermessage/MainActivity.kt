@@ -364,8 +364,11 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
             // The verb RoomsStore.deselect() exists for: on a
             // phone the roster is the previous screen, not a
             // column beside the room, so nothing should stay
-            // selected once system back has returned to it.
-            session.rooms.deselect()
+            // selected, subscribed or focused once system back has
+            // returned to it (the scaffold keeps the detail pane composed
+            // at zero size, so anything left pointing at the room would
+            // go on acting for it: Session.closeRoom).
+            session.closeRoom()
         },
         signedOutContent = {
             LoginScreen(

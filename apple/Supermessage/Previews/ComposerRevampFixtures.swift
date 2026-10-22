@@ -25,51 +25,49 @@ enum ComposerRevampFixtures {
             filename: "Voice message.m4a", message: "Can't reach the homeserver.")
     }
 
-    /// A clock a fixture moves by hand.
-    @MainActor
-    final class Clock {
-        var now: Date
-        init(_ now: Date) { self.now = now }
-    }
-
     /// A turn that has been running for 1m 04s: two steps done, one failed,
     /// one running.
     @MainActor
     static func longTurn(finished: Bool = false) -> LiveStore {
-        let clock = Clock(epoch)
-        let live = LiveStore(clock: { clock.now })
+        let live = LiveStore()
         let room = PreviewFixtures.roomId
-        live.focus(room)
-        live.handleThought(
-            roomId: room, seq: 1, text: "The failing test is in the token emitter.", done: false)
-        clock.now = epoch.addingTimeInterval(9)
-        live.handleTool(
-            roomId: room, seq: 2, toolCallId: "t1", title: "read scripts/tokens/model.py",
-            kind: "read", status: "completed", phase: .done, statusLabel: "Done",
-            locations: ["scripts/tokens/model.py"], input: nil, output: nil)
-        clock.now = epoch.addingTimeInterval(22)
-        live.handleTool(
-            roomId: room, seq: 3, toolCallId: "t2", title: "run pytest scripts/tests",
-            kind: "execute", status: "completed", phase: .done, statusLabel: "Done",
-            locations: [], input: nil, output: "41 passed")
-        clock.now = epoch.addingTimeInterval(40)
-        live.handleTool(
-            roomId: room, seq: 4, toolCallId: "t3", title: "write design/tokens.toml",
-            kind: "edit", status: "failed", phase: .failed, statusLabel: "Failed",
-            locations: ["design/tokens.toml"], input: nil, output: "permission denied")
-        clock.now = epoch.addingTimeInterval(64)
-        live.handleTool(
-            roomId: room, seq: 5, toolCallId: "t4", title: "regenerate the token targets",
-            kind: "execute", status: "in_progress", phase: .running, statusLabel: "Running",
-            locations: [], input: nil, output: nil)
+        live.select(room)
+        // The core's own rules fold these into the card, at fixed times.
+        let base = UInt64(epoch.timeIntervalSince1970 * 1000)
+        func at(_ seconds: UInt64) -> UInt64 { base + seconds * 1000 }
+        let regenerate = TurnStep.fixture(
+            id: "t4", title: "regenerate the token targets", phase: .running, seq: 5,
+            kind: "execute")
+        var inputs: [TurnInput] = [
+            .thought(
+                seq: 1, text: "The failing test is in the token emitter.", done: false, atMs: at(0)),
+            .tool(
+                step: .fixture(
+                    id: "t1", title: "read scripts/tokens/model.py", phase: .done, seq: 2,
+                    kind: "read", locations: ["scripts/tokens/model.py"]),
+                atMs: at(9)),
+            .tool(
+                step: .fixture(
+                    id: "t2", title: "run pytest scripts/tests", phase: .done, seq: 3,
+                    kind: "execute", output: "41 passed"),
+                atMs: at(22)),
+            .tool(
+                step: .fixture(
+                    id: "t3", title: "write design/tokens.toml", phase: .failed, seq: 4,
+                    kind: "edit", locations: ["design/tokens.toml"], output: "permission denied"),
+                atMs: at(40)),
+            .tool(step: regenerate, atMs: at(64)),
+        ]
         if finished {
-            clock.now = epoch.addingTimeInterval(71)
-            live.handleTool(
-                roomId: room, seq: 6, toolCallId: "t4", title: "regenerate the token targets",
-                kind: "execute", status: "completed", phase: .done, statusLabel: "Done",
-                locations: [], input: nil, output: nil)
-            live.handleLive(roomId: room, seq: 7, text: "", done: true)
+            inputs.append(
+                .tool(
+                    step: .fixture(
+                        id: "t4", title: "regenerate the token targets", phase: .done, seq: 6,
+                        kind: "execute"),
+                    atMs: at(71)))
+            inputs.append(.answer(seq: 7, done: true, atMs: at(71)))
         }
+        live.restore(foldTurn(roomId: room, inputs: inputs))
         return live
     }
 }

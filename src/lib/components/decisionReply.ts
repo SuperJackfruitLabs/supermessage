@@ -6,11 +6,13 @@ export async function sendDecisionReply(
   eventId: string | null,
   decision: CustomEventDecision,
   optionId: string,
+  comment: string | null = null,
 ): Promise<void> {
   if (decision.subject !== null) {
     if (eventId === null) throw new Error("A gate decision needs a confirmed event");
-    await sendGateDecision(roomId, decision.subject, optionId, null, eventId, decision.prompt);
+    await sendGateDecision(roomId, decision.subject, optionId, comment, eventId, decision.prompt);
   } else {
+    // A permission request has no place for a comment, so `comment` is dropped.
     // Permission option ids are the human-readable answer accepted by the
     // AgentPod bridge. They intentionally remain ordinary room messages.
     await sendMessage(roomId, optionId);
@@ -27,9 +29,10 @@ export async function answerDecision(
   eventId: string | null,
   decision: CustomEventDecision,
   optionId: string,
+  comment: string | null = null,
 ): Promise<boolean> {
   try {
-    await sendDecisionReply(roomId, eventId, decision, optionId);
+    await sendDecisionReply(roomId, eventId, decision, optionId, comment);
     return true;
   } catch (err) {
     console.error("failed to send a decision", { eventId, optionId, err });

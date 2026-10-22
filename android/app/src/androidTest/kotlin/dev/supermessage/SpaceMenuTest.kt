@@ -18,10 +18,11 @@ import uniffi.supermessage_core.SpaceSummary
 class SpaceMenuTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun space(id: String, name: String, children: ULong, membership: Membership = Membership.JOINED) =
+    private fun space(id: String, name: String, children: ULong, membership: Membership = Membership.JOINED, displayName: String = name) =
         SpaceSummary(
             id = id, name = name, avatarUrl = null, childCount = children, membership = membership,
             identity = RoomIdentity(glyph = null, name = name, role = null, initial = name.take(1)),
+            displayName = displayName,
         )
 
     private val spaces = listOf(
@@ -77,5 +78,16 @@ class SpaceMenuTest {
     fun noSelectionTitlesItChats() {
         menu()
         compose.onNodeWithTag("space-menu").assertContentDescriptionEquals("Space: Chats")
+    }
+
+    /** The menu shows the core's readable name, never the raw room name. */
+    @Test
+    fun theMenuShowsTheReadableNameNotTheRawOne() {
+        val raw = space("!eng:x", "!eng:x", 2uL, displayName = "Engineering")
+        menu(list = listOf(raw), selected = "!eng:x")
+        compose.onNodeWithTag("space-menu").assertContentDescriptionEquals("Space: Engineering")
+        compose.onNodeWithTag("space-menu").performClick()
+        compose.onNodeWithText("Engineering · 2").assertIsDisplayed()
+        compose.onNodeWithText("!eng:x · 2").assertDoesNotExist()
     }
 }

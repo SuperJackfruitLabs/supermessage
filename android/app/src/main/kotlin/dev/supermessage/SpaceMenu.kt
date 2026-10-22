@@ -49,7 +49,7 @@ fun SpaceMenu(
         Text("Chats", style = MaterialTheme.typography.titleMedium, modifier = modifier)
         return
     }
-    val title = spaces.firstOrNull { it.id == selectedId }?.identity?.name ?: "Chats"
+    val title = spaces.firstOrNull { it.id == selectedId }?.displayName ?: "Chats"
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         Row(
@@ -82,7 +82,7 @@ fun SpaceMenu(
                 modifier = Modifier.testTag("space-all"),
             )
             for (space in spaces) {
-                val name = space.identity.name
+                val name = space.displayName
                 DropdownMenuItem(
                     // No count for an invitation: the account cannot see into a
                     // space it has not joined, so one would be invented.

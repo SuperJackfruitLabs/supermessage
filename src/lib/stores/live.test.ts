@@ -174,19 +174,6 @@ describe("liveStore: tool calls", () => {
     expect(store.tools(ROOM).map((t) => t.toolCallId)).toEqual(["first", "second"]);
   });
 
-  it("ignores an update the network delivered late", () => {
-    // The reason this rule exists at all: a `completed` overtaken by an
-    // earlier `in_progress` would leave a finished tool looking busy forever.
-    const tools = makeChannel<ToolPayload>();
-    const store = createLiveStore({ onLive: makeChannel().onLive, onTool: tools.onLive });
-
-    tools.emit(tool({ seq: 5, status: "completed", phase: "done", statusLabel: "Done" }));
-    tools.emit(tool({ seq: 4, status: "in_progress", phase: "running", statusLabel: "Running" }));
-
-    expect(store.tools(ROOM)[0]!.status).toBe("completed");
-    expect(store.tools(ROOM)[0]!.phase).toBe("done");
-  });
-
   it("forgets a room's tools when its turn ends", () => {
     // Bounded by the answer's `done`, which is the only signal that says a turn
     // is over — and the reason the core cannot apply this rule itself.

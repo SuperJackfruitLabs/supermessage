@@ -78,6 +78,13 @@ pub enum FfiEvent {
         input: Option<String>,
         output: Option<String>,
     },
+    /// A room's agent turn moved: a summary, and at most one step that
+    /// changed. Sent **before** the text event that caused it. Discard an
+    /// update whose `summary.revision` is below the one held; see
+    /// `core::turns`. M4 hosts render it.
+    Turn {
+        update: supermessage_core::turns::TurnUpdate,
+    },
     AttachmentStaged {
         token: String,
         filename: String,
@@ -137,6 +144,7 @@ impl CoreSink for HostSink {
                 input: p.input,
                 output: p.output,
             },
+            CoreEvent::Turn(update) => FfiEvent::Turn { update },
             CoreEvent::AttachmentStaged(m) => FfiEvent::AttachmentStaged {
                 token: m.token,
                 filename: m.filename,
@@ -145,5 +153,50 @@ impl CoreSink for HostSink {
             },
             CoreEvent::IgnoredUsers(user_ids) => FfiEvent::IgnoredUsers { user_ids },
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+    use supermessage_core::turns::{fold_turn, TurnInput, TurnUpdate};
+
+    struct Recorder(Arc<Mutex<Vec<FfiEvent>>>);
+
+    impl EventSink for Recorder {
+        fn on_event(&self, event: FfiEvent) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    /// C3 left this arm a no-op; a host that never hears a turn update shows
+    /// no card.
+    ///
+    /// Mutation seen failing: restoring the `return` in the `Turn` arm leaves
+    /// the recorder empty.
+    #[test]
+    fn a_turn_update_reaches_the_host() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = HostSink(Box::new(Recorder(Arc::clone(&seen))));
+        let snapshot = fold_turn(
+            "!r:x",
+            vec![TurnInput::Answer {
+                seq: 1,
+                done: false,
+                at_ms: 1,
+            }],
+        )
+        .unwrap();
+        sink.emit(CoreEvent::Turn(TurnUpdate {
+            summary: snapshot.summary,
+            step: None,
+        }));
+        let seen = seen.lock().unwrap();
+        assert!(matches!(
+            seen.as_slice(),
+            [FfiEvent::Turn { update }] if update.summary.room_id == "!r:x"
+        ));
     }
 }

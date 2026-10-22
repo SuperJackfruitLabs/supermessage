@@ -12,8 +12,16 @@
   // the right conversation is most of the distance, and pretending to jump
   // and landing at the bottom would be worse than not offering it.
 
+  import { errorMessage } from "$lib/errorMessage";
   import type { RoomRow, SearchResult } from "$lib/ipc";
-  import { projectSearchResults } from "./searchView";
+  import {
+    createLatestOnly,
+    projectSearchResults,
+    rerunsOnScopeChange,
+    scopedRoomId,
+    searchHint,
+    type SearchScope,
+  } from "./searchView";
   import { relativeTime } from "./roomIdentity";
 
   /**
@@ -26,12 +34,14 @@
    */
   export interface Props {
     rooms: RoomRow[];
-    onSearch: (term: string) => Promise<SearchResult[]>;
+    /** The room the search was opened from; null when there is none. */
+    scope?: SearchScope | null;
+    onSearch: (term: string, roomId?: string) => Promise<SearchResult[]>;
     onOpenRoom: (roomId: string) => void;
     onClose: () => void;
   }
 
-  let { rooms, onSearch, onOpenRoom, onClose }: Props = $props();
+  let { rooms, scope = null, onSearch, onOpenRoom, onClose }: Props = $props();
 
   let term = $state("");
   let results = $state<SearchResult[]>([]);
@@ -40,6 +50,10 @@
   let failure = $state<string | null>(null);
   /** Whether a search has run at all, which is what "no results" depends on. */
   let searched = $state(false);
+
+  /** Starts narrowed to the room, as on iOS. */
+  let narrowed = $state(true);
+  const latest = createLatestOnly();
 
   const views = $derived(projectSearchResults(results, rooms));
   const now = Date.now();
@@ -56,18 +70,30 @@
    * useless to the reader, whose query is not finished yet.
    */
   async function run(): Promise<void> {
-    if (searching) return;
+    const ticket = latest.begin();
     searching = true;
     failure = null;
     try {
-      results = await onSearch(term);
+      const found = await onSearch(term, scopedRoomId(scope, narrowed));
+      if (!latest.isCurrent(ticket)) return;
+      results = found;
       searched = true;
     } catch (err) {
+      if (!latest.isCurrent(ticket)) return;
       results = [];
-      failure = err instanceof Error ? err.message : String(err);
+      failure = errorMessage(err);
+      // A failed search was still made: changing scope retries it.
+      searched = true;
     } finally {
-      searching = false;
+      if (latest.isCurrent(ticket)) searching = false;
     }
+  }
+
+  /** Changing the scope re-runs a search already made. */
+  function setNarrowed(value: boolean): void {
+    const changed = narrowed !== value;
+    narrowed = value;
+    if (rerunsOnScopeChange({ changed, searched, term })) void run();
   }
 
   function open(roomId: string): void {
@@ -90,7 +116,12 @@
     aria-label="Search"
     class="relative z-10 flex max-h-[70vh] w-full max-w-2xl flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-overlay"
     onkeydown={(e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        // Consumed here: the page's window handler must not also close the
+        // room-info panel underneath on this same keypress.
+        e.preventDefault();
+        onClose();
+      }
     }}
   >
     <form
@@ -117,8 +148,38 @@
       </button>
     </form>
 
+    {#if scope}
+      <div role="radiogroup" aria-label="Search in" class="flex gap-1">
+        {#each [{ value: true, label: scope.name }, { value: false, label: "All rooms" }] as option (option.label)}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={narrowed === option.value}
+            tabindex={narrowed === option.value ? 0 : -1}
+            onkeydown={(e: KeyboardEvent) => {
+              if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setNarrowed(!narrowed);
+              const other = [...(e.currentTarget as HTMLElement).parentElement!.children].find(
+                (n) => n !== e.currentTarget,
+              ) as HTMLElement;
+              other.focus();
+            }}
+            onclick={() => setNarrowed(option.value)}
+            class="max-w-[50%] truncate rounded-control border px-3 py-1 text-ui transition-colors {narrowed ===
+            option.value
+              ? 'border-accent bg-surface-sunken text-content'
+              : 'border-border text-content-muted hover:bg-surface-sunken'}"
+          >
+            {option.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
     {#if failure !== null}
-      <p role="alert" class="text-ui text-destructive">{failure}</p>
+      <p role="alert" class="text-ui text-danger">{failure}</p>
     {:else if searched && views.length === 0}
       <!--
         Named rather than left blank, and honest about the one thing that
@@ -128,6 +189,8 @@
       <p class="py-6 text-center text-ui text-content-muted">
         Nothing matched. Encrypted rooms are not searchable.
       </p>
+    {:else if !searched}
+      <p class="py-6 text-center text-ui text-content-muted">{searchHint(scope, narrowed)}</p>
     {:else if views.length > 0}
       <ul class="flex flex-col gap-1 overflow-y-auto">
         {#each views as view (view.eventId)}

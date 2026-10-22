@@ -2,7 +2,7 @@
 // shape under them.
 //
 // The timeline is the `flex-1` in a column of `shrink-0` siblings — `LiveTurn`,
-// the typing indicator, the connection banner, the composer — every one of
+// the typing indicator, the connection line, the composer — every one of
 // which can appear or grow while the reader sits perfectly still, and every one
 // of which takes its height out of this one. Meanwhile the scrolled content
 // grows from the bottom as messages arrive, and keeps growing after that as

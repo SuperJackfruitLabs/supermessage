@@ -96,6 +96,17 @@ extension AttachmentStaging {
     public func attachmentMarkVoice(roomId: String, token: String, durationMs: UInt64, waveform: [Float]) async throws {}
 }
 
+/// `LiveStore`: a room's turn record, asked of the core when the room opens.
+public protocol TurnFetching: Sendable {
+    func turn(roomId: String) async -> TurnSnapshot?
+}
+
+extension TurnFetching {
+    /// A seam with no core behind it has no turns: a preview or a stub that
+    /// never asked for one opens every room on a clean card.
+    public func turn(roomId: String) async -> TurnSnapshot? { nil }
+}
+
 /// `TimelineStore`.
 public protocol TimelineSubscribing: Sendable {
     func timelineSubscribe(roomId: String, sink: any CoreEventSink) async throws
@@ -217,7 +228,7 @@ public protocol SafetyActions: Sendable {
 public typealias SessionClient = AvatarFetching & MediaFetching & AudioFetching & RoomsSnapshotting
     & SpaceSelecting & AttachmentStaging & TimelineSubscribing & SessionAuthenticating
     & MessageSending & RoomMembership & RoomAdministering & AccountDirectory
-    & NotificationAnswering & SafetyActions
+    & NotificationAnswering & SafetyActions & TurnFetching
 
 // MARK: - The one real conformer
 

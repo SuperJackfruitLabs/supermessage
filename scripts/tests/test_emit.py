@@ -346,6 +346,24 @@ class ImportTests(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, code_only(swift))
 
+class BlackAccentKeepsBlackSurfacesTests(unittest.TestCase):
+    """`<html data-appearance="black" data-accent="teal">` must stay black.
+
+    The accent block out-ranks the appearance block on specificity, and the
+    black accent blocks once named only three roles, so the bare
+    `:root[data-accent]` light block won the surfaces: a light page in Black.
+    """
+
+    def test_every_black_accent_block_sets_the_black_surface(self):
+        css = emit_app_css(load(SOURCE))
+        for name in ("blue", "graphite", "green", "pink", "teal"):
+            with self.subTest(name=name):
+                head = f'[data-appearance="black"][data-accent="{name}"] {{'
+                start = css.index(head)
+                block = css[start : css.index("}", start)]
+                self.assertIn("--color-surface: #000000;", block)
+
+
 class AppearanceSelectorTests(unittest.TestCase):
     """Every appearance must be explicitly selectable.
 

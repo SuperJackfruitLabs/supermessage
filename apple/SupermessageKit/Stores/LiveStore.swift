@@ -2,13 +2,25 @@ import Foundation
 import Observation
 import SupermessageFFI
 
-/// An agent's turn while it is still being written.
+extension TurnStep: @retroactive Identifiable {}
+
+/// The open room's agent turn, as the core records it.
 ///
-/// **None of this is history.** It arrives on to-device messages, nothing here
-/// has been stored in a room, and the real message follows when the turn ends.
-/// So it is kept only for the focused room and thrown away the moment the turn
-/// lands — anything else would leave a ghost above a message that already says
-/// the same thing.
+/// **The core owns the record** (`core::turns`): when a turn started and
+/// ended, its steps merged by call id, the order of late reports, the step
+/// being worked on, the counts, the collapsed record's label, and how long a
+/// finished record is kept. This store mirrors it for the room on screen:
+/// `apply` takes the core's update, `restore` takes its snapshot when a room
+/// opens, and nothing here decides what a turn is.
+///
+/// **What it still holds itself** is the text, because text does not travel in
+/// a turn update: the answer being written (`handleLive`) and the reasoning
+/// (`handleThought`). Both arrive on their own channels, after the update that
+/// began the turn.
+///
+/// **None of this is history.** The streamed answer arrives on to-device
+/// messages and has not been stored in a room; the real message follows when
+/// the turn ends.
 @MainActor
 @Observable
 public final class LiveStore {
@@ -17,76 +29,96 @@ public final class LiveStore {
     /// Its reasoning, if it is sharing any. Collapsed by default in the view:
     /// it is context, not the answer.
     public private(set) var thought: String?
-    /// Tool calls this turn, in the order they fired.
-    public private(set) var tools: [ToolCall] = []
-    /// Whether the turn has finished.
+    /// Tool calls this turn, in the order they first fired.
+    public private(set) var tools: [TurnStep] = []
+    /// The core's summary of the turn on screen, or `nil` when it has none.
+    public private(set) var summary: TurnSummary?
+
+    /// Whether the turn has finished — by the agent's `done`, by its reply
+    /// landing in the room, or by the core's time limit.
     ///
-    /// The reasoning and the tool calls **outlive it**. They used to be
-    /// thrown away the instant the turn landed, which meant the record of how
-    /// an agent reached its answer was on screen only while it was still
-    /// being written — and gone by the time anyone had read the answer it
-    /// belongs to. What goes on `done` is the streamed *answer*, because the
-    /// real message arrives on the timeline and says it better; what stays is
-    /// everything the message does not carry.
-    public private(set) var finished = false
+    /// The reasoning and the tool calls **outlive it**: what goes on `done` is
+    /// the streamed *answer*, because the real message arrives on the timeline
+    /// and says it better; what stays is everything the message does not
+    /// carry.
+    public var finished: Bool { summary?.endedBy != nil }
 
-    public struct ToolCall: Identifiable, Equatable {
-        public let id: String
-        public let title: String
-        /// ACP's raw status. Not for display — see `phase` and `statusLabel`.
-        public let status: String
-        /// Where the call is, decided by the core. Glyph and colour key off
-        /// this, never off `status`.
-        public let phase: ToolPhase
-        /// The core's word for `phase` — "Running", "Done". Rendered as given.
-        public let statusLabel: String
-        /// ACP's tool kind, when the harness said. Display text.
-        public let kind: String?
-        /// What the call touched — paths, mostly.
-        public let locations: [String]
-        /// What it was given and what it produced, bounded by the core.
-        ///
-        /// `nil` from a harness that does not report them — which is every
-        /// harness today. `dev.agentpod.tool.update` carries the fields; the
-        /// agent side has to start filling them in.
-        public let input: String?
-        public let output: String?
-
-        /// Whether there is anything to open this row onto.
-        public var hasDetail: Bool {
-            input != nil || output != nil || !locations.isEmpty
-        }
+    /// Which turn is on screen and how it ended, for a haptic: the pair
+    /// changes when a room opens, so the view has to tell a turn *finishing*
+    /// from a room opening onto one that had already finished.
+    public struct Outcome: Equatable, Sendable {
+        public var turnId: UInt64?
+        public var endedBy: TurnEnding?
     }
 
+    public var outcome: Outcome {
+        Outcome(turnId: summary?.turnId, endedBy: summary?.endedBy)
+    }
+
+    /// Whether going from `old` to `new` is a turn finishing well: the same
+    /// turn, not ended before and ended now by the agent's `done` or its
+    /// reply. Opening a room (the turn is a different one, or none) never
+    /// counts, and neither does the time limit: a turn the core gave up on
+    /// did not succeed.
+    public static func turnFinishedWell(from old: Outcome, to new: Outcome) -> Bool {
+        guard let turnId = old.turnId, turnId == new.turnId, old.endedBy == nil else {
+            return false
+        }
+        return new.endedBy == .done || new.endedBy == .reply
+    }
+
+    /// Whether a turn is going and has not finished.
+    public var inProgress: Bool { summary?.inProgress ?? false }
+
+    /// Whether there is anything to show — a turn in progress, or the record
+    /// of the one that just ended.
+    ///
+    /// Unlike the summary this is `false` for a turn that left nothing behind
+    /// (an answer with no reasoning and no steps, once it is done): there is no
+    /// card to draw for it.
+    public var isLive: Bool { answer != nil || thought != nil || !tools.isEmpty }
+
     private var roomId: String?
-    /// The last sequence seen per stream, so a late delta cannot rewind the
-    /// text. The core numbers these for the same reason the diff channels are
-    /// numbered.
+    /// The last sequence seen per text stream, so a late delta cannot rewind
+    /// the text.
     private var answerSeq: UInt64 = 0
     private var thoughtSeq: UInt64 = 0
 
+    /// Steps whose index is past the end of `tools`: an update arrived for a
+    /// step whose predecessors this store has not seen. They are never
+    /// appended past the gap (that would put the step at the wrong position,
+    /// and its next report would append it again); they wait for a snapshot
+    /// to fill the gap.
+    private var pendingSteps: [Int: TurnStep] = [:]
+    /// The snapshot request a gap started, so a burst of updates asks once.
+    /// Internal for tests.
+    private(set) var resyncTask: Task<Void, Never>?
+
+    private let turns: (any TurnFetching)?
+
+    /// - Parameter turns: where a room's record is asked for when it opens.
+    ///   `nil` (tests, previews) opens every room on a clean card.
+    public init(turns: (any TurnFetching)? = nil) {
+        self.turns = turns
+    }
+
     // MARK: - Time
 
-    /// When this turn's first delta arrived — the reader's clock, not the
-    /// agent's. `nil` when nothing is live.
-    ///
-    /// The reader's clock because the question the activity card answers is
-    /// "how long have I been waiting", and the events carry no timestamp of
-    /// their own to disagree with it.
-    public private(set) var startedAt: Date?
+    /// When the turn started, on the reader's clock (the core's).
+    public var startedAt: Date? {
+        summary.map { Self.date(ms: $0.startedAtMs) }
+    }
+
     /// When the turn finished, so a finished card shows how long it took
     /// rather than a number that keeps climbing.
-    public private(set) var endedAt: Date?
-    /// When anything last arrived for this turn. What a still rendering
-    /// measures against, since it cannot ask for the time.
-    public private(set) var lastActivityAt: Date?
+    public var endedAt: Date? {
+        summary?.endedAtMs.map(Self.date(ms:))
+    }
 
-    private let clock: @MainActor () -> Date
-
-    /// - Parameter clock: the time source, injectable so a test can say how
-    ///   long a turn took without waiting for it.
-    public init(clock: @escaping @MainActor () -> Date = { Date() }) {
-        self.clock = clock
+    /// When the core last heard anything for this turn. Only as fresh as the
+    /// last update: a growing answer or thought does not send one.
+    public var lastActivityAt: Date? {
+        summary.map { Self.date(ms: $0.lastActivityMs) }
     }
 
     /// How long the turn has run at `now`: to its end once it has one.
@@ -95,38 +127,9 @@ public final class LiveStore {
         return max(0, (endedAt ?? now).timeIntervalSince(startedAt))
     }
 
-    private func noteActivity() {
-        let now = clock()
-        if startedAt == nil { startedAt = now }
-        lastActivityAt = now
+    private static func date(ms: UInt64) -> Date {
+        Date(timeIntervalSince1970: Double(ms) / 1000)
     }
-
-    private func noteFinished() {
-        if !finished { endedAt = clock() }
-        finished = true
-    }
-
-    // MARK: - Steps
-
-    /// The step being worked on: the latest running call, else the latest
-    /// queued one. `nil` between steps.
-    public var currentStep: ToolCall? {
-        tools.last { $0.phase == .running } ?? tools.last { $0.phase == .queued }
-    }
-
-    /// How many steps have completed.
-    public var completedSteps: Int {
-        tools.filter { $0.phase == .done }.count
-    }
-
-    /// The latest step that failed — the one state that still matters after
-    /// the turn ends, so the card names it ahead of any running one.
-    public var failedStep: ToolCall? {
-        tools.last { $0.phase == .failed }
-    }
-
-    /// Whether a turn is streaming and has not finished.
-    public var inProgress: Bool { isLive && !finished }
 
     // MARK: - Who
 
@@ -142,25 +145,119 @@ public final class LiveStore {
     /// The header's name for the agent in the focused room, when it has one.
     public var agentName: String? { roomId.flatMap { agentNames[$0] } }
 
-    /// Whether there is anything to show — a turn in progress, or the record
-    /// of the one that just ended.
-    public var isLive: Bool { answer != nil || thought != nil || !tools.isEmpty }
+    // MARK: - From the core
+
+    /// The core's update for a turn. Everything but the focused room's is
+    /// ignored, and so is anything older than what is held.
+    ///
+    /// A different `turn_id` is a new turn: the last one's steps, reasoning and
+    /// answer go. The core sends the update **before** the text that began the
+    /// turn, so clearing here does not wipe it.
+    public func apply(_ update: TurnUpdate) {
+        let incoming = update.summary
+        guard accept(incoming.roomId) else { return }
+        if let held = summary, incoming.revision < held.revision { return }
+        if summary?.turnId != incoming.turnId { forgetTurn() }
+        summary = incoming
+        if incoming.endedBy != nil {
+            // However it ended — `done`, the reply landing, the time limit —
+            // the streamed answer is over: the real message replaces it, or
+            // nothing more is coming.
+            answer = nil
+            answerSeq = 0
+        }
+        guard let change = update.step else { return }
+        place(change.step, at: Int(change.index))
+        if !pendingSteps.isEmpty { resync() }
+    }
+
+    /// Put a step at the index the core gave it. `index == count` is an
+    /// append; past it an update was missed, so the step waits (see
+    /// `pendingSteps`) rather than landing in the wrong place.
+    private func place(_ step: TurnStep, at index: Int) {
+        if index < tools.count {
+            tools[index] = step
+        } else if index == tools.count {
+            tools.append(step)
+            while let next = pendingSteps.removeValue(forKey: tools.count) {
+                tools.append(next)
+            }
+        } else {
+            pendingSteps[index] = step
+        }
+    }
+
+    /// Fold the core's steps into what is held, step by step, keeping the one
+    /// with the higher sequence (a call's own, which only grows). Held steps
+    /// the snapshot has not reached yet survive, and so do waiting ones that
+    /// now fit.
+    private func adopt(_ steps: [TurnStep]) {
+        var merged = steps
+        for (index, held) in tools.enumerated() {
+            if index < merged.count {
+                if held.seq > merged[index].seq { merged[index] = held }
+            } else {
+                merged.append(held)
+            }
+        }
+        for index in pendingSteps.keys.sorted() {
+            guard let waiting = pendingSteps[index] else { continue }
+            if index < merged.count {
+                if waiting.seq > merged[index].seq { merged[index] = waiting }
+                pendingSteps[index] = nil
+            } else if index == merged.count {
+                merged.append(waiting)
+                pendingSteps[index] = nil
+            }
+        }
+        tools = merged
+    }
+
+    /// Ask the core for the whole record again, after a step arrived with a
+    /// gap before it.
+    private func resync() {
+        guard resyncTask == nil, let roomId, let turns else { return }
+        resyncTask = Task { [weak self] in
+            let snapshot = await turns.turn(roomId: roomId)
+            // Cancelled by a room change: the answer is for the last room.
+            guard !Task.isCancelled, let self else { return }
+            self.resyncTask = nil
+            self.restore(snapshot)
+        }
+    }
+
+    /// A room's whole record, from the core, when it opens.
+    ///
+    /// The live channel may have shown something newer in the time the
+    /// question took. For another turn, that wins outright. For the same
+    /// turn, the summary stays at the newer revision, but the steps are
+    /// merged: an update that arrived first carries one step, and the
+    /// snapshot has the ones before it.
+    public func restore(_ snapshot: TurnSnapshot?) {
+        guard let snapshot, accept(snapshot.summary.roomId) else { return }
+        let sameTurn = summary?.turnId == snapshot.summary.turnId
+        if let held = summary, !sameTurn, snapshot.summary.revision < held.revision { return }
+        if !sameTurn { forgetTurn() }
+        let newer = summary.map { snapshot.summary.revision >= $0.revision } ?? true
+        if newer { summary = snapshot.summary }
+        adopt(snapshot.steps)
+        // A thought streamed in since the question was asked is newer.
+        if thoughtSeq == 0 { thought = snapshot.thought }
+    }
+
+    // MARK: - Text
 
     public func handleLive(roomId: String, seq: UInt64, text: String, done: Bool) {
         guard accept(roomId) else { return }
         if done {
             // The turn landed. The streamed answer goes, because the real
-            // message is arriving on the timeline channel and says it better
-            // — but the reasoning and the tool calls stay, because nothing
-            // else on screen carries them. They go when the *next* turn
-            // starts, or when the reader leaves the room.
+            // message is arriving on the timeline channel and says it better.
+            // The reasoning and the steps stay: nothing else on screen
+            // carries them, and the core's record keeps them.
             answer = nil
             answerSeq = 0
-            noteFinished()
             return
         }
-        beginTurnIfFinished()
-        noteActivity()
         guard seq >= answerSeq else { return }
         answerSeq = seq
         answer = text
@@ -168,119 +265,55 @@ public final class LiveStore {
 
     public func handleThought(roomId: String, seq: UInt64, text: String, done: Bool) {
         guard accept(roomId) else { return }
-        if done {
-            // Kept, for the same reason as the tool calls above: reasoning
-            // that vanishes the moment the answer appears is reasoning nobody
-            // has had time to read.
-            noteFinished()
-            return
-        }
-        beginTurnIfFinished()
-        noteActivity()
+        // A thought's own `done` keeps the text, for the same reason: reasoning
+        // that vanishes the moment the answer appears is reasoning nobody has
+        // had time to read.
+        if done { return }
         guard seq >= thoughtSeq else { return }
         thoughtSeq = seq
         thought = text
     }
 
-    public func handleTool(
-        roomId: String, seq: UInt64, toolCallId: String, title: String, kind: String?,
-        status: String, phase: ToolPhase, statusLabel: String, locations: [String],
-        input: String?, output: String?
-    ) {
-        guard accept(roomId) else { return }
-        beginTurnIfFinished()
-        noteActivity()
-        let call = ToolCall(
-            id: toolCallId, title: title, status: status, phase: phase, statusLabel: statusLabel,
-            kind: kind, locations: locations,
-            input: input, output: output)
-        if let index = tools.firstIndex(where: { $0.id == toolCallId }) {
-            // A call reports again as it progresses — running, then completed.
-            // Replacing rather than appending is what keeps one row per call.
-            tools[index] = call
-        } else {
-            tools.append(call)
-        }
-    }
+    // MARK: - Focus
 
-    /// Focus a room, putting the last one's finished turn aside.
-    ///
-    /// **A finished turn's record outlives leaving its room.** It used to be
-    /// discarded on every focus change, so opening another chat and coming
-    /// back lost "What I thought" — an agent's reasoning, which is written
-    /// nowhere else (2026-09-24, IMG_7586 → 7587). A turn still in progress
-    /// is not kept: its remaining deltas are addressed to a room this store
-    /// is no longer listening to, so the record would stop mid-sentence.
-    public func focus(_ roomId: String?) {
-        if let current = self.roomId, finished, isLive {
-            keep(Record(thought: thought, tools: tools, startedAt: startedAt, endedAt: endedAt,
-                        lastActivityAt: lastActivityAt), for: current)
-        }
+    /// Point the store at a room, with nothing of the last one's on screen.
+    /// Synchronous, for callers that cannot wait on the core.
+    public func select(_ roomId: String?) {
         self.roomId = roomId
-        reset()
-        if let roomId, let record = records[roomId] {
-            thought = record.thought
-            tools = record.tools
-            startedAt = record.startedAt
-            endedAt = record.endedAt
-            lastActivityAt = record.lastActivityAt
-            finished = true
-        }
+        forgetTurn()
+        summary = nil
     }
 
-    /// A room's last finished turn, kept while the reader is elsewhere.
-    private struct Record {
-        let thought: String?
-        let tools: [ToolCall]
-        let startedAt: Date?
-        let endedAt: Date?
-        let lastActivityAt: Date?
-    }
-
-    /// The kept records, and the order they were kept in, oldest first.
-    /// Bounded, so a session that visits every room holds a handful of
-    /// reasoning texts rather than all of them.
-    private var records: [String: Record] = [:]
-    private var recordOrder: [String] = []
-    static let keptRecords = 20
-
-    private func keep(_ record: Record, for roomId: String) {
-        records[roomId] = record
-        recordOrder.removeAll { $0 == roomId }
-        recordOrder.append(roomId)
-        while recordOrder.count > Self.keptRecords {
-            records[recordOrder.removeFirst()] = nil
-        }
-    }
-
-    /// The first delta of a new turn clears the last one's record.
+    /// Focus a room: reset, then show the core's record of its turn.
     ///
-    /// Here rather than on `done` because that is the whole point: the record
-    /// has to survive the end of its own turn. It ends when it is replaced.
-    private func beginTurnIfFinished() {
-        guard finished else { return }
-        reset()
-        if let roomId { records[roomId] = nil }
+    /// The core keeps a record for every room, including one still in
+    /// progress, so leaving a room and coming back loses nothing. The streamed
+    /// answer is not part of the record: a turn restored mid-answer shows the
+    /// rest of it from the next delta.
+    public func focus(_ roomId: String?) async {
+        select(roomId)
+        guard let roomId, let turns else { return }
+        let snapshot = await turns.turn(roomId: roomId)
+        restore(snapshot)
     }
 
-    /// Forget everything, kept records included — signing out.
+    /// Forget everything — signing out. The core clears its own book.
     public func clear() {
-        reset()
-        records = [:]
-        recordOrder = []
+        roomId = nil
+        forgetTurn()
+        summary = nil
     }
 
-    /// Forget the turn on screen.
-    private func reset() {
+    /// Drop the turn on screen but not the summary, which the caller sets.
+    private func forgetTurn() {
         answer = nil
         thought = nil
         tools = []
         answerSeq = 0
         thoughtSeq = 0
-        finished = false
-        startedAt = nil
-        endedAt = nil
-        lastActivityAt = nil
+        pendingSteps = [:]
+        resyncTask?.cancel()
+        resyncTask = nil
     }
 
     /// Whether this belongs to the room on screen.
