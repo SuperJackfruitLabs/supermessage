@@ -160,6 +160,26 @@ export NDK_HOME="$HOME/Android/Sdk/ndk/29.0.14206865"
 pnpm tauri android dev       # requires a device or emulator
 ```
 
+On a fresh machine the SDK is user-space and needs no root. Unzip Google's
+`commandlinetools-linux-*_latest.zip` to `~/Android/Sdk/cmdline-tools/latest`
+(checksum in `dl.google.com/android/repository/repository2-3.xml`), then:
+
+```bash
+SDK=~/Android/Sdk/cmdline-tools/latest/bin
+$SDK/sdkmanager --install platform-tools "platforms;android-36" "build-tools;36.1.0" \
+    "build-tools;36.0.0" "ndk;29.0.14206865" emulator "system-images;android-36;google_apis;x86_64" \
+    "system-images;android-36.1;google_apis_ps16k;x86_64"
+I36="system-images;android-36;google_apis;x86_64"
+echo no | $SDK/avdmanager create avd -n supermessage-phone  -k "$I36" -d pixel_6
+echo no | $SDK/avdmanager create avd -n supermessage-tablet -k "$I36" -d pixel_tablet
+echo no | $SDK/avdmanager create avd -n supermessage-16k \
+    -k "system-images;android-36.1;google_apis_ps16k;x86_64" -d pixel_9
+```
+
+Those profiles give the dp sizes listed under "The Android app"; `pixel_6`
+is also what CI pins. There is no API 36 16 KB-page image, so the 16k AVD is
+on 36.1. About 13 GB. Then build the libraries as described below.
+
 **Do not verify the app with a bare `cargo run`/`cargo build` binary.** Tauri
 debug builds load `build.devUrl` (`http://localhost:1420`), so without Vite
 running the webview loads nothing and every `invoke` fails — which looks like a
@@ -176,7 +196,7 @@ Per [Tauri's WebDriver docs](https://v2.tauri.app/develop/tests/webdriver/),
 only — macOS has no WKWebView driver.
 
 ```bash
-sudo apt install webkit2gtk-driver     # must match the installed webkit2gtk (2.52.3)
+sudo apt install webkit2gtk-driver     # Debian/Ubuntu; must match the installed webkit2gtk
 cargo install tauri-driver --locked
 
 pnpm tauri build --debug --no-bundle   # tauri-driver launches the BINARY, so the
@@ -192,6 +212,11 @@ message bodies, `span.italic` placeholders, the composer) using whatever
 account the keyring currently holds, so it needs a logged-in session. It is a
 diagnostic harness, not part of `pnpm test`. Note WebKitWebDriver returns lone
 surrogates for astral-plane emoji; the script repairs them before printing.
+
+Arch's `webkit2gtk-4.1` ships no `WebKitWebDriver`, so `tauri-driver` has
+nothing to proxy to there. Use the WebDriver server a debug build embeds
+(`tauri-plugin-wdio-webdriver`, on by default via the `wdio` feature) on
+`127.0.0.1:4445` instead: run `pnpm dev`, then `target/debug/supermessage`.
 
 This harness is what caught the "opening a room shows one message" bug — it
 is worth reaching for before trusting a UI claim made from code reading alone.
