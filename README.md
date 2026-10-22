@@ -31,7 +31,7 @@ release, or that every operation has been exercised against a live homeserver.
 |---|---|---|---|
 | Password login, persistent session, room and timeline sync | Implemented | Implemented | Implemented |
 | Messages, replies, reactions, typing and read receipts | Implemented | Implemented | Implemented |
-| File/image sending and editing/deleting own messages | Sending and deleting implemented; editing in the core only (no UI yet) | Implemented | Sending and editing implemented; deleting in the core only (no UI yet) |
+| File/image sending and editing/deleting own messages | Sending and deleting implemented; editing in the core only (no UI yet) | Implemented | Sending, editing and deleting implemented |
 | New conversations, room joining and accepting invitations | Implemented | Implemented | Implemented |
 | Message search | Homeserver search | Homeserver search | Homeserver search |
 | Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
