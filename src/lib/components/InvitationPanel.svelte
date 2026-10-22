@@ -19,6 +19,7 @@
   // an invitation that vanished before the join landed, and came back if it
   // failed, would be worse than one that waits.
 
+  import { errorMessage } from "$lib/errorMessage";
   import { invitationPrompt } from "./invitationView";
 
   /**
@@ -59,8 +60,8 @@
     } catch (err) {
       failure =
         action === "accept"
-          ? `Could not accept: ${String(err)}`
-          : `Could not decline: ${String(err)}`;
+          ? `Could not accept: ${errorMessage(err)}`
+          : `Could not decline: ${errorMessage(err)}`;
     } finally {
       busy = false;
     }

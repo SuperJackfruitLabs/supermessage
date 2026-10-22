@@ -12,6 +12,7 @@
   // the right conversation is most of the distance, and pretending to jump
   // and landing at the bottom would be worse than not offering it.
 
+  import { errorMessage } from "$lib/errorMessage";
   import type { RoomRow, SearchResult } from "$lib/ipc";
   import { projectSearchResults } from "./searchView";
   import { relativeTime } from "./roomIdentity";
@@ -64,7 +65,7 @@
       searched = true;
     } catch (err) {
       results = [];
-      failure = err instanceof Error ? err.message : String(err);
+      failure = errorMessage(err);
     } finally {
       searching = false;
     }
@@ -118,7 +119,7 @@
     </form>
 
     {#if failure !== null}
-      <p role="alert" class="text-ui text-destructive">{failure}</p>
+      <p role="alert" class="text-ui text-danger">{failure}</p>
     {:else if searched && views.length === 0}
       <!--
         Named rather than left blank, and honest about the one thing that

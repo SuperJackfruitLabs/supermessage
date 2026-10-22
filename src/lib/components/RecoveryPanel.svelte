@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { errorMessage } from "$lib/errorMessage";
   import { keyToShow } from "$lib/recoveryKey";
 
   // The key that gets a conversation back.
@@ -72,7 +73,7 @@
       resetting = false;
       password = "";
     } catch (err) {
-      failure = err instanceof Error ? err.message : String(err);
+      failure = errorMessage(err);
     } finally {
       busy = false;
     }
@@ -90,7 +91,7 @@
       // mistyped key, and `M_FORBIDDEN` on its own tells them nothing about
       // that — but the detail stays, because the second likeliest cause is
       // something this sentence would be wrong about.
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = errorMessage(err);
       failure = `That key was not accepted — check it for typos. (${detail})`;
     } finally {
       busy = false;

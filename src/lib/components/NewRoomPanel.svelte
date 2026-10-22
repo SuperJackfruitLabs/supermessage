@@ -10,6 +10,7 @@
   // exact shapes, and a request built from a typo comes back as an opaque
   // homeserver error rather than "that is not a user id".
 
+  import { errorMessage } from "$lib/errorMessage";
   import {
     creationProblem,
     isRoomTarget,
@@ -82,7 +83,7 @@
         await finish(await onJoin(target));
       }
     } catch (err) {
-      failure = err instanceof Error ? err.message : String(err);
+      failure = errorMessage(err);
     } finally {
       busy = false;
     }
@@ -176,7 +177,7 @@
       {/if}
 
       {#if failure !== null}
-        <p role="alert" class="text-ui text-destructive">{failure}</p>
+        <p role="alert" class="text-ui text-danger">{failure}</p>
       {/if}
 
       <div class="flex justify-end gap-2">

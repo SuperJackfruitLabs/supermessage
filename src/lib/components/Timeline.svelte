@@ -282,6 +282,7 @@
   import { tick, type Snippet } from "svelte";
   import { VList, type VListHandle } from "virtua/svelte";
   import Shimmer from "./ai/Shimmer.svelte";
+  import { errorMessage } from "$lib/errorMessage";
   import { deleteMessage, mediaDownload, type CustomEventDecision } from "$lib/ipc";
   import { answerDecision } from "./decisionReply";
   import { peerColorVar } from "$lib/peerColor";
@@ -882,7 +883,7 @@
       const path = await mediaDownload(eventId);
       if (path !== null) saveNote = { eventId, text: `Saved to ${path}`, failed: false };
     } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = errorMessage(err);
       saveNote = { eventId, text: `Could not save ${filename}: ${reason}`, failed: true };
     } finally {
       savingMedia = null;
@@ -1615,7 +1616,7 @@
                   {#if saveNote?.eventId === item.eventId}
                     <p
                       class="mt-1 font-sans text-meta {saveNote.failed
-                        ? 'text-destructive'
+                        ? 'text-danger'
                         : 'text-content-muted'}"
                     >
                       {saveNote.text}

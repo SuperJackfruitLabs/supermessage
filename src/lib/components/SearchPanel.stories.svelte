@@ -74,11 +74,11 @@
 -->
 <Story
   name="Search fails"
-  args={{ onSearch: async () => { throw new Error("M_LIMIT_EXCEEDED: too many requests"); } }}
+  args={{ onSearch: async () => { throw { kind: "network", message: "" }; } }}
   play={async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.type(canvas.getByPlaceholderText(/Search messages/), "anything");
     await userEvent.keyboard("{Enter}");
-    await expect(await canvas.findByText(/M_LIMIT_EXCEEDED|too many/i)).toBeInTheDocument();
+    await expect(await canvas.findByText("Can't reach the homeserver.")).toBeInTheDocument();
   }}
 />
