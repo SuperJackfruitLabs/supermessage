@@ -5,6 +5,8 @@
 //! duration formats stay two functions on purpose: the running label is
 //! fixed-width where it ticks ("1m 04s"), the record's is not ("1m 5s").
 
+use crate::turns::TurnEnding;
+
 /// "Thought for 12s · 2 steps", "Thought for 12s", or "2 steps · 12s" for a
 /// turn that only used tools.
 ///
@@ -42,6 +44,19 @@ pub fn turn_duration_label(elapsed_ms: u64) -> String {
     }
 }
 
+/// The one word for where a turn stands: "Working" while it goes, "Done" once
+/// the agent finished or its reply landed, and "Stopped" when the core gave up
+/// on it ([`crate::turns::GIVE_UP_AFTER_MS`] of silence). A turn that timed
+/// out did not succeed, so it never says "Done".
+pub fn turn_status_word(ended_by: Option<TurnEnding>) -> String {
+    match ended_by {
+        None => "Working",
+        Some(TurnEnding::Done | TurnEnding::Reply) => "Done",
+        Some(TurnEnding::TimedOut) => "Stopped",
+    }
+    .to_string()
+}
+
 /// How long a turn has been running, as the activity card says it: "8s",
 /// "1m 04s", "1h 02m". The seconds are zero-padded past the first minute so
 /// the label does not change width every tick. Floors; negative clamps to 0.
@@ -62,6 +77,18 @@ pub fn elapsed_label(elapsed_ms: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Owner ruling: a timed-out turn reads "Stopped", never "Done".
+    ///
+    /// Mutation seen failing (run): `TimedOut` reading "Done" fails this with
+    /// `left: "Done", right: "Stopped"`.
+    #[test]
+    fn a_turn_says_where_it_stands() {
+        assert_eq!(turn_status_word(None), "Working");
+        assert_eq!(turn_status_word(Some(TurnEnding::Done)), "Done");
+        assert_eq!(turn_status_word(Some(TurnEnding::Reply)), "Done");
+        assert_eq!(turn_status_word(Some(TurnEnding::TimedOut)), "Stopped");
+    }
 
     /// Ported from `TurnRecordLabelTests.swift` (`reasoningLeadsThenTheSteps`).
     ///

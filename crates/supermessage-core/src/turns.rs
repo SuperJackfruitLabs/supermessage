@@ -388,6 +388,37 @@ impl Inner {
         })
     }
 
+    /// A reply found among *loaded history* (the room being opened, or the
+    /// timeline starting over), not one that arrived live.
+    ///
+    /// [`REPLY_SKEW_MS`] allows a reply that arrives during the turn to carry
+    /// a clock a little behind ours. History has no such excuse: it holds the
+    /// previous turn's answer, which can sit within the skew of this turn's
+    /// start. So the reply must be stamped at or after the turn began, and,
+    /// where the turn's writer is known, must be that writer's.
+    fn apply_history_reply(
+        &mut self,
+        room_id: &str,
+        sender: Option<&str>,
+        event_ms: u64,
+        at_ms: u64,
+    ) -> TurnOutcome {
+        let before = self.shape(room_id);
+        let Some(state) = self.rooms.get(room_id).filter(|s| s.in_progress()) else {
+            return TurnOutcome::accepted(None);
+        };
+        if event_ms < state.started_at_ms {
+            return TurnOutcome::accepted(None);
+        }
+        if let Some(writer) = state.agent_id.as_deref() {
+            if sender != Some(writer) {
+                return TurnOutcome::accepted(None);
+            }
+        }
+        self.end(room_id, TurnEnding::Reply, at_ms);
+        TurnOutcome::accepted(self.update_if_news(room_id, before, None))
+    }
+
     fn apply(&mut self, room_id: &str, sender: Option<&str>, input: TurnInput) -> TurnOutcome {
         let before = self.shape(room_id);
         let mut step_change = None;
@@ -537,6 +568,26 @@ impl TurnBook {
             };
         }
         inner.apply(room_id, sender, input)
+    }
+
+    /// [`Self::apply_in`] for a reply found in loaded history (see
+    /// [`Inner::apply_history_reply`]): stricter than a live `Reply`.
+    pub fn apply_history_reply_in(
+        &self,
+        generation: u64,
+        room_id: &str,
+        sender: Option<&str>,
+        event_ms: u64,
+        at_ms: u64,
+    ) -> TurnOutcome {
+        let mut inner = self.lock();
+        if inner.generation != generation {
+            return TurnOutcome {
+                accepted: false,
+                update: None,
+            };
+        }
+        inner.apply_history_reply(room_id, sender, event_ms, at_ms)
     }
 
     /// Ends every in-progress turn that has been silent for
@@ -1241,12 +1292,54 @@ mod tests {
         assert!(book.snapshot(ROOM).is_some());
     }
 
+    /// A reply found in loaded history is held to the turn's own clock and
+    /// writer; the 60 s skew is for replies that arrive live.
+    ///
+    /// Mutation seen failing (run): dropping the `started_at_ms` check fails this
+    /// at `history(Some("@atlas:x"), T - 30_000).update.is_none()`; dropping the
+    /// writer check fails it at `history(Some("@quill:x"), T + 1_000)`.
+    #[test]
+    fn a_history_reply_needs_the_turns_clock_and_writer() {
+        let book = TurnBook::default();
+        let generation = book.generation();
+        book.apply_from(ROOM, "@atlas:x", answer(T));
+        let history = |sender: Option<&str>, event_ms: u64| {
+            book.apply_history_reply_in(generation, ROOM, sender, event_ms, T + 9_000)
+        };
+        assert!(history(Some("@atlas:x"), T - 30_000).update.is_none());
+        assert!(history(Some("@quill:x"), T + 1_000).update.is_none());
+        assert!(
+            history(None, T + 1_000).update.is_none(),
+            "a known writer needs a sender"
+        );
+        assert!(book.in_progress(ROOM));
+        let ended = history(Some("@atlas:x"), T + 1_000).update.expect("ends");
+        assert_eq!(ended.summary.ended_by, Some(TurnEnding::Reply));
+        // Once ended, nothing more to do; and a stale sign-in is refused.
+        assert!(history(Some("@atlas:x"), T + 2_000).update.is_none());
+        book.clear();
+        assert!(!history(Some("@atlas:x"), T + 1_000).accepted);
+    }
+
+    /// A reply the skew rule drops names no writer either.
+    ///
+    /// Mutation seen failing (run): noting the writer before the skew rule
+    /// drops the reply fails this with `left: Some("@human:x"), right: None`.
+    #[test]
+    fn a_dropped_reply_names_no_writer() {
+        let book = TurnBook::default();
+        book.apply(ROOM, answer(T));
+        book.apply_from(ROOM, "@human:x", reply(Some(T - 10 * 60_000), T + 1));
+        assert!(book.in_progress(ROOM));
+        assert_eq!(writer(&book), None);
+    }
+
     fn writer(book: &TurnBook) -> Option<String> {
         book.snapshot(ROOM).and_then(|s| s.summary.agent_id)
     }
 
-    /// Mutation seen failing: `note_writer` doing nothing fails this with
-    /// `None`.
+    /// Mutation seen failing (run): `note_writer` returning at once fails this
+    /// with `left: None, right: Some("@atlas:x")`.
     #[test]
     fn a_turn_remembers_who_is_writing_it() {
         let book = TurnBook::default();
@@ -1254,8 +1347,9 @@ mod tests {
         assert_eq!(writer(&book).as_deref(), Some("@atlas:x"));
     }
 
-    /// Mutation seen failing: `begin_if_needed` carrying the old turn's
-    /// `agent_id` into the new one fails this (still `@atlas:x`).
+    /// Mutation seen failing (run): `begin_if_needed` carrying the old turn's
+    /// `agent_id` into the new one fails this with `left: Some("@atlas:x"),
+    /// right: Some("@quill:x")`.
     #[test]
     fn a_new_turn_takes_its_own_writer() {
         let book = TurnBook::default();
@@ -1275,8 +1369,9 @@ mod tests {
     /// The documented rule for a mid-turn event from another agent: it joins
     /// the turn and does not rename it.
     ///
-    /// Mutation seen failing: `note_writer` overwriting an existing writer
-    /// fails this (`@quill:x`).
+    /// Mutation seen failing (run): `note_writer` without its
+    /// `agent_id.is_none()` condition fails this with `left: Some("@quill:x"),
+    /// right: Some("@atlas:x")`.
     #[test]
     fn a_turn_keeps_its_first_writer() {
         let book = TurnBook::default();
@@ -1295,8 +1390,9 @@ mod tests {
     /// A turn begun by an event with no sender is named by the first later
     /// event that has one.
     ///
-    /// Mutation seen failing: `note_writer` only setting it in
-    /// `begin_if_needed` fails this.
+    /// Mutation seen failing (run): setting the writer only in
+    /// `begin_if_needed` (the three `note_writer` calls removed) fails this with
+    /// `left: None, right: Some("@atlas:x")`.
     #[test]
     fn a_writer_unknown_at_the_start_is_learned_later() {
         let book = TurnBook::default();
@@ -1306,8 +1402,11 @@ mod tests {
         assert_eq!(writer(&book).as_deref(), Some("@atlas:x"));
     }
 
-    /// Mutation seen failing: `Reply` calling `note_writer` fails this
-    /// (`@human:x`).
+    /// Mutation seen failing (run): `Reply` calling `note_writer` before `end`
+    /// fails this with `left: Some("@human:x"), right: None`; so does calling it
+    /// after `end` once `note_writer` loses its `in_progress()` guard. Calling it
+    /// after `end` with the guard in place cannot be told from the real thing:
+    /// the guard makes it a no-op, so no test can fail on it.
     #[test]
     fn a_reply_names_no_writer() {
         let book = TurnBook::default();
@@ -1318,8 +1417,8 @@ mod tests {
 
     /// The writer is news: a host holding the summary without it must be told.
     ///
-    /// Mutation seen failing: leaving `agent_id` out of `summary()` fails
-    /// this.
+    /// Mutation seen failing (run): `summary()` reporting `agent_id: None`
+    /// fails this at `expect("the writer is news")`.
     #[test]
     fn learning_the_writer_is_an_update() {
         let book = TurnBook::default();

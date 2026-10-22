@@ -42,6 +42,8 @@ import {
 import { startGapSync } from "./gapSync";
 import { timelineStore } from "./timeline.svelte";
 import { spacesStore } from "./spaces.svelte";
+import { editTargetStore } from "./editTarget.svelte";
+import { replyTargetStore } from "./replyTarget.svelte";
 
 export interface RoomsStoreDeps {
   roomsResync: typeof defaultRoomsResync;
@@ -58,6 +60,8 @@ export interface RoomsStoreDeps {
    * other until the next launch.
    */
   reloadSpaces: () => Promise<void>;
+  /** Drops the room's edit and reply targets, so a rejoin starts clean. */
+  clearRoomCompose?: (roomId: string) => void;
 }
 
 const defaultDeps: RoomsStoreDeps = {
@@ -68,6 +72,10 @@ const defaultDeps: RoomsStoreDeps = {
   joinRoom: defaultJoinRoom,
   leaveRoom: defaultLeaveRoom,
   reloadSpaces: () => spacesStore.load(),
+  clearRoomCompose: (roomId) => {
+    editTargetStore.clear(roomId);
+    replyTargetStore.clear(roomId);
+  },
 };
 
 export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
@@ -254,6 +262,26 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     });
   }
 
+  /**
+   * Leaves the room `id` for good. When it is the open room the selection is
+   * cleared, so the pane falls back to its empty state; a failure rethrows
+   * with the selection untouched, so the caller can say so and offer a retry.
+   * The roster drops the row on its own, through the diff. The rail is a
+   * one-shot fetch, so — as after declining — a left *space* would go on being
+   * listed until the next launch; refreshing it is cosmetic if it fails.
+   */
+  async function leave(id: string): Promise<void> {
+    await deps.leaveRoom(id);
+    (deps.clearRoomCompose ?? defaultDeps.clearRoomCompose!)(id);
+    if (selectedId === id) {
+      selectedId = null;
+      selectedName = null;
+    }
+    await deps.reloadSpaces().catch((err: unknown) => {
+      console.error("failed to refresh spaces after leaving a room", err);
+    });
+  }
+
   return {
     get rooms(): RoomRow[] {
       return rooms;
@@ -303,6 +331,7 @@ export function createRoomsStore(deps: RoomsStoreDeps = defaultDeps) {
     select,
     acceptInvitation,
     declineInvitation,
+    leave,
     login,
     restoreSession,
     logout,

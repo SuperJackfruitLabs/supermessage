@@ -43,6 +43,30 @@ public final class LiveStore {
     /// carry.
     public var finished: Bool { summary?.endedBy != nil }
 
+    /// Which turn is on screen and how it ended, for a haptic: the pair
+    /// changes when a room opens, so the view has to tell a turn *finishing*
+    /// from a room opening onto one that had already finished.
+    public struct Outcome: Equatable, Sendable {
+        public var turnId: UInt64?
+        public var endedBy: TurnEnding?
+    }
+
+    public var outcome: Outcome {
+        Outcome(turnId: summary?.turnId, endedBy: summary?.endedBy)
+    }
+
+    /// Whether going from `old` to `new` is a turn finishing well: the same
+    /// turn, not ended before and ended now by the agent's `done` or its
+    /// reply. Opening a room (the turn is a different one, or none) never
+    /// counts, and neither does the time limit: a turn the core gave up on
+    /// did not succeed.
+    public static func turnFinishedWell(from old: Outcome, to new: Outcome) -> Bool {
+        guard let turnId = old.turnId, turnId == new.turnId, old.endedBy == nil else {
+            return false
+        }
+        return new.endedBy == .done || new.endedBy == .reply
+    }
+
     /// Whether a turn is going and has not finished.
     public var inProgress: Bool { summary?.inProgress ?? false }
 
@@ -59,6 +83,16 @@ public final class LiveStore {
     /// the text.
     private var answerSeq: UInt64 = 0
     private var thoughtSeq: UInt64 = 0
+
+    /// Steps whose index is past the end of `tools`: an update arrived for a
+    /// step whose predecessors this store has not seen. They are never
+    /// appended past the gap (that would put the step at the wrong position,
+    /// and its next report would append it again); they wait for a snapshot
+    /// to fill the gap.
+    private var pendingSteps: [Int: TurnStep] = [:]
+    /// The snapshot request a gap started, so a burst of updates asks once.
+    /// Internal for tests.
+    private(set) var resyncTask: Task<Void, Never>?
 
     private let turns: (any TurnFetching)?
 
@@ -133,26 +167,80 @@ public final class LiveStore {
             answerSeq = 0
         }
         guard let change = update.step else { return }
-        let index = Int(change.index)
+        place(change.step, at: Int(change.index))
+        if !pendingSteps.isEmpty { resync() }
+    }
+
+    /// Put a step at the index the core gave it. `index == count` is an
+    /// append; past it an update was missed, so the step waits (see
+    /// `pendingSteps`) rather than landing in the wrong place.
+    private func place(_ step: TurnStep, at index: Int) {
         if index < tools.count {
-            tools[index] = change.step
+            tools[index] = step
+        } else if index == tools.count {
+            tools.append(step)
+            while let next = pendingSteps.removeValue(forKey: tools.count) {
+                tools.append(next)
+            }
         } else {
-            // `index == count` is an append. Past it means an update was
-            // missed; appending keeps the step rather than losing it.
-            tools.append(change.step)
+            pendingSteps[index] = step
+        }
+    }
+
+    /// Fold the core's steps into what is held, step by step, keeping the one
+    /// with the higher sequence (a call's own, which only grows). Held steps
+    /// the snapshot has not reached yet survive, and so do waiting ones that
+    /// now fit.
+    private func adopt(_ steps: [TurnStep]) {
+        var merged = steps
+        for (index, held) in tools.enumerated() {
+            if index < merged.count {
+                if held.seq > merged[index].seq { merged[index] = held }
+            } else {
+                merged.append(held)
+            }
+        }
+        for index in pendingSteps.keys.sorted() {
+            guard let waiting = pendingSteps[index] else { continue }
+            if index < merged.count {
+                if waiting.seq > merged[index].seq { merged[index] = waiting }
+                pendingSteps[index] = nil
+            } else if index == merged.count {
+                merged.append(waiting)
+                pendingSteps[index] = nil
+            }
+        }
+        tools = merged
+    }
+
+    /// Ask the core for the whole record again, after a step arrived with a
+    /// gap before it.
+    private func resync() {
+        guard resyncTask == nil, let roomId, let turns else { return }
+        resyncTask = Task { [weak self] in
+            let snapshot = await turns.turn(roomId: roomId)
+            // Cancelled by a room change: the answer is for the last room.
+            guard !Task.isCancelled, let self else { return }
+            self.resyncTask = nil
+            self.restore(snapshot)
         }
     }
 
     /// A room's whole record, from the core, when it opens.
     ///
-    /// Skipped if the live channel has already shown something newer in the
-    /// time the question took.
+    /// The live channel may have shown something newer in the time the
+    /// question took. For another turn, that wins outright. For the same
+    /// turn, the summary stays at the newer revision, but the steps are
+    /// merged: an update that arrived first carries one step, and the
+    /// snapshot has the ones before it.
     public func restore(_ snapshot: TurnSnapshot?) {
         guard let snapshot, accept(snapshot.summary.roomId) else { return }
-        if let held = summary, snapshot.summary.revision < held.revision { return }
-        if summary?.turnId != snapshot.summary.turnId { forgetTurn() }
-        summary = snapshot.summary
-        tools = snapshot.steps
+        let sameTurn = summary?.turnId == snapshot.summary.turnId
+        if let held = summary, !sameTurn, snapshot.summary.revision < held.revision { return }
+        if !sameTurn { forgetTurn() }
+        let newer = summary.map { snapshot.summary.revision >= $0.revision } ?? true
+        if newer { summary = snapshot.summary }
+        adopt(snapshot.steps)
         // A thought streamed in since the question was asked is newer.
         if thoughtSeq == 0 { thought = snapshot.thought }
     }
@@ -223,6 +311,9 @@ public final class LiveStore {
         tools = []
         answerSeq = 0
         thoughtSeq = 0
+        pendingSteps = [:]
+        resyncTask?.cancel()
+        resyncTask = nil
     }
 
     /// Whether this belongs to the room on screen.

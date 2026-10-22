@@ -14,19 +14,28 @@
    * operator owes someone an answer, and they owe this one only to
    * themselves.
    */
+  import type { AttachmentFailure } from "../stagedAttachment";
+
   export interface Props {
     filename: string;
     /** Size and type, composed by `stagedAttachment.ts`. */
     summary: string;
+    /**
+     * Set when this file failed: the refusal is drawn on the chip itself
+     * (iOS `ComposerView.swift:626-675`), in danger, never as a loose line.
+     */
+    failure?: AttachmentFailure | null;
     /** What sending this will and will not carry, when there is a caveat. */
     caveat: string | null;
     onRemove: () => void;
   }
 
-  let { filename, summary, caveat, onRemove }: Props = $props();
+  let { filename, summary, caveat, failure = null, onRemove }: Props = $props();
 </script>
 
-<div class="shrink-0 border-l-2 border-l-accent bg-accent-soft px-4 py-2">
+<div
+  class="shrink-0 border-l-2 bg-accent-soft px-4 py-2 {failure ? 'border-l-danger' : 'border-l-accent'}"
+>
   <div class="mx-auto flex w-full max-w-[72ch] items-start gap-3">
     <div class="min-w-0 flex-1">
       <!--
@@ -42,10 +51,18 @@
         forbidden: `--color-signal` means the operator owes someone an
         answer (§3), and they owe this one only to themselves.
       -->
-      <p class="text-label text-accent">Attached</p>
+      {#if failure}
+        <p class="text-label text-danger">{failure.label}</p>
+      {:else}
+        <p class="text-label text-accent">Attached</p>
+      {/if}
       <p class="truncate text-ui font-medium text-content" title={filename}>{filename}</p>
-      <p class="mt-0.5 truncate text-meta tabular-nums text-content-muted">{summary}</p>
-      {#if caveat}
+      {#if failure}
+        <p class="selectable mt-0.5 text-ui text-danger" role="alert">{failure.message}</p>
+      {:else}
+        <p class="mt-0.5 truncate text-meta tabular-nums text-content-muted">{summary}</p>
+      {/if}
+      {#if caveat && !failure}
         <p class="mt-1 text-ui text-content-muted">{caveat}</p>
       {/if}
     </div>

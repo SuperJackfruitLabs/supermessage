@@ -4212,6 +4212,30 @@ fileprivate struct FfiConverterOptionTypeRosterRow: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeTurnEnding: FfiConverterRustBuffer {
+    typealias SwiftType = TurnEnding?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTurnEnding.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTurnEnding.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeTurnSnapshot: FfiConverterRustBuffer {
     typealias SwiftType = TurnSnapshot?
 
@@ -4823,6 +4847,8 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
 
 
 
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -5330,6 +5356,16 @@ public func turnRecordLabel(thought: Bool, steps: UInt32, elapsedMs: UInt64?) ->
 })
 }
 /**
+ * "Working", "Done" or "Stopped" — see `core::turn_label::turn_status_word`.
+ */
+public func turnStatusWord(endedBy: TurnEnding?) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_turn_status_word(
+        FfiConverterOptionTypeTurnEnding.lower(endedBy),$0
+    )
+})
+}
+/**
  * The typing line and the agents the acknowledgement names — see
  * `core::typing_line`. A free function for the same reason as `peer_color_index`.
  */
@@ -5591,6 +5627,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_turn_record_label() != 9579) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_turn_status_word() != 45599) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_typing_view() != 62690) {

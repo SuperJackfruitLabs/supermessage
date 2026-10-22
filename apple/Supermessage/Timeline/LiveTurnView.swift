@@ -145,12 +145,23 @@ struct LiveTurnView: View {
             // What this is: a turn in progress, or the record of the one that
             // just finished. Saying "Working" over a finished turn would be
             // the app claiming something that is no longer true.
-            Text(live.finished ? "Done" : "Working")
+            // The word is the core's, so every host says the same: "Working",
+            // "Done", or "Stopped" for a turn the core gave up on, which is
+            // neither working nor a success, so it takes the neutral colour.
+            Text(SupermessageFFI.turnStatusWord(endedBy: live.summary?.endedBy))
                 .metaFace()
-                .foregroundStyle(live.finished ? Theme.ok : Theme.accent)
+                .foregroundStyle(statusColor)
             elapsed
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var statusColor: Color {
+        switch live.summary?.endedBy {
+        case nil: Theme.accent
+        case .timedOut: Theme.contentMuted
+        case .done, .reply: Theme.ok
+        }
     }
 
     @ViewBuilder private var elapsed: some View {

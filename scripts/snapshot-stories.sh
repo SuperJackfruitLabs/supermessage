@@ -18,6 +18,7 @@ cd "$ROOT"
 
 RECORD=no
 if [ "${1:-}" = "--record" ]; then RECORD=yes; shift; fi
+if [ "$RECORD" = yes ] && [ -n "${SNAPSHOT_MOTION:-}" ]; then echo "Refusing to record with SNAPSHOT_MOTION set: the baseline is rendered with reduced motion." >&2; exit 2; fi
 
 OUT="$ROOT/.snapshots-web"
 REFERENCES="$ROOT/src/lib/stories/baseline"

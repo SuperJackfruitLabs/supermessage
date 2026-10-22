@@ -1,3 +1,4 @@
+import Foundation
 import SupermessageFFI
 import Testing
 
@@ -252,18 +253,106 @@ struct LiveStoreTests {
         #expect(live.summary == nil)
     }
 
-    @Test("a snapshot older than what the live channel showed is skipped")
+    @Test("a snapshot older than what the live channel showed does not rewind the card")
     func staleSnapshot() {
         // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): restoring without the revision check.
         let live = store()
         let snapshot = fold([tool("a", .running, seq: 1, ms: 0)])
-        live.apply(update(snapshot, revision: 9))
+        var held = snapshot.summary
+        held.revision = 9
+        live.apply(TurnUpdate(summary: held, step: TurnStepChange(index: 0, step: snapshot.steps[0])))
+        #expect(live.tools.count == 1)
         var old = snapshot
         old.summary.revision = 2
         old.steps = []
         live.restore(old)
         #expect(live.summary?.revision == 9)
-        #expect(live.tools.isEmpty, "an older snapshot replaced newer steps")
+        #expect(live.tools.map(\.id) == ["a"], "an older snapshot replaced newer steps")
+    }
+
+    @Test("a step that arrives while the room opens does not leave a gap or a duplicate")
+    func updateRacesRestore() async {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): `apply` appending a step past the end of `tools`.
+        // The core took the snapshot at revision R (two steps); then an update
+        // for the third step, at R+1, reached the store before `focus` resumed.
+        let steps = fold([
+            tool("a", .done, seq: 1, ms: 0), tool("b", .running, seq: 2, ms: 1),
+            tool("c", .running, seq: 3, ms: 2),
+        ])
+        let atR = fold([tool("a", .done, seq: 1, ms: 0), tool("b", .running, seq: 2, ms: 1)])
+        let live = store(turns: atR)
+        var newer = atR.summary
+        newer.revision += 1
+        live.apply(TurnUpdate(summary: newer, step: TurnStepChange(index: 2, step: steps.steps[2])))
+        #expect(live.tools.isEmpty, "a step past a gap was put at the wrong place")
+
+        live.restore(atR)
+        #expect(live.tools.map(\.id) == ["a", "b", "c"])
+        #expect(live.summary?.revision == newer.revision)
+        await live.resyncTask?.value
+
+        // The next report for the same call replaces the row; it does not add one.
+        var done = steps.steps[2]
+        done.phase = .done
+        done.seq = 4
+        var later = newer
+        later.revision += 1
+        live.apply(TurnUpdate(summary: later, step: TurnStepChange(index: 2, step: done)))
+        #expect(live.tools.map(\.id) == ["a", "b", "c"], "one call produced two rows")
+        #expect(live.tools[2].phase == .done)
+    }
+
+    @Test("a step with a gap before it asks the core for the record")
+    func gapResyncs() async {
+        let full = fold([tool("a", .done, seq: 1, ms: 0), tool("b", .running, seq: 2, ms: 1)])
+        let live = store(turns: full)
+        var summary = full.summary
+        summary.revision += 1
+        live.apply(TurnUpdate(summary: summary, step: TurnStepChange(index: 1, step: full.steps[1])))
+        await live.resyncTask?.value
+        #expect(live.tools.map(\.id) == ["a", "b"])
+    }
+
+    // --- the haptic ---------------------------------------------------------
+
+    private func outcome(_ turnId: UInt64?, _ endedBy: TurnEnding?) -> LiveStore.Outcome {
+        LiveStore.Outcome(turnId: turnId, endedBy: endedBy)
+    }
+
+    @Test("the success haptic is for one turn finishing well, not a room opening")
+    func hapticOnlyWithinOneTurn() {
+        // Mutation (not run: no Swift toolchain here; the ios CI job runs the suite): comparing only `endedBy`, or dropping the `turnId` equality.
+        // The turn goes from running to done or reply: yes.
+        #expect(LiveStore.turnFinishedWell(from: outcome(3, nil), to: outcome(3, .done)))
+        #expect(LiveStore.turnFinishedWell(from: outcome(3, nil), to: outcome(3, .reply)))
+        // The core's time limit is not a success.
+        #expect(!LiveStore.turnFinishedWell(from: outcome(3, nil), to: outcome(3, .timedOut)))
+        // A room opening: cleared, then restored onto a turn that had ended.
+        #expect(!LiveStore.turnFinishedWell(from: outcome(nil, nil), to: outcome(3, .done)))
+        // Another room's turn, or a new turn after an old one.
+        #expect(!LiveStore.turnFinishedWell(from: outcome(2, nil), to: outcome(3, .done)))
+        #expect(!LiveStore.turnFinishedWell(from: outcome(2, .done), to: outcome(3, .done)))
+        // Already ended.
+        #expect(!LiveStore.turnFinishedWell(from: outcome(3, .reply), to: outcome(3, .done)))
+    }
+
+    @Test("opening a finished room changes the outcome but is not a finish")
+    func openingIsNotAFinish() async {
+        let finished = fold([answer(0), answer(900, done: true, seq: 2)])
+        let live = LiveStore(turns: StubTurns(snapshot: finished))
+        live.select(room)
+        let before = live.outcome
+        await live.focus(room)
+        #expect(live.outcome != before)
+        #expect(!LiveStore.turnFinishedWell(from: before, to: live.outcome))
+    }
+
+    @Test("a turn the core gave up on is called stopped, not done")
+    func timedOutWord() {
+        #expect(turnStatusWord(endedBy: nil) == "Working")
+        #expect(turnStatusWord(endedBy: .done) == "Done")
+        #expect(turnStatusWord(endedBy: .reply) == "Done")
+        #expect(turnStatusWord(endedBy: .timedOut) == "Stopped")
     }
 
     @Test("signing out forgets the turn on screen")

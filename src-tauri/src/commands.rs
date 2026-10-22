@@ -59,20 +59,12 @@ pub async fn recovery_state(session: State<'_, Session>) -> Result<String, CoreE
     session.recovery_state().await
 }
 
-/// Turn recovery on and return the key, which the UI shows once and forgets.
-///
-/// Never logged. A recovery key in a log file is the same leak as a password
-/// in one, and this is the only place the value ever passes through.
-#[tauri::command]
-pub async fn enable_recovery(session: State<'_, Session>) -> Result<String, CoreError> {
-    session.enable_recovery().await
-}
-
 /// Turn recovery on if this account has none, returning the new key, or
 /// `None` when recovery was already on (or the state could not be read).
 ///
 /// What a fresh sign-in calls: the UI shows a returned key once and forgets
-/// it. Never logged, for the same reason as `enable_recovery`.
+/// it. Never logged: a recovery key in a log file is the same leak as a
+/// password in one, and this is the only place the value passes through.
 #[tauri::command]
 pub async fn ensure_recovery(session: State<'_, Session>) -> Result<Option<String>, CoreError> {
     session.ensure_recovery().await
@@ -928,6 +920,12 @@ pub fn turn(
 #[tauri::command]
 pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> String {
     supermessage_core::turn_label::turn_record_label(thought, steps, elapsed_ms)
+}
+
+/// `core::turn_label::turn_status_word`.
+#[tauri::command]
+pub fn turn_status_word(ended_by: Option<supermessage_core::turns::TurnEnding>) -> String {
+    supermessage_core::turn_label::turn_status_word(ended_by)
 }
 
 /// `core::turn_label::turn_duration_label`.
