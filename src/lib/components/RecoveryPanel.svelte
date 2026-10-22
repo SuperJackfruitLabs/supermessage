@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { keyToShow } from "$lib/recoveryKey";
+
   // The key that gets a conversation back.
   //
   // Room keys live in this device's encrypted store. Without recovery, a lost
@@ -44,8 +47,12 @@
    * because an app that can show you your recovery key again is an app that
    * stored it.
    */
-  // svelte-ignore state_referenced_locally
-  let freshKey = $state<string | null>(initialKey);
+  let freshKey = $state<string | null>(null);
+  // Adopts a key on mount and whenever one arrives later while the panel is
+  // open (`ensureRecovery` can finish after the reader opened it).
+  $effect(() => {
+    freshKey = keyToShow(untrack(() => freshKey), initialKey);
+  });
   let copied = $state(false);
   let entered = $state("");
 

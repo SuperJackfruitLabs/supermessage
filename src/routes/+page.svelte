@@ -607,7 +607,8 @@
     void spacesStore.load();
     // Recovery is set up after a fresh sign-in only, never after a restore —
     // `consumeFreshSignIn` is set by /login alone. Not awaited, and a failure
-    // is silent: the user can still set it up from "Encryption recovery".
+    // is silent: the user is not interrupted, and a device that cannot read its
+    // history is still offered the recovery-key screen from "Encryption recovery".
     if (consumeFreshSignIn()) {
       void ensureRecovery()
         .then((key) => {
@@ -1211,7 +1212,10 @@
       initialKey={recoveryNewKey}
       onRecover={recoverWithKey}
       onReset={resetRecovery}
-      onClose={() => (recoveryOpen = false)}
+      onClose={() => {
+        recoveryOpen = false;
+        recoveryNewKey = null;
+      }}
     />
   {/if}
 

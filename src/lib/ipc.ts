@@ -613,7 +613,9 @@ export type CoreErrorKind =
   | "roomChanged"
   | "attachmentTooLarge"
   | "unknownAttachment"
-  | "unknownSpace";
+  | "unknownSpace"
+  | "reasonTooLong"
+  | "refused";
 
 /**
  * Mirrors the serialized shape of `CoreError`. Every command in this file

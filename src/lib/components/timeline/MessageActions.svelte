@@ -46,12 +46,11 @@
   }: Props = $props();
 
   const item = $derived(row.item);
-  const interactive = $derived(row.canReplyOrReact);
   const actions = $derived(menuActions(row));
 </script>
 
 <!-- `alignEnd`: see `reactionsRow`'s note on why this is a parameter. -->
-{#if interactive}
+{#if actions.bar}
   <!--
     Chrome, not content — no `.selectable` here (see this file's
     top-of-script comment on user-select discipline), and rendered
@@ -100,36 +99,38 @@
       ? '-mr-1.5 justify-end'
       : '-ml-1.5'}"
   >
-    <button
-      type="button"
-      onclick={() => onStartReply(row)}
-      class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
-    >
-      Reply
-    </button>
-    {#each QUICK_REACTIONS as emoji (emoji)}
+    {#if actions.react}
       <button
         type="button"
-        onclick={() => onToggleReaction(item.eventId, emoji)}
-        aria-label={`React with ${emoji}`}
-        class="rounded px-1 py-0.5 text-ui transition-colors hover:bg-surface-sunken"
+        onclick={() => onStartReply(row)}
+        class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
       >
-        {emoji}
+        Reply
       </button>
-    {/each}
-    <!--
-      The six above stay the fast path — one click, no panel. This is for
-      everything else, which used to be reachable only if somebody else in
-      the room had already reacted with it.
-    -->
-    <button
-      type="button"
-      onclick={() => onPickReaction(item.id)}
-      aria-label="React with another emoji"
-      class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
-    >
-      +
-    </button>
+      {#each QUICK_REACTIONS as emoji (emoji)}
+        <button
+          type="button"
+          onclick={() => onToggleReaction(item.eventId, emoji)}
+          aria-label={`React with ${emoji}`}
+          class="rounded px-1 py-0.5 text-ui transition-colors hover:bg-surface-sunken"
+        >
+          {emoji}
+        </button>
+      {/each}
+      <!--
+        The six above stay the fast path — one click, no panel. This is for
+        everything else, which used to be reachable only if somebody else in
+        the room had already reacted with it.
+      -->
+      <button
+        type="button"
+        onclick={() => onPickReaction(item.id)}
+        aria-label="React with another emoji"
+        class="rounded px-1.5 py-0.5 text-ui font-medium text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+      >
+        +
+      </button>
+    {/if}
     {#if actions.copy}
       <button
         type="button"

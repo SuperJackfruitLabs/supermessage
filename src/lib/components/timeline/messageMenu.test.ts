@@ -19,6 +19,20 @@ describe("menuActions", () => {
     expect(menuActions(rowOf({ body: null })).copy).toBe(false);
     expect(menuActions(rowOf({ body: "" })).copy).toBe(false);
   });
+  it("pendingMessageWithTextStillGetsABarWithCopyOnly", () => {
+    // A local echo cannot be replied to or reacted to, but its text can be copied (iOS offers Copy
+    // whenever the body is non-empty, whatever `canReplyOrReact` says).
+    const a = menuActions(rowOf({ body: "hi", isOwn: true, eventId: null }, false));
+    expect(a).toEqual({ react: false, copy: true, del: false, bar: true });
+  });
+  it("pendingMessageWithoutTextHasNoBar", () => {
+    expect(menuActions(rowOf({ body: null }, false)).bar).toBe(false);
+  });
+  it("settledMessageGetsReactAndBar", () => {
+    const a = menuActions(rowOf({ body: null }, true));
+    expect(a.react).toBe(true);
+    expect(a.bar).toBe(true);
+  });
   it("deleteOfferedForOwnReplyable", () => {
     expect(menuActions(rowOf({ isOwn: true })).del).toBe(true);
   });

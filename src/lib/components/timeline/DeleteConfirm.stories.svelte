@@ -15,7 +15,9 @@
   };
 
   const ok = () => Promise.resolve();
-  const refuse = () => Promise.reject(new Error("M_FORBIDDEN: you cannot redact this event"));
+  // The shape `invoke` rejects with in the app: a serialized CoreError, not an Error.
+  const refuse = () =>
+    Promise.reject({ kind: "protocol", message: "M_FORBIDDEN: you cannot redact this event" });
 
   const { Story } = defineMeta({
     title: "Timeline/DeleteConfirm",

@@ -35,7 +35,7 @@ release, or that every operation has been exercised against a live homeserver.
 | New conversations, room joining and accepting invitations | Implemented | Implemented | Implemented |
 | Message search | Homeserver search | Homeserver search | Homeserver search |
 | Encryption and key recovery | SDK crypto and recovery UI | SDK crypto and recovery UI | SDK crypto and recovery UI |
-| AgentPod turn/permission cards and SuperPipeline gates | Implemented; gate sender uses shared core; permission answers sent as plain replies | Implemented | Implemented |
+| AgentPod turn/permission cards and SuperPipeline gates | Implemented; gate sender uses shared core; permission answers sent as plain messages | Implemented | Implemented |
 | Block users and agents; report messages, rooms and users | Core only (no UI yet) | Implemented | Core only (no UI yet) |
 | Background push notifications when closed | Not implemented | Implemented (hub gateway + Notification Service Extension; device verification pending) | Not implemented |
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/errorMessage";
   import InlineFailure from "./InlineFailure.svelte";
 
   /**
@@ -27,8 +28,7 @@
     try {
       await onConfirm();
     } catch (err) {
-      const detail = err instanceof Error ? err.message : "";
-      failure = detail !== "" ? detail : "Can't reach the homeserver.";
+      failure = errorMessage(err);
     } finally {
       busy = false;
     }
