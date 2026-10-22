@@ -234,6 +234,7 @@
           row={entry.row}
           state={entry.state}
           describesAgent={entry.describesAgent}
+          avatar={entry.avatar ?? null}
           selected={entry.row.room.id === roomsStore.selectedId}
           avatarUrl={avatarCache.get(entry.row.room.id)}
           {now}

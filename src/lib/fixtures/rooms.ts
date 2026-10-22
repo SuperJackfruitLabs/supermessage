@@ -1,4 +1,11 @@
-import type { Membership, RoomIdentity, RoomMember, RoomRow, RoomSummary } from "$lib/ipc";
+import type {
+  AgentAvatarStyle,
+  Membership,
+  RoomIdentity,
+  RoomMember,
+  RoomRow,
+  RoomSummary,
+} from "$lib/ipc";
 
 /**
  * Roster view-models.
@@ -163,3 +170,39 @@ export const roomIdentityWithRole: RoomIdentity = {
 export const roomIdentityLongName: RoomIdentity = identity(
   "Rakeshs-MacBook-Pro.local — station events and run transcripts",
 );
+
+/**
+ * `agentAvatarVariants()` as the core returns it (`core::agent_avatar`), fixed so the frames
+ * do not move if the core's palette does: ground and ink per variant, in variant order.
+ */
+export const agentAvatarVariantsFixture: AgentAvatarStyle[] = [
+  { ground: "accent", ink: "accentContent", variant: 0 },
+  { ground: "accentSoft", ink: "accent", variant: 1 },
+  { ground: "ok", ink: "surface", variant: 2 },
+  { ground: "surfaceRaised", ink: "accent", variant: 3 },
+  { ground: "contentMuted", ink: "surface", variant: 4 },
+  { ground: "surfaceRaised", ink: "ok", variant: 5 },
+];
+
+/** An agent that has said something, to show the preview on the second line. */
+export const rosterAgentPreview: RoomRow = roomRow({
+  room: roomSummary({
+    id: "!kiran:id.agentpod.dev",
+    name: "Kiran",
+    unread: 3,
+    lastActivityMs: 1_700_000_200_000,
+  }),
+  identity: { glyph: null, name: "Kiran", role: "CLAUDE-CODE @ FOUNDRY", initial: "K" },
+  preview: { text: "Staging is green across all four ABIs.", pending: false },
+});
+
+/** A busy room: the badge reads 99+. */
+export const rosterUnreadOver99: RoomRow = roomRow({
+  room: roomSummary({
+    id: "!busy:id.agentpod.dev",
+    name: "Guild",
+    unread: 140,
+    lastActivityMs: 1_700_000_250_000,
+  }),
+  preview: { text: "Anyone looked at the build?", pending: false },
+});

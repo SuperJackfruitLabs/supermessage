@@ -46,6 +46,9 @@
   import { typingArgs } from "$lib/components/typingView";
   import { castStore } from "$lib/stores/cast.svelte";
   import { turnAgentName } from "$lib/stores/liveTurn";
+  import RoomHeaderLine from "$lib/components/RoomHeaderLine.svelte";
+  import { createHeaderStatus } from "$lib/components/roomHeaderView";
+  import type { RoomStatus } from "$lib/ipc";
   import { railEntries } from "$lib/components/spacesRailView";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
@@ -94,6 +97,43 @@
     const id = roomsStore.selectedId;
     if (id === null) return;
     liveStore.setAgentName(turnAgentName(liveStore.summary, castStore.castFor(id)), id);
+  });
+
+  // The header's second line: the status pill of an agent's room, else the member count. The
+  // core answers from the roster rows already held (one `rosterRow` call per refresh, no
+  // per-row IPC); the clock moves every 60 s while the reader stays and resets on a room change.
+  let headerStatus = $state<RoomStatus | null>(null);
+  let headerWord = $state<string | null>(null);
+  let headerMembers = $state<number | null>(null);
+  const header = createHeaderStatus(undefined, () => {
+    headerStatus = header.status;
+    headerWord = header.word;
+    headerMembers = header.members;
+  });
+  let headerNow = $state(Date.now());
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    headerNow = Date.now();
+    if (id === null) return;
+    const timer = setInterval(() => (headerNow = Date.now()), 60_000);
+    return () => clearInterval(timer);
+  });
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    if (id === null) {
+      header.clear();
+      return;
+    }
+    // A live turn counts only if it is this room's.
+    const turn = liveStore.roomId === id && liveStore.inProgress;
+    void header.refresh(id, roomsStore.rooms, headerNow, turn);
+  });
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    // A room of people that is not an invitation (iOS `RoomScreen.swift:116-123`).
+    if (id !== null && (roomsStore.selectedAffordance ?? "compose") === "compose") {
+      void header.refreshMembers(id);
+    }
   });
 
   $effect(() => {
@@ -967,9 +1007,9 @@
             topic/alias/member list; see `RoomInfoPanel.svelte`'s doc
             comment.
 
-            No member count here by design (spec §6.2): it only comes from
-            `roomInfo`, fetched when the panel opens, and a stale or absent
-            number would be worse than none.
+            Under the name, a second line (M4 A1, owner Q3): the status pill of an agent's room,
+            else the member count of a room of people (`roomInfo`, fetched on selection). Either
+            is absent until the core answers, and the line then takes no height.
 
             `bg-surface-sunken`, so the header joins the field rather than
             capping the sheet. It was the last element outside the depth
@@ -1042,53 +1082,58 @@
                   {selectedIdentity.initial}
                 </span>
               {/if}
-              <span class="min-w-0 truncate text-ui-lg text-content">{selectedIdentity.name}</span>
-              {#if selectedIdentity.role !== null}
-                <!--
-                  `min-w-0` and a `max-w`, not `shrink-0`: a `shrink-0` flex
-                  item never shrinks below its own nowrap content width, so
-                  pairing it with `truncate` makes the truncation dead code
-                  and lets a long role push `Info`
-                  button out of the header. The role is bounded to 40
-                  characters by `core::room_identity`, which caps the damage
-                  but does not prevent it. The name is the more important
-                  half of the identity, so the chip is the one given a hard
-                  ceiling and told to give way first.
+              <div class="flex min-w-0 flex-col items-start">
+                <div class="flex min-w-0 max-w-full items-center gap-2">
+                  <span class="min-w-0 truncate text-ui-lg text-content">{selectedIdentity.name}</span>
+                  {#if selectedIdentity.role !== null}
+                    <!--
+                      `min-w-0` and a `max-w`, not `shrink-0`: a `shrink-0` flex
+                      item never shrinks below its own nowrap content width, so
+                      pairing it with `truncate` makes the truncation dead code
+                      and lets a long role push `Info`
+                      button out of the header. The role is bounded to 40
+                      characters by `core::room_identity`, which caps the damage
+                      but does not prevent it. The name is the more important
+                      half of the identity, so the chip is the one given a hard
+                      ceiling and told to give way first.
 
-                  The ceiling is written out in full because the two
-                  obvious short forms are both wrong, and the first one
-                  shipped. `max-w-[14ch]` was a *border-box* cap — Tailwind
-                  sets `box-sizing: border-box` globally — so `px-2` and
-                  the 1px border ate into it: 84px of box, 66px of room,
-                  and `SQUAD LEAD` needs 68. The spec's own canonical role
-                  (§1, §5.1, §6.2) rendered `SQUAD LE…` at 1905px while the
-                  roster row two inches away showed it whole; `CODE &
-                  BUILD` (98px) lost four characters. Widening to
-                  `max-w-[16ch]` would not have fixed it either: `ch` is
-                  the *advance* of `0`, and `--text-label` adds `0.08em` of
-                  tracking to every character, so 16ch of box is only
-                  ~11 characters of chip.
+                      The ceiling is written out in full because the two
+                      obvious short forms are both wrong, and the first one
+                      shipped. `max-w-[14ch]` was a *border-box* cap — Tailwind
+                      sets `box-sizing: border-box` globally — so `px-2` and
+                      the 1px border ate into it: 84px of box, 66px of room,
+                      and `SQUAD LEAD` needs 68. The spec's own canonical role
+                      (§1, §5.1, §6.2) rendered `SQUAD LE…` at 1905px while the
+                      roster row two inches away showed it whole; `CODE &
+                      BUILD` (98px) lost four characters. Widening to
+                      `max-w-[16ch]` would not have fixed it either: `ch` is
+                      the *advance* of `0`, and `--text-label` adds `0.08em` of
+                      tracking to every character, so 16ch of box is only
+                      ~11 characters of chip.
 
-                  So the cap names what it actually means — sixteen
-                  characters of this element's own text (`16ch` of advance
-                  plus `16 × 0.08em` of tracking), plus the box it sits in
-                  (`px-2` = 1rem, and 2px of border). 127px total, 109px of
-                  text. `CODE & BUILD` fits with 29px to spare, and the
-                  40-character worst case still truncates rather than
-                  reaching `Info`.
+                      So the cap names what it actually means — sixteen
+                      characters of this element's own text (`16ch` of advance
+                      plus `16 × 0.08em` of tracking), plus the box it sits in
+                      (`px-2` = 1rem, and 2px of border). 127px total, 109px of
+                      text. `CODE & BUILD` fits with 29px to spare, and the
+                      40-character worst case still truncates rather than
+                      reaching `Info`.
 
-                  Those figures are from when the chip was mono capitals
-                  with tracking. It is sentence-case sans now
-                  (docs/design-language.md §1), which is narrower per
-                  character, so the same cap only leaves more room; the
-                  `1.28em` term is kept as slack rather than re-measured.
-                -->
-                <span
-                  class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-pill border border-border px-2 py-0.5 text-label text-content-muted"
-                >
-                  {selectedIdentity.role}
-                </span>
-              {/if}
+                      Those figures are from when the chip was mono capitals
+                      with tracking. It is sentence-case sans now
+                      (docs/design-language.md §1), which is narrower per
+                      character, so the same cap only leaves more room; the
+                      `1.28em` term is kept as slack rather than re-measured.
+                    -->
+                    <span
+                      class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-pill border border-border px-2 py-0.5 text-label text-content-muted"
+                    >
+                      {selectedIdentity.role}
+                    </span>
+                  {/if}
+                </div>
+                <RoomHeaderLine status={headerStatus} word={headerWord} members={headerMembers} />
+              </div>
             </div>
             <div class="flex shrink-0 items-center gap-3">
               <!--
