@@ -957,6 +957,13 @@ class RosterReachabilityTest {
         assertEquals("!alpha:example.org", session.rooms.selectedRow?.room?.id)
 
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        // sendKeyDownUpSync returns once the key is injected, not once the app
+        // has run its back callback: on API 36 the system hands Back to the
+        // app's OnBackInvokedCallback asynchronously, and waitForIdle only
+        // waits on Compose, which has nothing pending until that callback
+        // lands. On a slow emulator the assertion below ran first. Wait on the
+        // real condition, the store clearing, then let Compose settle.
+        compose.waitUntil(timeoutMillis = 10_000) { session.rooms.selectedRow == null }
         compose.waitForIdle()
 
         assertEquals(null, session.rooms.selectedRow)
