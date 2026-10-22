@@ -4,7 +4,7 @@
 // `TypingUser.displayName`'s doc comment) — applied before the names go to
 // the core, so it never reaches a template unbounded.
 
-import type { TypingUser } from "$lib/ipc";
+import type { Counterpart, RoomCast, TypingUser } from "$lib/ipc";
 
 /**
  * Cap, in code points, on one typer's *displayed* name — same discipline
@@ -22,4 +22,18 @@ function truncateName(name: string): string {
 /** `users` with each `label` cut to {@link DISPLAY_NAME_MAX_CHARS} code points plus `…`. */
 export function boundTypers(users: TypingUser[]): TypingUser[] {
   return users.map((user) => ({ ...user, label: truncateName(user.label) }));
+}
+
+/** The arguments `typingView` takes, from the typers and the focused room's cast. */
+export function typingArgs(
+  users: TypingUser[],
+  cast: RoomCast | null,
+  roomId: string | null,
+): { typers: TypingUser[]; agentIds: string[]; counterpart: Counterpart | null } {
+  const mine = roomId !== null && cast?.roomId === roomId ? cast : null;
+  return {
+    typers: boundTypers(users),
+    agentIds: mine?.agentIds ?? [],
+    counterpart: mine?.counterpart ?? null,
+  };
 }

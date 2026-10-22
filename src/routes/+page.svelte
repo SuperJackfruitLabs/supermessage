@@ -43,7 +43,10 @@
   import { liveStore } from "$lib/stores/live.svelte";
   import { typingStore } from "$lib/stores/typing.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
-  import { boundTypers } from "$lib/components/typingView";
+  import { typingArgs } from "$lib/components/typingView";
+  import { castStore } from "$lib/stores/cast.svelte";
+  import { turnAgentName } from "$lib/stores/liveTurn";
+  import type { LiveTool } from "$lib/stores/live.svelte";
   import { railEntries } from "$lib/components/spacesRailView";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
@@ -79,19 +82,54 @@
   // bounds each name's length first. `null` until the core answers, and
   // whenever nobody is typing.
   let typingLine = $state<string | null>(null);
+  // The agents typing now, for the dock above the composer (a later task reads it).
+  // The steps in the shape the retiring activity strip reads (Task 2 deletes it).
+  const liveTools = $derived<LiveTool[]>(
+    liveStore.steps.map((s) => ({
+      toolCallId: s.id,
+      title: s.title,
+      kind: s.kind,
+      status: s.status,
+      phase: s.phase,
+      statusLabel: s.statusLabel,
+      locations: s.locations,
+    })),
+  );
+  let typingAgents = $state<string[]>([]);
+
+  // The focused room's turn and cast follow the selection. The cast loads first
+  // so the live card's name is known when the restored turn shows.
   $effect(() => {
-    const users = boundTypers(typingStore.users);
+    const id = roomsStore.selectedId;
+    void liveStore.focus(id);
+    if (id !== null) void castStore.load(id);
+    else castStore.clear();
+  });
+  // The live card names the agent writing the turn, else the room's agent.
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    if (id === null) return;
+    liveStore.setAgentName(turnAgentName(liveStore.summary, castStore.castFor(id)), id);
+  });
+
+  $effect(() => {
+    const args = typingArgs(typingStore.users, castStore.castFor(roomsStore.selectedId), roomsStore.selectedId);
     let current = true;
-    if (users.length === 0) {
+    if (args.typers.length === 0) {
       typingLine = null;
+      typingAgents = [];
       return;
     }
-    typingView(users, [], null)
+    typingView(args.typers, args.agentIds, args.counterpart)
       .then((view) => {
-        if (current) typingLine = view.line;
+        if (!current) return;
+        typingLine = view.line;
+        typingAgents = view.agents;
       })
       .catch(() => {
-        if (current) typingLine = null;
+        if (!current) return;
+        typingLine = null;
+        typingAgents = [];
       });
     return () => {
       current = false;
@@ -1120,7 +1158,7 @@
             the agent produced them in, and the order a reader reconstructs
             them in. Collapsed unless asked for; see `AgentReasoning.svelte`.
           -->
-          <AgentReasoning streaming={liveStore.thought(roomsStore.selectedId)} />
+          <AgentReasoning streaming={liveStore.thought} />
           <!--
             The answer as it is written, between the timeline and the typing
             line: closest to where it will land, and outside the virtual list
@@ -1128,7 +1166,8 @@
           -->
           <LiveTurn
             roomId={roomsStore.selectedId}
-            senderName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
+            senderName={liveStore.agentName(roomsStore.selectedId) ?? roomsStore.selectedRoomName ?? roomsStore.selectedId}
+            answer={liveStore.answer}
           />
           <!--
             What it is *doing*, under what it is saying. One line, never a log:
@@ -1136,8 +1175,8 @@
             the turn ends, and this only answers "right now".
           -->
           <LiveActivity
-            tools={liveStore.tools(roomsStore.selectedId)}
-            thinking={liveStore.thought(roomsStore.selectedId)}
+            tools={liveTools}
+            thinking={liveStore.thought}
           />
           <TypingIndicator text={typingLine} />
           <!--

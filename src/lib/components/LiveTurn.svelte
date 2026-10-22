@@ -36,16 +36,19 @@
 
   import { slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { liveStore } from "$lib/stores/live.svelte";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { createPacer } from "./pacer";
   import { richBlocksFromMarkdown, type RichBlock } from "$lib/ipc";
   import LiveTurnBubble from "./live/LiveTurnBubble.svelte";
 
-  let { roomId, senderName }: { roomId: string | null; senderName: string | null } = $props();
+  let {
+    roomId,
+    senderName,
+    answer,
+  }: { roomId: string | null; senderName: string | null; answer: string | null } = $props();
 
   /** What the hub has told us so far. Cumulative — each delta is the whole answer. */
-  const text = $derived(liveStore.get(roomId));
+  const text = $derived(answer);
 
   /**
    * ## Why the text on screen is not the text we were told
