@@ -9,6 +9,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsSelected
@@ -439,6 +442,36 @@ class RosterReachabilityTest {
         compose.waitForIdle()
     }
 
+    /**
+     * Opening a room hides the list (its rows measure zero wide on a phone) and
+     * nothing in it may run: a Leading anchor at width 0 settles on Closed and
+     * would run Mark read for the open room.
+     */
+    @Test
+    fun openingARoomRunsNoSwipeAction() {
+        val haptics = RecordingHaptics()
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Alpha"))) },
+            roomInfoResult = { infoOf(it, 4uL) },
+        )
+        val session = sessionOf(fake)
+        val prefs = preferences()
+        compose.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalHapticFeedback provides haptics,
+            ) {
+                Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                    AppRoot(session = session, prefs = prefs)
+                }
+            }
+        }
+        compose.waitForIdle()
+        assertEquals(emptyList<androidx.compose.ui.hapticfeedback.HapticFeedbackType>(), haptics.played)
+        compose.onNodeWithText("Alpha").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(emptyList<androidx.compose.ui.hapticfeedback.HapticFeedbackType>(), haptics.played)
+    }
+
     /** iOS buzzes lightly for a send that reached the room, and not otherwise (`ComposerView.swift:110-113`). */
     @Test
     fun aDeliveredSendIsALightHaptic() {
@@ -805,6 +838,78 @@ class RosterReachabilityTest {
     }
 
     /**
+     * On a phone: list -> room -> back must leave the list as it was. The
+     * invitations row stays open ("not stored" means across a restart, not
+     * across opening a room), a swipe's Mute/Unmute label is not forgotten, and
+     * the open room is cleared, because Search offers `selectedRow` as its scope.
+     */
+    @Test
+    fun theListSurvivesOpeningARoomAndGoingBackOnAPhone() {
+        val alpha = RoomRow(
+            room = RoomSummary(
+                id = "!alpha:example.org", name = "Alpha", avatarUrl = null, unread = 0uL, lastMessage = null,
+                lastMessageIsOwn = false, lastMessageNamesSender = false, lastEventType = null,
+                lastActivityMs = null, runtime = null, membership = Membership.JOINED,
+            ),
+            identity = RoomIdentity(glyph = null, name = "Alpha", role = null, initial = "A"),
+            preview = null,
+            affordance = RoomAffordance.COMPOSE,
+        )
+        val fake = FakeCore(
+            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(invitationRow(), alpha)) },
+            roomInviterResult = { null },
+            roomInfoResult = { id ->
+                RoomInfoDto(
+                    roomId = id, name = "Alpha", identity = RoomIdentity(null, "Alpha", null, "A"),
+                    topic = null, runtime = null, canonicalAlias = null, altAliases = emptyList(),
+                    activeMemberCount = 2uL, members = emptyList(),
+                    notifications = uniffi.supermessage_core.NotificationMode.DEFAULT, pinned = false,
+                )
+            },
+        )
+        val session = sessionOf(fake)
+        val prefs = preferences()
+        val haptics = RecordingHaptics()
+        compose.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalHapticFeedback provides haptics,
+            ) {
+                Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                    AppRoot(session = session, prefs = prefs)
+                }
+            }
+        }
+        compose.waitForIdle()
+        // Composing the roster runs no swipe action.
+        assertEquals(emptyList<androidx.compose.ui.hapticfeedback.HapticFeedbackType>(), haptics.played)
+
+        val alphaRow = hasTestTag("roster-row") and hasText("Alpha")
+        compose.onNodeWithTag("invitations-row").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Ops Room").assertIsDisplayed()
+
+        compose.onNode(alphaRow).performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
+        compose.onNodeWithTag("swipe-Mute").performClick()
+        compose.waitForIdle()
+
+        compose.onNode(alphaRow).performClick()
+        compose.waitForIdle()
+        assertEquals("!alpha:example.org", session.rooms.selectedRow?.room?.id)
+
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+
+        assertEquals(null, session.rooms.selectedRow)
+        compose.onNodeWithText("Ops Room").assertIsDisplayed()
+        compose.onNode(alphaRow).performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("swipe-Unmute").assertIsDisplayed()
+        // The one Mute landed. Hiding the list for the room (its rows measure
+        // zero wide) and showing it again ran nothing: no Mark read on return.
+        assertEquals(listOf(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm), haptics.played)
+    }
+
+    /**
      * A [CoreInterface] tailored to what this file drives, in the house
      * pattern [NewRoomTest] and [InvitationTest] already set: every method
      * the fake does not configure throws, so a test that accidentally
@@ -901,6 +1006,8 @@ class RosterReachabilityTest {
 
         // Reached on opening any joined room (the pane marks it read).
         override fun markRoomRead(roomId: String): Unit = Unit
+
+        override fun setRoomNotifications(roomId: String, mode: uniffi.supermessage_core.NotificationMode): Unit = Unit
 
         override fun roomInviter(roomId: String): String? {
             roomInviterCalls += roomId

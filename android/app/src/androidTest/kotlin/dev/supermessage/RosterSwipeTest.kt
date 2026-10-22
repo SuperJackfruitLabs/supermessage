@@ -155,6 +155,9 @@ class RosterSwipeTest {
     @Test
     fun swipingLeftOffersMuteAndPin() {
         show(FakeCore(alpha))
+        // Nothing is revealed until the swipe.
+        compose.onNodeWithTag("swipe-Mute").assertDoesNotExist()
+        compose.onNodeWithTag("swipe-Pin").assertDoesNotExist()
         compose.onNodeWithTag("roster-row").performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
         compose.waitForIdle()
         compose.onNodeWithTag("swipe-Mute").assertIsDisplayed()
@@ -204,6 +207,51 @@ class RosterSwipeTest {
         compose.onNodeWithTag("swipe-Unpin").assertIsDisplayed()
     }
 
+    /** A pinned room says Pin (what the swipe was last told), but the core decides: it unpins. */
+    @Test
+    fun aPinnedRoomIsUnpinnedBecauseTheCoreSaidPinned() {
+        val core = FakeCore(alpha, infoResult = { info(NotificationMode.DEFAULT, pinned = true) })
+        show(core)
+        compose.onNodeWithTag("roster-row").performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
+        compose.onNodeWithTag("swipe-Pin").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(false to "!a:example.org"), core.pinnedSet)
+
+        compose.onNodeWithTag("roster-row").performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("swipe-Pin").assertIsDisplayed()
+    }
+
+    /** A muted room is unmuted to the core's default, not muted again. */
+    @Test
+    fun aMutedRoomIsUnmutedBecauseTheCoreSaidMuted() {
+        val core = FakeCore(alpha, infoResult = { info(NotificationMode.MUTED) })
+        show(core)
+        compose.onNodeWithTag("roster-row").performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
+        compose.onNodeWithTag("swipe-Mute").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(NotificationMode.DEFAULT to "!a:example.org"), core.notificationsSet)
+
+        compose.onNodeWithTag("roster-row").performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("swipe-Mute").assertIsDisplayed()
+    }
+
+    @Test
+    fun pinSwipeDoesNothingWhenRoomInfoFails() {
+        val core = FakeCore(alpha) // roomInfo throws
+        show(core)
+        compose.onNodeWithTag("roster-row").performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
+        compose.onNodeWithTag("swipe-Pin").performClick()
+        compose.waitForIdle()
+        assertEquals(emptyList<Pair<Boolean, String>>(), core.pinnedSet)
+        assertEquals(emptyList<HapticFeedbackType>(), haptics.played)
+
+        compose.onNodeWithTag("roster-row").performTouchInput { swipeLeft(endX = right - 160.dp.toPx()) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("swipe-Pin").assertIsDisplayed()
+    }
+
     @Test
     fun anInvitationSwipesToDecline() {
         val core = FakeCore(listOf(roomRow("!inv:x", "Lab Room", invited = true)))
@@ -217,6 +265,8 @@ class RosterSwipeTest {
         compose.onNodeWithTag("swipe-Decline").performClick()
         compose.waitForIdle()
         assertEquals(listOf("!inv:x"), core.left)
+        // iOS plays nothing for a decline.
+        assertEquals(emptyList<HapticFeedbackType>(), haptics.played)
     }
 
     @Test
@@ -226,6 +276,8 @@ class RosterSwipeTest {
         val actions = compose.onNodeWithTag("roster-row").fetchSemanticsNode()
             .config[SemanticsActions.CustomActions]
         assertEquals(listOf("Mark read", "Mute", "Pin"), actions.map { it.label })
+        // One node: the tap and the custom actions are the same row.
+        assertEquals(true, compose.onNodeWithTag("roster-row").fetchSemanticsNode().config.contains(SemanticsActions.OnClick))
         compose.runOnUiThread { actions.first { it.label == "Pin" }.action() }
         compose.waitForIdle()
         assertEquals(listOf(true to "!a:example.org"), core.pinnedSet)

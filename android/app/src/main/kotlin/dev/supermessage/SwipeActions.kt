@@ -20,6 +20,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -122,21 +124,31 @@ fun SwipeActionsRow(
     }
 
     val trailingPx = with(density) { (ActionWidth * trailing.size).toPx() }
+    var width by remember { mutableIntStateOf(0) }
+    val hasLeading = leading != null
+    val hasTrailing = trailing.isNotEmpty()
+
+    // The anchors follow everything that shapes them: the measured width, which
+    // actions exist, and how wide the revealed set is. (Keyed here rather than
+    // rebuilt only when the pixel size changes, which would leave them stale
+    // when an action appears or goes without the row resizing.)
+    LaunchedEffect(width, hasLeading, hasTrailing, trailingPx) {
+        // Before the first measure the width is 0, and Leading at 0 would sit
+        // on top of Closed and settle there, running the action.
+        if (width <= 0) return@LaunchedEffect
+        state.updateAnchors(
+            DraggableAnchors {
+                SwipeValue.Closed at 0f
+                if (hasTrailing) SwipeValue.Trailing at -trailingPx
+                if (hasLeading) SwipeValue.Leading at width.toFloat()
+            },
+        )
+    }
     SwipeRowFrame(
         offset = if (state.offset.isNaN()) 0f else state.offset,
         leading = leading,
         trailing = trailing,
-        modifier = modifier.onSizeChanged { size ->
-            // Before the first measure the width is 0, and Leading at 0 would
-            // sit on top of Closed and settle there, running the action.
-            if (size.width <= 0) return@onSizeChanged
-            val anchors = DraggableAnchors {
-                SwipeValue.Closed at 0f
-                if (trailing.isNotEmpty()) SwipeValue.Trailing at -trailingPx
-                if (leading != null) SwipeValue.Leading at size.width.toFloat()
-            }
-            state.updateAnchors(anchors)
-        },
+        modifier = modifier.onSizeChanged { size -> width = size.width },
         onTrailing = { action -> scope.launch { perform(action) } },
         slide = { if (swipeable) it.anchoredDraggable(state, Orientation.Horizontal, flingBehavior = fling) else it },
     ) {
