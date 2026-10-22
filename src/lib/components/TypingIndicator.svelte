@@ -28,6 +28,8 @@
   // (see `Composer.svelte`) it has no second channel that would let the
   // rank move up without saying something it does not mean.
 
+  import { fade } from "svelte/transition";
+
   /**
    * The finished line, or `null` when no one is typing. Composed by the
    * core (`typing_view`) and handed in by the route; this component only
@@ -38,21 +40,27 @@
   }
 
   let { text }: Props = $props();
+  const still =
+    typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 </script>
 
 <!--
-  Ground edge to edge, contents in the timeline's own `72ch` column (spec
-  §6.3.0) — the same alignment the composer takes, and for the same reason:
-  this line names who is typing *in the conversation above it*, so it has to
-  start where that conversation starts rather than at the pane's edge.
+  A pill (iOS `TimelineView.swift:238-257`): a speech-bubble glyph, the core's line, one line,
+  on the sunken ground. It takes no room when nobody is typing; the page's dock row holds
+  the spacing. `aria-live="polite"` on a wrapper that is always mounted, so the line is heard
+  when it appears.
 -->
-<div
-  class="h-6 shrink-0 bg-surface-sunken px-4 text-meta text-content-faint"
-  aria-live="polite"
->
-  <div class="mx-auto flex h-full w-full max-w-[72ch] items-center">
-    {#if text}
-      <span class="truncate">{text}</span>
-    {/if}
-  </div>
+<div aria-live="polite" class="max-w-full">
+  {#if text}
+    <div
+      in:fade={{ duration: still ? 0 : 220 }}
+      class="inline-flex max-w-full items-center gap-1.5 rounded-pill bg-surface-sunken px-2.5 py-[5px] text-meta text-content-muted"
+      data-testid="typing-pill"
+    >
+      <svg class="size-3.5 shrink-0 text-content-faint" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
+      </svg>
+      <span class="truncate whitespace-nowrap">{text}</span>
+    </div>
+  {/if}
 </div>

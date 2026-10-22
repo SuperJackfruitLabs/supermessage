@@ -39,7 +39,8 @@ use crate::commands::{
 use crate::commands_session::{
     account, blocked_users, direct_room_with, ignore_user, known_people, people_label,
     report_event, report_reason_remaining, report_room, report_user, room_inviter,
-    send_permission_answer, set_room_notification_mode, set_room_pinned, unignore_user,
+    room_mention_candidates, send_permission_answer, set_room_notification_mode, set_room_pinned,
+    unignore_user,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -236,6 +237,7 @@ pub fn run() {
             set_room_notification_mode,
             set_room_pinned,
             known_people,
+            room_mention_candidates,
             direct_room_with,
             room_inviter,
             account,

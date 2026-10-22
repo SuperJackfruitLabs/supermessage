@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createAccountStore } from "./account.svelte";
+import { createAcknowledgementStore } from "./acknowledgement.svelte";
 import { createCastStore } from "./cast.svelte";
 import { createEditTargetStore } from "./editTarget.svelte";
 import { createLiveStore } from "./live.svelte";
@@ -13,6 +14,7 @@ function blankTurnStores() {
   return {
     liveStore: createLiveStore({ onLive: noop, onThought: noop, onTurn: noop, turn: async () => null }),
     castStore: createCastStore({ roomCast: async () => { throw new Error("unused"); } }),
+    acknowledgementStore: createAcknowledgementStore({ acknowledgement: async () => null }),
   };
 }
 
@@ -88,10 +90,30 @@ describe("resetSessionState", () => {
       accountStore: createAccountStore(),
       liveStore,
       castStore,
+      acknowledgementStore: createAcknowledgementStore({ acknowledgement: async () => null }),
     });
     expect(liveStore.isLive).toBe(false);
     expect(liveStore.summary).toBeNull();
     expect(liveStore.agentName("!a:x")).toBeNull();
     expect(castStore.cast).toBeNull();
+  });
+});
+
+describe("resetSessionState and the dock", () => {
+  it("reset forgets the dock", async () => {
+    const acknowledgementStore = createAcknowledgementStore({
+      acknowledgement: async () => ({ kind: "sent", names: ["Atlas"], text: "Sent to Atlas" }),
+    });
+    await acknowledgementStore.ask({ roomId: "!a:x", cast: null, typingAgents: [], inProgress: false });
+    expect(acknowledgementStore.current?.text).toBe("Sent to Atlas");
+    resetSessionState({
+      editTargetStore: createEditTargetStore(),
+      replyTargetStore: createReplyTargetStore(),
+      safetyStore: createSafetyStore(null),
+      accountStore: createAccountStore(),
+      ...blankTurnStores(),
+      acknowledgementStore,
+    });
+    expect(acknowledgementStore.current).toBeNull();
   });
 });

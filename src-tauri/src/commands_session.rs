@@ -108,6 +108,29 @@ pub async fn known_people(
     })
 }
 
+/// How many people an `@` query offers (iOS `RoomCastCandidates.swift`).
+const CANDIDATES: usize = 6;
+
+/// The people an `@` query offers in a room: its cast, agents first, matched by the core
+/// (`Session::room_cast`, then `people::matching`), at most `CANDIDATES` (6, iOS
+/// `RoomCastCandidates.swift`). One call per keystroke over a few dozen people (M3 Q12).
+#[tauri::command]
+pub async fn room_mention_candidates(
+    room_id: String,
+    query: String,
+    session: State<'_, Session>,
+) -> Result<Vec<PersonDto>, CoreError> {
+    let cast = session.room_cast(&room_id).await?;
+    Ok(candidates(&cast.people, &query))
+}
+
+/// The cast matched by `query` and capped; the cast keeps the core's order (agents first).
+fn candidates(cast: &[PersonDto], query: &str) -> Vec<PersonDto> {
+    let mut found = people::matching(cast, query);
+    found.truncate(CANDIDATES);
+    found
+}
+
 /// The direct room shared with `user_id`, if any (`Session::direct_room_with`).
 #[tauri::command]
 pub async fn direct_room_with(
@@ -207,9 +230,38 @@ mod tests {
         not_ready(known_people(None, s!()).await);
         not_ready(known_people(Some("x".into()), s!()).await);
         not_ready(direct_room_with("@a:b.c".into(), s!()).await);
+        not_ready(room_mention_candidates("!r:b.c".into(), "at".into(), s!()).await);
         not_ready(room_inviter("!r:b.c".into(), s!()).await);
         not_ready(account(s!()).await);
         not_ready(send_permission_answer("!r:b.c".into(), "Allow once".into(), s!()).await);
+    }
+
+    #[tokio::test]
+    async fn room_mention_candidates_without_a_session_is_not_ready() {
+        let app = app();
+        not_ready(
+            room_mention_candidates("!r:b.c".into(), "".into(), app.state::<Session>()).await,
+        );
+    }
+
+    #[test]
+    fn candidates_keep_the_casts_order_and_stop_at_six() {
+        let cast: Vec<PersonDto> = (0..9)
+            .map(|i| {
+                people::project_person_parts(
+                    &format!("@p{i}:x"),
+                    Some(&format!("Person {i}")),
+                    None,
+                )
+            })
+            .collect();
+        let all = candidates(&cast, "");
+        assert_eq!(all.len(), 6);
+        assert_eq!(all[0].user_id, "@p0:x");
+        assert_eq!(all[5].user_id, "@p5:x");
+        let one = candidates(&cast, "person 7");
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].user_id, "@p7:x");
     }
 
     #[test]
@@ -230,7 +282,7 @@ mod tests {
     /// see it is to read the source: every command in this file must be named
     /// in `lib.rs`'s `generate_handler!`.
     #[test]
-    fn all_fifteen_commands_are_registered_in_the_handler_list() {
+    fn all_sixteen_commands_are_registered_in_the_handler_list() {
         let lib = include_str!("lib.rs");
         let start = lib.find("generate_handler![").expect("handler list");
         let list = &lib[start..lib[start..].find("])").unwrap() + start];
@@ -247,6 +299,7 @@ mod tests {
             "known_people",
             "direct_room_with",
             "room_inviter",
+            "room_mention_candidates",
             "account",
             "people_label",
             "send_permission_answer",

@@ -2,6 +2,7 @@
 // reply targets (keyed by room id), the blocked list and hidden message ids, and who
 // was signed in. Called on every way back to /login, not only the sign-out button.
 import { accountStore } from "./account.svelte";
+import { acknowledgementStore } from "./acknowledgement.svelte";
 import { castStore } from "./cast.svelte";
 import { editTargetStore } from "./editTarget.svelte";
 import { liveStore } from "./live.svelte";
@@ -15,10 +16,11 @@ export interface SessionStores {
   accountStore: { clear(): void };
   liveStore: { clear(): void };
   castStore: { clear(): void };
+  acknowledgementStore: { clear(): void };
 }
 
 export function resetSessionState(
-  stores: SessionStores = { editTargetStore, replyTargetStore, safetyStore, accountStore, liveStore, castStore },
+  stores: SessionStores = { editTargetStore, replyTargetStore, safetyStore, accountStore, liveStore, castStore, acknowledgementStore },
 ): void {
   stores.editTargetStore.clearAll();
   stores.replyTargetStore.clearAll();
@@ -28,4 +30,6 @@ export function resetSessionState(
   // The last account's turn and cast must not show in the next one.
   stores.liveStore.clear();
   stores.castStore.clear();
+  // The last account's "Sent to" must not greet the next one.
+  stores.acknowledgementStore.clear();
 }

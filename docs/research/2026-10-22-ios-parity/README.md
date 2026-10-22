@@ -3,6 +3,10 @@
 **Status:** assessment, 22 Oct 2026, against `main` at `f64629f`. A dated record: it
 will not be edited to look current.
 
+**Update, 23 Oct 2026:** the Desktop cells of R1, A1, D11, T1, T6, D5, D6, A2 and A3 were
+corrected after M4 (branch `parity/m4-desktop`); each names its evidence and what is still
+live pending. The rest of the document is unchanged.
+
 **Question it answers:** what does the iOS app do that Android and desktop do not,
 how big is each gap, and in what order should they be closed?
 
@@ -105,27 +109,27 @@ The "Work" column is the plumbing each gap needs:
 ### Room list, header, room info
 | | Feature | Android | Desktop | Work |
 |---|---|---|---|---|
-| R1 | Generated agent avatars with badge, status dot on the avatar, two-line rows | ◐ (initials, three lines, runtime still in the row) | ◐ (initials, three lines) | core (`AgentAvatarStyle`) + UI |
+| R1 | Generated agent avatars with badge, status dot on the avatar, two-line rows | ◐ (initials, three lines, runtime still in the row) | ✅ after M4 (avatar tiles with badge, dot on the avatar, two lines; `avatarView.test.ts`, RoomAvatar/RoomRow stories; seen in the running app, read-only) | core (`AgentAvatarStyle`) + UI |
 | R2 | Mark read / mute / pin from the row | ✗ (mute and pin only in room info) | ✗ | Android UI; desktop cmd |
 | R3 | Filters (iOS now: All, Unread) | ✗ | ✗ | core + UI |
 | — | Arrangement Recent / Waiting | ◐ (fixed at Waiting; setters unused) | ✅ | UI |
 | — | Invitations as a row, with inviter | ◐ | ◐ (no inviter, no report) | desktop cmd (`room_inviter`) |
 | — | New room / DM with known people first | ✅ | ◐ (raw id list) | cmd (`known_people`, `direct_room_with`) |
-| A1 | Header status pill (Working / Needs you / Active / Idle / Quiet) | ✗ — **no room header at all**, and no way into room info from inside a room | ✗ (connection word only) | core (`RoomStatus`) + UI |
-| D11 | One name per person (header, typing, sender) | ◐ (typing line ignores the cast) | ◐ (live turn labelled with the room name) | core (`RoomCast`) + UI |
+| A1 | Header status pill (Working / Needs you / Active / Idle / Quiet) | ✗ — **no room header at all**, and no way into room info from inside a room | ✅ after M4 (header pill or member count; `roomHeaderView.test.ts`, StatusPill stories; Quiet pill and "2 members" seen in the running app; Working pill live pending, owner) | core (`RoomStatus`) + UI |
+| D11 | One name per person (header, typing, sender) | ◐ (typing line ignores the cast) | ✅ after M4 (typing line and live card named from the room's cast; `the typing line is asked with the room's cast`, `writerName` tests; live pending, owner) | core (`RoomCast`) + UI |
 | — | Room info: members, runtime, mute/pin, Leave with confirm, block/report | ◐ (no block or report) | ◐ (no Leave, runtime, mute/pin, block or report) | Android wrap; desktop UI + cmd |
 
 ### Timeline
 | | Feature | Android | Desktop | Work |
 |---|---|---|---|---|
-| T1 | Agent message card (avatar, name, Agent badge, soft surface) and serif long-read view | ✗ | ✗ | core (long-read rule) + UI |
+| T1 | Agent message card (avatar, name, Agent badge, soft surface) and serif long-read view | ✗ | ✅ after M4 (agent card, "Agent" tag, serif Read dialog; `messageView.test.ts`, Timeline/LongReadDialog stories; seen in the running app at 1920, 948, 632 Largest) | core (long-read rule) + UI |
 | T2 | Rhythm (2pt within a run, 12pt between turns) | ◐ (2/8dp) | ◐ (16/24px) | UI |
 | T3 | Reactions on the bubble corner; receipts as small faces | ◐ ("Read by …" sentences) | ◐ ("Seen by N") | UI |
 | T4 | Reveal every message's time | ✗ | ✗ (no hover time) | UI |
 | T5 | Tap a quote to jump to it and highlight | ✗ | ✗ | UI |
-| T6 | "What I did" footer and "Thought for 12s · 2 steps" in the answer row | ◐ (record lost on room switch) | ◐ (reasoning strip outside the list; tool steps dropped) | core (`TurnRecordLabel`, retention) + UI |
-| D5 | Membership churn collapsed across verbs, expandable | ◐ (same verb only) | ◐ (same verb only) | **core** (three copies today) |
-| D6 | Reply quote hidden when the parent is directly above | ✗ | ✗ | core + UI |
+| T6 | "What I did" footer and "Thought for 12s · 2 steps" in the answer row | ◐ (record lost on room switch) | ✅ after M4 (`recordAnchor.test.ts`, WhatIDid stories; a real turn is in the owner's live pass) | core (`TurnRecordLabel`, retention) + UI |
+| D5 | Membership churn collapsed across verbs, expandable | ◐ (same verb only) | ✅ after M1b (`timelineGrouping.test.ts`, MembershipStretch stories) | **core** (three copies today) |
+| D6 | Reply quote hidden when the parent is directly above | ✗ | ✅ after M4 (`a reply under its parent drops the quote`) | core + UI |
 | D7 | Quiet metadata | ◐ (raw event type on decision cards) | ◐ | UI |
 | — | Labelled new-messages line | ◐ (unlabelled divider) | ✅ (plus "Jump to unread") | UI |
 | — | Day separators, jump to newest, turn error card, voice notes and transcripts, m.notice rows | ✅ | ✅ | — |
@@ -138,8 +142,8 @@ The "Work" column is the plumbing each gap needs:
 ### Agents and decisions
 | | Feature | Android | Desktop | Work |
 |---|---|---|---|---|
-| A2 | Live turn as one activity card in the timeline: step, elapsed time, step count, markdown | ◐ | ◐ (three strips outside the list; no elapsed time) | core (elapsed time, step summary) + UI |
-| A3 | "Sent to X" → "X is on it" | ✗ | ✗ | core (`Acknowledgement`) + UI |
+| A2 | Live turn as one activity card in the timeline: step, elapsed time, step count, markdown | ◐ | ✅ in code after M4 (one live card in the timeline; `liveTurn.test.ts`, `live.test.ts`, `liveCardView.test.ts`, probe story); live pending, owner | core (elapsed time, step summary) + UI |
+| A3 | "Sent to X" → "X is on it" | ✗ | ✅ in code after M4 (`ackView.test.ts`, AcknowledgementDock stories; the core decides the words); live pending, owner | core (`Acknowledgement`) + UI |
 | A4 | Stop | ⛔ | ⛔ | AgentPod cancel event first |
 | G1 | Decision card: headline, Details disclosure, full-width Approve, Request changes with typed feedback, Reject last, receipt | ◐ (has typed feedback; flat layout; no failure state) | ◐ (one button per option; no typed feedback; silent failure) | UI |
 | — | Permission requests (Allow once / Reject) | ✗ (**B1**) | ◐ (sent as a plain message, not the shared builder) | Android wrap; desktop cmd |

@@ -45,6 +45,9 @@
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
   import { typingArgs } from "$lib/components/typingView";
   import { castStore } from "$lib/stores/cast.svelte";
+  import { acknowledgementStore } from "$lib/stores/acknowledgement.svelte";
+  import { timelineStore } from "$lib/stores/timeline.svelte";
+  import AcknowledgementDock from "$lib/components/composer/AcknowledgementDock.svelte";
   import { turnAgentName } from "$lib/stores/liveTurn";
   import RoomHeaderLine from "$lib/components/RoomHeaderLine.svelte";
   import { createHeaderStatus, headerRows, headerTurnFlag } from "$lib/components/roomHeaderView";
@@ -168,6 +171,25 @@
     return () => {
       current = false;
     };
+  });
+
+  // The dock above the composer. The core decides what it says from the timeline's own rows,
+  // so it is asked again on any change of the room, the timeline, who is typing, the turn or
+  // the cast: a progress message the agent edits ends "Sent to" only if it is asked again.
+  const ackTurn = $derived(liveStore.roomId === roomsStore.selectedId && liveStore.inProgress);
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    if (id === null) {
+      acknowledgementStore.clear();
+      return;
+    }
+    void timelineStore.items;
+    void acknowledgementStore.ask({
+      roomId: id,
+      cast: castStore.castFor(id),
+      typingAgents,
+      inProgress: ackTurn,
+    });
   });
 
   /**
@@ -1192,7 +1214,16 @@
           {#key roomsStore.selectedId}
             <Timeline roomId={roomsStore.selectedId} onOpenRecovery={() => void openRecovery()} />
           {/key}
-          <TypingIndicator text={typingLine} />
+          <!-- The dock, then the typing pill: floating capsules above the composer (iOS
+               `TimelineView.swift:123-146`). The row takes no room when both are empty. -->
+          <div
+            class="flex shrink-0 flex-col items-start gap-1 bg-surface-sunken px-3 {acknowledgementStore.current !== null || typingLine
+              ? 'pb-1'
+              : ''}"
+          >
+            <AcknowledgementDock ack={acknowledgementStore.current} />
+            <TypingIndicator text={typingLine} />
+          </div>
           <!--
             The composer is for rooms this account is *in*. An invitation gets
             Accept / Decline in the same place instead (issue #1), and a room

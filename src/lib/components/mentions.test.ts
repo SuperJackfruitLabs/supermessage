@@ -1,7 +1,7 @@
 // `collectMentions` moved to `core::mentions` — it produces what goes on the
 // wire. The caret handling below is input UX and stays here.
 import { describe, expect, it } from "vitest";
-import { applyMention, findMentionQuery, matchMentions, mentionLabel } from "./mentions";
+import { applyMention, candidateFromPerson, findMentionQuery, mentionLabel, runtimeLine } from "./mentions";
 import type { Mentionable } from "$lib/ipc";
 
 const ANA: Mentionable = { userId: "@ana:example.org", displayName: "Ana" };
@@ -43,24 +43,6 @@ describe("finding the mention being typed", () => {
   });
 });
 
-describe("matching members", () => {
-  it("puts a name that starts with the query first", () => {
-    expect(matchMentions("ana", MEMBERS)[0]).toEqual(ANA);
-  });
-
-  it("matches on the user id too, for a member with no display name", () => {
-    expect(matchMentions("quiet", MEMBERS)).toEqual([NAMELESS]);
-  });
-
-  it("offers everyone for a bare @", () => {
-    expect(matchMentions("", MEMBERS)).toHaveLength(MEMBERS.length);
-  });
-
-  it("ignores case", () => {
-    expect(matchMentions("ECHO", MEMBERS).map((m) => m.userId)).toContain(ECHO.userId);
-  });
-});
-
 describe("completing a mention", () => {
   it("replaces what was typed and leaves a trailing space", () => {
     // The next thing typed is a word, not more of the name — and the space
@@ -82,9 +64,15 @@ describe("completing a mention", () => {
   });
 });
 
-describe("agents among the matches", () => {
-  it("matchMentions keeps isAgent on the match", () => {
-    const members: Mentionable[] = [{ userId: "@agent_x:h", displayName: "Hermes", isAgent: true }];
-    expect(matchMentions("her", members)[0].isAgent).toBe(true);
+describe("candidates from the room's cast", () => {
+  const atlas = { userId: "@atlas:x", name: "Atlas", initial: "A", runtime: { harness: "Claude Code", host: "Ashram" }, avatarUrl: null };
+  it("an agent keeps its runtime and is marked; its label is the cast's name", () => {
+    const c = candidateFromPerson(atlas);
+    expect(c).toMatchObject({ userId: "@atlas:x", displayName: "Atlas", isAgent: true, initial: "A" });
+    expect(mentionLabel(c)).toBe("Atlas");
+    expect(runtimeLine(atlas.runtime)).toBe("Claude Code on Ashram");
+  });
+  it("a person is not marked", () => {
+    expect(candidateFromPerson({ ...atlas, runtime: null }).isAgent).toBe(false);
   });
 });
