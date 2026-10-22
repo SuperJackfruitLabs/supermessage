@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.supermessage.kit.RosterArrangement
+import dev.supermessage.kit.SendResult
 import dev.supermessage.kit.Session
 import dev.supermessage.kit.VoicePlayback
 import java.time.Instant
@@ -277,16 +278,22 @@ internal fun RoomPane(
                                     session.edits.cancel(currentRoomId)
                                     text = session.drafts.draft(currentRoomId)
                                 } else {
-                                    composerFailure = "Couldn't save that edit."
+                                    composerFailure = "Could not save the edit."
                                 }
                             } else {
-                                val refusal = session.send(text, currentRoomId)
-                                if (refusal == null) {
-                                    composerFailure = null
-                                    text = ""
-                                    session.drafts.clear(currentRoomId)
-                                } else {
-                                    composerFailure = refusal
+                                when (val result = session.send(text, currentRoomId)) {
+                                    SendResult.Sent, SendResult.NothingToSend -> {
+                                        composerFailure = null
+                                        text = ""
+                                        session.drafts.clear(currentRoomId)
+                                    }
+                                    // The reason is on the chip, and the draft stays.
+                                    // Unless the chip carries none (a newer pick took
+                                    // its place mid-send), so say it here.
+                                    is SendResult.AttachmentFailed ->
+                                        composerFailure =
+                                            if (session.staged.failure.value != null) null else result.message
+                                    is SendResult.TextFailed -> composerFailure = result.message
                                 }
                             }
                         } finally {
