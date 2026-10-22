@@ -309,8 +309,9 @@ private fun ReasoningDisclosure(reasoning: String, modifier: Modifier = Modifier
  * author it cannot attribute, so the sender has to be the person. That is what
  * [GateAnswer] carries up to a caller holding a session.
  *
- * When there is nothing to answer with — no `subject` from the renderer, or no
- * [onDecide] in this context — the options render as **plainly
+ * A permission request has no `subject` (it is identified by the event it
+ * arrived on) and is answered all the same. When there is nothing to answer
+ * with — no [onDecide] in this context — the options render as **plainly
  * non-interactive labels rather than as disabled buttons**. A disabled button
  * still affords a tap, and this surface must not claim an affordance it does
  * not have; a wrong shape here approves things.
@@ -344,20 +345,20 @@ private fun DecisionPrompt(
     var sending by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // Declared after `sending`, which it reads. A gate is answerable when the
-    // renderer named what it resolves, someone is listening, and no send is
-    // already in flight.
-    val answerable = subject != null && onDecide != null && !sending
+    // Declared after `sending`, which it reads. A decision is answerable when
+    // someone is listening and no send is already in flight. A permission
+    // request has no subject; the caller routes a null one to the permission
+    // sender (iOS `DecisionCard.swift:509`).
+    val answerable = onDecide != null && !sending
 
     fun send(optionId: String, label: String, text: String?) {
-        val gate = subject ?: return
         val handler = onDecide ?: return
         val trimmed = text?.trim()
         sending = true
         scope.launch {
             val landed = handler(
                 GateAnswer(
-                    subject = gate,
+                    subject = subject,
                     optionId = optionId,
                     comment = if (trimmed.isNullOrEmpty()) null else trimmed,
                     prompt = decision.prompt,
@@ -496,13 +497,14 @@ private fun DecisionPrompt(
 /**
  * One answer to a decision, on its way out of the card.
  *
- * Carries [subject] — what the decision resolves, a Superpipeline `gate_id` today —
- * because the card is the only place that knows it: the renderer read it out of
- * the payload, and the row above has only an event id. Both are needed to
+ * Carries [subject] — what the decision resolves, a Superpipeline `gate_id` today,
+ * or `null` for a permission request, which has no gate — because the card is
+ * the only place that knows it: the renderer read it out of the payload, and
+ * the row above has only an event id. Both are needed to
  * answer and neither side has both.
  */
 data class GateAnswer(
-    val subject: String,
+    val subject: String?,
     val optionId: String,
     val comment: String?,
     val prompt: String,

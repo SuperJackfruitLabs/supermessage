@@ -431,6 +431,47 @@ class SessionTest {
         advanceUntilIdle()
     }
 
+    @Test
+    fun answerPermissionSendsTheOptionToTheRoom() = runTest {
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = sessionOf(fake, this)
+        session.start()
+        advanceUntilIdle()
+
+        assertTrue(session.answerPermission("allow_once", "!r:x"))
+        assertEquals(listOf("!r:x" to "allow_once"), fake.permissionAnswers)
+
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun answerPermissionReturnsFalseWhenTheCoreRefuses() = runTest {
+        val fake = FakeCore(
+            restoreSessionResult = { true },
+            sendPermissionAnswerResult = { _, _ -> throw FfiException.Network("offline") },
+        )
+        val session = sessionOf(fake, this)
+        session.start()
+        advanceUntilIdle()
+
+        assertFalse(session.answerPermission("allow_once", "!r:x"))
+
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun answerPermissionReturnsFalseWhenSignedOut() = runTest {
+        val fake = FakeCore(restoreSessionResult = { false })
+        val session = sessionOf(fake, this)
+        session.start()
+        advanceUntilIdle()
+
+        assertFalse(session.answerPermission("allow_once", "!r:x"))
+        assertTrue(fake.permissionAnswers.isEmpty())
+    }
+
     private fun sessionOf(fake: FakeCore, scope: CoroutineScope): Session =
         Session(client = CoreClient(core = fake, dispatcher = Dispatchers.Unconfined), scope = scope)
 
@@ -451,7 +492,10 @@ class SessionTest {
         private val joinRoomResult: (String) -> Unit = {},
         private val searchMessagesResult: (String, String?) -> List<SearchResultDto> =
             { _, _ -> throw NotImplementedError() },
+        private val sendPermissionAnswerResult: (String, String) -> Unit = { _, _ -> },
     ) : StubCore() {
+        val permissionAnswers = mutableListOf<Pair<String, String>>()
+
         var logoutCallCount = 0
             private set
         var timelineSubscribeCallCount = 0
@@ -472,6 +516,11 @@ class SessionTest {
 
         override fun timelineSubscribe(roomId: String, sink: EventSink) {
             timelineSubscribeCallCount += 1
+        }
+
+        override fun sendPermissionAnswer(roomId: String, optionId: String) {
+            sendPermissionAnswerResult(roomId, optionId)
+            permissionAnswers += roomId to optionId
         }
 
         override fun joinRoom(roomId: String): Unit = joinRoomResult(roomId)

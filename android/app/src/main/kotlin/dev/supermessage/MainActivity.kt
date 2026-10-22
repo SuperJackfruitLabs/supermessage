@@ -395,9 +395,15 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             // stop offering the choice — and keep offering it when
                             // the send failed.
                             onDecide = { row, answer ->
-                                session.answerGate(
+                                val gateId = answer.subject
+                                if (gateId == null) {
+                                    // A permission request has no gate; route it
+                                    // to the permission sender (iOS
+                                    // `TimelineCollectionView.swift:1022-1031`).
+                                    session.answerPermission(answer.optionId, currentRoomId)
+                                } else session.answerGate(
                                     eventId = row.item.eventId,
-                                    gateId = answer.subject,
+                                    gateId = gateId,
                                     optionId = answer.optionId,
                                     comment = answer.comment,
                                     prompt = answer.prompt,

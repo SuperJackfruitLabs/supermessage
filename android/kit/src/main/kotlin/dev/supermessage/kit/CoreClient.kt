@@ -231,6 +231,14 @@ class CoreClient(
         run { it.sendGateDecision(roomId, gateId, optionId, comment, inReplyTo, prompt) }
     }
 
+    /**
+     * Answer an agent's permission request with one of its option ids. A
+     * permission request has no gate; the core resolves it from the room.
+     */
+    suspend fun sendPermissionAnswer(roomId: String, optionId: String) {
+        run { it.sendPermissionAnswer(roomId, optionId) }
+    }
+
     suspend fun setTyping(roomId: String, typing: Boolean) {
         run { it.setTyping(roomId, typing) }
     }

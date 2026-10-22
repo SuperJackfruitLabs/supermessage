@@ -3,12 +3,15 @@ package dev.supermessage
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_core.CustomEventDecision
@@ -195,6 +198,43 @@ class DecisionCardTest {
         compose.onNodeWithText("Restart the Hermes gateway?").assertIsDisplayed()
         compose.onNodeWithText("Approve").assertIsDisplayed()
         compose.onNodeWithText("Deny").assertIsDisplayed()
+    }
+
+    /**
+     * A permission request has no gate (`subject == null`), but it is still
+     * answerable whenever a handler is listening: the answer goes up with a
+     * null subject and the caller routes it to the permission sender.
+     */
+    @Test
+    fun permissionOptionsArePressableAndSendANullSubject() {
+        var recorded: GateAnswer? = null
+        compose.setContent {
+            DecisionCard(
+                view = CustomEventView.Rendered(
+                    fields = emptyList(),
+                    reasoning = null,
+                    newerVersion = false,
+                    decision = CustomEventDecision(
+                        prompt = "Restart the Hermes gateway?",
+                        options = listOf(
+                            CustomEventDecisionOption(label = "Approve", id = "approve-restart-hermes-gateway"),
+                            CustomEventDecisionOption(label = "Deny", id = "deny-restart-hermes-gateway"),
+                        ),
+                        subject = null,
+                    ),
+                    link = null,
+                    outcome = null,
+                ),
+                label = "Permission",
+                eventType = "dev.agentpod.permission.v1",
+                onDecide = { answer -> recorded = answer; true },
+            )
+        }
+        compose.onNodeWithText("Approve").assertIsEnabled()
+        compose.onNodeWithText("Approve").performClick()
+        compose.waitForIdle()
+        assertNull(recorded!!.subject)
+        assertEquals("approve-restart-hermes-gateway", recorded!!.optionId)
     }
 
     /**
