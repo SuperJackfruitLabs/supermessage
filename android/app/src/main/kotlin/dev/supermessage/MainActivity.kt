@@ -101,9 +101,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val model = ViewModelProvider(this)[SessionViewModel::class.java]
+        model.startNotifications()
+        // Start and stop of the Activity are the app coming forward and going
+        // away (iOS `scenePhase`); the notification lifecycle follows them.
+        lifecycle.addObserver(ScenePhaseObserver { active -> model.notifications.activeChanged(active) })
         val coordinator = PlatformCoordinator(
             context = this,
-            session = ViewModelProvider(this)[SessionViewModel::class.java].session,
+            session = model.session,
             permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
         )
         lifecycleScope.launch {

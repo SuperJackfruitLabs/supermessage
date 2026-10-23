@@ -165,6 +165,25 @@ class SessionTest {
         }
     }
 
+    /** Notifications are withdrawn wherever the sign-out happens, with no Activity collecting `phase`. */
+    @Test
+    fun `leaving SIGNED_IN runs the sign-out hooks once and a removed hook not at all`() = runTest {
+        val session = sessionOf(FakeCore(restoreSessionResult = { true }), this)
+        var ran = 0
+        var removedRan = 0
+        session.onSignedOut { ran++ }
+        session.onSignedOut { removedRan++ }()
+        session.start()
+        advanceUntilIdle()
+        assertEquals("signing in is not leaving", 0, ran)
+
+        session.signOut()
+        advanceUntilIdle()
+
+        assertEquals(1, ran)
+        assertEquals(0, removedRan)
+    }
+
     /**
      * "`signOut` finishes the pump and cancels the drain" — a leaked
      * collector after logout is a coroutine holding a dead session.

@@ -5,6 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.supermessage.kit.CoreClient
 import dev.supermessage.kit.Session
+import dev.supermessage.kit.notify.NotificationCoordinator
+import dev.supermessage.notify.AndroidPoster
+import dev.supermessage.notify.NotificationFeed
 import dev.supermessage.kit.stores.HiddenEventStorage
 import dev.supermessage.kit.stores.InMemoryHiddenEvents
 import kotlinx.coroutines.CoroutineScope
@@ -67,6 +70,28 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
      */
     override fun onCleared() {
         super.onCleared()
+        feed?.stop()
+    }
+
+    private val poster = AndroidPoster(app)
+
+    /** Lifecycle state for local notifications; survives Activity recreation, like [session]. */
+    internal val notifications = NotificationCoordinator(
+        poster = poster,
+        modeOf = session::notificationMode,
+        now = System::currentTimeMillis,
+    )
+
+    private var feed: NotificationFeed? = null
+
+    /**
+     * Starts feeding local notifications, once. It runs on [AppCore.scope], so
+     * a change after the Activity stops still posts, and ends here with the
+     * ViewModel. (Not a sign-out: it only stops posting.)
+     */
+    fun startNotifications() {
+        if (feed != null) return
+        feed = NotificationFeed(session, notifications, poster, getApplication(), AppCore.scope).also { it.start() }
     }
 
     companion object {

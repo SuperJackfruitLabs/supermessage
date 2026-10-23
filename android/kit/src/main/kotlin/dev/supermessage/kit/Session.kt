@@ -188,6 +188,25 @@ class Session(
     private val _phase = MutableStateFlow(Phase.STARTING)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
 
+    private val signedOutHooks = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    /**
+     * Runs [hook] each time this session leaves `SIGNED_IN` for `SIGNED_OUT`,
+     * wherever that happens: it needs no Activity to be collecting [phase].
+     * Local notifications are withdrawn here, so the next account never sees
+     * the last one's. The returned function removes the hook.
+     */
+    fun onSignedOut(hook: () -> Unit): () -> Unit {
+        signedOutHooks += hook
+        return { signedOutHooks -= hook }
+    }
+
+    private fun setPhase(next: Phase) {
+        val before = _phase.value
+        _phase.value = next
+        if (before == Phase.SIGNED_IN && next == Phase.SIGNED_OUT) signedOutHooks.forEach { it() }
+    }
+
     /** The last thing worth telling the reader about, or `null`. */
     private val _failure = MutableStateFlow<String?>(null)
     val failure: StateFlow<String?> = _failure.asStateFlow()
@@ -251,7 +270,7 @@ class Session(
             pump.reset()
             rooms.resume()
             val restored = client.restoreSession(sink = pump)
-            _phase.value = if (restored) Phase.SIGNED_IN else Phase.SIGNED_OUT
+            setPhase(if (restored) Phase.SIGNED_IN else Phase.SIGNED_OUT)
             // Nothing restored means no account is signed in; whatever this
             // device remembered about one must not reach the next.
             if (!restored) safety.clearAll()
@@ -270,7 +289,7 @@ class Session(
             // hidden stays stored under its account: an error says nothing
             // about that account, and only a sign-out or a definite "nothing
             // stored" forgets it. Whoever signs in next gets their own set.
-            _phase.value = Phase.SIGNED_OUT
+            setPhase(Phase.SIGNED_OUT)
             false
         }
     }
@@ -332,7 +351,7 @@ class Session(
             pump.reset()
             rooms.resume()
             client.login(homeserver = homeserver, username = username, password = password, sink = pump)
-            _phase.value = Phase.SIGNED_IN
+            setPhase(Phase.SIGNED_IN)
             bindSafety(adoptLegacy = false)
             beginDraining()
             load()
@@ -722,6 +741,19 @@ class Session(
     suspend fun roomInfo(roomId: String): RoomInfoDto = client.roomInfo(roomId)
 
     /**
+     * A room's notification setting, or `null` when it cannot be read
+     * (`Session.notificationMode(of:)`): the core's `delivers` takes `nil` as
+     * "no setting known".
+     */
+    suspend fun notificationMode(roomId: String): NotificationMode? = try {
+        client.roomInfo(roomId).notifications
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
      * Search for [term], in [roomId] when one is given and across every
      * room this account can see otherwise.
      *
@@ -1005,7 +1037,7 @@ class Session(
         faces.clear()
         edits.clearAll()
         safety.clear()
-        _phase.value = Phase.SIGNED_OUT
+        setPhase(Phase.SIGNED_OUT)
     }
 
     companion object {
