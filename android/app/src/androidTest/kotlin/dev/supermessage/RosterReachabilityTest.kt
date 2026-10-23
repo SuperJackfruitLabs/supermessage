@@ -1154,6 +1154,8 @@ class RosterReachabilityTest {
         private var subscribedRoomId: String? = null
 
         // The composer asks for the room's cast on opening it; nobody here is mentioned.
+        override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = null
+
         override fun roomCast(roomId: String) = uniffi.supermessage_core.RoomCast(
             roomId = roomId, people = emptyList(), counterpart = null,
             agentIds = emptyList(), addressee = null, mentionables = emptyList(),

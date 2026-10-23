@@ -270,6 +270,8 @@ class MentionPickerTest {
             this.mentions += mentions
         }
 
+        override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = null
+
         override fun roomCast(roomId: String): RoomCast = casts.getValue(roomId)
         override fun restoreSession(sink: EventSink): Boolean = true
         override fun roomsSnapshot() = RoomsSnapshot(

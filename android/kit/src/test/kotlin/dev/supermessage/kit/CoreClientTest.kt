@@ -72,6 +72,18 @@ class CoreClientTest {
         assertEquals(listOf(Triple("!r:x", "\$e", "spam")), core.reports)
     }
 
+    /** the room's turn is asked of the core by its id, and the answer comes back whole */
+    @Test
+    fun turnReachesTheCoreWithTheRoom() = runTest {
+        val core = FakeCore()
+        val answer = uniffi.supermessage_ffi.foldTurn("!r:x", listOf(uniffi.supermessage_core.TurnInput.Thought(1uL, "thinking", false, 1uL)))
+        core.turnAnswer = answer
+        val client = CoreClient(core = core, dispatcher = Dispatchers.Unconfined)
+
+        assertEquals(answer, client.turn("!r:x"))
+        assertEquals(listOf("!r:x"), core.turnAsks)
+    }
+
     /** the hidden set reaches the core whole, as given */
     @Test
     fun theHiddenSetReachesTheCore() = runTest {
@@ -165,6 +177,14 @@ class CoreClientTest {
 
         override fun reportEvent(roomId: String, eventId: String, reason: String) {
             reports += Triple(roomId, eventId, reason)
+        }
+
+        val turnAsks = mutableListOf<String>()
+        var turnAnswer: uniffi.supermessage_core.TurnSnapshot? = null
+
+        override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? {
+            turnAsks += roomId
+            return turnAnswer
         }
 
         val hiddenPushes = mutableListOf<List<String>>()

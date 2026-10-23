@@ -68,6 +68,7 @@ import dev.supermessage.kit.stores.LiveStore
 import java.time.Instant
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
+import uniffi.supermessage_core.TurnStep
 
 /**
  * The scroll container: an **inverted** `LazyColumn`.
@@ -175,7 +176,7 @@ fun Timeline(
     onMarkRead: () -> Unit,
     liveAnswer: String? = null,
     liveThought: String? = null,
-    liveTools: List<LiveStore.ToolCall> = emptyList(),
+    liveTools: List<TurnStep> = emptyList(),
     liveFinished: Boolean = false,
     onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
     onDecide: suspend (row: TimelineRowDto, answer: GateAnswer) -> Boolean = { _, _ -> false },

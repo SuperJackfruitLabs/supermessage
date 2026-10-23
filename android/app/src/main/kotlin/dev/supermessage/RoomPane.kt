@@ -149,17 +149,14 @@ internal fun RoomPane(
         val mediaCache by session.media.cache.collectAsStateWithLifecycle()
         val faceCache by session.faces.cache.collectAsStateWithLifecycle()
 
-        // `TypingStore.line` is a computed property,
-        // not a StateFlow — `typers` is what is
-        // actually observable, so that is what is
-        // collected; `line` is re-read from it every
-        // time `typers` changes.
-        val typers by session.typing.typers.collectAsStateWithLifecycle()
-        val typingLine = remember(typers) { session.typing.line }
+        // The line is the core's `typingView` of the typers and the room's
+        // cast; either changing moves it, so the view is what is collected.
+        val typingView by session.typing.view.collectAsStateWithLifecycle()
+        val typingLine = typingView.line
 
         val liveAnswer by session.live.answer.collectAsStateWithLifecycle()
         val liveThought by session.live.thought.collectAsStateWithLifecycle()
-        val liveTools by session.live.tools.collectAsStateWithLifecycle()
+        val liveTools by session.live.steps.collectAsStateWithLifecycle()
         val liveFinished by session.live.finished.collectAsStateWithLifecycle()
 
         // Reply/edit/attachment: reactive so a long
@@ -200,7 +197,15 @@ internal fun RoomPane(
         // room never starts with the last one's people, and `load` drops an
         // answer for a room already left.
         val mentionCast = remember(currentRoomId) { MentionCast() }
-        LaunchedEffect(currentRoomId) { mentionCast.load(currentRoomId, session::roomCast) }
+        LaunchedEffect(currentRoomId) {
+            mentionCast.load(currentRoomId, session::roomCast)
+            // The same cast tells the typing line which typers are agents
+            // and the card what the header calls its agent (iOS `loadCast`).
+            mentionCast.cast.value?.takeIf { it.roomId == currentRoomId }?.let { cast ->
+                session.typing.recognise(cast, currentRoomId)
+                session.live.setAgentName(cast.counterpart?.name, currentRoomId)
+            }
+        }
         val castPeople by mentionCast.cast.collectAsStateWithLifecycle()
         var sending by remember(currentRoomId) { mutableStateOf(false) }
         var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }

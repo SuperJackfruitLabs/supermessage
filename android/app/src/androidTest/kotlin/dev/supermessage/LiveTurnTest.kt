@@ -15,8 +15,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import dev.supermessage.kit.stores.LiveStore
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_core.TurnStep
 
 /**
  * An agent's turn while it is arriving — see `LiveTurn.kt`'s own KDoc and
@@ -113,16 +113,18 @@ class LiveTurnTest {
     /** Tool calls are listed by name. */
     @Test
     fun toolCallsAreNamed() {
-        val tool = LiveStore.ToolCall(
+        val tool = TurnStep(
             id = "call-1",
             title = "Read src/main.ts",
+            kind = null,
             status = "completed",
             phase = ToolPhase.DONE,
             statusLabel = "Done",
-            kind = null,
             locations = emptyList(),
             input = null,
             output = null,
+            seq = 1uL,
+            hasDetail = false,
         )
 
         compose.setContent {

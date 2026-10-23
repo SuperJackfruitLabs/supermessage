@@ -1,6 +1,5 @@
 package dev.supermessage.previews
 
-import dev.supermessage.kit.stores.LiveStore
 import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.AudioView
 import uniffi.supermessage_core.CustomEventDecision
@@ -37,6 +36,7 @@ import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_core.TurnStep
 import uniffi.supermessage_core.VoiceNoteTranscript
 import uniffi.supermessage_core.VoiceReplyPlayer
 import uniffi.supermessage_ffi.groupTimelineRows
@@ -913,31 +913,31 @@ object PreviewFixtures {
      * that was asleep never sees it. Which is why a still frame is worth
      * having: in a running app these states are gone in seconds.
      */
-    val liveTools: List<LiveStore.ToolCall>
+    val liveTools: List<TurnStep>
         get() = listOf(
-            LiveStore.ToolCall(
+            TurnStep(
                 id = "c1", title = "read docs/tech-stack.md", status = "completed",
                 phase = ToolPhase.DONE, statusLabel = "Done", kind = "read",
                 locations = listOf("docs/tech-stack.md"), input = null,
-                output = null,
+                output = null, seq = 1uL, hasDetail = true,
             ),
             // The web's LiveActivity names the *last failed* tool ahead of any
             // running one, because a failure is the only state there that still
             // matters after the turn ends. This is the fixture that shows
             // whether Android does the same.
-            LiveStore.ToolCall(
+            TurnStep(
                 id = "c2", title = "write src/lib/tokens.css", status = "failed",
                 phase = ToolPhase.FAILED, statusLabel = "Failed", kind = "write",
                 locations = listOf("src/lib/tokens.css"), input = null,
-                output = "permission denied",
+                output = "permission denied", seq = 1uL, hasDetail = true,
             ),
-            LiveStore.ToolCall(
+            TurnStep(
                 id = "c3",
                 title = "regenerate every design-token target and diff the checked-in " +
                     "output against the source that produces it",
                 status = "in_progress", phase = ToolPhase.RUNNING, statusLabel = "Running", kind = "run",
                 locations = emptyList(), input = null,
-                output = null,
+                output = null, seq = 1uL, hasDetail = false,
             ),
         )
 

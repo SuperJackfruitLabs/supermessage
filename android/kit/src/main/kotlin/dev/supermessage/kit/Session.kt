@@ -202,7 +202,7 @@ class Session(
     /** See this class's KDoc for why [pump] is `internal`, not `private`. */
     internal val pump = EventPump()
     val timeline: TimelineStore = TimelineStore(client = client, sink = pump, scope = scope)
-    val live = LiveStore()
+    val live = LiveStore(scope)
     val typing = TypingStore()
     val drafts = DraftStore()
     val replies = ReplyTarget()
@@ -863,7 +863,16 @@ class Session(
      * own guard, not one repeated here.
      */
     suspend fun open(roomId: String) {
-        live.focus(roomId)
+        live.focus(roomId) { id ->
+            // No record is not a reason to refuse to open a room.
+            try {
+                client.turn(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
         typing.focus(roomId)
         timeline.subscribeTo(roomId)
     }
@@ -879,7 +888,7 @@ class Session(
      */
     fun closeRoom() {
         rooms.deselect()
-        live.focus(null)
+        live.select(null)
         typing.focus(null)
         timeline.clear()
     }
@@ -1027,19 +1036,12 @@ class Session(
             live.handleLive(roomId = event.roomId, seq = event.seq, text = event.text, done = event.done)
         is FfiEvent.Thought ->
             live.handleThought(roomId = event.roomId, seq = event.seq, text = event.text, done = event.done)
-        is FfiEvent.Tool ->
-            live.handleTool(
-                roomId = event.roomId, seq = event.seq, toolCallId = event.toolCallId, title = event.title,
-                kind = event.kind, status = event.status, phase = event.phase, statusLabel = event.statusLabel,
-                locations = event.locations, input = event.input,
-                output = event.output,
-            )
-        is FfiEvent.Turn -> {
-            // The core's turn record (`core::turns`). M4 consumes this; until
-            // then Android keeps rendering from Live, Thought and Tool above.
-            // Listed rather than swept into an `else` so a new variant on the
-            // boundary still breaks this build.
-        }
+        // Steps arrive on `FfiEvent.Turn` (M1b C3: the book emits them, and
+        // refuses stale ones), so a tool report touches nothing here. Listed
+        // rather than swept into an `else` so a new variant on the boundary
+        // still breaks this build.
+        is FfiEvent.Tool -> Unit
+        is FfiEvent.Turn -> live.apply(event.update)
         is FfiEvent.AttachmentStaged -> {
             // Handled by the composer, which owns the staged strip. Listed
             // rather than swept into an `else` so a new variant on the

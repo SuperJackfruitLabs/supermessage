@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.supermessage.kit.NotePlayback
-import dev.supermessage.kit.stores.LiveStore
 import dev.supermessage.previews.PreviewFixtures
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -34,6 +33,7 @@ import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RichInline
 import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
+import uniffi.supermessage_core.TurnStep
 
 /**
  * M1 motion and M2 haptics at the sites no earlier task covered, and the
@@ -158,7 +158,7 @@ class MotionAndHapticsTest {
                     LiveTurn(
                         answer = null,
                         thought = "A long line of reasoning that wraps onto several lines. ".repeat(6),
-                        tools = emptyList<LiveStore.ToolCall>(),
+                        tools = emptyList<TurnStep>(),
                         finished = false,
                     )
                 }

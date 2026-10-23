@@ -41,6 +41,7 @@ import dev.supermessage.kit.stores.LiveStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_core.TurnStep
 import uniffi.supermessage_ffi.richBlocksFromMarkdown
 
 /**
@@ -71,7 +72,7 @@ import uniffi.supermessage_ffi.richBlocksFromMarkdown
 fun LiveTurn(
     answer: String?,
     thought: String?,
-    tools: List<LiveStore.ToolCall>,
+    tools: List<TurnStep>,
     finished: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -205,13 +206,13 @@ fun LiveTurn(
 /** One tool call, named and stated. Detail (input/output/locations) is a
  * later phase's concern — this phase only lists what fired.
  *
- * The status is the core's word ([LiveStore.ToolCall.statusLabel]) and the
+ * The status is the core's word ([TurnStep.statusLabel]) and the
  * colour and glyph come from its [ToolPhase]; the raw ACP `status` is never
  * shown or switched on here. The title takes the row's slack (`weight`):
  * without it a long title claimed the whole width and the status was
  * measured into zero, wrapping one character per line. */
 @Composable
-private fun ToolCallRow(tool: LiveStore.ToolCall, modifier: Modifier = Modifier) {
+private fun ToolCallRow(tool: TurnStep, modifier: Modifier = Modifier) {
     val failed = tool.phase == ToolPhase.FAILED
     val statusColor = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
     Row(

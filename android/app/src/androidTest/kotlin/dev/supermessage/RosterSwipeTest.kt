@@ -112,6 +112,8 @@ class RosterSwipeTest {
 
         // What the open room's pane asks for, none of it the point here.
         override fun timelinePaginateBack(roomId: String, count: UShort): Boolean = true
+        override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = null
+
         override fun roomCast(roomId: String) = uniffi.supermessage_core.RoomCast(
             roomId = roomId, people = emptyList(), counterpart = null,
             agentIds = emptyList(), addressee = null, mentionables = emptyList(),

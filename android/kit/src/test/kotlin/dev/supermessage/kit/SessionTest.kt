@@ -55,6 +55,12 @@ import uniffi.supermessage_ffi.TimelineSnapshot
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionTest {
+    companion object {
+        @org.junit.BeforeClass
+        @JvmStatic
+        fun hostCore() = HostCore.ensureBuilt("SessionTest")
+    }
+
 
     private fun row(id: String, sender: String = "@a:x", isOwn: Boolean = false): TimelineRow =
         TimelineRow(
@@ -905,6 +911,140 @@ class SessionTest {
     }
 
 
+    // -- the turn mirror and the cast (M4 Task 1) ---------------------------------
+
+    private val turnRoom = "!r:x.example"
+
+    private fun foldedTurn(room: String = turnRoom): uniffi.supermessage_core.TurnSnapshot =
+        uniffi.supermessage_ffi.foldTurn(
+            room,
+            listOf(
+                uniffi.supermessage_core.TurnInput.Thought(1uL, "Checking.", false, 500uL),
+                uniffi.supermessage_core.TurnInput.Tool(
+                    uniffi.supermessage_core.TurnStep(
+                        id = "c1", title = "Read a file", kind = null, status = "in_progress",
+                        phase = uniffi.supermessage_core.ToolPhase.RUNNING, statusLabel = "Running",
+                        locations = emptyList(), input = null, output = null, seq = 1uL, hasDetail = false,
+                    ),
+                    1_000uL,
+                ),
+            ),
+        ) ?: error("the core folded no turn")
+
+    private fun turnEvent(snapshot: uniffi.supermessage_core.TurnSnapshot, index: Int = 0) = FfiEvent.Turn(
+        uniffi.supermessage_core.TurnUpdate(
+            summary = snapshot.summary,
+            step = uniffi.supermessage_core.TurnStepChange(index.toUInt(), snapshot.steps[index]),
+        ),
+    )
+
+    @Test
+    fun aTurnEventReachesTheLiveStore() = runTest {
+        val session = sessionOf(FakeCore(restoreSessionResult = { true }), this)
+        session.start()
+        advanceUntilIdle()
+        session.open(turnRoom)
+
+        session.pump.onEvent(turnEvent(foldedTurn()))
+        advanceUntilIdle()
+
+        assertEquals(listOf("c1"), session.live.steps.value.map { it.id })
+        assertTrue(session.live.inProgress.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aToolEventNoLongerTouchesTheLiveStore() = runTest {
+        val session = sessionOf(FakeCore(restoreSessionResult = { true }), this)
+        session.start()
+        advanceUntilIdle()
+        session.open(turnRoom)
+
+        session.pump.onEvent(
+            FfiEvent.Tool(
+                roomId = turnRoom, seq = 1uL, toolCallId = "c1", title = "Read a file", kind = null,
+                status = "in_progress", phase = uniffi.supermessage_core.ToolPhase.RUNNING,
+                statusLabel = "Running", locations = emptyList(), input = null, output = null,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue("steps arrive on the turn event only", session.live.steps.value.isEmpty())
+        assertNull(session.live.summary.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun openRestoresTheRoomsTurn() = runTest {
+        val fake = FakeCore(restoreSessionResult = { true })
+        val snapshot = foldedTurn()
+        fake.turnBody = { room -> snapshot.takeIf { room == turnRoom } }
+        val session = sessionOf(fake, this)
+        session.start()
+        advanceUntilIdle()
+
+        session.open(turnRoom)
+
+        assertEquals(listOf("c1"), session.live.steps.value.map { it.id })
+        assertEquals("Checking.", session.live.thought.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aRefusedTurnFetchStillOpensTheRoom() = runTest {
+        val fake = FakeCore(restoreSessionResult = { true })
+        fake.turnBody = { throw FfiException.NotReady() }
+        val session = sessionOf(fake, this)
+        session.start()
+        advanceUntilIdle()
+
+        session.open(turnRoom)
+
+        assertEquals(1, fake.timelineSubscribeCallCount)
+        assertNull(session.live.summary.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun signOutForgetsTurnAndCast() = runTest {
+        val session = sessionOf(FakeCore(restoreSessionResult = { true }), this)
+        session.start()
+        advanceUntilIdle()
+        session.open(turnRoom)
+        session.pump.onEvent(turnEvent(foldedTurn()))
+        advanceUntilIdle()
+        session.typing.recognise(
+            uniffi.supermessage_core.RoomCast(
+                roomId = turnRoom, people = emptyList(),
+                counterpart = uniffi.supermessage_core.Counterpart("@atlas:x", "Atlas"),
+                agentIds = listOf("@atlas:x"), addressee = null, mentionables = emptyList(),
+            ),
+            turnRoom,
+        )
+        session.live.setAgentName("Atlas", turnRoom)
+        assertNotNull(session.live.summary.value)
+
+        session.signOut()
+
+        assertNull("the first account's turn survived sign-out", session.live.summary.value)
+        assertTrue(session.live.steps.value.isEmpty())
+        assertNull(session.live.agentName(turnRoom))
+        // The next account opens the same room id: its typers must not be
+        // named by the last account's cast.
+        session.typing.focus(turnRoom)
+        session.typing.handle(
+            turnRoom,
+            listOf(TypingUserDto(userId = "@atlas:x", displayName = "atlas-bot", label = "atlas-bot")),
+        )
+        assertTrue("the cast outlived sign-out", session.typing.typingAgents.isEmpty())
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
     private fun sessionOf(fake: FakeCore, scope: CoroutineScope): Session =
         Session(client = CoreClient(core = fake, dispatcher = Dispatchers.Unconfined), scope = scope)
 
@@ -1023,6 +1163,10 @@ class SessionTest {
         override fun sendMessage(roomId: String, body: String, mentions: List<String>) {
             sentMessages += Triple(roomId, body, mentions)
         }
+
+        var turnBody: (String) -> uniffi.supermessage_core.TurnSnapshot? = { null }
+
+        override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = turnBody(roomId)
 
         override fun setTyping(roomId: String, typing: Boolean) {}
 

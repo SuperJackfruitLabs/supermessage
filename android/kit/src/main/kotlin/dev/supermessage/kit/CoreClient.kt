@@ -12,6 +12,7 @@ import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomMemberDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
+import uniffi.supermessage_core.TurnSnapshot
 import uniffi.supermessage_ffi.AttachmentSendOutcome
 import uniffi.supermessage_ffi.ConnectionState
 import uniffi.supermessage_ffi.CoreInterface
@@ -159,6 +160,9 @@ class CoreClient(
     suspend fun knownPeople(): List<PersonDto> = run { it.knownPeople() }
 
     suspend fun roomCast(roomId: String): RoomCast = run { it.roomCast(roomId) }
+
+    /** The core's record of the room's latest turn, or `null` when it has none. */
+    suspend fun turn(roomId: String): TurnSnapshot? = run { it.turn(roomId) }
 
     suspend fun directRoomWith(userId: String): String? = run { it.directRoomWith(userId) }
 

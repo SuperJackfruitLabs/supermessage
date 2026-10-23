@@ -83,6 +83,8 @@ class LeavingARoomTest {
         override fun account(): AccountDto = AccountDto(userId = "@me:example.org", homeserver = "https://example.org")
         override fun knownPeople(): List<PersonDto> = emptyList()
         override fun roomAvatar(roomId: String): String? = null
+        override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = null
+
         override fun roomCast(roomId: String) = uniffi.supermessage_core.RoomCast(
             roomId = roomId, people = emptyList(), counterpart = null,
             agentIds = emptyList(), addressee = null, mentionables = emptyList(),
@@ -165,8 +167,18 @@ class LeavingARoomTest {
     }
 
     private fun finishATurn() {
-        session.live.handleLive(alphaId, 1uL, "hello", done = false)
-        session.live.handleLive(alphaId, 2uL, "hello", done = true)
+        // The core's own record of a turn that starts and then ends, as the
+        // book would send it (the mirror takes `endedBy` from the summary).
+        val thought = uniffi.supermessage_core.TurnInput.Thought(1uL, "hmm", false, 500uL)
+        val started = uniffi.supermessage_ffi.foldTurn(alphaId, listOf(thought))!!
+        val ended = uniffi.supermessage_ffi.foldTurn(
+            alphaId,
+            listOf(thought, uniffi.supermessage_core.TurnInput.Answer(1uL, true, 1_000uL)),
+        )!!
+        compose.runOnUiThread {
+            session.live.apply(uniffi.supermessage_core.TurnUpdate(started.summary, null))
+            session.live.apply(uniffi.supermessage_core.TurnUpdate(ended.summary, null))
+        }
         compose.waitForIdle()
     }
 
