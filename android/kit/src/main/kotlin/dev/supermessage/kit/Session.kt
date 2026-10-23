@@ -972,11 +972,25 @@ class Session(
      * noise on the screen they just signed in to.
      */
     fun setUpRecoveryIfNeeded() {
+        _recoverySettled.value = false
         scope.launch {
-            val key = runCatching { client.ensureRecovery() }.getOrNull()
-            if (!key.isNullOrEmpty()) _newRecoveryKey.value = key
+            try {
+                val key = runCatching { client.ensureRecovery() }.getOrNull()
+                if (!key.isNullOrEmpty()) _newRecoveryKey.value = key
+            } finally {
+                _recoverySettled.value = true
+            }
         }
     }
+
+    private val _recoverySettled = MutableStateFlow(true)
+
+    /**
+     * `false` from a sign-in until the core has said whether a new recovery key is coming, so that
+     * something which must wait for the key (the first-run demo, `RootView.swift:89-139`) cannot slip
+     * in ahead of it. `true` otherwise, including for a restored session, which makes no key.
+     */
+    val recoverySettled: StateFlow<Boolean> = _recoverySettled.asStateFlow()
 
     /** Destructive: replaces the identity and returns a new key. */
     suspend fun resetRecovery(password: String): String = client.resetRecovery(password)

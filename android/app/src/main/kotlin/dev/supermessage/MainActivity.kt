@@ -122,7 +122,13 @@ class MainActivity : ComponentActivity() {
                     // the one place in the tree that has one to give it.
                     val prefs = remember { RosterPreferences(applicationContext.rosterDataStore) }
 
-                    AppRoot(session = vm.session, prefs = prefs, appearance = appearance)
+                    val firstRun = remember { FirstRunPreferences(applicationContext.rosterDataStore) }
+                    // Only on a fresh launch: a rotation must not queue the demo again.
+                    if (savedInstanceState == null) {
+                        LaunchedEffect(Unit) { applyDebugLaunch(intent, firstRun) }
+                    }
+
+                    AppRoot(session = vm.session, prefs = prefs, appearance = appearance, firstRun = firstRun)
                 }
             }
         }
@@ -153,7 +159,13 @@ private fun ComponentActivity.applySystemBars(dark: Boolean) {
  * already reaches `AndroidSecretStore.rawForTest`.
  */
 @Composable
-internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: AppearancePreferences? = null) {
+internal fun AppRoot(
+    session: Session,
+    prefs: RosterPreferences,
+    appearance: AppearancePreferences? = null,
+    /** The welcome and the first-run demo; `null` is no onboarding at all (a test not about it). */
+    firstRun: FirstRunPreferences? = null,
+) {
     val phase by session.phase.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         if (phase == Session.Phase.STARTING) session.start()
@@ -253,6 +265,18 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
     // sign-in, and the alternative was an account whose backup could never be
     // opened by anyone, silently.
     val newRecoveryKey by session.newRecoveryKey.collectAsStateWithLifecycle()
+    val recoverySettled by session.recoverySettled.collectAsStateWithLifecycle()
+
+    // The first-run demo, over the signed-in shell, once the first sign-in's recovery key has been
+    // shown and put away (`RootView.swift:89-139`). Composed before the key's dialog so the key
+    // draws above it, should it still arrive.
+    if (firstRun != null) {
+        val demoPending by firstRun.demoPending.collectAsStateWithLifecycle(initialValue = false)
+        val demoSeen by firstRun.demoSeen.collectAsStateWithLifecycle(initialValue = true)
+        if (phase == Session.Phase.SIGNED_IN && demoPending && !demoSeen && newRecoveryKey == null && recoverySettled) {
+            FirstRunDemoScreen(onFinish = { scope.launch { firstRun.finishDemo() } })
+        }
+    }
     newRecoveryKey?.let { key ->
         NewRecoveryKeyDialog(key = key, onDone = session::clearNewRecoveryKey)
     }
@@ -522,33 +546,33 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
             session.closeRoom()
         },
         signedOutContent = {
-            LoginScreen(
-                homeserver = homeserverField.value,
-                onHomeserverChange = homeserverField::onChange,
-                failure = failure,
-                busy = busy,
-                onSignIn = { username, password ->
-                    // busy lives here, not in Session: it
-                    // guards this form against a double tap,
-                    // it is not part of what Session itself
-                    // tracks (see Session.kt's own
-                    // `phase`/`failure`, neither of which
-                    // serves that purpose while a sign-in is
-                    // in flight).
-                    scope.launch {
-                        busy = true
-                        try {
-                            session.signIn(
-                                homeserver = homeserverField.value,
-                                username = username,
-                                password = password,
-                            )
-                        } finally {
-                            busy = false
+            SignedOutContent(firstRun = firstRun) {
+                LoginScreen(
+                    homeserver = homeserverField.value,
+                    onHomeserverChange = homeserverField::onChange,
+                    failure = failure,
+                    busy = busy,
+                    onSignIn = { username, password ->
+                        // busy lives here, not in Session: it guards this form against a double
+                        // tap, it is not part of what Session itself tracks.
+                        scope.launch {
+                            busy = true
+                            try {
+                                session.signIn(
+                                    homeserver = homeserverField.value,
+                                    username = username,
+                                    password = password,
+                                )
+                                // Only an interactive sign-in that got in queues the demo; a restored
+                                // session never does (`LoginView.swift:115-126`).
+                                if (session.phase.value == Session.Phase.SIGNED_IN) firstRun?.setDemoPending(true)
+                            } finally {
+                                busy = false
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         },
     )
 }
