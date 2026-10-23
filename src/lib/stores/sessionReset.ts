@@ -8,6 +8,7 @@ import { castStore } from "./cast.svelte";
 import { destinations } from "./destinations.svelte";
 import { editTargetStore } from "./editTarget.svelte";
 import { liveStore } from "./live.svelte";
+import { notifier } from "$lib/notifier/notifier.svelte";
 import { replyTargetStore } from "./replyTarget.svelte";
 import { safetyStore } from "./safety.svelte";
 
@@ -22,10 +23,12 @@ export interface SessionStores {
   destinations: { reset(): void };
   /** Withdraws every delivered notification. */
   notificationClearAll: () => Promise<void>;
+  /** Forgets the roster baseline, what was shown, and the cached modes. */
+  notifier: { reset(): void };
 }
 
 export function resetSessionState(
-  stores: SessionStores = { editTargetStore, replyTargetStore, safetyStore, accountStore, liveStore, castStore, acknowledgementStore, destinations, notificationClearAll },
+  stores: SessionStores = { editTargetStore, replyTargetStore, safetyStore, accountStore, liveStore, castStore, acknowledgementStore, destinations, notificationClearAll, notifier },
 ): void {
   stores.editTargetStore.clearAll();
   stores.replyTargetStore.clearAll();
@@ -41,5 +44,7 @@ export function resetSessionState(
   stores.destinations.reset();
   // The last account's notifications must not outlive it (iOS removes every delivered one).
   // Fire and forget: a failure to withdraw must not hold up the sign-out.
+  // The next account's first roster is a baseline again, and nothing of this one is remembered.
+  stores.notifier.reset();
   void stores.notificationClearAll().catch(() => {});
 }

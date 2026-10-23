@@ -18,6 +18,7 @@ function blankTurnStores() {
     acknowledgementStore: createAcknowledgementStore({ acknowledgement: async () => null }),
     destinations: blankDestinations(),
     notificationClearAll: async () => {},
+    notifier: { reset() {} },
   };
 }
 function blankDestinations() {
@@ -104,6 +105,7 @@ describe("resetSessionState", () => {
       acknowledgementStore: createAcknowledgementStore({ acknowledgement: async () => null }),
       destinations: blankDestinations(),
       notificationClearAll: async () => {},
+      notifier: { reset() {} },
     });
     expect(liveStore.isLive).toBe(false);
     expect(liveStore.summary).toBeNull();
@@ -132,6 +134,19 @@ describe("resetSessionState and the dock", () => {
 });
 
 describe("resetSessionState and notifications", () => {
+  it("resetSessionState resets the notifier", () => {
+    let resets = 0;
+    resetSessionState({
+      editTargetStore: createEditTargetStore(),
+      replyTargetStore: createReplyTargetStore(),
+      safetyStore: createSafetyStore(null),
+      accountStore: createAccountStore(),
+      ...blankTurnStores(),
+      notifier: { reset: () => void (resets += 1) },
+    });
+    expect(resets).toBe(1);
+  });
+
   it("resetSessionState withdraws every notification", () => {
     let withdrawn = 0;
     resetSessionState({

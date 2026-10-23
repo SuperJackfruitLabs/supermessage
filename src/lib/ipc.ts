@@ -2608,6 +2608,76 @@ export async function sendGateDecisionTo(
   await invoke<void>("send_gate_decision_to", { roomId, gateId, optionId, comment, inReplyTo, prompt });
 }
 
+/** `core::notification::NotificationCategory`. */
+export type NotificationCategory = "message" | "permission" | "gate" | "decision";
+
+/** `core::notification::PermissionAnswers`: the two option ids a PERMISSION note answers with. */
+export interface PermissionAnswers {
+  allowOptionId: string;
+  rejectOptionId: string;
+}
+
+/** `core::notification::GateAnswers`: what a GATE note needs to answer with no room open. */
+export interface GateAnswers {
+  gateId: string;
+  prompt: string;
+  optionIds: string[];
+}
+
+/** `core::notification_policy::NotificationContext`: what the app is doing when the core decides. */
+export interface NotificationContext {
+  /** The room on screen, or null on the roster. */
+  openRoomId: string | null;
+  /** Whether the window is focused. */
+  appActive: boolean;
+  /** The room the timeline is subscribed to. */
+  timelineRoomId: string | null;
+  /** Always false on the desktop: there is no push. */
+  remotePush: boolean;
+}
+
+/** `core::notification_policy::PlannedNotification`: one note to post, worded and categorised by the core. */
+export interface PlannedNotification {
+  id: string;
+  roomId: string;
+  eventId: string | null;
+  title: string;
+  subtitle: string | null;
+  body: string;
+  category: NotificationCategory;
+  permission: PermissionAnswers | null;
+  gate: GateAnswers | null;
+}
+
+/** Notes for rooms whose row changed between two rosters (the first roster is a baseline). */
+export async function notificationsForRoster(
+  previous: RoomRow[], next: RoomRow[], context: NotificationContext,
+): Promise<PlannedNotification[]> {
+  return await invoke<PlannedNotification[]>("notifications_for_roster", { previous, next, context });
+}
+
+/**
+ * Notes for new rows in the focused timeline, which the core reads itself. Rejects `roomChanged`
+ * when the focused room is not `roomId` and `notReady` when none is.
+ */
+export async function notificationsForFocused(
+  roomId: string, roomName: string, sinceMs: number, alreadyNotified: string[], context: NotificationContext,
+): Promise<PlannedNotification[]> {
+  return await invoke<PlannedNotification[]>("notifications_for_focused", {
+    roomId, roomName, sinceMs, alreadyNotified, context,
+  });
+}
+
+/** Whether the room's notification setting lets `note` through. */
+export async function notificationDelivers(note: PlannedNotification, mode: NotificationMode | null): Promise<boolean> {
+  return await invoke<boolean>("notification_delivers", { note, mode });
+}
+
+/** Posts `note` locally, with the buttons the core gives its category. */
+export async function notificationPost(note: PlannedNotification): Promise<void> {
+  await invoke<void>("notification_post", { note });
+}
+
 /** `core::safety::IGNORED_USERS_EVENT`: the blocked list, emitted by the core. */
 const IGNORED_USERS_EVENT = "sm://ignored-users";
 

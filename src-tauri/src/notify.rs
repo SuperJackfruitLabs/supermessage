@@ -15,9 +15,7 @@
 //!
 //! The webview is granted no `notification:*` permission: it asks Rust to post.
 
-// Nothing calls `Poster::post` yet: `notification_post` arrives in the next task, and
-// this allowance goes with it.
-#![allow(dead_code)]
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -45,6 +43,11 @@ pub struct PostedAction {
     /// desktop notification protocol has no text input, so such an action is
     /// never a button; the reader types it in the app.
     pub text_input: bool,
+    /// What the core says this action carries (`notification_policy::user_info`):
+    /// the room, the event, and the option ids an answer needs. It comes back with
+    /// the press.
+    #[serde(default)]
+    pub user_info: HashMap<String, String>,
 }
 
 /// Where notifications go. Implemented per platform; faked in tests.
@@ -82,10 +85,13 @@ pub struct ActionTaken {
 pub type ActionSender = tokio::sync::mpsc::UnboundedSender<ActionTaken>;
 
 /// Holds the receiver of [`ActionTaken`] until the consumer takes it (once).
+// Task 3 takes the receiver; until then nothing reads it.
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub struct ActionInbox(std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<ActionTaken>>>);
 
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 impl ActionInbox {
     pub fn new(rx: tokio::sync::mpsc::UnboundedReceiver<ActionTaken>) -> Self {
         Self(std::sync::Mutex::new(Some(rx)))
@@ -103,7 +109,6 @@ pub use xdg::{NotifyRustBackend, XdgPoster};
 #[cfg(target_os = "linux")]
 mod xdg {
     use super::*;
-    use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
@@ -138,6 +143,21 @@ mod xdg {
     /// How many posted notes are remembered for replacement. Past this the oldest
     /// is forgotten (a note that old has long been seen).
     const MAX_KNOWN: usize = 256;
+
+    /// What a press reports: the note and room, plus what the core put in the
+    /// note's actions. The core gives every action of a note the same info, so the
+    /// first stands for all of them.
+    fn user_info_for(note: &PostedNote) -> Value {
+        let mut info = serde_json::Map::new();
+        if let Some(action) = note.actions.first() {
+            for (k, v) in &action.user_info {
+                info.insert(k.clone(), Value::String(v.clone()));
+            }
+        }
+        info.insert("id".into(), Value::String(note.id.clone()));
+        info.insert("roomId".into(), Value::String(note.room_id.clone()));
+        Value::Object(info)
+    }
 
     /// What the reader did with a notification.
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,11 +233,13 @@ mod xdg {
         }
 
         /// How many threads are waiting on a button right now.
+        #[cfg(test)]
         pub fn live_waiters(&self) -> usize {
             self.live.load(Ordering::SeqCst)
         }
 
         /// Whether buttons are offered on this desktop.
+        #[cfg(test)]
         pub fn offers_actions(&self) -> bool {
             self.actions
         }
@@ -283,10 +305,7 @@ mod xdg {
             let (replaces, replaces_waiting) = {
                 let state = lock(&self.state);
                 let known = state.known.iter().find(|k| k.note_id == note.id);
-                (
-                    known.map(|k| k.server_id),
-                    known.is_some_and(|k| k.waiting),
-                )
+                (known.map(|k| k.server_id), known.is_some_and(|k| k.waiting))
             };
             // A repost of a note that already has a waiter keeps that waiter. Any
             // other note with buttons needs a slot, and without one it is posted
@@ -297,11 +316,9 @@ mod xdg {
                 None
             };
             let buttons = replaces_waiting || slot.is_some();
-            let handle = self
-                .backend
-                .show(&self.request(note, replaces, buttons))?;
+            let handle = self.backend.show(&self.request(note, replaces, buttons))?;
             let server_id = handle.id();
-            let user_info = json!({ "id": note.id, "roomId": note.room_id });
+            let user_info = user_info_for(note);
 
             {
                 let mut state = lock(&self.state);
@@ -520,7 +537,11 @@ mod tests {
                 }))
             }
             fn wait(&self, id: u32) -> Outcome {
-                if self.0.panic_in_wait.load(std::sync::atomic::Ordering::SeqCst) {
+                if self
+                    .0
+                    .panic_in_wait
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
                     panic!("the bus went away");
                 }
                 let rx = self
@@ -550,6 +571,7 @@ mod tests {
                 id: id.into(),
                 title: id.into(),
                 text_input,
+                user_info: Default::default(),
             }
         }
 
@@ -658,6 +680,26 @@ mod tests {
         }
 
         #[test]
+        fn a_press_carries_what_the_core_put_in_the_action() {
+            let (poster, server, mut rx) = poster(true);
+            let mut action = button("approve", false);
+            action
+                .user_info
+                .insert("sm.allowOptionId".into(), "allow_once".into());
+            poster.post(&note("$a", vec![action])).unwrap();
+            server.press(101, "approve");
+            let mut taken = None;
+            wait_until("the action", || {
+                taken = rx.try_recv().ok();
+                taken.is_some()
+            });
+            assert_eq!(
+                taken.unwrap().user_info,
+                json!({ "id": "$a", "roomId": "!r:x", "sm.allowOptionId": "allow_once" })
+            );
+        }
+
+        #[test]
         fn the_live_waiters_never_exceed_the_cap_and_return_to_zero() {
             let (poster, server, _rx) = poster(true);
             for i in 0..MAX_WAITERS {
@@ -674,7 +716,10 @@ mod tests {
             );
             assert!(shown[0].actions.len() == 1, "under the cap it has Open");
             drop(shown);
-            assert!(server.closed.lock().unwrap().is_empty(), "nothing is evicted");
+            assert!(
+                server.closed.lock().unwrap().is_empty(),
+                "nothing is evicted"
+            );
             poster.withdraw_all();
             wait_until("every waiter to end", || poster.live_waiters() == 0);
         }

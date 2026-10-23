@@ -21,6 +21,8 @@
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
   import { setUpAfterSignIn } from "$lib/stores/signInSetup";
+  import { notifier } from "$lib/notifier/notifier.svelte";
+  import { createWindowFocus } from "$lib/stores/windowFocus.svelte";
   import {
     appVersion,
     type RoomMember,
@@ -111,6 +113,30 @@
     );
   });
   let signingOut = $state(false);
+
+  // Local notifications. The core decides what is news and what it says; this feeds it the
+  // roster, the selected room, the timeline's changes and the window's focus. Declared in this
+  // order on purpose: the selection reaches the notifier before the timeline change it explains.
+  const windowFocus = createWindowFocus();
+  $effect(() => {
+    if (!restored) return;
+    notifier.focusChanged(untrack(() => windowFocus.focused));
+    return windowFocus.onChange((focused) => notifier.focusChanged(focused));
+  });
+  $effect(() => {
+    if (!restored) return;
+    notifier.selectedChanged(roomsStore.selectedId);
+  });
+  $effect(() => {
+    if (!restored) return;
+    notifier.roomsChanged(roomsStore.rooms);
+  });
+  $effect(() => {
+    if (!restored) return;
+    void timelineStore.items;
+    const id = untrack(() => roomsStore.selectedId);
+    if (id !== null) notifier.timelineChanged(id, untrack(() => roomsStore.selectedRoomName) ?? "");
+  });
 
   // The typing line's wording is the core's (`typing_view`); the desktop only
   // bounds each name's length first. `null` until the core answers, and
@@ -765,6 +791,8 @@
     destroyed = true;
     unlistenIgnored?.();
   });
+
+  onMount(() => windowFocus.start());
 
   onMount(async () => {
     onIgnoredUsers((ids) => safetyStore.apply(ids))

@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, sendGateDecisionTo, onIgnoredUsers } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -303,6 +303,8 @@ describe("cast, typing line and acknowledgement", () => {
 });
 
 describe("session commands", () => {
+  const CTX = { openRoomId: null, appActive: true, timelineRoomId: null, remotePush: false };
+  const NOTE = { id: "$e", roomId: "!r:x", eventId: "$e", title: "Atlas", subtitle: null, body: "hi", category: "message" as const, permission: null, gate: null };
   const calls: [string, () => Promise<unknown>, string, Record<string, unknown> | undefined][] = [
     ["ignoreUser invokes ignore_user with userId", () => ignoreUser("@a:x"), "ignore_user", { userId: "@a:x" }],
     ["unignoreUser invokes unignore_user with userId", () => unignoreUser("@a:x"), "unignore_user", { userId: "@a:x" }],
@@ -325,6 +327,10 @@ describe("session commands", () => {
     ["notificationPermission without a prompt", () => notificationPermission(false), "notification_permission", { prompt: false }],
     ["notificationClearAll takes no arguments", () => notificationClearAll(), "notification_clear_all", undefined],
     ["sendGateDecisionTo passes camelCase args", () => sendGateDecisionTo("!r:x", "g1", "approve", null, "$e", "Ship it?"), "send_gate_decision_to", { roomId: "!r:x", gateId: "g1", optionId: "approve", comment: null, inReplyTo: "$e", prompt: "Ship it?" }],
+    ["notificationsForRoster passes both rosters and the context", () => notificationsForRoster([], [], CTX), "notifications_for_roster", { previous: [], next: [], context: CTX }],
+    ["notificationsForFocused passes camelCase args", () => notificationsForFocused("!r:x", "Atlas", 42, ["$a"], CTX), "notifications_for_focused", { roomId: "!r:x", roomName: "Atlas", sinceMs: 42, alreadyNotified: ["$a"], context: CTX }],
+    ["notificationDelivers passes the mode", () => notificationDelivers(NOTE, "muted"), "notification_delivers", { note: NOTE, mode: "muted" }],
+    ["notificationPost passes the note", () => notificationPost(NOTE), "notification_post", { note: NOTE }],
   ];
 
   it.each(calls)("%s", async (_name, call, command, args) => {

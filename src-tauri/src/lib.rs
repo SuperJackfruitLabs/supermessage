@@ -40,7 +40,8 @@ use crate::commands::{
     turn_duration_label, turn_record_label, turn_status_word, typing_view,
 };
 use crate::commands_notify::{
-    notification_clear_all, notification_permission, send_gate_decision_to,
+    notification_clear_all, notification_delivers, notification_permission, notification_post,
+    notifications_for_focused, notifications_for_roster, send_gate_decision_to,
 };
 use crate::commands_session::{
     account, blocked_users, direct_room_with, ignore_user, known_people, people_label,
@@ -275,6 +276,10 @@ pub fn run() {
             send_permission_answer,
             notification_permission,
             notification_clear_all,
+            notifications_for_roster,
+            notifications_for_focused,
+            notification_delivers,
+            notification_post,
             send_gate_decision_to,
             connection_state,
             login,
