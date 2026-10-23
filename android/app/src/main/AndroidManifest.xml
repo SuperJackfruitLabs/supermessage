@@ -68,5 +68,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          M6 Android Task 3. Answers from a notification's buttons. Not
+          exported: only this app's own PendingIntents reach it.
+        -->
+        <receiver
+            android:name=".notify.NotificationActionReceiver"
+            android:exported="false" />
     </application>
 </manifest>

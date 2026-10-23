@@ -8,17 +8,24 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import java.net.URLEncoder
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.RemoteInput
 import dev.supermessage.GeneratedThemeTokens
 import dev.supermessage.MainActivity
 import dev.supermessage.R
 import dev.supermessage.kit.notify.Poster
+import uniffi.supermessage_core.GateAnswers
+import uniffi.supermessage_core.NotificationActionSpec
 import uniffi.supermessage_core.NotificationCategory
+import uniffi.supermessage_core.PermissionAnswers
 import uniffi.supermessage_core.PlannedNotification
+import uniffi.supermessage_ffi.notificationActions
+import uniffi.supermessage_ffi.notificationUserInfo
 
 /**
  * Posts a planned notification with `NotificationCompat`
@@ -58,8 +65,66 @@ internal class AndroidPoster(
             .setAutoCancel(true)
             .setContentIntent(openRoom(note))
         note.subtitle?.let { builder.setSubText(it) }
+        addActions(builder, note)
         if (!isMessage) builder.setColor(GeneratedThemeTokens.light.signal.toArgb())
         manager.notify(note.id, NOTIFICATION_ID, builder.build())
+    }
+
+    /**
+     * The core's actions for the category (`LocalNotifier.swift:23-61`).
+     * Android shows three buttons, so when a note has answers its "Open" is
+     * dropped: the body tap opens, as iOS's tap does
+     * (`NotificationRouter.swift:142-143`). A note with nothing to answer
+     * keeps "Open" as its button.
+     */
+    private fun addActions(builder: NotificationCompat.Builder, note: PlannedNotification) {
+        val specs = notificationActions(note.category)
+        val answers = specs.filterNot { it.opensApp }
+        val info = notificationUserInfo(note)
+        for (spec in specs) {
+            if (spec.opensApp) {
+                if (answers.isEmpty()) builder.addAction(0, spec.title, openRoom(note))
+            } else {
+                builder.addAction(answerAction(spec, note, info))
+            }
+        }
+    }
+
+    /**
+     * A broadcast to [NotificationActionReceiver]. The unlock requirement is
+     * the core's (`requiresUnlock`, true for every answer): the system makes
+     * the reader authenticate before it runs the action, on a locked device
+     * (`LocalNotifier.swift:18-21`'s `.authenticationRequired`).
+     */
+    private fun answerAction(
+        spec: NotificationActionSpec,
+        note: PlannedNotification,
+        info: Map<String, String>,
+    ): NotificationCompat.Action {
+        val intent = Intent(context, NotificationActionReceiver::class.java)
+            .setAction(spec.id)
+            .putExtra(EXTRA_ACTION_ID, spec.id)
+            .putExtra(EXTRA_TAG, note.id)
+            .putExtra(EXTRA_ACCOUNT, accountId)
+            .putExtra(EXTRA_USER_INFO, Bundle().apply { info.forEach { (k, v) -> putString(k, v) } })
+            .putExtra(EXTRA_TITLE, note.title)
+            .putExtra(EXTRA_SUBTITLE, note.subtitle)
+            .putExtra(EXTRA_BODY, note.body)
+            .putExtra(EXTRA_CATEGORY, note.category.name)
+        // A RemoteInput needs the system to fill in the typed text, so only
+        // that action's PendingIntent is mutable.
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+            (if (spec.textInput != null) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE)
+        // Unique per (tag, action), or one note's Approve would stand in for another's.
+        val pending = PendingIntent.getBroadcast(context, "${note.id}|${spec.id}".hashCode(), intent, flags)
+        val action = NotificationCompat.Action.Builder(0, spec.title, pending)
+            .setAuthenticationRequired(spec.requiresUnlock)
+        spec.textInput?.let {
+            // Android has no separate send title: only the placeholder shows.
+            action.addRemoteInput(RemoteInput.Builder(KEY_TEXT).setLabel(it.placeholder).build())
+            action.setAllowGeneratedReplies(false)
+        }
+        return action.build()
     }
 
     private fun permitted(): Boolean =
@@ -89,6 +154,48 @@ internal class AndroidPoster(
         const val EXTRA_ROOM = "dev.supermessage.extra.ROOM"
         const val EXTRA_EVENT = "dev.supermessage.extra.EVENT"
         const val EXTRA_ACCOUNT = "dev.supermessage.extra.ACCOUNT"
+        const val EXTRA_ACTION_ID = "dev.supermessage.extra.ACTION_ID"
+        const val EXTRA_TAG = "dev.supermessage.extra.TAG"
+        const val EXTRA_USER_INFO = "dev.supermessage.extra.USER_INFO"
+        const val EXTRA_TITLE = "dev.supermessage.extra.TITLE"
+        const val EXTRA_SUBTITLE = "dev.supermessage.extra.SUBTITLE"
+        const val EXTRA_BODY = "dev.supermessage.extra.BODY"
+        const val EXTRA_CATEGORY = "dev.supermessage.extra.CATEGORY"
+
+        /** The RemoteInput result key of "Request changes". */
+        const val KEY_TEXT = "dev.supermessage.reply"
+
+        /**
+         * The note an action's extras were made from, to post it again
+         * unchanged. The core's user info carries what its actions need, so
+         * the answer fields come back from it.
+         */
+        fun noteFromExtras(intent: Intent): PlannedNotification? {
+            val info = intent.getBundleExtra(EXTRA_USER_INFO) ?: return null
+            val room = info.getString("sm.roomId") ?: return null
+            val category = runCatching { NotificationCategory.valueOf(intent.getStringExtra(EXTRA_CATEGORY) ?: "") }
+                .getOrNull() ?: return null
+            val allow = info.getString("sm.allowOptionId")
+            val reject = info.getString("sm.rejectOptionId")
+            val gateId = info.getString("sm.gateId")
+            return PlannedNotification(
+                id = intent.getStringExtra(EXTRA_TAG) ?: return null,
+                roomId = room,
+                eventId = info.getString("sm.eventId"),
+                title = intent.getStringExtra(EXTRA_TITLE) ?: return null,
+                subtitle = intent.getStringExtra(EXTRA_SUBTITLE),
+                body = intent.getStringExtra(EXTRA_BODY) ?: return null,
+                category = category,
+                permission = if (allow != null && reject != null) PermissionAnswers(allow, reject) else null,
+                gate = gateId?.let {
+                    GateAnswers(
+                        it,
+                        info.getString("sm.gatePrompt").orEmpty(),
+                        info.getString("sm.gateOptions").orEmpty().split(' ').filter(String::isNotEmpty),
+                    )
+                },
+            )
+        }
 
         /** `supermessage://open?room=<id>`; a Matrix id holds `!` and `:`, so it is a query item, encoded. */
         fun openRoomUri(roomId: String): Uri =

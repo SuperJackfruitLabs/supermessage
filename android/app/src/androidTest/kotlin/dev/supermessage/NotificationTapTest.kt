@@ -31,6 +31,12 @@ class NotificationTapTest {
                 body = "hello", category = NotificationCategory.MESSAGE, permission = null, gate = null,
             ),
         )
+        // The system takes a post asynchronously.
+        val deadline = System.currentTimeMillis() + 10_000
+        while (manager.activeNotifications.none { it.tag == "\$tap" }) {
+            check(System.currentTimeMillis() < deadline) { "the note never appeared" }
+            Thread.sleep(50)
+        }
         val pending = manager.activeNotifications.single { it.tag == "\$tap" }.notification.contentIntent
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             var first: MainActivity? = null
