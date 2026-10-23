@@ -496,8 +496,13 @@ jobs:
             -scheme Supermessage \
             -destination "id=${{ steps.sim.outputs.udid }}"
 
-  android:
-    name: Android
+  # The Android job is split for wall time. The critical path is
+  # android-libs (Rust x86_64) -> android-instrumented (3 shards); the AVD
+  # cache (android-avd) is built in parallel, and android-unit (host build,
+  # bindings check, unit tests, Roborazzi) runs alongside the shards. `android`
+  # is the aggregator that keeps the single check name.
+  android-libs:
+    name: Android libs
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
@@ -538,6 +543,68 @@ jobs:
         # and a human get pointed at means a local repro of a CI failure is
         # actually reproducing it.
         run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      # ── Now the expensive part, and only the ABIs this run will load ───────
+
+      - name: Build the Rust core for Android
+        # One ABI on a pull request, four on main.
+        #
+        # The instrumented tests below run on an x86_64 emulator and this job
+        # builds no shippable artifact, so arm64-v8a, armeabi-v7a and x86 are
+        # thirteen minutes spent on libraries nothing here loads. They are still
+        # built on main, where the cost buys real coverage of the targets a
+        # device actually uses.
+        #
+        # If that trade ever looks wrong, the honest fix is a release workflow
+        # that builds all four and assembles an artifact — which does not exist
+        # today, and is why the device-capable build ended up in PR CI at all.
+        run: ./scripts/build-android-libs.sh
+
+      - name: Upload the x86_64 JNI library for the instrumented shards
+        # Only the slice the emulator loads.
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jnilibs-x86_64
+          path: android/core/src/main/jniLibs/x86_64/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload all JNI libraries for the APK job (main only)
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jnilibs-all
+          path: android/core/src/main/jniLibs/
+          if-no-files-found: error
+          retention-days: 1
+
+
+  android-unit:
+    name: Android unit tests
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    env:
+      # One ABI on a pull request, four on main.
+      #
+      # Job-level rather than step-level because BOTH halves have to agree:
+      # `build-android-libs.sh` reads it to decide what to cross-compile, and
+      # :core's `checkJniLibs` reads it to decide what to require. Setting it on
+      # only the build step is how the first attempt failed — Gradle went on
+      # demanding four ABIs of a build that had deliberately produced one.
+      ANDROID_ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a armeabi-v7a x86_64 x86' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Four cross targets for cargo-ndk (see build-android-libs.sh's own
+          # header for why these four), no separate host target: rustup adds
+          # the runner's native triple by default alongside whatever `targets`
+          # names.
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - uses: Swatinem/rust-cache@v2
 
       # ── Everything that needs only a host build comes first ───────────────
       #
@@ -628,114 +695,43 @@ jobs:
         # turning every match into a failure.
         run: ./scripts/tests/test_android_preview_leak.sh
 
-      # ── Now the expensive part, and only the ABIs this run will load ───────
+  android-apks:
+    name: Android debug APKs
+    needs: [changes, android-libs]
+    if: needs.changes.outputs.android == 'true' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    env:
+      # One ABI on a pull request, four on main.
+      #
+      # Job-level rather than step-level because BOTH halves have to agree:
+      # `build-android-libs.sh` reads it to decide what to cross-compile, and
+      # :core's `checkJniLibs` reads it to decide what to require. Setting it on
+      # only the build step is how the first attempt failed — Gradle went on
+      # demanding four ABIs of a build that had deliberately produced one.
+      ANDROID_ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a armeabi-v7a x86_64 x86' }}
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Build the Rust core for Android
-        # One ABI on a pull request, four on main.
-        #
-        # The instrumented tests below run on an x86_64 emulator and this job
-        # builds no shippable artifact, so arm64-v8a, armeabi-v7a and x86 are
-        # thirteen minutes spent on libraries nothing here loads. They are still
-        # built on main, where the cost buys real coverage of the targets a
-        # device actually uses.
-        #
-        # If that trade ever looks wrong, the honest fix is a release workflow
-        # that builds all four and assembles an artifact — which does not exist
-        # today, and is why the device-capable build ended up in PR CI at all.
-        run: ./scripts/build-android-libs.sh
-
-      - name: Enable KVM
-        # The emulator needs hardware acceleration to be usable in CI at all;
-        # GitHub's runner has the /dev/kvm device node but the image's default
-        # udev rule leaves it root-only.
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: AVD cache
-        uses: actions/cache@v4
-        id: avd-cache
+      - uses: actions/setup-java@v4
         with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/avd/*/*
-          # The profile is part of the key. It was not, and pinning
-          # `profile: pixel_6` therefore did nothing for a whole run: the cache
-          # hit restored an AVD built with the runner's default profile and the
-          # create step was skipped. A cache key that omits an input silently
-          # ignores changes to it.
-          key: avd-api36-google_apis-x86_64-pixel_6-v2
+          distribution: temurin
+          java-version: 21
 
-      - name: Create AVD and generate its snapshot for caching
-        # Only runs on a cache miss. A booted-and-snapshotted AVD is what the
-        # cache above actually stores; recreating it every run would spend
-        # several of the minutes this step exists to save.
-        if: steps.avd-cache.outputs.cache-hit != 'true'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 36
-          target: google_apis
-          arch: x86_64
-          # Pinned so the device is reproducible. Without a profile the runner
-          # picks its own default, and two tests failed here that pass on a
-          # taller local screen — a height dependency nobody could reproduce
-          # because nobody knew what height CI was using.
-          profile: pixel_6
-          avd-name: ci-avd-36
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          script: echo "Generated AVD snapshot for caching."
+      - uses: gradle/actions/setup-gradle@v4
 
-      - name: Instrumented tests
-        # API 36 to match this project's compileSdk. arch/target are x86_64
-        # + google_apis because the runner has no nested virtualization for
-        # an arm64 image — hardware acceleration needs the emulator's guest
-        # architecture to match the host's.
-        uses: reactivecircus/android-emulator-runner@v2
+      - name: Download all JNI libraries
+        uses: actions/download-artifact@v4
         with:
-          api-level: 36
-          target: google_apis
-          arch: x86_64
-          # Pinned so the device is reproducible. Without a profile the runner
-          # picks its own default, and two tests failed here that pass on a
-          # taller local screen — a height dependency nobody could reproduce
-          # because nobody knew what height CI was using.
-          profile: pixel_6
-          avd-name: ci-avd-36
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          # Uninstall before installing.
-          #
-          # The AVD is restored from a cache, and a debug keystore is generated
-          # fresh on each runner unless one is checked in — this repo does not
-          # check one in. So a snapshot that ever captured an installed
-          # dev.supermessage carries an APK signed by a keystore no later run
-          # has, and every install after that fails with
-          # INSTALL_FAILED_UPDATE_INCOMPATIBLE ("signatures do not match").
-          #
-          # It is a poisoned cache rather than a broken change, and it survives
-          # until the cache key moves — which is a manual step nobody remembers
-          # in the moment, because the error names signatures and points at the
-          # app. Uninstalling first makes the job idempotent against whatever
-          # the snapshot happens to hold.
-          #
-          # `|| true`: the package is absent on a clean AVD, and adb treats
-          # uninstalling something that was never there as a failure.
-          script: |
-            adb uninstall dev.supermessage || true
-            adb uninstall dev.supermessage.test || true
-            cd android && ./gradlew :app:connectedDebugAndroidTest
+          name: android-jnilibs-all
+          path: android/core/src/main/jniLibs
+
+      - name: Assemble the debug APKs
+        run: ./gradlew :app:assembleDebug
+        working-directory: android
 
       - name: Report per-ABI APK sizes
-        # :app:connectedDebugAndroidTest above already assembles :app's own
-        # split APKs as a dependency of installing it on the emulator — see
-        # android/app/build.gradle.kts's `splits` block — so there is nothing
-        # left to build here, only to measure. On a pull request that is one
-        # split rather than five, because only one ABI was built.
         run: du -h android/app/build/outputs/apk/debug/*.apk
+
 
       # ── Installable artifacts, on main only ───────────────────────────────
       #
@@ -790,6 +786,193 @@ jobs:
         with:
           name: supermessage-debug-universal
           path: android/app/build/outputs/apk/debug/app-universal-debug.apk
+
+
+  android-avd:
+    name: Android emulator image
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/avd/*/*
+          # The profile is part of the key. It was not, and pinning
+          # `profile: pixel_6` therefore did nothing for a whole run: the cache
+          # hit restored an AVD built with the runner's default profile and the
+          # create step was skipped. A cache key that omits an input silently
+          # ignores changes to it.
+          key: avd-api36-google_apis-x86_64-pixel_6-v2
+
+      - name: Enable KVM
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        # The emulator needs hardware acceleration to be usable in CI at all;
+        # GitHub's runner has the /dev/kvm device node but the image's default
+        # udev rule leaves it root-only.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+
+      - name: Create AVD and generate its snapshot for caching
+        # Only runs on a cache miss. A booted-and-snapshotted AVD is what the
+        # cache above actually stores; recreating it every run would spend
+        # several of the minutes this step exists to save.
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          # Pinned so the device is reproducible. Without a profile the runner
+          # picks its own default, and two tests failed here that pass on a
+          # taller local screen — a height dependency nobody could reproduce
+          # because nobody knew what height CI was using.
+          profile: pixel_6
+          avd-name: ci-avd-36
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+
+  android-instrumented:
+    name: Android instrumented tests (shard ${{ matrix.shard }})
+    needs: [changes, android-libs, android-avd]
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      # One shard failing should not hide what the others found.
+      fail-fast: false
+      matrix:
+        # AndroidJUnitRunner shard indices; NUM_SHARDS must equal the length.
+        shard: [0, 1, 2]
+    env:
+      # The shards hold only the x86_64 library the emulator loads, so
+      # :core's checkJniLibs must require only that ABI, on main as well.
+      ANDROID_ABIS: x86_64
+      NUM_SHARDS: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Download the x86_64 JNI library
+        uses: actions/download-artifact@v4
+        with:
+          name: android-jnilibs-x86_64
+          path: android/core/src/main/jniLibs/x86_64
+
+
+      - name: Enable KVM
+        # The emulator needs hardware acceleration to be usable in CI at all;
+        # GitHub's runner has the /dev/kvm device node but the image's default
+        # udev rule leaves it root-only.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+
+      - name: AVD cache (restore only; android-avd creates it)
+        # Same key as android-avd's cache step. Any input that shapes the AVD
+        # (api level, target, arch, profile) must change the key in BOTH places.
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/avd/*/*
+          key: avd-api36-google_apis-x86_64-pixel_6-v2
+          fail-on-cache-miss: true
+
+      - name: Instrumented tests
+        # API 36 to match this project's compileSdk. arch/target are x86_64
+        # + google_apis because the runner has no nested virtualization for
+        # an arm64 image — hardware acceleration needs the emulator's guest
+        # architecture to match the host's.
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          # Pinned so the device is reproducible. Without a profile the runner
+          # picks its own default, and two tests failed here that pass on a
+          # taller local screen — a height dependency nobody could reproduce
+          # because nobody knew what height CI was using.
+          profile: pixel_6
+          avd-name: ci-avd-36
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          # Uninstall before installing.
+          #
+          # The AVD is restored from a cache, and a debug keystore is generated
+          # fresh on each runner unless one is checked in — this repo does not
+          # check one in. So a snapshot that ever captured an installed
+          # dev.supermessage carries an APK signed by a keystore no later run
+          # has, and every install after that fails with
+          # INSTALL_FAILED_UPDATE_INCOMPATIBLE ("signatures do not match").
+          #
+          # It is a poisoned cache rather than a broken change, and it survives
+          # until the cache key moves — which is a manual step nobody remembers
+          # in the moment, because the error names signatures and points at the
+          # app. Uninstalling first makes the job idempotent against whatever
+          # the snapshot happens to hold.
+          #
+          # `|| true`: the package is absent on a clean AVD, and adb treats
+          # uninstalling something that was never there as a failure.
+          script: |
+            adb uninstall dev.supermessage || true
+            adb uninstall dev.supermessage.test || true
+            cd android && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.numShards=${{ env.NUM_SHARDS }} -Pandroid.testInstrumentationRunnerArguments.shardIndex=${{ matrix.shard }}
+
+
+      - name: Upload instrumented test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumented-results-shard-${{ matrix.shard }}
+          path: |
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+
+  android:
+    name: Android
+    needs: [changes, android-libs, android-avd, android-unit, android-apks, android-instrumented]
+    if: always() && needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every Android job succeeded
+        env:
+          LIBS: ${{ needs.android-libs.result }}
+          AVD: ${{ needs.android-avd.result }}
+          UNIT: ${{ needs.android-unit.result }}
+          SHARDS: ${{ needs.android-instrumented.result }}
+          APKS: ${{ needs.android-apks.result }}
+        run: |
+          echo "libs=$LIBS avd=$AVD unit=$UNIT shards=$SHARDS apks=$APKS"
+          # These four always run when Android paths changed: success only.
+          for r in "$LIBS" "$AVD" "$UNIT" "$SHARDS"; do
+            if [ "$r" != success ]; then
+              echo "::error::an Android job did not succeed ($r)"
+              exit 1
+            fi
+          done
+          # android-apks is skipped on pull requests by design.
+          if [ "$APKS" != success ] && [ "$APKS" != skipped ]; then
+            echo "::error::android-apks $APKS"
+            exit 1
+          fi
 
   licences:
     name: Dependency licences
