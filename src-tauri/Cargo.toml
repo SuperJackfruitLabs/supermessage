@@ -159,6 +159,12 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # hand-written DTOs, is what that file exists to exercise.
 matrix-sdk-test = "0.18"
 
+# `p2p`: the notification tests run the real `notify::SessionBusBackend` against a fake
+# server on a private socket (D-Bus peer to peer), not only against an in-process fake.
+# Only adds `uuid/v4`, already in the tree.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+zbus = { version = "=5.19.0", features = ["p2p"] }
+
 [lints.rust]
 # `ruma`'s `EventContent` derive expands to `#[cfg(ruma_unstable_exhaustive_types)]`
 # in the *consuming* crate, so rustc's check-cfg — which only knows the cfgs this

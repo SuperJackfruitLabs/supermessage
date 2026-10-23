@@ -114,6 +114,7 @@ mod xdg {
     use super::*;
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+    use std::time::Duration;
 
     use supermessage_core::notification::NotificationCategory;
     use supermessage_core::notification_policy::{self, ACTION_OPEN};
@@ -125,6 +126,11 @@ mod xdg {
     /// withdrawn. Past this the oldest is closed: a note that old has long been seen,
     /// and closing it is what keeps `withdraw_all` from leaving one behind.
     pub const MAX_KNOWN: usize = 256;
+
+    /// How long one call to the session bus may take. A server that is alive but not
+    /// answering (a frozen plasmashell or gnome-shell) then costs a post this long, and
+    /// quit at most this long, instead of both for ever.
+    pub const METHOD_TIMEOUT: Duration = Duration::from_secs(5);
 
     /// The label of the click on the note itself: the core's own Open action
     /// (`LocalNotifier.swift:44-45`). Servers rarely draw it.
@@ -143,6 +149,9 @@ mod xdg {
         Action { id: u32, action: String },
         /// `NotificationClosed`: notification `id` is gone, however it went.
         Closed { id: u32 },
+        /// Another process now serves notifications (the server restarted). The old
+        /// server's notes went with it, and the new one numbers its own from 1 again.
+        ServerChanged,
     }
 
     /// Where the server's signals go.
@@ -168,8 +177,10 @@ mod xdg {
         fn supports_actions(&self) -> bool;
         /// Shows the notification; returns the server's id for it.
         fn show(&self, request: &XdgRequest) -> Result<u32, String>;
-        /// Closes notification `id`. Blocks for one round trip.
-        fn close(&self, id: u32);
+        /// Closes notification `id`. Blocks for one round trip. False only when the
+        /// server did not answer in time; an error answer (the note was already gone)
+        /// still counts as an answer.
+        fn close(&self, id: u32) -> bool;
     }
 
     /// A note on screen, by its ids only.
@@ -178,18 +189,29 @@ mod xdg {
         server_id: u32,
         user_info: HashMap<String, String>,
         account: Option<String>,
+        /// Pressed once already. It is kept, so that `withdraw_all` still closes it on a
+        /// server that leaves a note up after a press, but it answers nothing more.
+        answered: bool,
     }
 
     #[derive(Default)]
     struct State {
         /// Oldest first.
         known: VecDeque<Known>,
+        /// Moves on whenever every note is let go of (withdrawn, or gone with its server),
+        /// so a note whose post was under way then is closed instead of remembered.
+        generation: u64,
     }
 
     impl State {
         fn forget(&mut self, server_id: u32) -> Option<Known> {
             let i = self.known.iter().position(|k| k.server_id == server_id)?;
             self.known.remove(i)
+        }
+
+        fn forget_all(&mut self) -> Vec<u32> {
+            self.generation += 1;
+            self.known.drain(..).map(|k| k.server_id).collect()
         }
     }
 
@@ -198,7 +220,12 @@ mod xdg {
         /// Whether buttons are offered, read once with the subscription in place:
         /// the server does not change under a running app.
         actions: OnceLock<bool>,
+        /// What is on screen. Never held across a call to the server: the listener takes
+        /// it for every signal, and must never wait on the server's reply to a post.
         state: Arc<Mutex<State>>,
+        /// One post at a time, so two posts of one note cannot both miss the note they
+        /// replace. Only posts take it; neither the listener nor `withdraw_all` does.
+        posting: Mutex<()>,
         sender: ActionSender,
     }
 
@@ -208,21 +235,33 @@ mod xdg {
 
     /// A press is reported only for a note still remembered, and only once: that is
     /// what makes [`Poster::withdraw_all`] a barrier, since it forgets every note
-    /// before closing them.
+    /// before closing them. The lock is held only for the bookkeeping.
     fn on_signal(state: &Mutex<State>, sender: &ActionSender, signal: Signal) {
         match signal {
             Signal::Closed { id } => {
                 lock(state).forget(id);
             }
+            Signal::ServerChanged => {
+                lock(state).forget_all();
+            }
             Signal::Action { id, action } => {
-                let known = lock(state).forget(id);
-                if let Some(known) = known {
-                    let _ = sender.send(ActionTaken {
+                let taken = {
+                    let mut state = lock(state);
+                    let Some(known) = state
+                        .known
+                        .iter_mut()
+                        .find(|k| k.server_id == id && !k.answered)
+                    else {
+                        return;
+                    };
+                    known.answered = true;
+                    ActionTaken {
                         action_id: action,
-                        user_info: known.user_info,
-                        account: known.account,
-                    });
-                }
+                        user_info: known.user_info.clone(),
+                        account: known.account.clone(),
+                    }
+                };
+                let _ = sender.send(taken);
             }
         }
     }
@@ -234,6 +273,7 @@ mod xdg {
                 backend,
                 actions: OnceLock::new(),
                 state: Arc::new(Mutex::new(State::default())),
+                posting: Mutex::new(()),
                 sender,
             }
         }
@@ -293,43 +333,57 @@ mod xdg {
     impl Poster for XdgPoster {
         fn post(&self, note: &PostedNote) -> Result<(), String> {
             let buttons = self.ready();
-            let evicted: Vec<u32> = {
-                // Held while the note is sent, so a press that comes back at once waits
-                // for its entry instead of being missed.
-                let mut state = lock(&self.state);
+            let _posting = lock(&self.posting);
+            let (replaces, generation) = {
+                let state = lock(&self.state);
                 let replaces = state
                     .known
                     .iter()
                     .find(|k| k.note_id == note.id)
                     .map(|k| k.server_id);
-                let server_id = self.backend.show(&Self::request(note, replaces, buttons))?;
-                state
-                    .known
-                    .retain(|k| k.note_id != note.id && k.server_id != server_id);
-                state.known.push_back(Known {
-                    note_id: note.id.clone(),
-                    server_id,
-                    user_info: note.user_info.clone(),
-                    account: note.account.clone(),
-                });
-                let excess = state.known.len().saturating_sub(MAX_KNOWN);
-                state.known.drain(..excess).map(|k| k.server_id).collect()
+                (replaces, state.generation)
             };
-            for id in evicted {
+            // Sent with the state unlocked. A press on this note cannot come back before
+            // the reply does (nobody can press a note within one round trip), and holding
+            // the lock here would park the listener behind the server's reply: with zbus's
+            // bounded signal queue full, that reply is never read.
+            let server_id = self.backend.show(&Self::request(note, replaces, buttons))?;
+            let close: Vec<u32> = {
+                let mut state = lock(&self.state);
+                if state.generation != generation {
+                    // Withdrawn, or its server replaced, while it was being shown.
+                    vec![server_id]
+                } else {
+                    state
+                        .known
+                        .retain(|k| k.note_id != note.id && k.server_id != server_id);
+                    state.known.push_back(Known {
+                        note_id: note.id.clone(),
+                        server_id,
+                        user_info: note.user_info.clone(),
+                        account: note.account.clone(),
+                        answered: false,
+                    });
+                    let excess = state.known.len().saturating_sub(MAX_KNOWN);
+                    state.known.drain(..excess).map(|k| k.server_id).collect()
+                }
+            };
+            for id in close {
                 self.backend.close(id);
             }
             Ok(())
         }
 
         fn withdraw_all(&self) {
-            // Forgotten first: a press that lands while they close reports nothing.
-            let all: Vec<u32> = lock(&self.state)
-                .known
-                .drain(..)
-                .map(|k| k.server_id)
-                .collect();
+            // Forgotten first: a press that lands while they close reports nothing, and a
+            // post under way closes its own note when it returns.
+            let all = lock(&self.state).forget_all();
             for id in all {
-                self.backend.close(id);
+                // A server that does not answer one close will not answer the rest; quit
+                // waits for one timeout, not one per note.
+                if !self.backend.close(id) {
+                    break;
+                }
             }
         }
     }
@@ -341,25 +395,48 @@ mod xdg {
         "org.freedesktop.Notifications",
     );
 
+    /// The message bus itself: its name (which is also its interface) and object path.
+    const DBUS: (&str, &str) = ("org.freedesktop.DBus", "/org/freedesktop/DBus");
+
+    /// Opens the connection, before the timeout is put on it.
+    type Connect =
+        Box<dyn Fn() -> zbus::Result<zbus::blocking::connection::Builder<'static>> + Send + Sync>;
+
     /// The real server, over one session-bus connection opened on first use. Every note
     /// is sent on it and every signal heard on it: some servers (dunst) signal only the
     /// connection that sent a note, and some (GNOME) close a note once that connection
     /// goes away. `tauri-plugin-notification` 2.7 does the same on Linux
     /// (`desktop.rs`, `Tracker`).
     pub struct SessionBusBackend {
+        connect: Connect,
+        timeout: Duration,
         bus: OnceLock<Option<zbus::blocking::Connection>>,
     }
 
     impl SessionBusBackend {
         pub fn new() -> Self {
+            Self::over(
+                Box::new(zbus::blocking::connection::Builder::session),
+                METHOD_TIMEOUT,
+            )
+        }
+
+        /// Over the connection `connect` opens, every call bounded by `timeout`.
+        pub(super) fn over(connect: Connect, timeout: Duration) -> Self {
             Self {
+                connect,
+                timeout,
                 bus: OnceLock::new(),
             }
         }
 
         fn connection(&self) -> Option<&zbus::blocking::Connection> {
             self.bus
-                .get_or_init(|| zbus::blocking::Connection::session().ok())
+                .get_or_init(|| {
+                    (self.connect)()
+                        .and_then(|b| b.method_timeout(self.timeout).build())
+                        .ok()
+                })
                 .as_ref()
         }
 
@@ -373,11 +450,57 @@ mod xdg {
             let (destination, path, interface) = BUS;
             connection.call_method(Some(destination), path, Some(interface), method, body)
         }
+
+        /// The unique name that owns the server's well-known name now, if any.
+        fn name_owner(connection: &zbus::blocking::Connection) -> Option<String> {
+            let (bus, path) = DBUS;
+            connection
+                .call_method(Some(bus), path, Some(bus), "GetNameOwner", &(BUS.0,))
+                .ok()?
+                .body()
+                .deserialize::<String>()
+                .ok()
+        }
     }
 
-    /// The server's signal as a [`Signal`]; anything else is `None`.
-    fn parse(message: &zbus::message::Message) -> Option<Signal> {
+    /// Which process is the notification server: the unique name owning its well-known
+    /// name. Only its signals are its; anyone on the session bus can send the same
+    /// signal, addressed to us, with a forged note id.
+    #[derive(Debug, Default)]
+    pub(super) struct ServerOwner {
+        name: Option<String>,
+        /// A change was heard, so a start-up `GetNameOwner` reply is older than it.
+        heard_change: bool,
+    }
+
+    impl ServerOwner {
+        #[cfg(test)]
+        pub(super) fn of(name: &str) -> Self {
+            Self {
+                name: Some(name.into()),
+                heard_change: false,
+            }
+        }
+
+        #[cfg(test)]
+        pub(super) fn name(&self) -> Option<&str> {
+            self.name.as_deref()
+        }
+    }
+
+    /// The server's signal as a [`Signal`], if the server sent it; anything else is `None`.
+    pub(super) fn from_server(
+        owner: &Mutex<ServerOwner>,
+        message: &zbus::message::Message,
+    ) -> Option<Signal> {
         let header = message.header();
+        let sender = header.sender()?;
+        if lock(owner).name.as_deref() != Some(sender.as_str()) {
+            return None;
+        }
+        if header.interface()?.as_str() != BUS.2 {
+            return None;
+        }
         let body = message.body();
         match header.member()?.as_str() {
             "ActionInvoked" => {
@@ -392,39 +515,118 @@ mod xdg {
         }
     }
 
+    /// Follows the bus's `NameOwnerChanged` for the server's name. A change from one
+    /// server to another (or to none) is [`Signal::ServerChanged`]; the first server
+    /// appearing (started on demand by the first note) is not, since nothing was shown
+    /// before it.
+    pub(super) fn owner_changed(
+        owner: &Mutex<ServerOwner>,
+        message: &zbus::message::Message,
+    ) -> Option<Signal> {
+        let header = message.header();
+        let (bus, _) = DBUS;
+        if header.sender()?.as_str() != bus
+            || header.interface()?.as_str() != bus
+            || header.member()?.as_str() != "NameOwnerChanged"
+        {
+            return None;
+        }
+        let (name, _old, new) = message
+            .body()
+            .deserialize::<(String, String, String)>()
+            .ok()?;
+        if name != BUS.0 {
+            return None;
+        }
+        let new = (!new.is_empty()).then_some(new);
+        let mut owner = lock(owner);
+        owner.heard_change = true;
+        let previous = std::mem::replace(&mut owner.name, new);
+        (previous.is_some() && previous != owner.name).then_some(Signal::ServerChanged)
+    }
+
+    /// Hands what `read` makes of each message to `sink`, on a thread of its own. The
+    /// thread waits on nothing but short locks, so zbus's bounded queue is always drained
+    /// and the connection's reader never stalls behind it.
+    fn drain<F>(
+        name: &str,
+        messages: zbus::blocking::MessageIterator,
+        read: F,
+        sink: SignalSink,
+    ) -> bool
+    where
+        F: Fn(&zbus::message::Message) -> Option<Signal> + Send + 'static,
+    {
+        std::thread::Builder::new()
+            .name(name.into())
+            .spawn(move || {
+                for message in messages.flatten() {
+                    if let Some(signal) = read(&message) {
+                        // A panicking sink must not stop the signals of every other note.
+                        let _ =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sink(signal)));
+                    }
+                }
+            })
+            .is_ok()
+    }
+
     impl XdgBackend for SessionBusBackend {
         fn listen(&self, sink: SignalSink) -> bool {
             let Some(connection) = self.connection() else {
                 return false;
             };
-            let (_, path, interface) = BUS;
-            let Ok(rule) = zbus::MatchRule::builder()
+            let (name, path, interface) = BUS;
+            let (bus, bus_path) = DBUS;
+            // The bus applies `sender` to broadcast signals only, and zbus cannot apply a
+            // well-known name at all, so each signal's sender is checked again on arrival.
+            let signals = zbus::MatchRule::builder()
                 .msg_type(zbus::message::Type::Signal)
-                .path(path)
+                .sender(name)
+                .and_then(|b| b.path(path))
                 .and_then(|b| b.interface(interface))
-                .map(|b| b.build())
-            else {
+                .map(|b| b.build());
+            let changes = zbus::MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .sender(bus)
+                .and_then(|b| b.path(bus_path))
+                .and_then(|b| b.interface(bus))
+                .and_then(|b| b.member("NameOwnerChanged"))
+                .and_then(|b| b.arg(0, name))
+                .map(|b| b.build());
+            let (Ok(signals), Ok(changes)) = (signals, changes) else {
                 return false;
             };
             // Subscribed before this returns, so a press on the first note is heard.
-            let Ok(signals) =
-                zbus::blocking::MessageIterator::for_match_rule(rule, connection, None)
-            else {
+            let iterate =
+                |rule| zbus::blocking::MessageIterator::for_match_rule(rule, connection, None);
+            let (Ok(signals), Ok(changes)) = (iterate(signals), iterate(changes)) else {
                 return false;
             };
-            std::thread::Builder::new()
-                .name("notification-signals".into())
-                .spawn(move || {
-                    for message in signals.flatten() {
-                        if let Some(signal) = parse(&message) {
-                            // A panicking sink must not stop the signals of every other note.
-                            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                sink(signal)
-                            }));
-                        }
-                    }
-                })
-                .is_ok()
+            let owner = Arc::new(Mutex::new(ServerOwner::default()));
+            let heard = Arc::clone(&owner);
+            let followed = Arc::clone(&owner);
+            if !(drain(
+                "notification-signals",
+                signals,
+                move |m| from_server(&heard, m),
+                Arc::clone(&sink),
+            ) && drain(
+                "notification-owner",
+                changes,
+                move |m| owner_changed(&followed, m),
+                sink,
+            )) {
+                return false;
+            }
+            // Asked only once both queues are being drained, so no burst of signals can
+            // hold the reply up.
+            let current = Self::name_owner(connection);
+            let mut owner = lock(&owner);
+            if !owner.heard_change {
+                owner.name = current;
+            }
+            true
         }
 
         fn supports_actions(&self) -> bool {
@@ -459,11 +661,15 @@ mod xdg {
             .map_err(|e| e.to_string())
         }
 
-        fn close(&self, id: u32) {
+        fn close(&self, id: u32) -> bool {
             // Never opens the bus just to close: nothing was shown without it.
-            if self.bus.get().and_then(Option::as_ref).is_some() {
-                let _ = self.call("CloseNotification", &(id,));
+            if self.bus.get().and_then(Option::as_ref).is_none() {
+                return true;
             }
+            !matches!(
+                self.call("CloseNotification", &(id,)),
+                Err(zbus::Error::InputOutput(e)) if e.kind() == std::io::ErrorKind::TimedOut
+            )
         }
     }
 }
@@ -529,6 +735,8 @@ pub(crate) mod fake {
         pub calls: Mutex<Vec<&'static str>>,
         /// Closes without reporting them, as a server that restarted would.
         pub silent_closes: std::sync::atomic::AtomicBool,
+        /// When set, the next `show` waits for a message on it before it answers.
+        pub held: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
         sink: Mutex<Option<SignalSink>>,
     }
 
@@ -549,6 +757,7 @@ pub(crate) mod fake {
                 closed: Mutex::new(vec![]),
                 calls: Mutex::new(vec![]),
                 silent_closes: Default::default(),
+                held: Mutex::new(None),
                 sink: Mutex::new(None),
             })
         }
@@ -573,6 +782,10 @@ pub(crate) mod fake {
         pub fn dismiss(&self, id: u32) {
             self.signal(Signal::Closed { id });
         }
+        /// Another process takes over as the notification server.
+        pub fn restart(&self) {
+            self.signal(Signal::ServerChanged);
+        }
     }
 
     pub struct Backend(pub Arc<FakeServer>);
@@ -591,6 +804,10 @@ pub(crate) mod fake {
         fn show(&self, request: &XdgRequest) -> Result<u32, String> {
             self.0.calls.lock().unwrap().push("show");
             self.0.shown.lock().unwrap().push(request.clone());
+            let held = self.0.held.lock().unwrap().take();
+            if let Some(release) = held {
+                let _ = release.recv();
+            }
             Ok(match request.replaces {
                 Some(id) => id,
                 None => {
@@ -600,7 +817,7 @@ pub(crate) mod fake {
                 }
             })
         }
-        fn close(&self, id: u32) {
+        fn close(&self, id: u32) -> bool {
             self.0.closed.lock().unwrap().push(id);
             // A real server reports every close it makes.
             if !self
@@ -610,6 +827,7 @@ pub(crate) mod fake {
             {
                 self.0.dismiss(id);
             }
+            true
         }
     }
 
@@ -656,7 +874,10 @@ mod tests {
     #[cfg(target_os = "linux")]
     mod linux {
         use super::super::fake::{poster, poster_on, FakeServer};
-        use super::super::xdg::{SessionBusBackend, XdgPoster, MAX_KNOWN};
+        use super::super::xdg::{
+            from_server, owner_changed, ServerOwner, SessionBusBackend, Signal, XdgPoster,
+            MAX_KNOWN,
+        };
         use super::super::*;
         use std::sync::Arc;
         use std::time::Duration;
@@ -875,6 +1096,479 @@ mod tests {
             assert_eq!(server.closed.lock().unwrap().len(), MAX_KNOWN + 1);
         }
 
+        #[test]
+        fn a_pressed_note_answers_once_but_is_still_closed_on_withdraw() {
+            let (poster, server, mut rx) = poster(true);
+            server
+                .silent_closes
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            poster.post(&note("$a", vec![])).unwrap();
+            server.press(101, "default");
+            assert!(rx.try_recv().is_ok());
+            server.press(101, "default");
+            assert!(rx.try_recv().is_err(), "a note answers once");
+            poster.withdraw_all();
+            assert_eq!(
+                *server.closed.lock().unwrap(),
+                vec![101],
+                "a server may keep a pressed note up; sign-out still takes it down"
+            );
+        }
+
+        #[test]
+        fn a_new_server_forgets_every_note() {
+            let (poster, server, mut rx) = poster(true);
+            poster.post(&note("$a", vec![])).unwrap();
+            poster.post(&note("$b", vec![])).unwrap();
+            server.restart();
+            assert_eq!(poster.remembered(), 0);
+            // The new server numbers from 1 again: its 101 is someone else's note.
+            server.press(101, "default");
+            assert!(rx.try_recv().is_err());
+            poster.post(&note("$a", vec![])).unwrap();
+            assert_eq!(
+                server.shown.lock().unwrap()[2].replaces,
+                None,
+                "the old server's id is not the new one's to replace"
+            );
+        }
+
+        /// Runs `f` on its own thread; `None` if it has not returned within `limit`, so a
+        /// regression fails the test instead of hanging it.
+        fn within<T: Send + 'static>(
+            limit: Duration,
+            f: impl FnOnce() -> T + Send + 'static,
+        ) -> Option<T> {
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(f());
+            });
+            rx.recv_timeout(limit).ok()
+        }
+
+        #[test]
+        fn a_post_waiting_on_the_server_holds_up_neither_a_press_nor_withdraw_all() {
+            let (poster, server, rx) = poster(true);
+            let poster = Arc::new(poster);
+            let rx = Arc::new(std::sync::Mutex::new(rx));
+            poster.post(&note("$a", vec![])).unwrap();
+            let (release, held) = std::sync::mpsc::channel();
+            *server.held.lock().unwrap() = Some(held);
+            let posting = std::thread::spawn({
+                let poster = Arc::clone(&poster);
+                move || poster.post(&note("$b", vec![]))
+            });
+            while server.shown.lock().unwrap().len() < 2 {
+                std::thread::yield_now();
+            }
+
+            let pressed = within(Duration::from_secs(2), {
+                let (server, rx) = (Arc::clone(&server), Arc::clone(&rx));
+                move || {
+                    server.press(101, "default");
+                    rx.lock().unwrap().try_recv().is_ok()
+                }
+            });
+            assert_eq!(pressed, Some(true), "the press is heard while $b is shown");
+            let withdrawn = within(Duration::from_secs(2), {
+                let poster = Arc::clone(&poster);
+                move || poster.withdraw_all()
+            });
+            assert!(withdrawn.is_some(), "withdraw_all does not wait for $b");
+
+            release.send(()).unwrap();
+            posting.join().unwrap().unwrap();
+            assert_eq!(
+                poster.remembered(),
+                0,
+                "$b was withdrawn while it was shown"
+            );
+            assert!(
+                server.closed.lock().unwrap().contains(&102),
+                "so it is closed as soon as its id is known"
+            );
+        }
+
+        /// Signals as the bus delivers them, for [`from_server`] and [`owner_changed`].
+        fn signal<B>(
+            sender: &str,
+            path: &str,
+            interface: &str,
+            member: &str,
+            body: &B,
+        ) -> zbus::message::Message
+        where
+            B: serde::Serialize + zbus::zvariant::DynamicType,
+        {
+            zbus::message::Message::signal(path, interface, member)
+                .unwrap()
+                .sender(sender)
+                .unwrap()
+                .build(body)
+                .unwrap()
+        }
+
+        const NOTIFICATIONS: (&str, &str) = (
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        );
+
+        fn from(
+            sender: &str,
+            member: &str,
+            body: &(u32, impl serde::Serialize + zbus::zvariant::Type),
+        ) -> zbus::message::Message {
+            let (path, interface) = NOTIFICATIONS;
+            signal(sender, path, interface, member, body)
+        }
+
+        fn owner_change(sender: &str, name: &str, old: &str, new: &str) -> zbus::message::Message {
+            signal(
+                sender,
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "NameOwnerChanged",
+                &(name, old, new),
+            )
+        }
+
+        #[test]
+        fn only_the_servers_own_signals_are_heard() {
+            let owner = std::sync::Mutex::new(ServerOwner::of(":1.7"));
+            assert_eq!(
+                from_server(&owner, &from(":1.7", "ActionInvoked", &(4, "approve"))),
+                Some(Signal::Action {
+                    id: 4,
+                    action: "approve".into()
+                })
+            );
+            assert_eq!(
+                from_server(&owner, &from(":1.7", "NotificationClosed", &(4, 2u32))),
+                Some(Signal::Closed { id: 4 })
+            );
+            assert_eq!(
+                from_server(&owner, &from(":1.99", "ActionInvoked", &(4, "approve"))),
+                None,
+                "another process can send the same signal; it is not the server"
+            );
+            assert_eq!(
+                from_server(&owner, &from(":1.99", "NotificationClosed", &(4, 2u32))),
+                None
+            );
+            assert_eq!(
+                from_server(&owner, &from(":1.7", "ActionInvoked", &(4, 2u32))),
+                None,
+                "ActionInvoked is (us)"
+            );
+            assert_eq!(
+                from_server(&owner, &from(":1.7", "NotificationClosed", &(4, "x"))),
+                None,
+                "NotificationClosed is (uu)"
+            );
+            let nobody = std::sync::Mutex::new(ServerOwner::default());
+            assert_eq!(
+                from_server(&nobody, &from(":1.7", "ActionInvoked", &(4, "approve"))),
+                None,
+                "with no server known, nothing is the server's"
+            );
+        }
+
+        #[test]
+        fn the_server_is_followed_across_a_restart() {
+            const BUS: &str = "org.freedesktop.DBus";
+            const NAME: &str = "org.freedesktop.Notifications";
+            let owner = std::sync::Mutex::new(ServerOwner::of(":1.7"));
+
+            assert_eq!(
+                owner_changed(&owner, &owner_change(":1.99", NAME, ":1.7", ":1.99")),
+                None,
+                "only the bus says who owns a name"
+            );
+            assert_eq!(
+                owner_changed(&owner, &owner_change(BUS, "org.example.Other", "", ":1.5")),
+                None
+            );
+            assert_eq!(owner.lock().unwrap().name(), Some(":1.7"));
+
+            assert_eq!(
+                owner_changed(&owner, &owner_change(BUS, NAME, ":1.7", ":1.8")),
+                Some(Signal::ServerChanged)
+            );
+            assert_eq!(owner.lock().unwrap().name(), Some(":1.8"));
+            assert_eq!(
+                from_server(&owner, &from(":1.7", "ActionInvoked", &(4, "approve"))),
+                None,
+                "the old server is not the server any more"
+            );
+            assert!(from_server(&owner, &from(":1.8", "ActionInvoked", &(4, "approve"))).is_some());
+
+            assert_eq!(
+                owner_changed(&owner, &owner_change(BUS, NAME, ":1.8", "")),
+                Some(Signal::ServerChanged),
+                "the server went away"
+            );
+            assert_eq!(owner.lock().unwrap().name(), None);
+            assert_eq!(
+                owner_changed(&owner, &owner_change(BUS, NAME, "", ":1.9")),
+                None,
+                "a server starting where there was none had shown nothing"
+            );
+            assert_eq!(owner.lock().unwrap().name(), Some(":1.9"));
+        }
+
+        /// The real [`SessionBusBackend`] against a notification server on a private
+        /// socket (D-Bus peer to peer), which answers as a bus and a server would.
+        mod peer {
+            use super::super::super::xdg::SessionBusBackend;
+            use std::collections::HashMap;
+            use std::os::unix::net::UnixStream;
+            use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+            use std::sync::{Arc, Mutex};
+            use std::time::Duration;
+
+            /// The unique name the fake bus says owns `org.freedesktop.Notifications`.
+            pub const OWNER: &str = ":1.7";
+
+            struct Notifications {
+                hung: Arc<AtomicBool>,
+                next: AtomicU32,
+            }
+
+            #[zbus::interface(name = "org.freedesktop.Notifications")]
+            impl Notifications {
+                #[allow(clippy::too_many_arguments)]
+                async fn notify(
+                    &self,
+                    _app_name: String,
+                    replaces_id: u32,
+                    _app_icon: String,
+                    _summary: String,
+                    _body: String,
+                    _actions: Vec<String>,
+                    _hints: HashMap<String, zbus::zvariant::OwnedValue>,
+                    _expire_timeout: i32,
+                ) -> u32 {
+                    if self.hung.load(Ordering::SeqCst) {
+                        std::future::pending::<()>().await;
+                    }
+                    match replaces_id {
+                        0 => self.next.fetch_add(1, Ordering::SeqCst) + 1,
+                        id => id,
+                    }
+                }
+
+                async fn close_notification(&self, _id: u32) {
+                    if self.hung.load(Ordering::SeqCst) {
+                        std::future::pending::<()>().await;
+                    }
+                }
+
+                fn get_capabilities(&self) -> Vec<String> {
+                    vec!["actions".into()]
+                }
+            }
+
+            struct Bus;
+
+            #[zbus::interface(name = "org.freedesktop.DBus")]
+            impl Bus {
+                fn get_name_owner(&self, _name: String) -> String {
+                    OWNER.into()
+                }
+            }
+
+            pub struct Peer {
+                /// While set, the server takes every call and never answers it.
+                pub hung: Arc<AtomicBool>,
+                server: std::thread::JoinHandle<zbus::blocking::Connection>,
+            }
+
+            /// A backend whose every call is bounded by `timeout`, and its server. The
+            /// connection is made on the backend's first call.
+            pub fn start(timeout: Duration) -> (SessionBusBackend, Peer) {
+                let (client, server) = UnixStream::pair().unwrap();
+                let hung = Arc::new(AtomicBool::new(false));
+                let notifications = Notifications {
+                    hung: Arc::clone(&hung),
+                    next: AtomicU32::new(0),
+                };
+                let server = std::thread::spawn(move || {
+                    zbus::blocking::connection::Builder::async_io_unix_stream(server)
+                        .server(zbus::Guid::generate())
+                        .unwrap()
+                        .p2p()
+                        .serve_at("/org/freedesktop/Notifications", notifications)
+                        .unwrap()
+                        .serve_at("/org/freedesktop/DBus", Bus)
+                        .unwrap()
+                        .build()
+                        .unwrap()
+                });
+                let client = Mutex::new(Some(client));
+                let backend = SessionBusBackend::over(
+                    Box::new(move || {
+                        let stream =
+                            client.lock().unwrap().take().ok_or_else(|| {
+                                zbus::Error::Failure("one connection only".into())
+                            })?;
+                        Ok(zbus::blocking::connection::Builder::async_io_unix_stream(stream).p2p())
+                    }),
+                    timeout,
+                );
+                (backend, Peer { hung, server })
+            }
+
+            impl Peer {
+                /// The server's end, once the backend has connected.
+                pub fn connected(self) -> (zbus::blocking::Connection, Arc<AtomicBool>) {
+                    (self.server.join().unwrap(), self.hung)
+                }
+            }
+
+            /// Sends a signal from `sender`, as the bus would stamp it.
+            pub fn emit<B>(
+                server: &zbus::blocking::Connection,
+                sender: &str,
+                (path, interface): (&str, &str),
+                member: &str,
+                body: &B,
+            ) where
+                B: serde::Serialize + zbus::zvariant::DynamicType,
+            {
+                let message = zbus::message::Message::signal(path, interface, member)
+                    .unwrap()
+                    .sender(sender)
+                    .unwrap()
+                    .build(body)
+                    .unwrap();
+                server.send(&message).unwrap();
+            }
+        }
+
+        /// Polls `done` for up to two seconds.
+        fn eventually(mut done: impl FnMut() -> bool) -> bool {
+            for _ in 0..200 {
+                if done() {
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            false
+        }
+
+        #[test]
+        fn a_server_that_never_answers_costs_one_timeout_and_stops_nothing_else() {
+            const TIMEOUT: Duration = Duration::from_millis(800);
+            let (backend, peer) = peer::start(TIMEOUT);
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let poster = Arc::new(XdgPoster::new(Arc::new(backend), tx));
+            for id in ["$a", "$b", "$c"] {
+                poster.post(&note(id, vec![])).unwrap();
+            }
+            let (server, hung) = peer.connected();
+            hung.store(true, std::sync::atomic::Ordering::SeqCst);
+
+            let started = std::time::Instant::now();
+            let posting = std::thread::spawn({
+                let poster = Arc::clone(&poster);
+                move || poster.post(&note("$d", vec![]))
+            });
+            // The server is wedged on $d's Notify, but its signals still come.
+            peer::emit(
+                &server,
+                peer::OWNER,
+                NOTIFICATIONS,
+                "ActionInvoked",
+                &(1u32, "default"),
+            );
+            let rx = Arc::new(std::sync::Mutex::new(rx));
+            let heard = eventually({
+                let rx = Arc::clone(&rx);
+                move || rx.lock().unwrap().try_recv().is_ok()
+            });
+            assert!(heard, "a press is heard while a post waits on the server");
+            assert!(
+                !posting.is_finished(),
+                "heard before the post gave up, not after"
+            );
+
+            let posted = within(TIMEOUT * 5, move || posting.join().unwrap());
+            let posted = posted.expect("the post returns once the call times out");
+            assert!(posted.is_err(), "and says it failed: {posted:?}");
+            assert!(started.elapsed() >= TIMEOUT);
+
+            let started = std::time::Instant::now();
+            let withdrawn = within(TIMEOUT * 5, {
+                let poster = Arc::clone(&poster);
+                move || poster.withdraw_all()
+            });
+            assert!(withdrawn.is_some(), "quit's withdraw_all returns");
+            assert!(
+                started.elapsed() < TIMEOUT * 2,
+                "after one timeout, not one per note: {:?}",
+                started.elapsed()
+            );
+        }
+
+        #[test]
+        fn over_the_bus_a_forged_press_is_ignored_and_a_new_server_forgets() {
+            let (backend, peer) = peer::start(Duration::from_secs(5));
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let poster = XdgPoster::new(Arc::new(backend), tx);
+            poster.post(&note("$a", vec![])).unwrap();
+            poster.post(&note("$b", vec![])).unwrap();
+            let (server, _hung) = peer.connected();
+
+            peer::emit(
+                &server,
+                ":1.99",
+                NOTIFICATIONS,
+                "ActionInvoked",
+                &(1u32, "default"),
+            );
+            peer::emit(
+                &server,
+                peer::OWNER,
+                NOTIFICATIONS,
+                "ActionInvoked",
+                &(2u32, "default"),
+            );
+            assert!(eventually(|| poster.remembered_ids() == [1, 2]
+                && rx.try_recv().is_ok_and(|taken| taken.account.is_some())));
+            assert!(
+                rx.try_recv().is_err(),
+                "the forged press on 1 reported nothing"
+            );
+
+            peer::emit(
+                &server,
+                "org.freedesktop.DBus",
+                ("/org/freedesktop/DBus", "org.freedesktop.DBus"),
+                "NameOwnerChanged",
+                &("org.freedesktop.Notifications", peer::OWNER, ":1.8"),
+            );
+            assert!(
+                eventually(|| poster.remembered() == 0),
+                "the new server forgets every note"
+            );
+            peer::emit(
+                &server,
+                ":1.8",
+                NOTIFICATIONS,
+                "ActionInvoked",
+                &(1u32, "default"),
+            );
+            peer::emit(
+                &server,
+                peer::OWNER,
+                NOTIFICATIONS,
+                "ActionInvoked",
+                &(1u32, "default"),
+            );
+            std::thread::sleep(Duration::from_millis(200));
+            assert!(rx.try_recv().is_err());
+        }
+
         /// Manual: posts LOCAL notifications to the desktop's real server, the second
         /// replacing the first, then withdraws; then posts one more and closes it behind
         /// the poster's back, and waits to hear the server's `NotificationClosed` on the
@@ -901,8 +1595,13 @@ mod tests {
                 "ids: first {first:?}, after replace {:?}",
                 poster.remembered_ids()
             );
-            assert_eq!(poster.remembered(), 1);
+            // After a wait, so a server that reports the replaced note as closed is caught.
             std::thread::sleep(Duration::from_secs(2));
+            assert_eq!(
+                poster.remembered(),
+                1,
+                "the replacement is still remembered"
+            );
             poster.withdraw_all();
             assert_eq!(poster.remembered(), 0);
 
