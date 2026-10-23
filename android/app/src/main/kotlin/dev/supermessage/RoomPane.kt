@@ -14,6 +14,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -253,7 +254,11 @@ internal fun RoomPane(
             // belongs to one room and must not be lent to the next
             // (`RoomScreen.swift:35-39` resets on `roomId` too).
             // The dock and the pill float over the bottom of the timeline: they
-            // never take height from it, so the newest messages do not move.
+            // never take height from it, so the newest messages do not move. The
+            // list reserves their (constant) height as bottom padding, so they
+            // never cover the newest message or Jump to newest either.
+            var accessoriesPx by remember { mutableStateOf(0) }
+            val accessoriesDp = with(LocalDensity.current) { accessoriesPx.toDp() }
             Box(Modifier.weight(1f).fillMaxWidth()) {
             key(currentRoomId) {
                 CompositionLocalProvider(LocalVoicePlayback provides voice) {
@@ -267,6 +272,7 @@ internal fun RoomPane(
                         faceUri = { mxc -> faceCache[mxc] },
                         loadFace = session.faces::load,
                         roomId = currentRoomId,
+                        bottomReserve = accessoriesDp,
                         onMarkRead = { scope.launch { session.timeline.markRead() } },
                         liveSummary = liveSummary,
                         liveSteps = liveSteps,
@@ -323,7 +329,13 @@ internal fun RoomPane(
                     )
                 }
             }
-            ComposerAccessories(ack = dock, typingLine = typingLine, modifier = Modifier.align(Alignment.BottomStart))
+            key(currentRoomId) {
+            ComposerAccessories(
+                ack = dock, typingLine = typingLine, modifier = Modifier.align(Alignment.BottomStart),
+                reserveDock = castHere?.agentIds?.isNotEmpty() == true,
+                onHeight = { accessoriesPx = it },
+            )
+            }
             }
 
             Composer(
