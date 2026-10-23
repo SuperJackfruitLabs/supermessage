@@ -11,6 +11,7 @@ import androidx.glance.appwidget.runComposition
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.testing.WorkManagerTestInitHelper
 import dev.supermessage.AppCore
+import dev.supermessage.kit.Session.Phase
 import dev.supermessage.kit.widgets.WidgetFixtures
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,12 +22,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import uniffi.supermessage_core.WidgetContent
 
 /**
  * C1: a write made while a widget is drawn reaches what it draws, in the same composition.
@@ -119,5 +122,38 @@ class WidgetSessionTest {
         AppCore.widgetsDecided(app, WidgetFixtures.permission(at = System.currentTimeMillis() - WidgetFixtures.MINUTE))
         frames.until("signed in, in the same composition") { WidgetCopy.SIGNED_OUT !in it }
         Unit
+    }
+
+    /**
+     * The sign-out reset as the app makes it: the process's [WidgetPublisher] told the phase,
+     * its one queue, the one feed and the redraw, while the widget draws the account's roster.
+     * The reset reaches the running composition, and nothing the publisher is told after it (the
+     * app coming forward or leaving, a roster) brings that account back.
+     */
+    @Test(timeout = 60_000)
+    fun aSignOutThroughThePublisherIsDrawnAndNothingAfterItUndoesIt() = runBlocking {
+        AppCore.widgets(app).signedOut()
+        val frames = composing(NeedsYouWidget(), NeedsYouWidget.MEDIUM)
+        frames.until("the signed-out widget") { WidgetCopy.SIGNED_OUT in it }
+
+        val publisher = AppCore.widgetPublisher(app)
+        val asked = System.currentTimeMillis() - WidgetFixtures.MINUTE
+        val roster = listOf("!a:hs" to "Atlas", "!b:hs" to "Sam").map { (id, name) ->
+            WidgetFixtures.agentRow(id, name, asked, "Run it?").let { it.copy(preview = it.preview?.copy(pending = true)) }
+        }
+        publisher.phaseChanged(Phase.SIGNED_IN)
+        publisher.activeChanged(true)
+        publisher.roomsChanged(roster)
+        frames.until("the account's roster") { "2 need you" in it }
+
+        publisher.phaseChanged(Phase.SIGNED_OUT)
+        val out = frames.until("signed out, in the same composition") { WidgetCopy.SIGNED_OUT in it }
+        assertFalse(out.any { "need you" in it })
+
+        publisher.activeChanged(false)
+        publisher.activeChanged(true)
+        publisher.roomsChanged(roster)
+        publisher.writesDone()
+        assertEquals(WidgetContent.SIGNED_OUT, AppCore.widgets(app).view().content)
     }
 }
