@@ -93,6 +93,34 @@ class StagedAttachment(private val client: CoreClient) {
     }
 
     /**
+     * Mark what is staged in [roomId] as a voice message, with its length and
+     * waveform. Without the mark a recording goes as a plain audio file:
+     * other clients draw a file row and Hermes never transcribes it.
+     *
+     * Only the staged file of its own room is marked (a chip belongs to one
+     * room; `StagedAttachment.swift:120-125`). Returns whether the core took
+     * the mark. iOS lets an unmarked recording go as a file; the caller here
+     * decides, and [dev.supermessage.kit.Session.sendVoice] throws it away.
+     */
+    suspend fun markVoice(durationMs: Long, waveform: List<Float>, roomId: String): Boolean {
+        val staged = _file.value ?: return false
+        if (_roomId.value != roomId) return false
+        return try {
+            client.attachmentMarkVoice(
+                roomId = roomId,
+                token = staged.token,
+                durationMs = durationMs.coerceAtLeast(0).toULong(),
+                waveform = waveform,
+            )
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            false
+        }
+    }
+
+    /**
      * Record a refusal that happened before the core was ever asked: the
      * picker's bytes could not be read, or copied.
      */

@@ -239,6 +239,15 @@ internal fun RoomPane(
             session.dock.hold(currentRoomId, ack)
         }
         var sending by remember(currentRoomId) { mutableStateOf(false) }
+        // One recorder for the pane; it is thrown away with the room, the
+        // pane, a sign-out and the app going to the background.
+        val appContext = androidx.compose.ui.platform.LocalContext.current
+        val voiceScope = rememberCoroutineScope()
+        val recording = remember(session) { newVoiceRecording(appContext, voiceScope) }
+        DisposableEffect(session) {
+            val forget = session.onSignedOut { recording.cancel() }
+            onDispose(forget)
+        }
         var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }
 
         Column(modifier = modifier.fillMaxSize().testTag("pane-timeline")) {
@@ -409,6 +418,26 @@ internal fun RoomPane(
                 // recomposes) when the cast arrives.
                 mentionCandidates = { query -> castPeople?.let { mentionCast.candidates(query) }.orEmpty() },
                 sending = sending,
+                voice = rememberVoiceControls(
+                    recording = recording,
+                    session = session,
+                    roomId = currentRoomId,
+                    // A note playing aloud would be recorded into the new one.
+                    onRecordingStarts = { voice.stop() },
+                    onSending = { sending = it },
+                    onResult = { result ->
+                        when (result) {
+                            SendResult.Sent, SendResult.NothingToSend -> {
+                                composerFailure = null
+                            }
+                            is SendResult.AttachmentFailed ->
+                                composerFailure =
+                                    if (session.staged.failure.value?.message == result.message) null
+                                    else result.message
+                            is SendResult.TextFailed -> composerFailure = result.message
+                        }
+                    },
+                ),
                 failure = composerFailure,
                 replyTo = replyTargets[currentRoomId],
                 onCancelReply = { session.replies.cancel(currentRoomId) },

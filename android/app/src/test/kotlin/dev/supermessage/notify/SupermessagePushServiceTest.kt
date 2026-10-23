@@ -12,6 +12,11 @@ import dev.supermessage.kit.notify.NotificationCoordinator
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.runBlocking
+import androidx.work.Configuration
+import androidx.work.WorkManager
+import androidx.work.testing.SynchronousExecutor
+import androidx.work.testing.TestListenableWorkerBuilder
+import androidx.work.testing.WorkManagerTestInitHelper
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
@@ -126,13 +131,63 @@ class SupermessagePushServiceTest {
         activity = null,
     )
 
-    /** Builds the service, delivers [bytes] through `onMessage`, and waits for its work. */
+    /**
+     * Delivers [bytes] the way the job does: the worker's own `doWork`, built by
+     * WorkManager's test helper (no scheduler involved, so nothing can wait on
+     * one). The service's hand-off is tested separately below.
+     */
     private fun deliver(core: Recording, bytes: ByteArray = push()) {
         AppCore.installForTest(core)
         SupermessagePushService.onDecided = { decidedSeen += it }
+        val worker = TestListenableWorkerBuilder<PushWorker>(app)
+            .setInputData(androidx.work.Data.Builder().putByteArray(PushWorker.KEY_PUSH, bytes).build())
+            .build()
+        runBlocking { worker.doWork() }
+    }
+
+    /** The connector binds the service for ~5 s: onMessage must hand off and return. */
+    @Test
+    fun theServiceOnlyEnqueuesExpeditedWorkAndReturnsAtOnce() {
+        AppCore.installForTest(Recording(decided()))
+        val held = java.util.ArrayDeque<Runnable>()
+        val deferred = java.util.concurrent.Executor { held.add(it) }
+        // Queries go through the task executor, so it must run; only the worker's own executor is held.
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            app, Configuration.Builder().setExecutor(deferred).setTaskExecutor(SynchronousExecutor()).build(),
+        )
+        val core = Recording(decided())
+        AppCore.installForTest(core)
         val service = Robolectric.buildService(SupermessagePushService::class.java).create().get()
-        service.onMessage(PushMessage(bytes, false), INSTANCE_DEFAULT)
-        runBlocking { checkNotNull(service.lastWork) { "onMessage started no work" }.join() }
+
+        service.onMessage(PushMessage(push(), false), INSTANCE_DEFAULT)
+
+        assertEquals("the core was not touched inside onMessage", emptyList<String>(), core.calls.toList())
+        assertEquals(null, shown())
+        val infos = WorkManager.getInstance(app).getWorkInfosForUniqueWork("push:!r:x:\$e1").get()
+        assertEquals(1, infos.size)
+        // Handed over, not done: the worker's executor is held, so it has not run.
+        assertTrue(infos.single().state in setOf(androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.RUNNING))
+    }
+
+    @Test
+    fun theWorkerDoesTheFetchAndThePost() {
+        val core = Recording(decided())
+        AppCore.installForTest(core)
+        val worker = TestListenableWorkerBuilder<PushWorker>(app)
+            .setInputData(androidx.work.Data.Builder().putByteArray(PushWorker.KEY_PUSH, push()).build())
+            .build()
+
+        val result = runBlocking { worker.doWork() }
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        assertEquals(listOf("restore", "notificationFor !r:x \$e1"), core.calls.toList())
+        assertEquals("Lyra", text(checkNotNull(shown()), Notification.EXTRA_TITLE))
+    }
+
+    @Test
+    fun aWorkerWithNoPushFails() {
+        val worker = TestListenableWorkerBuilder<PushWorker>(app).build()
+        assertEquals(androidx.work.ListenableWorker.Result.failure(), runBlocking { worker.doWork() })
     }
 
     private fun shown(tag: String = "\$e1"): Notification? = shadowOf(manager).getNotification(tag, 1)

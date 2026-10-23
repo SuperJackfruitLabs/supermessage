@@ -1,8 +1,13 @@
 package dev.supermessage.notify
 
 import android.content.Context
-import android.os.PowerManager
-import androidx.annotation.VisibleForTesting
+import androidx.work.CoroutineWorker
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
 import dev.supermessage.AppCore
 import dev.supermessage.kit.CoreClient
 import kotlinx.coroutines.CancellationException
@@ -35,25 +40,20 @@ import uniffi.supermessage_ffi.plannedFromDecided
  * [AppCore.core], never a second one, and never touched on the main thread.
  */
 class SupermessagePushService : PushService() {
-    /** The last message's work, so a test can wait for it. */
-    @VisibleForTesting
-    internal var lastWork: Job? = null
-
     override fun onNewEndpoint(endpoint: PushEndpoint, instance: String) {
         val context = applicationContext
         val url = endpoint.url
         AppCore.scope.launch { AppCore.registrar(context).newEndpoint(url, distributorLabel(context)) }
     }
 
+    /**
+     * The connector binds this service for about 5 s (its 5000 ms timer), but a
+     * push may take up to [BUDGET_MS]. So the push is only handed to expedited
+     * WorkManager here, which keeps the process and a wake lock for as long as
+     * the work runs ([PushWorker]), and this returns at once.
+     */
     override fun onMessage(message: PushMessage, instance: String) {
-        val context = applicationContext
-        // Awake for as long as the push may take; the system may doze otherwise.
-        val wake = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "supermessage:push")
-            .apply { acquire(BUDGET_MS + 1_000) }
-        lastWork = deliverPush(context, message.content).also { job ->
-            job.invokeOnCompletion { if (wake.isHeld) wake.release() }
-        }
+        enqueuePush(applicationContext, message.content)
     }
 
     override fun onRegistrationFailed(reason: FailedReason, instance: String) {
@@ -155,5 +155,42 @@ private suspend fun decide(context: Context, push: MatrixPush, core: () -> CoreI
         throw e
     } catch (e: Exception) {
         PushOutcome.Generic(account)
+    }
+}
+
+/**
+ * Hand one push to expedited WorkManager (one job per event, so a repeat
+ * delivery is not worked twice). If WorkManager cannot take it, the push is
+ * worked directly in [AppCore.scope], as before: a push is never dropped for
+ * want of a scheduler.
+ */
+internal fun enqueuePush(context: Context, bytes: ByteArray) {
+    val push = MatrixPush.parse(bytes) ?: return
+    val request = OneTimeWorkRequestBuilder<PushWorker>()
+        .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+        .setInputData(Data.Builder().putByteArray(PushWorker.KEY_PUSH, bytes).build())
+        .build()
+    try {
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork("push:${push.roomId}:${push.eventId}", ExistingWorkPolicy.KEEP, request)
+    } catch (e: Exception) {
+        deliverPush(context, bytes)
+    }
+}
+
+/**
+ * Does the push's work inside the job: restore quietly, ask the core
+ * (`notificationFor`), post what it decided, with the "New message" fallback
+ * when the budget runs out ([deliverPush]). Same handler, same one core.
+ */
+class PushWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val bytes = inputData.getByteArray(KEY_PUSH) ?: return Result.failure()
+        deliverPush(applicationContext, bytes).join()
+        return Result.success()
+    }
+
+    companion object {
+        const val KEY_PUSH = "push"
     }
 }

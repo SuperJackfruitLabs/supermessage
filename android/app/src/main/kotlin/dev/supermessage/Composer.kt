@@ -157,6 +157,7 @@ fun Composer(
     onRefuse: (filename: String, message: String) -> Unit = { _, _ -> },
     onDiscardAttachment: () -> Unit = {},
     mentionCandidates: (query: String) -> List<PersonDto> = { emptyList() },
+    voice: VoiceControls? = null,
     modifier: Modifier = Modifier,
 ) {
     // Focus anywhere in the composer, picker included: a keyboard user who
@@ -167,7 +168,7 @@ fun Composer(
     // Only while the composer has focus (iOS `mentionQuery`; Android has no
     // recorder in the composer). `activeQuery` is the Kit's, so an email
     // address opens nothing.
-    val mentionQuery = if (focused) MentionComposing.activeQuery(text) else null
+    val mentionQuery = if (focused && voice?.recording == null) MentionComposing.activeQuery(text) else null
     val mentionPeople = mentionQuery?.let { mentionCandidates(it.text) }.orEmpty()
     val canSend = when {
         editing != null -> text.isNotBlank()
@@ -262,13 +263,16 @@ fun Composer(
                 onAttach = onAttach,
                 onRefuse = onRefuse,
                 focusRequester = fieldFocus,
+                hasAttachment = attachment != null,
+                voice = voice,
             )
         }
 
         // Below the capsule, in danger (iOS `ComposerView.swift:87-93`).
-        if (failure != null) {
+        val shownFailure = failure ?: voice?.failure
+        if (shownFailure != null) {
             Text(
-                failure,
+                shownFailure,
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.danger,
                 modifier = Modifier
@@ -293,84 +297,121 @@ private fun FieldRow(
     onAttach: (path: String) -> Unit,
     onRefuse: (filename: String, message: String) -> Unit,
     focusRequester: FocusRequester,
+    hasAttachment: Boolean,
+    voice: VoiceControls?,
 ) {
     val colors = SupermessageTheme.colors
+    val recording = voice?.recording
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        AttachMenu(onAttach = onAttach, onRefuse = onRefuse)
+        if (recording != null) {
+            // The pill replaces "+" and the field while recording.
+            RecordingPill(
+                elapsedMs = recording.elapsedMs,
+                held = recording.held,
+                onDiscard = voice.onDiscard,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            AttachMenu(onAttach = onAttach, onRefuse = onRefuse)
+        }
 
         // The caret is held here so that a change the field did not make (a
         // picked mention, an edit beginning, a draft restored) leaves it at
         // the end of the new text, where the reader carries on typing; the
         // string overload would leave it wherever it was.
-        var field by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
-        if (field.text != text) field = TextFieldValue(text, TextRange(text.length))
-        BasicTextField(
-            value = field,
-            onValueChange = { next ->
-                field = next
-                if (next.text != text) onTextChange(next.text)
-            },
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.content),
-            cursorBrush = SolidColor(colors.accent),
-            minLines = 1,
-            maxLines = 6,
-            keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Default),
-            decorationBox = { inner ->
-                Box(Modifier.padding(vertical = 11.dp), contentAlignment = Alignment.CenterStart) {
-                    if (text.isEmpty()) {
-                        Text(
-                            if (editing) "Edit message" else "Message",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = colors.contentFaint,
+        if (recording == null) {
+            var field by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+            if (field.text != text) field = TextFieldValue(text, TextRange(text.length))
+            BasicTextField(
+                value = field,
+                onValueChange = { next ->
+                    field = next
+                    if (next.text != text) onTextChange(next.text)
+                },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.content),
+                cursorBrush = SolidColor(colors.accent),
+                minLines = 1,
+                maxLines = 6,
+                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Default),
+                decorationBox = { inner ->
+                    Box(Modifier.padding(vertical = 11.dp), contentAlignment = Alignment.CenterStart) {
+                        if (text.isEmpty()) {
+                            Text(
+                                if (editing) "Edit message" else "Message",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = colors.contentFaint,
+                            )
+                        }
+                        inner()
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp)
+                    .focusRequester(focusRequester)
+                    .testTag("composer-text"),
+            )
+
+        }
+
+        // Which control trails (`ComposerView.swift:189-197`): held, the mic
+        // stays the mic (replacing it would cancel the gesture the recording
+        // hangs on); recording by tap, it becomes send; with nothing to send
+        // and nothing staged, the mic; otherwise send.
+        val micShows = voice != null && !editing &&
+            (recording?.held == true || (recording == null && text.isBlank() && !hasAttachment))
+        val sendsVoice = recording != null && !recording.held
+        if (micShows) {
+            MicButton(
+                isRecording = recording != null,
+                onTap = voice!!.onTap,
+                onHoldStart = voice.onHoldStart,
+                onHoldEnd = voice.onHoldEnd,
+            )
+        } else {
+            val enabled = if (sendsVoice) true else canSend && !sending
+            IconButton(
+                onClick = if (sendsVoice) voice!!.onSend else onSend,
+                // The double-tap guard: a send already in flight cannot be
+                // started twice.
+                enabled = enabled && !sending,
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = colors.accentContent,
+                    disabledContentColor = colors.accentContent,
+                ),
+                modifier = Modifier.size(44.dp).testTag("composer-send").semantics {
+                    contentDescription = when {
+                        sendsVoice -> "Send voice message"
+                        editing -> "Save edit"
+                        else -> "Send"
+                    }
+                },
+            ) {
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (canSend || sendsVoice) colors.accent else colors.contentFaint),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (sending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = colors.accentContent,
+                        )
+                    } else {
+                        // A tick rather than an arrow while editing: nothing is
+                        // being sent to anyone, a message is being replaced.
+                        Icon(
+                            if (editing) Icons.Filled.Check else Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
-                    inner()
-                }
-            },
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 4.dp)
-                .focusRequester(focusRequester)
-                .testTag("composer-text"),
-        )
-
-        IconButton(
-            onClick = onSend,
-            // The double-tap guard: a send already in flight cannot be
-            // started twice.
-            enabled = canSend && !sending,
-            colors = IconButtonDefaults.iconButtonColors(
-                contentColor = colors.accentContent,
-                disabledContentColor = colors.accentContent,
-            ),
-            modifier = Modifier.size(44.dp).testTag("composer-send").semantics {
-                contentDescription = if (editing) "Save edit" else "Send"
-            },
-        ) {
-            Box(
-                Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (canSend) colors.accent else colors.contentFaint),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (sending) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = colors.accentContent,
-                    )
-                } else {
-                    // A tick rather than an arrow while editing: nothing is
-                    // being sent to anyone, a message is being replaced.
-                    Icon(
-                        if (editing) Icons.Filled.Check else Icons.AutoMirrored.Filled.Send,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
                 }
             }
         }

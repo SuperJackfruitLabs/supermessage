@@ -416,6 +416,34 @@ class Session(
     }
 
     /**
+     * Send a finished recording as a voice message: stage the file through the
+     * path a picked file takes, mark it as voice with its length and waveform,
+     * then send with empty text (`ComposerView.swift:304-317`). The order is
+     * the contract: marked before it goes, because sent as a bare file Element
+     * draws a file row and Hermes never transcribes it.
+     *
+     * A refused stage leaves the failure on the chip, as for any file. A refused
+     * mark throws the staged file away rather than sending it as a plain file.
+     * The recording's folder is deleted once it has gone; a failed send keeps it
+     * for Retry.
+     */
+    suspend fun sendVoice(recording: VoiceRecording.Recording, roomId: String): SendResult {
+        val refusal = staged.stage(path = recording.file.absolutePath, roomId = roomId)
+        if (refusal != null) {
+            recording.delete()
+            return SendResult.AttachmentFailed(refusal)
+        }
+        if (!staged.markVoice(recording.durationMs, recording.waveform, roomId)) {
+            staged.discard()
+            recording.delete()
+            return SendResult.AttachmentFailed("Couldn't send that voice message.")
+        }
+        val result = send(text = "", roomId = roomId)
+        if (result.delivered) recording.delete()
+        return result
+    }
+
+    /**
      * Tell the room whether this account is typing.
      *
      * Failures are swallowed: a typing notice nobody saw is not worth an

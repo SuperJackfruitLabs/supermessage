@@ -1,3 +1,5 @@
+import java.time.Duration
+
 plugins {
     alias(libs.plugins.android.application)
     // No org.jetbrains.kotlin.android here: AGP 9.3.1 (this repo's version, per
@@ -180,6 +182,7 @@ dependencies {
     debugImplementation(libs.glance.preview)
     debugImplementation(libs.glance.appwidget.preview)
     testImplementation(libs.glance.appwidget.testing)
+    implementation(libs.androidx.work.runtime)
 
     // `StubCore`, which every FakeCore in this module extends. See :kit's
     // build file for why it is a test fixture and not a test source file.
@@ -193,6 +196,7 @@ dependencies {
     // test artifact, so :app needs its own like :kit's test source does.
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.work.testing)
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.roborazzi.preview.scanner)
@@ -240,6 +244,12 @@ dependencies {
 // :app needs it because PreviewScreenshotTest renders every @Preview, and a
 // few of those reach a type whose class initialiser loads the core.
 tasks.withType<Test>().configureEach {
+    // A hung test (a worker waiting on a scheduler that never runs, say) fails the
+    // task instead of holding the machine-wide lock for as long as it likes.
+    // The whole suite takes minutes; Robolectric cannot take a per-test timeout
+    // (it needs the main thread), so the bound is on the task.
+    timeout.set(Duration.ofMinutes(20))
+
     // The previews used to be opt-in, because rendering them took 31 minutes
     // on CI. That was never the rendering: 41 of the 48 draw in under a
     // second and the median is 0.3s. Seven were spinners that never settle,
