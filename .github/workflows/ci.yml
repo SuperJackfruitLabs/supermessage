@@ -496,13 +496,13 @@ jobs:
             -scheme Supermessage \
             -destination "id=${{ steps.sim.outputs.udid }}"
 
-  # The Android job is split so the instrumented tests can run as a matrix of
-  # shards. `android-build` (host build, bindings check, unit tests, Roborazzi,
-  # the Rust cross-compile) and `android-avd` (AVD creation and cache) run in
-  # parallel, once. `android-instrumented` then fans out over AndroidJUnitRunner
-  # shards. `android` is the aggregator that keeps the single check name.
-  android-build:
-    name: Android build and unit tests
+  # The Android job is split for wall time. The critical path is
+  # android-libs (Rust x86_64) -> android-instrumented (3 shards); the AVD
+  # cache (android-avd) is built in parallel, and android-unit (host build,
+  # bindings check, unit tests, Roborazzi) runs alongside the shards. `android`
+  # is the aggregator that keeps the single check name.
+  android-libs:
+    name: Android libs
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
@@ -543,6 +543,68 @@ jobs:
         # and a human get pointed at means a local repro of a CI failure is
         # actually reproducing it.
         run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      # ── Now the expensive part, and only the ABIs this run will load ───────
+
+      - name: Build the Rust core for Android
+        # One ABI on a pull request, four on main.
+        #
+        # The instrumented tests below run on an x86_64 emulator and this job
+        # builds no shippable artifact, so arm64-v8a, armeabi-v7a and x86 are
+        # thirteen minutes spent on libraries nothing here loads. They are still
+        # built on main, where the cost buys real coverage of the targets a
+        # device actually uses.
+        #
+        # If that trade ever looks wrong, the honest fix is a release workflow
+        # that builds all four and assembles an artifact — which does not exist
+        # today, and is why the device-capable build ended up in PR CI at all.
+        run: ./scripts/build-android-libs.sh
+
+      - name: Upload the x86_64 JNI library for the instrumented shards
+        # Only the slice the emulator loads.
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jnilibs-x86_64
+          path: android/core/src/main/jniLibs/x86_64/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload all JNI libraries for the APK job (main only)
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jnilibs-all
+          path: android/core/src/main/jniLibs/
+          if-no-files-found: error
+          retention-days: 1
+
+
+  android-unit:
+    name: Android unit tests
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    env:
+      # One ABI on a pull request, four on main.
+      #
+      # Job-level rather than step-level because BOTH halves have to agree:
+      # `build-android-libs.sh` reads it to decide what to cross-compile, and
+      # :core's `checkJniLibs` reads it to decide what to require. Setting it on
+      # only the build step is how the first attempt failed — Gradle went on
+      # demanding four ABIs of a build that had deliberately produced one.
+      ANDROID_ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a armeabi-v7a x86_64 x86' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Four cross targets for cargo-ndk (see build-android-libs.sh's own
+          # header for why these four), no separate host target: rustup adds
+          # the runner's native triple by default alongside whatever `targets`
+          # names.
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - uses: Swatinem/rust-cache@v2
 
       # ── Everything that needs only a host build comes first ───────────────
       #
@@ -633,41 +695,41 @@ jobs:
         # turning every match into a failure.
         run: ./scripts/tests/test_android_preview_leak.sh
 
-      # ── Now the expensive part, and only the ABIs this run will load ───────
+  android-apks:
+    name: Android debug APKs
+    needs: [changes, android-libs]
+    if: needs.changes.outputs.android == 'true' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    env:
+      # One ABI on a pull request, four on main.
+      #
+      # Job-level rather than step-level because BOTH halves have to agree:
+      # `build-android-libs.sh` reads it to decide what to cross-compile, and
+      # :core's `checkJniLibs` reads it to decide what to require. Setting it on
+      # only the build step is how the first attempt failed — Gradle went on
+      # demanding four ABIs of a build that had deliberately produced one.
+      ANDROID_ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a armeabi-v7a x86_64 x86' }}
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Build the Rust core for Android
-        # One ABI on a pull request, four on main.
-        #
-        # The instrumented tests below run on an x86_64 emulator and this job
-        # builds no shippable artifact, so arm64-v8a, armeabi-v7a and x86 are
-        # thirteen minutes spent on libraries nothing here loads. They are still
-        # built on main, where the cost buys real coverage of the targets a
-        # device actually uses.
-        #
-        # If that trade ever looks wrong, the honest fix is a release workflow
-        # that builds all four and assembles an artifact — which does not exist
-        # today, and is why the device-capable build ended up in PR CI at all.
-        run: ./scripts/build-android-libs.sh
-
-      - name: Upload the x86_64 JNI library for the instrumented shards
-        # Only the slice the emulator loads (the other ABIs, four on main, are
-        # for the installable APKs, which this job assembles itself).
-        uses: actions/upload-artifact@v4
+      - uses: actions/setup-java@v4
         with:
-          name: android-jnilibs-x86_64
-          path: android/core/src/main/jniLibs/x86_64/
-          if-no-files-found: error
-          retention-days: 1
+          distribution: temurin
+          java-version: 21
 
-      - name: Assemble the debug APKs (main only)
-        # Instrumented shards hold only x86_64 and no longer assemble the
-        # four-ABI split APKs, so main assembles them here for the uploads.
-        if: github.event_name != 'pull_request'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Download all JNI libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: android-jnilibs-all
+          path: android/core/src/main/jniLibs
+
+      - name: Assemble the debug APKs
         run: ./gradlew :app:assembleDebug
         working-directory: android
 
       - name: Report per-ABI APK sizes
-        if: github.event_name != 'pull_request'
         run: du -h android/app/build/outputs/apk/debug/*.apk
 
 
@@ -780,7 +842,7 @@ jobs:
 
   android-instrumented:
     name: Android instrumented tests (shard ${{ matrix.shard }})
-    needs: [changes, android-build, android-avd]
+    needs: [changes, android-libs, android-avd]
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     strategy:
@@ -886,7 +948,7 @@ jobs:
 
   android:
     name: Android
-    needs: [changes, android-build, android-avd, android-instrumented]
+    needs: [changes, android-libs, android-avd, android-unit, android-apks, android-instrumented]
     if: always() && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     steps:
@@ -895,8 +957,14 @@ jobs:
           RESULTS: ${{ toJson(needs.*.result) }}
         run: |
           echo "$RESULTS"
-          if echo "$RESULTS" | grep -Eq 'failure|cancelled|skipped'; then
+          # android-apks is legitimately skipped on pull requests; every other
+          # job must have succeeded.
+          if echo "$RESULTS" | grep -Eq 'failure|cancelled'; then
             echo "::error::an Android job did not succeed"
+            exit 1
+          fi
+          if [ "$(echo "$RESULTS" | grep -c success)" -lt 6 ]; then
+            echo "::error::an Android job was skipped"
             exit 1
           fi
 
