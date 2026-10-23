@@ -20,7 +20,11 @@
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
-  import { consumeFreshSignIn } from "$lib/stores/freshSignIn";
+  import { setUpAfterSignIn } from "$lib/stores/signInSetup";
+  import { attention } from "$lib/stores/attention.svelte";
+  import { notifier } from "$lib/notifier/notifier.svelte";
+  import { openRoomFromNotification } from "$lib/notifier/openRoom";
+  import { createWindowFocus } from "$lib/stores/windowFocus.svelte";
   import {
     appVersion,
     type RoomMember,
@@ -28,7 +32,9 @@
     createRoom,
     knownPeople,
     onIgnoredUsers,
+    onNotificationOpen,
     ensureRecovery,
+    notificationPermission,
     joinRoomByAlias,
     recoverWithKey,
     resetRecovery,
@@ -109,7 +115,36 @@
       liveStore.roomId === roomsStore.selectedId && liveStore.inProgress,
     );
   });
+  // The window title carries the Needs you count: the inbox's own badge count, set only when it changes.
+  $effect(() => {
+    if (!restored) return;
+    attention.follow(destinations.inbox);
+  });
   let signingOut = $state(false);
+
+  // Local notifications. The core decides what is news and what it says; this feeds it the
+  // roster, the selected room, the timeline's changes and the window's focus. Declared in this
+  // order on purpose: the selection reaches the notifier before the timeline change it explains.
+  const windowFocus = createWindowFocus();
+  $effect(() => {
+    if (!restored) return;
+    notifier.focusChanged(untrack(() => windowFocus.focused));
+    return windowFocus.onChange((focused) => notifier.focusChanged(focused));
+  });
+  $effect(() => {
+    if (!restored) return;
+    notifier.selectedChanged(roomsStore.selectedId);
+  });
+  $effect(() => {
+    if (!restored) return;
+    notifier.roomsChanged(roomsStore.rooms);
+  });
+  $effect(() => {
+    if (!restored) return;
+    void timelineStore.items;
+    const id = untrack(() => roomsStore.selectedId);
+    if (id !== null) notifier.timelineChanged(id, untrack(() => roomsStore.selectedRoomName) ?? "");
+  });
 
   // The typing line's wording is the core's (`typing_view`); the desktop only
   // bounds each name's length first. `null` until the core answers, and
@@ -759,11 +794,24 @@
   // an `onMount` return value: that callback is `async`, and Svelte only calls a
   // synchronous one.
   let unlistenIgnored: (() => void) | null = null;
+  let unlistenOpen: (() => void) | null = null;
   let destroyed = false;
   onDestroy(() => {
     destroyed = true;
     unlistenIgnored?.();
+    unlistenOpen?.();
   });
+
+  /** A notification was clicked: the window is forward; show its room (the collapsed layout too). */
+  async function openFromNotification(roomId: string): Promise<void> {
+    await openRoomFromNotification(roomId, {
+      selectedRoomId: roomsStore.selectedId,
+      selectRoom: (id) => roomsStore.select(id),
+    });
+    roomPaneOpen = true;
+  }
+
+  onMount(() => windowFocus.start());
 
   onMount(async () => {
     onIgnoredUsers((ids) => safetyStore.apply(ids))
@@ -772,6 +820,12 @@
         else unlistenIgnored = unlisten;
       })
       .catch((err: unknown) => console.error("could not listen for the blocked list", err));
+    onNotificationOpen((roomId) => void openFromNotification(roomId))
+      .then((unlisten) => {
+        if (destroyed) unlisten();
+        else unlistenOpen = unlisten;
+      })
+      .catch((err: unknown) => console.error("could not listen for notification clicks", err));
     try {
       restored = await roomsStore.restoreSession();
     } catch (err) {
@@ -810,7 +864,9 @@
     // `consumeFreshSignIn` is set by /login alone. Not awaited, and a failure
     // is silent: the user is not interrupted, and a device that cannot read its
     // history is still offered the recovery-key screen from "Encryption recovery".
-    if (consumeFreshSignIn()) {
+    // One read of the one-shot mark serves both: notification permission is asked
+    // after a fresh sign-in only (`setUpAfterSignIn`), and so is recovery.
+    if (setUpAfterSignIn({ notificationPermission })) {
       void ensureRecovery()
         .then((key) => {
           if (key) void openRecovery(key);

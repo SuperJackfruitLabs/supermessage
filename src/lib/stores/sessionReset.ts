@@ -3,10 +3,13 @@
 // was signed in. Called on every way back to /login, not only the sign-out button.
 import { accountStore } from "./account.svelte";
 import { acknowledgementStore } from "./acknowledgement.svelte";
+import { notificationClearAll } from "$lib/ipc";
+import { attention } from "./attention.svelte";
 import { castStore } from "./cast.svelte";
 import { destinations } from "./destinations.svelte";
 import { editTargetStore } from "./editTarget.svelte";
 import { liveStore } from "./live.svelte";
+import { notifier } from "$lib/notifier/notifier.svelte";
 import { replyTargetStore } from "./replyTarget.svelte";
 import { safetyStore } from "./safety.svelte";
 
@@ -19,10 +22,16 @@ export interface SessionStores {
   castStore: { clear(): void };
   acknowledgementStore: { clear(): void };
   destinations: { reset(): void };
+  /** Withdraws every delivered notification. */
+  notificationClearAll: () => Promise<void>;
+  /** Forgets the roster baseline, what was shown, and the cached modes. */
+  notifier: { reset(): void };
+  /** Puts the window title back to the plain app name. */
+  attention: { reset(): void };
 }
 
 export function resetSessionState(
-  stores: SessionStores = { editTargetStore, replyTargetStore, safetyStore, accountStore, liveStore, castStore, acknowledgementStore, destinations },
+  stores: SessionStores = { editTargetStore, replyTargetStore, safetyStore, accountStore, liveStore, castStore, acknowledgementStore, destinations, notificationClearAll, notifier, attention },
 ): void {
   stores.editTargetStore.clearAll();
   stores.replyTargetStore.clearAll();
@@ -36,4 +45,11 @@ export function resetSessionState(
   stores.acknowledgementStore.clear();
   // The last account's inbox, badge and agents must not greet the next one; back on Chats.
   stores.destinations.reset();
+  // The last account's notifications must not outlive it (iOS removes every delivered one).
+  // Fire and forget: a failure to withdraw must not hold up the sign-out.
+  // The next account's first roster is a baseline again, and nothing of this one is remembered.
+  stores.notifier.reset();
+  // The last account's Needs you count must not stay in the window title.
+  stores.attention.reset();
+  void stores.notificationClearAll().catch(() => {});
 }

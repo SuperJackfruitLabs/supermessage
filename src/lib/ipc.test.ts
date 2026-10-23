@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, voiceRecordingSpec, voiceWaveform, voiceLongEnough, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -194,6 +194,18 @@ describe("roster views", () => {
   });
 });
 
+describe("attachmentStageRecording", () => {
+  it("sends the bytes as the raw body and the room and mime as headers", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue({ token: "t" });
+    await attachmentStageRecording("!r:x", "audio/ogg;codecs=opus", new Blob([new Uint8Array([1, 2, 3])]));
+    const [cmd, body, options] = invokeMock.mock.calls[0];
+    expect(cmd).toBe("attachment_stage_recording");
+    expect(Array.from(body as Uint8Array)).toEqual([1, 2, 3]);
+    expect(options).toEqual({ headers: { "x-room-id": "!r:x", "x-mime": "audio/ogg;codecs=opus" } });
+  });
+});
+
 describe("attachmentSend", () => {
   it("returns the core's outcome", async () => {
     const outcome = {
@@ -303,6 +315,8 @@ describe("cast, typing line and acknowledgement", () => {
 });
 
 describe("session commands", () => {
+  const CTX = { openRoomId: null, appActive: true, timelineRoomId: null, remotePush: false };
+  const NOTE = { id: "$e", roomId: "!r:x", eventId: "$e", title: "Atlas", subtitle: null, body: "hi", category: "message" as const, permission: null, gate: null };
   const calls: [string, () => Promise<unknown>, string, Record<string, unknown> | undefined][] = [
     ["ignoreUser invokes ignore_user with userId", () => ignoreUser("@a:x"), "ignore_user", { userId: "@a:x" }],
     ["unignoreUser invokes unignore_user with userId", () => unignoreUser("@a:x"), "unignore_user", { userId: "@a:x" }],
@@ -322,6 +336,19 @@ describe("session commands", () => {
     ["account invokes account", () => account(), "account", undefined],
     ["peopleLabel passes userIds", () => peopleLabel(["@a:x", "@b:x"]), "people_label", { userIds: ["@a:x", "@b:x"] }],
     ["sendPermissionAnswer passes roomId and optionId", () => sendPermissionAnswer("!r:x", "Allow once"), "send_permission_answer", { roomId: "!r:x", optionId: "Allow once" }],
+    ["notificationPermission passes prompt", () => notificationPermission(true), "notification_permission", { prompt: true }],
+    ["notificationPermission without a prompt", () => notificationPermission(false), "notification_permission", { prompt: false }],
+    ["voiceRecordingSpec takes no arguments", () => voiceRecordingSpec(), "voice_recording_spec", undefined],
+    ["voiceWaveform passes decibels and bins", () => voiceWaveform([-60, -10], 60), "voice_waveform", { decibels: [-60, -10], bins: 60 }],
+    ["voiceLongEnough passes the length camelCased", () => voiceLongEnough(599), "voice_long_enough", { durationMs: 599 }],
+    ["attachmentMarkVoice passes room, token, length and waveform camelCased", () => attachmentMarkVoice("!r:x", "tok", 3200, [0.5]), "attachment_mark_voice", { roomId: "!r:x", token: "tok", durationMs: 3200, waveform: [0.5] }],
+    ["setAttention passes the count camelCased", () => setAttention(3), "set_attention", { needsYou: 3 }],
+    ["notificationClearAll takes no arguments", () => notificationClearAll(), "notification_clear_all", undefined],
+    ["sendGateDecisionTo passes camelCase args", () => sendGateDecisionTo("!r:x", "g1", "approve", null, "$e", "Ship it?"), "send_gate_decision_to", { roomId: "!r:x", gateId: "g1", optionId: "approve", comment: null, inReplyTo: "$e", prompt: "Ship it?" }],
+    ["notificationsForRoster passes both rosters and the context", () => notificationsForRoster([], [], CTX), "notifications_for_roster", { previous: [], next: [], context: CTX }],
+    ["notificationsForFocused passes camelCase args", () => notificationsForFocused("!r:x", "Atlas", 42, ["$a"], CTX), "notifications_for_focused", { roomId: "!r:x", roomName: "Atlas", sinceMs: 42, alreadyNotified: ["$a"], context: CTX }],
+    ["notificationDelivers passes the mode", () => notificationDelivers(NOTE, "muted"), "notification_delivers", { note: NOTE, mode: "muted" }],
+    ["notificationPost passes the note", () => notificationPost(NOTE), "notification_post", { note: NOTE }],
   ];
 
   it.each(calls)("%s", async (_name, call, command, args) => {
@@ -329,6 +356,18 @@ describe("session commands", () => {
     invokeMock.mockResolvedValue(null);
     await call();
     expect(invokeMock.mock.calls).toEqual([args === undefined ? [command] : [command, args]]);
+  });
+
+  it("onNotificationOpen listens on sm://notification/open and hands over the room id", async () => {
+    const listenMock = vi.mocked(listen);
+    listenMock.mockReset();
+    listenMock.mockResolvedValue(() => {});
+    const handler = vi.fn();
+    await onNotificationOpen(handler);
+    expect(listenMock.mock.calls[0][0]).toBe("sm://notification/open");
+    const callback = listenMock.mock.calls[0][1] as (e: { payload: { roomId: string } }) => void;
+    callback({ payload: { roomId: "!r:x" } });
+    expect(handler).toHaveBeenCalledWith("!r:x");
   });
 
   it("onIgnoredUsers listens on sm://ignored-users and hands over the ids", async () => {
