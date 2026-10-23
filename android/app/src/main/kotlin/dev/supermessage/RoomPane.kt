@@ -162,6 +162,7 @@ internal fun RoomPane(
         // cast; either changing moves it, so the view is what is collected.
         val typingView by session.typing.view.collectAsStateWithLifecycle()
         val typingLine = typingView.line
+        val typingAgents = typingView.agents
 
         val liveSummary by session.live.summary.collectAsStateWithLifecycle()
         val liveAnswer by session.live.answer.collectAsStateWithLifecycle()
@@ -216,6 +217,26 @@ internal fun RoomPane(
             }
         }
         val castPeople by mentionCast.cast.collectAsStateWithLifecycle()
+        // The cast says who the addressee and the agents are only for the room
+        // it was loaded for; a cast still held from another room says nothing
+        // here (iOS `TimelineView.swift:177-195`).
+        val castHere = castPeople?.takeIf { it.roomId == currentRoomId }
+        val held by session.dock.held.collectAsStateWithLifecycle()
+        val dock = held?.takeIf { it.roomId == currentRoomId }?.acknowledgement
+        // The core decides what the dock says; it is asked again whenever a fact
+        // it reads changes: the history (an agent's reply, or its edit of a
+        // progress message, ends "Sent to"), who is typing, the turn, the cast.
+        // The answer is kept only while this room is the open one.
+        LaunchedEffect(currentRoomId, revision, typingAgents, turnInProgress, castHere?.roomId) {
+            val ack = session.acknowledgement(
+                roomId = currentRoomId,
+                addressee = castHere?.addressee,
+                agentIds = castHere?.agentIds.orEmpty(),
+                typingAgents = typingAgents,
+                turnInProgress = turnInProgress,
+            )
+            session.dock.hold(currentRoomId, ack)
+        }
         var sending by remember(currentRoomId) { mutableStateOf(false) }
         var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }
 
@@ -231,12 +252,14 @@ internal fun RoomPane(
             // message menu, a who-reacted popover, a swipe, the scroll position)
             // belongs to one room and must not be lent to the next
             // (`RoomScreen.swift:35-39` resets on `roomId` too).
+            // The dock and the pill float over the bottom of the timeline: they
+            // never take height from it, so the newest messages do not move.
+            Box(Modifier.weight(1f).fillMaxWidth()) {
             key(currentRoomId) {
                 CompositionLocalProvider(LocalVoicePlayback provides voice) {
                     Timeline(
                         rows = items,
                         revision = revision,
-                        typingLine = typingLine,
                         isPaginating = isPaginating,
                         canPaginate = canPaginate,
                         onPaginate = { scope.launch { session.timeline.paginateBack() } },
@@ -296,9 +319,11 @@ internal fun RoomPane(
                                 if (subject == null) reportOrigin = null else reporting = subject
                             }
                         },
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
+            }
+            ComposerAccessories(ack = dock, typingLine = typingLine, modifier = Modifier.align(Alignment.BottomStart))
             }
 
             Composer(

@@ -2,6 +2,7 @@ package dev.supermessage.kit
 
 import dev.supermessage.kit.stores.AvatarCache
 import dev.supermessage.kit.stores.ConnectionStore
+import dev.supermessage.kit.stores.DockStore
 import dev.supermessage.kit.stores.DraftStore
 import dev.supermessage.kit.stores.EditTarget
 import dev.supermessage.kit.stores.HiddenEventStorage
@@ -28,6 +29,7 @@ import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
+import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomMemberDto
@@ -204,6 +206,7 @@ class Session(
     val timeline: TimelineStore = TimelineStore(client = client, sink = pump, scope = scope)
     val live = LiveStore(scope)
     val typing = TypingStore()
+    val dock = DockStore()
     val drafts = DraftStore()
     val replies = ReplyTarget()
     val edits = EditTarget()
@@ -773,6 +776,27 @@ class Session(
     }
 
     /**
+     * What the core says about the room's last send — "Sent to Atlas", "Atlas
+     * is on it…" — from the facts the host holds: the cast's addressee and
+     * agents, who is typing, whether a turn is on (iOS `TimelineView.swift:177-195`).
+     * `null` when there is nothing to say, and also when the core refuses
+     * (the focus moved while the question was out): no dock is the safe answer.
+     */
+    suspend fun acknowledgement(
+        roomId: String,
+        addressee: String?,
+        agentIds: List<String>,
+        typingAgents: List<String>,
+        turnInProgress: Boolean,
+    ): Acknowledgement? = try {
+        client.acknowledgement(roomId, addressee, agentIds, typingAgents, turnInProgress)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
      * Who is in [roomId], as the core joins it: the composer's people, its
      * agents, and the names a message here can address. `null` when the core
      * cannot answer (no session yet), which leaves the `@` picker empty.
@@ -874,6 +898,7 @@ class Session(
             }
         }
         typing.focus(roomId)
+        dock.focus(roomId)
         timeline.subscribeTo(roomId)
     }
 
@@ -890,6 +915,7 @@ class Session(
         rooms.deselect()
         live.select(null)
         typing.focus(null)
+        dock.clear()
         timeline.clear()
     }
 
@@ -970,6 +996,7 @@ class Session(
         timeline.clear()
         live.clear()
         typing.focus(null)
+        dock.clear()
         drafts.clearAll()
         replies.clearAll()
         staged.discard()

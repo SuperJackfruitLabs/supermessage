@@ -58,7 +58,7 @@ class StreamingGlideTest {
             CompositionLocalProvider(LocalReduceMotion provides reduce) {
                 Box(Modifier.requiredWidth(411.dp)) {
                     Timeline(
-                        rows = shown, revision = revision, typingLine = null, isPaginating = false,
+                        rows = shown, revision = revision, isPaginating = false,
                         canPaginate = false, onPaginate = {}, onMarkRead = {}, roomId = room,
                         liveSummary = inProgress(), liveThought = thought, liveSteps = steps,
                         liveAnswer = null, liveName = "Atlas",

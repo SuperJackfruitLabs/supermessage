@@ -1045,6 +1045,68 @@ class SessionTest {
         advanceUntilIdle()
     }
 
+    // -- the acknowledgement dock (M4 Task 5) -------------------------------------
+
+    private fun sent() = uniffi.supermessage_core.Acknowledgement(
+        uniffi.supermessage_core.AcknowledgementKind.SENT, listOf("Atlas"), "Sent to Atlas",
+    )
+
+    @Test
+    fun acknowledgementAsksTheCoreWithTheRoomsFacts() = runTest {
+        val fake = FakeCore(restoreSessionResult = { true })
+        fake.ackBody = { sent() }
+        val session = sessionOf(fake, this)
+
+        val ack = session.acknowledgement(turnRoom, "@atlas:x", listOf("@atlas:x", "@quill:x"), listOf("Atlas"), true)
+
+        assertEquals("Sent to Atlas", ack?.text)
+        assertEquals(
+            listOf(FakeCore.AckAsk(turnRoom, "@atlas:x", listOf("@atlas:x", "@quill:x"), listOf("Atlas"), true)),
+            fake.ackAsks,
+        )
+    }
+
+    @Test
+    fun aRefusedAskIsNoDock() = runTest {
+        val fake = FakeCore(restoreSessionResult = { true })
+        fake.ackBody = { throw FfiException.RoomChanged("!a:x", "!b:x") }
+        val session = sessionOf(fake, this)
+
+        assertNull(session.acknowledgement("!a:x", null, emptyList(), emptyList(), false))
+    }
+
+    @Test
+    fun signOutClearsTheDock() = runTest {
+        val session = sessionOf(FakeCore(restoreSessionResult = { true }), this)
+        session.start()
+        advanceUntilIdle()
+        session.open(turnRoom)
+        session.dock.hold(turnRoom, sent())
+        assertNotNull(session.dock.held.value)
+
+        session.signOut()
+
+        assertNull("the first account's dock survived sign-out", session.dock.held.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aDockIsOnlyHeldForTheOpenRoom() = runTest {
+        val session = sessionOf(FakeCore(restoreSessionResult = { true }), this)
+        session.start()
+        advanceUntilIdle()
+        session.open("!a:x")
+        session.dock.hold("!b:x", sent())
+        assertNull("a late answer for another room is dropped", session.dock.held.value)
+        session.dock.hold("!a:x", sent())
+        assertNotNull(session.dock.held.value)
+        session.open("!b:x")
+        assertNull("opening another room drops it", session.dock.held.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
     private fun sessionOf(fake: FakeCore, scope: CoroutineScope): Session =
         Session(client = CoreClient(core = fake, dispatcher = Dispatchers.Unconfined), scope = scope)
 
@@ -1165,6 +1227,22 @@ class SessionTest {
         }
 
         var turnBody: (String) -> uniffi.supermessage_core.TurnSnapshot? = { null }
+
+        /** The five arguments each ask for an acknowledgement carried. */
+        data class AckAsk(
+            val roomId: String, val addressee: String?, val agentIds: List<String>,
+            val typingAgents: List<String>, val turnInProgress: Boolean,
+        )
+        val ackAsks = mutableListOf<AckAsk>()
+        var ackBody: () -> uniffi.supermessage_core.Acknowledgement? = { null }
+
+        override fun acknowledgement(
+            roomId: String, addressee: String?, agentIds: List<String>,
+            typingAgents: List<String>, turnInProgress: Boolean,
+        ): uniffi.supermessage_core.Acknowledgement? {
+            ackAsks += AckAsk(roomId, addressee, agentIds, typingAgents, turnInProgress)
+            return ackBody()
+        }
 
         override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = turnBody(roomId)
 

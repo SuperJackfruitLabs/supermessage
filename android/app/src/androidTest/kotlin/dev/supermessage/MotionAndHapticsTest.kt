@@ -78,7 +78,7 @@ class MotionAndHapticsTest {
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides haptics, LocalReduceMotion provides true) {
                 Timeline(
-                    rows = listOf(message(1)), revision = 0uL, typingLine = null,
+                    rows = listOf(message(1)), revision = 0uL,
                     isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
                     liveSummary = if (finished) ended(TurnEnding.DONE) else inProgress(), liveThought = "thinking",
                 )
@@ -100,7 +100,7 @@ class MotionAndHapticsTest {
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides haptics, LocalReduceMotion provides true) {
                 Timeline(
-                    rows = listOf(message(1)), revision = 0uL, typingLine = null,
+                    rows = listOf(message(1)), revision = 0uL,
                     isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
                     liveSummary = ended(TurnEnding.DONE), liveThought = "thinking",
                 )
@@ -120,7 +120,7 @@ class MotionAndHapticsTest {
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides haptics, LocalReduceMotion provides true) {
                 Timeline(
-                    rows = listOf(message(1)), revision = 0uL, typingLine = null,
+                    rows = listOf(message(1)), revision = 0uL,
                     isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
                     liveAnswer = answer,
                 )
@@ -139,7 +139,7 @@ class MotionAndHapticsTest {
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides haptics, LocalReduceMotion provides true) {
                 Timeline(
-                    rows = listOf(message(1)), revision = 0uL, typingLine = null,
+                    rows = listOf(message(1)), revision = 0uL,
                     isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
                     liveSummary = summary,
                 )
@@ -231,7 +231,7 @@ class MotionAndHapticsTest {
             CompositionLocalProvider(LocalReduceMotion provides reduce, LocalHapticFeedback provides haptics) {
                 Box(Modifier.requiredWidth(411.dp)) {
                     Timeline(
-                        rows = rows(), revision = revision(), typingLine = null,
+                        rows = rows(), revision = revision(),
                         isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
                         liveSummary = if (streaming) inProgress() else null,
                         liveAnswer = if (streaming) "writing a reply" else null,

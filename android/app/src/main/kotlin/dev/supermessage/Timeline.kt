@@ -196,7 +196,6 @@ import uniffi.supermessage_core.TurnStep
 fun Timeline(
     rows: List<TimelineRowDto>,
     revision: ULong,
-    typingLine: String?,
     isPaginating: Boolean,
     canPaginate: Boolean,
     onPaginate: () -> Unit,
@@ -665,18 +664,6 @@ fun Timeline(
                         }
                     }
                 }
-            }
-
-            if (typingLine != null) {
-                Text(
-                    typingLine,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                        .testTag("typing-line"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 

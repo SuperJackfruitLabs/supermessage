@@ -61,7 +61,6 @@ class TimelineSwipeTest {
                 Timeline(
                     rows = rows,
                     revision = 0uL,
-                    typingLine = null,
                     isPaginating = false,
                     canPaginate = false,
                     onPaginate = {},

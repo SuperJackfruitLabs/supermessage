@@ -188,7 +188,6 @@ internal fun TimelineLive() {
         Timeline(
             rows = groupTimelineRows(PreviewFixtures.history),
             revision = 1uL,
-            typingLine = "Atlas is typing…",
             isPaginating = false,
             canPaginate = false,
             onPaginate = {},
@@ -221,7 +220,6 @@ internal fun TimelinePaginating() {
         Timeline(
             rows = groupTimelineRows(PreviewFixtures.history),
             revision = 1uL,
-            typingLine = null,
             isPaginating = true,
             canPaginate = true,
             onPaginate = {},
@@ -243,7 +241,6 @@ internal fun MembershipStretchCollapsed() {
         Timeline(
             rows = PreviewFixtures.membershipStretch,
             revision = 1uL,
-            typingLine = null,
             isPaginating = false,
             canPaginate = false,
             onPaginate = {},
@@ -260,7 +257,6 @@ internal fun TimelineEmpty() {
         Timeline(
             rows = emptyList(),
             revision = 0uL,
-            typingLine = null,
             isPaginating = false,
             canPaginate = false,
             onPaginate = {},

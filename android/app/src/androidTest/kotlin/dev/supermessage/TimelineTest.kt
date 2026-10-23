@@ -170,7 +170,6 @@ class TimelineTest {
                 Timeline(
                     rows = fixed,
                     revision = 0uL,
-                    typingLine = null,
                     isPaginating = false,
                     canPaginate = false,
                     onPaginate = {},
@@ -235,7 +234,6 @@ class TimelineTest {
             Timeline(
                 rows = rows,
                 revision = revision,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -292,7 +290,6 @@ class TimelineTest {
             Timeline(
                 rows = rows,
                 revision = revision,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -350,7 +347,6 @@ class TimelineTest {
             Timeline(
                 rows = rows,
                 revision = revision,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -387,7 +383,6 @@ class TimelineTest {
                 Timeline(
                     rows = fixed,
                     revision = 0uL,
-                    typingLine = null,
                     isPaginating = false,
                     canPaginate = true,
                     onPaginate = { paginateCalls++ },
@@ -419,7 +414,6 @@ class TimelineTest {
                 Timeline(
                     rows = fixed,
                     revision = 0uL,
-                    typingLine = null,
                     isPaginating = false,
                     canPaginate = false,
                     onPaginate = { paginateCalls++ },
@@ -444,7 +438,6 @@ class TimelineTest {
                 Timeline(
                     rows = fixed,
                     revision = 0uL,
-                    typingLine = null,
                     isPaginating = false,
                     canPaginate = false,
                     onPaginate = {},
@@ -462,30 +455,6 @@ class TimelineTest {
         compose.onNodeWithTag("jump-to-newest").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("jump-to-newest").assertDoesNotExist()
-    }
-
-    /** The typing line shows what TypingStore said, and nothing when it is null. */
-    @Test
-    fun theTypingLineComesFromTheStore() {
-        var typingLine by mutableStateOf<String?>("Ganesha is typing…")
-
-        compose.setContent {
-            Timeline(
-                rows = emptyList(),
-                revision = 0uL,
-                typingLine = typingLine,
-                isPaginating = false,
-                canPaginate = false,
-                onPaginate = {},
-                onMarkRead = {},
-            )
-        }
-
-        compose.onNodeWithText("Ganesha is typing…").assertIsDisplayed()
-
-        typingLine = null
-        compose.waitForIdle()
-        compose.onNodeWithTag("typing-line").assertDoesNotExist()
     }
 
     /**
@@ -513,7 +482,6 @@ class TimelineTest {
             Timeline(
                 rows = fixed,
                 revision = 0uL,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -553,7 +521,6 @@ class TimelineTest {
             Timeline(
                 rows = fixed,
                 revision = 0uL,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -589,7 +556,6 @@ class TimelineTest {
             Timeline(
                 rows = fixed,
                 revision = 0uL,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -617,7 +583,6 @@ class TimelineTest {
             Timeline(
                 rows = fixed,
                 revision = 0uL,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -653,7 +618,6 @@ class TimelineTest {
             Timeline(
                 rows = fixed,
                 revision = 0uL,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -692,7 +656,6 @@ class TimelineTest {
             Timeline(
                 rows = fixed,
                 revision = 0uL,
-                typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
                 onPaginate = {},
@@ -730,7 +693,7 @@ class TimelineTest {
             CompositionLocalProvider(LocalReduceMotion provides true) {
                 Box(Modifier.requiredWidth(411.dp)) {
                     Timeline(
-                        rows = rows, revision = 0uL, typingLine = null, isPaginating = false,
+                        rows = rows, revision = 0uL, isPaginating = false,
                         canPaginate = false, onPaginate = {}, onMarkRead = {},
                         onReply = onReply, onSwipeReply = onSwipeReply,
                         liveSummary = liveSummary, liveAnswer = liveAnswer,
@@ -878,7 +841,7 @@ class TimelineTest {
             CompositionLocalProvider(LocalReduceMotion provides true) {
                 Box(Modifier.requiredWidth(411.dp)) {
                     Timeline(
-                        rows = rows(), revision = revision(), typingLine = null, isPaginating = false,
+                        rows = rows(), revision = revision(), isPaginating = false,
                         canPaginate = false, onPaginate = {}, onMarkRead = {},
                         liveSummary = summary(), liveAnswer = answer(), liveName = name,
                     )

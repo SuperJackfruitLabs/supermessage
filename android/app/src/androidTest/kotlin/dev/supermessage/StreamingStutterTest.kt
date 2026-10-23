@@ -109,7 +109,7 @@ class StreamingStutterTest {
                             }
                         }
                         Timeline(
-                            rows = rows, revision = 0uL, typingLine = null, isPaginating = false,
+                            rows = rows, revision = 0uL, isPaginating = false,
                             canPaginate = false, onPaginate = {}, onMarkRead = {},
                             liveSummary = inProgress(), liveAnswer = answer.ifEmpty { null }, liveName = "Atlas",
                         )
