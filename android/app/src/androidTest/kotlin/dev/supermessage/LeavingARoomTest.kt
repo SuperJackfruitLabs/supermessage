@@ -68,6 +68,9 @@ class LeavingARoomTest {
     private val alphaId = "!a:example.org"
 
     private class FakeCore : StubCore() {
+        /** The session pushes the hidden set at sign-in; these tests hide nothing. */
+        override fun setHiddenEvents(eventIds: List<String>) {}
+
         val receipts = mutableListOf<String>()
         val paginated = mutableListOf<String>()
         val typing = mutableListOf<Pair<String, Boolean>>()

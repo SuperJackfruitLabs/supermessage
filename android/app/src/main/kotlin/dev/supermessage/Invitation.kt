@@ -1,9 +1,11 @@
 package dev.supermessage
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -18,9 +20,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+
+private const val REPORT_HINT = "Reports this invitation to your homeserver's administrators"
 
 /**
  * What an invited room shows in place of a composer — the port of
@@ -40,6 +47,10 @@ import kotlinx.coroutines.launch
  * @param joinRoom Accepts — `Session.joinRoom`. Returns a refusal message, or
  *   `null` on success.
  * @param leaveRoom Declines — `Session.leaveRoom`. Same refusal contract.
+ * @param onReport Opens the report sheet for this room, which the caller hosts
+ *   (`InvitationView.swift:77-87`).
+ * @param reporting Whether that sheet is open. When it closes, focus comes
+ *   back to the "Report room…" button it was opened from.
  */
 @Composable
 fun InvitationView(
@@ -49,6 +60,8 @@ fun InvitationView(
     joinRoom: suspend (roomId: String) -> String?,
     leaveRoom: suspend (roomId: String) -> String?,
     modifier: Modifier = Modifier,
+    onReport: () -> Unit = {},
+    reporting: Boolean = false,
 ) {
     var inviterName by remember(roomId) { mutableStateOf<String?>(null) }
     var busy by remember(roomId) { mutableStateOf(false) }
@@ -57,6 +70,14 @@ fun InvitationView(
 
     LaunchedEffect(roomId) {
         inviterName = inviter(roomId)
+    }
+
+    // Focus returns to where the report was started from.
+    val reportFocus = remember { FocusRequester() }
+    var wasReporting by remember { mutableStateOf(false) }
+    LaunchedEffect(reporting) {
+        if (wasReporting && !reporting) runCatching { reportFocus.requestFocus() }
+        wasReporting = reporting
     }
 
     suspend fun respond(accept: Boolean) {
@@ -111,6 +132,19 @@ fun InvitationView(
                 modifier = Modifier.testTag("invitation-accept"),
             ) { Text("Accept") }
         }
+
+        // Quiet, beneath the two answers: reporting is not a way to respond.
+        Text(
+            "Report room…",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier
+                .heightIn(min = 48.dp)
+                .focusRequester(reportFocus)
+                .clickable(enabled = !busy, onClickLabel = REPORT_HINT, role = Role.Button, onClick = onReport)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .testTag("invitation-report"),
+        )
     }
 }
 
