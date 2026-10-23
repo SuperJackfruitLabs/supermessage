@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createAccountStore } from "./account.svelte";
 import { createAcknowledgementStore } from "./acknowledgement.svelte";
 import { createCastStore } from "./cast.svelte";
+import { createDestinations } from "./destinations.svelte";
 import { createEditTargetStore } from "./editTarget.svelte";
 import { createLiveStore } from "./live.svelte";
 import { createReplyTargetStore } from "./replyTarget.svelte";
@@ -15,7 +16,16 @@ function blankTurnStores() {
     liveStore: createLiveStore({ onLive: noop, onThought: noop, onTurn: noop, turn: async () => null }),
     castStore: createCastStore({ roomCast: async () => { throw new Error("unused"); } }),
     acknowledgementStore: createAcknowledgementStore({ acknowledgement: async () => null }),
+    destinations: blankDestinations(),
   };
+}
+function blankDestinations() {
+  return createDestinations({
+    rosterNeedsYouInbox: async () => ({ decisions: [], invitations: [], count: 0, badgeCount: 0 }),
+    rosterAgentDirectory: async () => [],
+    roomStatus: async () => null,
+    roomStatusWord: async () => "",
+  });
 }
 
 describe("resetSessionState", () => {
@@ -91,6 +101,7 @@ describe("resetSessionState", () => {
       liveStore,
       castStore,
       acknowledgementStore: createAcknowledgementStore({ acknowledgement: async () => null }),
+      destinations: blankDestinations(),
     });
     expect(liveStore.isLive).toBe(false);
     expect(liveStore.summary).toBeNull();
@@ -115,5 +126,31 @@ describe("resetSessionState and the dock", () => {
       acknowledgementStore,
     });
     expect(acknowledgementStore.current).toBeNull();
+  });
+});
+
+describe("resetSessionState and the destination", () => {
+  it("one reset covers the destination", async () => {
+    const inbox = { decisions: [], invitations: [], count: 1, badgeCount: 1 };
+    const destinations = createDestinations({
+      rosterNeedsYouInbox: async () => ({ ...inbox, decisions: [{ row: {} as never, state: "needsYou", describesAgent: true }] }),
+      rosterAgentDirectory: async () => [],
+      roomStatus: async () => null,
+      roomStatusWord: async () => "",
+    });
+    destinations.select("needsYou");
+    await destinations.refresh([], 1, null, false);
+    expect(destinations.badgeCount).toBe(1);
+    resetSessionState({
+      editTargetStore: createEditTargetStore(),
+      replyTargetStore: createReplyTargetStore(),
+      safetyStore: createSafetyStore(null),
+      accountStore: createAccountStore(),
+      ...blankTurnStores(),
+      destinations,
+    });
+    expect(destinations.selected).toBe("chats");
+    expect(destinations.inbox).toBeNull();
+    expect(destinations.badgeCount).toBe(0);
   });
 });

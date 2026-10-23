@@ -53,6 +53,7 @@
   import { createHeaderStatus, headerRows, headerTurnFlag } from "$lib/components/roomHeaderView";
   import type { RoomStatus } from "$lib/ipc";
   import { railEntries } from "$lib/components/spacesRailView";
+  import KeptPane from "$lib/components/KeptPane.svelte";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
@@ -60,6 +61,10 @@
   import Composer from "$lib/components/Composer.svelte";
   import EmptyRoomState from "$lib/components/layout/EmptyRoomState.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
+  import SidebarDestinations from "$lib/components/SidebarDestinations.svelte";
+  import NeedsYouList from "$lib/components/NeedsYouList.svelte";
+  import AgentsList from "$lib/components/AgentsList.svelte";
+  import { DESTINATIONS, destinations, type Destination } from "$lib/stores/destinations.svelte";
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
   import { openConversation } from "$lib/components/roomCreation";
   import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
@@ -67,6 +72,8 @@
   import ConnectionLine from "$lib/components/ConnectionLine.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
   import RecoveryPanel from "$lib/components/RecoveryPanel.svelte";
+  import FirstRunDemo from "$lib/components/FirstRunDemo.svelte";
+  import { browserOnboarding, demoDue } from "$lib/onboarding";
   import AccountPanel from "$lib/components/AccountPanel.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { appearanceStore } from "$lib/stores/appearance.svelte";
@@ -78,6 +85,30 @@
 
   let checking = $state(true);
   let restored = $state(false);
+
+  /** The sidebar's title follows its destination; the connection line stays under it (O4). */
+  const destinationTitle = $derived(DESTINATIONS.find((d) => d.id === destinations.selected)!.title);
+  /**
+   * The instant the Needs you and Agents ages measure against. Derived from the roster, so it
+   * moves exactly when a row's age could be stale and never on a timer (as `RoomList`'s is).
+   */
+  const nowMs = $derived.by(() => {
+    void roomsStore.rooms;
+    return Date.now();
+  });
+  /**
+   * Follows the selected space's roster (Q1): `roomsStore.rooms` is already that. The core is asked
+   * once per roster; a turn starting or ending re-reads only the Agents statuses.
+   */
+  $effect(() => {
+    if (!restored) return;
+    void destinations.refresh(
+      roomsStore.rooms,
+      nowMs,
+      roomsStore.selectedId,
+      liveStore.roomId === roomsStore.selectedId && liveStore.inProgress,
+    );
+  });
   let signingOut = $state(false);
 
   // The typing line's wording is the core's (`typing_view`); the desktop only
@@ -323,8 +354,6 @@
    * thing for a room-switch effect to have to remember to do.
    */
   let showRoomInfo = $state(false);
-  /** Whether the search panel is up. Fleet-wide, so not scoped to a room. */
-  let searchOpen = $state(false);
   /** Whether the create/join panel is up. */
   let newRoomOpen = $state(false);
   /**
@@ -566,13 +595,28 @@
         key: event.key,
         panelIsModal,
         defaultPrevented: event.defaultPrevented,
-        // The search panel is a modal overlay too, and handles its own Escape.
-        modalDialogOpen: searchOpen || accountOpen || newRoomOpen || document.querySelector("dialog:modal") !== null,
+        modalDialogOpen: accountOpen || newRoomOpen || document.querySelector("dialog:modal") !== null,
       })
     )
       return;
     event.preventDefault();
     void closeRoomInfo();
+  }
+
+  /** Chooses what the sidebar shows; in the collapsed layout that is the roster group. */
+  function chooseDestination(d: Destination): void {
+    destinations.select(d);
+    if (narrow) roomPaneOpen = false;
+  }
+
+  /**
+   * A room chosen from Needs you, Agents or Search: select it unless it already is (a re-select
+   * re-arms the timeline subscription) and, in the collapsed layout, show the room pane. The
+   * sidebar stays on its destination.
+   */
+  function chooseFromDestination(roomId: string): void {
+    if (roomId !== roomsStore.selectedId) roomsStore.select(roomId);
+    roomPaneOpen = true;
   }
 
   /**
@@ -771,7 +815,13 @@
         .then((key) => {
           if (key) void openRecovery(key);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          // The first-run demo waited for this: a new key is shown before anything else.
+          recoverySettled = true;
+        });
+    } else {
+      recoverySettled = true;
     }
   });
 
@@ -796,6 +846,29 @@
   let recoveryState = $state<"enabled" | "disabled" | "incomplete" | "unknown">("unknown");
   /** The key just created at sign-in, shown once by the panel. */
   let recoveryNewKey = $state<string | null>(null);
+
+  /**
+   * The first-run demo (iOS `RootView`): over the signed-in app when it is queued and unseen, and
+   * never while a new recovery key is being set up or shown. It opens when that panel closes.
+   * `recoverySettled` is false from a fresh sign-in until `ensureRecovery` has answered, so the
+   * demo cannot slip in before the key panel has had its chance to open.
+   */
+  const firstRun = browserOnboarding();
+  let recoverySettled = $state(false);
+  let demoOpen = $state(false);
+  /** Closed in this run, whether or not storage took the "seen" mark, so a refusing store cannot reopen it. */
+  let demoDone = $state(false);
+  $effect(() => {
+    const holdForRecovery = !recoverySettled || (recoveryOpen && recoveryNewKey !== null);
+    if (!demoOpen && !demoDone && demoDue({ demoPending: firstRun.demoPending, demoSeen: firstRun.demoSeen }, holdForRecovery)) {
+      demoOpen = true;
+    }
+  });
+  function finishDemo(): void {
+    firstRun.finishDemo();
+    demoDone = true;
+    demoOpen = false;
+  }
 
   async function openRecovery(newKey: string | null = null): Promise<void> {
     recoveryNewKey = newKey;
@@ -953,9 +1026,18 @@
             live, so the title sits alone then.
           -->
           <div class="shrink-0 px-3 pt-3">
-            <h2 class="text-ui-lg font-medium text-content">Chats</h2>
+            <h2 class="text-ui-lg font-medium text-content" data-testid="sidebar-title">{destinationTitle}</h2>
             <ConnectionLine state={connectionStore.state} message={connectionStore.message} />
           </div>
+          <!--
+            The four places the sidebar can show, above the roster (iOS `SidebarDestinations`).
+            The room pane keeps the open room whichever is chosen.
+          -->
+          <SidebarDestinations
+            selected={destinations.selected}
+            badgeCount={destinations.badgeCount}
+            onSelect={chooseDestination}
+          />
           <!--
             Starting a conversation sits above the roster, where the list of
             conversations is — not in the room header, which is about the room
@@ -981,7 +1063,44 @@
               that value, so returning to it from the roster would silently
               do nothing.
             -->
-            <RoomList onSelect={() => (roomPaneOpen = true)} />
+            <!--
+              The roster stays mounted whichever destination shows, and is hidden (out of the layout,
+              the tab order and the accessibility tree) rather than unmounted: a return to Chats
+              would otherwise rebuild its avatar cache (every avatar over IPC again), lose the scroll
+              position and flash "No rooms yet" until the first read landed.
+            -->
+            <KeptPane active={destinations.selected === "chats"}>
+              <RoomList onSelect={() => (roomPaneOpen = true)} />
+            </KeptPane>
+            {#if destinations.selected === "needsYou"}
+              <NeedsYouList
+                inbox={destinations.inbox}
+                {nowMs}
+                showsState={true}
+                avatars={headerAvatarCache}
+                selectedId={roomsStore.selectedId}
+                onSelect={chooseFromDestination}
+              />
+            {:else if destinations.selected === "agents"}
+              <AgentsList
+                agents={destinations.agents}
+                {nowMs}
+                statuses={destinations}
+                avatars={headerAvatarCache}
+                selectedId={roomsStore.selectedId}
+                onSelect={chooseFromDestination}
+              />
+            {:else if destinations.selected === "search"}
+              <SearchPanel
+                embedded
+                rooms={roomsStore.rooms}
+                scope={roomsStore.selectedId
+                  ? { roomId: roomsStore.selectedId, name: selectedIdentity.name }
+                  : null}
+                onSearch={searchMessages}
+                onOpenRoom={chooseFromDestination}
+              />
+            {/if}
           </div>
           <!--
             One "Account" button: appearance, links, encryption recovery and
@@ -1104,7 +1223,7 @@
                   class="-ml-1 flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
                 >
                   <span aria-hidden="true">‹</span>
-                  Chats
+                  {destinationTitle}
                 </button>
               {/if}
               {#if headerAvatar}
@@ -1193,20 +1312,6 @@
                 ground was never the only channel — but a state a sighted
                 operator cannot see is still a state that is not working.
               -->
-              <!--
-                Search is a fleet-wide action, not a room one, but this header
-                is where the reader's hands already are — and a second control
-                strip for one button would be a worse answer than borrowing
-                this one.
-              -->
-              <button
-                type="button"
-                onclick={() => (searchOpen = true)}
-                aria-label="Search messages"
-                class="shrink-0 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content"
-              >
-                Search
-              </button>
               <button
                 type="button"
                 bind:this={infoButton}
@@ -1366,18 +1471,6 @@
   />
 {/if}
 
-{#if searchOpen}
-  <SearchPanel
-    rooms={roomsStore.rooms}
-    scope={roomsStore.selectedId
-      ? { roomId: roomsStore.selectedId, name: selectedIdentity.name }
-      : null}
-    onSearch={searchMessages}
-    onOpenRoom={(roomId) => roomsStore.select(roomId)}
-    onClose={() => (searchOpen = false)}
-  />
-{/if}
-
 {#if spaceInvite !== null}
   <SpaceInvitePanel
     label={spaceInvite.identity.name}
@@ -1399,6 +1492,10 @@
       }}
     />
   {/if}
+
+{#if demoOpen}
+  <FirstRunDemo onFinish={finishDemo} />
+{/if}
 
 {#if newRoomOpen}
   <NewRoomPanel

@@ -120,7 +120,9 @@ function roomCountPhrase(count: number): string | null {
  */
 export function spaceEntryLabel(space: SpaceSummary): string {
   const identity = space.identity;
-  const parts = [identity.name];
+  // The core's `displayName` reads a generated id as "Runtime 9247e5" and a host without its
+  // `.local`. When it left the name alone, the parsed identity (no glyph) is the better label.
+  const parts = [space.displayName !== space.name ? space.displayName : identity.name];
   if (identity.role !== null) parts.push(identity.role);
   // An invitation never counts rooms. `childCount` is 0 for one, and "No
   // rooms" would be a claim about the contents of a space we are not in and
