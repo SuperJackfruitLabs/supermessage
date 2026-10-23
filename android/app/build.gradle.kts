@@ -183,6 +183,9 @@ dependencies {
     debugImplementation(libs.glance.appwidget.preview)
     testImplementation(libs.glance.appwidget.testing)
     implementation(libs.androidx.work.runtime)
+    // The process's own foreground/background (Apache-2.0, androidx; the pin of the other
+    // lifecycle libraries): the widgets' recap follows the app, not an Activity.
+    implementation(libs.androidx.lifecycle.process)
 
     // `StubCore`, which every FakeCore in this module extends. See :kit's
     // build file for why it is a test fixture and not a test source file.

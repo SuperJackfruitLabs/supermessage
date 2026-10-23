@@ -1,7 +1,5 @@
-package dev.supermessage.notify
+package dev.supermessage.widgets
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import dev.supermessage.kit.Session.Phase
 import dev.supermessage.kit.widgets.WidgetWriting
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,9 +25,7 @@ import uniffi.supermessage_core.WidgetLiveTurn
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
-class PlatformCoordinatorWidgetsTest {
-    private val context: Context = ApplicationProvider.getApplicationContext()
-
+class WidgetPublisherTest {
     private class Recording : WidgetWriting {
         val calls = mutableListOf<String>()
         val decisionRooms = mutableSetOf<String>()
@@ -54,25 +50,25 @@ class PlatformCoordinatorWidgetsTest {
         override fun holdsDecision(roomId: String): Boolean = roomId in decisionRooms
     }
 
-    private class Harness(context: Context, val writer: Recording, scope: kotlinx.coroutines.CoroutineScope) {
+    private class Harness(val writer: Recording, scope: kotlinx.coroutines.CoroutineScope) {
         val redraws = mutableListOf<Boolean>()
-        val coordinator = PlatformCoordinator(
-            context, MutableStateFlow(Phase.STARTING), permissionLauncher = {}, sdkInt = 36, granted = { false },
-            widgets = writer, widgetsWritten = { redraws += it }, widgetScope = scope, now = { 1_000L },
+        val coordinator = WidgetPublisher(
+            WidgetWriteQueue(writer, written = { redraws += it }, scope = scope),
+            now = { 1_000L },
         )
 
         suspend fun calls(): List<String> {
-            coordinator.widgetWritesDone()
+            coordinator.writesDone()
             return writer.calls.toList()
         }
     }
 
-    private fun harness(scope: kotlinx.coroutines.CoroutineScope) = Harness(context, Recording(), scope)
+    private fun harness(scope: kotlinx.coroutines.CoroutineScope) = Harness(Recording(), scope)
 
     @Test(timeout = 60_000)
     fun becomingActiveAndLeavingBothRestartTheRecap() = runTest(UnconfinedTestDispatcher()) {
         val h = harness(backgroundScope)
-        h.coordinator.widgetPhaseChanged(Phase.SIGNED_IN)
+        h.coordinator.phaseChanged(Phase.SIGNED_IN)
         assertEquals("signed in but not in front: no recap yet", emptyList<String>(), h.calls())
         h.coordinator.activeChanged(true)
         h.coordinator.activeChanged(false)
@@ -84,7 +80,7 @@ class PlatformCoordinatorWidgetsTest {
         val h = harness(backgroundScope)
         h.coordinator.activeChanged(true)
         assertEquals("nobody is signed in: nothing to recap", emptyList<String>(), h.calls())
-        h.coordinator.widgetPhaseChanged(Phase.SIGNED_IN)
+        h.coordinator.phaseChanged(Phase.SIGNED_IN)
         assertEquals(listOf("opened"), h.calls())
     }
 
@@ -92,7 +88,7 @@ class PlatformCoordinatorWidgetsTest {
     fun theTimelineIsReadOnlyForARoomWithADecision() = runTest(UnconfinedTestDispatcher()) {
         val h = harness(backgroundScope)
         h.writer.decisionRooms += "!owes:x"
-        h.coordinator.widgetPhaseChanged(Phase.SIGNED_IN)
+        h.coordinator.phaseChanged(Phase.SIGNED_IN)
         h.coordinator.timelineChanged("!quiet:x", emptyList())
         assertEquals("no decision for that room, no timeline call", emptyList<String>(), h.calls())
         h.coordinator.timelineChanged("!owes:x", emptyList())
@@ -109,7 +105,7 @@ class PlatformCoordinatorWidgetsTest {
     @Test(timeout = 60_000)
     fun aLiveTurnIsWrittenOnlyWhenItChanges() = runTest(UnconfinedTestDispatcher()) {
         val h = harness(backgroundScope)
-        h.coordinator.widgetPhaseChanged(Phase.SIGNED_IN)
+        h.coordinator.phaseChanged(Phase.SIGNED_IN)
         h.coordinator.liveChanged("!r:x", "Reading files")
         h.coordinator.liveChanged("!r:x", "Reading files")
         assertEquals(listOf("roster !r:x:Reading files"), h.calls())
@@ -125,11 +121,11 @@ class PlatformCoordinatorWidgetsTest {
     @Test(timeout = 60_000)
     fun signingOutWritesSignedOut() = runTest(UnconfinedTestDispatcher()) {
         val h = harness(backgroundScope)
-        h.coordinator.widgetPhaseChanged(Phase.SIGNED_OUT)
-        assertEquals("never signed in: nothing to reset", emptyList<String>(), h.calls())
-        h.coordinator.widgetPhaseChanged(Phase.SIGNED_IN)
-        h.coordinator.widgetPhaseChanged(Phase.SIGNED_OUT)
-        assertEquals(listOf("signedOut"), h.calls())
+        h.coordinator.phaseChanged(Phase.SIGNED_OUT)
+        assertEquals("a cold start into SIGNED_OUT clears a previous account's snapshot", listOf("signedOut"), h.calls())
+        h.coordinator.phaseChanged(Phase.SIGNED_IN)
+        h.coordinator.phaseChanged(Phase.SIGNED_OUT)
+        assertEquals(listOf("signedOut", "signedOut"), h.calls())
     }
 
     @Test(timeout = 60_000)
@@ -137,7 +133,7 @@ class PlatformCoordinatorWidgetsTest {
         val h = harness(backgroundScope)
         h.coordinator.roomsChanged(emptyList())
         assertEquals("signed out: no roster", emptyList<String>(), h.calls())
-        h.coordinator.widgetPhaseChanged(Phase.SIGNED_IN)
+        h.coordinator.phaseChanged(Phase.SIGNED_IN)
         h.coordinator.roomsChanged(emptyList())
         h.calls()
         assertEquals("the core said no reload", 0, h.redraws.count { it })

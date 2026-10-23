@@ -2,10 +2,17 @@ package dev.supermessage.widgets
 
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import java.util.concurrent.TimeUnit
 import androidx.glance.appwidget.updateAll
 import dev.supermessage.AppCore
 import java.util.concurrent.CopyOnWriteArrayList
@@ -30,19 +37,26 @@ object WidgetRegistry {
  * recap"): what changes between writes is the **frame** (an agent "active"
  * at the last write is "idle" fifteen minutes later with nothing written), so
  * the core says when the next frame begins (`WidgetView.nextChangeMs`) and the
- * widget is drawn again then. Two inexact alarms, neither needing the
- * exact-alarm permission:
+ * widget is drawn again then. Two things, neither needing the exact-alarm permission:
  *
- * - **the frame:** at `nextChangeMs`, or none when there is no next frame;
- * - **the backstop:** every [RELOAD_EVERY_MS] (`widget::RELOAD_EVERY_MS`, iOS's
- *   timeline `.after(reloadEvery)`), so a skipped redraw is picked up.
+ * - **the frame:** one inexact alarm at `nextChangeMs`, or none when there is no next frame;
+ * - **the backstop:** unique periodic WorkManager work every [RELOAD_EVERY_MS]
+ *   (`widget::RELOAD_EVERY_MS`, iOS's timeline `.after(reloadEvery)`), so a
+ *   skipped redraw is picked up. WorkManager keeps it across a reboot and a
+ *   force-stop, which an alarm does not.
  *
- * A fire redraws every registered widget and arms both again, so the chain
- * continues for as long as the process is alive; a write that the core says
- * is worth a redraw (a decision arriving or leaving) redraws at once.
- * Decisions about *what* to draw stay in the core: this only asks.
+ * **Only while a widget is placed.** With none, [arm] cancels both, so the
+ * process is never woken for nothing; the provider arms on `onEnabled` and
+ * `onUpdate` (the system sends an update after boot, which re-sets the frame
+ * alarm the reboot dropped) and cancels on `onDisabled`.
+ *
+ * A fire redraws every registered widget and arms again, so the frame chain
+ * continues; a write that the core says is worth a redraw (a decision arriving
+ * or leaving) redraws at once. Decisions about *what* to draw stay in the core:
+ * this only asks.
  *
  * @param nextChangeMs the core's `nextChangeMs` for now, from the snapshot.
+ * @param placed whether any of this app's widgets is on a home screen.
  */
 open class WidgetRedraw(
     context: Context,
@@ -50,16 +64,17 @@ open class WidgetRedraw(
     private val now: () -> Long = System::currentTimeMillis,
     private val widgets: () -> List<GlanceAppWidget> = { WidgetRegistry.all },
     private val update: suspend (GlanceAppWidget, Context) -> Unit = { widget, c -> widget.updateAll(c) },
+    private val placed: () -> Boolean = { anyWidgetPlaced(context.applicationContext) },
 ) {
     private val context = context.applicationContext
     private val alarms = this.context.getSystemService(AlarmManager::class.java)
 
-    /** After a write: redraw now when the core said to, and keep the alarms right either way. */
+    /** After a write: redraw now when the core said to, and keep the schedule right either way. */
     open suspend fun after(reload: Boolean) {
         if (reload) redraw() else arm()
     }
 
-    /** Every registered widget is drawn from the snapshot as it stands, and both alarms are set again. */
+    /** Every registered widget is drawn from the snapshot as it stands, and the schedule is set again. */
     suspend fun redraw() {
         try {
             for (widget in widgets()) update(widget, context)
@@ -68,31 +83,63 @@ open class WidgetRedraw(
         }
     }
 
-    /** Sets the frame alarm for the snapshot's next frame (or cancels it) and the backstop for [RELOAD_EVERY_MS] out. */
+    /**
+     * Sets the frame alarm for the snapshot's next frame (or cancels it) and makes sure the
+     * periodic backstop is queued; with no widget placed, cancels both.
+     */
     fun arm() {
-        val at = now()
-        val frame = nextChangeMs(at)
-        if (frame == null) alarms.cancel(intent(FRAME)) else alarms.setAndAllowWhileIdle(AlarmManager.RTC, frame, intent(FRAME))
-        alarms.setAndAllowWhileIdle(AlarmManager.RTC, at + RELOAD_EVERY_MS, intent(BACKSTOP))
+        if (!placed()) return cancelAll()
+        val frame = nextChangeMs(now())
+        if (frame == null) alarms.cancel(frameIntent()) else alarms.setAndAllowWhileIdle(AlarmManager.RTC, frame, frameIntent())
+        // KEEP: the queued work (and its phase) stands; re-enqueuing would push the next run out.
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            BACKSTOP_WORK,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<WidgetRefreshWorker>(RELOAD_EVERY_MS, TimeUnit.MILLISECONDS)
+                // Whoever armed has just drawn; the first backstop is a period away.
+                .setInitialDelay(RELOAD_EVERY_MS, TimeUnit.MILLISECONDS)
+                .build(),
+        )
     }
 
-    private fun intent(action: String): PendingIntent = PendingIntent.getBroadcast(
+    /** No widget remains: nothing is left to wake the process for. */
+    fun cancelAll() {
+        alarms.cancel(frameIntent())
+        WorkManager.getInstance(context).cancelUniqueWork(BACKSTOP_WORK)
+    }
+
+    private fun frameIntent(): PendingIntent = PendingIntent.getBroadcast(
         context,
         0,
-        Intent(context, WidgetRedrawReceiver::class.java).setAction(action),
+        Intent(context, WidgetRedrawReceiver::class.java).setAction(FRAME),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
     companion object {
-        /** `core::widget::RELOAD_EVERY_MS`: 15 minutes. */
+        /** `core::widget::RELOAD_EVERY_MS`: 15 minutes, which is also WorkManager's shortest period. */
         const val RELOAD_EVERY_MS = 15 * 60 * 1000L
 
         const val FRAME = "dev.supermessage.widgets.REDRAW_AT_NEXT_FRAME"
-        const val BACKSTOP = "dev.supermessage.widgets.REDRAW_BACKSTOP"
+        const val BACKSTOP_WORK = "widgets-backstop"
+
+        /** Whether the launcher holds any widget of this app. */
+        fun anyWidgetPlaced(context: Context): Boolean {
+            val manager = AppWidgetManager.getInstance(context)
+            return manager.getInstalledProvidersForPackage(context.packageName, null)
+                .any { manager.getAppWidgetIds(it.provider).isNotEmpty() }
+        }
     }
 }
 
-/** The alarms' target. Not exported: only this app's own PendingIntents reach it. */
+/** The periodic backstop: draw every widget from the snapshot, and arm the next frame. */
+class WidgetRefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        AppCore.widgetRedraw(applicationContext).redraw()
+        return Result.success()
+    }
+}
+
+/** The frame alarm's target. Not exported: only this app's own PendingIntents reach it. */
 class WidgetRedrawReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pending = goAsync()

@@ -5,12 +5,16 @@ import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import dev.supermessage.kit.notify.NotificationCoordinator
 import dev.supermessage.kit.widgets.WidgetFeed
 import dev.supermessage.kit.widgets.WidgetWriting
 import dev.supermessage.notify.PushRegistrar
 import dev.supermessage.widgets.FileSnapshotStore
+import dev.supermessage.widgets.WidgetPublisher
 import dev.supermessage.widgets.WidgetRedraw
+import dev.supermessage.widgets.WidgetWriteQueue
 import uniffi.supermessage_core.NotificationDto
 import org.unifiedpush.android.connector.INSTANCE_DEFAULT
 import org.unifiedpush.android.connector.UnifiedPush
@@ -84,6 +88,12 @@ object AppCore {
     @Volatile
     private var widgetRedraw: WidgetRedraw? = null
 
+    @Volatile
+    private var widgetPublisher: WidgetPublisher? = null
+
+    @Volatile
+    private var processObserved = false
+
     /**
      * The one writer of the widgets' snapshot (`filesDir/widgets/snapshot.json`):
      * the roster, the open room, every push and every widget button merge
@@ -111,6 +121,42 @@ object AppCore {
         }
     }
 
+    /**
+     * The one [WidgetPublisher]: when the app asks the snapshot to merge. Process-wide, with
+     * its writes on one IO queue, so an Activity's recreation neither restarts the recap nor
+     * is held by it. It also takes the card answers ([decisionAnswered]).
+     */
+    internal fun widgetPublisher(context: Context): WidgetPublisher {
+        widgetPublisher?.let { return it }
+        val app = context.applicationContext
+        return synchronized(lock) {
+            widgetPublisher ?: WidgetPublisher(
+                WidgetWriteQueue(
+                    writer = widgetWriter(app),
+                    written = { reload -> widgetRedraw(app).after(reload) },
+                    scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+                ),
+            ).also {
+                widgetPublisher = it
+                decisionAnswered = it::decisionAnswered
+            }
+        }
+    }
+
+    /**
+     * Follows the app's real foreground and background (`ProcessLifecycleOwner`, which
+     * ignores an Activity's recreation) into the widgets' recap, as iOS's `scenePhase`
+     * does. Once per process; call from the main thread.
+     */
+    internal fun observeProcess(context: Context, lifecycle: Lifecycle = ProcessLifecycleOwner.get().lifecycle) {
+        synchronized(lock) {
+            if (processObserved) return
+            processObserved = true
+        }
+        val publisher = widgetPublisher(context)
+        lifecycle.addObserver(ScenePhaseObserver(publisher::activeChanged))
+    }
+
     /** A push the core decided: merged into the snapshot, and the widgets drawn if it is worth it. */
     internal suspend fun widgetsDecided(context: Context, note: NotificationDto) {
         val reload = widgetWriter(context).apply(note)
@@ -119,8 +165,8 @@ object AppCore {
 
     /**
      * Called when a decision card's answer has landed from the app, with the
-     * room, event and option: the widgets stop offering it. The coordinator
-     * sets it while it lives (`PlatformCoordinator.decisionAnswered`).
+     * room, event and option: the widgets stop offering it. The process's
+     * [WidgetPublisher] sets it when it is made.
      */
     @Volatile
     internal var decisionAnswered: (roomId: String, eventId: String, optionId: String) -> Unit = { _, _, _ -> }
@@ -148,6 +194,8 @@ object AppCore {
             widgetFeed = null
             widgetWriting = writing
             widgetRedraw = redraw
+            widgetPublisher = null
+            processObserved = false
         }
     }
 

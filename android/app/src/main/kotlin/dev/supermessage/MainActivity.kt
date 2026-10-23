@@ -117,8 +117,6 @@ class MainActivity : ComponentActivity() {
         lifecycle.addObserver(
             ScenePhaseObserver { active ->
                 model.notifications.activeChanged(active)
-                // The widgets' recap starts again on the way in and on the way out.
-                coordinator?.activeChanged(active)
             },
         )
         val registrar = AppCore.registrar(this)
@@ -128,17 +126,17 @@ class MainActivity : ComponentActivity() {
             permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
             askForPush = { askForPush(this, registrar) },
             pushSignedOut = registrar::signedOut,
-            widgets = AppCore.widgetWriter(this),
-            widgetsWritten = AppCore.widgetRedraw(this)::after,
         ).also { coordinator = it }
-        // On the process's scope, so a change after the Activity stops still lands.
-        coordinator.watch(model.session, AppCore.scope)
-        AppCore.decisionAnswered = coordinator::decisionAnswered
+        // The widgets' snapshot is the process's, not this Activity's: the recap follows the
+        // app's real foreground (so a recreation does not restart it), and the feed runs on
+        // the process's scope so a change after the Activity stops still lands.
+        AppCore.observeProcess(this)
+        val publisher = AppCore.widgetPublisher(this)
+        publisher.watch(model.session.phase, model.session, AppCore.scope)
         lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onDestroy(owner: LifecycleOwner) {
-                    coordinator.stopWatching()
-                    AppCore.decisionAnswered = { _, _, _ -> }
+                    publisher.stopWatching()
                 }
             },
         )
